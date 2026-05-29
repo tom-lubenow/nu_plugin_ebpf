@@ -498,6 +498,8 @@ const PROGRAM_MAP_KERNEL_FEATURE_EXPECTATIONS = [
             '  # helper-call "bpf_redirect_map" redirects 0 0 --kind devmap-hash'
             '  let docs = "redirect-map tx_ports 0 --kind devmap"'
             '  let more_docs = "map-define xsks --kind xskmap"'
+            '  let ignored = 0 # | helper-call "bpf_map_lookup_percpu_elem" values key 0 --kind lru-per-cpu-hash'
+            '  let more_ignored = 0 # | map-get values --kind queue'
             '  0'
             '}'
         ]
@@ -675,6 +677,8 @@ const PROGRAM_RESERVED_MAP_KERNEL_FEATURE_EXPECTATIONS = [
             '{|ctx|'
             '  let docs = "emit events user_events perf_events kstacks ustacks .kstack .ustack"'
             '  # emit events user_events perf_events kstacks ustacks .kstack .ustack'
+            '  let ignored = 0 # | emit | count | histogram | start-timer | stop-timer'
+            '  let more_ignored = 0 # events user_events perf_events kstacks ustacks .kstack .ustack'
             '  0'
             '}'
         ]
@@ -707,6 +711,7 @@ const PROGRAM_MAP_VALUE_KERNEL_FEATURE_EXPECTATIONS = [
             '{|ctx|'
             '  let text = "map-define resources --kind hash --value-type record{lock:bpf_spin_lock}"'
             '  # map-define resources --kind hash --value-type "record{timer:bpf_timer}"'
+            '  map-define docs --kind hash # --value-type "record{lock:bpf_spin_lock}"'
             '  0'
             '}'
         ]
@@ -4640,6 +4645,7 @@ const PROGRAM_SURFACE_KERNEL_FEATURE_EXPECTATIONS = [
             '{|ctx|'
             '  let text = "tail-call random int read-str read-kernel-str | emit | count | histogram start-timer stop-timer map-get map-put map-delete map-contains map-push map-peek map-pop redirect-map assign-socket adjust-message --pull adjust-packet --head redirect-socket redirect --peer"'
             '  # tail-call random int read-str read-kernel-str | emit | count | histogram start-timer stop-timer map-get map-put map-delete map-contains map-push map-peek map-pop redirect-map assign-socket adjust-message --pull adjust-packet --head redirect-socket redirect --peer'
+            '  let ignored = 0 # | tail-call prog 0 | emit | count | histogram | start-timer | stop-timer | adjust-message --pull 0 1 | adjust-packet --head 0 | redirect-socket peers 0 --kind sockhash | redirect --peer'
             '  0'
             '}'
         ]
@@ -4943,6 +4949,7 @@ const PROGRAM_HELPER_KERNEL_FEATURE_EXPECTATIONS = [
             '{|ctx|'
             '  let text = "helper-call \"bpf_trace_printk\" \"ignored\" 7"'
             '  # helper-call "bpf_map_lookup_elem" ignored key'
+            '  let ignored = 0 # | helper-call "bpf_ktime_get_ns"'
             '  0'
             '}'
         ]
@@ -4997,6 +5004,7 @@ const PROGRAM_KFUNC_KERNEL_FEATURE_EXPECTATIONS = [
             '{|ctx|'
             '  let text = "kfunc-call \"bpf_task_from_pid\" 1"'
             '  # kfunc-call "bpf_task_from_pid" 1'
+            '  let ignored = 0 # | kfunc-call "bpf_task_from_pid" 1'
             '  0'
             '}'
         ]
@@ -19676,6 +19684,10 @@ def marker-tails-outside-simple-string [line: string marker: string] {
     $tails
 }
 
+def line-contains-code-marker? [line: string marker: string] {
+    not ((marker-tails-outside-simple-string $line $marker) | is-empty)
+}
+
 def command-tail-after-token [raw_after: string] {
     if $raw_after == "" {
         return ""
@@ -19721,6 +19733,9 @@ def command-invocation-tails [line: string command: string] {
 
             let before = ($parts | first $part.index | str join $marker)
             if not (outside-simple-string? $before) {
+                continue
+            }
+            if (line-contains-outside-simple-string? $before "#") {
                 continue
             }
 
@@ -19794,7 +19809,7 @@ def helper-call-fixed-map-kind-kernel-feature [line: string] {
 }
 
 def helper-call-explicit-map-kind-kernel-feature [line: string] {
-    if ((command-invocation-tails $line "helper-call") | is-empty) or not ($line | str contains "--kind ") {
+    if ((command-invocation-tails $line "helper-call") | is-empty) or not (line-contains-code-marker? $line "--kind ") {
         return null
     }
 
@@ -19818,13 +19833,12 @@ def helper-call-explicit-map-kind-kernel-feature [line: string] {
 }
 
 def source-line-map-kind [line: string default_kind: string] {
-    let parts = ($line | split row "--kind ")
-    if ($parts | length) <= 1 {
-        return $default_kind
+    for raw_tail in (marker-tails-outside-simple-string $line "--kind ") {
+        let raw_kind = ($raw_tail | str trim | split row " " | first)
+        return (normalize-map-kind-token $raw_kind)
     }
 
-    let raw_kind = (($parts | get 1) | str trim | split row " " | first)
-    normalize-map-kind-token $raw_kind
+    $default_kind
 }
 
 def line-invokes-map-kind-surface? [line: string] {
@@ -21545,10 +21559,8 @@ def program-map-kernel-features [source: string] {
             continue
         }
 
-        let parts = ($trimmed | split row "--kind ")
-        if ($parts | length) > 1 {
-            let raw_kind = (($parts | get 1) | str trim | split row " " | first)
-            let kind = (normalize-map-kind-token $raw_kind)
+        let kind = (source-line-map-kind $trimmed "")
+        if $kind != "" {
             let feature = (map-kind-kernel-feature $kind)
             if $feature != null {
                 $features = (append-missing-kernel-features $features [$feature])
@@ -21574,7 +21586,7 @@ def program-reserved-map-kernel-features [source: string] {
 
         if (
             (line-invokes-command? $trimmed "emit")
-            or (line-contains-outside-simple-string? $trimmed " events")
+            or (line-contains-code-marker? $trimmed " events")
         ) {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_MAP_RINGBUF])
         }
@@ -21588,21 +21600,21 @@ def program-reserved-map-kernel-features [source: string] {
         }
         if (
             ((line-invokes-command? $trimmed "map-get") or (line-invokes-command? $trimmed "map-put") or (line-invokes-command? $trimmed "map-delete") or (line-invokes-command? $trimmed "map-contains"))
-            and not ($trimmed | str contains "--kind ")
+            and not (line-contains-code-marker? $trimmed "--kind ")
         ) {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_MAP_HASH])
         }
-        if (line-contains-outside-simple-string? $trimmed " user_events") {
+        if (line-contains-code-marker? $trimmed " user_events") {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_MAP_USER_RINGBUF])
         }
-        if (line-contains-outside-simple-string? $trimmed " perf_events") {
+        if (line-contains-code-marker? $trimmed " perf_events") {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_MAP_PERF_EVENT_ARRAY])
         }
         if (
-            (line-contains-outside-simple-string? $trimmed " kstacks")
-            or (line-contains-outside-simple-string? $trimmed " ustacks")
-            or (line-contains-outside-simple-string? $trimmed ".kstack")
-            or (line-contains-outside-simple-string? $trimmed ".ustack")
+            (line-contains-code-marker? $trimmed " kstacks")
+            or (line-contains-code-marker? $trimmed " ustacks")
+            or (line-contains-code-marker? $trimmed ".kstack")
+            or (line-contains-code-marker? $trimmed ".ustack")
         ) {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_MAP_STACK_TRACE])
         }
@@ -21616,7 +21628,7 @@ def program-map-value-kernel-features [source: string] {
 
     for line in ($source | lines) {
         let trimmed = ($line | str trim)
-        if not ((line-invokes-command? $trimmed "map-define") and ($trimmed | str contains "--value-type")) {
+        if not ((line-invokes-command? $trimmed "map-define") and (line-contains-code-marker? $trimmed "--value-type")) {
             continue
         }
 
@@ -22010,7 +22022,7 @@ def program-surface-kernel-features [source: string target] {
         if (line-invokes-command? $trimmed "redirect-map") {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_REDIRECT_MAP])
         }
-        if (line-invokes-command? $trimmed "map-contains") and ($trimmed | str contains "--kind cgroup-array") {
+        if (line-invokes-command? $trimmed "map-contains") and ($map_kind == "cgroup-array") {
             if $target_uses_skb_cgroup_helper {
                 $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SKB_UNDER_CGROUP])
             } else {
@@ -22050,13 +22062,13 @@ def program-surface-kernel-features [source: string target] {
         }
         if (line-invokes-command? $trimmed "redirect-socket") {
             if ($target_text | str starts-with "sk_msg:") {
-                if ($trimmed | str contains "--kind sockhash") {
+                if $map_kind == "sockhash" {
                     $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MSG_REDIRECT_HASH])
                 } else {
                     $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MSG_REDIRECT_MAP])
                 }
             } else if ($target_text | str starts-with "sk_skb:") or ($target_text | str starts-with "sk_skb_parser:") {
-                if ($trimmed | str contains "--kind sockhash") {
+                if $map_kind == "sockhash" {
                     $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SK_REDIRECT_HASH])
                 } else {
                     $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SK_REDIRECT_MAP])
