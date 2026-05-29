@@ -16,6 +16,24 @@ impl TracepointContextSource {
             Self::WellKnownSyscallFallback => "well-known-syscall-fallback",
         }
     }
+
+    pub fn minimum_kernel(self) -> Option<&'static str> {
+        match self {
+            Self::TracefsFormat => None,
+            // BPF tracepoint programs require Linux 4.7. The syscall tracepoint
+            // layout predates that, but 4.7 is the earliest useful eBPF floor.
+            Self::WellKnownSyscallFallback => Some("4.7"),
+        }
+    }
+
+    pub fn minimum_kernel_source(self) -> Option<&'static str> {
+        match self {
+            Self::TracefsFormat => None,
+            Self::WellKnownSyscallFallback => {
+                Some("https://github.com/torvalds/linux/blob/v4.7/include/trace/events/syscalls.h")
+            }
+        }
+    }
 }
 
 /// Tracepoint context layout from kernel BTF

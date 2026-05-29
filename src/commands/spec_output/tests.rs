@@ -4045,6 +4045,63 @@ fn test_spec_tracepoint_fields_include_payload_fields_when_available() {
     assert!(fields.iter().all(|field| !field.source.is_empty()));
     assert!(fields.iter().all(|field| !field.context_struct.is_empty()));
     assert!(fields.iter().all(|field| field.context_size > 0));
+    for field in &fields {
+        if field.source == "well-known-syscall-fallback" {
+            assert_eq!(field.minimum_kernel, Some("4.7"));
+            assert!(
+                field
+                    .minimum_kernel_source
+                    .is_some_and(|source| source.contains("/v4.7/include/trace/events/syscalls.h"))
+            );
+        } else {
+            assert_eq!(field.minimum_kernel, None);
+            assert_eq!(field.minimum_kernel_source, None);
+        }
+    }
+}
+
+#[test]
+fn test_tracepoint_field_records_include_fallback_kernel_metadata() {
+    let records = tracepoint_field_records(
+        vec![SpecTracepointField {
+            name: "args".to_string(),
+            ty: "array<u64;6>".to_string(),
+            offset: 16,
+            size: 48,
+            bit_offset: None,
+            bit_size: None,
+            source: "well-known-syscall-fallback",
+            source_path: None,
+            context_struct: "trace_event_raw_sys_enter_openat".to_string(),
+            context_size: 64,
+            minimum_kernel: Some("4.7"),
+            minimum_kernel_source: Some(
+                "https://github.com/torvalds/linux/blob/v4.7/include/trace/events/syscalls.h",
+            ),
+        }],
+        Span::test_data(),
+    );
+    let record = records
+        .first()
+        .expect("expected tracepoint field record")
+        .as_record()
+        .expect("tracepoint field should render as a record");
+    assert_eq!(
+        record
+            .get("minimum_kernel")
+            .expect("minimum_kernel should be present")
+            .as_str()
+            .expect("minimum_kernel should be a string"),
+        "4.7"
+    );
+    assert!(
+        record
+            .get("minimum_kernel_source")
+            .expect("minimum_kernel_source should be present")
+            .as_str()
+            .expect("minimum_kernel_source should be a string")
+            .contains("/v4.7/include/trace/events/syscalls.h")
+    );
 }
 
 #[test]

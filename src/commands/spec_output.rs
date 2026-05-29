@@ -172,6 +172,8 @@ struct SpecTracepointField {
     source_path: Option<String>,
     context_struct: String,
     context_size: usize,
+    minimum_kernel: Option<&'static str>,
+    minimum_kernel_source: Option<&'static str>,
 }
 
 #[cfg(target_os = "linux")]
@@ -1180,6 +1182,8 @@ fn spec_tracepoint_fields(
     match ctx.tracepoint_context() {
         Ok(Some(tracepoint)) => {
             let source = tracepoint.source.label();
+            let minimum_kernel = tracepoint.source.minimum_kernel();
+            let minimum_kernel_source = tracepoint.source.minimum_kernel_source();
             let source_path = tracepoint.source_path.clone();
             let context_struct = tracepoint.struct_name.clone();
             let context_size = tracepoint.size;
@@ -1198,6 +1202,8 @@ fn spec_tracepoint_fields(
                         source_path: source_path.clone(),
                         context_struct: context_struct.clone(),
                         context_size,
+                        minimum_kernel,
+                        minimum_kernel_source,
                     })
                     .collect(),
                 None,
@@ -1225,6 +1231,8 @@ fn tracepoint_field_records(fields: Vec<SpecTracepointField>, span: Span) -> Vec
                     "source_path" => optional_string(field.source_path, span),
                     "context_struct" => Value::string(field.context_struct, span),
                     "context_size" => optional_usize(Some(field.context_size), span),
+                    "minimum_kernel" => optional_static_str(field.minimum_kernel, span),
+                    "minimum_kernel_source" => optional_static_str(field.minimum_kernel_source, span),
                 },
                 span,
             )

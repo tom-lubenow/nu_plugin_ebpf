@@ -809,7 +809,10 @@ generic syscall payload shape: `ctx.id` plus fixed-array `ctx.args`. For
 `ctx.filename`; syscall-entry pointer fields are modeled as userspace pointers,
 so `ctx.filename | read-str --max-len 64` is the preferred form. The generic
 fallback `($ctx.args | get 1)` is only a raw numeric ABI value and is not enough
-pointer provenance for `read-str`.
+pointer provenance for `read-str`. `ebpf spec` reports tracepoint field
+provenance for both paths; fallback syscall fields also report the Linux 4.7
+eBPF tracepoint floor and source URL used for that layout, while tracefs-derived
+fields stay unversioned because they are observed from the local host.
 
 ## Limits
 
