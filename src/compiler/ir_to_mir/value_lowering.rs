@@ -728,6 +728,21 @@ impl<'a> HirToMirLowering<'a> {
         Ok(())
     }
 
+    pub(super) fn lower_compile_time_only_constant_value(&mut self, dst: RegId, value: &Value) {
+        let dst_vreg = if self.reg_map.contains_key(&dst.get()) {
+            self.assign_fresh_vreg(dst)
+        } else {
+            self.get_vreg(dst)
+        };
+        self.reg_metadata.insert(dst.get(), RegMetadata::default());
+        self.emit(MirInst::Copy {
+            dst: dst_vreg,
+            src: MirValue::Const(0),
+        });
+        self.vreg_type_hints.insert(dst_vreg, MirType::I64);
+        self.set_reg_constant_value(dst, Some(value.clone()));
+    }
+
     fn lower_const_i64_literal(&mut self, dst: RegId, dst_vreg: VReg, value: i64) {
         self.vreg_type_hints.insert(dst_vreg, MirType::I64);
         self.emit(MirInst::Copy {

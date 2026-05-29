@@ -2254,12 +2254,13 @@ fn test_lower_global_define_empty_binary_without_type_still_rejects_empty_layout
 }
 
 #[test]
-fn test_lower_global_define_type_record_omitted_bytes_field_zero_fills_declared_bytes() {
+fn test_lower_global_define_type_record_empty_binary_field_zero_fills_declared_bytes() {
     let define_decl = DeclId::new(1075);
     let decl_names = HashMap::from([(define_decl, "global-define".to_string())]);
 
-    let mut state = Record::with_capacity(1);
+    let mut state = Record::with_capacity(2);
     state.push("pid", Value::int(7, Span::test_data()));
+    state.push("comm", Value::binary(Vec::new(), Span::test_data()));
 
     let func = HirFunction {
         blocks: vec![HirBlock {
@@ -2307,17 +2308,58 @@ fn test_lower_global_define_type_record_omitted_bytes_field_zero_fills_declared_
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect("typed record bytes:N fields should zero-fill omitted initializers");
+    .expect("typed record bytes:N fields should accept empty binary initializers");
 
     let mut expected = Vec::new();
     expected.extend_from_slice(&7i64.to_le_bytes());
     expected.extend_from_slice(&[0u8; 4]);
     expected.extend_from_slice(&[0u8; 4]);
 
+    assert_eq!(result.readonly_globals.len(), 0);
     assert_eq!(result.data_globals.len(), 1);
     assert_eq!(result.bss_globals.len(), 0);
     assert_eq!(result.data_globals[0].name, "__nu_global_seen_state");
     assert_eq!(result.data_globals[0].data, expected);
+}
+
+#[test]
+fn test_lower_constant_record_empty_binary_field_without_typed_consumer_rejects_layout() {
+    let mut state = Record::with_capacity(2);
+    state.push("pid", Value::int(7, Span::test_data()));
+    state.push("comm", Value::binary(Vec::new(), Span::test_data()));
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::LoadValue {
+                dst: RegId::new(0),
+                val: Box::new(Value::record(state, Span::test_data())),
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 1,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("untyped record constants with empty binary fields should reject");
+
+    assert!(
+        err.to_string()
+            .contains("empty binary constants do not establish a fixed byte-buffer layout")
+    );
 }
 
 #[test]

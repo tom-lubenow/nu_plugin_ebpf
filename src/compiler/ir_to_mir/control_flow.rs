@@ -505,7 +505,7 @@ impl<'a> HirToMirLowering<'a> {
                 }
             }
 
-            for stmt in &block.stmts {
+            for (stmt_index, stmt) in block.stmts.iter().enumerate() {
                 if self.current_block_has_real_terminator() {
                     if Self::is_terminal_cleanup_stmt(stmt) {
                         continue;
@@ -513,6 +513,16 @@ impl<'a> HirToMirLowering<'a> {
                     return Err(CompileError::UnsupportedInstruction(
                         "terminal eBPF command must be the final expression in its block".into(),
                     ));
+                }
+                if let HirStmt::LoadValue { dst, val } = stmt
+                    && self.is_compile_time_only_typed_global_define_value(
+                        &block.stmts,
+                        stmt_index,
+                        *dst,
+                    )
+                {
+                    self.lower_compile_time_only_constant_value(*dst, val);
+                    continue;
                 }
                 self.lower_stmt(stmt)?;
             }
@@ -710,6 +720,50 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         Ok(())
+    }
+
+    fn is_compile_time_only_typed_global_define_value(
+        &self,
+        stmts: &[HirStmt],
+        stmt_index: usize,
+        dst: RegId,
+    ) -> bool {
+        let Some(rest) = stmts.get(stmt_index.saturating_add(1)..) else {
+            return false;
+        };
+
+        for stmt in rest {
+            match stmt {
+                HirStmt::LoadLiteral {
+                    dst: loaded_dst, ..
+                }
+                | HirStmt::LoadValue {
+                    dst: loaded_dst, ..
+                } => {
+                    if *loaded_dst == dst {
+                        return false;
+                    }
+                }
+                HirStmt::Call {
+                    decl_id,
+                    src_dst,
+                    args,
+                } => {
+                    return *src_dst == dst
+                        && args.pipeline_input == Some(dst)
+                        && self.decl_names.get(decl_id).map(String::as_str)
+                            == Some("global-define")
+                        && args
+                            .named
+                            .iter()
+                            .any(|(name, _)| name.as_slice() == b"type")
+                        && !args.flags.iter().any(|flag| flag.as_slice() == b"zero");
+                }
+                _ => return false,
+            }
+        }
+
+        false
     }
 
     /// Lower a single HIR statement to MIR
