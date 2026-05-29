@@ -707,7 +707,7 @@ impl<'a> HirToMirLowering<'a> {
         };
 
         let val_meta = self.get_metadata(val).cloned();
-        let val_vreg =
+        let mut val_vreg =
             if val_meta.as_ref().is_some_and(|meta| meta.is_context) && self.ctx_param.is_some() {
                 self.materialize_context_pointer_arg()
             } else {
@@ -716,16 +716,26 @@ impl<'a> HirToMirLowering<'a> {
 
         // Preserve aggregate-pointer field layout as the underlying aggregate
         // so `{ path: $entry } | emit` serializes nested data instead of a raw pointer.
-        let mut field_type = val_meta
+        let fixed_array_field_type = val_meta
             .as_ref()
-            .and_then(|m| {
-                m.field_type
-                    .clone()
-                    .or_else(|| Self::metadata_record_layout(m))
+            .map(Self::metadata_fixed_array_layout)
+            .transpose()?
+            .flatten();
+        let mut field_type = fixed_array_field_type
+            .clone()
+            .or_else(|| {
+                val_meta.as_ref().and_then(|m| {
+                    m.field_type
+                        .clone()
+                        .or_else(|| Self::metadata_record_layout(m))
+                })
             })
             .or_else(|| self.vreg_type_hints.get(&val_vreg).cloned())
             .map(|ty| self.stored_generic_map_value_type(&ty))
             .unwrap_or(MirType::I64);
+        if fixed_array_field_type.is_some() {
+            val_vreg = self.materialized_metadata_aggregate_vreg(val, val_vreg)?;
+        }
         let field_constant = self
             .get_metadata(val)
             .and_then(|m| m.constant_value.clone());

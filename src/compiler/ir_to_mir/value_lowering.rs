@@ -408,7 +408,7 @@ impl<'a> HirToMirLowering<'a> {
         Ok((record_ty, data))
     }
 
-    fn alloc_readonly_global_name(&mut self) -> String {
+    pub(super) fn alloc_readonly_global_name(&mut self) -> String {
         let id = self.readonly_global_counter;
         self.readonly_global_counter = self.readonly_global_counter.saturating_add(1);
         format!("__nu_rodata_const_{}", id)

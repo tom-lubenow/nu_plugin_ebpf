@@ -425,6 +425,28 @@ impl<'a> HirToMirLowering<'a> {
         Some(Self::record_type_from_fields(&field_layouts))
     }
 
+    pub(super) fn metadata_fixed_array_layout(
+        meta: &RegMetadata,
+    ) -> Result<Option<MirType>, CompileError> {
+        Ok(Self::metadata_fixed_array_value_repr(meta)?.map(|(ty, _data)| ty))
+    }
+
+    fn metadata_fixed_array_value_repr(
+        meta: &RegMetadata,
+    ) -> Result<Option<(MirType, Vec<u8>)>, CompileError> {
+        let Some(value @ Value::List { vals, .. }) = meta.constant_value.as_ref() else {
+            return Ok(None);
+        };
+        if crate::compiler::hir::supports_numeric_constant_list(value) {
+            return Ok(None);
+        }
+        if !crate::compiler::hir::supports_fixed_array_constant_list(value) {
+            return Ok(None);
+        }
+
+        Self::constant_fixed_array_rodata_repr(vals).map(Some)
+    }
+
     pub(super) fn subfunction_arg_seed_for_value(
         &self,
         vreg: VReg,
@@ -688,7 +710,54 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(materialized_vreg);
         }
 
+        if let Some(src_meta) = self.get_metadata(src_reg).cloned()
+            && let Some(materialized_vreg) =
+                self.materialize_metadata_fixed_array_value(&src_meta, src_vreg)?
+        {
+            return Ok(materialized_vreg);
+        }
+
         Ok(src_vreg)
+    }
+
+    fn materialize_metadata_fixed_array_value(
+        &mut self,
+        meta: &RegMetadata,
+        existing_vreg: VReg,
+    ) -> Result<Option<VReg>, CompileError> {
+        let Some((array_ty, data)) = Self::metadata_fixed_array_value_repr(meta)? else {
+            return Ok(None);
+        };
+
+        if let Some(MirType::Ptr {
+            pointee,
+            address_space: AddressSpace::Stack | AddressSpace::Map,
+        }) = self.vreg_type_hints.get(&existing_vreg)
+            && pointee.as_ref() == &array_ty
+        {
+            return Ok(Some(existing_vreg));
+        }
+
+        let symbol = self.alloc_readonly_global_name();
+        self.readonly_globals.push(ReadonlyGlobal {
+            name: symbol.clone(),
+            data,
+        });
+
+        let array_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::LoadGlobal {
+            dst: array_vreg,
+            symbol,
+            ty: array_ty.clone(),
+        });
+        self.vreg_type_hints.insert(
+            array_vreg,
+            MirType::Ptr {
+                pointee: Box::new(array_ty),
+                address_space: AddressSpace::Map,
+            },
+        );
+        Ok(Some(array_vreg))
     }
 
     pub(super) fn stored_generic_map_value_type(&self, ty: &MirType) -> MirType {

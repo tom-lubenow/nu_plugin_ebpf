@@ -525,7 +525,7 @@ impl<'a> HirToMirLowering<'a> {
                     continue;
                 }
                 if let HirStmt::ListPush { src_dst, item } = stmt
-                    && self.is_compile_time_only_typed_global_builder_value(
+                    && self.is_compile_time_only_global_initializer_builder_value(
                         &block.stmts,
                         stmt_index,
                         *src_dst,
@@ -738,26 +738,35 @@ impl<'a> HirToMirLowering<'a> {
         stmt_index: usize,
         dst: RegId,
     ) -> bool {
-        compile_time_value_flows_to_typed_global_define(
+        compile_time_value_flows_to_global_consumer(
             stmts,
             stmt_index,
             dst,
             self.decl_names,
+            CompileTimeValueConsumer::TypedGlobalDefine,
             CompileTimeValueFlow::Direct,
         )
     }
 
-    fn is_compile_time_only_typed_global_builder_value(
+    fn is_compile_time_only_global_initializer_builder_value(
         &self,
         stmts: &[HirStmt],
         stmt_index: usize,
         dst: RegId,
     ) -> bool {
-        compile_time_value_flows_to_typed_global_define(
+        compile_time_value_flows_to_global_consumer(
             stmts,
             stmt_index,
             dst,
             self.decl_names,
+            CompileTimeValueConsumer::TypedGlobalDefine,
+            CompileTimeValueFlow::AggregateBuilder,
+        ) || compile_time_value_flows_to_global_consumer(
+            stmts,
+            stmt_index,
+            dst,
+            self.decl_names,
+            CompileTimeValueConsumer::GlobalSet,
             CompileTimeValueFlow::AggregateBuilder,
         )
     }
@@ -779,7 +788,7 @@ impl<'a> HirToMirLowering<'a> {
             }
             _ => {
                 return Err(CompileError::UnsupportedInstruction(
-                    "global-define --type list and array initializers require compile-time constant list items"
+                    "fixed-layout global list and array initializers require compile-time constant list items"
                         .into(),
                 ));
             }

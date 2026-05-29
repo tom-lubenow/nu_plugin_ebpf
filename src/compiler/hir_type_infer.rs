@@ -14,8 +14,8 @@ use super::hindley_milner::{
     HMType, Substitution, TypeScheme, TypeVar, TypeVarGenerator, UnifyError, unify,
 };
 use super::hir::{
-    AnnotatedMutGlobal, CompileTimeValueFlow, HirBlock, HirFunction, HirLiteral, HirProgram,
-    HirStmt, HirTerminator, compile_time_value_flows_to_typed_global_define,
+    AnnotatedMutGlobal, CompileTimeValueConsumer, CompileTimeValueFlow, HirBlock, HirFunction,
+    HirLiteral, HirProgram, HirStmt, HirTerminator, compile_time_value_flows_to_global_consumer,
     supports_numeric_constant_list,
 };
 use super::mir::AddressSpace;
@@ -210,19 +210,27 @@ impl<'a> HirTypeInference<'a> {
         let mut errors = Vec::new();
 
         for (stmt_index, stmt) in block.stmts.iter().enumerate() {
-            let compile_time_only_typed_global_list = match stmt {
+            let compile_time_only_global_initializer_list = match stmt {
                 HirStmt::ListPush { src_dst, .. } => {
-                    compile_time_value_flows_to_typed_global_define(
+                    compile_time_value_flows_to_global_consumer(
                         &block.stmts,
                         stmt_index,
                         *src_dst,
                         self.decl_names,
+                        CompileTimeValueConsumer::TypedGlobalDefine,
+                        CompileTimeValueFlow::AggregateBuilder,
+                    ) || compile_time_value_flows_to_global_consumer(
+                        &block.stmts,
+                        stmt_index,
+                        *src_dst,
+                        self.decl_names,
+                        CompileTimeValueConsumer::GlobalSet,
                         CompileTimeValueFlow::AggregateBuilder,
                     )
                 }
                 _ => false,
             };
-            if let Err(err) = self.infer_stmt(stmt, compile_time_only_typed_global_list) {
+            if let Err(err) = self.infer_stmt(stmt, compile_time_only_global_initializer_list) {
                 errors.push(err);
             }
         }
@@ -241,7 +249,7 @@ impl<'a> HirTypeInference<'a> {
     fn infer_stmt(
         &mut self,
         stmt: &HirStmt,
-        compile_time_only_typed_global_list: bool,
+        compile_time_only_global_initializer_list: bool,
     ) -> Result<(), TypeError> {
         match stmt {
             HirStmt::LoadLiteral { dst, lit } => {
@@ -327,7 +335,7 @@ impl<'a> HirTypeInference<'a> {
                 let list_ty = self.reg_type(*src_dst);
                 let item_ty = self.reg_type(*item);
                 self.constrain(list_ty, stack_list_ptr_type(), "list_push_list")?;
-                if !compile_time_only_typed_global_list {
+                if !compile_time_only_global_initializer_list {
                     self.constrain(item_ty.clone(), HMType::I64, "list_push_item")
                         .map_err(|err| self.list_push_item_error(item_ty, err))?;
                 }
@@ -489,7 +497,7 @@ impl<'a> HirTypeInference<'a> {
             "eBPF runtime list literals currently support numeric scalar items only",
         )
         .with_hint(
-            "for fixed arrays of records or nested lists, use a leading typed `mut` global or a `global-define --type array{...}` initializer",
+            "for fixed arrays of records or nested lists, use a leading typed `mut` global, a `global-define --type array{...}` initializer, or a layout-establishing `global-set` initializer",
         )
     }
 

@@ -287,11 +287,18 @@ pub enum CompileTimeValueFlow {
     AggregateBuilder,
 }
 
-pub fn compile_time_value_flows_to_typed_global_define(
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompileTimeValueConsumer {
+    TypedGlobalDefine,
+    GlobalSet,
+}
+
+pub fn compile_time_value_flows_to_global_consumer(
     stmts: &[HirStmt],
     stmt_index: usize,
     dst: RegId,
     decl_names: &HashMap<DeclId, String>,
+    consumer: CompileTimeValueConsumer,
     flow: CompileTimeValueFlow,
 ) -> bool {
     let Some(rest) = stmts.get(stmt_index.saturating_add(1)..) else {
@@ -410,12 +417,11 @@ pub fn compile_time_value_flows_to_typed_global_define(
                 if args
                     .pipeline_input
                     .is_some_and(|reg| tracked_regs.contains(&reg))
-                    && decl_names.get(decl_id).map(String::as_str) == Some("global-define")
-                    && args
-                        .named
-                        .iter()
-                        .any(|(name, _)| name.as_slice() == b"type")
-                    && !args.flags.iter().any(|flag| flag.as_slice() == b"zero")
+                    && compile_time_value_consumer_matches(
+                        decl_names.get(decl_id).map(String::as_str),
+                        args,
+                        consumer,
+                    )
                 {
                     return !compile_time_value_used_after(
                         &rest[offset.saturating_add(1)..],
@@ -438,6 +444,31 @@ pub fn compile_time_value_flows_to_typed_global_define(
     }
 
     false
+}
+
+fn compile_time_value_consumer_matches(
+    decl_name: Option<&str>,
+    args: &HirCallArgs,
+    consumer: CompileTimeValueConsumer,
+) -> bool {
+    match consumer {
+        CompileTimeValueConsumer::TypedGlobalDefine => {
+            decl_name == Some("global-define")
+                && args
+                    .named
+                    .iter()
+                    .any(|(name, _)| name.as_slice() == b"type")
+                && !args.flags.iter().any(|flag| flag.as_slice() == b"zero")
+        }
+        CompileTimeValueConsumer::GlobalSet => {
+            decl_name == Some("global-set")
+                && args.positional.len() == 1
+                && args.rest.is_empty()
+                && args.named.is_empty()
+                && args.flags.is_empty()
+                && args.parser_info.is_empty()
+        }
+    }
 }
 
 fn call_args_touch_compile_time_value(args: &HirCallArgs, regs: &HashSet<RegId>) -> bool {

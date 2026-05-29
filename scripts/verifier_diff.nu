@@ -6294,6 +6294,38 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "global-set-array-record-initializer"
+        category: "globals"
+        tags: [globals records arrays global-set accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  [{ pid: 7 cpu: 2 } { pid: 9 cpu: 3 }] | global-set seen_entries'
+            '  let entries = (global-get seen_entries)'
+            '  (($entries | get 1).cpu) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "global-set-record-array-record-field-initializer"
+        category: "globals"
+        tags: [globals records arrays global-set accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  { entries: [{ pid: 7 cpu: 2 } { pid: 9 cpu: 3 }] } | global-set seen_state'
+            '  let state = (global-get seen_state)'
+            '  (($state.entries | get 1).cpu) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "global-define-empty-binary-without-type-rejects"
         category: "globals"
         tags: [globals binary global-define reject]
