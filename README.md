@@ -71,6 +71,15 @@ Mixed requirements stay nullable until they are split precisely enough to avoid
 misleading compatibility claims. The kernel verifier remains the final
 authority for unmodeled or version-specific behavior.
 
+Local-kernel live-load preflight is intentionally best effort. It reads the
+host release with `uname -r` and compares it with source-backed minimum kernels
+and known maximum-exclusive kfunc windows preserved in the compiled object. It
+does not prove kernel config, distro backports, disabled helpers/kfuncs, BTF
+availability, tracefs/bpffs state, cgroup/map/socket prerequisites, or every
+attach-family-specific verifier rule. `--dry-run` still validates compiler,
+object, VCC, and modeled compatibility metadata without loading the program;
+the kernel verifier remains authoritative for the final live-load decision.
+
 ## Installation
 
 ```bash
