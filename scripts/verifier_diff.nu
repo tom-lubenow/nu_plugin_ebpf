@@ -17664,6 +17664,27 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "core-user-function-deep-nested-context-arg"
+        category: "language-core"
+        tags: [user-function nested context accept]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  def id [x] { $x }'
+            '  def id2 [x] { id $x }'
+            '  def read_pid [c] {'
+            '    let actual = (id2 $c)'
+            '    $actual.pid | count'
+            '    0'
+            '  }'
+            '  read_pid $ctx'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "adjust-packet-xdp-head"
         category: "language-surface"
         tags: [adjust-packet xdp]

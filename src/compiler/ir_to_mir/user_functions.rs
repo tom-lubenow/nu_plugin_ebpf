@@ -1527,8 +1527,13 @@ impl<'a> HirToMirLowering<'a> {
                 self.vreg_type_hints.insert(dst_vreg, type_hint);
             }
             let meta = self.get_or_create_metadata(src_dst);
-            meta.field_type = seed.field_type;
-            meta.annotated_semantics = seed.annotated_semantics;
+            if seed.is_context {
+                *meta = RegMetadata::default();
+                meta.is_context = true;
+            } else {
+                meta.field_type = seed.field_type;
+                meta.annotated_semantics = seed.annotated_semantics;
+            }
             meta.source_var = None;
         }
         Ok(())

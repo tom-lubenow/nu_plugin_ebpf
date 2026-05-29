@@ -204,6 +204,172 @@ fn test_user_function_call_with_context_arg_materializes_subfn_param() {
 }
 
 #[test]
+fn test_nested_user_function_return_preserves_context_metadata() {
+    let ctx_var = VarId::new(0);
+    let id_arg = VarId::new(10);
+    let id2_arg = VarId::new(11);
+    let read_arg = VarId::new(12);
+    let id_decl = DeclId::new(1);
+    let id2_decl = DeclId::new(2);
+    let read_decl = DeclId::new(3);
+
+    let id_func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::LoadVariable {
+                dst: RegId::new(0),
+                var_id: id_arg,
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data()],
+        ast: vec![None],
+        comments: vec![],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let id2_func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: id2_arg,
+                },
+                HirStmt::Call {
+                    decl_id: id_decl,
+                    src_dst: RegId::new(1),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 2],
+        ast: vec![None; 2],
+        comments: vec![],
+        register_count: 2,
+        file_count: 0,
+    };
+
+    let read_func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: read_arg,
+                },
+                HirStmt::Call {
+                    decl_id: id2_decl,
+                    src_dst: RegId::new(1),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![string_member("pid")],
+                    })),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(1),
+                    path: RegId::new(2),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 4],
+        ast: vec![None; 4],
+        comments: vec![],
+        register_count: 3,
+        file_count: 0,
+    };
+
+    let hir_program = HirProgram::new(
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(0),
+                        var_id: ctx_var,
+                    },
+                    HirStmt::Call {
+                        decl_id: read_decl,
+                        src_dst: RegId::new(1),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(0)],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(1) },
+            }],
+            entry: HirBlockId(0),
+            spans: vec![Span::test_data(); 2],
+            ast: vec![None; 2],
+            comments: vec![],
+            register_count: 2,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        Some(ctx_var),
+    );
+
+    let mut user_functions = HashMap::new();
+    user_functions.insert(id_decl, id_func);
+    user_functions.insert(id2_decl, id2_func);
+    user_functions.insert(read_decl, read_func);
+
+    let probe_ctx = ProbeContext::new(crate::compiler::EbpfProgramType::Kprobe, "ksys_read");
+    let mut result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &user_functions,
+        &HashMap::new(),
+    )
+    .expect("nested context-returning user functions should lower");
+
+    optimize_with_ssa_hints(
+        &mut result.program.main,
+        Some(&probe_ctx),
+        &mut result.type_hints.main,
+        &result.type_hints.main_stack_slots,
+        &result.type_hints.generic_map_value_types,
+    );
+    for ((subfn, hints), stack_slots) in result
+        .program
+        .subfunctions
+        .iter_mut()
+        .zip(result.type_hints.subfunctions.iter_mut())
+        .zip(result.type_hints.subfunction_stack_slots.iter())
+    {
+        optimize_with_ssa_hints(
+            subfn,
+            None,
+            hints,
+            stack_slots,
+            &result.type_hints.generic_map_value_types,
+        );
+    }
+
+    compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+        .expect("nested context-returning user functions should compile");
+}
+
+#[test]
 fn test_inlined_user_function_bounded_list_iterate_lowers() {
     let user_func = HirFunction {
         blocks: vec![

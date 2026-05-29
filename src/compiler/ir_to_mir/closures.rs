@@ -300,12 +300,14 @@ impl<'a> HirToMirLowering<'a> {
                     .annotated_semantics
                     .clone()
                     .or_else(|| Self::metadata_record_semantics(meta)),
+                is_context: meta.is_context,
             })
             .or_else(|| {
                 result_type_hint.clone().map(|ty| SubfunctionReturnSeed {
                     type_hint: Some(ty.clone()),
                     field_type: Some(self.stored_generic_map_value_type(&ty)),
                     annotated_semantics: None,
+                    is_context: false,
                 })
             });
         self.note_return_seed(seed);

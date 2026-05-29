@@ -269,6 +269,7 @@ struct SubfunctionReturnSeed {
     type_hint: Option<MirType>,
     field_type: Option<MirType>,
     annotated_semantics: Option<AnnotatedValueSemantics>,
+    is_context: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
