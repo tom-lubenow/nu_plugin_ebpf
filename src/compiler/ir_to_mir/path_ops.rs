@@ -1330,13 +1330,6 @@ impl<'a> HirToMirLowering<'a> {
             .collect()
     }
 
-    fn empty_record_field_from_constant(meta: &RegMetadata, field_name: &str) -> bool {
-        let Some(Value::Record { val: record, .. }) = meta.constant_value.as_ref() else {
-            return false;
-        };
-        matches!(record.get(field_name), Some(Value::Record { val, .. }) if val.is_empty())
-    }
-
     fn record_field_from_string_path(
         &mut self,
         field_names: &[String],
@@ -1425,7 +1418,7 @@ impl<'a> HirToMirLowering<'a> {
             .position(|field| field.name == *first_field);
         let first_field_missing = existing_index.is_none();
         let first_field_empty_record = existing_index.is_some()
-            && Self::empty_record_field_from_constant(&base_meta, first_field);
+            && Self::metadata_field_is_empty_record(&base_meta, first_field);
         if !first_field_missing && !first_field_empty_record {
             return Ok(false);
         }

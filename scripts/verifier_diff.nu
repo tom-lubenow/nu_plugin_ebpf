@@ -19796,6 +19796,21 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-record-upsert-empty-record-nested-field-local"
+        category: "language-core"
+        tags: [aggregate record upsert nested local]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  mut rec = { stats: {} }'
+            '  $rec.stats.pid = 7'
+            '  $rec.stats.pid'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-record-upsert-new-field-local"
         category: "language-core"
         tags: [aggregate record upsert local]
@@ -19923,6 +19938,25 @@ const FIXTURES = [
             '{|ctx|'
             '  def make [] {'
             '    mut rec = {}'
+            '    $rec.stats.pid = 7'
+            '    $rec'
+            '  }'
+            '  let out = (make)'
+            '  $out.stats.pid'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-user-function-record-upsert-empty-record-nested-field-return"
+        category: "language-core"
+        tags: [user-function aggregate record upsert nested]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  def make [] {'
+            '    mut rec = { stats: {} }'
             '    $rec.stats.pid = 7'
             '    $rec'
             '  }'

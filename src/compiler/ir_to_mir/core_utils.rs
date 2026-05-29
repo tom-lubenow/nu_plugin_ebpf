@@ -229,6 +229,15 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(());
         }
 
+        if let Some(mut src_meta) = self.get_metadata(src).cloned()
+            && Self::metadata_contains_empty_record_field(&src_meta)
+        {
+            src_meta.source_var.get_or_insert(var_id);
+            self.var_mappings.remove(&var_id);
+            self.var_metadata.insert(var_id, src_meta);
+            return Ok(());
+        }
+
         if let Some(src_meta) = self.get_metadata(src).cloned()
             && let Some((materialized_vreg, materialized_meta)) =
                 self.materialize_metadata_record_value(&src_meta)?
@@ -524,6 +533,19 @@ impl<'a> HirToMirLowering<'a> {
             })
             .collect();
         (!field_semantics.is_empty()).then_some(AnnotatedValueSemantics::Record(field_semantics))
+    }
+
+    pub(super) fn metadata_field_is_empty_record(meta: &RegMetadata, field_name: &str) -> bool {
+        let Some(Value::Record { val: record, .. }) = meta.constant_value.as_ref() else {
+            return false;
+        };
+        matches!(record.get(field_name), Some(Value::Record { val, .. }) if val.is_empty())
+    }
+
+    pub(super) fn metadata_contains_empty_record_field(meta: &RegMetadata) -> bool {
+        meta.record_fields
+            .iter()
+            .any(|field| Self::metadata_field_is_empty_record(meta, &field.name))
     }
 
     pub(super) fn metadata_contains_context_pointer(&self, meta: &RegMetadata) -> bool {

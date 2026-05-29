@@ -1116,6 +1116,14 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(());
         }
 
+        if let Some(mut meta) = self.var_metadata.get(&var_id).cloned()
+            && !self.var_mappings.contains_key(&var_id)
+        {
+            meta.source_var.get_or_insert(var_id);
+            self.reg_metadata.insert(dst.get(), meta);
+            return Ok(());
+        }
+
         // Check if this is a parameter from an inlined function
         if let Some(&param_vreg) = self.var_mappings.get(&var_id) {
             // Copy the parameter value to the destination
