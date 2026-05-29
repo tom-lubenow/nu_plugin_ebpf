@@ -1162,6 +1162,22 @@ fn test_spec_record_reports_target_specific_live_attach_policy() {
             .expect("live_attach_default_test_lane_description should be a string")
             .contains("dry-run")
     );
+    assert_eq!(
+        record
+            .get("external_alpha_status")
+            .expect("external_alpha_status should be present")
+            .as_str()
+            .expect("external_alpha_status should be a string"),
+        "dry-run-only"
+    );
+    assert!(
+        record
+            .get("external_alpha_status_description")
+            .expect("external_alpha_status_description should be present")
+            .as_str()
+            .expect("external_alpha_status_description should be a string")
+            .contains("compile/dry-run")
+    );
 
     let generic_struct_ops =
         ProgramSpec::parse("struct_ops:demo_ops").expect("generic struct_ops spec should parse");
@@ -1246,6 +1262,22 @@ fn test_spec_record_reports_target_specific_live_attach_policy() {
             .expect("live_attach_default_test_lane should be a string"),
         "vm-only"
     );
+    assert_eq!(
+        record
+            .get("external_alpha_status")
+            .expect("external_alpha_status should be present")
+            .as_str()
+            .expect("external_alpha_status should be a string"),
+        "unsafe-opt-in"
+    );
+    assert!(
+        record
+            .get("external_alpha_status_description")
+            .expect("external_alpha_status_description should be present")
+            .as_str()
+            .expect("external_alpha_status_description should be a string")
+            .contains("unsafe opt-in")
+    );
 
     for (spec_text, opt_in_reason, description_fragment) in [
         (
@@ -1329,6 +1361,14 @@ fn test_spec_record_reports_target_specific_live_attach_policy() {
                 .as_str()
                 .expect("live_attach_default_test_lane should be a string"),
             "vm-only"
+        );
+        assert_eq!(
+            record
+                .get("external_alpha_status")
+                .expect("external_alpha_status should be present")
+                .as_str()
+                .expect("external_alpha_status should be a string"),
+            "unsafe-opt-in"
         );
     }
 }

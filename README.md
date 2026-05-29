@@ -33,10 +33,11 @@ test lane (`host-safe`, `host-gated`, `dry-run`, or `vm-only`), a lane
 description, and nullable minimum-kernel fields. These lanes are test-planning
 metadata, not live-attach authorization flags; use the separate
 `live_attach_*` fields to inspect loader policy. `live_attach_default_test_lane`
-combines feature risk with current loader support for the parsed target.
-Source-verified feature
-requirements carry minimum
-kernel versions for base program families, cgroup program families,
+combines feature risk with current loader support for the parsed target, and
+`external_alpha_status` gives a coarse consumption label:
+`live-supported`, `host-gated`, `dry-run-only`, `vm-only`, or
+`unsafe-opt-in`. Source-verified feature requirements carry minimum kernel
+versions for base program families, cgroup program families,
 TCX/netkit, netfilter links and defrag targets, XDP attach modes,
 XDP devmap/cpumap secondary program sections, `uprobe.multi`,
 struct_ops family targets such as `tcp_congestion_ops`,

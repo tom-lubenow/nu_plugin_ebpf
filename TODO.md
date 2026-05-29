@@ -133,10 +133,11 @@ history and release notes, not here.
   - Include the offending surface, the current program family, and a suggested supported rewrite when possible.
   - Keep aliases in diagnostics when users wrote aliases, not only canonical field names.
 
-- [ ] Prepare for external alpha consumption.
-  - Define feature gates and compatibility labels for unstable surfaces.
+- [~] Prepare for external alpha consumption.
+  - Keep the derived `external_alpha_status` labels in `ebpf spec` aligned with live-attach policy and default test lanes: `live-supported`, `host-gated`, `dry-run-only`, `vm-only`, and `unsafe-opt-in`.
+  - Define explicit feature gates for unstable surfaces that need user-facing opt-ins beyond the existing live-attach safety gates.
   - Add a concise external quickstart, troubleshooting guide, and safe-example path.
-  - Document which program families are live, compile/dry-run only, VM-only, or intentionally unsupported.
+  - Expand documentation that maps program families to live, compile/dry-run-only, VM-only, unsafe-opt-in, or intentionally unsupported status.
   - Add release notes or a changelog so `TODO.md` does not become a historical progress log again.
   - Decide packaging expectations for the plugin binary, Nushell version compatibility, capabilities setup, and kernel feature detection.
 

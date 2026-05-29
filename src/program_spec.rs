@@ -255,6 +255,47 @@ impl ProgramLiveAttachStatus {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProgramExternalAlphaStatus {
+    LiveSupported,
+    HostGated,
+    DryRunOnly,
+    VmOnly,
+    UnsafeOptIn,
+}
+
+impl ProgramExternalAlphaStatus {
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::LiveSupported => "live-supported",
+            Self::HostGated => "host-gated",
+            Self::DryRunOnly => "dry-run-only",
+            Self::VmOnly => "vm-only",
+            Self::UnsafeOptIn => "unsafe-opt-in",
+        }
+    }
+
+    pub fn description(self) -> &'static str {
+        match self {
+            Self::LiveSupported => {
+                "Live attach is implemented and suitable for default host-safe alpha use."
+            }
+            Self::HostGated => {
+                "Live attach is implemented but requires host resources, privileges, or setup."
+            }
+            Self::DryRunOnly => {
+                "The target is part of the compiler surface but should be treated as compile/dry-run only in this alpha."
+            }
+            Self::VmOnly => {
+                "The target should be exercised in an isolated VM or disposable environment for alpha use."
+            }
+            Self::UnsafeOptIn => {
+                "Live attach is implemented but can change host kernel behavior and requires an explicit unsafe opt-in."
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProgramLiveAttachOptInReason {
     UnclassifiedStructOps,
     SchedExt,
@@ -3214,6 +3255,25 @@ impl ProgramSpec {
         }
     }
 
+    pub fn external_alpha_status(&self) -> ProgramExternalAlphaStatus {
+        let live_attach_policy = self.live_attach_policy();
+
+        if !live_attach_policy.loader_supported {
+            return ProgramExternalAlphaStatus::DryRunOnly;
+        }
+
+        if live_attach_policy.requires_opt_in {
+            return ProgramExternalAlphaStatus::UnsafeOptIn;
+        }
+
+        match self.live_attach_default_test_lane() {
+            ProgramCompatibilityTestLane::HostSafe => ProgramExternalAlphaStatus::LiveSupported,
+            ProgramCompatibilityTestLane::HostGated => ProgramExternalAlphaStatus::HostGated,
+            ProgramCompatibilityTestLane::DryRun => ProgramExternalAlphaStatus::DryRunOnly,
+            ProgramCompatibilityTestLane::VmOnly => ProgramExternalAlphaStatus::VmOnly,
+        }
+    }
+
     pub fn sleepable(&self) -> bool {
         match self {
             ProgramSpec::Fentry {
@@ -4432,6 +4492,16 @@ mod tests {
             xdp.live_attach_default_test_lane(),
             ProgramCompatibilityTestLane::HostGated
         );
+        assert_eq!(
+            xdp.external_alpha_status(),
+            ProgramExternalAlphaStatus::HostGated
+        );
+
+        let kprobe = ProgramSpec::parse("kprobe:sys_read").expect("kprobe spec should parse");
+        assert_eq!(
+            kprobe.external_alpha_status(),
+            ProgramExternalAlphaStatus::LiveSupported
+        );
 
         let raw_tracepoint_writable =
             ProgramSpec::parse("raw_tracepoint.w:sys_enter").expect("raw_tp.w spec should parse");
@@ -4448,6 +4518,10 @@ mod tests {
         assert_eq!(
             raw_policy.note,
             Some(ProgramLiveAttachUnsupportedReason::RawTracepointWritable.note())
+        );
+        assert_eq!(
+            raw_tracepoint_writable.external_alpha_status(),
+            ProgramExternalAlphaStatus::DryRunOnly
         );
 
         let cgroup_sock_addr_unix =
@@ -4497,6 +4571,10 @@ mod tests {
             xdp_devmap.live_attach_default_test_lane(),
             ProgramCompatibilityTestLane::DryRun
         );
+        assert_eq!(
+            xdp_devmap.external_alpha_status(),
+            ProgramExternalAlphaStatus::DryRunOnly
+        );
 
         let sched_ext =
             ProgramSpec::parse("struct_ops:sched_ext_ops").expect("sched_ext spec should parse");
@@ -4520,6 +4598,10 @@ mod tests {
         assert_eq!(
             sched_ext.live_attach_default_test_lane(),
             ProgramCompatibilityTestLane::VmOnly
+        );
+        assert_eq!(
+            sched_ext.external_alpha_status(),
+            ProgramExternalAlphaStatus::UnsafeOptIn
         );
 
         for (spec_text, opt_in_reason) in [
