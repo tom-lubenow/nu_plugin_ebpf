@@ -11714,6 +11714,37 @@ fn test_ebpf_program_reports_context_field_compatibility_requirements() {
         Some("5.8")
     );
 
+    let tracepoint_program = EbpfProgram::new(
+        EbpfProgramType::Tracepoint,
+        "syscalls/sys_enter_openat2",
+        "tp_main",
+        EbpfBuilder::new(),
+    )
+    .with_program_spec(
+        ProgramSpec::parse("tracepoint:syscalls/sys_enter_openat2")
+            .expect("tracepoint spec should parse"),
+    )
+    .with_used_context_fields([
+        CtxField::TracepointField("filename".to_string()),
+        CtxField::TracepointField("how".to_string()),
+        CtxField::TracepointField("__missing".to_string()),
+    ]);
+    let tracepoint_requirements = tracepoint_program.context_field_compatibility_requirements();
+    assert_eq!(tracepoint_requirements.len(), 2);
+    assert_eq!(
+        tracepoint_requirements[0].key(),
+        "tracepoint:syscalls/sys_enter_openat2:field:filename"
+    );
+    assert_eq!(tracepoint_requirements[0].minimum_kernel(), "5.6");
+    assert_eq!(
+        tracepoint_requirements[1].key(),
+        "tracepoint:syscalls/sys_enter_openat2:field:how"
+    );
+    assert_eq!(
+        tracepoint_program.context_field_compatibility_minimum_kernel(),
+        Some("5.6")
+    );
+
     let sock_ops_program = EbpfProgram::new(
         EbpfProgramType::SockOps,
         "/sys/fs/cgroup",

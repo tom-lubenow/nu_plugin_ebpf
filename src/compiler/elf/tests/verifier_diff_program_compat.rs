@@ -159,6 +159,35 @@ fn verifier_diff_target_context_field_feature_records(
     records
 }
 
+fn verifier_diff_tracepoint_field_feature_records(
+    source: &str,
+) -> Vec<VerifierDiffTargetContextFeatureRecord> {
+    let body = verifier_diff_const_body(source, "TRACEPOINT_FIELD_KERNEL_FEATURES", '[');
+    let mut records = Vec::new();
+
+    for line in body.lines() {
+        let Some(target) = verifier_diff_quoted_field(line, "target") else {
+            continue;
+        };
+        let field = verifier_diff_quoted_field(line, "field").unwrap_or_else(|| {
+            panic!("TRACEPOINT_FIELD_KERNEL_FEATURES target {target} missing field")
+        });
+        let feature_const = verifier_diff_dollar_field(line, "feature").unwrap_or_else(|| {
+            panic!(
+                "TRACEPOINT_FIELD_KERNEL_FEATURES target {target} field {field} should reference a feature const"
+            )
+        });
+
+        records.push(VerifierDiffTargetContextFeatureRecord {
+            target: target.to_string(),
+            field: field.to_string(),
+            feature: verifier_diff_feature_record(source, feature_const),
+        });
+    }
+
+    records
+}
+
 fn verifier_diff_quoted_strings(text: &str) -> BTreeSet<String> {
     let mut values = BTreeSet::new();
     let mut rest = text;
@@ -638,6 +667,42 @@ fn test_verifier_diff_target_context_field_feature_metadata_matches_rust() {
     assert!(
         !records.is_empty(),
         "expected verifier_diff.nu target-aware context-field feature metadata"
+    );
+}
+
+#[test]
+fn test_verifier_diff_tracepoint_field_feature_metadata_matches_rust() {
+    let verifier_diff = include_str!("../../../../scripts/verifier_diff.nu");
+    let records = verifier_diff_tracepoint_field_feature_records(verifier_diff);
+
+    for record in &records {
+        let spec = ProgramSpec::parse(&record.target).unwrap_or_else(|err| {
+            panic!(
+                "verifier_diff.nu tracepoint field target {} should parse: {err}",
+                record.target
+            )
+        });
+        let requirement = ContextFieldCompatibilityRequirement::for_field_on_program_spec(
+            &CtxField::TracepointField(record.field.clone()),
+            &spec,
+        )
+        .unwrap_or_else(|| {
+            panic!(
+                "verifier_diff.nu tracepoint field expectation {} ctx.{} has no Rust compatibility requirement",
+                record.target, record.field
+            )
+        });
+
+        assert_verifier_feature_record_matches_context_requirement(
+            &format!("{} ctx.{}", record.target, record.field),
+            &requirement,
+            &record.feature,
+        );
+    }
+
+    assert!(
+        !records.is_empty(),
+        "expected verifier_diff.nu tracepoint-field feature metadata"
     );
 }
 

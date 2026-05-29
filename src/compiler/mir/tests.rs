@@ -881,7 +881,33 @@ fn test_context_field_compatibility_requirements_are_source_backed() {
             "pid".to_string()
         ))
         .is_none(),
-        "fields without an independent source-checked floor should stay unversioned"
+        "tracepoint fields without a target should stay unversioned"
+    );
+    let openat_spec =
+        crate::program_spec::ProgramSpec::parse("tracepoint:syscalls/sys_enter_openat")
+            .expect("tracepoint spec should parse");
+    let filename_requirement = ContextFieldCompatibilityRequirement::for_field_on_program_spec(
+        &CtxField::TracepointField("filename".to_string()),
+        &openat_spec,
+    )
+    .expect("known syscall tracepoint fields should report a target-specific floor");
+    assert_eq!(
+        filename_requirement.key(),
+        "tracepoint:syscalls/sys_enter_openat:field:filename"
+    );
+    assert_eq!(filename_requirement.minimum_kernel(), "4.7");
+    assert!(
+        filename_requirement
+            .minimum_kernel_source()
+            .contains("include/trace/events/syscalls.h")
+    );
+    assert!(
+        ContextFieldCompatibilityRequirement::for_field_on_program_spec(
+            &CtxField::TracepointField("__missing".to_string()),
+            &openat_spec,
+        )
+        .is_none(),
+        "unresolved or unversioned tracepoint payload fields should stay explicit"
     );
 
     let requirements = [

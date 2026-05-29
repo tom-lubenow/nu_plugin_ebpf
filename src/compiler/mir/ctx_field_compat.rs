@@ -99,11 +99,19 @@ const LINUX_KMEM_CACHE_ITER_V6_13_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.13/kernel/bpf/kmem_cache_iter.c";
 const LINUX_DMABUF_ITER_V6_16_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.16/kernel/bpf/dmabuf_iter.c";
+const LINUX_READ_WRITE_C_V4_7_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v4.7/fs/read_write.c";
+const LINUX_OPEN_C_V4_7_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/open.c";
+const LINUX_OPEN_C_V5_6_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.6/fs/open.c";
+const LINUX_EXEC_C_V4_7_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/exec.c";
+const LINUX_SYSCALLS_H_V4_7_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v4.7/include/trace/events/syscalls.h";
 
 /// Source-backed kernel compatibility metadata for a source-level context field.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ContextFieldCompatibilityRequirement {
     field: CtxField,
+    key: Option<String>,
     minimum_kernel: &'static str,
     minimum_kernel_source: &'static str,
 }
@@ -134,6 +142,12 @@ impl ContextFieldCompatibilityRequirement {
     }
 
     pub(crate) fn for_field_on_program_spec(field: &CtxField, spec: &ProgramSpec) -> Option<Self> {
+        if let Some((category, name)) = spec.tracepoint_parts() {
+            if let CtxField::TracepointField(field_name) = field {
+                return Self::for_tracepoint_field(category, name, field_name);
+            }
+        }
+
         Self::for_field_on_program_iter_target(
             field,
             Some(spec.program_type()),
@@ -150,6 +164,18 @@ impl ContextFieldCompatibilityRequirement {
             context_field_kernel_floor(field, prog_type, iter_target_kind)?;
         Some(Self {
             field: field.clone(),
+            key: None,
+            minimum_kernel,
+            minimum_kernel_source,
+        })
+    }
+
+    fn for_tracepoint_field(category: &str, name: &str, field: &str) -> Option<Self> {
+        let (minimum_kernel, minimum_kernel_source) =
+            tracepoint_field_kernel_floor(category, name, field)?;
+        Some(Self {
+            field: CtxField::TracepointField(field.to_string()),
+            key: Some(format!("tracepoint:{category}/{name}:field:{field}")),
             minimum_kernel,
             minimum_kernel_source,
         })
@@ -160,7 +186,9 @@ impl ContextFieldCompatibilityRequirement {
     }
 
     pub fn key(&self) -> String {
-        format!("ctx:{}", self.field.display_name())
+        self.key
+            .clone()
+            .unwrap_or_else(|| format!("ctx:{}", self.field.display_name()))
     }
 
     pub fn category(&self) -> &'static str {
@@ -572,6 +600,30 @@ fn target_context_field_kernel_floor(
         (CtxField::IterSock, IterTargetKind::Sockmap) => ("5.10", LINUX_SOCK_MAP_V5_10_SOURCE),
         (CtxField::IterUid, IterTargetKind::Udp) => ("5.9", LINUX_UDP_V5_9_SOURCE),
         (CtxField::IterUid, IterTargetKind::Unix) => ("5.15", LINUX_AF_UNIX_V5_15_SOURCE),
+        _ => return None,
+    })
+}
+
+fn tracepoint_field_kernel_floor(
+    category: &str,
+    name: &str,
+    field: &str,
+) -> Option<(&'static str, &'static str)> {
+    if category != "syscalls" {
+        return None;
+    }
+
+    Some(match (name, field) {
+        ("sys_enter_read", "fd" | "buf" | "count") => ("4.7", LINUX_READ_WRITE_C_V4_7_SOURCE),
+        ("sys_enter_write", "fd" | "buf" | "count") => ("4.7", LINUX_READ_WRITE_C_V4_7_SOURCE),
+        ("sys_enter_close", "fd") => ("4.7", LINUX_OPEN_C_V4_7_SOURCE),
+        ("sys_enter_openat", "dfd" | "filename" | "flags" | "mode") => {
+            ("4.7", LINUX_SYSCALLS_H_V4_7_SOURCE)
+        }
+        ("sys_enter_openat2", "dfd" | "filename" | "how" | "usize") => {
+            ("5.6", LINUX_OPEN_C_V5_6_SOURCE)
+        }
+        ("sys_enter_execve", "filename" | "argv" | "envp") => ("4.7", LINUX_EXEC_C_V4_7_SOURCE),
         _ => return None,
     })
 }
