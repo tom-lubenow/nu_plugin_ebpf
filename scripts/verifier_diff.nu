@@ -16872,6 +16872,21 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "callback-bpf-loop-rejects-extra-declared-param"
+        category: "callbacks"
+        tags: [helper-call callback bpf-loop reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_loop" 4 {|i cb extra| $i } "ctx" 0'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "declares 3 parameters, but the callback ABI supplies 2"
+    }
+    {
         name: "callback-for-each-map-elem"
         category: "callbacks"
         tags: [helper-call callback map array]
@@ -16888,6 +16903,24 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
+    }
+    {
+        name: "callback-for-each-map-elem-rejects-extra-declared-param"
+        category: "callbacks"
+        tags: [helper-call callback map array reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define elems --kind array --value-type "record{seen:u64}"'
+            '  helper-call "bpf_for_each_map_elem" elems {|m k v cb extra|'
+            '    0'
+            '  } "ctx" 0 --kind array'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "declares 5 parameters, but the callback ABI supplies 4"
     }
     {
         name: "callback-for-each-map-elem-record-context"
@@ -16944,6 +16977,24 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "callback-find-vma-rejects-extra-declared-param"
+        category: "callbacks"
+        tags: [helper-call callback btf kernel-btf reject]
+        requires: [kernel-btf]
+        target: "kprobe:tcp_connect"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_find_vma" $ctx.current_task 0 {|task vma cb extra|'
+            '    0'
+            '  } "ctx" 0'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "declares 4 parameters, but the callback ABI supplies 3"
+    }
+    {
         name: "callback-find-vma-record-context"
         category: "callbacks"
         tags: [helper-call callback btf kernel-btf record]
@@ -16973,6 +17024,21 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "skip"
+    }
+    {
+        name: "callback-user-ringbuf-drain-rejects-extra-declared-param"
+        category: "callbacks"
+        tags: [helper-call callback dynptr user-ringbuf reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_user_ringbuf_drain" user_events {|dyn cb extra| 0 } "ctx" 0'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "declares 3 parameters, but the callback ABI supplies 2"
     }
     {
         name: "callback-user-ringbuf-drain-record-context"
