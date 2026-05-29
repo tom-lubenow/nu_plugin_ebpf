@@ -6858,6 +6858,24 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "global-set-mutated-root-numeric-list"
+        category: "globals"
+        tags: [globals list upsert global-set accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  global-define --type "list:int:2" samples'
+            '  mut samples = (global-get samples)'
+            '  $samples.0 = 11'
+            '  $samples | global-set samples'
+            '  let persisted = (global-get samples)'
+            '  $persisted.0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "global-define-type-array-u32-initializer"
         category: "globals"
         tags: [globals arrays global-define accept]
