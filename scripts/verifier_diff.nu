@@ -19706,6 +19706,55 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-record-upsert-numeric-list-existing-index-local"
+        category: "language-core"
+        tags: [aggregate record list upsert local]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  mut rec = {}'
+            '  $rec.a.0 = 3'
+            '  $rec.a.0 = 7'
+            '  $rec.a.0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-record-upsert-numeric-list-append-local"
+        category: "language-core"
+        tags: [aggregate record list upsert append local]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  mut rec = {}'
+            '  $rec.a.0 = 3'
+            '  $rec.a.1 = 7'
+            '  $rec.a.0 + $rec.a.1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-record-upsert-numeric-list-sparse-append-reject"
+        category: "language-core"
+        tags: [aggregate record list upsert append reject]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  mut rec = {}'
+            '  $rec.a.0 = 3'
+            '  $rec.a.2 = 7'
+            '  $rec.a.0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "can only update an existing numeric list item or append at the next index"
+    }
+    {
         name: "core-record-upsert-new-record-list-field-local"
         category: "language-core"
         tags: [aggregate record list upsert local]
@@ -20119,6 +20168,26 @@ const FIXTURES = [
             '  }'
             '  let out = (make)'
             '  $out.a.0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-user-function-record-upsert-numeric-list-append-return"
+        category: "language-core"
+        tags: [user-function aggregate record list upsert append]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  def make [] {'
+            '    mut rec = {}'
+            '    $rec.a.0 = 3'
+            '    $rec.a.1 = 7'
+            '    $rec'
+            '  }'
+            '  let out = (make)'
+            '  $out.a.0 + $out.a.1'
             '}'
         ]
         local: "accept"

@@ -1853,6 +1853,225 @@ impl<'a> HirToMirLowering<'a> {
         Ok(())
     }
 
+    fn metadata_record_numeric_list_len(meta: &RegMetadata, field_name: &str) -> Option<usize> {
+        let Some(Value::Record { val: record, .. }) = meta.constant_value.as_ref() else {
+            return None;
+        };
+        let Some(Value::List { vals, .. }) = record.get(field_name) else {
+            return None;
+        };
+        Some(vals.len())
+    }
+
+    fn lower_metadata_existing_numeric_list_path_update(
+        &mut self,
+        src_dst: RegId,
+        field_index: usize,
+        path_members: &[PathMember],
+        new_value: RegId,
+        constant_value: Option<Value>,
+        path_desc: &str,
+        base_is_materialized_aggregate: bool,
+    ) -> Result<bool, CompileError> {
+        let [
+            PathMember::String {
+                val: field_name, ..
+            },
+            PathMember::Int { val: index, .. },
+        ] = path_members
+        else {
+            return Ok(false);
+        };
+
+        let Some(existing_field) = self
+            .get_metadata(src_dst)
+            .and_then(|meta| meta.record_fields.get(field_index))
+            .cloned()
+        else {
+            return Ok(false);
+        };
+        let Some(AnnotatedValueSemantics::NumericList { max_len }) = existing_field.semantics
+        else {
+            return Ok(false);
+        };
+        let current_len = self
+            .get_metadata(src_dst)
+            .and_then(|meta| Self::metadata_record_numeric_list_len(meta, field_name))
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "cell path update '.{} = ...' requires compile-time numeric list length metadata",
+                    path_desc
+                ))
+            })?;
+        if *index > current_len {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "cell path update '.{} = ...' can only update an existing numeric list item or append at the next index",
+                path_desc
+            )));
+        }
+
+        let list_runtime_ty = self
+            .vreg_type_hints
+            .get(&existing_field.value_vreg)
+            .cloned()
+            .unwrap_or_else(|| existing_field.ty.clone());
+        let MirType::Ptr {
+            pointee,
+            address_space: AddressSpace::Stack,
+        } = list_runtime_ty
+        else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "cell path update '.{} = ...' requires a stack-backed numeric list field",
+                path_desc
+            )));
+        };
+        if pointee.as_ref() != &existing_field.ty {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "cell path update '.{} = ...' numeric list field pointer type {:?} does not match field type {:?}",
+                path_desc, pointee, existing_field.ty
+            )));
+        }
+
+        let new_value_vreg = self.get_vreg(new_value);
+        let new_value_runtime_ty = self
+            .typed_value_runtime_type(new_value, new_value_vreg)
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "cell path update '.{} = ...' requires type information for the new list value",
+                    path_desc
+                ))
+            })?;
+        let Some(item_vreg) = self.coerce_scalar_assignment_value(
+            new_value_vreg,
+            &new_value_runtime_ty,
+            &MirType::I64,
+        ) else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "cell path update '.{} = ...' cannot store value type {:?} into numeric list field",
+                path_desc, new_value_runtime_ty
+            )));
+        };
+
+        if *index < current_len {
+            let item_offset = index
+                .checked_mul(8)
+                .and_then(|offset| offset.checked_add(8))
+                .and_then(|offset| i32::try_from(offset).ok())
+                .ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "cell path update '.{} = ...' numeric list index offset overflowed",
+                        path_desc
+                    ))
+                })?;
+            self.emit(MirInst::Store {
+                ptr: existing_field.value_vreg,
+                offset: item_offset,
+                val: MirValue::VReg(item_vreg),
+                ty: MirType::I64,
+            });
+            self.replace_metadata_record_field(
+                src_dst,
+                field_index,
+                existing_field,
+                constant_value,
+                path_desc,
+                base_is_materialized_aggregate,
+                "updated",
+            )?;
+            return Ok(true);
+        }
+
+        if current_len < max_len {
+            self.emit(MirInst::ListPush {
+                list: existing_field.value_vreg,
+                item: item_vreg,
+            });
+            self.replace_metadata_record_field(
+                src_dst,
+                field_index,
+                existing_field,
+                constant_value,
+                path_desc,
+                base_is_materialized_aggregate,
+                "updated",
+            )?;
+            return Ok(true);
+        }
+
+        let new_max_len = max_len.checked_add(1).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "cell path update '.{} = ...' numeric list capacity overflowed",
+                path_desc
+            ))
+        })?;
+        let list_ty = MirType::Array {
+            elem: Box::new(MirType::I64),
+            len: new_max_len + 1,
+        };
+        let slot = self
+            .func
+            .alloc_stack_slot(list_ty.size(), 8, StackSlotKind::ListBuffer);
+        self.record_list_buffer_slot_type(slot, new_max_len);
+        let list_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::ListNew {
+            dst: list_vreg,
+            buffer: slot,
+            max_len: new_max_len,
+        });
+        self.vreg_type_hints.insert(
+            list_vreg,
+            MirType::Ptr {
+                pointee: Box::new(list_ty.clone()),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        for old_index in 0..current_len {
+            let old_item = self.func.alloc_vreg();
+            self.vreg_type_hints.insert(old_item, MirType::I64);
+            self.emit(MirInst::ListGet {
+                dst: old_item,
+                list: existing_field.value_vreg,
+                idx: MirValue::Const(i64::try_from(old_index).map_err(|_| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "cell path update '.{} = ...' numeric list index {} is too large",
+                        path_desc, old_index
+                    ))
+                })?),
+            });
+            self.emit(MirInst::ListPush {
+                list: list_vreg,
+                item: old_item,
+            });
+        }
+        self.emit(MirInst::ListPush {
+            list: list_vreg,
+            item: item_vreg,
+        });
+
+        let updated_field = RecordField {
+            name: existing_field.name,
+            value_vreg: list_vreg,
+            source_reg: None,
+            stack_offset: existing_field.stack_offset,
+            ty: list_ty,
+            semantics: Some(AnnotatedValueSemantics::NumericList {
+                max_len: new_max_len,
+            }),
+            is_context: false,
+            root_ctx_field: None,
+        };
+        self.replace_metadata_record_field(
+            src_dst,
+            field_index,
+            updated_field,
+            constant_value,
+            path_desc,
+            base_is_materialized_aggregate,
+            "updated",
+        )?;
+        Ok(true)
+    }
+
     fn replace_fixed_record_array_with_appended_element(
         &mut self,
         src_dst: RegId,
@@ -2343,6 +2562,17 @@ impl<'a> HirToMirLowering<'a> {
             && Self::metadata_field_is_empty_record(&base_meta, first_field);
         if !first_field_missing && !first_field_empty_record {
             let path_desc = Self::typed_value_path_desc(path_members);
+            if self.lower_metadata_existing_numeric_list_path_update(
+                src_dst,
+                existing_index.expect("existing index checked above"),
+                path_members,
+                new_value,
+                constant_value.clone(),
+                &path_desc,
+                base_is_materialized_aggregate,
+            )? {
+                return Ok(true);
+            }
             if self.lower_metadata_existing_fixed_record_array_path_creation(
                 src_dst,
                 existing_index.expect("existing index checked above"),
