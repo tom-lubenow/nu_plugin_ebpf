@@ -129,6 +129,44 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
+    pub(super) fn annotated_mut_global_omitted_field_message(
+        field_name: &str,
+        field_type: &Type,
+    ) -> String {
+        let prefix = format!(
+            "annotated mutable global initializer omitted record field '{}' of declared type {}",
+            field_name, field_type
+        );
+
+        if let Some((path, kind)) =
+            Self::find_null_annotated_global_unsupported_shape(field_type, Some(field_name.into()))
+        {
+            let path = path.unwrap_or_else(|| field_name.into());
+            return match kind {
+                NullAnnotatedGlobalUnsupportedKind::String => format!(
+                    "{prefix}; field '{path}' needs explicit string capacity, so provide a concrete value for '{field_name}', or switch to `global-define --type 'record{{...}}'` with `string:N` when you need an explicit zero-initialized fixed-capacity string field"
+                ),
+                NullAnnotatedGlobalUnsupportedKind::Binary => format!(
+                    "{prefix}; field '{path}' needs explicit binary length, so provide a concrete value for '{field_name}', or switch to `global-define --type 'record{{...}}'` with `bytes:N` when you need an explicit zero-initialized fixed-size byte field"
+                ),
+                NullAnnotatedGlobalUnsupportedKind::NumericList => format!(
+                    "{prefix}; field '{path}' needs explicit numeric-list capacity, so provide a concrete value for '{field_name}', or switch to `global-define --type 'record{{...}}'` with `list:int:N` when you need an explicit zero-initialized fixed-capacity numeric list field"
+                ),
+                NullAnnotatedGlobalUnsupportedKind::FixedArrayList(element_type) => format!(
+                    "{prefix}; field '{path}' declared as list<{element_type}> needs explicit fixed-array length, so provide a concrete value for '{field_name}', or switch to `global-define --type 'record{{...}}'` containing `array{{...:N}}` when you need an explicit zero-initialized fixed-array field"
+                ),
+                NullAnnotatedGlobalUnsupportedKind::Other(other) => format!(
+                    "{prefix}; field '{path}' declared as {} is not yet supported as a compiler-managed mutable global without a materialized initializer",
+                    other
+                ),
+            };
+        }
+
+        format!(
+            "{prefix}; plain Nushell type annotations do not carry enough information to zero-initialize that field, so provide a concrete value for '{field_name}', or switch to `global-define --type 'record{{...}}'` if you need an explicit fixed-capacity zero-initialized global"
+        )
+    }
+
     fn annotated_mut_global_unsupported_message(
         var_id: VarId,
         declared_type: &Type,

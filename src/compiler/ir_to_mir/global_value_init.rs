@@ -398,10 +398,11 @@ impl<'a> HirToMirLowering<'a> {
                             )));
                         }
 
-                        return Err(CompileError::UnsupportedInstruction(format!(
-                            "annotated mutable global initializer omitted record field '{}' of declared type {}; plain Nushell type annotations do not carry enough information to zero-initialize that field, so provide a concrete value for '{}', or switch to `global-define --type 'record{{...}}'` if you need an explicit fixed-capacity zero-initialized global",
-                            field_name, field_type, field_name
-                        )));
+                        return Err(CompileError::UnsupportedInstruction(
+                            Self::annotated_mut_global_omitted_field_message(
+                                field_name, field_type,
+                            ),
+                        ));
                     };
                     let _ = (field_list_max_len, field_string_slot_len);
                     field_reprs.push((field_name.clone(), field_ty, field_data));
@@ -526,10 +527,11 @@ impl<'a> HirToMirLowering<'a> {
                 for (field_name, field_type) in fields.iter() {
                     let Some(field_value) = val.get(field_name) else {
                         if Self::typed_mutable_global_zero_repr(field_type)?.is_none() {
-                            return Err(CompileError::UnsupportedInstruction(format!(
-                                "annotated mutable global initializer omitted record field '{}' of declared type {}; plain Nushell type annotations do not carry enough information to zero-initialize that field, so provide a concrete value for '{}', or switch to `global-define --type 'record{{...}}'` if you need an explicit fixed-capacity zero-initialized global",
-                                field_name, field_type, field_name
-                            )));
+                            return Err(CompileError::UnsupportedInstruction(
+                                Self::annotated_mut_global_omitted_field_message(
+                                    field_name, field_type,
+                                ),
+                            ));
                         }
                         continue;
                     };
