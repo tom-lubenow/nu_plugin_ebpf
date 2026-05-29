@@ -4015,6 +4015,18 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         target: "raw_tracepoint:sys_enter"
         program: [
             '{|ctx|'
+            '  let base = { event: $ctx }'
+            '  let rec = { ok: true, ...$base }'
+            '  $rec.event.pid | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:pid" "helper:bpf_get_current_pid_tgid"]
+    }
+    {
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
             '  mut rec = { event: null }'
             '  $rec.event = $ctx'
             '  $rec.event.pid | count'
@@ -19737,6 +19749,22 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "core-record-context-spread-field-access"
+        category: "language-core"
+        tags: [record context spread accept]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let base = { k: $ctx }'
+            '  let rec = { ok: true, ...$base }'
+            '  $rec.k.pid | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "core-user-function-record-context-field-access"
         category: "language-core"
         tags: [user-function record context accept]
@@ -23327,6 +23355,36 @@ def record-upsert-context-bindings [line: string context_names bound_aliases] {
     $bindings
 }
 
+def record-spread-context-bindings [line: string aliases] {
+    let assignment = (declaration-assignment $line)
+    if $assignment == null {
+        return []
+    }
+
+    let rhs = (declaration-rhs-token $assignment)
+    let trimmed_rhs = ($rhs | str trim)
+    if not (($trimmed_rhs | str starts-with "{") and ($trimmed_rhs | str ends-with "}")) {
+        return []
+    }
+
+    mut bindings = []
+    let inner = ($trimmed_rhs | str substring 1..-2)
+    for parsed in (
+        $inner
+        | parse --regex '\.\.\.\$(?P<name>[A-Za-z_][A-Za-z0-9_-]*)'
+    ) {
+        for alias in ($aliases | where {|alias| $alias.name == $parsed.name }) {
+            $bindings = ($bindings | append {
+                name: $assignment.name
+                field: $alias.field
+                root: ($alias | get -o root | default "")
+            })
+        }
+    }
+
+    $bindings
+}
+
 def identity-wrapper-definitions [source: string] {
     mut identities = []
     mut changed = true
@@ -23691,6 +23749,7 @@ def program-record-context-aliases [source: string context_names] {
             (record-context-bindings $line $context_names $bound_aliases)
             | append (record-wrapper-context-bindings $line $context_names $bound_aliases $wrapper_defs)
             | append (record-upsert-context-bindings $line $context_names $bound_aliases)
+            | append (record-spread-context-bindings $line $aliases)
         )
         for binding in $bindings {
             let existing = (
