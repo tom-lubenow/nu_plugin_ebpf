@@ -623,6 +623,7 @@ impl<'a> HirToMirLowering<'a> {
         let materialized_meta = RegMetadata {
             field_type: Some(record_ty),
             record_fields: meta.record_fields.clone(),
+            constant_value: meta.constant_value.clone(),
             annotated_semantics: Self::metadata_record_semantics(meta),
             ..Default::default()
         };

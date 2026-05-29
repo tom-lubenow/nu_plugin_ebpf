@@ -6147,6 +6147,23 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "global-define-type-bound-record-empty-binary-field-zero-fills"
+        category: "globals"
+        tags: [globals records binary bytes global-define zero-fill accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let state = { pid: 7 comm: 0x[] }'
+            '  $state | global-define --type "record{pid:int,comm:bytes:4}" seen_state'
+            '  let state = (global-get seen_state)'
+            '  ($state.comm | get 0) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "global-define-empty-binary-without-type-rejects"
         category: "globals"
         tags: [globals binary global-define reject]
