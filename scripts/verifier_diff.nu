@@ -16719,6 +16719,34 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "source-kfunc-list-front-copied-dynamic-key-repeated-map-root"
+        category: "helper-state"
+        tags: [kfunc object graph source accept]
+        requires: [kernel-btf]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  map-define graph_items --kind hash --value-type "record{lock:bpf_spin_lock,root:bpf_list_head:node_data:node,cookie:u64}"'
+            '  let key = $ctx.packet_len'
+            '  let lock_key = $key'
+            '  let root_key = $key'
+            '  let lock_entry = ($lock_key | map-get graph_items --kind hash)'
+            '  if $lock_entry {'
+            '    let root_entry = ($root_key | map-get graph_items --kind hash)'
+            '    if $root_entry {'
+            '      helper-call "bpf_spin_lock" $lock_entry.lock'
+            '      let obj = (kfunc-call "bpf_list_front" $root_entry.root)'
+            '      helper-call "bpf_spin_unlock" $lock_entry.lock'
+            '      if $obj { 0 }'
+            '    }'
+            '  }'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "source-kfunc-list-front-rejects-different-key-repeated-map-root"
         category: "helper-state"
         tags: [kfunc object graph source reject]
@@ -16923,6 +16951,34 @@ const FIXTURES = [
             '  let lock_entry = ($key | map-get rb_items --kind hash)'
             '  if $lock_entry {'
             '    let root_entry = ($key | map-get rb_items --kind hash)'
+            '    if $root_entry {'
+            '      helper-call "bpf_spin_lock" $lock_entry.lock'
+            '      let obj = (kfunc-call "bpf_rbtree_first" $root_entry.root)'
+            '      helper-call "bpf_spin_unlock" $lock_entry.lock'
+            '      if $obj { 0 }'
+            '    }'
+            '  }'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-kfunc-rbtree-first-copied-dynamic-key-repeated-map-root"
+        category: "helper-state"
+        tags: [kfunc object graph source accept]
+        requires: [kernel-btf]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  map-define rb_items --kind hash --value-type "record{lock:bpf_spin_lock,root:bpf_rb_root:rb_item:rb,cookie:u64}"'
+            '  let key = $ctx.packet_len'
+            '  let lock_key = $key'
+            '  let root_key = $key'
+            '  let lock_entry = ($lock_key | map-get rb_items --kind hash)'
+            '  if $lock_entry {'
+            '    let root_entry = ($root_key | map-get rb_items --kind hash)'
             '    if $root_entry {'
             '      helper-call "bpf_spin_lock" $lock_entry.lock'
             '      let obj = (kfunc-call "bpf_rbtree_first" $root_entry.root)'
