@@ -609,6 +609,122 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(());
         }
 
+        if let Some(AnnotatedValueSemantics::NumericList { max_len }) = &record_field.semantics
+            && let [PathMember::Int { val: index, .. }] = remaining_members
+        {
+            if *index >= *max_len {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "typed field path '{}' index {} is out of bounds for numeric list capacity {}",
+                    path_desc, index, max_len
+                )));
+            }
+            let list_vreg = match &base_runtime_ty {
+                MirType::Ptr {
+                    pointee,
+                    address_space,
+                } if pointee.as_ref() == &record_field.ty => match address_space {
+                    AddressSpace::Stack => source_vreg,
+                    AddressSpace::Map | AddressSpace::Context => {
+                        let buffer_size = (max_len.saturating_add(1)) * std::mem::size_of::<i64>();
+                        let slot =
+                            self.func
+                                .alloc_stack_slot(buffer_size, 8, StackSlotKind::ListBuffer);
+                        self.record_list_buffer_slot_type(slot, *max_len);
+                        let list_vreg = self.func.alloc_vreg();
+                        self.emit(MirInst::ListNew {
+                            dst: list_vreg,
+                            buffer: slot,
+                            max_len: *max_len,
+                        });
+                        self.vreg_type_hints.insert(
+                            list_vreg,
+                            MirType::Ptr {
+                                pointee: Box::new(record_field.ty.clone()),
+                                address_space: AddressSpace::Stack,
+                            },
+                        );
+                        self.emit_ptr_to_slot_copy(
+                            slot,
+                            0,
+                            source_vreg,
+                            0,
+                            record_field.ty.size(),
+                        )?;
+                        list_vreg
+                    }
+                    AddressSpace::Kernel | AddressSpace::User | AddressSpace::Packet => {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "typed field path '{}' cannot index numeric list from {:?} memory",
+                            path_desc, address_space
+                        )));
+                    }
+                },
+                _ => {
+                    let mut parent_vreg = source_dst_vreg;
+                    let mut parent_runtime_ty = self
+                        .typed_value_runtime_type(src_dst, parent_vreg)
+                        .ok_or_else(|| {
+                            CompileError::UnsupportedInstruction(format!(
+                                "typed field path '{}' requires type information for the parent record",
+                                path_desc
+                            ))
+                        })?;
+                    if !matches!(parent_runtime_ty, MirType::Ptr { .. })
+                        && Self::aggregate_call_value_type(&parent_runtime_ty).is_some()
+                    {
+                        parent_vreg =
+                            self.materialized_metadata_aggregate_vreg(src_dst, parent_vreg)?;
+                        parent_runtime_ty = self
+                            .typed_value_runtime_type(src_dst, parent_vreg)
+                            .ok_or_else(|| {
+                                CompileError::UnsupportedInstruction(format!(
+                                    "typed field path '{}' requires type information for the materialized parent record",
+                                    path_desc
+                                ))
+                            })?;
+                    }
+
+                    let list_vreg = self.func.alloc_vreg();
+                    let parent_copy_vreg = self.func.alloc_vreg();
+                    self.emit(MirInst::Copy {
+                        dst: parent_copy_vreg,
+                        src: MirValue::VReg(parent_vreg),
+                    });
+                    self.vreg_type_hints
+                        .insert(parent_copy_vreg, parent_runtime_ty.clone());
+                    self.lower_typed_value_projection(
+                        src_dst,
+                        list_vreg,
+                        parent_copy_vreg,
+                        &parent_runtime_ty,
+                        &path_members[..1],
+                        &Self::typed_value_path_desc(&path_members[..1]),
+                        record_field.root_ctx_field.as_ref(),
+                        base_trusted_btf,
+                        record_field.semantics.as_ref(),
+                    )?;
+                    list_vreg
+                }
+            };
+            self.emit(MirInst::ListGet {
+                dst: dst_vreg,
+                list: list_vreg,
+                idx: MirValue::Const(i64::try_from(*index).map_err(|_| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "typed field path '{}' numeric list index {} is too large",
+                        path_desc, index
+                    ))
+                })?),
+            });
+            self.vreg_type_hints.insert(dst_vreg, MirType::I64);
+            let meta = self.get_or_create_metadata(src_dst);
+            *meta = RegMetadata::default();
+            meta.field_type = Some(MirType::I64);
+            meta.source_var = None;
+            self.set_reg_constant_value(src_dst, constant_value);
+            return Ok(());
+        }
+
         if !matches!(base_runtime_ty, MirType::Ptr { .. })
             && Self::aggregate_call_value_type(&base_runtime_ty).is_some()
         {
@@ -719,6 +835,43 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         if !self.is_context_reg(src_dst) {
+            let numeric_list_field_projection = match path.members.first() {
+                Some(PathMember::String { val, .. })
+                    if matches!(path.members.as_slice(), [_, PathMember::Int { .. }]) =>
+                {
+                    self.get_metadata(src_dst).and_then(|meta| {
+                        meta.record_fields
+                            .iter()
+                            .find(|field| {
+                                field.name == *val
+                                    && matches!(
+                                        field.semantics,
+                                        Some(AnnotatedValueSemantics::NumericList { .. })
+                                    )
+                            })
+                            .cloned()
+                    })
+                }
+                _ => None,
+            };
+            if let Some(record_field) = numeric_list_field_projection {
+                let constant_value = self
+                    .get_metadata(src_dst)
+                    .and_then(|meta| meta.constant_value.as_ref())
+                    .and_then(|value| Self::constant_follow_cell_path(value, &path));
+                let remaining_members: Vec<PathMember> =
+                    path.members.iter().skip(1).cloned().collect();
+                return self.lower_record_field_projection_from_metadata(
+                    src_dst,
+                    source_dst_vreg,
+                    had_source_vreg,
+                    record_field,
+                    &remaining_members,
+                    &path.members,
+                    constant_value,
+                );
+            }
+
             // Context-derived record fields keep their own pointer provenance; projecting
             // through the materialized record would make helper aliases target the stack.
             let record_field_projection = match path.members.first() {

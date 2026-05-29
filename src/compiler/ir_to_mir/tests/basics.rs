@@ -4486,6 +4486,74 @@ fn test_lower_upsert_cell_path_on_metadata_only_record_builder_materializes_base
 }
 
 #[test]
+fn test_lower_metadata_record_numeric_list_index_uses_list_get() {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Record { capacity: 0 },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![string_member("a"), int_member(0)],
+                    })),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(7),
+                },
+                HirStmt::UpsertCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                    new_value: RegId::new(2),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+
+    let result = lower_hir_to_mir_with_hints(
+        &HirProgram::new(func, HashMap::new(), vec![], None),
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("metadata-only numeric list cell path projection should lower");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::ListGet {
+                    idx: MirValue::Const(0),
+                    ..
+                }
+            )),
+        "expected metadata-backed $rec.a.0 projection to lower through ListGet, not raw array index 0"
+    );
+}
+
+#[test]
 fn test_lower_nested_field_access_rejects_nonaggregate_ctx_value() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("arg0"), string_member("tv_nsec")],
