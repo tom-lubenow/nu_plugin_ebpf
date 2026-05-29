@@ -12380,6 +12380,45 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "bpf-wq-kfunc-set-callback-allows-prefix-params"
+        category: "helper-state"
+        tags: [bpf_wq kfunc-call callback prefix-arity accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define work_items --kind array --value-type "record{work:bpf_wq,cookie:u64}" --max-entries 1'
+            '  let entry = (0 | map-get work_items --kind array)'
+            '  if $entry {'
+            '    kfunc-call "bpf_wq_init" $entry.work work_items 0'
+            '    kfunc-call "bpf_wq_set_callback_impl" $entry.work {|map key| 0} 0 0'
+            '    kfunc-call "bpf_wq_start" $entry.work 0'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "bpf-wq-kfunc-set-callback-rejects-extra-declared-param"
+        category: "helper-state"
+        tags: [bpf_wq kfunc-call callback reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define work_items --kind array --value-type "record{work:bpf_wq,cookie:u64}" --max-entries 1'
+            '  let entry = (0 | map-get work_items --kind array)'
+            '  if $entry {'
+            '    kfunc-call "bpf_wq_set_callback_impl" $entry.work {|map key work extra| 0} 0 0'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "declares 4 parameters, but the callback ABI supplies 3"
+    }
+    {
         name: "bpf-wq-init-rejects-mismatched-map"
         category: "helper-state"
         tags: [bpf_wq kfunc-call reject]
