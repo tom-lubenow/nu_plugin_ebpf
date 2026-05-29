@@ -365,6 +365,11 @@ pub fn compile_time_value_flows_to_global_consumer(
                     return false;
                 }
             }
+            HirStmt::Drain { src } | HirStmt::DrainIfEnd { src } | HirStmt::Drop { src } => {
+                if tracked_regs.remove(src) && tracked_regs.is_empty() && tracked_vars.is_empty() {
+                    return false;
+                }
+            }
             HirStmt::ListPush { src_dst, item }
                 if flow == CompileTimeValueFlow::AggregateBuilder =>
             {

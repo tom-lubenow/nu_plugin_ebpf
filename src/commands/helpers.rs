@@ -623,7 +623,8 @@ declare a zero-initialized global, but a compile-time constant input may also
 be provided when you want explicit layout plus explicit initial contents.
 Source-level `record{...}` specs use natural field alignment and aligned array
 stride; typed initializers zero-fill scalar fields, omitted record fields, and
-layout padding.
+layout padding. Source-built fixed arrays of records may use ordinary list
+construction and list spread when every item remains compile-time constant.
 
 Leading annotated `mut` bindings are the preferred small private-state path
 when ordinary Nushell variable syntax is enough. Named globals remain useful
@@ -787,8 +788,9 @@ impl PluginCommand for GlobalSet {
         r#"Stores the pipeline input into a named per-program global. If no
 same-closure `global-define` already exists, the first `global-set` for a given
 name establishes the fixed layout used by later `global-get` and `global-set`
-calls. Compile-time constant first writes seed the global's initial value;
-otherwise it starts zeroed.
+calls. Compile-time constant first writes, including source-built fixed arrays
+assembled with list spread, seed the global's initial value; otherwise it starts
+zeroed.
 
 Prefer leading annotated `mut` bindings for private state when plain variable
 syntax is sufficient. Use named globals when you need an explicit shared name.

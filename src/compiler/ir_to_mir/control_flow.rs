@@ -534,6 +534,16 @@ impl<'a> HirToMirLowering<'a> {
                     self.lower_compile_time_only_list_push(*src_dst, *item)?;
                     continue;
                 }
+                if let HirStmt::ListSpread { src_dst, items } = stmt
+                    && self.is_compile_time_only_global_initializer_builder_value(
+                        &block.stmts,
+                        stmt_index,
+                        *src_dst,
+                    )
+                {
+                    self.lower_compile_time_only_list_spread(*src_dst, *items)?;
+                    continue;
+                }
                 self.lower_stmt(stmt)?;
             }
             if self.current_block_has_real_terminator() {
@@ -789,6 +799,39 @@ impl<'a> HirToMirLowering<'a> {
             _ => {
                 return Err(CompileError::UnsupportedInstruction(
                     "fixed-layout global list and array initializers require compile-time constant list items"
+                        .into(),
+                ));
+            }
+        };
+
+        self.clear_source_var(src_dst);
+        self.set_reg_constant_value(src_dst, constant_value);
+        Ok(())
+    }
+
+    fn lower_compile_time_only_list_spread(
+        &mut self,
+        src_dst: RegId,
+        items: RegId,
+    ) -> Result<(), CompileError> {
+        let constant_value = match (
+            self.get_metadata(src_dst)
+                .and_then(|meta| meta.constant_value.clone()),
+            self.get_metadata(items)
+                .and_then(|meta| meta.constant_value.clone()),
+        ) {
+            (
+                Some(Value::List { mut vals, .. }),
+                Some(Value::List {
+                    vals: spread_vals, ..
+                }),
+            ) => {
+                vals.extend(spread_vals);
+                Some(Value::list(vals, Span::unknown()))
+            }
+            _ => {
+                return Err(CompileError::UnsupportedInstruction(
+                    "fixed-layout global list and array spread initializers require compile-time constant lists"
                         .into(),
                 ));
             }

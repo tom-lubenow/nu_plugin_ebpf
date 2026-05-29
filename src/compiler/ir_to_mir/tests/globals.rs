@@ -4011,6 +4011,182 @@ fn test_lower_global_set_fixed_record_array_source_list_builder_skips_runtime_li
 }
 
 #[test]
+fn test_lower_global_set_fixed_record_array_source_list_spread_skips_runtime_list_ops() {
+    let global_set_decl = DeclId::new(1104);
+    let global_get_decl = DeclId::new(1105);
+    let count_decl = DeclId::new(1106);
+    let decl_names = HashMap::from([
+        (global_set_decl, "global-set".to_string()),
+        (global_get_decl, "global-get".to_string()),
+        (count_decl, "count".to_string()),
+    ]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::List { capacity: 2 },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Record { capacity: 1 },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String("pid".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::Int(7),
+                },
+                HirStmt::RecordInsert {
+                    src_dst: RegId::new(1),
+                    key: RegId::new(2),
+                    val: RegId::new(3),
+                },
+                HirStmt::ListPush {
+                    src_dst: RegId::new(0),
+                    item: RegId::new(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::List { capacity: 1 },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(5),
+                    lit: HirLiteral::Record { capacity: 1 },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(6),
+                    lit: HirLiteral::String("pid".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(7),
+                    lit: HirLiteral::Int(9),
+                },
+                HirStmt::RecordInsert {
+                    src_dst: RegId::new(5),
+                    key: RegId::new(6),
+                    val: RegId::new(7),
+                },
+                HirStmt::ListPush {
+                    src_dst: RegId::new(4),
+                    item: RegId::new(5),
+                },
+                HirStmt::ListSpread {
+                    src_dst: RegId::new(0),
+                    items: RegId::new(4),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(8),
+                    lit: HirLiteral::String("seen_entries".into()),
+                },
+                HirStmt::Call {
+                    decl_id: global_set_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(8)],
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Drain { src: RegId::new(0) },
+                HirStmt::Drop { src: RegId::new(0) },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::Call {
+                    decl_id: global_get_decl,
+                    src_dst: RegId::new(9),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(8)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(10),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![int_member(1), string_member("pid")],
+                    })),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(9),
+                    path: RegId::new(10),
+                },
+                HirStmt::Call {
+                    decl_id: count_decl,
+                    src_dst: RegId::new(9),
+                    args: HirCallArgs::default(),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(9) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 11,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("source list-spread global-set initializer should lower as fixed global data");
+
+    let mut expected = Vec::new();
+    expected.extend_from_slice(&7i64.to_le_bytes());
+    expected.extend_from_slice(&9i64.to_le_bytes());
+
+    let global = result
+        .data_globals
+        .iter()
+        .find(|global| global.name == "__nu_global_seen_entries")
+        .expect("expected global-set spread initializer to create named data global");
+    assert_eq!(global.data, expected);
+    assert!(
+        !result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| {
+                matches!(
+                    inst,
+                    MirInst::ListPush { .. } | MirInst::ListLen { .. } | MirInst::ListGet { .. }
+                )
+            }),
+        "compile-time global-set list-spread builders must not emit runtime list operations"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::MapUpdate {
+                    map: MapRef { name, .. },
+                    ..
+                } if name == COUNTER_MAP_NAME
+            )),
+        "expected global-set fixed record-array spread field to be usable as a scalar key"
+    );
+}
+
+#[test]
 fn test_lower_global_define_type_fixed_record_array_initializer_supports_nested_numeric_list_field()
 {
     let define_decl = DeclId::new(1094);
