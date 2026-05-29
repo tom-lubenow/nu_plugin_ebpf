@@ -4039,6 +4039,18 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         target: "raw_tracepoint:sys_enter"
         program: [
             '{|ctx|'
+            '  mut rec = {}'
+            '  $rec.event = $ctx'
+            '  $rec.event.pid | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:pid" "helper:bpf_get_current_pid_tgid"]
+    }
+    {
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
             '  def wrap [event] { { event: $event } }'
             '  let rec = (wrap $ctx)'
             '  $rec.event.pid | count'
@@ -19756,6 +19768,22 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  mut rec = { k: null }'
+            '  $rec.k = $ctx'
+            '  $rec.k.pid | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "core-record-context-upsert-new-field-access"
+        category: "language-core"
+        tags: [record context upsert accept]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  mut rec = {}'
             '  $rec.k = $ctx'
             '  $rec.k.pid | count'
             '  0'

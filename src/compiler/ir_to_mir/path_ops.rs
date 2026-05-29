@@ -1362,29 +1362,29 @@ impl<'a> HirToMirLowering<'a> {
                     path_desc
                 )));
             };
-            let Some(existing_field) = base_meta
+            let existing_field = base_meta
                 .record_fields
                 .iter()
                 .find(|field| field.name == *field_name)
-                .cloned()
-            else {
-                return Err(CompileError::UnsupportedInstruction(format!(
-                    "cell path update '.{} = ...' can assign context-backed values only to existing record fields with fixed layout",
-                    path_desc
-                )));
-            };
+                .cloned();
             let field_type = new_value_meta
                 .field_type
                 .clone()
                 .or_else(|| Self::metadata_record_layout(&new_value_meta))
                 .or_else(|| self.vreg_type_hints.get(&new_value_vreg).cloned())
-                .unwrap_or(existing_field.ty);
+                .or_else(|| existing_field.as_ref().map(|field| field.ty.clone()))
+                .ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "cell path update '.{} = ...' requires type information for the context-backed value",
+                        path_desc
+                    ))
+                })?;
 
             let field = RecordField {
                 name: field_name.clone(),
                 value_vreg: new_value_vreg,
                 source_reg: Some(new_value),
-                stack_offset: existing_field.stack_offset,
+                stack_offset: existing_field.and_then(|field| field.stack_offset),
                 ty: field_type,
                 semantics: new_value_meta.annotated_semantics.clone(),
                 is_context: new_value_meta.is_context,
