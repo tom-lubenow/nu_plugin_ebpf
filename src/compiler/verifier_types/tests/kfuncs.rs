@@ -15219,6 +15219,22 @@ fn test_xdp_get_xfrm_state_release_accepts_xdp() {
 }
 
 #[test]
+fn test_xdp_get_xfrm_state_rejects_non_xdp_program() {
+    let (func, types) = make_xdp_get_xfrm_state_verify_function(32, 32, true);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected bpf_xdp_get_xfrm_state to be rejected outside xdp");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("kfunc 'bpf_xdp_get_xfrm_state' is only valid in xdp programs")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_xdp_get_xfrm_state_requires_release() {
     let (func, types) = make_xdp_get_xfrm_state_verify_function(32, 32, false);
     let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
