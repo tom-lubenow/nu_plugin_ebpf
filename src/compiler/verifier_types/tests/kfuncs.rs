@@ -12503,28 +12503,166 @@ fn test_kfunc_bpf_wq_set_callback_accepts_callback_and_zero_aux() {
             address_space: AddressSpace::Map,
         },
     );
-    types.insert(
-        callback,
-        MirType::Subprogram {
-            args: vec![
-                MirType::named_kernel_struct_ptr("bpf_map"),
-                MirType::Ptr {
-                    pointee: Box::new(MirType::U32),
-                    address_space: AddressSpace::Map,
-                },
-                MirType::Ptr {
-                    pointee: Box::new(MirType::bpf_wq_struct()),
-                    address_space: AddressSpace::Map,
-                },
-            ],
-            ret: Box::new(MirType::I64),
-        },
-    );
+    types.insert(callback, bpf_wq_callback_type());
     types.insert(flags, MirType::I64);
     types.insert(aux, MirType::I64);
     types.insert(dst, MirType::I64);
 
     verify_mir(&func, &types).expect("expected bpf_wq_set_callback_impl call to verify");
+}
+
+fn bpf_wq_callback_type() -> MirType {
+    MirType::Subprogram {
+        args: vec![
+            MirType::named_kernel_struct_ptr("bpf_map"),
+            MirType::Ptr {
+                pointee: Box::new(MirType::U32),
+                address_space: AddressSpace::Map,
+            },
+            MirType::Ptr {
+                pointee: Box::new(MirType::bpf_wq_struct()),
+                address_space: AddressSpace::Map,
+            },
+        ],
+        ret: Box::new(MirType::I64),
+    }
+}
+
+#[test]
+fn test_kfunc_bpf_wq_set_callback_rejects_stack_wq() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let wq = func.alloc_vreg();
+    let callback = func.alloc_vreg();
+    let flags = func.alloc_vreg();
+    let aux = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadSubprogram {
+            dst: callback,
+            subfn: crate::compiler::mir::SubfunctionId(0),
+        });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: flags,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: aux,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_wq_set_callback_impl".to_string(),
+        btf_id: None,
+        args: vec![wq, callback, flags, aux],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        wq,
+        MirType::Ptr {
+            pointee: Box::new(MirType::bpf_wq_struct()),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(callback, bpf_wq_callback_type());
+    types.insert(flags, MirType::I64);
+    types.insert(aux, MirType::I64);
+    types.insert(dst, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected stack bpf_wq kfunc arg error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("bpf_wq field expects pointer in [Map]")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_kfunc_bpf_wq_set_callback_requires_null_checked_map_lookup() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let key = func.alloc_vreg();
+    let wq = func.alloc_vreg();
+    let callback = func.alloc_vreg();
+    let flags = func.alloc_vreg();
+    let aux = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: key,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::MapLookup {
+        dst: wq,
+        map: MapRef {
+            name: "work_items".to_string(),
+            kind: MapKind::Array,
+        },
+        key,
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadSubprogram {
+            dst: callback,
+            subfn: crate::compiler::mir::SubfunctionId(0),
+        });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: flags,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: aux,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_wq_set_callback_impl".to_string(),
+        btf_id: None,
+        args: vec![wq, callback, flags, aux],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let value_ty = MirType::Struct {
+        name: Some("wq_value".to_string()),
+        kernel_btf_type_id: None,
+        fields: vec![StructField {
+            name: "work".to_string(),
+            ty: MirType::bpf_wq_struct(),
+            offset: 0,
+            synthetic: false,
+            bitfield: None,
+        }],
+    };
+    let mut types = HashMap::new();
+    types.insert(key, MirType::I64);
+    types.insert(
+        wq,
+        MirType::Ptr {
+            pointee: Box::new(value_ty),
+            address_space: AddressSpace::Map,
+        },
+    );
+    types.insert(callback, bpf_wq_callback_type());
+    types.insert(flags, MirType::I64);
+    types.insert(aux, MirType::I64);
+    types.insert(dst, MirType::I64);
+
+    let err =
+        verify_mir(&func, &types).expect_err("expected unchecked map-backed bpf_wq pointer error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("may dereference null pointer")),
+        "unexpected errors: {:?}",
+        err
+    );
 }
 
 #[test]
