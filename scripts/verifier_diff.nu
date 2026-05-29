@@ -908,6 +908,12 @@ const PROGRAM_GLOBAL_KERNEL_FEATURE_EXPECTATIONS = [
     }
     {
         program: [
+            '{|ctx| let config = { pid: 7 samples: [11 22] }; (($config.samples | get 1) + $config.pid) | count }'
+        ]
+        feature_keys: ["global:bpf-data-sections"]
+    }
+    {
+        program: [
             '{|ctx|'
             '  let text = "global-get seen"'
             '  0'
@@ -4024,6 +4030,13 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
             '  $rec.event.pid | count'
             '  0'
             '}'
+        ]
+        feature_keys: ["ctx:pid" "helper:bpf_get_current_pid_tgid"]
+    }
+    {
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|event| let rec = { event: $event }; $rec.event.pid | count }'
         ]
         feature_keys: ["ctx:pid" "helper:bpf_get_current_pid_tgid"]
     }
@@ -24805,15 +24818,25 @@ def declaration-binding-name [raw_name: string] {
 
 def declaration-assignment [line: string] {
     let trimmed = ($line | str trim)
-    let prefix = if ($trimmed | str starts-with "let ") {
-        "let "
+    let body = if ($trimmed | str starts-with "let ") {
+        $trimmed | str substring 4..
     } else if ($trimmed | str starts-with "mut ") {
-        "mut "
+        $trimmed | str substring 4..
     } else {
-        return null
+        mut inline_body = null
+        for command in ["let" "mut"] {
+            let tails = (command-invocation-tails $trimmed $command)
+            if not ($tails | is-empty) {
+                $inline_body = ($tails | first | str trim)
+                break
+            }
+        }
+        if $inline_body == null {
+            return null
+        }
+        $inline_body
     }
 
-    let body = ($trimmed | str substring ($prefix | str length)..)
     let assignment_parts = ($body | split row "=")
     if ($assignment_parts | length) < 2 {
         return null
@@ -25780,7 +25803,7 @@ def program-map-value-kernel-features [source: string] {
 
 def line-declares-readonly-aggregate-constant? [line: string] {
     let trimmed = ($line | str trim)
-    if not ($trimmed | str starts-with "let ") {
+    if not (line-invokes-command? $trimmed "let") {
         return false
     }
 
