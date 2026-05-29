@@ -1118,6 +1118,23 @@ impl<'a> HirToMirLowering<'a> {
 
         if let Some(mut meta) = self.var_metadata.get(&var_id).cloned()
             && !self.var_mappings.contains_key(&var_id)
+            && let Some(ctx_field) = meta.direct_ctx_field.clone()
+        {
+            self.emit(MirInst::LoadCtxField {
+                dst: dst_vreg,
+                field: ctx_field,
+                slot: None,
+            });
+            if let Some(ty) = meta.field_type.clone() {
+                self.vreg_type_hints.insert(dst_vreg, ty);
+            }
+            meta.source_var.get_or_insert(var_id);
+            self.reg_metadata.insert(dst.get(), meta);
+            return Ok(());
+        }
+
+        if let Some(mut meta) = self.var_metadata.get(&var_id).cloned()
+            && !self.var_mappings.contains_key(&var_id)
         {
             meta.source_var.get_or_insert(var_id);
             self.reg_metadata.insert(dst.get(), meta);

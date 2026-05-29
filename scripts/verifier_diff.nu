@@ -10271,6 +10271,25 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "tc-phi-joined-packet-data-read"
+        category: "context-surface"
+        tags: [tc context packet phi accept]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let selector = $ctx.mark'
+            '  let data = (if $selector == 0 { $ctx.data } else { $ctx.data })'
+            '  if ($ctx.data_end != 0) {'
+            '    ($data | get 0) | count'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "tc-record-packet-data-write"
         category: "context-surface"
         tags: [tc context packet writable record source metadata]
@@ -15327,6 +15346,54 @@ const FIXTURES = [
         error_contains: "requires arg1 map 'other_timers'"
     }
     {
+        name: "timer-init-accepts-phi-joined-same-map-value-source"
+        category: "helper-state"
+        tags: [timer map-define phi accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define timers --kind hash --key-type u32 --value-type "record{timer:bpf_timer,cookie:u64}"'
+            '  let selector = (helper-call "bpf_get_prandom_u32")'
+            '  let base_key = $ctx.pid'
+            '  let left_key = $base_key'
+            '  let right_key = $base_key'
+            '  let first = ($left_key | map-get timers --kind hash)'
+            '  let second = ($right_key | map-get timers --kind hash)'
+            '  let entry = (if $selector == 0 { $first } else { $second })'
+            '  if $entry {'
+            '    helper-call "bpf_timer_init" $entry.timer timers 0 --kind hash'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "timer-init-rejects-phi-joined-mismatched-map-value-source"
+        category: "helper-state"
+        tags: [timer map-define phi reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define timers --kind hash --key-type u32 --value-type "record{timer:bpf_timer,cookie:u64}"'
+            '  map-define other_timers --kind hash --key-type u32 --value-type "record{timer:bpf_timer,cookie:u64}"'
+            '  let selector = (helper-call "bpf_get_prandom_u32")'
+            '  let base_key = $ctx.pid'
+            '  let first = ($base_key | map-get timers --kind hash)'
+            '  let second = ($base_key | map-get other_timers --kind hash)'
+            '  let entry = (if $selector == 0 { $first } else { $second })'
+            '  if $entry {'
+            '    helper-call "bpf_timer_init" $entry.timer timers 0 --kind hash'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "requires arg1 map 'timers'"
+    }
+    {
         name: "timer-callback-uses-trailing-value-param"
         category: "helper-state"
         tags: [timer callback accept]
@@ -16962,6 +17029,36 @@ const FIXTURES = [
             '  let lock_entry = ($lock_key | map-get graph_items --kind hash)'
             '  if $lock_entry {'
             '    let root_entry = ($root_key | map-get graph_items --kind hash)'
+            '    if $root_entry {'
+            '      helper-call "bpf_spin_lock" $lock_entry.lock'
+            '      let obj = (kfunc-call "bpf_list_front" $root_entry.root)'
+            '      helper-call "bpf_spin_unlock" $lock_entry.lock'
+            '      if $obj { 0 }'
+            '    }'
+            '  }'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-kfunc-list-front-phi-key-repeated-map-root"
+        category: "helper-state"
+        tags: [kfunc object graph source phi accept]
+        requires: [kernel-btf]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  map-define graph_items --kind hash --value-type "record{lock:bpf_spin_lock,root:bpf_list_head:node_data:node,cookie:u64}"'
+            '  let selector = (helper-call "bpf_get_prandom_u32")'
+            '  let base_key = $ctx.packet_len'
+            '  let left_key = $base_key'
+            '  let right_key = $base_key'
+            '  let key = (if $selector == 0 { $left_key } else { $right_key })'
+            '  let lock_entry = ($key | map-get graph_items --kind hash)'
+            '  if $lock_entry {'
+            '    let root_entry = ($key | map-get graph_items --kind hash)'
             '    if $root_entry {'
             '      helper-call "bpf_spin_lock" $lock_entry.lock'
             '      let obj = (kfunc-call "bpf_list_front" $root_entry.root)'

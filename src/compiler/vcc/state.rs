@@ -266,6 +266,9 @@ impl VccState {
         if lhs == rhs || self.scalar_alias_root(lhs) == self.scalar_alias_root(rhs) {
             return true;
         }
+        if self.ctx_field_values_may_alias(lhs, rhs) {
+            return true;
+        }
         matches!(
             (self.reg_type(lhs), self.reg_type(rhs)),
             (
@@ -282,6 +285,28 @@ impl VccState {
                     }),
                 }),
             ) if lhs_min == lhs_max && rhs_min == rhs_max && lhs_min == rhs_min
+        )
+    }
+
+    fn ctx_field_values_may_alias(&self, lhs: VccReg, rhs: VccReg) -> bool {
+        let Some(lhs_field) = self.ctx_field_source(lhs) else {
+            return false;
+        };
+        if self.ctx_field_source(rhs) != Some(lhs_field) {
+            return false;
+        }
+        matches!(
+            (self.reg_type(lhs), self.reg_type(rhs)),
+            (Ok(lhs_ty), Ok(rhs_ty))
+                if matches!(lhs_ty.class(), VccTypeClass::Scalar | VccTypeClass::Bool)
+                    && matches!(rhs_ty.class(), VccTypeClass::Scalar | VccTypeClass::Bool)
+        )
+    }
+
+    fn ctx_field_invalidated_by_packet_mutation(field: &CtxField) -> bool {
+        matches!(
+            field,
+            CtxField::Data | CtxField::DataMeta | CtxField::DataEnd | CtxField::PacketLen
         )
     }
 
@@ -400,6 +425,8 @@ impl VccState {
             self.ctx_field_sources.remove(reg);
             self.not_equal_consts.remove(reg);
         }
+        self.ctx_field_sources
+            .retain(|_, field| !Self::ctx_field_invalidated_by_packet_mutation(field));
         self.cond_refinements.retain(|reg, info| {
             if invalidated.contains(reg) {
                 return false;

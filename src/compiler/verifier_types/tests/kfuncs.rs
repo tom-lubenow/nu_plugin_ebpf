@@ -282,11 +282,22 @@ fn graph_lock_root_repeated_lookup_phi_key_function() -> (MirFunction, HashMap<V
     )
 }
 
+fn graph_lock_root_repeated_lookup_ctx_field_key_function() -> (MirFunction, HashMap<VReg, MirType>)
+{
+    graph_lock_root_repeated_lookup_for_kfunc(
+        RepeatedLookupKeyMode::SameCtxFieldReload,
+        "bpf_list_front",
+        MirType::bpf_list_head_root_struct("node_data", "node"),
+        MirType::bpf_list_node_struct(),
+    )
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum RepeatedLookupKeyMode {
     SameConst,
     CopiedDynamic,
     PhiCopiedDynamic,
+    SameCtxFieldReload,
     DifferentConst,
 }
 
@@ -358,6 +369,22 @@ fn graph_lock_root_repeated_lookup_for_kfunc(
             dst: root_key,
             src: MirValue::VReg(key),
         });
+        entry
+    } else if key_mode == RepeatedLookupKeyMode::SameCtxFieldReload {
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::LoadCtxField {
+                dst: key,
+                field: CtxField::PacketLen,
+                slot: None,
+            });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::LoadCtxField {
+                dst: root_key,
+                field: CtxField::PacketLen,
+                slot: None,
+            });
         entry
     } else {
         func.block_mut(entry).instructions.push(MirInst::Copy {
@@ -1170,6 +1197,13 @@ fn test_kfunc_list_front_accepts_phi_key_repeated_map_lookup_bpf_spin_lock() {
     let (func, types) = graph_lock_root_repeated_lookup_phi_key_function();
 
     verify_mir(&func, &types).expect("phi-copied dynamic map key graph lock/root should verify");
+}
+
+#[test]
+fn test_kfunc_list_front_accepts_same_ctx_field_repeated_map_lookup_bpf_spin_lock() {
+    let (func, types) = graph_lock_root_repeated_lookup_ctx_field_key_function();
+
+    verify_mir(&func, &types).expect("same ctx-field map key graph lock/root should verify");
 }
 
 #[test]

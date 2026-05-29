@@ -1090,6 +1090,8 @@ impl<'a> VccLowerer<'a> {
                         .remove(&Self::ctx_field_key(&CtxField::DataMeta));
                     self.entry_ctx_field_regs
                         .remove(&Self::ctx_field_key(&CtxField::DataEnd));
+                    self.entry_ctx_field_regs
+                        .remove(&Self::ctx_field_key(&CtxField::PacketLen));
                 }
                 if let Some(kind) = Self::helper_acquire_kind(*helper) {
                     out.push(VccInst::KfuncAcquire {

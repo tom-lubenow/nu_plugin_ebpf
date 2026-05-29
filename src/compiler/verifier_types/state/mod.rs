@@ -452,6 +452,7 @@ impl VerifierState {
     pub(super) fn map_lookup_keys_may_alias(&self, lhs: VReg, rhs: VReg) -> bool {
         lhs == rhs
             || self.scalar_alias_root(lhs) == self.scalar_alias_root(rhs)
+            || self.ctx_field_values_may_alias(lhs, rhs)
             || matches!(
                 (self.get_range(lhs), self.get_range(rhs)),
                 (
@@ -459,6 +460,29 @@ impl VerifierState {
                     ValueRange::Known { min: rhs_min, max: rhs_max },
                 ) if lhs_min == lhs_max && rhs_min == rhs_max && lhs_min == rhs_min
             )
+    }
+
+    fn ctx_field_values_may_alias(&self, lhs: VReg, rhs: VReg) -> bool {
+        let Some(lhs_field) = self.ctx_field_source(lhs) else {
+            return false;
+        };
+        if self.ctx_field_source(rhs) != Some(lhs_field) {
+            return false;
+        }
+        matches!(
+            (self.get(lhs), self.get(rhs)),
+            (
+                VerifierType::Scalar | VerifierType::Bool,
+                VerifierType::Scalar | VerifierType::Bool,
+            )
+        )
+    }
+
+    fn ctx_field_invalidated_by_packet_mutation(field: &CtxField) -> bool {
+        matches!(
+            field,
+            CtxField::Data | CtxField::DataMeta | CtxField::DataEnd | CtxField::PacketLen
+        )
     }
 
     pub(super) fn find_ctx_field_type(&self, field: &CtxField) -> Option<VerifierType> {
@@ -562,6 +586,14 @@ impl VerifierState {
             self.not_equal[idx].clear();
             self.ctx_field_sources[idx] = None;
             self.guards.remove(&VReg(idx as u32));
+        }
+        for source in &mut self.ctx_field_sources {
+            if source
+                .as_ref()
+                .is_some_and(Self::ctx_field_invalidated_by_packet_mutation)
+            {
+                *source = None;
+            }
         }
     }
 

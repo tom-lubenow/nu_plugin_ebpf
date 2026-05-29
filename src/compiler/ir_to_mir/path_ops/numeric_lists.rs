@@ -282,6 +282,7 @@ impl<'a> HirToMirLowering<'a> {
             meta.annotated_semantics = semantics;
             meta.constant_value = constant_value.clone();
             meta.root_ctx_field = None;
+            meta.direct_ctx_field = None;
             meta.kernel_btf_field_addr = None;
             meta.source_var = None;
             self.set_reg_constant_value(src_dst, constant_value);

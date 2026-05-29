@@ -9,7 +9,7 @@ use crate::compiler::mir::{AddressSpace, CtxStoreTarget};
 use crate::compiler::mir_to_ebpf::compile_mir_to_ebpf_with_hints;
 use crate::compiler::passes::optimize_with_ssa_hints;
 use crate::kernel_btf::{KernelBtf, TrampolineFieldSelector, TypeInfo};
-use nu_protocol::ast::{CellPath, PathMember};
+use nu_protocol::ast::{CellPath, Comparison, Operator, PathMember};
 use nu_protocol::{DeclId, RegId, VarId};
 use std::collections::{BTreeSet, HashMap};
 
@@ -7085,6 +7085,242 @@ fn test_lower_bound_cgroup_sockopt_ctx_optval_byte_assignment() {
             )),
         "expected bound ctx.optval byte write to emit a guarded u8 store"
     );
+}
+
+#[test]
+fn test_compile_tc_phi_joined_ctx_data_get_count_program() {
+    let ctx_var = VarId::new(0);
+    let selector_var = VarId::new(1);
+    let data_var = VarId::new(2);
+    let get_decl = DeclId::new(41);
+    let count_decl = DeclId::new(42);
+    let hir = HirProgram::new(
+        HirFunction {
+            blocks: vec![
+                HirBlock {
+                    id: HirBlockId(0),
+                    stmts: vec![
+                        HirStmt::LoadVariable {
+                            dst: RegId::new(0),
+                            var_id: ctx_var,
+                        },
+                        HirStmt::LoadLiteral {
+                            dst: RegId::new(1),
+                            lit: HirLiteral::CellPath(Box::new(CellPath {
+                                members: vec![string_member("mark")],
+                            })),
+                        },
+                        HirStmt::FollowCellPath {
+                            src_dst: RegId::new(0),
+                            path: RegId::new(1),
+                        },
+                        HirStmt::StoreVariable {
+                            var_id: selector_var,
+                            src: RegId::new(0),
+                        },
+                        HirStmt::Drain { src: RegId::new(0) },
+                        HirStmt::Drop { src: RegId::new(0) },
+                        HirStmt::LoadVariable {
+                            dst: RegId::new(1),
+                            var_id: selector_var,
+                        },
+                        HirStmt::LoadLiteral {
+                            dst: RegId::new(2),
+                            lit: HirLiteral::Int(0),
+                        },
+                        HirStmt::BinaryOp {
+                            lhs_dst: RegId::new(1),
+                            op: Operator::Comparison(Comparison::Equal),
+                            rhs: RegId::new(2),
+                        },
+                        HirStmt::Span {
+                            src_dst: RegId::new(1),
+                        },
+                        HirStmt::Not {
+                            src_dst: RegId::new(1),
+                        },
+                    ],
+                    terminator: HirTerminator::BranchIf {
+                        cond: RegId::new(1),
+                        if_true: HirBlockId(2),
+                        if_false: HirBlockId(1),
+                    },
+                },
+                HirBlock {
+                    id: HirBlockId(1),
+                    stmts: vec![
+                        HirStmt::LoadVariable {
+                            dst: RegId::new(0),
+                            var_id: ctx_var,
+                        },
+                        HirStmt::LoadLiteral {
+                            dst: RegId::new(1),
+                            lit: HirLiteral::CellPath(Box::new(CellPath {
+                                members: vec![string_member("data")],
+                            })),
+                        },
+                        HirStmt::FollowCellPath {
+                            src_dst: RegId::new(0),
+                            path: RegId::new(1),
+                        },
+                    ],
+                    terminator: HirTerminator::Jump {
+                        target: HirBlockId(3),
+                    },
+                },
+                HirBlock {
+                    id: HirBlockId(2),
+                    stmts: vec![
+                        HirStmt::LoadVariable {
+                            dst: RegId::new(0),
+                            var_id: ctx_var,
+                        },
+                        HirStmt::LoadLiteral {
+                            dst: RegId::new(1),
+                            lit: HirLiteral::CellPath(Box::new(CellPath {
+                                members: vec![string_member("data")],
+                            })),
+                        },
+                        HirStmt::FollowCellPath {
+                            src_dst: RegId::new(0),
+                            path: RegId::new(1),
+                        },
+                    ],
+                    terminator: HirTerminator::Jump {
+                        target: HirBlockId(3),
+                    },
+                },
+                HirBlock {
+                    id: HirBlockId(3),
+                    stmts: vec![
+                        HirStmt::StoreVariable {
+                            var_id: data_var,
+                            src: RegId::new(0),
+                        },
+                        HirStmt::Drain { src: RegId::new(0) },
+                        HirStmt::Drop { src: RegId::new(0) },
+                        HirStmt::LoadVariable {
+                            dst: RegId::new(1),
+                            var_id: ctx_var,
+                        },
+                        HirStmt::LoadLiteral {
+                            dst: RegId::new(2),
+                            lit: HirLiteral::CellPath(Box::new(CellPath {
+                                members: vec![string_member("data_end")],
+                            })),
+                        },
+                        HirStmt::FollowCellPath {
+                            src_dst: RegId::new(1),
+                            path: RegId::new(2),
+                        },
+                        HirStmt::LoadLiteral {
+                            dst: RegId::new(2),
+                            lit: HirLiteral::Int(0),
+                        },
+                        HirStmt::BinaryOp {
+                            lhs_dst: RegId::new(1),
+                            op: Operator::Comparison(Comparison::NotEqual),
+                            rhs: RegId::new(2),
+                        },
+                        HirStmt::Span {
+                            src_dst: RegId::new(1),
+                        },
+                        HirStmt::Not {
+                            src_dst: RegId::new(1),
+                        },
+                    ],
+                    terminator: HirTerminator::BranchIf {
+                        cond: RegId::new(1),
+                        if_true: HirBlockId(5),
+                        if_false: HirBlockId(4),
+                    },
+                },
+                HirBlock {
+                    id: HirBlockId(4),
+                    stmts: vec![
+                        HirStmt::LoadVariable {
+                            dst: RegId::new(0),
+                            var_id: data_var,
+                        },
+                        HirStmt::LoadLiteral {
+                            dst: RegId::new(1),
+                            lit: HirLiteral::CellPath(Box::new(CellPath {
+                                members: vec![int_member(0)],
+                            })),
+                        },
+                        HirStmt::Call {
+                            decl_id: get_decl,
+                            src_dst: RegId::new(0),
+                            args: HirCallArgs {
+                                pipeline_input: Some(RegId::new(0)),
+                                positional: vec![RegId::new(1)],
+                                ..Default::default()
+                            },
+                        },
+                        HirStmt::Call {
+                            decl_id: count_decl,
+                            src_dst: RegId::new(0),
+                            args: HirCallArgs::default(),
+                        },
+                    ],
+                    terminator: HirTerminator::Jump {
+                        target: HirBlockId(6),
+                    },
+                },
+                HirBlock {
+                    id: HirBlockId(5),
+                    stmts: vec![HirStmt::Drop { src: RegId::new(0) }],
+                    terminator: HirTerminator::Jump {
+                        target: HirBlockId(6),
+                    },
+                },
+                HirBlock {
+                    id: HirBlockId(6),
+                    stmts: vec![
+                        HirStmt::Drain { src: RegId::new(0) },
+                        HirStmt::LoadLiteral {
+                            dst: RegId::new(0),
+                            lit: HirLiteral::Int(0),
+                        },
+                    ],
+                    terminator: HirTerminator::Return { src: RegId::new(0) },
+                },
+            ],
+            entry: HirBlockId(0),
+            spans: vec![nu_protocol::Span::test_data(); 41],
+            ast: vec![None; 41],
+            comments: vec![],
+            register_count: 3,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        Some(ctx_var),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let decl_names = HashMap::from([
+        (get_decl, "get".to_string()),
+        (count_decl, "count".to_string()),
+    ]);
+
+    let mut result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("tc phi-joined ctx.data get/count should lower");
+    optimize_with_ssa_hints(
+        &mut result.program.main,
+        Some(&probe_ctx),
+        &mut result.type_hints.main,
+        &result.type_hints.main_stack_slots,
+        &result.type_hints.generic_map_value_types,
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+        .expect("tc phi-joined ctx.data get/count should compile");
 }
 
 #[test]

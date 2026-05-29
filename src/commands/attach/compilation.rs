@@ -958,6 +958,12 @@ pub(super) fn map_leading_annotated_mut_globals(
     if declarations.is_empty() {
         return Ok(Vec::new());
     }
+    if !declarations
+        .iter()
+        .any(|decl| decl.mutable && decl.declared_type.is_some())
+    {
+        return Ok(Vec::new());
+    }
 
     let declaration_var_ids = collect_variable_declaration_store_var_ids(ir_block);
     if declaration_var_ids.len() < declarations.len() {

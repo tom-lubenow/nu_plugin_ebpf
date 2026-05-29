@@ -212,6 +212,8 @@ struct RegMetadata {
     field_type: Option<MirType>,
     /// Originating root context field for values derived from a specific ctx field.
     root_ctx_field: Option<CtxField>,
+    /// Exact context field backing this value when it has not been projected or transformed.
+    direct_ctx_field: Option<CtxField>,
     /// Whether this value preserves verifier-trusted kernel BTF pointer provenance.
     trusted_btf: bool,
     /// Alternate address for a terminal aggregate field inside trusted kernel BTF memory.

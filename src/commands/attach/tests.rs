@@ -248,6 +248,25 @@ fn test_map_leading_annotated_mut_globals_ignores_non_leading_untyped_mut() {
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_ignores_ordinary_lets_without_ir_stores() {
+    let source = "{|ctx| let selector = $ctx.mark; let data = (if $selector == 0 { $ctx.data } else { $ctx.data }); $data }";
+    let ir_block = IrBlock {
+        instructions: vec![Instruction::Return { src: RegId::new(0) }],
+        spans: vec![Span::test_data()],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None],
+        comments: vec!["".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("ordinary lets should not require annotated-mut declaration mapping");
+
+    assert!(globals.is_empty());
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_constant_record_spread_initializer() {
     let source = "{|| mut state: record<pid: int ok: bool> = {pid: 0, ...{ok: true}}; $state }";
     let ir_block = IrBlock {

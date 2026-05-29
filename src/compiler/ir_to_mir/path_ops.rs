@@ -335,6 +335,7 @@ impl<'a> HirToMirLowering<'a> {
         meta.is_context = false;
         meta.field_type = Some(element_ty.clone());
         meta.root_ctx_field = root_ctx_field.cloned();
+        meta.direct_ctx_field = None;
         meta.trusted_btf = false;
         meta.kernel_btf_field_addr = None;
 
@@ -411,6 +412,7 @@ impl<'a> HirToMirLowering<'a> {
         meta.is_context = false;
         meta.field_type = Some(MirType::U64);
         meta.root_ctx_field = None;
+        meta.direct_ctx_field = None;
         meta.trusted_btf = false;
         meta.kernel_btf_field_addr = None;
         meta.source_var = None;
@@ -552,6 +554,7 @@ impl<'a> HirToMirLowering<'a> {
         meta.is_context = false;
         meta.field_type = Some(projected_ty);
         meta.root_ctx_field = Some(task_field);
+        meta.direct_ctx_field = None;
         meta.trusted_btf = matches!(
             meta.field_type.as_ref(),
             Some(MirType::Ptr {
@@ -1016,6 +1019,7 @@ impl<'a> HirToMirLowering<'a> {
             meta.record_fields.clear();
             meta.field_type = Some(projected_ty);
             meta.root_ctx_field = root_ctx_field;
+            meta.direct_ctx_field = None;
             meta.map_value_origin = map_value_origin.filter(|_| preserves_map_value_origin);
             meta.trusted_btf = base_trusted_btf
                 && matches!(
@@ -1109,6 +1113,7 @@ impl<'a> HirToMirLowering<'a> {
                 meta.is_context = false;
                 meta.field_type = Some(projected_ty);
                 meta.root_ctx_field = Some(ctx_field.clone());
+                meta.direct_ctx_field = None;
                 meta.trusted_btf = base_trusted_btf
                     && matches!(
                         meta.field_type.as_ref(),
@@ -1157,6 +1162,7 @@ impl<'a> HirToMirLowering<'a> {
                 meta.is_context = false;
                 meta.field_type = Some(projected_ty);
                 meta.root_ctx_field = Some(ctx_field.clone());
+                meta.direct_ctx_field = None;
                 meta.trusted_btf = base_trusted_btf
                     && matches!(
                         meta.field_type.as_ref(),
@@ -1214,6 +1220,7 @@ impl<'a> HirToMirLowering<'a> {
                 meta.is_context = false;
                 meta.field_type = Some(projected_ty);
                 meta.root_ctx_field = Some(ctx_field.clone());
+                meta.direct_ctx_field = None;
                 meta.trusted_btf = false;
                 meta.kernel_btf_field_addr = None;
                 meta.source_var = None;
@@ -1312,6 +1319,7 @@ impl<'a> HirToMirLowering<'a> {
             meta.is_context = false;
             meta.field_type = Some(projected_ty);
             meta.root_ctx_field = Some(ctx_field.clone());
+            meta.direct_ctx_field = None;
             meta.trusted_btf = root_trusted_btf
                 && matches!(
                     spec.kind,
@@ -1485,7 +1493,8 @@ impl<'a> HirToMirLowering<'a> {
         let meta = self.get_or_create_metadata(src_dst);
         meta.is_context = false;
         meta.field_type = Some(field_type);
-        meta.root_ctx_field = Some(ctx_field);
+        meta.root_ctx_field = Some(ctx_field.clone());
+        meta.direct_ctx_field = Some(ctx_field);
         meta.trusted_btf = trusted_btf;
         meta.kernel_btf_field_addr = None;
         meta.source_var = None;

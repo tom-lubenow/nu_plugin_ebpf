@@ -186,6 +186,7 @@ impl<'a> HirToMirLowering<'a> {
     pub(super) fn clear_source_var(&mut self, reg: RegId) {
         if let Some(meta) = self.reg_metadata.get_mut(&reg.get()) {
             meta.source_var = None;
+            meta.direct_ctx_field = None;
             meta.kernel_btf_field_addr = None;
         }
     }
@@ -222,6 +223,18 @@ impl<'a> HirToMirLowering<'a> {
     ) -> Result<(), CompileError> {
         if let Some(mut src_meta) = self.get_metadata(src).cloned()
             && src_meta.is_context
+        {
+            src_meta.source_var.get_or_insert(var_id);
+            self.var_mappings.remove(&var_id);
+            self.var_metadata.insert(var_id, src_meta);
+            return Ok(());
+        }
+
+        if let Some(mut src_meta) = self.get_metadata(src).cloned()
+            && src_meta
+                .direct_ctx_field
+                .as_ref()
+                .is_some_and(Self::should_rematerialize_direct_ctx_field_alias)
         {
             src_meta.source_var.get_or_insert(var_id);
             self.var_mappings.remove(&var_id);
@@ -285,6 +298,13 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         Ok(())
+    }
+
+    fn should_rematerialize_direct_ctx_field_alias(field: &CtxField) -> bool {
+        matches!(
+            field,
+            CtxField::Data | CtxField::DataMeta | CtxField::DataEnd
+        )
     }
 
     pub(super) fn direct_scalar_var_out_arg_type(
