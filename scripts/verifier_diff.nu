@@ -18686,6 +18686,50 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "source-kptr-xchg-cgroup-clear-zero-vreg-release"
+        category: "helper-state"
+        tags: [kfunc helper-call kptr cgroup ref-lifetime source accept]
+        requires: [kernel-btf]
+        target: "kprobe:do_exit"
+        program: [
+            '{|ctx|'
+            '  map-define cgroup_slots --kind array --key-type u32 --value-type "record{cgrp:kptr:cgroup,cookie:u64}" --max-entries 1'
+            '  let zero = 0'
+            '  let entry = (0 | map-get cgroup_slots --kind array)'
+            '  if $entry {'
+            '    let old = (helper-call "bpf_kptr_xchg" $entry.cgrp $zero)'
+            '    if $old {'
+            '      $old | kfunc-call "bpf_cgroup_release"'
+            '    }'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-kptr-xchg-rejects-nonzero-scalar-src"
+        category: "helper-state"
+        tags: [helper-call kptr cgroup source reject]
+        requires: [kernel-btf]
+        target: "kprobe:do_exit"
+        program: [
+            '{|ctx|'
+            '  map-define cgroup_slots --kind array --key-type u32 --value-type "record{cgrp:kptr:cgroup,cookie:u64}" --max-entries 1'
+            '  let one = 1'
+            '  let entry = (0 | map-get cgroup_slots --kind array)'
+            '  if $entry {'
+            '    helper-call "bpf_kptr_xchg" $entry.cgrp $one'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 194 arg1 expects pointer, got I64"
+    }
+    {
         name: "source-kptr-xchg-cgroup-clear-rejects-old-ref-leak"
         category: "helper-state"
         tags: [kfunc helper-call kptr cgroup ref-lifetime source reject]
