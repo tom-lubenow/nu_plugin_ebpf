@@ -13397,6 +13397,21 @@ const FIXTURES = [
         error_contains: "kptr fields, which are currently supported for hash, array, and lru-hash maps"
     }
     {
+        name: "map-define-kptr-rejects-array-field"
+        category: "maps"
+        tags: [maps map-define kptr reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define task_slots --kind array --value-type "record{tasks:array{record{task:kptr:task_struct}:2},cookie:u64}"'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "arrays of verifier-managed kptr"
+    }
+    {
         name: "map-define-bpf-wq-slot"
         category: "maps"
         tags: [maps map-define bpf_wq accept]
@@ -13662,6 +13677,21 @@ const FIXTURES = [
         local: "reject"
         kernel: "skip"
         error_contains: "matching bpf_list_node/bpf_rb_node object fields"
+    }
+    {
+        name: "map-define-bpf-timer-rejects-array-field"
+        category: "maps"
+        tags: [maps map-define timer reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define timers --kind array --value-type "record{timers:array{bpf_timer:2},cookie:u64}"'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "arrays of verifier-managed bpf_timer"
     }
     {
         name: "timer-map-define-lowers-init-start-cancel"
@@ -17807,6 +17837,21 @@ const FIXTURES = [
         local: "reject"
         kernel: "skip"
         error_contains: "bpf_spin_lock, which is only supported for hash and array maps"
+    }
+    {
+        name: "spin-lock-map-define-rejects-array-field"
+        category: "helper-state"
+        tags: [spin-lock map-define reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define locks --kind hash --value-type "record{locks:array{bpf_spin_lock:2},counter:u64}"'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "arrays of verifier-managed bpf_spin_lock"
     }
     {
         name: "timer-set-callback-rejects-non-map-timer"
