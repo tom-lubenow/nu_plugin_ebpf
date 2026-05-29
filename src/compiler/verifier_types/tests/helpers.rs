@@ -8628,6 +8628,121 @@ fn test_verify_mir_helper_get_task_stack_rejects_negative_size() {
     );
 }
 
+fn make_trampoline_arg_verify_call(
+    helper: BpfHelper,
+    output_size: usize,
+    ctx_non_null: bool,
+) -> (MirFunction, HashMap<VReg, MirType>) {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let ctx = func.alloc_vreg();
+    if ctx_non_null {
+        func.param_non_null.insert(ctx.0 as usize);
+    }
+    let dst = func.alloc_vreg();
+    let output_slot = func.alloc_stack_slot(output_size, 8, StackSlotKind::StringBuffer);
+    let args = match helper {
+        BpfHelper::GetFuncArg => {
+            vec![
+                MirValue::VReg(ctx),
+                MirValue::Const(0),
+                MirValue::StackSlot(output_slot),
+            ]
+        }
+        BpfHelper::GetFuncRet => vec![MirValue::VReg(ctx), MirValue::StackSlot(output_slot)],
+        BpfHelper::GetFuncArgCnt => vec![MirValue::VReg(ctx)],
+        _ => unreachable!(),
+    };
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: helper as u32,
+            args,
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let types = HashMap::from([
+        (
+            ctx,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        ),
+        (dst, MirType::I64),
+    ]);
+
+    (func, types)
+}
+
+fn trampoline_helper_probe_context(helper: BpfHelper) -> ProbeContext {
+    match helper {
+        BpfHelper::GetFuncArg | BpfHelper::GetFuncArgCnt => {
+            ProbeContext::new(EbpfProgramType::Fentry, "tcp_connect")
+        }
+        BpfHelper::GetFuncRet => ProbeContext::new(EbpfProgramType::Fexit, "tcp_connect"),
+        _ => unreachable!(),
+    }
+}
+
+#[test]
+fn test_verify_mir_trampoline_arg_helpers_accept_non_null_raw_context() {
+    for helper in [
+        BpfHelper::GetFuncArg,
+        BpfHelper::GetFuncRet,
+        BpfHelper::GetFuncArgCnt,
+    ] {
+        let (func, types) = make_trampoline_arg_verify_call(helper, 8, true);
+        let probe_ctx = trampoline_helper_probe_context(helper);
+        verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .unwrap_or_else(|err| panic!("expected {helper:?} to verify: {err:?}"));
+    }
+}
+
+#[test]
+fn test_verify_mir_trampoline_arg_helpers_reject_unchecked_nullable_raw_context() {
+    for helper in [
+        BpfHelper::GetFuncArg,
+        BpfHelper::GetFuncRet,
+        BpfHelper::GetFuncArgCnt,
+    ] {
+        let (func, types) = make_trampoline_arg_verify_call(helper, 8, false);
+        let probe_ctx = trampoline_helper_probe_context(helper);
+        let err = match verify_mir_for_probe_context(&func, &types, &probe_ctx) {
+            Ok(()) => panic!("expected {helper:?} null-check error"),
+            Err(err) => err,
+        };
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("may dereference null pointer")),
+            "unexpected errors for {helper:?}: {:?}",
+            err
+        );
+    }
+}
+
+#[test]
+fn test_verify_mir_trampoline_arg_helpers_reject_small_output_buffer() {
+    for helper in [BpfHelper::GetFuncArg, BpfHelper::GetFuncRet] {
+        let (func, types) = make_trampoline_arg_verify_call(helper, 4, true);
+        let probe_ctx = trampoline_helper_probe_context(helper);
+        let err = match verify_mir_for_probe_context(&func, &types, &probe_ctx) {
+            Ok(()) => panic!("expected {helper:?} output bounds error"),
+            Err(err) => err,
+        };
+        assert!(
+            err.iter().any(|e| e.message.contains("out of bounds")),
+            "unexpected errors for {helper:?}: {:?}",
+            err
+        );
+    }
+}
+
 fn make_d_path_verify_call(size: i64, buf_size: usize) -> (MirFunction, HashMap<VReg, MirType>) {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
