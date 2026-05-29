@@ -4058,6 +4058,18 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         feature_keys: ["ctx:family" "ctx:sk" "helper:bpf_probe_read_kernel"]
     }
     {
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let sk = $ctx.sk'
+            '  let rec = { socket: $sk }'
+            '  $rec.socket.family | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:family" "ctx:sk" "helper:bpf_probe_read_kernel"]
+    }
+    {
         target: "cgroup_sockopt:/sys/fs/cgroup:get"
         program: [
             '{|ctx|'
@@ -11161,6 +11173,22 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  let rec = { root: $ctx socket: $ctx.sk }'
+            '  $rec.socket.family | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "tc-record-bound-context-root-projection"
+        category: "context-surface"
+        tags: [tc context record alias source metadata]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let sk = $ctx.sk'
+            '  let rec = { socket: $sk }'
             '  $rec.socket.family | count'
             '  0'
             '}'
@@ -21933,7 +21961,7 @@ def program-bound-context-root-aliases [source: string context_names] {
     $aliases
 }
 
-def record-context-bindings [line: string context_names] {
+def record-context-bindings [line: string context_names bound_aliases] {
     let assignment = (declaration-assignment $line)
     if $assignment == null {
         return []
@@ -21983,6 +22011,34 @@ def record-context-bindings [line: string context_names] {
                 })
             }
         }
+        for alias in $bound_aliases {
+            let alias_token = (["$" $alias.name] | str join "")
+            if $field_value == $alias_token {
+                $bindings = ($bindings | append {
+                    name: $assignment.name
+                    field: $field_name
+                    root: $alias.root
+                })
+                continue
+            }
+
+            let alias_prefix = $"($alias_token)."
+            if not ($field_value | str starts-with $alias_prefix) {
+                continue
+            }
+
+            let tail = (
+                normalize-context-path-token (
+                    $field_value | str substring ($alias_prefix | str length)..
+                )
+            )
+            let root_path = $"($alias.root).($tail)"
+            $bindings = ($bindings | append {
+                name: $assignment.name
+                field: $field_name
+                root: $root_path
+            })
+        }
     }
 
     $bindings
@@ -21990,10 +22046,20 @@ def record-context-bindings [line: string context_names] {
 
 def program-record-context-aliases [source: string context_names] {
     mut aliases = []
+    let bound_aliases = (program-bound-context-root-aliases $source $context_names)
 
     for line in ($source | lines) {
-        for binding in (record-context-bindings $line $context_names) {
-            let existing = ($aliases | where {|alias| $alias.name == $binding.name and $alias.field == $binding.field })
+        for binding in (record-context-bindings $line $context_names $bound_aliases) {
+            let existing = (
+                $aliases
+                | where {|alias|
+                    (
+                        $alias.name == $binding.name
+                        and $alias.field == $binding.field
+                        and (($alias | get -o root | default "") == ($binding | get -o root | default ""))
+                    )
+                }
+            )
             if ($existing | is-empty) {
                 $aliases = ($aliases | append $binding)
             }
