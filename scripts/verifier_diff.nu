@@ -14609,6 +14609,23 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "bpf-wq-start-requires-null-checked-map-lookup"
+        category: "helper-state"
+        tags: [bpf_wq kfunc-call nullability reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define work_items --kind array --value-type "record{work:bpf_wq,cookie:u64}" --max-entries 1'
+            '  let entry = (0 | map-get work_items --kind array)'
+            '  kfunc-call "bpf_wq_start" $entry 0'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "may dereference null pointer"
+    }
+    {
         name: "bpf-wq-kfunc-set-callback"
         category: "helper-state"
         tags: [bpf_wq kfunc-call callback accept]
