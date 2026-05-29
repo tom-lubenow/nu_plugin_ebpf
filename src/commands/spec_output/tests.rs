@@ -4061,6 +4061,27 @@ fn test_spec_tracepoint_fields_include_payload_fields_when_available() {
 }
 
 #[test]
+fn test_spec_tracepoint_openat2_uses_kernel_argument_names() {
+    let spec = ProgramSpec::parse("tracepoint:syscalls/sys_enter_openat2")
+        .expect("tracepoint spec should parse");
+    let (fields, err) = spec_tracepoint_fields(&spec, true);
+
+    if fields.is_empty() {
+        assert!(err.is_some(), "expected tracepoint fields or an error");
+        return;
+    }
+
+    assert!(
+        tracepoint_field(&fields, "usize").is_some(),
+        "openat2 should expose the kernel syscall argument name 'usize'"
+    );
+    assert!(
+        tracepoint_field(&fields, "size").is_none(),
+        "openat2 fallback should not invent a 'size' alias that tracefs does not expose"
+    );
+}
+
+#[test]
 fn test_tracepoint_field_records_include_fallback_kernel_metadata() {
     let records = tracepoint_field_records(
         vec![SpecTracepointField {
