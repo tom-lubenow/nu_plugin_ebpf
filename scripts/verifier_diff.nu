@@ -508,6 +508,47 @@ const PROGRAM_MAP_KERNEL_FEATURE_EXPECTATIONS = [
     {
         program: [
             '{|ctx|'
+            '  let entry = ($ctx.pid | map-get default_counts)'
+            '  if $entry { $entry | count }'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["map:BPF_MAP_TYPE_HASH"]
+    }
+    {
+        program: [
+            '{|ctx|'
+            '  map-define array_counts --kind array --key-type u32 --value-type u64'
+            '  let entry = ($ctx.pid | map-get array_counts)'
+            '  1 | map-put array_counts $ctx.pid'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["map:BPF_MAP_TYPE_ARRAY"]
+    }
+    {
+        program: [
+            '{|ctx|'
+            '  let entry = ($ctx.pid | map-get lru_counts --kind lru-hash)'
+            '  if $entry { 1 | map-put lru_counts $ctx.pid }'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["map:BPF_MAP_TYPE_LRU_HASH"]
+    }
+    {
+        program: [
+            '{|ctx|'
+            '  let inner = ($ctx.pid | map-get outer_maps --kind array-of-maps)'
+            '  if $inner { $ctx.pid | map-get $inner }'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["map:BPF_MAP_TYPE_ARRAY_OF_MAPS"]
+    }
+    {
+        program: [
+            '{|ctx|'
             '  redirect-map tx_ports 0 --kind devmap'
             '  redirect-map tx_hash 0 --kind devmap-hash'
             '  redirect-map cpu_targets 0 --kind cpumap'
@@ -20186,6 +20227,120 @@ def source-line-map-kind [line: string default_kind: string] {
     $default_kind
 }
 
+def source-line-command-map-name [line: string command: string] {
+    let tails = (command-invocation-tails $line $command)
+    if ($tails | is-empty) {
+        return null
+    }
+
+    let raw_name = (($tails | first) | str trim | split row " " | first)
+    let name = (normalize-map-name-token $raw_name)
+    if $name == "" or ($name | str starts-with "$") {
+        null
+    } else {
+        $name
+    }
+}
+
+def source-line-map-kind-surface [line: string] {
+    for command in [
+        "map-define"
+        "map-get"
+        "map-put"
+        "map-delete"
+        "map-contains"
+        "map-push"
+        "map-peek"
+        "map-pop"
+        "redirect-map"
+        "redirect-socket"
+    ] {
+        if (line-invokes-command? $line $command) {
+            return {
+                command: $command
+                name: (source-line-command-map-name $line $command)
+            }
+        }
+    }
+
+    null
+}
+
+def map-command-default-kind [command: string] {
+    if $command in ["map-define" "map-get" "map-put" "map-delete" "map-contains"] {
+        "hash"
+    } else {
+        ""
+    }
+}
+
+def map-kind-binding [bindings name] {
+    if $name == null or $name == "" {
+        return null
+    }
+
+    let matches = ($bindings | where {|entry| $entry.name == $name })
+    if ($matches | is-empty) {
+        null
+    } else {
+        $matches | first | get kind
+    }
+}
+
+def bind-map-kind [bindings name kind] {
+    if $name == null or $name == "" or $kind == null or $kind == "" {
+        return $bindings
+    }
+
+    $bindings
+    | where {|entry| $entry.name != $name }
+    | append { name: $name kind: $kind }
+}
+
+def source-line-effective-map-kind [line: string bindings] {
+    let surface = (source-line-map-kind-surface $line)
+    if $surface == null {
+        return null
+    }
+
+    let explicit_kind = (source-line-map-kind $line "")
+    if $explicit_kind != "" {
+        return $explicit_kind
+    }
+
+    let name = ($surface | get name)
+    if $name == null {
+        return null
+    }
+
+    let inferred_kind = (map-kind-binding $bindings $name)
+    if $inferred_kind != null {
+        return $inferred_kind
+    }
+
+    let default_kind = (map-command-default-kind ($surface | get command))
+    if $default_kind == "" {
+        null
+    } else {
+        $default_kind
+    }
+}
+
+def update-map-kind-bindings-for-line [bindings line: string] {
+    let surface = (source-line-map-kind-surface $line)
+    if $surface == null {
+        return $bindings
+    }
+
+    let name = ($surface | get name)
+    if $name == null {
+        return $bindings
+    }
+
+    let kind = (source-line-effective-map-kind $line $bindings)
+    bind-map-kind $bindings $name $kind
+}
+
 def line-invokes-map-kind-surface? [line: string] {
     for command in [
         "map-define"
@@ -21036,6 +21191,19 @@ def normalize-map-kind-token [token: string] {
     | str replace --all "'" ""
 }
 
+def normalize-map-name-token [token: string] {
+    $token
+    | str trim
+    | str replace --all ")" ""
+    | str replace --all "(" ""
+    | str replace --all "," ""
+    | str replace --all "\"" ""
+    | str replace --all "'" ""
+    | str replace --all "}" ""
+    | str replace --all "]" ""
+    | str replace --all ";" ""
+}
+
 def normalize-helper-name-token [token: string] {
     $token
     | str trim
@@ -21881,6 +22049,7 @@ def program-helper-names [source: string] {
 
 def program-map-kernel-features [source: string] {
     mut features = []
+    mut map_kind_bindings = []
 
     for line in ($source | lines) {
         let trimmed = ($line | str trim)
@@ -21904,13 +22073,14 @@ def program-map-kernel-features [source: string] {
             continue
         }
 
-        let kind = (source-line-map-kind $trimmed "")
-        if $kind != "" {
+        let kind = (source-line-effective-map-kind $trimmed $map_kind_bindings)
+        if $kind != null and $kind != "" {
             let feature = (map-kind-kernel-feature $kind)
             if $feature != null {
                 $features = (append-missing-kernel-features $features [$feature])
             }
         }
+        $map_kind_bindings = (update-map-kind-bindings-for-line $map_kind_bindings $trimmed)
     }
 
     if (source-invokes-command? $source "tail-call") {
@@ -21940,12 +22110,6 @@ def program-reserved-map-kernel-features [source: string] {
             or (line-invokes-command? $trimmed "histogram")
             or (line-invokes-command? $trimmed "start-timer")
             or (line-invokes-command? $trimmed "stop-timer")
-        ) {
-            $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_MAP_HASH])
-        }
-        if (
-            ((line-invokes-command? $trimmed "map-get") or (line-invokes-command? $trimmed "map-put") or (line-invokes-command? $trimmed "map-delete") or (line-invokes-command? $trimmed "map-contains"))
-            and not (line-contains-code-marker? $trimmed "--kind ")
         ) {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_MAP_HASH])
         }
