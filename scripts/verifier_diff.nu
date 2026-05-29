@@ -18292,6 +18292,24 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "source-kptr-xchg-cgroup-clear-requires-null-checked-dst"
+        category: "helper-state"
+        tags: [helper-call kptr cgroup source reject]
+        requires: [kernel-btf]
+        target: "kprobe:do_exit"
+        program: [
+            '{|ctx|'
+            '  map-define cgroup_slots --kind array --key-type u32 --value-type "record{cgrp:kptr:cgroup,cookie:u64}" --max-entries 1'
+            '  let entry = (0 | map-get cgroup_slots --kind array)'
+            '  helper-call "bpf_kptr_xchg" $entry.cgrp 0'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper kptr_xchg dst may dereference null pointer"
+    }
+    {
         name: "source-kptr-xchg-rejects-old-ref-leak"
         category: "helper-state"
         tags: [kfunc helper-call kptr ref-lifetime source reject]

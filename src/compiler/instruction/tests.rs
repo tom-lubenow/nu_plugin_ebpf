@@ -995,6 +995,13 @@ fn test_helper_signature_kptr_xchg() {
     assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
     assert_eq!(sig.arg_kind(1), HelperArgKind::Pointer);
     assert_eq!(sig.ret_kind, HelperRetKind::PointerMaybeNull);
+
+    let semantics = BpfHelper::KptrXchg.semantics();
+    assert_eq!(semantics.ptr_arg_rules.len(), 2);
+    assert_eq!(semantics.ptr_arg_rules[0].op, "helper kptr_xchg dst");
+    assert_eq!(semantics.ptr_arg_rules[0].fixed_size, Some(8));
+    assert_eq!(semantics.ptr_arg_rules[1].op, "helper kptr_xchg ptr");
+    assert_eq!(semantics.ptr_arg_rules[1].fixed_size, Some(8));
 }
 
 #[test]

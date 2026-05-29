@@ -1773,14 +1773,14 @@ impl BpfHelper {
                 arg_idx: 0,
                 op: "helper kptr_xchg dst",
                 allowed: MAP_ONLY,
-                fixed_size: None,
+                fixed_size: Some(8),
                 size_from_arg: None,
             },
             HelperPtrArgRule {
                 arg_idx: 1,
                 op: "helper kptr_xchg ptr",
                 allowed: KERNEL,
-                fixed_size: None,
+                fixed_size: Some(8),
                 size_from_arg: None,
             },
         ];

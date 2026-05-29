@@ -275,6 +275,116 @@ fn test_helper_kptr_xchg_rejects_non_map_dst_arg0() {
 }
 
 #[test]
+fn test_helper_kptr_xchg_rejects_unchecked_map_dst_arg0() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let dst_ptr = func.alloc_vreg();
+    let swapped = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: swapped,
+            helper: BpfHelper::KptrXchg as u32,
+            args: vec![MirValue::VReg(dst_ptr), MirValue::Const(0)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        dst_ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Map,
+        },
+    );
+    types.insert(
+        swapped,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+
+    let err = verify_mir(&func, &types).expect_err("expected unchecked kptr_xchg dst rejection");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper kptr_xchg dst may dereference null pointer")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_helper_kptr_xchg_rejects_unchecked_kernel_ptr_arg1() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let call = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 2;
+
+    let dst_ptr = func.alloc_vreg();
+    let src_ptr = func.alloc_vreg();
+    let dst_non_null = func.alloc_vreg();
+    let swapped = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: dst_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(dst_ptr),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: dst_non_null,
+        if_true: call,
+        if_false: done,
+    };
+    func.block_mut(call).instructions.push(MirInst::CallHelper {
+        dst: swapped,
+        helper: BpfHelper::KptrXchg as u32,
+        args: vec![MirValue::VReg(dst_ptr), MirValue::VReg(src_ptr)],
+    });
+    func.block_mut(call).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        dst_ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Map,
+        },
+    );
+    types.insert(
+        src_ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst_non_null, MirType::Bool);
+    types.insert(
+        swapped,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+
+    let err = verify_mir(&func, &types).expect_err("expected unchecked kptr_xchg src rejection");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper kptr_xchg ptr may dereference null pointer")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_helper_kptr_xchg_transfers_reference_and_releases_old_value() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
