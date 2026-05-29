@@ -203,6 +203,9 @@ impl VccVerifier {
                 }
                 state.set_ctx_field_source(*reg, Some(field.clone()));
             }
+            VccInst::ScalarAlias { dst, src } => {
+                state.set_scalar_alias(*dst, *src);
+            }
             VccInst::MapLookupSource { root, map, key } => {
                 state.set_map_lookup_source(*root, map.clone(), *key);
             }
@@ -1293,6 +1296,7 @@ impl VccVerifier {
                 if let Some(Some(source)) = &merged_ctx_field {
                     ty = Self::ctx_field_phi_type(*dst, ty, source);
                 }
+                let scalar_alias_root = Self::scalar_alias_root_for_phi(args, state, ty);
                 let mut merged_map_value_source = None;
                 for (_, reg) in args {
                     let next = state.map_value_source(*reg).cloned();
@@ -1318,6 +1322,11 @@ impl VccVerifier {
                     }
                 }
                 state.set_reg(*dst, ty);
+                if let Some(root) = scalar_alias_root
+                    && root != *dst
+                {
+                    state.set_scalar_alias(*dst, root);
+                }
                 if released_kfunc_ref {
                     state.mark_released_kfunc_ref(*dst);
                     return;
@@ -2389,6 +2398,29 @@ impl VccVerifier {
             _ => {}
         }
         VccValueType::Ptr(info)
+    }
+
+    fn scalar_alias_root_for_phi(
+        args: &[(VccBlockId, VccReg)],
+        state: &VccState,
+        ty: VccValueType,
+    ) -> Option<VccReg> {
+        if !matches!(
+            ty.class(),
+            VccTypeClass::Scalar | VccTypeClass::Bool
+        ) {
+            return None;
+        }
+        let mut root = None;
+        for (_, reg) in args {
+            let next = state.scalar_alias_root(*reg);
+            root = Some(match root {
+                None => next,
+                Some(existing) if existing == next => existing,
+                _ => return None,
+            });
+        }
+        root
     }
 }
 

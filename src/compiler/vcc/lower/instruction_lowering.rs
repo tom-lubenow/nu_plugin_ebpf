@@ -30,6 +30,33 @@ impl<'a> VccLowerer<'a> {
         source
     }
 
+    fn scalar_alias_root_for_value(&self, vreg: VReg) -> VccReg {
+        let reg = VccReg(vreg.0);
+        self.scalar_alias_regs.get(&reg).copied().unwrap_or(reg)
+    }
+
+    fn scalar_alias_root_for_phi(&self, args: &[(BlockId, VReg)]) -> Option<VccReg> {
+        let mut root = None;
+        for (_, vreg) in args {
+            let candidate = self.scalar_alias_root_for_value(*vreg);
+            root = Some(match root {
+                None => candidate,
+                Some(existing) if existing == candidate => existing,
+                _ => return None,
+            });
+        }
+        root
+    }
+
+    fn vreg_is_scalar_aliasable(&self, vreg: VReg) -> bool {
+        self.types.get(&vreg).is_some_and(|ty| {
+            matches!(
+                vcc_type_from_mir(ty).class(),
+                VccTypeClass::Scalar | VccTypeClass::Bool
+            )
+        })
+    }
+
     fn map_fd_source_for_phi(&self, args: &[(BlockId, VReg)]) -> Option<MapRef> {
         let mut source = None;
         for (_, vreg) in args {
@@ -87,6 +114,7 @@ impl<'a> VccLowerer<'a> {
                             slot: *slot,
                             size,
                         });
+                        self.scalar_alias_regs.remove(&dst_reg);
                         self.map_lookup_regs.remove(&dst_reg);
                         self.map_fd_regs.remove(&dst_reg);
                         self.ptr_regs.insert(
@@ -120,6 +148,16 @@ impl<'a> VccLowerer<'a> {
                             self.direct_ctx_field_regs.insert(dst_reg, field);
                         }
                         if let MirValue::VReg(src_reg) = src {
+                            if self.vreg_is_scalar_aliasable(*dst) {
+                                let root = self.scalar_alias_root_for_value(*src_reg);
+                                if root != dst_reg {
+                                    self.scalar_alias_regs.insert(dst_reg, root);
+                                } else {
+                                    self.scalar_alias_regs.remove(&dst_reg);
+                                }
+                            } else {
+                                self.scalar_alias_regs.remove(&dst_reg);
+                            }
                             if let Some(source) =
                                 self.map_lookup_regs.get(&VccReg(src_reg.0)).cloned()
                             {
@@ -133,6 +171,7 @@ impl<'a> VccLowerer<'a> {
                                 self.map_fd_regs.remove(&dst_reg);
                             }
                         } else {
+                            self.scalar_alias_regs.remove(&dst_reg);
                             self.map_lookup_regs.remove(&dst_reg);
                             self.map_fd_regs.remove(&dst_reg);
                         }
@@ -312,6 +351,10 @@ impl<'a> VccLowerer<'a> {
                 }
             }
             MirInst::Phi { dst, args } => {
+                let scalar_alias_root = self
+                    .vreg_is_scalar_aliasable(*dst)
+                    .then(|| self.scalar_alias_root_for_phi(args))
+                    .flatten();
                 let map_lookup_source = self.map_lookup_source_for_phi(args);
                 let map_fd_source = self.map_fd_source_for_phi(args);
                 let vcc_args = args
@@ -322,6 +365,19 @@ impl<'a> VccLowerer<'a> {
                     dst: VccReg(dst.0),
                     args: vcc_args,
                 });
+                if let Some(root) = scalar_alias_root {
+                    if root != VccReg(dst.0) {
+                        out.push(VccInst::ScalarAlias {
+                            dst: VccReg(dst.0),
+                            src: root,
+                        });
+                        self.scalar_alias_regs.insert(VccReg(dst.0), root);
+                    } else {
+                        self.scalar_alias_regs.remove(&VccReg(dst.0));
+                    }
+                } else {
+                    self.scalar_alias_regs.remove(&VccReg(dst.0));
+                }
                 if let Some((map, key)) = map_lookup_source {
                     out.push(VccInst::MapLookupSource {
                         root: VccReg(dst.0),

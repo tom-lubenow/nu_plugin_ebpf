@@ -91,6 +91,8 @@ impl VerifierState {
         for i in 0..self.scalar_alias_roots.len() {
             let merged = match (self.scalar_alias_roots[i], other.scalar_alias_roots[i]) {
                 (Some(left), Some(right)) if left == right => Some(left),
+                (Some(left), None) if matches!(other.regs[i], VerifierType::Uninit) => Some(left),
+                (None, Some(right)) if matches!(self.regs[i], VerifierType::Uninit) => Some(right),
                 _ => None,
             };
             scalar_alias_roots.push(merged);

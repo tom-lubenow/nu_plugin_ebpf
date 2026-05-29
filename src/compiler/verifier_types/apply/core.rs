@@ -269,6 +269,7 @@ pub(super) fn apply_phi_inst(
     if let Some(Some(source)) = &merged_ctx_field {
         ty = ctx_field_phi_type(dst, ty, source);
     }
+    let scalar_alias_root = scalar_alias_root_for_phi(args, state, ty);
     let released_kfunc_ref = args
         .iter()
         .any(|(_, reg)| state.is_released_kfunc_ref(*reg));
@@ -297,6 +298,11 @@ pub(super) fn apply_phi_inst(
         }
     }
     state.set_with_range(dst, ty, range);
+    if let Some(root) = scalar_alias_root
+        && root != dst
+    {
+        state.set_scalar_alias(dst, root);
+    }
     if released_kfunc_ref {
         state.mark_released_kfunc_ref(dst);
         return;
@@ -313,6 +319,26 @@ pub(super) fn apply_phi_inst(
     if let Some(guard) = phi_guard {
         state.set_guard(dst, guard);
     }
+}
+
+fn scalar_alias_root_for_phi(
+    args: &[(BlockId, VReg)],
+    state: &VerifierState,
+    ty: VerifierType,
+) -> Option<VReg> {
+    if !matches!(ty, VerifierType::Scalar | VerifierType::Bool) {
+        return None;
+    }
+    let mut root = None;
+    for (_, reg) in args {
+        let next = state.scalar_alias_root(*reg);
+        root = Some(match root {
+            None => next,
+            Some(existing) if existing == next => existing,
+            _ => return None,
+        });
+    }
+    root
 }
 
 fn ctx_field_phi_type(dst: VReg, ty: VerifierType, field: &CtxField) -> VerifierType {

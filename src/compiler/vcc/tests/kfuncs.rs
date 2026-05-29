@@ -271,10 +271,20 @@ fn graph_lock_root_repeated_lookup_copied_key_function() -> (MirFunction, HashMa
     )
 }
 
+fn graph_lock_root_repeated_lookup_phi_key_function() -> (MirFunction, HashMap<VReg, MirType>) {
+    graph_lock_root_repeated_lookup_for_kfunc(
+        RepeatedLookupKeyMode::PhiCopiedDynamic,
+        "bpf_list_front",
+        MirType::bpf_list_head_root_struct("node_data", "node"),
+        MirType::bpf_list_node_struct(),
+    )
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum RepeatedLookupKeyMode {
     SameConst,
     CopiedDynamic,
+    PhiCopiedDynamic,
     DifferentConst,
 }
 
@@ -290,6 +300,11 @@ fn graph_lock_root_repeated_lookup_for_kfunc(
     let done = func.alloc_block();
 
     let key = func.alloc_vreg();
+    let selector = if key_mode == RepeatedLookupKeyMode::PhiCopiedDynamic {
+        Some(func.alloc_vreg())
+    } else {
+        None
+    };
     let root_key = if key_mode == RepeatedLookupKeyMode::SameConst {
         key
     } else {
@@ -309,12 +324,37 @@ fn graph_lock_root_repeated_lookup_for_kfunc(
         kind: MapKind::Hash,
     };
 
-    if key_mode == RepeatedLookupKeyMode::CopiedDynamic {
+    let lookup_entry = if key_mode == RepeatedLookupKeyMode::PhiCopiedDynamic {
+        func.param_count = 2;
+        let left = func.alloc_block();
+        let right = func.alloc_block();
+        let join = func.alloc_block();
+        let left_key = func.alloc_vreg();
+        let right_key = func.alloc_vreg();
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond: selector.expect("phi copied key mode has selector"),
+            if_true: left,
+            if_false: right,
+        };
+        for (block, copied_key) in [(left, left_key), (right, right_key)] {
+            func.block_mut(block).instructions.push(MirInst::Copy {
+                dst: copied_key,
+                src: MirValue::VReg(key),
+            });
+            func.block_mut(block).terminator = MirInst::Jump { target: join };
+        }
+        func.block_mut(join).instructions.push(MirInst::Phi {
+            dst: root_key,
+            args: vec![(left, left_key), (right, right_key)],
+        });
+        join
+    } else if key_mode == RepeatedLookupKeyMode::CopiedDynamic {
         func.param_count = 1;
         func.block_mut(entry).instructions.push(MirInst::Copy {
             dst: root_key,
             src: MirValue::VReg(key),
         });
+        entry
     } else {
         func.block_mut(entry).instructions.push(MirInst::Copy {
             dst: key,
@@ -326,19 +366,24 @@ fn graph_lock_root_repeated_lookup_for_kfunc(
                 src: MirValue::Const(1),
             });
         }
-    }
-    func.block_mut(entry).instructions.push(MirInst::MapLookup {
-        dst: lock_value,
-        map: graph_items.clone(),
-        key,
-    });
-    func.block_mut(entry).instructions.push(MirInst::BinOp {
-        dst: lock_value_non_null,
-        op: BinOpKind::Ne,
-        lhs: MirValue::VReg(lock_value),
-        rhs: MirValue::Const(0),
-    });
-    func.block_mut(entry).terminator = MirInst::Branch {
+        entry
+    };
+    func.block_mut(lookup_entry)
+        .instructions
+        .push(MirInst::MapLookup {
+            dst: lock_value,
+            map: graph_items.clone(),
+            key,
+        });
+    func.block_mut(lookup_entry)
+        .instructions
+        .push(MirInst::BinOp {
+            dst: lock_value_non_null,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(lock_value),
+            rhs: MirValue::Const(0),
+        });
+    func.block_mut(lookup_entry).terminator = MirInst::Branch {
         cond: lock_value_non_null,
         if_true: lock_ready,
         if_false: done,
@@ -980,6 +1025,13 @@ fn test_verify_mir_kfunc_list_front_accepts_copied_dynamic_key_repeated_map_look
     let (func, types) = graph_lock_root_repeated_lookup_copied_key_function();
 
     verify_mir(&func, &types).expect("copied dynamic map key graph lock/root should verify");
+}
+
+#[test]
+fn test_verify_mir_kfunc_list_front_accepts_phi_key_repeated_map_lookup_bpf_spin_lock() {
+    let (func, types) = graph_lock_root_repeated_lookup_phi_key_function();
+
+    verify_mir(&func, &types).expect("phi-copied dynamic map key graph lock/root should verify");
 }
 
 #[test]

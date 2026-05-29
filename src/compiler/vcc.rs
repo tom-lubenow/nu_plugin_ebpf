@@ -246,6 +246,10 @@ pub enum VccInst {
         reg: VccReg,
         field: CtxField,
     },
+    ScalarAlias {
+        dst: VccReg,
+        src: VccReg,
+    },
     MapLookupSource {
         root: VccReg,
         map: MapRef,
