@@ -449,7 +449,7 @@ impl VerifierState {
         lhs.map == rhs.map && self.map_lookup_keys_may_alias(lhs.key, rhs.key)
     }
 
-    fn map_lookup_keys_may_alias(&self, lhs: VReg, rhs: VReg) -> bool {
+    pub(super) fn map_lookup_keys_may_alias(&self, lhs: VReg, rhs: VReg) -> bool {
         lhs == rhs
             || self.scalar_alias_root(lhs) == self.scalar_alias_root(rhs)
             || matches!(

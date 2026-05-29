@@ -75,12 +75,22 @@ impl<'a> VccLowerer<'a> {
         for (_, vreg) in args {
             let candidate = self.map_lookup_regs.get(&VccReg(vreg.0)).cloned()?;
             match &source {
-                Some(existing) if *existing != candidate => return None,
+                Some((existing_map, existing_key))
+                    if *existing_map != candidate.0
+                        || self.scalar_alias_root_for_reg(*existing_key)
+                            != self.scalar_alias_root_for_reg(candidate.1) =>
+                {
+                    return None;
+                }
                 Some(_) => {}
                 None => source = Some(candidate),
             }
         }
         source
+    }
+
+    fn scalar_alias_root_for_reg(&self, reg: VccReg) -> VccReg {
+        self.scalar_alias_regs.get(&reg).copied().unwrap_or(reg)
     }
 
     fn push_iter_lifecycle_inst(

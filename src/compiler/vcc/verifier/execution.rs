@@ -1297,18 +1297,7 @@ impl VccVerifier {
                     ty = Self::ctx_field_phi_type(*dst, ty, source);
                 }
                 let scalar_alias_root = Self::scalar_alias_root_for_phi(args, state, ty);
-                let mut merged_map_value_source = None;
-                for (_, reg) in args {
-                    let next = state.map_value_source(*reg).cloned();
-                    merged_map_value_source = Some(match merged_map_value_source {
-                        None => next,
-                        Some(existing) if existing == next => existing,
-                        _ => None,
-                    });
-                    if matches!(merged_map_value_source, Some(None)) {
-                        break;
-                    }
-                }
+                let merged_map_value_source = Self::map_value_source_for_phi(args, state);
                 let mut merged_map_fd: Option<Option<MapRef>> = None;
                 for (_, reg) in args {
                     let next = state.map_fd_source(*reg).cloned();
@@ -1334,7 +1323,7 @@ impl VccVerifier {
                 if let Some(Some(map)) = merged_map_fd {
                     state.set_map_fd_source(*dst, map);
                 }
-                if let Some(Some(source)) = merged_map_value_source {
+                if let Some(source) = merged_map_value_source {
                     state.set_map_lookup_source(*dst, source.map, source.key);
                 }
                 if let Some(Some(source)) = merged_ctx_field {
@@ -2421,6 +2410,27 @@ impl VccVerifier {
             });
         }
         root
+    }
+
+    fn map_value_source_for_phi(
+        args: &[(VccBlockId, VccReg)],
+        state: &VccState,
+    ) -> Option<VccMapLookupSource> {
+        let mut source: Option<VccMapLookupSource> = None;
+        for (_, reg) in args {
+            let next = state.map_value_source(*reg).cloned()?;
+            source = Some(match source {
+                None => next,
+                Some(existing)
+                    if existing.map == next.map
+                        && state.map_lookup_keys_may_alias(existing.key, next.key) =>
+                {
+                    existing
+                }
+                _ => return None,
+            });
+        }
+        source
     }
 }
 

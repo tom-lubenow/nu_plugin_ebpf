@@ -273,18 +273,7 @@ pub(super) fn apply_phi_inst(
     let released_kfunc_ref = args
         .iter()
         .any(|(_, reg)| state.is_released_kfunc_ref(*reg));
-    let mut merged_map_value_source: Option<Option<MapLookupSource>> = None;
-    for (_, reg) in args {
-        let next = state.map_value_source(*reg).cloned();
-        merged_map_value_source = Some(match merged_map_value_source {
-            None => next,
-            Some(existing) if existing == next => existing,
-            _ => None,
-        });
-        if matches!(merged_map_value_source, Some(None)) {
-            break;
-        }
-    }
+    let merged_map_value_source = map_value_source_for_phi(args, state);
     let mut merged_map_fd: Option<Option<MapRef>> = None;
     for (_, reg) in args {
         let next = state.map_fd_source(*reg).cloned();
@@ -310,7 +299,7 @@ pub(super) fn apply_phi_inst(
     if let Some(Some(map)) = merged_map_fd {
         state.set_map_fd_source(dst, &map);
     }
-    if let Some(Some(source)) = merged_map_value_source {
+    if let Some(source) = merged_map_value_source {
         state.set_map_lookup_source(dst, &source.map, source.key);
     }
     if let Some(Some(source)) = merged_ctx_field {
@@ -339,6 +328,27 @@ fn scalar_alias_root_for_phi(
         });
     }
     root
+}
+
+fn map_value_source_for_phi(
+    args: &[(BlockId, VReg)],
+    state: &VerifierState,
+) -> Option<MapLookupSource> {
+    let mut source: Option<MapLookupSource> = None;
+    for (_, reg) in args {
+        let next = state.map_value_source(*reg).cloned()?;
+        source = Some(match source {
+            None => next,
+            Some(existing)
+                if existing.map == next.map
+                    && state.map_lookup_keys_may_alias(existing.key, next.key) =>
+            {
+                existing
+            }
+            _ => return None,
+        });
+    }
+    source
 }
 
 fn ctx_field_phi_type(dst: VReg, ty: VerifierType, field: &CtxField) -> VerifierType {
