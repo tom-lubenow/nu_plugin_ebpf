@@ -23077,6 +23077,23 @@ def run-nu-with-plugin-complete [plugin_bin: string code: string] {
     run-external (current-nu-bin) "--no-config-file" "--plugins" $"[($plugin_bin)]" "-c" $code | complete
 }
 
+def default-local-jobs [] {
+    let value = ($env | get -o VERIFIER_DIFF_JOBS)
+    if $value == null {
+        4
+    } else {
+        $value | into int
+    }
+}
+
+def resolve-local-jobs [jobs] {
+    let resolved = if $jobs == null { default-local-jobs } else { $jobs }
+    if $resolved < 1 {
+        fail $"--jobs must be at least 1, got ($resolved)"
+    }
+    $resolved
+}
+
 def fixture-program [fixture] {
     let program = $fixture.program
     if (($program | describe) | str starts-with "list") {
@@ -27381,6 +27398,25 @@ def check-local-fixture [plugin_bin: string fixture] {
     { name: $fixture.name, local: $actual, output: $output }
 }
 
+def check-local-fixtures [plugin_bin: string fixtures jobs: int] {
+    mut results = []
+
+    for batch in ($fixtures | chunks $jobs) {
+        let batch_results = if $jobs == 1 {
+            $batch | each {|fixture| check-local-fixture $plugin_bin $fixture }
+        } else {
+            $batch | par-each --keep-order --threads $jobs {|fixture| check-local-fixture $plugin_bin $fixture }
+        }
+
+        for result in $batch_results {
+            print $"local  ($result.local)  ($result.name)"
+        }
+        $results = ($results | append $batch_results)
+    }
+
+    $results
+}
+
 def kernel-preflight [] {
     mut reasons = []
 
@@ -27616,6 +27652,7 @@ def main [
     --test-lane: string # Run fixtures in a default test lane: host-safe, host-gated, dry-run, or vm-only.
     --local-status: string # Run fixtures whose expected local status is accept, reject, or skip.
     --kernel-status: string # Run fixtures whose expected kernel status is accept, reject, or skip.
+    --jobs: int # Number of local fixture dry-run jobs. Defaults to VERIFIER_DIFF_JOBS or 4.
 ] {
     if $kernel and $no_kernel {
         fail "--kernel and --no-kernel are mutually exclusive"
@@ -27679,8 +27716,8 @@ def main [
         fail "--validate checks all fixture metadata and cannot be combined with fixture selection or run-mode flags"
     }
 
-    validate-fixture-metadata $FIXTURES
     if $validate {
+        validate-fixture-metadata $FIXTURES
         print $"ok: (($FIXTURES | length)) verifier fixtures metadata-valid"
         return
     }
@@ -27709,6 +27746,7 @@ def main [
     let selected_test_lane = if ($smoke or $default_smoke) { "host-safe" } else { $test_lane }
     let fixture_names = if $fixture == null { $fixtures } else { [$fixture] }
     let fixtures = (select-fixtures $fixture_names $category $tag $selected_tier $exclude_tier $local_status $kernel_status $selected_test_lane)
+    validate-fixture-metadata $fixtures
 
     if $list {
         let summaries = ($fixtures | each {|fixture| fixture-summary $fixture $compat_kernel })
@@ -27736,8 +27774,12 @@ def main [
         return
     }
 
+    let local_jobs = (resolve-local-jobs $jobs)
     let plugin_bin = (resolve-plugin-bin $REPO_ROOT)
     print $"Using plugin: ($plugin_bin)"
+    if $local_jobs > 1 {
+        print $"Using local fixture jobs: ($local_jobs)"
+    }
     if $default_smoke {
         print "Using default smoke lane: --tier fast --test-lane host-safe. Pass --full for the complete fixture sweep."
     }
@@ -27748,14 +27790,7 @@ def main [
         return
     }
 
-    let local_results = (
-        $local_fixtures
-        | each {|fixture|
-            let result = (check-local-fixture $plugin_bin $fixture)
-            print $"local  ($result.local)  ($fixture.name)"
-            $result
-        }
-    )
+    let local_results = (check-local-fixtures $plugin_bin $local_fixtures $local_jobs)
 
     let local_accepts = (
         $local_fixtures
