@@ -247,13 +247,28 @@ pub(super) fn apply_phi_inst(
         }
     }
     let phi_guard = merged_guard.flatten();
+    let mut merged_ctx_field: Option<Option<CtxField>> = None;
+    for (_, reg) in args {
+        let next = state.ctx_field_source(*reg).cloned();
+        merged_ctx_field = Some(match merged_ctx_field {
+            None => next,
+            Some(existing) if existing == next => existing,
+            _ => None,
+        });
+        if matches!(merged_ctx_field, Some(None)) {
+            break;
+        }
+    }
 
     let ty = types
         .get(&dst)
         .map(verifier_type_from_mir)
         .unwrap_or(VerifierType::Scalar);
     let range = range_for_phi(args, state);
-    let ty = ptr_type_for_phi(args, state).unwrap_or(ty);
+    let mut ty = ptr_type_for_phi(args, state).unwrap_or(ty);
+    if let Some(Some(source)) = &merged_ctx_field {
+        ty = ctx_field_phi_type(dst, ty, source);
+    }
     let released_kfunc_ref = args
         .iter()
         .any(|(_, reg)| state.is_released_kfunc_ref(*reg));
@@ -292,7 +307,45 @@ pub(super) fn apply_phi_inst(
     if let Some(Some(source)) = merged_map_value_source {
         state.set_map_lookup_source(dst, &source.map, source.key);
     }
+    if let Some(Some(source)) = merged_ctx_field {
+        state.set_ctx_field_source(dst, Some(source));
+    }
     if let Some(guard) = phi_guard {
         state.set_guard(dst, guard);
+    }
+}
+
+fn ctx_field_phi_type(dst: VReg, ty: VerifierType, field: &CtxField) -> VerifierType {
+    let VerifierType::Ptr {
+        space,
+        nullability,
+        bounds,
+        ringbuf_ref,
+        kfunc_ref,
+    } = ty
+    else {
+        return ty;
+    };
+
+    let bounds =
+        match (field, space, bounds) {
+            (CtxField::Data | CtxField::DataMeta, AddressSpace::Packet, None) => Some(
+                PtrBounds::new(PtrOrigin::Packet(dst), 0, 0, UNKNOWN_PACKET_LIMIT),
+            ),
+            (CtxField::SockoptOptval, AddressSpace::Kernel, None) => Some(PtrBounds::new(
+                PtrOrigin::ContextBuffer(dst),
+                0,
+                0,
+                UNKNOWN_CONTEXT_BUFFER_LIMIT,
+            )),
+            _ => bounds,
+        };
+
+    VerifierType::Ptr {
+        space,
+        nullability,
+        bounds,
+        ringbuf_ref,
+        kfunc_ref,
     }
 }

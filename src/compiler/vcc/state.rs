@@ -1248,12 +1248,32 @@ impl VccState {
                 scalar_alias_roots.insert(*reg, *left);
             }
         }
+        let mut ctx_field_source_regs: HashSet<VccReg> =
+            self.ctx_field_sources.keys().copied().collect();
+        ctx_field_source_regs.extend(other.ctx_field_sources.keys().copied());
         let mut ctx_field_sources = HashMap::new();
-        for (reg, left) in &self.ctx_field_sources {
-            if let Some(right) = other.ctx_field_sources.get(reg)
-                && left == right
-            {
-                ctx_field_sources.insert(*reg, left.clone());
+        for reg in ctx_field_source_regs {
+            let merged = match (
+                self.ctx_field_sources.get(&reg),
+                other.ctx_field_sources.get(&reg),
+            ) {
+                (Some(left), Some(right)) if left == right => Some(left.clone()),
+                (Some(left), None)
+                    if !other.reg_types.contains_key(&reg)
+                        || matches!(other.reg_types.get(&reg), Some(VccValueType::Uninit)) =>
+                {
+                    Some(left.clone())
+                }
+                (None, Some(right))
+                    if !self.reg_types.contains_key(&reg)
+                        || matches!(self.reg_types.get(&reg), Some(VccValueType::Uninit)) =>
+                {
+                    Some(right.clone())
+                }
+                _ => None,
+            };
+            if let Some(source) = merged {
+                ctx_field_sources.insert(reg, source);
             }
         }
         let mut map_lookup_source_regs: HashSet<VccReg> =

@@ -197,6 +197,12 @@ impl VccVerifier {
                 state.set_reg(*dst, *ty);
                 state.set_ctx_field_source(*dst, ctx_field_source.clone());
             }
+            VccInst::CtxFieldSource { reg, field } => {
+                if let Ok(ty) = state.reg_type(*reg) {
+                    state.set_reg(*reg, Self::ctx_field_phi_type(*reg, ty, field));
+                }
+                state.set_ctx_field_source(*reg, Some(field.clone()));
+            }
             VccInst::MapLookupSource { root, map, key } => {
                 state.set_map_lookup_source(*root, map.clone(), *key);
             }
@@ -1268,10 +1274,25 @@ impl VccVerifier {
                         Err(err) => self.errors.push(err),
                     }
                 }
-                let ty = merged.unwrap_or(VccValueType::Unknown);
+                let mut ty = merged.unwrap_or(VccValueType::Unknown);
                 let released_kfunc_ref = args
                     .iter()
                     .any(|(_, reg)| state.is_released_kfunc_ref(*reg));
+                let mut merged_ctx_field: Option<Option<CtxField>> = None;
+                for (_, reg) in args {
+                    let next = state.ctx_field_source(*reg).cloned();
+                    merged_ctx_field = Some(match merged_ctx_field {
+                        None => next,
+                        Some(existing) if existing == next => existing,
+                        _ => None,
+                    });
+                    if matches!(merged_ctx_field, Some(None)) {
+                        break;
+                    }
+                }
+                if let Some(Some(source)) = &merged_ctx_field {
+                    ty = Self::ctx_field_phi_type(*dst, ty, source);
+                }
                 let mut merged_map_value_source = None;
                 for (_, reg) in args {
                     let next = state.map_value_source(*reg).cloned();
@@ -1306,18 +1327,6 @@ impl VccVerifier {
                 }
                 if let Some(Some(source)) = merged_map_value_source {
                     state.set_map_lookup_source(*dst, source.map, source.key);
-                }
-                let mut merged_ctx_field: Option<Option<CtxField>> = None;
-                for (_, reg) in args {
-                    let next = state.ctx_field_source(*reg).cloned();
-                    merged_ctx_field = Some(match merged_ctx_field {
-                        None => next,
-                        Some(existing) if existing == next => existing,
-                        _ => None,
-                    });
-                    if matches!(merged_ctx_field, Some(None)) {
-                        break;
-                    }
                 }
                 if let Some(Some(source)) = merged_ctx_field {
                     state.set_ctx_field_source(*dst, Some(source));
@@ -2329,6 +2338,57 @@ impl VccVerifier {
                 "{op} uses stale packet pointer after a packet-mutating helper; reload ctx.data/data_end before access"
             ),
         )
+    }
+
+    fn ctx_field_phi_type(reg: VccReg, ty: VccValueType, field: &CtxField) -> VccValueType {
+        let VccValueType::Ptr(mut info) = ty else {
+            return ty;
+        };
+        match field {
+            CtxField::Data if info.space == VccAddrSpace::Packet => {
+                info.bounds = Some(VccBounds {
+                    min: 0,
+                    max: 0,
+                    limit: UNKNOWN_PACKET_LIMIT,
+                });
+                info.packet_root = Some(reg);
+                info.packet_root_field = Some(VccPacketCtxField::Data);
+                info.packet_ctx_field = Some(VccPacketCtxField::Data);
+                info.packet_end = false;
+            }
+            CtxField::DataMeta if info.space == VccAddrSpace::Packet => {
+                info.bounds = Some(VccBounds {
+                    min: 0,
+                    max: 0,
+                    limit: UNKNOWN_PACKET_LIMIT,
+                });
+                info.packet_root = Some(reg);
+                info.packet_root_field = Some(VccPacketCtxField::DataMeta);
+                info.packet_ctx_field = Some(VccPacketCtxField::DataMeta);
+                info.packet_end = false;
+            }
+            CtxField::DataEnd if info.space == VccAddrSpace::Packet => {
+                info.packet_root = None;
+                info.packet_root_field = None;
+                info.packet_ctx_field = Some(VccPacketCtxField::DataEnd);
+                info.packet_end = true;
+            }
+            CtxField::SockoptOptval if info.space == VccAddrSpace::Kernel => {
+                info.bounds = Some(VccBounds {
+                    min: 0,
+                    max: 0,
+                    limit: UNKNOWN_CONTEXT_BUFFER_LIMIT,
+                });
+                info.context_buffer_root = Some(reg);
+                info.context_buffer_end = false;
+            }
+            CtxField::SockoptOptvalEnd if info.space == VccAddrSpace::Kernel => {
+                info.context_buffer_root = None;
+                info.context_buffer_end = true;
+            }
+            _ => {}
+        }
+        VccValueType::Ptr(info)
     }
 }
 

@@ -639,6 +639,97 @@ fn test_packet_load_with_data_end_guard_passes() {
 }
 
 #[test]
+fn test_packet_load_with_phi_data_end_guard_passes() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let left = func.alloc_block();
+    let right = func.alloc_block();
+    let join = func.alloc_block();
+    let load = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let selector = func.alloc_vreg();
+    let data_left = func.alloc_vreg();
+    let data_right = func.alloc_vreg();
+    let data = func.alloc_vreg();
+    let access_end = func.alloc_vreg();
+    let data_end = func.alloc_vreg();
+    let cond = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: selector,
+        if_true: left,
+        if_false: right,
+    };
+    for (block, data_reg) in [(left, data_left), (right, data_right)] {
+        func.block_mut(block)
+            .instructions
+            .push(MirInst::LoadCtxField {
+                dst: data_reg,
+                field: CtxField::Data,
+                slot: None,
+            });
+        func.block_mut(block).terminator = MirInst::Jump { target: join };
+    }
+    func.block_mut(join).instructions.push(MirInst::Phi {
+        dst: data,
+        args: vec![(left, data_left), (right, data_right)],
+    });
+    func.block_mut(join).instructions.push(MirInst::BinOp {
+        dst: access_end,
+        op: BinOpKind::Add,
+        lhs: MirValue::VReg(data),
+        rhs: MirValue::Const(1),
+    });
+    func.block_mut(join)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: data_end,
+            field: CtxField::DataEnd,
+            slot: None,
+        });
+    func.block_mut(join).instructions.push(MirInst::BinOp {
+        dst: cond,
+        op: BinOpKind::Le,
+        lhs: MirValue::VReg(access_end),
+        rhs: MirValue::VReg(data_end),
+    });
+    func.block_mut(join).terminator = MirInst::Branch {
+        cond,
+        if_true: load,
+        if_false: done,
+    };
+
+    func.block_mut(load).instructions.push(MirInst::Load {
+        dst,
+        ptr: data,
+        offset: 0,
+        ty: MirType::U8,
+    });
+    func.block_mut(load).terminator = MirInst::Jump { target: done };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let packet_ptr = MirType::Ptr {
+        pointee: Box::new(MirType::U8),
+        address_space: AddressSpace::Packet,
+    };
+    let mut types = HashMap::new();
+    types.insert(selector, MirType::I64);
+    types.insert(data_left, packet_ptr.clone());
+    types.insert(data_right, packet_ptr.clone());
+    types.insert(data, packet_ptr.clone());
+    types.insert(access_end, packet_ptr.clone());
+    types.insert(data_end, packet_ptr);
+    types.insert(cond, MirType::Bool);
+    types.insert(dst, MirType::U8);
+
+    verify_mir(&func, &types).expect("guarded packet load through ctx.data phi should verify");
+}
+
+#[test]
 fn test_packet_store_with_data_end_guard_passes() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

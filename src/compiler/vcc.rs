@@ -242,6 +242,10 @@ pub enum VccInst {
         ty: VccValueType,
         ctx_field_source: Option<CtxField>,
     },
+    CtxFieldSource {
+        reg: VccReg,
+        field: CtxField,
+    },
     MapLookupSource {
         root: VccReg,
         map: MapRef,

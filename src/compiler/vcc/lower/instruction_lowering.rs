@@ -342,6 +342,10 @@ impl<'a> VccLowerer<'a> {
                     self.map_fd_regs.remove(&VccReg(dst.0));
                 }
                 if let Some(field) = self.direct_ctx_field_for_phi(args) {
+                    out.push(VccInst::CtxFieldSource {
+                        reg: VccReg(dst.0),
+                        field: field.clone(),
+                    });
                     self.direct_ctx_field_regs.insert(VccReg(dst.0), field);
                 }
             }
