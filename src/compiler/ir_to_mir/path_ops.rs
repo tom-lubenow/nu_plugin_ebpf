@@ -1544,6 +1544,178 @@ impl<'a> HirToMirLowering<'a> {
         })
     }
 
+    fn replace_metadata_record_field(
+        &mut self,
+        src_dst: RegId,
+        field_index: usize,
+        updated_field: RecordField,
+        constant_value: Option<Value>,
+        path_desc: &str,
+        base_is_materialized_aggregate: bool,
+        action: &str,
+    ) -> Result<(), CompileError> {
+        let meta = self.get_or_create_metadata(src_dst);
+        meta.record_fields[field_index] = updated_field;
+        meta.field_type = Self::metadata_record_layout(meta);
+        meta.annotated_semantics = Self::metadata_record_semantics(meta);
+        meta.constant_value = constant_value.clone();
+        meta.source_var = None;
+        self.set_reg_constant_value(src_dst, constant_value);
+
+        if base_is_materialized_aggregate {
+            let updated_meta = self.get_metadata(src_dst).cloned().ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "cell path update '.{} = ...' lost {} record metadata",
+                    path_desc, action
+                ))
+            })?;
+            let (materialized_vreg, materialized_meta) = self
+                .materialize_metadata_record_value(&updated_meta)?
+                .ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "cell path update '.{} = ...' could not materialize {} record",
+                        path_desc, action
+                    ))
+                })?;
+            self.reg_map.insert(src_dst.get(), materialized_vreg);
+            self.reg_metadata.insert(src_dst.get(), materialized_meta);
+        }
+
+        Ok(())
+    }
+
+    fn lower_metadata_fixed_record_array_append_path(
+        &mut self,
+        src_dst: RegId,
+        field_index: usize,
+        existing_field: RecordField,
+        elem_ty: MirType,
+        len: usize,
+        path_members: &[PathMember],
+        new_value: RegId,
+        constant_value: Option<Value>,
+        path_desc: &str,
+        base_is_materialized_aggregate: bool,
+    ) -> Result<bool, CompileError> {
+        let Some(PathMember::String {
+            val: new_field_name,
+            ..
+        }) = path_members.get(2)
+        else {
+            return Ok(false);
+        };
+
+        let new_element_field = self.record_field_from_path_members(
+            new_field_name.clone(),
+            &path_members[3..],
+            new_value,
+            path_desc,
+        )?;
+        let mut element_meta = RegMetadata {
+            record_fields: vec![new_element_field],
+            ..Default::default()
+        };
+        let new_element_ty = Self::metadata_record_layout(&element_meta).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "cell path update '.{} = ...' could not infer appended fixed-array element layout",
+                path_desc
+            ))
+        })?;
+
+        if new_element_ty != elem_ty {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "cell path update '.{} = ...' can only append homogeneous fixed record array elements; appended element layout {:?} does not match existing layout {:?}",
+                path_desc, new_element_ty, elem_ty
+            )));
+        }
+
+        element_meta.field_type = Some(new_element_ty.clone());
+        element_meta.annotated_semantics = Self::metadata_record_semantics(&element_meta);
+        let (element_vreg, materialized_element_meta) = self
+            .materialize_metadata_record_value(&element_meta)?
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "cell path update '.{} = ...' could not materialize appended fixed-array element",
+                    path_desc
+                ))
+            })?;
+
+        let new_len = len.checked_add(1).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "cell path update '.{} = ...' fixed-array length overflowed",
+                path_desc
+            ))
+        })?;
+        let array_ty = MirType::Array {
+            elem: Box::new(elem_ty.clone()),
+            len: new_len,
+        };
+        let slot =
+            self.func
+                .alloc_stack_slot(align_to_eight(array_ty.size()), 8, StackSlotKind::Local);
+        self.record_stack_slot_type(slot, array_ty.clone());
+
+        let array_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::Copy {
+            dst: array_vreg,
+            src: MirValue::StackSlot(slot),
+        });
+        self.vreg_type_hints.insert(
+            array_vreg,
+            MirType::Ptr {
+                pointee: Box::new(array_ty.clone()),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        self.emit_ptr_copy_with_offsets(
+            array_vreg,
+            0,
+            existing_field.value_vreg,
+            0,
+            existing_field.ty.size(),
+        )?;
+        self.emit_ptr_copy_with_offsets(
+            array_vreg,
+            len * elem_ty.size(),
+            element_vreg,
+            0,
+            elem_ty.size(),
+        )?;
+
+        let semantics = match existing_field.semantics.clone() {
+            Some(AnnotatedValueSemantics::FixedArray { elem, .. }) => {
+                Some(AnnotatedValueSemantics::FixedArray { elem, len: new_len })
+            }
+            _ => materialized_element_meta.annotated_semantics.map(|elem| {
+                AnnotatedValueSemantics::FixedArray {
+                    elem: Box::new(elem),
+                    len: new_len,
+                }
+            }),
+        };
+        let updated_field = RecordField {
+            name: existing_field.name,
+            value_vreg: array_vreg,
+            source_reg: None,
+            stack_offset: existing_field.stack_offset,
+            ty: array_ty,
+            semantics,
+            is_context: false,
+            root_ctx_field: None,
+        };
+
+        self.replace_metadata_record_field(
+            src_dst,
+            field_index,
+            updated_field,
+            constant_value,
+            path_desc,
+            base_is_materialized_aggregate,
+            "appended",
+        )?;
+        Ok(true)
+    }
+
     fn lower_metadata_existing_fixed_record_array_path_creation(
         &mut self,
         src_dst: RegId,
@@ -1579,16 +1751,35 @@ impl<'a> HirToMirLowering<'a> {
         let MirType::Array { elem, len } = &existing_field.ty else {
             return Ok(false);
         };
-        if *len != 1 || *element_index != 0 {
-            return Ok(false);
+        let elem_ty = elem.as_ref().clone();
+        let len = *len;
+
+        if *element_index == len {
+            return self.lower_metadata_fixed_record_array_append_path(
+                src_dst,
+                field_index,
+                existing_field,
+                elem_ty,
+                len,
+                path_members,
+                new_value,
+                constant_value,
+                path_desc,
+                base_is_materialized_aggregate,
+            );
         }
-        let MirType::Struct { fields, .. } = elem.as_ref() else {
+
+        let MirType::Struct { fields, .. } = &elem_ty else {
             return Ok(false);
         };
-        if fields
+
+        if len != 1 || *element_index != 0 {
+            return Ok(false);
+        }
+        let new_field_exists = fields
             .iter()
-            .any(|field| !field.synthetic && field.name == *new_field_name)
-        {
+            .any(|field| !field.synthetic && field.name == *new_field_name);
+        if new_field_exists {
             return Ok(false);
         }
 
@@ -1636,7 +1827,7 @@ impl<'a> HirToMirLowering<'a> {
 
         let array_ty = MirType::Array {
             elem: Box::new(element_ty.clone()),
-            len: *len,
+            len,
         };
         let slot =
             self.func
@@ -1659,7 +1850,7 @@ impl<'a> HirToMirLowering<'a> {
         let semantics = materialized_element_meta.annotated_semantics.map(|elem| {
             AnnotatedValueSemantics::FixedArray {
                 elem: Box::new(elem),
-                len: *len,
+                len,
             }
         });
         let updated_field = RecordField {
@@ -1673,31 +1864,15 @@ impl<'a> HirToMirLowering<'a> {
             root_ctx_field: None,
         };
 
-        let meta = self.get_or_create_metadata(src_dst);
-        meta.record_fields[field_index] = updated_field;
-        meta.field_type = Self::metadata_record_layout(meta);
-        meta.annotated_semantics = Self::metadata_record_semantics(meta);
-        meta.constant_value = constant_value.clone();
-        meta.source_var = None;
-        self.set_reg_constant_value(src_dst, constant_value);
-        if base_is_materialized_aggregate {
-            let updated_meta = self.get_metadata(src_dst).cloned().ok_or_else(|| {
-                CompileError::UnsupportedInstruction(format!(
-                    "cell path update '.{} = ...' lost expanded record metadata",
-                    path_desc
-                ))
-            })?;
-            let (materialized_vreg, materialized_meta) = self
-                .materialize_metadata_record_value(&updated_meta)?
-                .ok_or_else(|| {
-                    CompileError::UnsupportedInstruction(format!(
-                        "cell path update '.{} = ...' could not materialize expanded record",
-                        path_desc
-                    ))
-                })?;
-            self.reg_map.insert(src_dst.get(), materialized_vreg);
-            self.reg_metadata.insert(src_dst.get(), materialized_meta);
-        }
+        self.replace_metadata_record_field(
+            src_dst,
+            field_index,
+            updated_field,
+            constant_value,
+            path_desc,
+            base_is_materialized_aggregate,
+            "expanded",
+        )?;
         Ok(true)
     }
 
