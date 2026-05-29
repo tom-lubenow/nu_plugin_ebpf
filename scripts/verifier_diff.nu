@@ -1670,6 +1670,26 @@ const KERNEL_FEATURE_BPF_USER_RINGBUF_DRAIN = {
     min_kernel: "6.1"
     source: "https://github.com/torvalds/linux/blob/v6.1/include/uapi/linux/bpf.h"
 }
+const KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_OPENAT_DFD = {
+    key: "tracepoint:syscalls/sys_enter_openat:field:dfd"
+    min_kernel: "4.7"
+    source: "https://github.com/torvalds/linux/blob/v4.7/include/trace/events/syscalls.h"
+}
+const KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_OPENAT_FILENAME = {
+    key: "tracepoint:syscalls/sys_enter_openat:field:filename"
+    min_kernel: "4.7"
+    source: "https://github.com/torvalds/linux/blob/v4.7/include/trace/events/syscalls.h"
+}
+const KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_OPENAT_FLAGS = {
+    key: "tracepoint:syscalls/sys_enter_openat:field:flags"
+    min_kernel: "4.7"
+    source: "https://github.com/torvalds/linux/blob/v4.7/include/trace/events/syscalls.h"
+}
+const KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_OPENAT_MODE = {
+    key: "tracepoint:syscalls/sys_enter_openat:field:mode"
+    min_kernel: "4.7"
+    source: "https://github.com/torvalds/linux/blob/v4.7/include/trace/events/syscalls.h"
+}
 const KERNEL_FEATURE_CTX_PACKET_LEN = {
     key: "ctx:packet_len"
     min_kernel: "4.1"
@@ -4769,8 +4789,16 @@ const FIXTURES = [
         tags: [tracepoint context]
         requires: [tracefs kernel-btf]
         target: "tracepoint:syscalls/sys_enter_openat"
+        kernel_features: [
+            $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_OPENAT_DFD
+            $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_OPENAT_FILENAME
+            $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_OPENAT_FLAGS
+            $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_OPENAT_MODE
+        ]
         program: [
             '{|ctx|'
+            '  let filename = $ctx.filename'
+            '  if $filename { $filename | read-str --max-len 64 | count }'
             '  ($ctx.dfd + $ctx.flags + $ctx.mode + $ctx.current_task.pid) | count'
             '  0'
             '}'
