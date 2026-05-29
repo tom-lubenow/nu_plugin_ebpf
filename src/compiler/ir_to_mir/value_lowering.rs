@@ -8,6 +8,7 @@ enum NullAnnotatedGlobalUnsupportedKind {
     String,
     Binary,
     NumericList,
+    FixedArrayList(String),
     Other(String),
 }
 
@@ -110,6 +111,10 @@ impl<'a> HirToMirLowering<'a> {
             Type::List(inner) if matches!(inner.as_ref(), Type::Int | Type::Nothing) => {
                 Some((path, NullAnnotatedGlobalUnsupportedKind::NumericList))
             }
+            Type::List(inner) => Some((
+                path,
+                NullAnnotatedGlobalUnsupportedKind::FixedArrayList(inner.as_ref().to_string()),
+            )),
             Type::Record(fields) => fields.iter().find_map(|(field_name, field_type)| {
                 let field_path = path
                     .as_ref()
@@ -156,6 +161,15 @@ impl<'a> HirToMirLowering<'a> {
                     ),
                     (Some(path), NullAnnotatedGlobalUnsupportedKind::NumericList) => format!(
                         "{prefix} because nested field '{path}' needs explicit numeric-list capacity; use a concrete record initializer to establish nested list capacities, or switch to a named global declared with `global-define --type 'record{{...}}'` if you need zero-initialized fixed-capacity list fields"
+                    ),
+                    (None, NullAnnotatedGlobalUnsupportedKind::FixedArrayList(_)) => format!(
+                        "{prefix} because plain Nushell list type annotations do not carry fixed-array length; use a concrete list initializer to establish array length and element layout, or use `global-define --type 'array{{...:N}}'` when you need an explicit zero-initialized fixed-array global"
+                    ),
+                    (
+                        Some(path),
+                        NullAnnotatedGlobalUnsupportedKind::FixedArrayList(element_type),
+                    ) => format!(
+                        "{prefix} because nested field '{path}' declared as list<{element_type}> needs explicit fixed-array length; use a concrete record/list initializer to establish the nested array length and element layout, or switch to a named global declared with `global-define --type 'record{{...}}'` containing `array{{...:N}}` if you need zero-initialized fixed-array fields"
                     ),
                     (None, NullAnnotatedGlobalUnsupportedKind::Other(other)) => format!(
                         "{prefix} because declared type {} is not yet supported as a compiler-managed mutable global without a materialized initializer",
