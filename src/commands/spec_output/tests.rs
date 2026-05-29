@@ -4461,6 +4461,60 @@ fn test_context_write_records_include_backing_abi_metadata() {
 }
 
 #[test]
+fn test_context_write_backing_abi_metadata_invariants() {
+    for spec_source in [
+        "tc_action:diff-action",
+        "tc:lo:ingress",
+        "tcx:lo:ingress",
+        "cgroup_sysctl:/sys/fs/cgroup",
+        "sock_ops:/sys/fs/cgroup",
+        "cgroup_sock_addr:/sys/fs/cgroup:connect_unix",
+        "sk_lookup:/proc/self/ns/net",
+    ] {
+        let spec = ProgramSpec::parse(spec_source)
+            .unwrap_or_else(|err| panic!("{spec_source} should parse: {err}"));
+
+        for write in spec_context_writes(&spec) {
+            if let Some(helper) = write.helper {
+                assert!(
+                    write.helper_requirement_key.is_some(),
+                    "{spec_source} ctx.{} helper-backed write via {helper} should report a helper requirement key",
+                    write.field
+                );
+                assert!(
+                    write.helper_minimum_kernel.is_some(),
+                    "{spec_source} ctx.{} helper-backed write via {helper} should report a helper minimum kernel",
+                    write.field
+                );
+                assert!(
+                    write.helper_minimum_kernel_source.is_some(),
+                    "{spec_source} ctx.{} helper-backed write via {helper} should report a helper source",
+                    write.field
+                );
+            }
+
+            if let Some(kfunc) = write.kfunc {
+                assert!(
+                    write.kfunc_requirement_key.is_some(),
+                    "{spec_source} ctx.{} kfunc-backed write via {kfunc} should report a kfunc requirement key",
+                    write.field
+                );
+                assert!(
+                    write.kfunc_minimum_kernel.is_some(),
+                    "{spec_source} ctx.{} kfunc-backed write via {kfunc} should report a kfunc minimum kernel",
+                    write.field
+                );
+                assert!(
+                    write.kfunc_minimum_kernel_source.is_some(),
+                    "{spec_source} ctx.{} kfunc-backed write via {kfunc} should report a kfunc source",
+                    write.field
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn test_context_write_records_include_packet_field_metadata() {
     let tc_action =
         ProgramSpec::parse("tc_action:diff-action").expect("tc_action spec should parse");
