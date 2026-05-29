@@ -20197,6 +20197,106 @@ def program-bound-context-root-aliases [source: string context_names] {
     $aliases
 }
 
+def record-context-bindings [line: string context_names] {
+    let assignment = (declaration-assignment $line)
+    if $assignment == null {
+        return []
+    }
+
+    let rhs = (declaration-rhs-token $assignment)
+    let compact = ($rhs | str replace --all " " "")
+    if not (($compact | str starts-with "{") and ($compact | str ends-with "}")) {
+        return []
+    }
+
+    let inner = ($compact | str substring 1..-2)
+    mut bindings = []
+    for raw_field in ($inner | split row ",") {
+        let field_parts = ($raw_field | split row ":")
+        if ($field_parts | length) != 2 {
+            continue
+        }
+        let field_name = (($field_parts | first) | str trim)
+        let field_value = (($field_parts | get 1) | str trim)
+        for context_name in $context_names {
+            let context_token = (["$" $context_name] | str join "")
+            if $field_value == $context_token {
+                $bindings = ($bindings | append {
+                    name: $assignment.name
+                    field: $field_name
+                })
+            }
+        }
+    }
+
+    $bindings
+}
+
+def program-record-context-aliases [source: string context_names] {
+    mut aliases = []
+
+    for line in ($source | lines) {
+        for binding in (record-context-bindings $line $context_names) {
+            let existing = ($aliases | where {|alias| $alias.name == $binding.name and $alias.field == $binding.field })
+            if ($existing | is-empty) {
+                $aliases = ($aliases | append $binding)
+            }
+        }
+    }
+
+    $aliases
+}
+
+def record-context-projection-kernel-features [source: string target context_names] {
+    mut features = []
+    let aliases = (program-record-context-aliases $source $context_names)
+    if ($aliases | is-empty) {
+        return $features
+    }
+
+    for line in ($source | lines) {
+        for alias in $aliases {
+            let prefix = $"$($alias.name).($alias.field)."
+            let parts = ($line | split row $prefix)
+            if ($parts | length) <= 1 {
+                continue
+            }
+
+            for raw_tail in ($parts | skip 1) {
+                let field = (normalize-context-field-token $raw_tail)
+                if $field == "" {
+                    continue
+                }
+
+                let feature = (context-field-kernel-feature $field $target)
+                if $feature != null {
+                    $features = (append-missing-kernel-features $features [$feature])
+                }
+                if not (context-field-access-is-assignment-lhs? $raw_tail $field) {
+                    let helper_feature = (context-field-helper-kernel-feature $field $target)
+                    if $helper_feature != null {
+                        $features = (append-missing-kernel-features $features [$helper_feature])
+                    }
+                }
+                let projection_feature = (context-projection-kernel-feature $raw_tail $target)
+                if $projection_feature != null {
+                    $features = (append-missing-kernel-features $features [$projection_feature])
+                }
+                let read_feature = (context-projection-kernel-read-feature $raw_tail $target)
+                if $read_feature != null {
+                    $features = (append-missing-kernel-features $features [$read_feature])
+                }
+                let task_pt_regs_feature = (context-task-pt-regs-kernel-feature $raw_tail)
+                if $task_pt_regs_feature != null {
+                    $features = (append-missing-kernel-features $features [$task_pt_regs_feature])
+                }
+            }
+        }
+    }
+
+    $features
+}
+
 def bound-context-projection-kernel-features [source: string target context_names] {
     mut features = []
     let aliases = (program-bound-context-root-aliases $source $context_names)
@@ -20585,6 +20685,7 @@ def program-context-field-kernel-features [source: string target] {
     }
 
     $features = (append-missing-kernel-features $features (bound-context-projection-kernel-features $source $target $context_names))
+    $features = (append-missing-kernel-features $features (record-context-projection-kernel-features $source $target $context_names))
 
     $features
 }
