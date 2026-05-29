@@ -5087,6 +5087,42 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         target: "tc_action:demo"
         program: [
             '{|ctx|'
+            '  mut rec = {}'
+            '  $rec.event = $ctx'
+            '  $rec.event.tstamp = 123'
+            '  "ok"'
+            '}'
+        ]
+        feature_keys: ["ctx:tstamp"]
+    }
+    {
+        target: "tc_action:demo"
+        program: [
+            '{|ctx|'
+            '  let base = { event: $ctx }'
+            '  mut rec = { ok: true, ...$base }'
+            '  $rec.event.tstamp = 123'
+            '  "ok"'
+            '}'
+        ]
+        feature_keys: ["ctx:tstamp"]
+    }
+    {
+        target: "tc_action:demo"
+        program: [
+            '{|ctx|'
+            '  def wrap [event] { { event: $event } }'
+            '  mut rec = (wrap $ctx)'
+            '  $rec.event.tstamp = 123'
+            '  "ok"'
+            '}'
+        ]
+        feature_keys: ["ctx:tstamp"]
+    }
+    {
+        target: "tc_action:demo"
+        program: [
+            '{|ctx|'
             '  mut ctx = $ctx'
             '  $ctx.mark = (if $ctx.pid == 0 { 7 } else { 1 })'
             '  "ok"'
@@ -9751,6 +9787,54 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  mut rec = { event: $ctx }'
+            '  $rec.event.tstamp = 123'
+            '  "ok"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "tc-action-record-context-upsert-write"
+        category: "context-surface"
+        tags: [tc-action context packet writable record upsert source metadata]
+        target: "tc_action:diff-action"
+        program: [
+            '{|ctx|'
+            '  mut rec = {}'
+            '  $rec.event = $ctx'
+            '  $rec.event.tstamp = 123'
+            '  "ok"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "tc-action-record-context-spread-write"
+        category: "context-surface"
+        tags: [tc-action context packet writable record spread source metadata]
+        target: "tc_action:diff-action"
+        program: [
+            '{|ctx|'
+            '  let base = { event: $ctx }'
+            '  mut rec = { ok: true, ...$base }'
+            '  $rec.event.tstamp = 123'
+            '  "ok"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "tc-action-user-function-record-context-write"
+        category: "context-surface"
+        tags: [tc-action context packet writable record user-function source metadata]
+        target: "tc_action:diff-action"
+        program: [
+            '{|ctx|'
+            '  def wrap [event] { { event: $event } }'
+            '  mut rec = (wrap $ctx)'
             '  $rec.event.tstamp = 123'
             '  "ok"'
             '}'
