@@ -19207,6 +19207,98 @@ const FIXTURES = [
         error_contains: "unreleased kfunc reference at function exit"
     }
     {
+        name: "source-kptr-xchg-old-ref-accepts-both-branch-release"
+        category: "helper-state"
+        tags: [kfunc helper-call kptr ref-lifetime branch source accept]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define task_slots --kind array --key-type u32 --value-type "record{task:kptr:task_struct,cookie:u64}" --max-entries 1'
+            '  let task = (kfunc-call "bpf_task_from_pid" 1)'
+            '  if $task {'
+            '    let entry = (0 | map-get task_slots --kind array)'
+            '    if $entry {'
+            '      let old = (helper-call "bpf_kptr_xchg" $entry.task $task)'
+            '      if $old {'
+            '        if $ctx.pid {'
+            '          $old | kfunc-call "bpf_task_release"'
+            '        } else {'
+            '          $old | kfunc-call "bpf_task_release"'
+            '        }'
+            '      }'
+            '    } else {'
+            '      $task | kfunc-call "bpf_task_release"'
+            '    }'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-kptr-xchg-old-ref-rejects-one-branch-release-leak"
+        category: "helper-state"
+        tags: [kfunc helper-call kptr ref-lifetime branch source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define task_slots --kind array --key-type u32 --value-type "record{task:kptr:task_struct,cookie:u64}" --max-entries 1'
+            '  let task = (kfunc-call "bpf_task_from_pid" 1)'
+            '  if $task {'
+            '    let entry = (0 | map-get task_slots --kind array)'
+            '    if $entry {'
+            '      let old = (helper-call "bpf_kptr_xchg" $entry.task $task)'
+            '      if $old {'
+            '        if $ctx.pid {'
+            '          $old | kfunc-call "bpf_task_release"'
+            '        }'
+            '      }'
+            '    } else {'
+            '      $task | kfunc-call "bpf_task_release"'
+            '    }'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "unreleased kfunc reference at function exit"
+    }
+    {
+        name: "source-kptr-xchg-old-ref-rejects-release-after-conditional-release"
+        category: "helper-state"
+        tags: [kfunc helper-call kptr ref-lifetime branch source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define task_slots --kind array --key-type u32 --value-type "record{task:kptr:task_struct,cookie:u64}" --max-entries 1'
+            '  let task = (kfunc-call "bpf_task_from_pid" 1)'
+            '  if $task {'
+            '    let entry = (0 | map-get task_slots --kind array)'
+            '    if $entry {'
+            '      let old = (helper-call "bpf_kptr_xchg" $entry.task $task)'
+            '      if $old {'
+            '        if $ctx.pid {'
+            '          $old | kfunc-call "bpf_task_release"'
+            '        }'
+            '        $old | kfunc-call "bpf_task_release"'
+            '      }'
+            '    } else {'
+            '      $task | kfunc-call "bpf_task_release"'
+            '    }'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'bpf_task_release' arg0 reference already released"
+    }
+    {
         name: "source-kptr-xchg-cpumask-ref-transfer"
         category: "helper-state"
         tags: [kfunc helper-call kptr cpumask ref-lifetime source accept]
