@@ -17558,6 +17558,24 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-user-function-context-arg"
+        category: "language-core"
+        tags: [user-function context accept]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  def read_pid [c] {'
+            '    $c.pid | count'
+            '    0'
+            '  }'
+            '  read_pid $ctx'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "adjust-packet-xdp-head"
         category: "language-surface"
         tags: [adjust-packet xdp]
