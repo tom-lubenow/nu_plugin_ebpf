@@ -1042,6 +1042,7 @@ impl<'a> HirToMirLowering<'a> {
         let (ctx_field, root_members_consumed) = self.resolve_ctx_field_from_path(&path)?;
         let remaining_members = &path.members[root_members_consumed..];
         self.validate_ctx_field_access_with_source_name(&ctx_field, &source_ctx_field_name)?;
+        self.implied_ctx_fields.insert(ctx_field.clone());
         if matches!(ctx_field, CtxField::Cgroup) {
             self.lower_current_cgroup_context_field(
                 src_dst,

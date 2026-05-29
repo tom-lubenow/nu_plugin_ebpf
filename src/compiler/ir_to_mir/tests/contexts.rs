@@ -11,7 +11,7 @@ use crate::compiler::passes::optimize_with_ssa_hints;
 use crate::kernel_btf::{KernelBtf, TrampolineFieldSelector, TypeInfo};
 use nu_protocol::ast::{CellPath, PathMember};
 use nu_protocol::{DeclId, RegId, VarId};
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 #[test]
 fn test_lower_xdp_action_alias_return_to_const() {
@@ -5302,6 +5302,133 @@ fn test_lower_record_context_field_projection_preserves_context_metadata() {
     )));
     compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
         .expect("record-held context field projection should compile");
+}
+
+#[test]
+fn test_lower_aliased_tracepoint_payload_fields_preserve_context_metadata() {
+    let ctx_var = VarId::new(0);
+    let event_var = VarId::new(1);
+    let hir = HirProgram::new(
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(0),
+                        var_id: ctx_var,
+                    },
+                    HirStmt::StoreVariable {
+                        var_id: event_var,
+                        src: RegId::new(0),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::Record { capacity: 1 },
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::String(b"root".to_vec()),
+                    },
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(3),
+                        var_id: ctx_var,
+                    },
+                    HirStmt::RecordInsert {
+                        src_dst: RegId::new(1),
+                        key: RegId::new(2),
+                        val: RegId::new(3),
+                    },
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(4),
+                        var_id: event_var,
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(5),
+                        lit: HirLiteral::CellPath(Box::new(CellPath {
+                            members: vec![string_member("filename")],
+                        })),
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(4),
+                        path: RegId::new(5),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(6),
+                        lit: HirLiteral::CellPath(Box::new(CellPath {
+                            members: vec![string_member("root"), string_member("argv")],
+                        })),
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(1),
+                        path: RegId::new(6),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(7),
+                        lit: HirLiteral::Int(0),
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(7) },
+            }],
+            entry: HirBlockId(0),
+            spans: vec![Span::test_data(); 13],
+            ast: vec![None; 13],
+            comments: vec![],
+            register_count: 8,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        Some(ctx_var),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tracepoint, "syscalls/sys_enter_execve");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("aliased tracepoint payload fields should lower");
+
+    for field in ["filename", "argv"] {
+        assert!(
+            result
+                .type_hints
+                .used_ctx_fields
+                .contains(&CtxField::TracepointField(field.to_string())),
+            "ctx.{field} should preserve source-level tracepoint compatibility metadata"
+        );
+    }
+
+    let compiled =
+        compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+            .expect("aliased tracepoint payload fields should compile");
+    let program = compiled.into_program(
+        EbpfProgramType::Tracepoint,
+        "syscalls/sys_enter_execve",
+        "main",
+        HashMap::new(),
+        HashMap::new(),
+    );
+    let requirement_keys = program
+        .context_field_compatibility_requirements()
+        .into_iter()
+        .map(|requirement| requirement.key().to_string())
+        .collect::<BTreeSet<_>>();
+
+    assert_eq!(
+        requirement_keys,
+        BTreeSet::from([
+            "tracepoint:syscalls/sys_enter_execve:field:argv".to_string(),
+            "tracepoint:syscalls/sys_enter_execve:field:filename".to_string(),
+        ])
+    );
+    assert_eq!(
+        program.context_field_compatibility_minimum_kernel(),
+        Some("4.7")
+    );
 }
 
 fn make_bare_context_call_program(ctx_var: VarId, decl_id: DeclId) -> HirProgram {
