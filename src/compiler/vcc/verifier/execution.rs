@@ -1272,10 +1272,25 @@ impl VccVerifier {
                 let released_kfunc_ref = args
                     .iter()
                     .any(|(_, reg)| state.is_released_kfunc_ref(*reg));
+                let mut merged_map_fd: Option<Option<MapRef>> = None;
+                for (_, reg) in args {
+                    let next = state.map_fd_source(*reg).cloned();
+                    merged_map_fd = Some(match merged_map_fd {
+                        None => next,
+                        Some(existing) if existing == next => existing,
+                        _ => None,
+                    });
+                    if matches!(merged_map_fd, Some(None)) {
+                        break;
+                    }
+                }
                 state.set_reg(*dst, ty);
                 if released_kfunc_ref {
                     state.mark_released_kfunc_ref(*dst);
                     return;
+                }
+                if let Some(Some(map)) = merged_map_fd {
+                    state.set_map_fd_source(*dst, map);
                 }
                 let mut merged_ctx_field: Option<Option<CtxField>> = None;
                 for (_, reg) in args {

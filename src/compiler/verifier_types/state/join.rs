@@ -135,6 +135,12 @@ impl VerifierState {
         for i in 0..self.map_fd_sources.len() {
             let merged = match (&self.map_fd_sources[i], &other.map_fd_sources[i]) {
                 (Some(left), Some(right)) if left == right => Some(left.clone()),
+                (Some(left), None) if matches!(other.regs[i], VerifierType::Uninit) => {
+                    Some(left.clone())
+                }
+                (None, Some(right)) if matches!(self.regs[i], VerifierType::Uninit) => {
+                    Some(right.clone())
+                }
                 _ => None,
             };
             map_fd_sources.push(merged);

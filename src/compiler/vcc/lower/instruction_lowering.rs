@@ -30,6 +30,19 @@ impl<'a> VccLowerer<'a> {
         source
     }
 
+    fn map_fd_source_for_phi(&self, args: &[(BlockId, VReg)]) -> Option<MapRef> {
+        let mut source = None;
+        for (_, vreg) in args {
+            let candidate = self.map_fd_regs.get(&VccReg(vreg.0)).cloned()?;
+            match &source {
+                Some(existing) if *existing != candidate => return None,
+                Some(_) => {}
+                None => source = Some(candidate),
+            }
+        }
+        source
+    }
+
     fn push_iter_lifecycle_inst(
         kfunc: &str,
         out: &mut Vec<VccInst>,
@@ -61,6 +74,7 @@ impl<'a> VccLowerer<'a> {
                             slot: *slot,
                             size,
                         });
+                        self.map_fd_regs.remove(&dst_reg);
                         self.ptr_regs.insert(
                             dst_reg,
                             VccPointerInfo {
@@ -90,6 +104,15 @@ impl<'a> VccLowerer<'a> {
                         }
                         if let Some(field) = self.direct_ctx_field_for_value(src) {
                             self.direct_ctx_field_regs.insert(dst_reg, field);
+                        }
+                        if let MirValue::VReg(src_reg) = src {
+                            if let Some(map) = self.map_fd_regs.get(&VccReg(src_reg.0)).cloned() {
+                                self.map_fd_regs.insert(dst_reg, map);
+                            } else {
+                                self.map_fd_regs.remove(&dst_reg);
+                            }
+                        } else {
+                            self.map_fd_regs.remove(&dst_reg);
                         }
                     }
                 }
@@ -267,6 +290,7 @@ impl<'a> VccLowerer<'a> {
                 }
             }
             MirInst::Phi { dst, args } => {
+                let map_fd_source = self.map_fd_source_for_phi(args);
                 let vcc_args = args
                     .iter()
                     .map(|(block, vreg)| (VccBlockId(block.0), VccReg(vreg.0)))
@@ -275,6 +299,15 @@ impl<'a> VccLowerer<'a> {
                     dst: VccReg(dst.0),
                     args: vcc_args,
                 });
+                if let Some(map) = map_fd_source {
+                    out.push(VccInst::MapFdSource {
+                        map_fd: VccReg(dst.0),
+                        map: map.clone(),
+                    });
+                    self.map_fd_regs.insert(VccReg(dst.0), map);
+                } else {
+                    self.map_fd_regs.remove(&VccReg(dst.0));
+                }
                 if let Some(field) = self.direct_ctx_field_for_phi(args) {
                     self.direct_ctx_field_regs.insert(VccReg(dst.0), field);
                 }
@@ -667,6 +700,7 @@ impl<'a> VccLowerer<'a> {
                     map_fd: VccReg(dst.0),
                     map: map.clone(),
                 });
+                self.map_fd_regs.insert(VccReg(dst.0), map.clone());
             }
             MirInst::LoadSubprogram { dst, .. } => {
                 let ty = self
