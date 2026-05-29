@@ -1824,6 +1824,27 @@ fn test_known_dynptr_kfunc_args_are_modeled() {
 }
 
 #[test]
+fn test_known_dynptr_state_copies_require_input_source_and_output_destination() {
+    for kfunc in ["bpf_dynptr_clone"] {
+        let args = kfunc_unknown_dynptr_args(kfunc);
+        for copy in kfunc_unknown_dynptr_copy(kfunc) {
+            assert!(
+                args.iter().any(|arg| arg.arg_idx == copy.src_arg_idx
+                    && arg.role == KfuncUnknownDynptrArgRole::In),
+                "{kfunc} copy source arg{} must require an initialized dynptr",
+                copy.src_arg_idx
+            );
+            assert!(
+                args.iter().any(|arg| arg.arg_idx == copy.dst_arg_idx
+                    && arg.role == KfuncUnknownDynptrArgRole::Out),
+                "{kfunc} copy destination arg{} must be modeled as an output dynptr",
+                copy.dst_arg_idx
+            );
+        }
+    }
+}
+
+#[test]
 fn test_infer_unknown_dynptr_copy_args_prefers_named_input() {
     let args = vec![
         KfuncUnknownDynptrArg {
