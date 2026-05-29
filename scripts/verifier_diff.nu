@@ -740,6 +740,15 @@ const PROGRAM_GLOBAL_KERNEL_FEATURE_EXPECTATIONS = [
         ]
         feature_keys: ["global:bpf-data-sections"]
     }
+    {
+        program: [
+            '{|ctx|'
+            '  let text = "global-get seen"'
+            '  0'
+            '}'
+        ]
+        feature_keys: []
+    }
 ]
 
 const KERNEL_FEATURE_MAP_HASH = {
@@ -21178,6 +21187,27 @@ def line-declares-readonly-aggregate-constant? [line: string] {
     false
 }
 
+def line-invokes-global-command? [line: string] {
+    let trimmed = ($line | str trim)
+    if ($trimmed | str starts-with "#") {
+        return false
+    }
+
+    for command in ["global-define" "global-get" "global-set"] {
+        if $trimmed == $command or ($trimmed | str starts-with $"($command) ") {
+            return true
+        }
+
+        for prefix in ["| " "; " "{ " "( "] {
+            if ($trimmed | str contains $"($prefix)($command) ") {
+                return true
+            }
+        }
+    }
+
+    false
+}
+
 def program-global-kernel-features [source: string] {
     for line in ($source | lines) {
         let trimmed = ($line | str trim)
@@ -21185,7 +21215,7 @@ def program-global-kernel-features [source: string] {
             continue
         }
 
-        if (($trimmed | str contains "global-define") or ($trimmed | str contains "global-get") or ($trimmed | str contains "global-set")) {
+        if (line-invokes-global-command? $trimmed) {
             return [$KERNEL_FEATURE_GLOBAL_DATA_SECTIONS]
         }
 
