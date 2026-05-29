@@ -1,4 +1,5 @@
 use super::attach::{
+    kernel_compiled_feature_minimum_requirement_detail,
     kernel_context_field_minimum_requirement_detail, kernel_global_minimum_requirement_detail,
     kernel_helper_minimum_requirement_detail, kernel_kfunc_minimum_requirement_detail,
     kernel_map_minimum_requirement_detail, kernel_map_value_minimum_requirement_detail,
@@ -8,11 +9,11 @@ use super::*;
 use crate::compiler::instruction::{EbpfBuilder, EbpfInsn};
 use crate::compiler::mir::{CtxField, MapKind};
 use crate::compiler::{
-    BpfHelper, BpfMapDef, ContextFieldCompatibilityRequirement, CounterKeySchema,
-    CounterKeySchemaField, EbpfMap, EbpfObject, EbpfProgram, EbpfProgramType,
-    GlobalCompatibilityRequirement, KfuncCompatibilityRequirement, MapRef,
-    MapValueCompatibilityRequirement, MirType, ProgramCompatibilityRequirement,
-    ir_to_mir::AnnotatedValueSemantics,
+    BpfHelper, BpfMapDef, CompiledFeatureCompatibilityRequirement,
+    ContextFieldCompatibilityRequirement, CounterKeySchema, CounterKeySchemaField, EbpfMap,
+    EbpfObject, EbpfProgram, EbpfProgramType, GlobalCompatibilityRequirement,
+    KfuncCompatibilityRequirement, MapRef, MapValueCompatibilityRequirement, MirType,
+    ProgramCompatibilityRequirement, ir_to_mir::AnnotatedValueSemantics,
 };
 use crate::kernel_btf::{KernelBtf, TrampolineValueKind};
 use crate::program_spec::{
@@ -2004,6 +2005,21 @@ fn test_kernel_object_compatibility_requirement_detail_reports_program_floor() {
 
 #[test]
 fn test_kernel_object_compatibility_requirement_detail_reports_compiled_feature_floor() {
+    let mut builder = EbpfBuilder::new();
+    builder.push(EbpfInsn::jump(-1)).push(EbpfInsn::exit());
+    let object =
+        EbpfProgram::new(EbpfProgramType::Kprobe, "do_sys_openat2", "main", builder).into_object();
+
+    let msg = kernel_object_compatibility_requirement_detail(&object, "5.2.0-test")
+        .expect("kernel 5.2 should be too old for bounded loops");
+
+    assert!(msg.contains("compiled bytecode features require kernel>=5.3"));
+    assert!(msg.contains("current kernel is 5.2.0-test"));
+    assert!(msg.contains("bounded backward-branch loop support"));
+}
+
+#[test]
+fn test_kernel_object_compatibility_requirement_detail_reports_kfunc_floor() {
     let object =
         EbpfProgram::from_bytecode(EbpfProgramType::Kprobe, "do_sys_openat2", "main", vec![])
             .with_used_kfuncs(["bpf_get_task_exe_file"])
@@ -2181,6 +2197,33 @@ fn test_kernel_helper_minimum_requirement_detail_accepts_newer_kernel() {
     assert!(kernel_helper_minimum_requirement_detail(&requirements, "5.8.0").is_none());
     assert!(kernel_helper_minimum_requirement_detail(&requirements, "6.1.12").is_none());
     assert!(kernel_helper_minimum_requirement_detail(&[], "3.19").is_none());
+}
+
+#[test]
+fn test_kernel_compiled_feature_minimum_requirement_detail_reports_too_old_kernel() {
+    let requirements = [
+        CompiledFeatureCompatibilityRequirement::BpfSubprogramCalls,
+        CompiledFeatureCompatibilityRequirement::BoundedLoops,
+    ];
+    let msg = kernel_compiled_feature_minimum_requirement_detail(&requirements, "5.2.0-test")
+        .expect("kernel 5.2 should be too old for bounded loops");
+
+    assert!(msg.contains("compiled bytecode features require kernel>=5.3"));
+    assert!(msg.contains("current kernel is 5.2.0-test"));
+    assert!(msg.contains("bounded backward-branch loop support"));
+    assert!(msg.contains("BPF-to-BPF subprogram call support"));
+    assert!(msg.contains("kernel>=5.3"));
+}
+
+#[test]
+fn test_kernel_compiled_feature_minimum_requirement_detail_accepts_newer_kernel() {
+    let requirements = [
+        CompiledFeatureCompatibilityRequirement::BpfSubprogramCalls,
+        CompiledFeatureCompatibilityRequirement::BoundedLoops,
+    ];
+    assert!(kernel_compiled_feature_minimum_requirement_detail(&requirements, "5.3.0").is_none());
+    assert!(kernel_compiled_feature_minimum_requirement_detail(&requirements, "6.1.12").is_none());
+    assert!(kernel_compiled_feature_minimum_requirement_detail(&[], "4.15").is_none());
 }
 
 #[test]

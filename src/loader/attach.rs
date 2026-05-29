@@ -202,6 +202,27 @@ fn helper_compatibility_requirements_detail(
     }
 }
 
+fn compiled_feature_compatibility_requirements_detail(
+    requirements: &[crate::compiler::CompiledFeatureCompatibilityRequirement],
+) -> String {
+    if requirements.is_empty() {
+        String::new()
+    } else {
+        let descriptions = requirements
+            .iter()
+            .map(|requirement| {
+                format!(
+                    "{} (kernel>={})",
+                    requirement.description(),
+                    requirement.minimum_kernel()
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!("; compiled-feature requirements: {descriptions}")
+    }
+}
+
 fn kfunc_compatibility_requirements_detail(
     requirements: &[crate::compiler::KfuncCompatibilityRequirement],
 ) -> String {
@@ -352,6 +373,27 @@ pub(super) fn kernel_helper_minimum_requirement_detail(
     ))
 }
 
+pub(super) fn kernel_compiled_feature_minimum_requirement_detail(
+    requirements: &[crate::compiler::CompiledFeatureCompatibilityRequirement],
+    current_kernel: &str,
+) -> Option<String> {
+    let minimum =
+        crate::compiler::CompiledFeatureCompatibilityRequirement::effective_minimum_kernel(
+            requirements,
+        )?;
+    if crate::compiler::CompiledFeatureCompatibilityRequirement::kernel_version_at_least(
+        current_kernel,
+        minimum,
+    ) {
+        return None;
+    }
+
+    Some(format!(
+        "compiled bytecode features require kernel>={minimum}; current kernel is {current_kernel}{}; use --dry-run to compile or use a newer kernel",
+        compiled_feature_compatibility_requirements_detail(requirements)
+    ))
+}
+
 pub(super) fn kernel_kfunc_minimum_requirement_detail(
     requirements: &[crate::compiler::KfuncCompatibilityRequirement],
     current_kernel: &str,
@@ -442,6 +484,14 @@ pub(super) fn kernel_object_compatibility_requirement_detail(
     if !requirements.is_empty()
         && let Some(detail) =
             kernel_helper_minimum_requirement_detail(&requirements, current_kernel)
+    {
+        return Some(detail);
+    }
+
+    let requirements = object.compiled_feature_compatibility_requirements();
+    if !requirements.is_empty()
+        && let Some(detail) =
+            kernel_compiled_feature_minimum_requirement_detail(&requirements, current_kernel)
     {
         return Some(detail);
     }
