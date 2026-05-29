@@ -143,6 +143,7 @@ struct RecordField {
     ty: MirType,
     semantics: Option<AnnotatedValueSemantics>,
     is_context: bool,
+    root_ctx_field: Option<CtxField>,
 }
 
 /// Bounded iterator info for ranges

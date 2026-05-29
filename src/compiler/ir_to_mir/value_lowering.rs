@@ -692,6 +692,7 @@ impl<'a> HirToMirLowering<'a> {
                 ty: field_ty,
                 semantics: field_semantics,
                 is_context: false,
+                root_ctx_field: None,
             });
         }
 

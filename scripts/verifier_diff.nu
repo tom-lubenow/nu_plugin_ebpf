@@ -4676,6 +4676,17 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         feature_keys: ["ctx:data"]
     }
     {
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  mut rec = { data: $ctx.data }'
+            '  $rec.data.0 = 42'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:data"]
+    }
+    {
         target: "sk_skb_parser:/sys/fs/bpf/demo_sockmap"
         program: [
             '{|ctx|'
@@ -9224,6 +9235,22 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "tc-record-packet-data-write"
+        category: "context-surface"
+        tags: [tc context packet writable record source metadata]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  mut rec = { data: $ctx.data }'
+            '  $rec.data.0 = 42'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "tc-egress-rejects-context-socket-write"
         category: "context-policy"
         tags: [tc context writable socket reject egress-only]
@@ -10936,6 +10963,22 @@ const FIXTURES = [
             '{|ctx|'
             '  mut optval = $ctx.optval'
             '  $optval.2 = 42'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "cgroup-sockopt-optval-record-byte-write"
+        category: "context-surface"
+        tags: [cgroup-sockopt context writable record source metadata]
+        requires: [cgroup-v2]
+        target: "cgroup_sockopt:/sys/fs/cgroup:get"
+        program: [
+            '{|ctx|'
+            '  mut rec = { optval: $ctx.optval }'
+            '  $rec.optval.2 = 42'
             '  "allow"'
             '}'
         ]
@@ -19365,6 +19408,21 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  { k: $ctx } | emit'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "cannot use context pointers as values"
+    }
+    {
+        name: "core-record-context-packet-pointer-emit-rejects-pointer-escape"
+        category: "language-core"
+        tags: [record context packet emit reject]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  { data: $ctx.data } | emit'
             '  0'
             '}'
         ]

@@ -654,9 +654,19 @@ impl<'a> HirToMirLowering<'a> {
                 .and_then(|semantics| {
                     Self::project_annotated_value_semantics(&semantics, &path.members)
                 });
-            let root_ctx_field = self
-                .get_metadata(src_dst)
-                .and_then(|meta| meta.root_ctx_field.clone());
+            let root_ctx_field = self.get_metadata(src_dst).and_then(|meta| {
+                path.members
+                    .first()
+                    .and_then(|member| match member {
+                        PathMember::String { val, .. } => meta
+                            .record_fields
+                            .iter()
+                            .find(|field| field.name == *val)
+                            .and_then(|field| field.root_ctx_field.clone()),
+                        _ => None,
+                    })
+                    .or_else(|| meta.root_ctx_field.clone())
+            });
             let map_value_origin = self
                 .get_metadata(src_dst)
                 .and_then(|meta| meta.map_value_origin.clone());
@@ -1202,6 +1212,84 @@ impl<'a> HirToMirLowering<'a> {
             .and_then(|(value, new_value)| {
                 Self::constant_upsert_cell_path(value, &path, new_value.clone())
             });
+
+        if let Some(record_field) = self.get_metadata(src_dst).and_then(|meta| {
+            path.members.first().and_then(|member| match member {
+                PathMember::String { val, .. } => meta
+                    .record_fields
+                    .iter()
+                    .find(|field| field.name == *val && field.root_ctx_field.is_some())
+                    .cloned(),
+                _ => None,
+            })
+        }) {
+            let tail: Vec<PathMember> = path.members.iter().skip(1).cloned().collect();
+            match (&record_field.ty, record_field.root_ctx_field.clone()) {
+                (
+                    MirType::Ptr {
+                        pointee,
+                        address_space: AddressSpace::Context,
+                    },
+                    Some(CtxField::FlowKeys),
+                ) => {
+                    self.lower_context_pointer_scalar_update(
+                        record_field.value_vreg,
+                        pointee.as_ref(),
+                        &tail,
+                        new_value,
+                        &path_desc,
+                    )?;
+                    self.set_reg_constant_value(src_dst, constant_value);
+                    return Ok(());
+                }
+                (
+                    MirType::Ptr {
+                        address_space: AddressSpace::Packet,
+                        ..
+                    },
+                    Some(root_field @ (CtxField::Data | CtxField::DataMeta)),
+                ) => {
+                    self.lower_packet_ctx_update_from_ptr(
+                        record_field.value_vreg,
+                        root_field,
+                        &tail,
+                        new_value,
+                        &path_desc,
+                    )?;
+                    self.set_reg_constant_value(src_dst, constant_value);
+                    return Ok(());
+                }
+                (
+                    MirType::Ptr {
+                        address_space: AddressSpace::Kernel,
+                        ..
+                    },
+                    Some(CtxField::SockoptOptval),
+                ) => {
+                    let [PathMember::Int { val: index, .. }] = tail.as_slice() else {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "cell path update '.{} = ...' for a ctx.optval alias requires a fixed integer byte index, e.g. $ctx.optval.N = ...",
+                            path_desc
+                        )));
+                    };
+                    let index = usize::try_from(*index).map_err(|_| {
+                        CompileError::UnsupportedInstruction(format!(
+                            "cell path update '.{} = ...' requires a non-negative ctx.optval byte index",
+                            path_desc
+                        ))
+                    })?;
+                    self.lower_cgroup_sockopt_optval_byte_update_from_ptr(
+                        record_field.value_vreg,
+                        index,
+                        new_value,
+                        &path_desc,
+                    )?;
+                    self.set_reg_constant_value(src_dst, constant_value);
+                    return Ok(());
+                }
+                _ => {}
+            }
+        }
 
         let mut base_vreg = self.get_vreg(src_dst);
         let mut base_runtime_ty = self

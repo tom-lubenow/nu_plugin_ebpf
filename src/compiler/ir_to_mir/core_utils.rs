@@ -519,6 +519,16 @@ impl<'a> HirToMirLowering<'a> {
 
         meta.record_fields.iter().any(|field| {
             field.is_context
+                || (field.root_ctx_field.is_some()
+                    && matches!(
+                        field.ty,
+                        MirType::Ptr {
+                            address_space: AddressSpace::Context
+                                | AddressSpace::Kernel
+                                | AddressSpace::Packet,
+                            ..
+                        }
+                    ))
                 || field.source_reg.is_some_and(|source_reg| {
                     if seen_regs.contains(&source_reg.get()) {
                         return false;

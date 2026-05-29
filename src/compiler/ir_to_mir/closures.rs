@@ -822,6 +822,7 @@ impl<'a> HirToMirLowering<'a> {
             ty: field_type,
             semantics: field_semantics,
             is_context: val_meta.as_ref().is_some_and(|meta| meta.is_context),
+            root_ctx_field: val_meta.and_then(|meta| meta.root_ctx_field),
         };
 
         {
