@@ -5320,6 +5320,109 @@ fn test_type_error_kfunc_dynptr_slice_requires_constant_size_arg() {
     );
 }
 
+fn make_xdp_metadata_kfunc_type_call(
+    kfunc: &str,
+    outputs: &[usize],
+    packet_output_idx: Option<usize>,
+) -> MirFunction {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let output_vregs = (0..outputs.len())
+        .map(|_| func.alloc_vreg())
+        .collect::<Vec<_>>();
+    let ret = func.alloc_vreg();
+
+    func.block_mut(BlockId(0))
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    for (idx, (output, size)) in output_vregs.iter().zip(outputs.iter()).enumerate() {
+        if packet_output_idx == Some(idx) {
+            func.block_mut(BlockId(0))
+                .instructions
+                .push(MirInst::LoadCtxField {
+                    dst: *output,
+                    field: CtxField::Data,
+                    slot: None,
+                });
+        } else {
+            let slot = func.alloc_stack_slot(*size, 8, StackSlotKind::StringBuffer);
+            func.block_mut(BlockId(0)).instructions.push(MirInst::Copy {
+                dst: *output,
+                src: MirValue::StackSlot(slot),
+            });
+        }
+    }
+    func.block_mut(BlockId(0))
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: ret,
+            kfunc: kfunc.to_string(),
+            btf_id: None,
+            args: std::iter::once(ctx)
+                .chain(output_vregs.iter().copied())
+                .collect(),
+        });
+    func.block_mut(BlockId(0)).terminator = MirInst::Return { val: None };
+    func
+}
+
+fn assert_xdp_metadata_kfunc_infers_stack_outputs(kfunc: &str, outputs: &[usize]) {
+    let func = make_xdp_metadata_kfunc_type_call(kfunc, outputs, None);
+    let mut ti = TypeInference::new(Some(ProbeContext::new(EbpfProgramType::Xdp, "lo")));
+    ti.infer(&func)
+        .unwrap_or_else(|err| panic!("expected {kfunc} to infer stack outputs: {err:?}"));
+}
+
+fn assert_xdp_metadata_kfunc_rejects_packet_output(kfunc: &str, outputs: &[usize]) {
+    for packet_idx in 0..outputs.len() {
+        let func = make_xdp_metadata_kfunc_type_call(kfunc, outputs, Some(packet_idx));
+        let mut ti = TypeInference::new(Some(ProbeContext::new(EbpfProgramType::Xdp, "lo")));
+        let errs = match ti.infer(&func) {
+            Ok(_) => panic!("expected {kfunc} output {packet_idx} to reject packet buffer"),
+            Err(errs) => errs,
+        };
+        assert!(
+            errs.iter().any(|e| e.message.contains("got Packet")),
+            "unexpected errors for {kfunc} output {packet_idx}: {:?}",
+            errs
+        );
+    }
+}
+
+#[test]
+fn test_infer_xdp_metadata_rx_timestamp_accepts_stack_output_buffer() {
+    assert_xdp_metadata_kfunc_infers_stack_outputs("bpf_xdp_metadata_rx_timestamp", &[8]);
+}
+
+#[test]
+fn test_type_error_xdp_metadata_rx_timestamp_rejects_packet_output_buffer() {
+    assert_xdp_metadata_kfunc_rejects_packet_output("bpf_xdp_metadata_rx_timestamp", &[8]);
+}
+
+#[test]
+fn test_infer_xdp_metadata_rx_hash_accepts_stack_output_buffers() {
+    assert_xdp_metadata_kfunc_infers_stack_outputs("bpf_xdp_metadata_rx_hash", &[4, 4]);
+}
+
+#[test]
+fn test_type_error_xdp_metadata_rx_hash_rejects_packet_output_buffers() {
+    assert_xdp_metadata_kfunc_rejects_packet_output("bpf_xdp_metadata_rx_hash", &[4, 4]);
+}
+
+#[test]
+fn test_infer_xdp_metadata_rx_vlan_tag_accepts_stack_output_buffers() {
+    assert_xdp_metadata_kfunc_infers_stack_outputs("bpf_xdp_metadata_rx_vlan_tag", &[2, 2]);
+}
+
+#[test]
+fn test_type_error_xdp_metadata_rx_vlan_tag_rejects_packet_output_buffers() {
+    assert_xdp_metadata_kfunc_rejects_packet_output("bpf_xdp_metadata_rx_vlan_tag", &[2, 2]);
+}
+
 fn make_xdp_get_xfrm_state_type_call(size: i64, buffer_size: usize) -> (MirFunction, VReg) {
     make_xdp_get_xfrm_state_type_call_with_arg0(CtxField::Context, size, buffer_size)
 }
