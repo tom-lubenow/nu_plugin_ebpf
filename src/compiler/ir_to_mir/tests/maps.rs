@@ -519,6 +519,7 @@ fn make_sock_ops_socket_map_put_program(
                     (b"kind".to_vec(), RegId::new(4)),
                     (b"flags".to_vec(), RegId::new(5)),
                 ],
+                pipeline_input: Some(RegId::new(0)),
                 ..Default::default()
             },
         },
@@ -806,6 +807,7 @@ fn test_lower_map_put_get_record_string_field_preserves_semantics() {
                         args: HirCallArgs {
                             positional: vec![RegId::new(1), RegId::new(2)],
                             named: vec![(b"kind".to_vec(), RegId::new(3))],
+                            pipeline_input: Some(RegId::new(0)),
                             ..HirCallArgs::default()
                         },
                     },
@@ -974,6 +976,7 @@ fn test_lower_map_put_get_metadata_only_record_builder_preserves_string_semantic
                         args: HirCallArgs {
                             positional: vec![RegId::new(5), RegId::new(6)],
                             named: vec![(b"kind".to_vec(), RegId::new(7))],
+                            pipeline_input: Some(RegId::new(0)),
                             ..HirCallArgs::default()
                         },
                     },
@@ -1127,6 +1130,7 @@ fn test_lower_map_put_get_record_list_field_preserves_semantics() {
                         args: HirCallArgs {
                             positional: vec![RegId::new(1), RegId::new(2)],
                             named: vec![(b"kind".to_vec(), RegId::new(3))],
+                            pipeline_input: Some(RegId::new(0)),
                             ..HirCallArgs::default()
                         },
                     },
@@ -1986,6 +1990,67 @@ fn test_lower_map_put_respects_lpm_trie_kind() {
 }
 
 #[test]
+fn test_lower_map_put_rejects_live_src_dst_without_pipeline_input() {
+    let map_put_decl = DeclId::new(42);
+    let decl_names = HashMap::from([(map_put_decl, "map-put".to_string())]);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Int(99),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("seen".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::String("hash".into()),
+                },
+                HirStmt::Call {
+                    decl_id: map_put_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1), RegId::new(2)],
+                        named: vec![(b"kind".to_vec(), RegId::new(3))],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 4,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("map-put must not consume a merely live src_dst value");
+
+    assert!(
+        err.to_string()
+            .contains("map-put requires a value from pipeline input")
+    );
+}
+
+#[test]
 fn test_lower_map_put_sockmap_uses_socket_update_helper() {
     let hir = make_sock_ops_socket_map_put_program(DeclId::new(42), "sockmap", 7);
     let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
@@ -2178,6 +2243,63 @@ fn test_lower_map_push_respects_bloom_filter_kind() {
         })
         .expect("expected generic map push");
     assert_eq!(kind, MapKind::BloomFilter);
+}
+
+#[test]
+fn test_lower_map_push_rejects_live_src_dst_without_pipeline_input() {
+    let map_push_decl = DeclId::new(42);
+    let decl_names = HashMap::from([(map_push_decl, "map-push".to_string())]);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Int(99),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("recent".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String("queue".into()),
+                },
+                HirStmt::Call {
+                    decl_id: map_push_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        named: vec![(b"kind".to_vec(), RegId::new(2))],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("map-push must not consume a merely live src_dst value");
+
+    assert!(
+        err.to_string()
+            .contains("map-push requires a value from pipeline input")
+    );
 }
 
 #[test]
@@ -2947,6 +3069,7 @@ fn test_map_define_key_type_registers_and_materializes_record_key() {
                     args: HirCallArgs {
                         positional: vec![RegId::new(5), RegId::new(0)],
                         named: vec![(b"kind".to_vec(), RegId::new(6))],
+                        pipeline_input: Some(RegId::new(10)),
                         ..HirCallArgs::default()
                     },
                 },
@@ -3246,6 +3369,7 @@ fn test_map_put_on_map_in_map_result_lowers_dynamic_inner_update() {
         src_dst: RegId::new(14),
         args: HirCallArgs {
             positional: vec![RegId::new(12), RegId::new(13)],
+            pipeline_input: Some(RegId::new(14)),
             ..HirCallArgs::default()
         },
     });
@@ -3934,6 +4058,7 @@ fn test_external_key_schema_materializes_record_key() {
                     args: HirCallArgs {
                         positional: vec![RegId::new(5), RegId::new(0)],
                         named: vec![(b"kind".to_vec(), RegId::new(6))],
+                        pipeline_input: Some(RegId::new(7)),
                         ..HirCallArgs::default()
                     },
                 },

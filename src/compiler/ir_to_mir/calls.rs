@@ -1655,17 +1655,12 @@ impl<'a> HirToMirLowering<'a> {
                         Some(key_reg),
                         "map-put dynamic map",
                     )?;
-                    let value_vreg = self
-                        .pipeline_input
-                        .or_else(|| src_dst_had_value.then_some(dst_vreg))
-                        .ok_or_else(|| {
-                            CompileError::UnsupportedInstruction(
-                                "map-put requires a value from pipeline input".into(),
-                            )
-                        })?;
-                    let value_reg = self
-                        .pipeline_input_reg
-                        .or_else(|| src_dst_had_value.then_some(src_dst));
+                    let value_vreg = self.pipeline_input.ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "map-put requires a value from pipeline input".into(),
+                        )
+                    })?;
+                    let value_reg = self.pipeline_input_reg;
                     let stored_value_vreg = if let Some(value_reg) = value_reg {
                         self.reject_context_pointer_payload(Some(value_reg), "map-put value")?;
                         self.materialized_metadata_aggregate_vreg(value_reg, value_vreg)?
@@ -1701,13 +1696,7 @@ impl<'a> HirToMirLowering<'a> {
                     };
                     if map_kind.is_socket_map() {
                         self.lower_socket_map_put(
-                            src_dst,
-                            dst_vreg,
-                            src_dst_had_value,
-                            map_ref,
-                            key_vreg,
-                            key_reg,
-                            flags,
+                            src_dst, dst_vreg, map_ref, key_vreg, key_reg, flags,
                         )?;
                     } else {
                         self.validate_generic_map_update_kind(map_kind, &map_name)?;
@@ -1718,17 +1707,12 @@ impl<'a> HirToMirLowering<'a> {
                             Some(key_reg),
                             "map-put",
                         )?;
-                        let value_vreg = self
-                            .pipeline_input
-                            .or_else(|| src_dst_had_value.then_some(dst_vreg))
-                            .ok_or_else(|| {
-                                CompileError::UnsupportedInstruction(
-                                    "map-put requires a value from pipeline input".into(),
-                                )
-                            })?;
-                        let value_reg = self
-                            .pipeline_input_reg
-                            .or_else(|| src_dst_had_value.then_some(src_dst));
+                        let value_vreg = self.pipeline_input.ok_or_else(|| {
+                            CompileError::UnsupportedInstruction(
+                                "map-put requires a value from pipeline input".into(),
+                            )
+                        })?;
+                        let value_reg = self.pipeline_input_reg;
                         let stored_value_vreg = if let Some(value_reg) = value_reg {
                             self.reject_context_pointer_payload(Some(value_reg), "map-put value")?;
                             self.materialized_metadata_aggregate_vreg(value_reg, value_vreg)?
@@ -1792,17 +1776,12 @@ impl<'a> HirToMirLowering<'a> {
                 } else {
                     0
                 };
-                let value_vreg = self
-                    .pipeline_input
-                    .or_else(|| src_dst_had_value.then_some(dst_vreg))
-                    .ok_or_else(|| {
-                        CompileError::UnsupportedInstruction(
-                            "map-push requires a value from pipeline input".into(),
-                        )
-                    })?;
-                let value_reg = self
-                    .pipeline_input_reg
-                    .or_else(|| src_dst_had_value.then_some(src_dst));
+                let value_vreg = self.pipeline_input.ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(
+                        "map-push requires a value from pipeline input".into(),
+                    )
+                })?;
+                let value_reg = self.pipeline_input_reg;
                 let stored_value_vreg = if let Some(value_reg) = value_reg {
                     self.reject_context_pointer_payload(Some(value_reg), "map-push value")?;
                     self.materialized_metadata_aggregate_vreg(value_reg, value_vreg)?
@@ -1993,20 +1972,17 @@ impl<'a> HirToMirLowering<'a> {
                         })?;
                     let _ = type_vreg;
                     let type_spec = self.literal_string_arg(type_reg, "global-define --type")?;
-                    let constant_value = self
-                        .pipeline_input_reg
-                        .or_else(|| src_dst_had_value.then_some(src_dst))
-                        .and_then(|reg| {
-                            self.get_metadata(reg)
-                                .and_then(|meta| meta.constant_value.clone())
-                        });
+                    let constant_value = self.pipeline_input_reg.and_then(|reg| {
+                        self.get_metadata(reg)
+                            .and_then(|meta| meta.constant_value.clone())
+                    });
                     if let Some(value) = constant_value.as_ref() {
                         self.define_named_program_global_from_type_spec_and_value(
                             &global_name,
                             &type_spec,
                             value,
                         )?;
-                    } else if self.pipeline_input.is_some() || src_dst_had_value {
+                    } else if self.pipeline_input.is_some() {
                         return Err(CompileError::UnsupportedInstruction(
                             "global-define --type with pipeline input requires a compile-time constant value".into(),
                         ));
@@ -2021,28 +1997,20 @@ impl<'a> HirToMirLowering<'a> {
                     self.reset_call_result_metadata(src_dst);
                     return Ok(());
                 }
-                let value_vreg = self
-                    .pipeline_input
-                    .or_else(|| src_dst_had_value.then_some(dst_vreg))
-                    .ok_or_else(|| {
-                        CompileError::UnsupportedInstruction(
-                            if zero_init {
-                                "global-define --zero requires a value from pipeline input to establish layout"
-                                    .into()
-                            } else {
-                                "global-define requires a compile-time constant value from pipeline input"
-                                    .into()
-                            },
-                        )
-                    })?;
-                let value_reg = self
-                    .pipeline_input_reg
-                    .or_else(|| src_dst_had_value.then_some(src_dst))
-                    .ok_or_else(|| {
-                        CompileError::UnsupportedInstruction(
-                            "global-define requires a source value with tracked metadata".into(),
-                        )
-                    })?;
+                let value_vreg = self.pipeline_input.ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(if zero_init {
+                        "global-define --zero requires a value from pipeline input to establish layout"
+                            .into()
+                    } else {
+                        "global-define requires a compile-time constant value from pipeline input"
+                            .into()
+                    })
+                })?;
+                let value_reg = self.pipeline_input_reg.ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(
+                        "global-define requires a source value with tracked metadata".into(),
+                    )
+                })?;
                 self.reject_context_pointer_payload(Some(value_reg), "global-define value")?;
                 if !zero_init
                     && self
@@ -2121,22 +2089,16 @@ impl<'a> HirToMirLowering<'a> {
                 let (_, name_reg) = self.positional_args[0];
                 let global_name = self.literal_string_arg(name_reg, "global-set")?;
                 self.validate_generic_map_name(&global_name, "global-set")?;
-                let value_vreg = self
-                    .pipeline_input
-                    .or_else(|| src_dst_had_value.then_some(dst_vreg))
-                    .ok_or_else(|| {
-                        CompileError::UnsupportedInstruction(
-                            "global-set requires a value from pipeline input".into(),
-                        )
-                    })?;
-                let value_reg = self
-                    .pipeline_input_reg
-                    .or_else(|| src_dst_had_value.then_some(src_dst))
-                    .ok_or_else(|| {
-                        CompileError::UnsupportedInstruction(
-                            "global-set requires a source value with tracked metadata".into(),
-                        )
-                    })?;
+                let value_vreg = self.pipeline_input.ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(
+                        "global-set requires a value from pipeline input".into(),
+                    )
+                })?;
+                let value_reg = self.pipeline_input_reg.ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(
+                        "global-set requires a source value with tracked metadata".into(),
+                    )
+                })?;
                 self.reject_context_pointer_payload(Some(value_reg), "global-set value")?;
                 let global =
                     self.ensure_named_program_global(&global_name, value_reg, value_vreg)?;
@@ -2783,7 +2745,6 @@ impl<'a> HirToMirLowering<'a> {
         &mut self,
         src_dst: RegId,
         dst_vreg: VReg,
-        src_dst_had_value: bool,
         map_ref: MapRef,
         key_vreg: VReg,
         key_reg: RegId,
@@ -2803,18 +2764,13 @@ impl<'a> HirToMirLowering<'a> {
         if let Some(message) = probe_ctx.helper_call_error(helper) {
             return Err(CompileError::UnsupportedInstruction(message));
         }
-        let ctx_vreg = self
-            .pipeline_input
-            .or_else(|| src_dst_had_value.then_some(dst_vreg))
-            .ok_or_else(|| {
-                CompileError::UnsupportedInstruction(
-                    "map-put --kind sockmap/sockhash requires a sock_ops context from pipeline input"
-                        .into(),
-                )
-            })?;
-        let ctx_reg = self
-            .pipeline_input_reg
-            .or_else(|| src_dst_had_value.then_some(src_dst));
+        let ctx_vreg = self.pipeline_input.ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "map-put --kind sockmap/sockhash requires a sock_ops context from pipeline input"
+                    .into(),
+            )
+        })?;
+        let ctx_reg = self.pipeline_input_reg;
         let ctx_vreg = if ctx_reg.is_some_and(|reg| self.is_context_reg(reg)) {
             self.materialize_context_pointer_arg()
         } else {

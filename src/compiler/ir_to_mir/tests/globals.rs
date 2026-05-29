@@ -764,6 +764,7 @@ fn test_lower_global_set_and_get_nonzero_scalar_uses_named_data_global() {
                     src_dst: RegId::new(0),
                     args: HirCallArgs {
                         positional: vec![RegId::new(1)],
+                        pipeline_input: Some(RegId::new(0)),
                         ..HirCallArgs::default()
                     },
                 },
@@ -844,6 +845,7 @@ fn test_lower_global_set_and_get_zero_scalar_uses_named_bss_global() {
                     src_dst: RegId::new(0),
                     args: HirCallArgs {
                         positional: vec![RegId::new(1)],
+                        pipeline_input: Some(RegId::new(0)),
                         ..HirCallArgs::default()
                     },
                 },
@@ -909,6 +911,7 @@ fn test_lower_global_set_and_get_string_materializes_string_slot() {
                     src_dst: RegId::new(0),
                     args: HirCallArgs {
                         positional: vec![RegId::new(1)],
+                        pipeline_input: Some(RegId::new(0)),
                         ..HirCallArgs::default()
                     },
                 },
@@ -993,6 +996,7 @@ fn test_lower_global_set_and_get_record_string_field_materializes_string_slot() 
                     src_dst: RegId::new(0),
                     args: HirCallArgs {
                         positional: vec![RegId::new(1)],
+                        pipeline_input: Some(RegId::new(0)),
                         ..HirCallArgs::default()
                     },
                 },
@@ -1110,6 +1114,7 @@ fn test_lower_global_set_from_runtime_record_value_preserves_string_field_semant
                     src_dst: RegId::new(4),
                     args: HirCallArgs {
                         positional: vec![RegId::new(3)],
+                        pipeline_input: Some(RegId::new(4)),
                         ..HirCallArgs::default()
                     },
                 },
@@ -1226,6 +1231,7 @@ fn test_lower_global_set_from_runtime_record_value_preserves_list_field_semantic
                     src_dst: RegId::new(4),
                     args: HirCallArgs {
                         positional: vec![RegId::new(3)],
+                        pipeline_input: Some(RegId::new(4)),
                         ..HirCallArgs::default()
                     },
                 },
@@ -1342,6 +1348,7 @@ fn test_lower_global_define_and_get_record_list_field_supports_get() {
                     src_dst: RegId::new(0),
                     args: HirCallArgs {
                         positional: vec![RegId::new(1)],
+                        pipeline_input: Some(RegId::new(0)),
                         ..HirCallArgs::default()
                     },
                 },
@@ -1461,6 +1468,7 @@ fn test_lower_global_define_and_get_nonzero_scalar_uses_named_data_global() {
                     src_dst: RegId::new(0),
                     args: HirCallArgs {
                         positional: vec![RegId::new(1)],
+                        pipeline_input: Some(RegId::new(0)),
                         ..HirCallArgs::default()
                     },
                 },
@@ -1549,6 +1557,7 @@ fn test_lower_global_get_before_later_global_define_uses_named_data_global() {
                     src_dst: RegId::new(2),
                     args: HirCallArgs {
                         positional: vec![RegId::new(0)],
+                        pipeline_input: Some(RegId::new(2)),
                         ..HirCallArgs::default()
                     },
                 },
@@ -1619,6 +1628,7 @@ fn test_lower_global_define_zero_with_runtime_exemplar_uses_named_bss_global() {
                     args: HirCallArgs {
                         positional: vec![RegId::new(2)],
                         flags: vec![b"zero".to_vec()],
+                        pipeline_input: Some(RegId::new(0)),
                         ..HirCallArgs::default()
                     },
                 },
@@ -4828,6 +4838,7 @@ fn test_lower_global_get_before_later_constant_set_uses_named_bss_global() {
                     src_dst: RegId::new(2),
                     args: HirCallArgs {
                         positional: vec![RegId::new(0)],
+                        pipeline_input: Some(RegId::new(2)),
                         ..HirCallArgs::default()
                     },
                 },
@@ -4856,6 +4867,112 @@ fn test_lower_global_get_before_later_constant_set_uses_named_bss_global() {
     assert_eq!(result.data_globals.len(), 0);
     assert_eq!(result.bss_globals.len(), 1);
     assert_eq!(result.bss_globals[0].name, "__nu_global_state");
+}
+
+#[test]
+fn test_lower_global_set_rejects_live_src_dst_without_pipeline_input() {
+    let set_decl = DeclId::new(95);
+    let decl_names = HashMap::from([(set_decl, "global-set".to_string())]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Int(7),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("state".into()),
+                },
+                HirStmt::Call {
+                    decl_id: set_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 2,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("global-set must not consume a merely live src_dst value");
+
+    assert!(
+        err.to_string()
+            .contains("global-set requires a value from pipeline input")
+    );
+}
+
+#[test]
+fn test_lower_global_define_rejects_live_src_dst_without_pipeline_input() {
+    let define_decl = DeclId::new(96);
+    let decl_names = HashMap::from([(define_decl, "global-define".to_string())]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Int(7),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("state".into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 2,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("global-define must not consume a merely live src_dst value");
+
+    assert!(
+        err.to_string()
+            .contains("global-define requires a compile-time constant value from pipeline input")
+    );
 }
 
 #[test]
@@ -4929,6 +5046,7 @@ fn test_lower_global_set_rejects_conflicting_layouts() {
                     src_dst: RegId::new(0),
                     args: HirCallArgs {
                         positional: vec![RegId::new(1)],
+                        pipeline_input: Some(RegId::new(0)),
                         ..HirCallArgs::default()
                     },
                 },
@@ -4941,6 +5059,7 @@ fn test_lower_global_set_rejects_conflicting_layouts() {
                     src_dst: RegId::new(2),
                     args: HirCallArgs {
                         positional: vec![RegId::new(1)],
+                        pipeline_input: Some(RegId::new(2)),
                         ..HirCallArgs::default()
                     },
                 },
@@ -6156,6 +6275,7 @@ fn test_lower_global_set_from_metadata_only_record_builder_infers_layout_and_pre
                     src_dst: RegId::new(1),
                     args: HirCallArgs {
                         positional: vec![RegId::new(0)],
+                        pipeline_input: Some(RegId::new(1)),
                         ..HirCallArgs::default()
                     },
                 },
@@ -6297,6 +6417,7 @@ fn test_lower_global_set_from_nested_metadata_record_builder_preserves_nested_st
                     src_dst: RegId::new(6),
                     args: HirCallArgs {
                         positional: vec![RegId::new(0)],
+                        pipeline_input: Some(RegId::new(6)),
                         ..HirCallArgs::default()
                     },
                 },
@@ -6462,6 +6583,7 @@ fn test_lower_global_set_from_nested_metadata_record_builder_preserves_nested_li
                     src_dst: RegId::new(8),
                     args: HirCallArgs {
                         positional: vec![RegId::new(0)],
+                        pipeline_input: Some(RegId::new(8)),
                         ..HirCallArgs::default()
                     },
                 },

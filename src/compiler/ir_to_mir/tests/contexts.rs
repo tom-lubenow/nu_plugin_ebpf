@@ -5419,6 +5419,7 @@ fn test_lower_record_context_map_put_rejects_pointer_escape() {
                         args: HirCallArgs {
                             positional: vec![RegId::new(3), RegId::new(4)],
                             named: vec![(b"kind".to_vec(), RegId::new(5))],
+                            pipeline_input: Some(RegId::new(0)),
                             ..HirCallArgs::default()
                         },
                     },
@@ -5566,6 +5567,7 @@ fn test_lower_record_context_global_set_rejects_pointer_escape() {
                         src_dst: RegId::new(0),
                         args: HirCallArgs {
                             positional: vec![RegId::new(3)],
+                            pipeline_input: Some(RegId::new(0)),
                             ..HirCallArgs::default()
                         },
                     },

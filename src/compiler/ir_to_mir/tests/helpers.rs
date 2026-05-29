@@ -420,6 +420,7 @@ pub(super) fn make_map_put_get_projection_program(
                         args: HirCallArgs {
                             positional: vec![RegId::new(2), RegId::new(3)],
                             named: vec![(b"kind".to_vec(), RegId::new(5))],
+                            pipeline_input: Some(RegId::new(0)),
                             ..Default::default()
                         },
                     },
@@ -947,6 +948,7 @@ pub(super) fn make_map_put_program(map_put_decl: DeclId, flags: i64, kind: &str)
                             (b"kind".to_vec(), RegId::new(5)),
                             (b"flags".to_vec(), RegId::new(6)),
                         ],
+                        pipeline_input: Some(RegId::new(0)),
                         ..Default::default()
                     },
                 },
@@ -1004,6 +1006,7 @@ pub(super) fn make_map_push_program(map_push_decl: DeclId, flags: i64, kind: &st
                             (b"kind".to_vec(), RegId::new(3)),
                             (b"flags".to_vec(), RegId::new(4)),
                         ],
+                        pipeline_input: Some(RegId::new(0)),
                         ..Default::default()
                     },
                 },
@@ -1082,6 +1085,7 @@ fn make_map_take_program(
                     (b"kind".to_vec(), RegId::new(3)),
                     (b"flags".to_vec(), RegId::new(4)),
                 ],
+                pipeline_input: Some(RegId::new(0)),
                 ..Default::default()
             },
         });
@@ -1170,6 +1174,7 @@ pub(super) fn make_map_copy_projection_program(
                         args: HirCallArgs {
                             positional: vec![RegId::new(2), RegId::new(3)],
                             named: vec![(b"kind".to_vec(), RegId::new(5))],
+                            pipeline_input: Some(RegId::new(0)),
                             ..Default::default()
                         },
                     },
@@ -1235,6 +1240,7 @@ pub(super) fn make_map_copy_projection_program(
                         args: HirCallArgs {
                             positional: vec![RegId::new(7), RegId::new(3)],
                             named: vec![(b"kind".to_vec(), RegId::new(5))],
+                            pipeline_input: Some(RegId::new(0)),
                             ..Default::default()
                         },
                     },
