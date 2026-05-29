@@ -619,6 +619,10 @@ fn tracepoint_field_kernel_floor(
         return None;
     }
 
+    if let Some(floor) = syscall_tracepoint_fallback_field_kernel_floor(name, field) {
+        return Some(floor);
+    }
+
     Some(match (name, field) {
         ("sys_enter_read", "fd" | "buf" | "count") => ("4.7", LINUX_READ_WRITE_C_V4_7_SOURCE),
         ("sys_enter_write", "fd" | "buf" | "count") => ("4.7", LINUX_READ_WRITE_C_V4_7_SOURCE),
@@ -631,6 +635,30 @@ fn tracepoint_field_kernel_floor(
         }
         ("sys_enter_execve", "filename" | "argv" | "envp") => ("4.7", LINUX_EXEC_C_V4_7_SOURCE),
         _ => return None,
+    })
+}
+
+fn syscall_tracepoint_fallback_field_kernel_floor(
+    name: &str,
+    field: &str,
+) -> Option<(&'static str, &'static str)> {
+    let syscall = if name.starts_with("sys_enter_") {
+        if !matches!(field, "id" | "args") {
+            return None;
+        }
+        name.strip_prefix("sys_enter_")
+    } else if name.starts_with("sys_exit_") {
+        if !matches!(field, "id" | "ret") {
+            return None;
+        }
+        name.strip_prefix("sys_exit_")
+    } else {
+        return None;
+    }?;
+
+    Some(match syscall {
+        "openat2" => ("5.6", LINUX_OPEN_C_V5_6_SOURCE),
+        _ => ("4.7", LINUX_SYSCALLS_H_V4_7_SOURCE),
     })
 }
 

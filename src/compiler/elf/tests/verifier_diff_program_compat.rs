@@ -601,6 +601,106 @@ fn verifier_feature_record_matches_context_requirement(
         && record.max_kernel_exclusive.is_none()
 }
 
+fn verifier_diff_nu_field_target_feature_records(
+    function_name: &str,
+    checks: &[(String, String)],
+) -> Option<Vec<VerifierDiffFeatureRecord>> {
+    let check_rows = checks
+        .iter()
+        .map(|(target, field)| format!("    {{ target: {:?} field: {:?} }}", target, field))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let script = format!(
+        r#"source scripts/verifier_diff.nu
+let checks = [
+{check_rows}
+]
+$checks
+| enumerate
+| each {{|row|
+    let check = $row.item
+    let feature = ({function_name} $check.field $check.target)
+    {{
+        index: $row.index
+        key: ($feature | get -o key)
+        min_kernel: ($feature | get -o min_kernel)
+        source: ($feature | get -o source)
+        max_kernel_exclusive: ($feature | get -o max_kernel_exclusive)
+    }}
+}}
+| to json"#
+    );
+
+    let output = match Command::new("nu")
+        .arg("-c")
+        .arg(script)
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .output()
+    {
+        Ok(output) => output,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            eprintln!(
+                "skipping verifier_diff.nu {function_name} scanner coverage: nu binary was not found"
+            );
+            return None;
+        }
+        Err(err) => panic!("failed to run nu for verifier_diff.nu {function_name}: {err}"),
+    };
+    assert!(
+        output.status.success(),
+        "verifier_diff.nu {function_name} scanner failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let actual: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("verifier_diff.nu scanner should emit JSON");
+    let actual = actual
+        .as_array()
+        .expect("verifier_diff.nu scanner output should be a JSON list");
+    assert_eq!(
+        actual.len(),
+        checks.len(),
+        "verifier_diff.nu scanner should return one result per checked field"
+    );
+
+    let mut records = Vec::new();
+    for value in actual {
+        let index = value
+            .get("index")
+            .and_then(serde_json::Value::as_u64)
+            .expect("verifier_diff.nu scanner result should include index")
+            as usize;
+        assert!(
+            index < checks.len(),
+            "verifier_diff.nu scanner index should refer to a checked field"
+        );
+        records.push(VerifierDiffFeatureRecord {
+            key: value
+                .get("key")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("")
+                .to_string(),
+            min_kernel: value
+                .get("min_kernel")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("")
+                .to_string(),
+            source: value
+                .get("source")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("")
+                .to_string(),
+            max_kernel_exclusive: value
+                .get("max_kernel_exclusive")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_string),
+        });
+    }
+
+    Some(records)
+}
+
 #[test]
 fn test_verifier_diff_map_value_feature_metadata_matches_rust() {
     let verifier_diff = include_str!("../../../../scripts/verifier_diff.nu");
@@ -709,103 +809,18 @@ fn test_verifier_diff_context_field_feature_metadata_covers_representative_rust_
         }
     }
 
-    let check_rows = expected
+    let checks = expected
         .iter()
-        .map(|check| {
-            format!(
-                "    {{ target: {:?} field: {:?} }}",
-                check.target, check.field
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-    let script = format!(
-        r#"source scripts/verifier_diff.nu
-let checks = [
-{check_rows}
-]
-$checks
-| enumerate
-| each {{|row|
-    let check = $row.item
-    let feature = (context-field-kernel-feature $check.field $check.target)
-    {{
-        index: $row.index
-        target: $check.target
-        field: $check.field
-        key: ($feature | get -o key)
-        min_kernel: ($feature | get -o min_kernel)
-        source: ($feature | get -o source)
-        max_kernel_exclusive: ($feature | get -o max_kernel_exclusive)
-    }}
-}}
-| to json"#
-    );
-
-    let output = match Command::new("nu")
-        .arg("-c")
-        .arg(script)
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .output()
-    {
-        Ok(output) => output,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-            eprintln!(
-                "skipping verifier_diff.nu context scanner coverage: nu binary was not found"
-            );
-            return;
-        }
-        Err(err) => panic!("failed to run nu for verifier_diff.nu context scanner: {err}"),
+        .map(|check| (check.target.clone(), check.field.clone()))
+        .collect::<Vec<_>>();
+    let Some(actual) =
+        verifier_diff_nu_field_target_feature_records("context-field-kernel-feature", &checks)
+    else {
+        return;
     };
-    assert!(
-        output.status.success(),
-        "verifier_diff.nu context scanner failed\nstdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    let actual: serde_json::Value = serde_json::from_slice(&output.stdout)
-        .expect("verifier_diff.nu context scanner should emit JSON");
-    let actual = actual
-        .as_array()
-        .expect("verifier_diff.nu context scanner output should be a JSON list");
-    assert_eq!(
-        actual.len(),
-        expected.len(),
-        "verifier_diff.nu context scanner should return one result per checked field"
-    );
 
     let mut mismatches = Vec::new();
-    for value in actual {
-        let index = value
-            .get("index")
-            .and_then(serde_json::Value::as_u64)
-            .expect("verifier_diff.nu context scanner result should include index")
-            as usize;
-        let check = expected
-            .get(index)
-            .expect("verifier_diff.nu context scanner index should refer to a checked field");
-        let record = VerifierDiffFeatureRecord {
-            key: value
-                .get("key")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or("")
-                .to_string(),
-            min_kernel: value
-                .get("min_kernel")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or("")
-                .to_string(),
-            source: value
-                .get("source")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or("")
-                .to_string(),
-            max_kernel_exclusive: value
-                .get("max_kernel_exclusive")
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_string),
-        };
+    for (check, record) in expected.iter().zip(actual.iter()) {
         if !verifier_feature_record_matches_context_requirement(&check.requirement, &record) {
             mismatches.push(format!(
                 "{} ctx.{} expected key={} min_kernel={} source={} actual key={} min_kernel={} source={}",
@@ -913,6 +928,56 @@ fn test_verifier_diff_tracepoint_field_feature_metadata_matches_rust() {
     assert!(
         !records.is_empty(),
         "expected verifier_diff.nu tracepoint-field feature metadata"
+    );
+}
+
+#[test]
+fn test_verifier_diff_tracepoint_payload_scanner_matches_rust_fallback_fields() {
+    let checks = [
+        ("tracepoint:syscalls/sys_enter_openat", "id"),
+        ("tracepoint:syscalls/sys_enter_openat", "args"),
+        ("tracepoint:syscalls/sys_enter_openat2", "args"),
+        ("tracepoint:syscalls/sys_exit_openat", "ret"),
+        ("tracepoint:syscalls/sys_exit_openat2", "id"),
+        ("tracepoint:syscalls/sys_exit_openat2", "ret"),
+    ]
+    .into_iter()
+    .map(|(target, field)| (target.to_string(), field.to_string()))
+    .collect::<Vec<_>>();
+    let Some(records) = verifier_diff_nu_field_target_feature_records(
+        "tracepoint-payload-field-kernel-feature",
+        &checks,
+    ) else {
+        return;
+    };
+
+    let mut mismatches = Vec::new();
+    for ((target, field), record) in checks.iter().zip(records.iter()) {
+        let spec = ProgramSpec::parse(target)
+            .unwrap_or_else(|err| panic!("tracepoint target {target} should parse: {err}"));
+        let requirement = ContextFieldCompatibilityRequirement::for_field_on_program_spec(
+            &CtxField::TracepointField(field.clone()),
+            &spec,
+        )
+        .unwrap_or_else(|| panic!("{target} ctx.{field} should have Rust fallback metadata"));
+
+        if !verifier_feature_record_matches_context_requirement(&requirement, record) {
+            mismatches.push(format!(
+                "{target} ctx.{field} expected key={} min_kernel={} source={} actual key={} min_kernel={} source={}",
+                requirement.key(),
+                requirement.minimum_kernel(),
+                requirement.minimum_kernel_source(),
+                record.key,
+                record.min_kernel,
+                record.source
+            ));
+        }
+    }
+
+    assert!(
+        mismatches.is_empty(),
+        "scripts/verifier_diff.nu tracepoint payload scanner drifted from Rust metadata: {}",
+        mismatches.join(", ")
     );
 }
 

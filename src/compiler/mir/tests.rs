@@ -901,6 +901,39 @@ fn test_context_field_compatibility_requirements_are_source_backed() {
             .minimum_kernel_source()
             .contains("include/trace/events/syscalls.h")
     );
+    let args_requirement = ContextFieldCompatibilityRequirement::for_field_on_program_spec(
+        &CtxField::TracepointField("args".to_string()),
+        &openat_spec,
+    )
+    .expect("known syscall tracepoint args field should report a fallback floor");
+    assert_eq!(
+        args_requirement.key(),
+        "tracepoint:syscalls/sys_enter_openat:field:args"
+    );
+    assert_eq!(args_requirement.minimum_kernel(), "4.7");
+    assert!(
+        args_requirement
+            .minimum_kernel_source()
+            .contains("include/trace/events/syscalls.h")
+    );
+    let exit_openat2_spec =
+        crate::program_spec::ProgramSpec::parse("tracepoint:syscalls/sys_exit_openat2")
+            .expect("tracepoint spec should parse");
+    let ret_requirement = ContextFieldCompatibilityRequirement::for_field_on_program_spec(
+        &CtxField::TracepointField("ret".to_string()),
+        &exit_openat2_spec,
+    )
+    .expect("known syscall exit tracepoint ret field should report a fallback floor");
+    assert_eq!(
+        ret_requirement.key(),
+        "tracepoint:syscalls/sys_exit_openat2:field:ret"
+    );
+    assert_eq!(ret_requirement.minimum_kernel(), "5.6");
+    assert!(
+        ret_requirement
+            .minimum_kernel_source()
+            .contains("/v5.6/fs/open.c")
+    );
     assert!(
         ContextFieldCompatibilityRequirement::for_field_on_program_spec(
             &CtxField::TracepointField("__missing".to_string()),

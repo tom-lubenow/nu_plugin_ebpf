@@ -11706,23 +11706,60 @@ fn test_ebpf_program_reports_context_field_compatibility_requirements() {
             .expect("tracepoint spec should parse"),
     )
     .with_used_context_fields([
+        CtxField::TracepointField("args".to_string()),
         CtxField::TracepointField("filename".to_string()),
         CtxField::TracepointField("how".to_string()),
         CtxField::TracepointField("__missing".to_string()),
     ]);
     let tracepoint_requirements = tracepoint_program.context_field_compatibility_requirements();
-    assert_eq!(tracepoint_requirements.len(), 2);
+    assert_eq!(tracepoint_requirements.len(), 3);
     assert_eq!(
         tracepoint_requirements[0].key(),
-        "tracepoint:syscalls/sys_enter_openat2:field:filename"
+        "tracepoint:syscalls/sys_enter_openat2:field:args"
     );
     assert_eq!(tracepoint_requirements[0].minimum_kernel(), "5.6");
     assert_eq!(
         tracepoint_requirements[1].key(),
+        "tracepoint:syscalls/sys_enter_openat2:field:filename"
+    );
+    assert_eq!(tracepoint_requirements[1].minimum_kernel(), "5.6");
+    assert_eq!(
+        tracepoint_requirements[2].key(),
         "tracepoint:syscalls/sys_enter_openat2:field:how"
     );
     assert_eq!(
         tracepoint_program.context_field_compatibility_minimum_kernel(),
+        Some("5.6")
+    );
+
+    let tracepoint_exit_program = EbpfProgram::new(
+        EbpfProgramType::Tracepoint,
+        "syscalls/sys_exit_openat2",
+        "tp_exit",
+        EbpfBuilder::new(),
+    )
+    .with_program_spec(
+        ProgramSpec::parse("tracepoint:syscalls/sys_exit_openat2")
+            .expect("tracepoint spec should parse"),
+    )
+    .with_used_context_fields([
+        CtxField::TracepointField("id".to_string()),
+        CtxField::TracepointField("ret".to_string()),
+    ]);
+    let tracepoint_exit_requirements =
+        tracepoint_exit_program.context_field_compatibility_requirements();
+    assert_eq!(
+        tracepoint_exit_requirements
+            .iter()
+            .map(ContextFieldCompatibilityRequirement::key)
+            .collect::<Vec<_>>(),
+        [
+            "tracepoint:syscalls/sys_exit_openat2:field:id",
+            "tracepoint:syscalls/sys_exit_openat2:field:ret",
+        ]
+    );
+    assert_eq!(
+        tracepoint_exit_program.context_field_compatibility_minimum_kernel(),
         Some("5.6")
     );
 

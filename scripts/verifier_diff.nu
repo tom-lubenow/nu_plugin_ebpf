@@ -4299,6 +4299,32 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         target: "tracepoint:syscalls/sys_enter_openat"
         program: [
             '{|ctx|'
+            '  ($ctx.id + ($ctx.args | get 0)) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_openat:field:id"
+            "tracepoint:syscalls/sys_enter_openat:field:args"
+        ]
+    }
+    {
+        target: "tracepoint:syscalls/sys_exit_openat2"
+        program: [
+            '{|ctx|'
+            '  ($ctx.id + $ctx.ret) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_exit_openat2:field:id"
+            "tracepoint:syscalls/sys_exit_openat2:field:ret"
+        ]
+    }
+    {
+        target: "tracepoint:syscalls/sys_enter_openat"
+        program: [
+            '{|ctx|'
             '  $ctx.ifindex | count'
             '  0'
             '}'
@@ -21738,6 +21764,41 @@ def context-field-kernel-feature [field: string target] {
     }
 }
 
+def syscall-tracepoint-fallback-field-kernel-feature [field: string target] {
+    let target_text = ($target | default "")
+    if not ($target_text | str starts-with "tracepoint:syscalls/") {
+        return null
+    }
+
+    let name = ($target_text | str replace "tracepoint:syscalls/" "")
+    let syscall = if ($name | str starts-with "sys_enter_") {
+        if $field not-in ["id" "args"] {
+            return null
+        }
+        $name | str replace "sys_enter_" ""
+    } else if ($name | str starts-with "sys_exit_") {
+        if $field not-in ["id" "ret"] {
+            return null
+        }
+        $name | str replace "sys_exit_" ""
+    } else {
+        return null
+    }
+
+    let min_kernel = if $syscall == "openat2" { "5.6" } else { "4.7" }
+    let source = if $syscall == "openat2" {
+        "https://github.com/torvalds/linux/blob/v5.6/fs/open.c"
+    } else {
+        "https://github.com/torvalds/linux/blob/v4.7/include/trace/events/syscalls.h"
+    }
+
+    {
+        key: $"tracepoint:syscalls/($name):field:($field)"
+        min_kernel: $min_kernel
+        source: $source
+    }
+}
+
 def tracepoint-payload-field-kernel-feature [field: string target] {
     let target_text = ($target | default "")
     if not ($target_text | str starts-with "tracepoint:") {
@@ -21745,6 +21806,11 @@ def tracepoint-payload-field-kernel-feature [field: string target] {
     }
     if (tracepoint-built-in-context-field? $field) {
         return null
+    }
+
+    let fallback = (syscall-tracepoint-fallback-field-kernel-feature $field $target)
+    if $fallback != null {
+        return $fallback
     }
 
     let matches = (
