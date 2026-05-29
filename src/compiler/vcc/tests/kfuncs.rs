@@ -14315,6 +14315,113 @@ fn test_verify_mir_kfunc_dynptr_slice_requires_constant_size_arg() {
     );
 }
 
+#[test]
+fn test_verify_mir_xdp_metadata_rx_timestamp_accepts_stack_output_buffer() {
+    let (mut func, entry) = new_mir_function();
+
+    let ctx = func.alloc_vreg();
+    let timestamp = func.alloc_vreg();
+    let ret = func.alloc_vreg();
+    let timestamp_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: timestamp,
+        src: MirValue::StackSlot(timestamp_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: ret,
+        kfunc: "bpf_xdp_metadata_rx_timestamp".to_string(),
+        btf_id: None,
+        args: vec![ctx, timestamp],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(
+        timestamp,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U64),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(ret, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected xdp metadata timestamp kfunc to accept stack output buffer");
+}
+
+#[test]
+fn test_verify_mir_xdp_metadata_rx_timestamp_rejects_packet_output_buffer() {
+    let (mut func, entry) = new_mir_function();
+
+    let ctx = func.alloc_vreg();
+    let packet_data = func.alloc_vreg();
+    let ret = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: packet_data,
+            field: CtxField::Data,
+            slot: None,
+        });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: ret,
+        kfunc: "bpf_xdp_metadata_rx_timestamp".to_string(),
+        btf_id: None,
+        args: vec![ctx, packet_data],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(
+        packet_data,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Packet,
+        },
+    );
+    types.insert(ret, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected xdp metadata timestamp to reject packet output buffer");
+    assert!(
+        err.iter().any(|e| e.message.contains("got Packet")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
 fn make_xdp_get_xfrm_state_vcc_function(
     opts_size: i64,
     buffer_size: usize,
