@@ -19,7 +19,7 @@ fn unsupported_live_attach_error(
             .or_else(|| attach_kind.unsupported_live_attach_detail())
     }
     .unwrap_or("this attach kind has no live attach implementation");
-    let requirements = compatibility_requirements_detail(requirements);
+    let requirements = live_attach_compatibility_requirements_detail(spec, requirements);
     LoadError::Attach(format!(
         "live attach for {} programs is not supported by this loader yet; {}{}; use --dry-run to compile",
         prog_type.canonical_prefix(),
@@ -32,7 +32,8 @@ fn unsupported_cgroup_sock_addr_target_error(target: &CgroupSockAddrTarget) -> L
     let spec = ProgramSpec::CgroupSockAddr {
         target: target.clone(),
     };
-    let requirements = compatibility_requirements_detail(&spec.compatibility_requirements());
+    let requirements =
+        live_attach_compatibility_requirements_detail(&spec, &spec.compatibility_requirements());
     let policy = spec.live_attach_policy();
     let reason = policy
         .note
@@ -91,17 +92,34 @@ fn unsupported_live_map_in_map_error(object: &EbpfObject) -> Option<LoadError> {
 fn compatibility_requirements_detail(
     requirements: &[crate::compiler::ProgramCompatibilityRequirement],
 ) -> String {
+    let test_lane =
+        crate::compiler::ProgramCompatibilityRequirement::effective_default_test_lane(requirements);
+    compatibility_requirements_detail_with_lane(requirements, test_lane, "default test lane")
+}
+
+fn live_attach_compatibility_requirements_detail(
+    spec: &ProgramSpec,
+    requirements: &[crate::compiler::ProgramCompatibilityRequirement],
+) -> String {
+    compatibility_requirements_detail_with_lane(
+        requirements,
+        spec.live_attach_default_test_lane().key(),
+        "live attach default test lane",
+    )
+}
+
+fn compatibility_requirements_detail_with_lane(
+    requirements: &[crate::compiler::ProgramCompatibilityRequirement],
+    test_lane: &str,
+    test_lane_label: &str,
+) -> String {
     if requirements.is_empty() {
         String::new()
     } else {
-        let test_lane =
-            crate::compiler::ProgramCompatibilityRequirement::effective_default_test_lane(
-                requirements,
-            );
         let test_lane_detail = if test_lane == "host-safe" {
             String::new()
         } else {
-            format!("; default test lane: {test_lane}")
+            format!("; {test_lane_label}: {test_lane}")
         };
         let descriptions = requirements
             .iter()

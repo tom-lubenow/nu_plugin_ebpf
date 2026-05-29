@@ -1637,7 +1637,7 @@ fn test_attach_rejects_risky_struct_ops_without_explicit_opt_in() {
         assert!(
             matches!(
                 err,
-                LoadError::Attach(ref msg)
+            LoadError::Attach(ref msg)
                     if msg.contains("requires explicit opt-in")
                         && msg.contains(value_type_name)
                         && msg.contains("--unsafe-struct-ops")
@@ -1665,10 +1665,11 @@ fn test_attach_rejects_struct_ops_callback_program_before_loading() {
     assert!(
         matches!(
             err,
-            LoadError::Attach(ref msg)
+                LoadError::Attach(ref msg)
                 if msg.contains("live attach for struct_ops programs is not supported by this loader yet")
                     && msg.contains("struct_ops callbacks")
                     && msg.contains("not directly attachable")
+                    && msg.contains("live attach default test lane: dry-run")
                     && msg.contains("use --dry-run to compile")
         ),
         "unexpected struct_ops callback live-attach error: {err:?}"
@@ -1809,7 +1810,9 @@ fn test_attach_rejects_compile_only_programs_before_loading() {
                 LoadError::Attach(ref msg)
                     if msg.contains(&format!(
                         "live attach for {label} programs is not supported by this loader yet"
-                    )) && msg.contains(detail) && msg.contains("use --dry-run to compile")
+                    )) && msg.contains(detail)
+                        && msg.contains("live attach default test lane: dry-run")
+                        && msg.contains("use --dry-run to compile")
             ),
             "unexpected live-attach error for {label}: {err:?}"
         );
@@ -1858,6 +1861,7 @@ fn test_attach_rejects_xdp_map_targets_before_loading() {
                 LoadError::Attach(ref msg)
                     if msg.contains("live attach for xdp programs is not supported by this loader yet")
                         && msg.contains("map entries")
+                        && msg.contains("live attach default test lane: dry-run")
                         && msg.contains("use --dry-run to compile")
                         && msg.contains(requirement.description())
                         && msg.contains(&format!("kernel>={minimum}"))
@@ -1922,14 +1926,15 @@ fn test_attach_rejects_cgroup_sock_addr_unix_before_loading() {
             LoadError::Attach(ref msg)
                 if msg.contains("live attach for cgroup_sock_addr connect_unix hooks is not supported by this loader yet")
                     && msg.contains("does not expose BPF_CGROUP_UNIX_* hooks")
+                    && msg.contains("live attach default test lane: dry-run")
                     && msg.contains("use --dry-run to compile")
         ),
         "unexpected cgroup_sock_addr unix live-attach error: {err:?}"
     );
     if let LoadError::Attach(msg) = &err {
         assert!(
-            msg.contains("default test lane: host-gated"),
-            "cgroup_sock_addr unix live-attach error should mention the host-gated lane: {msg}"
+            !msg.contains("default test lane: host-gated"),
+            "cgroup_sock_addr unix live-attach error should use the live-attach lane, not the feature-only lane: {msg}"
         );
         for requirement in expected_requirements {
             assert!(
