@@ -161,10 +161,9 @@ fn test_wellknown_sys_enter() {
         TracepointContextSource::WellKnownSyscallFallback
     );
     assert_eq!(ctx.source_path, None);
-    assert_eq!(ctx.source.minimum_kernel(), Some("4.7"));
+    assert_eq!(ctx.minimum_kernel(), Some("4.7"));
     assert!(
-        ctx.source
-            .minimum_kernel_source()
+        ctx.minimum_kernel_source()
             .is_some_and(|source| source.contains("/v4.7/include/trace/events/syscalls.h"))
     );
     assert!(ctx.has_field("id"));
@@ -198,6 +197,12 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
     assert!(openat2.has_field("filename"));
     assert!(openat2.has_field("how"));
     assert!(openat2.has_field("size"));
+    assert_eq!(openat2.minimum_kernel(), Some("5.6"));
+    assert!(
+        openat2
+            .minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v5.6/fs/open.c"))
+    );
 
     let execve = TracepointContext::sys_enter("sys_enter_execve");
     assert!(execve.has_field("filename"));

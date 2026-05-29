@@ -1690,6 +1690,26 @@ const KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_OPENAT_MODE = {
     min_kernel: "4.7"
     source: "https://github.com/torvalds/linux/blob/v4.7/include/trace/events/syscalls.h"
 }
+const KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_OPENAT2_DFD = {
+    key: "tracepoint:syscalls/sys_enter_openat2:field:dfd"
+    min_kernel: "5.6"
+    source: "https://github.com/torvalds/linux/blob/v5.6/fs/open.c"
+}
+const KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_OPENAT2_FILENAME = {
+    key: "tracepoint:syscalls/sys_enter_openat2:field:filename"
+    min_kernel: "5.6"
+    source: "https://github.com/torvalds/linux/blob/v5.6/fs/open.c"
+}
+const KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_OPENAT2_HOW = {
+    key: "tracepoint:syscalls/sys_enter_openat2:field:how"
+    min_kernel: "5.6"
+    source: "https://github.com/torvalds/linux/blob/v5.6/fs/open.c"
+}
+const KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_OPENAT2_SIZE = {
+    key: "tracepoint:syscalls/sys_enter_openat2:field:size"
+    min_kernel: "5.6"
+    source: "https://github.com/torvalds/linux/blob/v5.6/fs/open.c"
+}
 const KERNEL_FEATURE_CTX_PACKET_LEN = {
     key: "ctx:packet_len"
     min_kernel: "4.1"
@@ -4800,6 +4820,31 @@ const FIXTURES = [
             '  let filename = $ctx.filename'
             '  if $filename { $filename | read-str --max-len 64 | count }'
             '  ($ctx.dfd + $ctx.flags + $ctx.mode + $ctx.current_task.pid) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-openat2-context"
+        category: "tracing"
+        tags: [tracepoint context]
+        requires: [tracefs kernel-btf]
+        target: "tracepoint:syscalls/sys_enter_openat2"
+        kernel_features: [
+            $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_OPENAT2_DFD
+            $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_OPENAT2_FILENAME
+            $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_OPENAT2_HOW
+            $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_OPENAT2_SIZE
+        ]
+        program: [
+            '{|ctx|'
+            '  let filename = $ctx.filename'
+            '  if $filename { $filename | read-str --max-len 64 | count }'
+            '  let how = $ctx.how'
+            '  if $how { 1 | count }'
+            '  ($ctx.dfd + $ctx.size) | count'
             '  0'
             '}'
         ]

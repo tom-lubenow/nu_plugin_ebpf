@@ -2,6 +2,12 @@
 
 use super::types::{FieldInfo, TypeInfo};
 
+const SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL: &str = "4.7";
+const SYSCALL_TRACEPOINT_FALLBACK_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v4.7/include/trace/events/syscalls.h";
+const OPENAT2_MIN_KERNEL: &str = "5.6";
+const OPENAT2_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.6/fs/open.c";
+
 /// Source used to construct a tracepoint context layout.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TracepointContextSource {
@@ -22,16 +28,14 @@ impl TracepointContextSource {
             Self::TracefsFormat => None,
             // BPF tracepoint programs require Linux 4.7. The syscall tracepoint
             // layout predates that, but 4.7 is the earliest useful eBPF floor.
-            Self::WellKnownSyscallFallback => Some("4.7"),
+            Self::WellKnownSyscallFallback => Some(SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL),
         }
     }
 
     pub fn minimum_kernel_source(self) -> Option<&'static str> {
         match self {
             Self::TracefsFormat => None,
-            Self::WellKnownSyscallFallback => {
-                Some("https://github.com/torvalds/linux/blob/v4.7/include/trace/events/syscalls.h")
-            }
+            Self::WellKnownSyscallFallback => Some(SYSCALL_TRACEPOINT_FALLBACK_SOURCE),
         }
     }
 }
@@ -56,6 +60,10 @@ pub struct TracepointContext {
     pub source: TracepointContextSource,
     /// Path to the tracefs format file when this layout was read from tracefs.
     pub source_path: Option<String>,
+    /// Compatibility floor for this specific tracepoint layout, when known.
+    pub minimum_kernel: Option<&'static str>,
+    /// Source for the compatibility floor.
+    pub minimum_kernel_source: Option<&'static str>,
 }
 
 impl TracepointContext {
@@ -88,6 +96,31 @@ impl TracepointContext {
         source: TracepointContextSource,
         source_path: Option<String>,
     ) -> Self {
+        Self::new_with_source_and_minimum_kernel(
+            category,
+            name,
+            struct_name,
+            fields,
+            size,
+            source,
+            source_path,
+            source.minimum_kernel(),
+            source.minimum_kernel_source(),
+        )
+    }
+
+    /// Create a new tracepoint context with explicit provenance and compatibility metadata.
+    pub fn new_with_source_and_minimum_kernel(
+        category: impl Into<String>,
+        name: impl Into<String>,
+        struct_name: impl Into<String>,
+        fields: Vec<FieldInfo>,
+        size: usize,
+        source: TracepointContextSource,
+        source_path: Option<String>,
+        minimum_kernel: Option<&'static str>,
+        minimum_kernel_source: Option<&'static str>,
+    ) -> Self {
         Self {
             category: category.into(),
             name: name.into(),
@@ -96,7 +129,20 @@ impl TracepointContext {
             size,
             source,
             source_path,
+            minimum_kernel,
+            minimum_kernel_source,
         }
+    }
+
+    /// Minimum kernel for the specific tracepoint, including syscall existence
+    /// when the layout came from a well-known syscall fallback.
+    pub fn minimum_kernel(&self) -> Option<&'static str> {
+        self.minimum_kernel
+    }
+
+    /// Source for the specific tracepoint compatibility floor.
+    pub fn minimum_kernel_source(&self) -> Option<&'static str> {
+        self.minimum_kernel_source
     }
 
     /// Get a field by name
@@ -153,7 +199,9 @@ impl TracepointContext {
         ];
         fields.extend(Self::well_known_sys_enter_arg_fields(name));
 
-        Self::new_with_source(
+        let (minimum_kernel, minimum_kernel_source) = Self::syscall_fallback_minimum_kernel(name);
+
+        Self::new_with_source_and_minimum_kernel(
             "syscalls",
             name,
             format!("trace_event_raw_{}", name),
@@ -161,7 +209,22 @@ impl TracepointContext {
             64, // 8 + 8 + 48
             TracepointContextSource::WellKnownSyscallFallback,
             None,
+            minimum_kernel,
+            minimum_kernel_source,
         )
+    }
+
+    fn syscall_fallback_minimum_kernel(name: &str) -> (Option<&'static str>, Option<&'static str>) {
+        let syscall = name
+            .strip_prefix("sys_enter_")
+            .or_else(|| name.strip_prefix("sys_exit_"));
+        match syscall {
+            Some("openat2") => (Some(OPENAT2_MIN_KERNEL), Some(OPENAT2_SOURCE)),
+            _ => (
+                Some(SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL),
+                Some(SYSCALL_TRACEPOINT_FALLBACK_SOURCE),
+            ),
+        }
     }
 
     fn sys_enter_arg_field(index: usize, name: &str, type_info: TypeInfo) -> Option<FieldInfo> {
@@ -247,7 +310,9 @@ impl TracepointContext {
             },
         ];
 
-        Self::new_with_source(
+        let (minimum_kernel, minimum_kernel_source) = Self::syscall_fallback_minimum_kernel(name);
+
+        Self::new_with_source_and_minimum_kernel(
             "syscalls",
             name,
             format!("trace_event_raw_{}", name),
@@ -255,6 +320,8 @@ impl TracepointContext {
             24,
             TracepointContextSource::WellKnownSyscallFallback,
             None,
+            minimum_kernel,
+            minimum_kernel_source,
         )
     }
 }
