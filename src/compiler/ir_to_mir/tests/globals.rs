@@ -4653,6 +4653,139 @@ fn test_lower_global_define_type_fixed_record_array_initializer_supports_nested_
 }
 
 #[test]
+fn test_lower_global_define_type_fixed_record_array_initializer_supports_nested_numeric_list_upsert()
+ {
+    let define_decl = DeclId::new(1108);
+    let global_get_decl = DeclId::new(1109);
+    let decl_names = HashMap::from([
+        (define_decl, "global-define".to_string()),
+        (global_get_decl, "global-get".to_string()),
+    ]);
+
+    let mut first = Record::with_capacity(1);
+    first.push(
+        "samples",
+        Value::list(
+            vec![
+                Value::int(1, Span::test_data()),
+                Value::int(2, Span::test_data()),
+            ],
+            Span::test_data(),
+        ),
+    );
+
+    let mut second = Record::with_capacity(1);
+    second.push(
+        "samples",
+        Value::list(
+            vec![
+                Value::int(3, Span::test_data()),
+                Value::int(4, Span::test_data()),
+            ],
+            Span::test_data(),
+        ),
+    );
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::list(
+                        vec![
+                            Value::record(first, Span::test_data()),
+                            Value::record(second, Span::test_data()),
+                        ],
+                        Span::test_data(),
+                    )),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("seen_entries".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String("array{record{samples:list:int:2}:2}".into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        named: vec![(b"type".to_vec(), RegId::new(2))],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: global_get_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![int_member(1), string_member("samples"), int_member(1)],
+                    })),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(5),
+                    lit: HirLiteral::Int(9),
+                },
+                HirStmt::UpsertCellPath {
+                    src_dst: RegId::new(3),
+                    path: RegId::new(4),
+                    new_value: RegId::new(5),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(3),
+                    path: RegId::new(4),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(3) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 6,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("typed fixed record array globals should allow nested numeric-list item upserts");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Store {
+                    offset: 40,
+                    ty: MirType::I64,
+                    ..
+                }
+            )),
+        "expected $entries.1.samples.1 = ... to store at the logical nested list item slot"
+    );
+}
+
+#[test]
 fn test_lower_global_define_type_fixed_record_array_initializer_supports_nested_string_field() {
     let define_decl = DeclId::new(1097);
     let global_get_decl = DeclId::new(1098);

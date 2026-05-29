@@ -905,6 +905,99 @@ impl ParsedNamedGlobalType {
         self.initializer_bytes_with_path(value, spec, None)
     }
 
+    fn zero_initializer_semantics(&self) -> Result<Option<AnnotatedValueSemantics>, CompileError> {
+        match &self.shape {
+            NamedGlobalTypeShape::NumericList { max_len } => {
+                Ok(Some(AnnotatedValueSemantics::NumericList {
+                    max_len: *max_len,
+                    known_len: Some(0),
+                }))
+            }
+            NamedGlobalTypeShape::FixedArray { elem, len } => Ok(elem
+                .zero_initializer_semantics()?
+                .map(|elem_semantics| AnnotatedValueSemantics::FixedArray {
+                    elem: Box::new(elem_semantics),
+                    len: *len,
+                })),
+            NamedGlobalTypeShape::Record(fields) => {
+                let mut field_semantics = Vec::new();
+                for field in fields {
+                    if let Some(semantics) = field.ty.zero_initializer_semantics()? {
+                        field_semantics.push((field.name.clone(), semantics));
+                    }
+                }
+                if field_semantics.is_empty() {
+                    Ok(None)
+                } else {
+                    Ok(Some(AnnotatedValueSemantics::Record(field_semantics)))
+                }
+            }
+            _ => Ok(self.semantics.clone()),
+        }
+    }
+
+    fn initializer_semantics(
+        &self,
+        value: Option<&Value>,
+    ) -> Result<Option<AnnotatedValueSemantics>, CompileError> {
+        let Some(value) = value else {
+            return self.zero_initializer_semantics();
+        };
+        if matches!(value, Value::Nothing { .. }) {
+            return self.zero_initializer_semantics();
+        }
+
+        match &self.shape {
+            NamedGlobalTypeShape::NumericList { max_len } => {
+                let Value::List { vals, .. } = value else {
+                    return Ok(self.semantics.clone());
+                };
+                Ok(Some(AnnotatedValueSemantics::NumericList {
+                    max_len: *max_len,
+                    known_len: Some(vals.len()),
+                }))
+            }
+            NamedGlobalTypeShape::FixedArray { elem, len } => {
+                let Value::List { vals, .. } = value else {
+                    return Ok(self.semantics.clone());
+                };
+                let mut elem_semantics = None;
+                for idx in 0..*len {
+                    let item_semantics = elem.initializer_semantics(vals.get(idx))?;
+                    match (&elem_semantics, item_semantics) {
+                        (None, Some(semantics)) => elem_semantics = Some(semantics),
+                        (Some(existing), Some(semantics)) if existing == &semantics => {}
+                        (Some(_), Some(_)) => return Ok(self.semantics.clone()),
+                        (_, None) => return Ok(None),
+                    }
+                }
+                Ok(
+                    elem_semantics.map(|elem_semantics| AnnotatedValueSemantics::FixedArray {
+                        elem: Box::new(elem_semantics),
+                        len: *len,
+                    }),
+                )
+            }
+            NamedGlobalTypeShape::Record(fields) => {
+                let Value::Record { val, .. } = value else {
+                    return Ok(self.semantics.clone());
+                };
+                let mut field_semantics = Vec::new();
+                for field in fields {
+                    if let Some(semantics) = field.ty.initializer_semantics(val.get(&field.name))? {
+                        field_semantics.push((field.name.clone(), semantics));
+                    }
+                }
+                if field_semantics.is_empty() {
+                    Ok(None)
+                } else {
+                    Ok(Some(AnnotatedValueSemantics::Record(field_semantics)))
+                }
+            }
+            _ => Ok(self.semantics.clone()),
+        }
+    }
+
     fn initializer_bytes_with_path(
         &self,
         value: &Value,
@@ -1214,6 +1307,115 @@ impl<'a> HirToMirLowering<'a> {
         self.named_program_global_semantics.get(name)
     }
 
+    fn merge_annotated_value_semantics(
+        existing: &AnnotatedValueSemantics,
+        incoming: &AnnotatedValueSemantics,
+    ) -> Option<AnnotatedValueSemantics> {
+        match (existing, incoming) {
+            (
+                AnnotatedValueSemantics::String {
+                    slot_len: existing_slot_len,
+                    content_cap: existing_content_cap,
+                },
+                AnnotatedValueSemantics::String {
+                    slot_len: incoming_slot_len,
+                    content_cap: incoming_content_cap,
+                },
+            ) if existing_slot_len == incoming_slot_len
+                && existing_content_cap == incoming_content_cap =>
+            {
+                Some(existing.clone())
+            }
+            (
+                AnnotatedValueSemantics::NumericList {
+                    max_len: existing_max_len,
+                    known_len: existing_known_len,
+                },
+                AnnotatedValueSemantics::NumericList {
+                    max_len: incoming_max_len,
+                    known_len: incoming_known_len,
+                },
+            ) if existing_max_len == incoming_max_len => {
+                let known_len = match (existing_known_len, incoming_known_len) {
+                    (Some(existing), Some(incoming)) if existing == incoming => Some(*existing),
+                    (Some(_), Some(_)) => return None,
+                    (Some(existing), None) => Some(*existing),
+                    (None, Some(incoming)) => Some(*incoming),
+                    (None, None) => None,
+                };
+                Some(AnnotatedValueSemantics::NumericList {
+                    max_len: *existing_max_len,
+                    known_len,
+                })
+            }
+            (
+                AnnotatedValueSemantics::FixedArray {
+                    elem: existing_elem,
+                    len: existing_len,
+                },
+                AnnotatedValueSemantics::FixedArray {
+                    elem: incoming_elem,
+                    len: incoming_len,
+                },
+            ) if existing_len == incoming_len => {
+                Self::merge_annotated_value_semantics(existing_elem, incoming_elem).map(
+                    |merged_elem| AnnotatedValueSemantics::FixedArray {
+                        elem: Box::new(merged_elem),
+                        len: *existing_len,
+                    },
+                )
+            }
+            (
+                AnnotatedValueSemantics::Record(existing_fields),
+                AnnotatedValueSemantics::Record(incoming_fields),
+            ) if existing_fields.len() == incoming_fields.len() => {
+                let mut merged_fields = Vec::with_capacity(existing_fields.len());
+                for ((existing_name, existing_semantics), (incoming_name, incoming_semantics)) in
+                    existing_fields.iter().zip(incoming_fields)
+                {
+                    if existing_name != incoming_name {
+                        return None;
+                    }
+                    let merged_semantics = Self::merge_annotated_value_semantics(
+                        existing_semantics,
+                        incoming_semantics,
+                    )?;
+                    merged_fields.push((existing_name.clone(), merged_semantics));
+                }
+                Some(AnnotatedValueSemantics::Record(merged_fields))
+            }
+            _ => None,
+        }
+    }
+
+    fn merge_named_program_global_semantics(
+        &mut self,
+        name: &str,
+        semantics: AnnotatedValueSemantics,
+    ) -> Result<(), CompileError> {
+        let Some(existing_semantics) = self.named_program_global_semantics.get(name).cloned()
+        else {
+            self.named_program_global_semantics
+                .insert(name.to_string(), semantics);
+            return Ok(());
+        };
+
+        let Some(merged_semantics) =
+            Self::merge_annotated_value_semantics(&existing_semantics, &semantics)
+        else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "global '{}' is used with incompatible value semantics",
+                name
+            )));
+        };
+
+        if merged_semantics != existing_semantics {
+            self.named_program_global_semantics
+                .insert(name.to_string(), merged_semantics);
+        }
+        Ok(())
+    }
+
     pub(super) fn tracked_value_semantics(
         &self,
         src: RegId,
@@ -1429,29 +1631,17 @@ impl<'a> HirToMirLowering<'a> {
                 self.infer_mutable_global_layout(symbol.clone(), src, src_vreg)?
             };
 
-        if let Some(existing) = self.named_program_globals.get(name) {
-            if existing != &inferred {
+        if let Some(existing) = self.named_program_globals.get(name).cloned() {
+            if existing != inferred {
                 return Err(CompileError::UnsupportedInstruction(format!(
                     "global '{}' is used with incompatible layouts",
                     name
                 )));
             }
             if let Some(semantics) = value_semantics {
-                match self.named_program_global_semantics.get(name) {
-                    Some(existing_semantics) if existing_semantics != &semantics => {
-                        return Err(CompileError::UnsupportedInstruction(format!(
-                            "global '{}' is used with incompatible value semantics",
-                            name
-                        )));
-                    }
-                    Some(_) => {}
-                    None => {
-                        self.named_program_global_semantics
-                            .insert(name.to_string(), semantics);
-                    }
-                }
+                self.merge_named_program_global_semantics(name, semantics)?;
             }
-            return Ok(existing.clone());
+            return Ok(existing);
         }
 
         let size = inferred.ty.size();
@@ -1474,8 +1664,7 @@ impl<'a> HirToMirLowering<'a> {
         self.named_program_globals
             .insert(name.to_string(), inferred.clone());
         if let Some(semantics) = value_semantics {
-            self.named_program_global_semantics
-                .insert(name.to_string(), semantics);
+            self.merge_named_program_global_semantics(name, semantics)?;
         }
         Ok(inferred)
     }
@@ -1522,29 +1711,17 @@ impl<'a> HirToMirLowering<'a> {
             string_content_cap: string_slot_len.map(|slot_len| slot_len.saturating_sub(1)),
         };
 
-        if let Some(existing) = self.named_program_globals.get(name) {
-            if existing != &inferred {
+        if let Some(existing) = self.named_program_globals.get(name).cloned() {
+            if existing != inferred {
                 return Err(CompileError::UnsupportedInstruction(format!(
                     "global '{}' is used with incompatible layouts",
                     name
                 )));
             }
             if let Some(semantics) = Self::mutable_global_value_semantics(value)? {
-                match self.named_program_global_semantics.get(name) {
-                    Some(existing_semantics) if existing_semantics != &semantics => {
-                        return Err(CompileError::UnsupportedInstruction(format!(
-                            "global '{}' is used with incompatible value semantics",
-                            name
-                        )));
-                    }
-                    Some(_) => {}
-                    None => {
-                        self.named_program_global_semantics
-                            .insert(name.to_string(), semantics);
-                    }
-                }
+                self.merge_named_program_global_semantics(name, semantics)?;
             }
-            return Ok(existing.clone());
+            return Ok(existing);
         }
 
         let size = inferred.ty.size();
@@ -1566,8 +1743,7 @@ impl<'a> HirToMirLowering<'a> {
         self.named_program_globals
             .insert(name.to_string(), inferred.clone());
         if let Some(semantics) = Self::mutable_global_value_semantics(value)? {
-            self.named_program_global_semantics
-                .insert(name.to_string(), semantics);
+            self.merge_named_program_global_semantics(name, semantics)?;
         }
         Ok(inferred)
     }
@@ -1580,29 +1756,17 @@ impl<'a> HirToMirLowering<'a> {
         let symbol = Self::named_program_global_symbol(name);
         let (inferred, semantics) = Self::typed_named_program_global_layout(symbol.clone(), spec)?;
 
-        if let Some(existing) = self.named_program_globals.get(name) {
-            if existing != &inferred {
+        if let Some(existing) = self.named_program_globals.get(name).cloned() {
+            if existing != inferred {
                 return Err(CompileError::UnsupportedInstruction(format!(
                     "global '{}' is used with incompatible layouts",
                     name
                 )));
             }
             if let Some(semantics) = semantics {
-                match self.named_program_global_semantics.get(name) {
-                    Some(existing_semantics) if existing_semantics != &semantics => {
-                        return Err(CompileError::UnsupportedInstruction(format!(
-                            "global '{}' is used with incompatible value semantics",
-                            name
-                        )));
-                    }
-                    Some(_) => {}
-                    None => {
-                        self.named_program_global_semantics
-                            .insert(name.to_string(), semantics);
-                    }
-                }
+                self.merge_named_program_global_semantics(name, semantics)?;
             }
-            return Ok(existing.clone());
+            return Ok(existing);
         }
 
         let size = inferred.ty.size();
@@ -1617,8 +1781,7 @@ impl<'a> HirToMirLowering<'a> {
         self.named_program_globals
             .insert(name.to_string(), inferred.clone());
         if let Some(semantics) = semantics {
-            self.named_program_global_semantics
-                .insert(name.to_string(), semantics);
+            self.merge_named_program_global_semantics(name, semantics)?;
         }
         Ok(inferred)
     }
@@ -1633,30 +1796,19 @@ impl<'a> HirToMirLowering<'a> {
         let parsed = ParsedNamedGlobalType::parse(spec)?;
         let (inferred, semantics) = parsed.layout(symbol.clone());
         let data = parsed.initializer_bytes(value, spec)?;
+        let semantics = parsed.initializer_semantics(Some(value))?.or(semantics);
 
-        if let Some(existing) = self.named_program_globals.get(name) {
-            if existing != &inferred {
+        if let Some(existing) = self.named_program_globals.get(name).cloned() {
+            if existing != inferred {
                 return Err(CompileError::UnsupportedInstruction(format!(
                     "global '{}' is used with incompatible layouts",
                     name
                 )));
             }
             if let Some(semantics) = semantics {
-                match self.named_program_global_semantics.get(name) {
-                    Some(existing_semantics) if existing_semantics != &semantics => {
-                        return Err(CompileError::UnsupportedInstruction(format!(
-                            "global '{}' is used with incompatible value semantics",
-                            name
-                        )));
-                    }
-                    Some(_) => {}
-                    None => {
-                        self.named_program_global_semantics
-                            .insert(name.to_string(), semantics);
-                    }
-                }
+                self.merge_named_program_global_semantics(name, semantics)?;
             }
-            return Ok(existing.clone());
+            return Ok(existing);
         }
 
         let size = inferred.ty.size();
@@ -1675,8 +1827,7 @@ impl<'a> HirToMirLowering<'a> {
         self.named_program_globals
             .insert(name.to_string(), inferred.clone());
         if let Some(semantics) = semantics {
-            self.named_program_global_semantics
-                .insert(name.to_string(), semantics);
+            self.merge_named_program_global_semantics(name, semantics)?;
         }
         Ok(inferred)
     }

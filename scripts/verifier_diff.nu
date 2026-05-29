@@ -6970,6 +6970,22 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "global-define-type-array-record-nested-numeric-list-upsert"
+        category: "globals"
+        tags: [globals records arrays list upsert global-define accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  [{samples: [1 2]} {samples: [3 4]}] | global-define --type "array{record{samples:list:int:2}:2}" entries'
+            '  mut entries = (global-get entries)'
+            '  $entries.1.samples.1 = 9'
+            '  $entries.1.samples.1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "global-define-type-array-record-spread-initializer"
         category: "globals"
         tags: [globals records arrays list-spread global-define accept]
