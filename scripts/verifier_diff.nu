@@ -893,6 +893,16 @@ const PROGRAM_GLOBAL_KERNEL_FEATURE_EXPECTATIONS = [
     {
         program: [
             '{|ctx|'
+            '  mut state: record<pid: int stats: record<hits: int ok: bool>> = {}'
+            '  ($state.pid + $state.stats.hits) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["global:bpf-data-sections"]
+    }
+    {
+        program: [
+            '{|ctx|'
             '  let text = "global-get seen"'
             '  0'
             '}'
@@ -6902,6 +6912,38 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "annotated-mut-scalar-null-rejected-by-nushell-parser"
+        category: "globals"
+        tags: [globals scalar null parser reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  mut hits: int = null'
+            '  $hits | count'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "reject"
+        error_contains: "expected int, found nothing"
+    }
+    {
+        name: "annotated-mut-record-null-rejected-by-nushell-parser"
+        category: "globals"
+        tags: [globals records null parser reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  mut state: record<pid: int stats: record<hits: int ok: bool>> = null'
+            '  ($state.pid + $state.stats.hits) | count'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "reject"
+        error_contains: "expected record<pid: int, stats: record<hits: int, ok: bool>>, found nothing"
+    }
+    {
         name: "annotated-mut-record-nested-empty-zero-fill"
         category: "globals"
         tags: [globals records zero-fill accept]
@@ -6915,6 +6957,22 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
+    }
+    {
+        name: "annotated-mut-top-level-record-omission-rejected-by-nushell-parser"
+        category: "globals"
+        tags: [globals records parser reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  mut state: record<pid: int stats: record<hits: int ok: bool>> = { pid: 7 }'
+            '  ($state.pid + $state.stats.hits) | count'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "reject"
+        error_contains: "expected record<pid: int, stats: record<hits: int, ok: bool>>, found record<pid: int>"
     }
     {
         name: "constant-record-nested-list"
