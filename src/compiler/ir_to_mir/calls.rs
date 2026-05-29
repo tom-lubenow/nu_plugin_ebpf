@@ -1988,6 +1988,7 @@ impl<'a> HirToMirLowering<'a> {
                             "global-define requires a source value with tracked metadata".into(),
                         )
                     })?;
+                self.reject_context_pointer_payload(Some(value_reg), "global-define value")?;
                 if !zero_init
                     && self
                         .get_metadata(value_reg)
@@ -2081,6 +2082,7 @@ impl<'a> HirToMirLowering<'a> {
                             "global-set requires a source value with tracked metadata".into(),
                         )
                     })?;
+                self.reject_context_pointer_payload(Some(value_reg), "global-set value")?;
                 let global =
                     self.ensure_named_program_global(&global_name, value_reg, value_vreg)?;
                 self.store_into_mutable_global(

@@ -1785,6 +1785,7 @@ impl<'a> HirToMirLowering<'a> {
         src: RegId,
         src_vreg: VReg,
     ) -> Result<(), CompileError> {
+        self.reject_context_pointer_payload(Some(src), context)?;
         let global_ptr = self.func.alloc_vreg();
         self.emit(MirInst::LoadGlobal {
             dst: global_ptr,

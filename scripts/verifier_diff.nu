@@ -17794,6 +17794,36 @@ const FIXTURES = [
         error_contains: "cannot persist records containing context pointers"
     }
     {
+        name: "core-record-context-global-set-rejects-pointer-escape"
+        category: "language-core"
+        tags: [record context global reject]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  { k: $ctx } | global-set state'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "cannot persist records containing context pointers"
+    }
+    {
+        name: "core-record-context-global-define-zero-rejects-pointer-escape"
+        category: "language-core"
+        tags: [record context global reject]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  { k: $ctx } | global-define state --zero'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "cannot persist records containing context pointers"
+    }
+    {
         name: "adjust-packet-xdp-head"
         category: "language-surface"
         tags: [adjust-packet xdp]
