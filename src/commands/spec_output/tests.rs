@@ -343,6 +343,12 @@ fn assert_accessible_helper_backed_context_fields_report_metadata(spec_text: &st
             "{spec_text} ctx.{} should report its backing helper minimum kernel",
             entry.field.display_name()
         );
+        assert_eq!(
+            field.compatibility_minimum_kernel,
+            Some(minimum_kernel),
+            "{spec_text} ctx.{} should report aggregate compatibility minimum kernel",
+            entry.field.display_name()
+        );
         assert!(
             field
                 .backing_helper_minimum_kernel_source
@@ -483,6 +489,7 @@ fn test_spec_context_fields_include_kernel_btf_runtime_type_labels() {
     assert_eq!(task.minimum_kernel, Some("5.11"));
     assert_eq!(task.backing_helper, Some("bpf_get_current_task_btf"));
     assert_eq!(task.backing_helper_minimum_kernel, Some("5.11"));
+    assert_eq!(task.compatibility_minimum_kernel, Some("5.11"));
     assert!(
         task.backing_helper_minimum_kernel_source
             .is_some_and(|source| source.contains("/v5.11/"))
@@ -499,6 +506,7 @@ fn test_spec_context_fields_include_kernel_btf_runtime_type_labels() {
     assert_eq!(cgroup.backing_helper, Some("bpf_get_current_task_btf"));
     assert_eq!(cgroup.backing_helper_minimum_kernel, Some("5.11"));
     assert_eq!(cgroup.minimum_kernel, Some("5.11"));
+    assert_eq!(cgroup.compatibility_minimum_kernel, Some("5.11"));
 }
 
 #[test]
@@ -556,6 +564,7 @@ fn test_spec_context_fields_label_helper_backed_scalar_fields() {
     assert_eq!(pid.backing_helper_minimum_kernel, Some("4.2"));
     assert_eq!(pid.requirement_key.as_deref(), Some("ctx:pid"));
     assert_eq!(pid.minimum_kernel, Some("4.2"));
+    assert_eq!(pid.compatibility_minimum_kernel, Some("4.2"));
     assert!(
         pid.minimum_kernel_source
             .is_some_and(|source| source.contains("/v4.2/"))
@@ -566,6 +575,7 @@ fn test_spec_context_fields_label_helper_backed_scalar_fields() {
     assert_eq!(retval.runtime_type.as_deref(), Some("u64"));
     assert_eq!(retval.backing_helper, None);
     assert_eq!(retval.minimum_kernel, None);
+    assert_eq!(retval.compatibility_minimum_kernel, None);
 
     let kstack = field(&fields, "kstack");
     assert_eq!(kstack.semantic_type.as_deref(), Some("i64"));
@@ -573,6 +583,7 @@ fn test_spec_context_fields_label_helper_backed_scalar_fields() {
     assert_eq!(kstack.backing_helper, Some("bpf_get_stackid"));
     assert_eq!(kstack.backing_helper_minimum_kernel, Some("4.6"));
     assert_eq!(kstack.minimum_kernel, Some("4.6"));
+    assert_eq!(kstack.compatibility_minimum_kernel, Some("4.6"));
 
     let ustack = field(&fields, "ustack");
     assert_eq!(ustack.semantic_type.as_deref(), Some("i64"));
@@ -580,6 +591,7 @@ fn test_spec_context_fields_label_helper_backed_scalar_fields() {
     assert_eq!(ustack.backing_helper, Some("bpf_get_stackid"));
     assert_eq!(ustack.backing_helper_minimum_kernel, Some("4.6"));
     assert_eq!(ustack.minimum_kernel, Some("4.6"));
+    assert_eq!(ustack.compatibility_minimum_kernel, Some("4.6"));
 }
 
 #[test]
@@ -653,6 +665,51 @@ fn test_spec_context_fields_report_backing_helper_metadata_invariants() {
         "cgroup_sysctl:/sys/fs/cgroup",
     ] {
         assert_accessible_helper_backed_context_fields_report_metadata(spec_text);
+    }
+}
+
+#[test]
+fn test_context_field_compatibility_metadata_invariants() {
+    for spec_text in [
+        "raw_tracepoint:sys_enter",
+        "fentry:security_file_open",
+        "tc:lo:ingress",
+        "sk_lookup:/proc/self/ns/net",
+        "perf_event:software:cpu-clock",
+        "xdp:lo",
+        "cgroup_sysctl:/sys/fs/cgroup",
+        "sock_ops:/sys/fs/cgroup",
+    ] {
+        let spec = ProgramSpec::parse(spec_text)
+            .unwrap_or_else(|err| panic!("{spec_text} should parse: {err}"));
+
+        for field in spec_context_fields(&spec, false) {
+            let component_floors = [field.minimum_kernel, field.backing_helper_minimum_kernel];
+            if component_floors.iter().any(Option::is_some) {
+                let compatibility_minimum =
+                    field.compatibility_minimum_kernel.unwrap_or_else(|| {
+                        panic!(
+                            "{spec_text} ctx.{} should report an aggregate compatibility minimum kernel",
+                            field.field
+                        )
+                    });
+                assert!(
+                    field.compatibility_minimum_kernel_source.is_some(),
+                    "{spec_text} ctx.{} should report an aggregate compatibility source",
+                    field.field
+                );
+                for floor in component_floors.into_iter().flatten() {
+                    assert!(
+                        ContextFieldCompatibilityRequirement::kernel_version_at_least(
+                            compatibility_minimum,
+                            floor
+                        ),
+                        "{spec_text} ctx.{} aggregate floor {compatibility_minimum} should cover component floor {floor}",
+                        field.field
+                    );
+                }
+            }
+        }
     }
 }
 
@@ -1072,6 +1129,22 @@ fn test_spec_record_context_fields_include_minimum_kernel_metadata() {
             .as_str()
             .expect("requirement key should be a string"),
         "ctx:packet_len"
+    );
+    assert_eq!(
+        packet_len
+            .get("compatibility_minimum_kernel")
+            .expect("compatibility minimum kernel should be present")
+            .as_str()
+            .expect("compatibility minimum kernel should be a string"),
+        "4.8"
+    );
+    assert!(
+        packet_len
+            .get("compatibility_minimum_kernel_source")
+            .expect("compatibility minimum kernel source should be present")
+            .as_str()
+            .expect("compatibility minimum kernel source should be a string")
+            .contains("/v4.8/")
     );
     assert_eq!(
         packet_len

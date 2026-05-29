@@ -28,6 +28,8 @@ struct SpecContextField {
     raw_context_pointer: bool,
     pointer_non_null: bool,
     trusted_btf_kernel_pointer: bool,
+    compatibility_minimum_kernel: Option<&'static str>,
+    compatibility_minimum_kernel_source: Option<&'static str>,
     backing_helper: Option<&'static str>,
     backing_helper_requirement_key: Option<String>,
     backing_helper_minimum_kernel: Option<&'static str>,
@@ -684,6 +686,10 @@ fn spec_context_fields(
             let backing_helper = ctx_field_backing_helper(&entry.field);
             let compatibility_requirement =
                 ContextFieldCompatibilityRequirement::for_field_on_program_spec(&entry.field, spec);
+            let compatibility_floor = context_surface_compatibility_floor(
+                compatibility_requirement.as_ref(),
+                backing_helper,
+            );
             let direct_load = spec.ctx_field_direct_load(&entry.field);
             let array_load = spec.ctx_field_array_load(&entry.field);
             let nested_load = spec.ctx_field_nested_load(&entry.field);
@@ -716,6 +722,8 @@ fn spec_context_fields(
                     pointer_non_null: spec.ctx_field_pointer_is_non_null(&entry.field),
                     trusted_btf_kernel_pointer: spec
                         .ctx_field_is_trusted_btf_kernel_pointer(&entry.field),
+                    compatibility_minimum_kernel: compatibility_floor.map(|floor| floor.0),
+                    compatibility_minimum_kernel_source: compatibility_floor.map(|floor| floor.1),
                     backing_helper: backing_helper.map(BpfHelper::name),
                     backing_helper_requirement_key: backing_helper.and_then(helper_requirement_key),
                     backing_helper_minimum_kernel: backing_helper
@@ -780,6 +788,8 @@ fn context_field_records(
                     "raw_context_pointer" => Value::bool(field.raw_context_pointer, span),
                     "pointer_non_null" => Value::bool(field.pointer_non_null, span),
                     "trusted_btf_kernel_pointer" => Value::bool(field.trusted_btf_kernel_pointer, span),
+                    "compatibility_minimum_kernel" => optional_static_str(field.compatibility_minimum_kernel, span),
+                    "compatibility_minimum_kernel_source" => optional_static_str(field.compatibility_minimum_kernel_source, span),
                     "backing_helper" => optional_static_str(field.backing_helper, span),
                     "backing_helper_requirement_key" => optional_string(field.backing_helper_requirement_key, span),
                     "backing_helper_minimum_kernel" => optional_static_str(field.backing_helper_minimum_kernel, span),
@@ -925,7 +935,7 @@ fn push_context_field_projection(
     compatibility_requirement: Option<ContextFieldCompatibilityRequirement>,
 ) {
     let compatibility_floor =
-        context_projection_compatibility_floor(compatibility_requirement.as_ref(), None);
+        context_surface_compatibility_floor(compatibility_requirement.as_ref(), None);
     projections.push(SpecContextProjection {
         root: root.to_string(),
         path: format!("{root}.{name}"),
@@ -974,7 +984,7 @@ fn push_struct_field_projections(
     let helper_requirement_feature_key = helper.and_then(helper_requirement_key);
     let helper_minimum_kernel = helper.and_then(BpfHelper::minimum_kernel);
     let helper_minimum_kernel_source = helper.and_then(BpfHelper::minimum_kernel_source);
-    let compatibility_floor = context_projection_compatibility_floor(None, helper);
+    let compatibility_floor = context_surface_compatibility_floor(None, helper);
     let include_bpf_sock_aliases = name.as_deref() == Some("bpf_sock");
 
     for field in fields.into_iter().filter(|field| !field.synthetic) {
@@ -1040,7 +1050,7 @@ fn push_helper_call_projection(
     if unsupported_reason.is_some() {
         return;
     }
-    let compatibility_floor = context_projection_compatibility_floor(None, Some(helper));
+    let compatibility_floor = context_surface_compatibility_floor(None, Some(helper));
 
     projections.push(SpecContextProjection {
         root: root.to_string(),
@@ -1155,7 +1165,7 @@ fn push_helper_backed_socket_projections(
 }
 
 #[cfg(target_os = "linux")]
-fn context_projection_compatibility_floor(
+fn context_surface_compatibility_floor(
     context_requirement: Option<&ContextFieldCompatibilityRequirement>,
     helper: Option<BpfHelper>,
 ) -> Option<(&'static str, &'static str)> {

@@ -241,13 +241,14 @@ is constrained by the parsed program or callback, such as XDP metadata kfuncs
 or sched_ext callback kfuncs, including modeled arity, argument kinds, return
 kind, pointer-space/size rules, and source-checked kfunc compatibility metadata
 when available.
-Individual
-context-field and context-write records also carry nullable `minimum_kernel`
-and `minimum_kernel_source` fields when direct UAPI fields, write-only
-surfaces, or backing helpers have source-checked introduction points. Mixed
-requirements stay empty until they are split precisely enough to avoid
-overstating or understating compatibility. When a feature is unmodeled or
-kernel-version-specific, the kernel verifier and loader remain authoritative.
+Individual context-field, context-projection, and context-write records also
+carry nullable `compatibility_minimum_kernel` and
+`compatibility_minimum_kernel_source` fields that aggregate the known direct
+context ABI, write-only surface, and backing helper/kfunc floors for that row.
+The component `minimum_kernel`, `backing_helper_minimum_kernel`,
+`helper_minimum_kernel`, and `kfunc_minimum_kernel` fields remain present where
+they apply. When a feature is unmodeled or kernel-version-specific, the kernel
+verifier and loader remain authoritative.
 
 Kernel-BTF-backed attach specs accept both the normal and sleepable
 section spellings where Aya/libbpf do: `fentry:func` / `fentry.s:func`,
@@ -665,7 +666,7 @@ Read-only closure captures now lower as real constants for supported types (`int
 | Command | Description |
 |---------|-------------|
 | `ebpf attach` | Attach eBPF probe with closure |
-| `ebpf spec` | Inspect parsed target metadata, aliases, parsed attach shape, context family, packet context kind, direct packet-write support, concrete context argument and return-value surfaces when knowable, modeled context fields with type labels, pointer verifier facts, load guards, direct/array/nested context load-shape metadata, direct context-field compatibility keys, backing helpers with compatibility keys and inherited helper kernel floors where applicable, and nested direct/helper-backed projections, tracepoint payload fields with tracefs/fallback provenance, writable context surfaces with direct context-field keys plus backing helper/kfunc compatibility keys and version metadata where applicable, argument/return access mode, return aliases, capabilities, supported first-class intrinsic commands with helper floors, intrinsic context-field requirements, and map-kind floors for kind-sensitive redirect variants, section naming/target usage, struct_ops value/callback metadata, sleepable/BTF-callable metadata, kernel-target validation, live-attach/default-safety support, and compatibility requirements; pass `--list` for all modeled program families |
+| `ebpf spec` | Inspect parsed target metadata, aliases, parsed attach shape, context family, packet context kind, direct packet-write support, concrete context argument and return-value surfaces when knowable, modeled context fields with type labels, pointer verifier facts, load guards, aggregate/direct/helper compatibility floors, direct/array/nested context load-shape metadata, backing helpers with compatibility keys and inherited helper kernel floors where applicable, and nested direct/helper-backed projections, tracepoint payload fields with tracefs/fallback provenance, writable context surfaces with direct context-field keys plus backing helper/kfunc compatibility keys and version metadata where applicable, argument/return access mode, return aliases, capabilities, supported first-class intrinsic commands with helper floors, intrinsic context-field requirements, and map-kind floors for kind-sensitive redirect variants, section naming/target usage, struct_ops value/callback metadata, sleepable/BTF-callable metadata, kernel-target validation, live-attach/default-safety support, and compatibility requirements; pass `--list` for all modeled program families |
 | `ebpf detach` | Detach a probe by ID |
 | `ebpf list` | List active probes |
 | `ebpf counters` | Read counter map |
