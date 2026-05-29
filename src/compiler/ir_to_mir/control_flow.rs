@@ -748,12 +748,12 @@ impl<'a> HirToMirLowering<'a> {
         stmt_index: usize,
         dst: RegId,
     ) -> bool {
-        compile_time_value_flows_to_global_consumer(
+        compile_time_value_flows_to_fixed_layout_consumer(
             stmts,
             stmt_index,
             dst,
             self.decl_names,
-            CompileTimeValueConsumer::TypedGlobalDefine,
+            FixedLayoutValueConsumer::TypedGlobalDefine,
             CompileTimeValueFlow::Direct,
         )
     }
@@ -764,19 +764,26 @@ impl<'a> HirToMirLowering<'a> {
         stmt_index: usize,
         dst: RegId,
     ) -> bool {
-        compile_time_value_flows_to_global_consumer(
+        compile_time_value_flows_to_fixed_layout_consumer(
             stmts,
             stmt_index,
             dst,
             self.decl_names,
-            CompileTimeValueConsumer::TypedGlobalDefine,
+            FixedLayoutValueConsumer::TypedGlobalDefine,
             CompileTimeValueFlow::AggregateBuilder,
-        ) || compile_time_value_flows_to_global_consumer(
+        ) || compile_time_value_flows_to_fixed_layout_consumer(
             stmts,
             stmt_index,
             dst,
             self.decl_names,
-            CompileTimeValueConsumer::GlobalSet,
+            FixedLayoutValueConsumer::GlobalSet,
+            CompileTimeValueFlow::AggregateBuilder,
+        ) || compile_time_value_flows_to_fixed_layout_consumer(
+            stmts,
+            stmt_index,
+            dst,
+            self.decl_names,
+            FixedLayoutValueConsumer::MapPut,
             CompileTimeValueFlow::AggregateBuilder,
         )
     }

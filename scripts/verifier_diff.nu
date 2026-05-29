@@ -7078,6 +7078,43 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "map-put-array-record-initializer"
+        category: "maps"
+        tags: [maps records arrays map-put map-get accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  [{ pid: 7 cpu: 2 } { pid: 9 cpu: 3 }] | map-put entries_by_pid 0 --kind hash'
+            '  let entries = (0 | map-get entries_by_pid --kind hash)'
+            '  if $entries {'
+            '    (($entries | get 1).cpu) | count'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "map-put-array-record-spread-initializer"
+        category: "maps"
+        tags: [maps records arrays list-spread map-put map-get accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let tail = [{ pid: 9 cpu: 3 }]'
+            '  [{ pid: 7 cpu: 2 }, ...$tail] | map-put entries_by_pid 0 --kind hash'
+            '  let entries = (0 | map-get entries_by_pid --kind hash)'
+            '  if $entries {'
+            '    (($entries | get 1).cpu) | count'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "ringbuf-query-built-in-events"
         category: "maps"
         tags: [helper-call ringbuf reserved-name]

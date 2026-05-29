@@ -14,9 +14,9 @@ use super::hindley_milner::{
     HMType, Substitution, TypeScheme, TypeVar, TypeVarGenerator, UnifyError, unify,
 };
 use super::hir::{
-    AnnotatedMutGlobal, CompileTimeValueConsumer, CompileTimeValueFlow, HirBlock, HirFunction,
-    HirLiteral, HirProgram, HirStmt, HirTerminator, compile_time_value_flows_to_global_consumer,
-    supports_numeric_constant_list,
+    AnnotatedMutGlobal, CompileTimeValueFlow, FixedLayoutValueConsumer, HirBlock, HirFunction,
+    HirLiteral, HirProgram, HirStmt, HirTerminator,
+    compile_time_value_flows_to_fixed_layout_consumer, supports_numeric_constant_list,
 };
 use super::mir::AddressSpace;
 use super::type_infer::TypeError;
@@ -212,19 +212,26 @@ impl<'a> HirTypeInference<'a> {
         for (stmt_index, stmt) in block.stmts.iter().enumerate() {
             let compile_time_only_global_initializer_list = match stmt {
                 HirStmt::ListPush { src_dst, .. } => {
-                    compile_time_value_flows_to_global_consumer(
+                    compile_time_value_flows_to_fixed_layout_consumer(
                         &block.stmts,
                         stmt_index,
                         *src_dst,
                         self.decl_names,
-                        CompileTimeValueConsumer::TypedGlobalDefine,
+                        FixedLayoutValueConsumer::TypedGlobalDefine,
                         CompileTimeValueFlow::AggregateBuilder,
-                    ) || compile_time_value_flows_to_global_consumer(
+                    ) || compile_time_value_flows_to_fixed_layout_consumer(
                         &block.stmts,
                         stmt_index,
                         *src_dst,
                         self.decl_names,
-                        CompileTimeValueConsumer::GlobalSet,
+                        FixedLayoutValueConsumer::GlobalSet,
+                        CompileTimeValueFlow::AggregateBuilder,
+                    ) || compile_time_value_flows_to_fixed_layout_consumer(
+                        &block.stmts,
+                        stmt_index,
+                        *src_dst,
+                        self.decl_names,
+                        FixedLayoutValueConsumer::MapPut,
                         CompileTimeValueFlow::AggregateBuilder,
                     )
                 }

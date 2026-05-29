@@ -2687,13 +2687,13 @@ impl<'a> HirToMirLowering<'a> {
         context: &str,
     ) -> Result<(), CompileError> {
         self.reject_context_pointer_payload(value_reg, context)?;
-        let value_ty = value_reg
-            .and_then(|reg| self.get_metadata(reg))
-            .and_then(|m| {
-                m.field_type
-                    .clone()
-                    .or_else(|| Self::metadata_record_layout(m))
-            });
+        let value_ty = if let Some(meta) = value_reg.and_then(|reg| self.get_metadata(reg)) {
+            Self::metadata_fixed_array_layout(meta)?
+                .or_else(|| meta.field_type.clone())
+                .or_else(|| Self::metadata_record_layout(meta))
+        } else {
+            None
+        };
         let value_constant = value_reg
             .and_then(|reg| self.get_metadata(reg))
             .and_then(|m| m.constant_value.clone());

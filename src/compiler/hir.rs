@@ -288,17 +288,18 @@ pub enum CompileTimeValueFlow {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CompileTimeValueConsumer {
+pub enum FixedLayoutValueConsumer {
     TypedGlobalDefine,
     GlobalSet,
+    MapPut,
 }
 
-pub fn compile_time_value_flows_to_global_consumer(
+pub fn compile_time_value_flows_to_fixed_layout_consumer(
     stmts: &[HirStmt],
     stmt_index: usize,
     dst: RegId,
     decl_names: &HashMap<DeclId, String>,
-    consumer: CompileTimeValueConsumer,
+    consumer: FixedLayoutValueConsumer,
     flow: CompileTimeValueFlow,
 ) -> bool {
     let Some(rest) = stmts.get(stmt_index.saturating_add(1)..) else {
@@ -422,6 +423,7 @@ pub fn compile_time_value_flows_to_global_consumer(
                 if args
                     .pipeline_input
                     .is_some_and(|reg| tracked_regs.contains(&reg))
+                    && !call_args_non_pipeline_touch_compile_time_value(args, &tracked_regs)
                     && compile_time_value_consumer_matches(
                         decl_names.get(decl_id).map(String::as_str),
                         args,
@@ -454,10 +456,10 @@ pub fn compile_time_value_flows_to_global_consumer(
 fn compile_time_value_consumer_matches(
     decl_name: Option<&str>,
     args: &HirCallArgs,
-    consumer: CompileTimeValueConsumer,
+    consumer: FixedLayoutValueConsumer,
 ) -> bool {
     match consumer {
-        CompileTimeValueConsumer::TypedGlobalDefine => {
+        FixedLayoutValueConsumer::TypedGlobalDefine => {
             decl_name == Some("global-define")
                 && args
                     .named
@@ -465,7 +467,7 @@ fn compile_time_value_consumer_matches(
                     .any(|(name, _)| name.as_slice() == b"type")
                 && !args.flags.iter().any(|flag| flag.as_slice() == b"zero")
         }
-        CompileTimeValueConsumer::GlobalSet => {
+        FixedLayoutValueConsumer::GlobalSet => {
             decl_name == Some("global-set")
                 && args.positional.len() == 1
                 && args.rest.is_empty()
@@ -473,14 +475,33 @@ fn compile_time_value_consumer_matches(
                 && args.flags.is_empty()
                 && args.parser_info.is_empty()
         }
+        FixedLayoutValueConsumer::MapPut => {
+            decl_name == Some("map-put")
+                && args.pipeline_input.is_some()
+                && args.positional.len() == 2
+                && args.rest.is_empty()
+                && args
+                    .named
+                    .iter()
+                    .all(|(name, _)| matches!(name.as_slice(), b"kind" | b"flags"))
+                && args.flags.is_empty()
+                && args.parser_info.is_empty()
+        }
     }
+}
+
+fn call_args_non_pipeline_touch_compile_time_value(
+    args: &HirCallArgs,
+    regs: &HashSet<RegId>,
+) -> bool {
+    args.positional.iter().any(|reg| regs.contains(reg))
+        || args.rest.iter().any(|reg| regs.contains(reg))
+        || args.named.iter().any(|(_, reg)| regs.contains(reg))
 }
 
 fn call_args_touch_compile_time_value(args: &HirCallArgs, regs: &HashSet<RegId>) -> bool {
     args.pipeline_input.is_some_and(|reg| regs.contains(&reg))
-        || args.positional.iter().any(|reg| regs.contains(reg))
-        || args.rest.iter().any(|reg| regs.contains(reg))
-        || args.named.iter().any(|(_, reg)| regs.contains(reg))
+        || call_args_non_pipeline_touch_compile_time_value(args, regs)
 }
 
 fn stmt_touches_compile_time_value(

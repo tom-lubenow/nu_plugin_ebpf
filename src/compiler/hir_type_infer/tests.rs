@@ -395,6 +395,69 @@ fn test_list_push_record_item_allowed_through_bound_list_spread_global_set_initi
 }
 
 #[test]
+fn test_list_push_record_item_allowed_for_map_put_value_initializer() {
+    let map_put_decl = DeclId::new(45);
+    let mut func = HirFunction {
+        blocks: Vec::new(),
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 5,
+        file_count: 0,
+    };
+
+    let mut block = HirBlock {
+        id: HirBlockId(0),
+        stmts: Vec::new(),
+        terminator: HirTerminator::Return { src: RegId::new(0) },
+    };
+
+    block.stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List { capacity: 1 },
+    });
+    block.stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(1),
+        lit: HirLiteral::Record { capacity: 1 },
+    });
+    block.stmts.push(HirStmt::ListPush {
+        src_dst: RegId::new(0),
+        item: RegId::new(1),
+    });
+    block.stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(2),
+        lit: HirLiteral::String("entries_by_pid".into()),
+    });
+    block.stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(3),
+        lit: HirLiteral::Int(7),
+    });
+    block.stmts.push(HirStmt::Call {
+        decl_id: map_put_decl,
+        src_dst: RegId::new(4),
+        args: HirCallArgs {
+            positional: vec![RegId::new(2), RegId::new(3)],
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+    block.stmts.push(HirStmt::Drain { src: RegId::new(0) });
+    block.stmts.push(HirStmt::Drop { src: RegId::new(0) });
+    block.stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::Int(0),
+    });
+
+    func.blocks.push(block);
+
+    let program = HirProgram::new(func, HashMap::new(), Vec::new(), None);
+    let decl_names = HashMap::from([(map_put_decl, "map-put".to_string())]);
+    infer_hir(&program, &decl_names)
+        .expect("record list items should be allowed for fixed-layout map-put values");
+}
+
+#[test]
 fn test_record_insert_requires_string_key() {
     let mut func = HirFunction {
         blocks: Vec::new(),

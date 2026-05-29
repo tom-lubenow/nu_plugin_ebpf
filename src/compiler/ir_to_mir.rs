@@ -14,9 +14,9 @@ use super::CompileError;
 use super::elf::{BssGlobal, DataGlobal, ProbeContext, ReadonlyGlobal};
 use super::hindley_milner::HMType;
 use super::hir::{
-    CompileTimeValueConsumer, CompileTimeValueFlow, HirBlockId, HirCallArgs, HirClosureParamSource,
+    CompileTimeValueFlow, FixedLayoutValueConsumer, HirBlockId, HirCallArgs, HirClosureParamSource,
     HirFunction, HirLiteral, HirProgram, HirStmt, HirTerminator,
-    compile_time_value_flows_to_global_consumer, lower_ir_to_hir,
+    compile_time_value_flows_to_fixed_layout_consumer, lower_ir_to_hir,
 };
 use super::hir_type_infer::HirTypeInfo;
 use super::mir::{

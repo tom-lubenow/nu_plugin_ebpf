@@ -846,6 +846,9 @@ raw `bpf_map_update_elem` flags when needed. With `ebpf attach --pin`, the
 value layout becomes available to later pinned `map-get` users in the same
 group. If the pipeline input is a whole typed `map-get` value, `map-put`
 stores the underlying aggregate bytes rather than the pointer wrapper.
+Metadata-built fixed-record and fixed-array values, including arrays of records
+assembled with list spread, can establish the map value layout when every field
+has an honest fixed representation.
 
 For `--kind sockmap` or `--kind sockhash`, the pipeline input must be the
 current `sock_ops` context and the key is the second positional argument. This
