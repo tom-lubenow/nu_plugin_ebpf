@@ -8340,6 +8340,50 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "tc-subfn-skb-store-bytes-rejects-stale-data"
+        category: "helper-state"
+        tags: [tc helper user-function packet-bounds reject]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  def mutate [skb bytes] {'
+            '    helper-call "bpf_skb_store_bytes" $skb 0 $bytes 1 0'
+            '    0'
+            '  }'
+            '  let data = $ctx.data'
+            '  let bytes = "x"'
+            '  mutate $ctx $bytes'
+            '  ($data | get 0) | count'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "stale packet pointer"
+    }
+    {
+        name: "tc-subfn-skb-store-bytes-allows-reloaded-data"
+        category: "helper-state"
+        tags: [tc helper user-function packet-bounds accept]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  def mutate [skb bytes] {'
+            '    helper-call "bpf_skb_store_bytes" $skb 0 $bytes 1 0'
+            '    0'
+            '  }'
+            '  let bytes = "x"'
+            '  mutate $ctx $bytes'
+            '  ($ctx.data | get 0) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "tc-subfn-skb-pull-data-rejects-stale-data"
         category: "helper-state"
         tags: [tc helper user-function packet-bounds reject]
@@ -17632,6 +17676,48 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  adjust-packet --meta 0'
+            '  ($ctx.data | get 0) | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "adjust-packet-xdp-meta-subfn-rejects-stale-data"
+        category: "language-surface"
+        tags: [adjust-packet xdp user-function packet-bounds reject]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  def shift [] {'
+            '    adjust-packet --meta 0'
+            '    0'
+            '  }'
+            '  let data = $ctx.data'
+            '  shift'
+            '  ($data | get 0) | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "stale packet pointer"
+    }
+    {
+        name: "adjust-packet-xdp-meta-subfn-allows-reloaded-data"
+        category: "language-surface"
+        tags: [adjust-packet xdp user-function packet-bounds accept]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  def shift [] {'
+            '    adjust-packet --meta 0'
+            '    0'
+            '  }'
+            '  shift'
             '  ($ctx.data | get 0) | count'
             '  "pass"'
             '}'
