@@ -14573,6 +14573,93 @@ fn test_verify_mir_xdp_metadata_rx_vlan_tag_rejects_packet_output_buffers() {
     );
 }
 
+fn make_xdp_metadata_rx_timestamp_vcc_function_with_copied_arg0(
+    arg0_field: CtxField,
+    arg0_type: MirType,
+) -> (MirFunction, HashMap<VReg, MirType>) {
+    let (mut func, entry) = new_mir_function();
+
+    let ctx = func.alloc_vreg();
+    let ctx_alias = func.alloc_vreg();
+    let timestamp = func.alloc_vreg();
+    let ret = func.alloc_vreg();
+    let timestamp_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: arg0_field,
+            slot: None,
+        });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: ctx_alias,
+        src: MirValue::VReg(ctx),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: timestamp,
+        src: MirValue::StackSlot(timestamp_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: ret,
+        kfunc: "bpf_xdp_metadata_rx_timestamp".to_string(),
+        btf_id: None,
+        args: vec![ctx_alias, timestamp],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(ctx, arg0_type.clone());
+    types.insert(ctx_alias, arg0_type);
+    types.insert(
+        timestamp,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U64),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(ret, MirType::I64);
+
+    (func, types)
+}
+
+#[test]
+fn test_verify_mir_xdp_metadata_rx_timestamp_accepts_copied_raw_context_arg0() {
+    let (func, types) = make_xdp_metadata_rx_timestamp_vcc_function_with_copied_arg0(
+        CtxField::Context,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected copied raw xdp context to satisfy metadata kfunc arg0");
+}
+
+#[test]
+fn test_verify_mir_xdp_metadata_rx_timestamp_rejects_copied_packet_arg0() {
+    let (func, types) = make_xdp_metadata_rx_timestamp_vcc_function_with_copied_arg0(
+        CtxField::Data,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Packet,
+        },
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected copied packet pointer to fail metadata kfunc arg0");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("kfunc 'bpf_xdp_metadata_rx_timestamp' arg0 expects xdp_md pointer")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
 fn make_xdp_get_xfrm_state_vcc_function(
     opts_size: i64,
     buffer_size: usize,
