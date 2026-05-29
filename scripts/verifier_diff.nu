@@ -14510,6 +14510,40 @@ const FIXTURES = [
         error_contains: "got Packet"
     }
     {
+        name: "source-kfunc-xdp-metadata-rx-hash-rejects-packet-rss-type-buffer"
+        category: "helper-state"
+        tags: [kfunc btf xdp metadata source reject]
+        requires: [kernel-btf]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  let hash = "0123"'
+            '  kfunc-call "bpf_xdp_metadata_rx_hash" $ctx $hash $ctx.data'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "got Packet"
+    }
+    {
+        name: "source-kfunc-xdp-metadata-rx-vlan-tag-rejects-packet-tci-buffer"
+        category: "helper-state"
+        tags: [kfunc btf xdp metadata source reject]
+        requires: [kernel-btf]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  let vlan_proto = "01"'
+            '  kfunc-call "bpf_xdp_metadata_rx_vlan_tag" $ctx $vlan_proto $ctx.data'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "got Packet"
+    }
+    {
         name: "source-kfunc-xdp-xfrm-state-release"
         category: "helper-state"
         tags: [kfunc btf xdp ref-lifetime source accept]
