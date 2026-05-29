@@ -4522,6 +4522,28 @@ mod tests {
             ProgramCompatibilityTestLane::VmOnly
         );
 
+        for (spec_text, opt_in_reason) in [
+            (
+                "struct_ops:hid_bpf_ops",
+                ProgramLiveAttachOptInReason::HidBpf,
+            ),
+            ("struct_ops:Qdisc_ops", ProgramLiveAttachOptInReason::Qdisc),
+        ] {
+            let spec = ProgramSpec::parse(spec_text).expect("struct_ops spec should parse");
+            let policy = spec.live_attach_policy();
+            assert!(policy.loader_supported);
+            assert!(!policy.default_allowed);
+            assert!(policy.requires_opt_in);
+            assert_eq!(policy.status(), ProgramLiveAttachStatus::RequiresOptIn);
+            assert_eq!(policy.unsupported_reason, None);
+            assert_eq!(policy.opt_in_reason, Some(opt_in_reason));
+            assert_eq!(policy.note, Some(opt_in_reason.note()));
+            assert_eq!(
+                spec.live_attach_default_test_lane(),
+                ProgramCompatibilityTestLane::VmOnly
+            );
+        }
+
         let generic_struct_ops = ProgramSpec::parse("struct_ops:demo_ops")
             .expect("generic struct_ops spec should parse");
         let generic_policy = generic_struct_ops.live_attach_policy();

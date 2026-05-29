@@ -1096,6 +1096,91 @@ fn test_spec_record_reports_target_specific_live_attach_policy() {
             .expect("live_attach_default_test_lane should be a string"),
         "vm-only"
     );
+
+    for (spec_text, opt_in_reason, description_fragment) in [
+        (
+            "struct_ops:hid_bpf_ops",
+            ProgramLiveAttachOptInReason::HidBpf,
+            "hid_bpf_ops",
+        ),
+        (
+            "struct_ops:Qdisc_ops",
+            ProgramLiveAttachOptInReason::Qdisc,
+            "Qdisc_ops",
+        ),
+    ] {
+        let spec = ProgramSpec::parse(spec_text).expect("struct_ops spec should parse");
+        let record = spec_record(spec_text.to_string(), spec, Span::test_data(), false)
+            .into_record()
+            .expect("spec output should be a record");
+        assert!(
+            record
+                .get("live_attach_supported")
+                .expect("live_attach_supported should be present")
+                .as_bool()
+                .expect("live_attach_supported should be a bool")
+        );
+        assert!(
+            !record
+                .get("live_attach_default_allowed")
+                .expect("live_attach_default_allowed should be present")
+                .as_bool()
+                .expect("live_attach_default_allowed should be a bool")
+        );
+        assert!(
+            record
+                .get("live_attach_requires_opt_in")
+                .expect("live_attach_requires_opt_in should be present")
+                .as_bool()
+                .expect("live_attach_requires_opt_in should be a bool")
+        );
+        assert_eq!(
+            record
+                .get("live_attach_status")
+                .expect("live_attach_status should be present")
+                .as_str()
+                .expect("live_attach_status should be a string"),
+            "requires-opt-in"
+        );
+        assert!(
+            record
+                .get("live_attach_unsupported_reason")
+                .expect("live_attach_unsupported_reason should be present")
+                .is_nothing()
+        );
+        assert_eq!(
+            record
+                .get("live_attach_opt_in_reason")
+                .expect("live_attach_opt_in_reason should be present")
+                .as_str()
+                .expect("live_attach_opt_in_reason should be a string"),
+            opt_in_reason.key()
+        );
+        assert!(
+            record
+                .get("live_attach_opt_in_reason_description")
+                .expect("live_attach_opt_in_reason_description should be present")
+                .as_str()
+                .expect("live_attach_opt_in_reason_description should be a string")
+                .contains(description_fragment)
+        );
+        assert_eq!(
+            record
+                .get("live_attach_note")
+                .expect("live_attach_note should be present")
+                .as_str()
+                .expect("live_attach_note should be a string"),
+            opt_in_reason.note()
+        );
+        assert_eq!(
+            record
+                .get("live_attach_default_test_lane")
+                .expect("live_attach_default_test_lane should be present")
+                .as_str()
+                .expect("live_attach_default_test_lane should be a string"),
+            "vm-only"
+        );
+    }
 }
 
 #[test]
