@@ -23003,6 +23003,7 @@ def has-explicit-fixture-selection [
 }
 
 def main [
+    --validate     # Validate fixture metadata and exit without resolving or running the plugin.
     --list         # List verifier fixtures and exit.
     --matrix       # Print verifier fixture counts by tier and category, then exit.
     --json         # Emit JSON for --list or --matrix.
@@ -23027,6 +23028,9 @@ def main [
     }
     if $list and $matrix {
         fail "--list and --matrix are mutually exclusive"
+    }
+    if $validate and ($list or $matrix) {
+        fail "--validate cannot be combined with --list or --matrix"
     }
     if $json and not ($list or $matrix) {
         fail "--json is only supported with --list or --matrix"
@@ -23062,7 +23066,31 @@ def main [
         fail "--fixture and --fixtures are mutually exclusive"
     }
 
+    if $validate and (
+        $kernel
+        or $no_kernel
+        or $smoke
+        or $fast
+        or $full
+        or $fixture != null
+        or $fixtures != null
+        or $category != null
+        or $tag != null
+        or $tier != null
+        or $exclude_tier != null
+        or $test_lane != null
+        or $local_status != null
+        or $kernel_status != null
+    ) {
+        fail "--validate checks all fixture metadata and cannot be combined with fixture selection or run-mode flags"
+    }
+
     validate-fixture-metadata $FIXTURES
+    if $validate {
+        print $"ok: (($FIXTURES | length)) verifier fixtures metadata-valid"
+        return
+    }
+
     if $compat_kernel != null {
         parse-kernel-version $compat_kernel | ignore
     }
