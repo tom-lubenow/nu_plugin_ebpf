@@ -103,6 +103,23 @@ fn intrinsic_record(spec_text: &str, command: &str) -> Value {
         .clone()
 }
 
+fn intrinsic_compatibility_floor(
+    spec_text: &str,
+    command: &str,
+) -> (Option<String>, Option<String>) {
+    let intrinsic = intrinsic_record(spec_text, command);
+    let intrinsic = intrinsic.as_record().expect("intrinsic should be a record");
+    let minimum_kernel = intrinsic
+        .get("compatibility_minimum_kernel")
+        .and_then(|value| value.as_str().ok())
+        .map(str::to_string);
+    let minimum_kernel_source = intrinsic
+        .get("compatibility_minimum_kernel_source")
+        .and_then(|value| value.as_str().ok())
+        .map(str::to_string);
+    (minimum_kernel, minimum_kernel_source)
+}
+
 fn intrinsic_backing_helper_names(spec_text: &str, command: &str) -> Vec<String> {
     intrinsic_record(spec_text, command)
         .as_record()
@@ -2065,6 +2082,24 @@ fn test_spec_record_intrinsics_include_backing_helper_metadata() {
             .is_some_and(|(_field, _key, _minimum, source)| source.contains("/v5.9/")),
         "{sk_lookup_assign_socket_context:?}"
     );
+    let (tc_assign_minimum, tc_assign_source) =
+        intrinsic_compatibility_floor("tc:lo:ingress", "assign-socket");
+    assert_eq!(tc_assign_minimum.as_deref(), Some("5.7"));
+    assert!(
+        tc_assign_source
+            .as_deref()
+            .is_some_and(|source| source.contains("include/uapi/linux/bpf.h")),
+        "{tc_assign_source:?}"
+    );
+    let (sk_lookup_assign_minimum, sk_lookup_assign_source) =
+        intrinsic_compatibility_floor("sk_lookup:/proc/self/ns/net", "assign-socket");
+    assert_eq!(sk_lookup_assign_minimum.as_deref(), Some("5.9"));
+    assert!(
+        sk_lookup_assign_source
+            .as_deref()
+            .is_some_and(|source| source.contains("/v5.9/")),
+        "{sk_lookup_assign_source:?}"
+    );
     let tc_map_contains = intrinsic_backing_helper_names("tc:lo:ingress", "map-contains");
     assert!(tc_map_contains.contains(&"bpf_map_lookup_elem".to_string()));
     assert!(tc_map_contains.contains(&"bpf_map_peek_elem".to_string()));
@@ -2099,6 +2134,15 @@ fn test_spec_record_intrinsics_include_backing_helper_metadata() {
         redirect_map_source.contains("include/uapi/linux/bpf.h"),
         "{redirect_map_source}"
     );
+    let (redirect_map_compatibility_minimum, redirect_map_compatibility_source) =
+        intrinsic_compatibility_floor("xdp:lo", "redirect-map");
+    assert_eq!(redirect_map_compatibility_minimum.as_deref(), Some("4.14"));
+    assert!(
+        redirect_map_compatibility_source
+            .as_deref()
+            .is_some_and(|source| source.contains("include/uapi/linux/bpf.h")),
+        "{redirect_map_compatibility_source:?}"
+    );
     let redirect_map_intrinsic = intrinsic_record("xdp:lo", "redirect-map");
     let redirect_map_helpers = redirect_map_intrinsic
         .as_record()
@@ -2128,6 +2172,11 @@ fn test_spec_record_intrinsics_include_backing_helper_metadata() {
         assign_socket_source.contains("include/uapi/linux/bpf.h"),
         "{assign_socket_source}"
     );
+
+    let (helper_call_minimum, helper_call_source) =
+        intrinsic_compatibility_floor("raw_tracepoint:sys_enter", "helper-call");
+    assert_eq!(helper_call_minimum, None);
+    assert_eq!(helper_call_source, None);
 }
 
 #[test]

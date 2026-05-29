@@ -229,10 +229,13 @@ carry minimum
 versions, `compatibility_minimum_kernel` reports the maximum known requirement
 for the parsed target, and `compatibility_default_test_lane` reports the most
 restrictive default lane across those requirements. The `intrinsics` list is program- and
-attach-aware, and first-class helper-backed commands expose `backing_helpers`
-records with source-checked helper minimum-kernel metadata. Intrinsics that
-imply a context-field ABI dependency expose `context_field_requirements`, such
-as `assign-socket` reporting `ctx:sk` for supported tc and sk_lookup targets.
+attach-aware, and first-class helper-backed commands expose aggregate
+compatibility metadata plus `backing_helpers` records with source-checked
+helper minimum-kernel metadata. Intrinsics that imply a context-field ABI
+dependency expose `context_field_requirements`, such as `assign-socket`
+reporting `ctx:sk` for supported tc and sk_lookup targets, and the intrinsic
+row's aggregate compatibility floor combines that target-specific ABI floor
+with the always-required backing helper floor.
 Mode- or kind-sensitive intrinsic rows also expose `variants` records that map
 the accepted flag/kind to the exact helper floor and, for map-family choices,
 the map-kind compatibility floor for the parsed target.
@@ -712,10 +715,12 @@ and source fields, plus nullable kfunc maximum-exclusive windows, so surfaces
 such as `ctx.reply`, `ctx.mark`, `ctx.cb_flags`, `ctx.new_value`, `ctx.sk`,
 `ctx.sun_path`, and context-pointer scalar-field roots such as `ctx.flow_keys`
 can be inspected before writing code that depends on them.
-`intrinsics` rows include aggregate `backing_helpers` plus
+`intrinsics` rows include aggregate `compatibility_minimum_kernel` /
+`compatibility_minimum_kernel_source` fields, aggregate `backing_helpers`, and
 `context_field_requirements` when an intrinsic implies a context-field ABI
 dependency. For example, `assign-socket` reports the target-specific `ctx:sk`
-minimum kernel alongside its `bpf_sk_assign` helper floor.
+minimum kernel alongside its `bpf_sk_assign` helper floor, while the row-level
+compatibility floor reports the later of those requirements.
 
 ## Helper Commands (inside closures)
 

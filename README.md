@@ -61,9 +61,11 @@ Kind-sensitive intrinsic variants such as `redirect-map --kind devmap-hash`
 and `redirect-socket --kind sockhash` also report their selected map kind,
 map requirement key, and source-backed map minimum kernel separately from the
 backing helper floor.
-Intrinsic rows can also report target-aware `context_field_requirements` when
-the command implies a context ABI dependency; for example `assign-socket`
-advertises the `ctx:sk` floor for the parsed attach target.
+Intrinsic rows also carry nullable aggregate `compatibility_minimum_kernel` /
+`compatibility_minimum_kernel_source` fields over always-required backing
+helper floors plus target-aware `context_field_requirements`; for example
+`assign-socket` advertises the effective `ctx:sk` / `bpf_sk_assign` floor for
+the parsed attach target.
 Writable context surface records report direct write-surface floors when known
 and whether an assignment lowers through a helper or kfunc, including separate
 source-backed minimum-kernel/source fields for ABI-backed writes such as
@@ -151,7 +153,8 @@ The `context_writes` table similarly reports assignment kind, indexed-write
 shape, aggregate write-surface compatibility floor when known, the direct
 context/write-only field floor, and any helper/kfunc ABI dependency plus its
 own known kernel floor.
-Each `intrinsics` row includes aggregate `backing_helpers`; mode- or
+Each `intrinsics` row includes aggregate compatibility metadata and aggregate
+`backing_helpers`; mode- or
 kind-sensitive commands such as `adjust-packet`, `adjust-message`, `redirect`,
 `redirect-map`, and `redirect-socket` also include `variants` records that map
 the supported flag/kind to the exact helper and helper kernel floor for the

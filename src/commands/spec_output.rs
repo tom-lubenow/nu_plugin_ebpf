@@ -1474,6 +1474,31 @@ fn intrinsic_context_field_requirement_records(
 }
 
 #[cfg(target_os = "linux")]
+fn intrinsic_compatibility_floor(
+    spec: &crate::program_spec::ProgramSpec,
+    intrinsic: ProgramIntrinsic,
+) -> Option<(&'static str, &'static str)> {
+    let helper_floor = spec
+        .intrinsic_backing_helpers(intrinsic)
+        .into_iter()
+        .filter_map(|helper| Some((helper.minimum_kernel()?, helper.minimum_kernel_source()?)))
+        .fold(None, |floor, helper| {
+            later_kernel_floor(floor, Some(helper))
+        });
+    spec.intrinsic_context_field_requirements(intrinsic)
+        .into_iter()
+        .map(|requirement| {
+            (
+                requirement.minimum_kernel(),
+                requirement.minimum_kernel_source(),
+            )
+        })
+        .fold(helper_floor, |floor, requirement| {
+            later_kernel_floor(floor, Some(requirement))
+        })
+}
+
+#[cfg(target_os = "linux")]
 fn intrinsic_variant_record(
     selector: &'static str,
     value: &'static str,
@@ -1947,11 +1972,14 @@ pub(super) fn spec_record(
             let context_field_requirements =
                 intrinsic_context_field_requirement_records(&spec, *intrinsic, span);
             let variants = intrinsic_variant_records(&spec, *intrinsic, span);
+            let compatibility_floor = intrinsic_compatibility_floor(&spec, *intrinsic);
             Value::record(
                 record! {
                     "command" => Value::string(intrinsic.command_name(), span),
                     "capability" => Value::string(capability.key(), span),
                     "capability_description" => Value::string(capability.description(), span),
+                    "compatibility_minimum_kernel" => optional_static_str(compatibility_floor.map(|floor| floor.0), span),
+                    "compatibility_minimum_kernel_source" => optional_static_str(compatibility_floor.map(|floor| floor.1), span),
                     "backing_helpers" => Value::list(backing_helpers, span),
                     "context_field_requirements" => Value::list(context_field_requirements, span),
                     "variants" => Value::list(variants, span),
