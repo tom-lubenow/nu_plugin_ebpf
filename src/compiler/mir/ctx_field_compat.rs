@@ -191,6 +191,12 @@ impl ContextFieldCompatibilityRequirement {
             .unwrap_or_else(|| format!("ctx:{}", self.field.display_name()))
     }
 
+    pub fn diagnostic_label(&self) -> String {
+        self.key
+            .clone()
+            .unwrap_or_else(|| format!("ctx.{}", self.field.display_name()))
+    }
+
     pub fn category(&self) -> &'static str {
         "context-field"
     }

@@ -259,8 +259,8 @@ fn context_field_compatibility_requirements_detail(
             .iter()
             .map(|requirement| {
                 format!(
-                    "ctx.{} context field support (kernel>={})",
-                    requirement.field().display_name(),
+                    "{} context field support (kernel>={})",
+                    requirement.diagnostic_label(),
                     requirement.minimum_kernel()
                 )
             })

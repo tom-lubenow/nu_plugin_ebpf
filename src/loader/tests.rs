@@ -17,8 +17,8 @@ use crate::compiler::{
 };
 use crate::kernel_btf::{KernelBtf, TrampolineValueKind};
 use crate::program_spec::{
-    CgroupSockAddrAttachKind, CgroupSysctlTarget, DEFAULT_PERF_EVENT_PERIOD, UprobeMultiTarget,
-    XdpAttachMode, XdpTarget, XdpTargetKind,
+    CgroupSockAddrAttachKind, CgroupSysctlTarget, DEFAULT_PERF_EVENT_PERIOD, ProgramSpec,
+    UprobeMultiTarget, XdpAttachMode, XdpTarget, XdpTargetKind,
 };
 use std::collections::HashMap;
 
@@ -2241,6 +2241,25 @@ fn test_kernel_context_field_minimum_requirement_detail_reports_too_old_kernel()
     assert!(msg.contains("current kernel is 5.4.0-test"));
     assert!(msg.contains("ctx.egress_ifindex context field support"));
     assert!(msg.contains("kernel>=5.8"));
+}
+
+#[test]
+fn test_kernel_context_field_requirement_detail_reports_tracepoint_target_key() {
+    let spec = ProgramSpec::parse("tracepoint:syscalls/sys_enter_openat2")
+        .expect("tracepoint spec should parse");
+    let requirement = ContextFieldCompatibilityRequirement::for_field_on_program_spec(
+        &CtxField::TracepointField("filename".to_string()),
+        &spec,
+    )
+    .expect("tracepoint filename field should be versioned");
+    let msg = kernel_context_field_minimum_requirement_detail(&[requirement], "5.5.0-test")
+        .expect("kernel 5.5 should be too old for openat2 tracepoint fields");
+
+    assert!(msg.contains("compiled context fields require kernel>=5.6"));
+    assert!(
+        msg.contains("tracepoint:syscalls/sys_enter_openat2:field:filename context field support")
+    );
+    assert!(!msg.contains("ctx.filename context field support"));
 }
 
 #[test]
