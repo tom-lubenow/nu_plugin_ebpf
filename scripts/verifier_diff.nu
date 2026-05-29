@@ -488,6 +488,24 @@ const PROGRAM_LANGUAGE_KERNEL_FEATURE_EXPECTATIONS = [
         ]
         feature_keys: []
     }
+    {
+        program: [
+            '{|ctx|'
+            '  if true { for i in 0..3 { $i | count } }'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["compiled:bounded-loops"]
+    }
+    {
+        program: [
+            '{|ctx|'
+            '  def make [] { mut sum = 0; for i in 0..3 { $sum = ($sum + $i) }; $sum }'
+            '  make'
+            '}'
+        ]
+        feature_keys: ["compiled:bpf-subprogram-calls" "compiled:bounded-loops"]
+    }
 ]
 
 const PROGRAM_MAP_KERNEL_FEATURE_EXPECTATIONS = [
@@ -19347,6 +19365,41 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-inline-bounded-loop"
+        category: "language-core"
+        tags: [control-flow loop]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  mut sum = 0'
+            '  if true { for i in 0..3 { $sum = ($sum + $i) } }'
+            '  $sum'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-user-function-bounded-loop"
+        category: "language-core"
+        tags: [control-flow loop user-function]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  def sum [] {'
+            '    mut total = 0'
+            '    for i in 0..3 {'
+            '      $total = ($total + $i)'
+            '    }'
+            '    $total'
+            '  }'
+            '  sum'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-null-compare-flow"
         category: "language-core"
         tags: [control-flow null]
@@ -24207,20 +24260,19 @@ def source-statement-lines [source: string] {
     | where {|line| $line != "" and not ($line | str starts-with "#") }
 }
 
-def source-statement-starts-with? [line: string keyword: string] {
-    let trimmed = ($line | str trim)
-    $trimmed == $keyword or ($trimmed | str starts-with $"($keyword) ")
+def line-has-statement-keyword? [line: string keyword: string] {
+    not ((command-invocation-tails $line $keyword) | is-empty)
 }
 
 def program-language-kernel-features [source: string] {
     mut features = []
 
     for line in (source-statement-lines $source) {
-        if (source-statement-starts-with? $line "def") {
+        if (line-has-statement-keyword? $line "def") {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SUBPROGRAM_CALLS])
         }
 
-        if (source-statement-starts-with? $line "for") {
+        if (line-has-statement-keyword? $line "for") {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BOUNDED_LOOPS])
         }
     }
