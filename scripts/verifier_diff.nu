@@ -8561,6 +8561,27 @@ const FIXTURES = [
         error_contains: "ringbuf dynptr reservation already released"
     }
     {
+        name: "ringbuf-dynptr-accepts-both-branch-reserve-before-submit"
+        category: "helper-state"
+        tags: [ringbuf dynptr ref-lifetime phi accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let d = "0123456789abcdef"'
+            '  let selector = (helper-call "bpf_get_prandom_u32")'
+            '  if $selector == 0 {'
+            '    helper-call "bpf_ringbuf_reserve_dynptr" events 8 0 $d'
+            '  } else {'
+            '    helper-call "bpf_ringbuf_reserve_dynptr" events 8 0 $d'
+            '  }'
+            '  helper-call "bpf_ringbuf_submit_dynptr" $d 0'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "ringbuf-dynptr-allows-slot-reuse-after-submit"
         category: "helper-state"
         tags: [ringbuf dynptr ref-lifetime]
@@ -8774,6 +8795,55 @@ const FIXTURES = [
         local: "reject"
         kernel: "skip"
         error_contains: "helper 'bpf_dynptr_from_mem' requires arg2 flags to be 0"
+    }
+    {
+        name: "dynptr-from-mem-accepts-both-branch-initialization"
+        category: "helper-state"
+        tags: [dynptr phi accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  "abcdefgh" | map-put dynptr_join_buffers 0 --kind array'
+            '  let entry = (0 | map-get dynptr_join_buffers --kind array)'
+            '  if $entry {'
+            '    let d = "0123456789abcdef"'
+            '    let selector = (helper-call "bpf_get_prandom_u32")'
+            '    if $selector == 0 {'
+            '      helper-call "bpf_dynptr_from_mem" $entry 8 0 $d'
+            '    } else {'
+            '      helper-call "bpf_dynptr_from_mem" $entry 8 0 $d'
+            '    }'
+            '    helper-call "bpf_dynptr_data" $d 0 4'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "dynptr-from-mem-rejects-one-branch-initialization"
+        category: "helper-state"
+        tags: [dynptr phi reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  "abcdefgh" | map-put dynptr_join_partial_buffers 0 --kind array'
+            '  let entry = (0 | map-get dynptr_join_partial_buffers --kind array)'
+            '  if $entry {'
+            '    let d = "0123456789abcdef"'
+            '    let selector = (helper-call "bpf_get_prandom_u32")'
+            '    if $selector == 0 {'
+            '      helper-call "bpf_dynptr_from_mem" $entry 8 0 $d'
+            '    }'
+            '    helper-call "bpf_dynptr_data" $d 0 4'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_dynptr_data' arg0 requires initialized dynptr stack object"
     }
     {
         name: "dynptr-read-write-initialized-from-mem"
