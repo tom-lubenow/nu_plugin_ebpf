@@ -304,6 +304,10 @@ impl<'a> HirToMirLowering<'a> {
 
             "read-str" => {
                 let ptr_vreg = self.pipeline_input.unwrap_or(dst_vreg);
+                let ptr_reg = self
+                    .pipeline_input_reg
+                    .or_else(|| src_dst_had_value.then_some(src_dst));
+                self.reject_context_pointer_payload(ptr_reg, "read-str source")?;
 
                 // Check for --max-len argument (default 128)
                 let requested_len = self
@@ -330,6 +334,10 @@ impl<'a> HirToMirLowering<'a> {
 
             "read-kernel-str" => {
                 let ptr_vreg = self.pipeline_input.unwrap_or(dst_vreg);
+                let ptr_reg = self
+                    .pipeline_input_reg
+                    .or_else(|| src_dst_had_value.then_some(src_dst));
+                self.reject_context_pointer_payload(ptr_reg, "read-kernel-str source")?;
 
                 // Check for --max-len argument (default 128)
                 let requested_len = self

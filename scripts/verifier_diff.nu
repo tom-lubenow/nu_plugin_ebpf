@@ -17807,6 +17807,36 @@ const FIXTURES = [
         error_contains: "cannot use context pointers as values"
     }
     {
+        name: "core-context-read-str-rejects-pointer-source"
+        category: "language-core"
+        tags: [context read-str reject]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  $ctx | read-str'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "cannot use context pointers as values"
+    }
+    {
+        name: "core-context-read-kernel-str-rejects-pointer-source"
+        category: "language-core"
+        tags: [context read-kernel-str reject]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  $ctx | read-kernel-str'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "cannot use context pointers as values"
+    }
+    {
         name: "core-context-map-get-rejects-pointer-key"
         category: "language-core"
         tags: [context map reject]
