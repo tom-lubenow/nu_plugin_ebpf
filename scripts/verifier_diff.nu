@@ -19491,6 +19491,26 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-user-function-list-iterate"
+        category: "language-core"
+        tags: [control-flow loop aggregate list user-function]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  def sum_list [] {'
+            '    mut sum = 0'
+            '    for item in [10 20 30] {'
+            '      $sum = ($sum + $item)'
+            '    }'
+            '    $sum'
+            '  }'
+            '  sum_list'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-null-compare-flow"
         category: "language-core"
         tags: [control-flow null]
