@@ -1685,6 +1685,12 @@ pub enum ProgramCompatibilityRequirement {
     CgroupUnixSockAddr,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CompiledFeatureCompatibilityRequirement {
+    BpfSubprogramCalls,
+    BoundedLoops,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ProgramCompatibilityTestLane {
     HostSafe,
@@ -1737,6 +1743,8 @@ const LINUX_BPF_H_V4_14_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v4.14/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V4_15_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v4.15/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V4_16_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v4.16/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V4_17_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v4.17/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V4_18_SOURCE: &str =
@@ -1818,6 +1826,86 @@ const LINUX_KMEM_CACHE_ITER_V6_13_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.13/kernel/bpf/kmem_cache_iter.c";
 const LINUX_DMABUF_ITER_V6_16_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.16/kernel/bpf/dmabuf_iter.c";
+const LINUX_BPF_VERIFIER_C_V5_3_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.3/kernel/bpf/verifier.c";
+
+const COMPILED_FEATURE_COMPATIBILITY_REQUIREMENTS: &[CompiledFeatureCompatibilityRequirement] = &[
+    CompiledFeatureCompatibilityRequirement::BpfSubprogramCalls,
+    CompiledFeatureCompatibilityRequirement::BoundedLoops,
+];
+
+impl CompiledFeatureCompatibilityRequirement {
+    pub fn all() -> &'static [Self] {
+        COMPILED_FEATURE_COMPATIBILITY_REQUIREMENTS
+    }
+
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::BpfSubprogramCalls => "compiled:bpf-subprogram-calls",
+            Self::BoundedLoops => "compiled:bounded-loops",
+        }
+    }
+
+    pub fn description(self) -> &'static str {
+        match self {
+            Self::BpfSubprogramCalls => "BPF-to-BPF subprogram call support",
+            Self::BoundedLoops => "bounded backward-branch loop support",
+        }
+    }
+
+    pub fn category(self) -> &'static str {
+        "compiled-feature"
+    }
+
+    pub fn minimum_kernel(self) -> &'static str {
+        match self {
+            Self::BpfSubprogramCalls => "4.16",
+            Self::BoundedLoops => "5.3",
+        }
+    }
+
+    pub fn minimum_kernel_source(self) -> &'static str {
+        match self {
+            Self::BpfSubprogramCalls => LINUX_BPF_H_V4_16_SOURCE,
+            Self::BoundedLoops => LINUX_BPF_VERIFIER_C_V5_3_SOURCE,
+        }
+    }
+
+    pub fn effective_minimum_kernel(requirements: &[Self]) -> Option<&'static str> {
+        let mut minimum = None;
+        for requirement in requirements {
+            let candidate = requirement.minimum_kernel();
+            let should_replace = match minimum {
+                Some(current) => Self::kernel_version_cmp(candidate, current).is_gt(),
+                None => true,
+            };
+            if should_replace {
+                minimum = Some(candidate);
+            }
+        }
+        minimum
+    }
+
+    pub fn kernel_version_at_least(current: &str, minimum: &str) -> bool {
+        ProgramCompatibilityRequirement::kernel_version_at_least(current, minimum)
+    }
+
+    fn kernel_version_cmp(left: &str, right: &str) -> Ordering {
+        let mut left_parts = left.split(['.', '-']);
+        let mut right_parts = right.split(['.', '-']);
+        let left_version = [
+            ProgramCompatibilityRequirement::kernel_version_part(left_parts.next()),
+            ProgramCompatibilityRequirement::kernel_version_part(left_parts.next()),
+            ProgramCompatibilityRequirement::kernel_version_part(left_parts.next()),
+        ];
+        let right_version = [
+            ProgramCompatibilityRequirement::kernel_version_part(right_parts.next()),
+            ProgramCompatibilityRequirement::kernel_version_part(right_parts.next()),
+            ProgramCompatibilityRequirement::kernel_version_part(right_parts.next()),
+        ];
+        left_version.cmp(&right_version)
+    }
+}
 
 impl ProgramCompatibilityRequirement {
     pub fn all() -> &'static [ProgramCompatibilityRequirement] {
@@ -2314,6 +2402,12 @@ impl fmt::Display for ProgramCompatibilityTestLane {
 }
 
 impl fmt::Display for ProgramCompatibilityRequirement {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.key())
+    }
+}
+
+impl fmt::Display for CompiledFeatureCompatibilityRequirement {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.key())
     }

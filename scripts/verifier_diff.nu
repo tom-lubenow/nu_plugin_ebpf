@@ -47,6 +47,16 @@ const KERNEL_FEATURE_PROG_KPROBE = {
     min_kernel: "4.1"
     source: "https://github.com/torvalds/linux/blob/v4.1/include/uapi/linux/bpf.h"
 }
+const KERNEL_FEATURE_BPF_SUBPROGRAM_CALLS = {
+    key: "compiled:bpf-subprogram-calls"
+    min_kernel: "4.16"
+    source: "https://github.com/torvalds/linux/blob/v4.16/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BOUNDED_LOOPS = {
+    key: "compiled:bounded-loops"
+    min_kernel: "5.3"
+    source: "https://github.com/torvalds/linux/blob/v5.3/kernel/bpf/verifier.c"
+}
 const KERNEL_FEATURE_PROG_SCHED_CLS = {
     key: "program:BPF_PROG_TYPE_SCHED_CLS"
     min_kernel: "4.1"
@@ -17075,7 +17085,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "core-null-compare-flow"
@@ -17134,7 +17144,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "adjust-packet-xdp-head"
@@ -20357,10 +20367,25 @@ def target-kernel-features [target] {
     $features
 }
 
+def program-language-kernel-features [source: string] {
+    mut features = []
+
+    if ($source | str contains "def ") {
+        $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SUBPROGRAM_CALLS])
+    }
+
+    if ($source | str contains "for ") {
+        $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BOUNDED_LOOPS])
+    }
+
+    $features
+}
+
 def fixture-kernel-features [fixture] {
     mut features = (optional $fixture kernel_features [])
     $features = (append-missing-kernel-features $features (target-kernel-features ($fixture | get -o target)))
     let program = (fixture-program $fixture)
+    $features = (append-missing-kernel-features $features (program-language-kernel-features $program))
     $features = (append-missing-kernel-features $features (program-map-kernel-features $program))
     $features = (append-missing-kernel-features $features (program-reserved-map-kernel-features $program))
     $features = (append-missing-kernel-features $features (program-map-value-kernel-features $program))

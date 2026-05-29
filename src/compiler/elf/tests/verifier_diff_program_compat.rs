@@ -2,8 +2,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::compiler::mir::CtxField;
 use crate::compiler::{
-    ContextFieldCompatibilityRequirement, EbpfProgramType, MapKind,
-    MapValueCompatibilityRequirement, ProgramCompatibilityRequirement,
+    CompiledFeatureCompatibilityRequirement, ContextFieldCompatibilityRequirement, EbpfProgramType,
+    MapKind, MapValueCompatibilityRequirement, ProgramCompatibilityRequirement,
 };
 use crate::program_spec::{IterTargetKind, ProgramSpec};
 
@@ -695,6 +695,46 @@ fn test_verifier_diff_program_feature_metadata_matches_rust() {
             verifier_lane,
             requirement.default_test_lane(),
             "scripts/verifier_diff.nu default test lane drifted for {requirement:?}"
+        );
+    }
+
+    for requirement in CompiledFeatureCompatibilityRequirement::all() {
+        let verifier_key = requirement.key();
+        assert!(
+            expected_keys.insert(verifier_key),
+            "duplicate verifier feature key mapping for {requirement:?}"
+        );
+        let record = verifier_records.get(verifier_key).unwrap_or_else(|| {
+            panic!("scripts/verifier_diff.nu is missing compiled feature {verifier_key}")
+        });
+        assert_eq!(
+            record.min_kernel.as_str(),
+            requirement.minimum_kernel(),
+            "scripts/verifier_diff.nu min_kernel drifted for {requirement:?}"
+        );
+        assert_eq!(
+            record.source.as_str(),
+            requirement.minimum_kernel_source(),
+            "scripts/verifier_diff.nu source drifted for {requirement:?}"
+        );
+        assert_eq!(
+            record.max_kernel_exclusive, None,
+            "compiled compatibility features should not use max_kernel_exclusive"
+        );
+
+        let verifier_lane =
+            if verifier_key.starts_with("struct_ops:") || vm_only_keys.contains(verifier_key) {
+                "vm-only"
+            } else if dry_run_keys.contains(verifier_key) {
+                "dry-run"
+            } else if host_gated_keys.contains(verifier_key) {
+                "host-gated"
+            } else {
+                "host-safe"
+            };
+        assert_eq!(
+            verifier_lane, "host-safe",
+            "compiled compatibility features should not force fixture lanes by themselves"
         );
     }
 

@@ -5157,6 +5157,51 @@ fn test_program_compatibility_requirement_surfaces_are_unique() {
 }
 
 #[test]
+fn test_compiled_feature_compatibility_requirement_surfaces_are_unique() {
+    let mut requirement_keys = HashSet::new();
+    for requirement in CompiledFeatureCompatibilityRequirement::all() {
+        assert!(
+            requirement_keys.insert(requirement.key()),
+            "compiled feature requirement key repeats for {requirement:?}"
+        );
+        assert_eq!(
+            requirement.to_string(),
+            requirement.key(),
+            "{requirement:?} Display should use the machine-readable key"
+        );
+        assert!(
+            !requirement.description().is_empty(),
+            "{requirement:?} should have a diagnostic description"
+        );
+        assert_eq!(requirement.category(), "compiled-feature");
+        assert!(
+            !requirement.minimum_kernel().is_empty(),
+            "{requirement:?} should have a minimum kernel"
+        );
+        assert!(
+            requirement.minimum_kernel_source().starts_with("https://"),
+            "{requirement:?} should have source-backed kernel metadata"
+        );
+    }
+
+    assert_eq!(
+        CompiledFeatureCompatibilityRequirement::BpfSubprogramCalls.minimum_kernel(),
+        "4.16"
+    );
+    assert_eq!(
+        CompiledFeatureCompatibilityRequirement::BoundedLoops.minimum_kernel(),
+        "5.3"
+    );
+    assert_eq!(
+        CompiledFeatureCompatibilityRequirement::effective_minimum_kernel(
+            CompiledFeatureCompatibilityRequirement::all()
+        ),
+        Some("5.3")
+    );
+    assert!(CompiledFeatureCompatibilityRequirement::kernel_version_at_least("5.4.0", "5.3"));
+}
+
+#[test]
 fn test_elf_generation() {
     let prog = EbpfProgram::hello_world("sys_clone");
     let elf = prog.to_elf().expect("Failed to generate ELF");
@@ -11400,6 +11445,91 @@ fn test_ebpf_program_reports_program_specific_kfunc_compatibility_requirements()
     };
     assert_eq!(object.kfunc_compatibility_minimum_kernel(), Some("6.12"));
     assert_eq!(object.compatibility_minimum_kernel(), Some("6.12"));
+}
+
+#[test]
+fn test_ebpf_program_reports_compiled_feature_compatibility_requirements() {
+    let mut subprogram_builder = EbpfBuilder::new();
+    subprogram_builder
+        .push(EbpfInsn::call_local(1))
+        .push(EbpfInsn::exit())
+        .push(EbpfInsn::exit());
+    let subprogram_bytecode = subprogram_builder.build();
+    let subprogram = EbpfProgram::with_maps(
+        EbpfProgramType::Kprobe,
+        "do_sys_openat2",
+        "main",
+        subprogram_bytecode.clone(),
+        16,
+        vec![],
+        vec![],
+        vec![SubfunctionSymbol {
+            name: "make_record".to_string(),
+            offset: 16,
+            size: 8,
+        }],
+        None,
+        None,
+        HashMap::new(),
+        HashMap::new(),
+    );
+
+    let subprogram_requirements = subprogram.compiled_feature_compatibility_requirements();
+    assert_eq!(
+        subprogram_requirements,
+        vec![CompiledFeatureCompatibilityRequirement::BpfSubprogramCalls]
+    );
+    assert_eq!(
+        subprogram.compiled_feature_compatibility_minimum_kernel(),
+        Some("4.16")
+    );
+    assert_eq!(subprogram.compatibility_minimum_kernel(), Some("4.16"));
+
+    let mut loop_builder = EbpfBuilder::new();
+    loop_builder.push(EbpfInsn::jump(-1));
+    let loop_program = EbpfProgram::from_bytecode(
+        EbpfProgramType::Kprobe,
+        "do_sys_openat2",
+        "looping",
+        loop_builder.build(),
+    );
+
+    let loop_requirements = loop_program.compiled_feature_compatibility_requirements();
+    assert_eq!(
+        loop_requirements,
+        vec![CompiledFeatureCompatibilityRequirement::BoundedLoops]
+    );
+    assert_eq!(
+        loop_program.compiled_feature_compatibility_minimum_kernel(),
+        Some("5.3")
+    );
+    assert_eq!(loop_program.compatibility_minimum_kernel(), Some("5.3"));
+
+    let object = EbpfObject {
+        kind: EbpfObjectKind::Program,
+        license: "GPL".to_string(),
+        maps: Vec::new(),
+        readonly_globals: Vec::new(),
+        data_globals: Vec::new(),
+        bss_globals: Vec::new(),
+        extra_data_symbols: Vec::new(),
+        programs: vec![
+            subprogram.into_program_section(),
+            loop_program.into_program_section(),
+        ],
+    };
+    assert_eq!(
+        object.compiled_feature_compatibility_requirements(),
+        vec![
+            CompiledFeatureCompatibilityRequirement::BoundedLoops,
+            CompiledFeatureCompatibilityRequirement::BpfSubprogramCalls,
+        ]
+    );
+    assert_eq!(
+        object.compiled_feature_compatibility_minimum_kernel(),
+        Some("5.3")
+    );
+    assert_eq!(object.compatibility_minimum_kernel(), Some("5.3"));
 }
 
 #[test]

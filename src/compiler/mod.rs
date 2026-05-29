@@ -52,15 +52,15 @@ pub(crate) use ctx_field_schema::{
 pub(crate) use ctx_field_schema::{synthetic_bpf_sock_type, synthetic_bpf_tcp_sock_type};
 pub(crate) use elf::ContextFieldDirectLoadWidth;
 pub use elf::{
-    BpfFieldType, BpfMapDef, BssGlobal, CompiledStructOpsCallback, CounterKeySchema,
-    CounterKeySchemaField, DataGlobal, EbpfMap, EbpfObject, EbpfObjectKind, EbpfProgram,
-    EbpfProgramSection, EbpfProgramType, EventSchema, GlobalCompatibilityRequirement,
-    KernelTargetValidationKind, ObjectDataRelocation, ObjectDataSymbol, PacketContextKind,
-    ProbeContext, ProgramAttachKind, ProgramBtfCallableSurface, ProgramCapability,
-    ProgramCompatibilityRequirement, ProgramCompatibilityTestLane, ProgramIntrinsic,
-    ProgramTargetKind, ProgramTypeInfo, ProgramValueAccess, ReadonlyGlobal, SchemaField,
-    StructOpsCallbackSlot, StructOpsCallbackSpec, StructOpsObjectSpec, StructOpsValueField,
-    SymbolRelocation,
+    BpfFieldType, BpfMapDef, BssGlobal, CompiledFeatureCompatibilityRequirement,
+    CompiledStructOpsCallback, CounterKeySchema, CounterKeySchemaField, DataGlobal, EbpfMap,
+    EbpfObject, EbpfObjectKind, EbpfProgram, EbpfProgramSection, EbpfProgramType, EventSchema,
+    GlobalCompatibilityRequirement, KernelTargetValidationKind, ObjectDataRelocation,
+    ObjectDataSymbol, PacketContextKind, ProbeContext, ProgramAttachKind,
+    ProgramBtfCallableSurface, ProgramCapability, ProgramCompatibilityRequirement,
+    ProgramCompatibilityTestLane, ProgramIntrinsic, ProgramTargetKind, ProgramTypeInfo,
+    ProgramValueAccess, ReadonlyGlobal, SchemaField, StructOpsCallbackSlot, StructOpsCallbackSpec,
+    StructOpsObjectSpec, StructOpsValueField, SymbolRelocation,
 };
 pub use hir::{
     HirProgram, extract_call_decl_ids, extract_closure_block_ids, infer_ctx_param, lower_ir_to_hir,
