@@ -3983,6 +3983,29 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         feature_keys: ["ctx:pid" "helper:bpf_get_current_pid_tgid"]
     }
     {
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let rec = { event: $ctx }'
+            '  $rec.event.pid | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:pid" "helper:bpf_get_current_pid_tgid"]
+    }
+    {
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  def wrap [event] { { event: $event } }'
+            '  let rec = (wrap $ctx)'
+            '  $rec.event.pid | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:pid" "helper:bpf_get_current_pid_tgid"]
+    }
+    {
         target: "raw_tracepoint.w:sys_enter"
         program: [
             '{|ctx|'
@@ -22839,65 +22862,122 @@ def record-context-bindings [line: string context_names bound_aliases] {
         | parse --regex '(?P<field>[A-Za-z_][A-Za-z0-9_-]*)\s*:\s*(?P<value>\(?\$[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*\)?)'
     ) {
         let field_name = ($parsed_field.field | str trim)
-        let field_value = (trim-simple-parentheses ($parsed_field.value | str trim))
-        for context_name in $context_names {
-            let context_token = (["$" $context_name] | str join "")
-            if $field_value == $context_token {
-                $bindings = ($bindings | append {
-                    name: $assignment.name
-                    field: $field_name
-                    root: ""
-                })
-                continue
-            }
-
-            let context_prefix = $"($context_token)."
-            if not ($field_value | str starts-with $context_prefix) {
-                continue
-            }
-
-            let root_path = (
-                normalize-context-path-token (
-                    $field_value | str substring ($context_prefix | str length)..
-                )
-            )
-            let root = ($root_path | split row "." | first)
-            if (context-projection-root? $root) {
-                $bindings = ($bindings | append {
-                    name: $assignment.name
-                    field: $field_name
-                    root: $root_path
-                })
-            }
-        }
-        for alias in $bound_aliases {
-            let alias_token = (["$" $alias.name] | str join "")
-            if $field_value == $alias_token {
-                $bindings = ($bindings | append {
-                    name: $assignment.name
-                    field: $field_name
-                    root: $alias.root
-                })
-                continue
-            }
-
-            let alias_prefix = $"($alias_token)."
-            if not ($field_value | str starts-with $alias_prefix) {
-                continue
-            }
-
-            let tail = (
-                normalize-context-path-token (
-                    $field_value | str substring ($alias_prefix | str length)..
-                )
-            )
-            let root_path = $"($alias.root).($tail)"
+        let root = (context-root-from-value-token $parsed_field.value $context_names $bound_aliases)
+        if $root != null {
             $bindings = ($bindings | append {
                 name: $assignment.name
                 field: $field_name
-                root: $root_path
+                root: $root
             })
         }
+    }
+
+    $bindings
+}
+
+def record-wrapper-definitions [source: string] {
+    mut wrappers = []
+
+    for line in ($source | lines) {
+        for parsed in (
+            $line
+            | parse --regex '^\s*def\s+(?P<name>[A-Za-z_][A-Za-z0-9_-]*)\s+\[\s*(?P<param>[A-Za-z_][A-Za-z0-9_-]*)\s*\]\s*\{\s*\{\s*(?P<field>[A-Za-z_][A-Za-z0-9_-]*)\s*:\s*\$(?P<value>[A-Za-z_][A-Za-z0-9_-]*)\s*\}\s*\}\s*$'
+        ) {
+            if $parsed.param != $parsed.value {
+                continue
+            }
+            if (
+                $wrappers
+                | any {|wrapper| $wrapper.name == $parsed.name and $wrapper.field == $parsed.field }
+            ) {
+                continue
+            }
+            $wrappers = ($wrappers | append {
+                name: $parsed.name
+                field: $parsed.field
+            })
+        }
+    }
+
+    $wrappers
+}
+
+def context-root-from-value-token [raw_value: string context_names bound_aliases] {
+    let field_value = (trim-simple-parentheses ($raw_value | str trim))
+    for context_name in $context_names {
+        let context_token = (["$" $context_name] | str join "")
+        if $field_value == $context_token {
+            return ""
+        }
+
+        let context_prefix = $"($context_token)."
+        if not ($field_value | str starts-with $context_prefix) {
+            continue
+        }
+
+        let root_path = (
+            normalize-context-path-token (
+                $field_value | str substring ($context_prefix | str length)..
+            )
+        )
+        let root = ($root_path | split row "." | first)
+        if (context-projection-root? $root) {
+            return $root_path
+        }
+    }
+
+    for alias in $bound_aliases {
+        let alias_token = (["$" $alias.name] | str join "")
+        if $field_value == $alias_token {
+            return $alias.root
+        }
+
+        let alias_prefix = $"($alias_token)."
+        if not ($field_value | str starts-with $alias_prefix) {
+            continue
+        }
+
+        let tail = (
+            normalize-context-path-token (
+                $field_value | str substring ($alias_prefix | str length)..
+            )
+        )
+        return $"($alias.root).($tail)"
+    }
+
+    null
+}
+
+def record-wrapper-context-bindings [line: string context_names bound_aliases wrapper_defs] {
+    let assignment = (declaration-assignment $line)
+    if $assignment == null {
+        return []
+    }
+
+    let rhs = (declaration-rhs-token $assignment)
+    let tokens = (
+        $rhs
+        | split row " "
+        | each {|part| $part | str trim }
+        | where {|part| $part != "" }
+    )
+    if ($tokens | length) != 2 {
+        return []
+    }
+
+    let callee = ($tokens | get 0)
+    let arg = ($tokens | get 1)
+    mut bindings = []
+    for wrapper in ($wrapper_defs | where {|wrapper| $wrapper.name == $callee }) {
+        let root = (context-root-from-value-token $arg $context_names $bound_aliases)
+        if $root == null {
+            continue
+        }
+        $bindings = ($bindings | append {
+            name: $assignment.name
+            field: $wrapper.field
+            root: $root
+        })
     }
 
     $bindings
@@ -22906,9 +22986,14 @@ def record-context-bindings [line: string context_names bound_aliases] {
 def program-record-context-aliases [source: string context_names] {
     mut aliases = []
     let bound_aliases = (program-bound-context-root-aliases $source $context_names)
+    let wrapper_defs = (record-wrapper-definitions $source)
 
     for line in ($source | lines) {
-        for binding in (record-context-bindings $line $context_names $bound_aliases) {
+        let bindings = (
+            (record-context-bindings $line $context_names $bound_aliases)
+            | append (record-wrapper-context-bindings $line $context_names $bound_aliases $wrapper_defs)
+        )
+        for binding in $bindings {
             let existing = (
                 $aliases
                 | where {|alias|
