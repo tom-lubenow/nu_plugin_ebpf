@@ -16576,6 +16576,74 @@ const FIXTURES = [
         error_contains: "kfunc 'bpf_obj_drop_impl' arg0 reference already released"
     }
     {
+        name: "source-kfunc-obj-drop-accepts-both-branch-release"
+        category: "helper-state"
+        tags: [kfunc object ref-lifetime source phi accept]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let obj = (kfunc-call "bpf_obj_new_impl" 1 0)'
+            '  if $obj {'
+            '    let selector = (helper-call "bpf_get_prandom_u32")'
+            '    if $selector == 0 {'
+            '      kfunc-call "bpf_obj_drop_impl" $obj 0'
+            '    } else {'
+            '      kfunc-call "bpf_obj_drop_impl" $obj 0'
+            '    }'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-kfunc-obj-drop-rejects-one-branch-release-leak"
+        category: "helper-state"
+        tags: [kfunc object ref-lifetime source phi reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let obj = (kfunc-call "bpf_obj_new_impl" 1 0)'
+            '  if $obj {'
+            '    let selector = (helper-call "bpf_get_prandom_u32")'
+            '    if $selector == 0 {'
+            '      kfunc-call "bpf_obj_drop_impl" $obj 0'
+            '    }'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "unreleased kfunc reference at function exit"
+    }
+    {
+        name: "source-kfunc-obj-drop-rejects-release-after-conditional-release"
+        category: "helper-state"
+        tags: [kfunc object ref-lifetime source phi reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let obj = (kfunc-call "bpf_obj_new_impl" 1 0)'
+            '  if $obj {'
+            '    let selector = (helper-call "bpf_get_prandom_u32")'
+            '    if $selector == 0 {'
+            '      kfunc-call "bpf_obj_drop_impl" $obj 0'
+            '    }'
+            '    kfunc-call "bpf_obj_drop_impl" $obj 0'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'bpf_obj_drop_impl' arg0 reference already released"
+    }
+    {
         name: "source-kfunc-refcount-acquire-rejects-map-field"
         category: "helper-state"
         tags: [kfunc object bpf_refcount ref-lifetime source reject]
