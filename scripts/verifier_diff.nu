@@ -14280,6 +14280,26 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "timer-init-rejects-mismatched-owner-map"
+        category: "helper-state"
+        tags: [timer map-define reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define timers --kind array --value-type "record{timer:bpf_timer,cookie:u64}"'
+            '  map-define other_timers --kind array --value-type "record{timer:bpf_timer,cookie:u64}"'
+            '  let entry = (0 | map-get timers --kind array)'
+            '  if $entry {'
+            '    helper-call "bpf_timer_init" $entry.timer other_timers 0 --kind array'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "requires arg1 map 'other_timers'"
+    }
+    {
         name: "timer-callback-uses-trailing-value-param"
         category: "helper-state"
         tags: [timer callback accept]
