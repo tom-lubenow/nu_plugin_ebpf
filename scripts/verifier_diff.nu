@@ -17048,6 +17048,23 @@ const FIXTURES = [
         error_contains: "declares 4 parameters, but the callback ABI supplies 3"
     }
     {
+        name: "callback-find-vma-rejects-non-task-pointer"
+        category: "callbacks"
+        tags: [helper-call callback btf reject]
+        target: "kprobe:tcp_connect"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_find_vma" $ctx 0 {|task vma cb|'
+            '    0'
+            '  } "ctx" 0'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_find_vma' arg0 expects task pointer"
+    }
+    {
         name: "callback-find-vma-record-context"
         category: "callbacks"
         tags: [helper-call callback btf kernel-btf record]
