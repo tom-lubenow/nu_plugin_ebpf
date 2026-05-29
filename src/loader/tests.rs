@@ -1520,7 +1520,10 @@ fn test_merge_generic_map_value_semantics_drops_conflicts() {
     )]);
     let list_semantics = AnnotatedValueSemantics::Record(vec![(
         "vals".to_string(),
-        AnnotatedValueSemantics::NumericList { max_len: 2 },
+        AnnotatedValueSemantics::NumericList {
+            max_len: 2,
+            known_len: Some(2),
+        },
     )]);
 
     let merged = EbpfState::merge_generic_map_value_semantics(

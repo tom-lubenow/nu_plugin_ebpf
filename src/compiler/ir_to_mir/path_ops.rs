@@ -611,7 +611,7 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(());
         }
 
-        if let Some(AnnotatedValueSemantics::NumericList { max_len }) = &record_field.semantics
+        if let Some(AnnotatedValueSemantics::NumericList { max_len, .. }) = &record_field.semantics
             && let [PathMember::Int { val: index, .. }] = remaining_members
         {
             if *index >= *max_len {
@@ -1560,7 +1560,10 @@ impl<'a> HirToMirLowering<'a> {
             source_reg: None,
             stack_offset: None,
             ty: list_ty,
-            semantics: Some(AnnotatedValueSemantics::NumericList { max_len }),
+            semantics: Some(AnnotatedValueSemantics::NumericList {
+                max_len,
+                known_len: Some(1),
+            }),
             is_context: false,
             root_ctx_field: None,
         })

@@ -495,6 +495,7 @@ impl<'a> HirToMirLowering<'a> {
                 };
                 return Ok(Some(AnnotatedValueSemantics::NumericList {
                     max_len: vals.len(),
+                    known_len: Some(vals.len()),
                 }));
             }
             nu_protocol::Type::List(inner)

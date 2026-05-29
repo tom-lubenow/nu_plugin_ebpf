@@ -244,6 +244,7 @@ pub enum AnnotatedValueSemantics {
     },
     NumericList {
         max_len: usize,
+        known_len: Option<usize>,
     },
     FixedArray {
         elem: Box<AnnotatedValueSemantics>,

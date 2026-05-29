@@ -31,6 +31,7 @@ impl<'a> HirToMirLowering<'a> {
             {
                 Ok(Some(AnnotatedValueSemantics::NumericList {
                     max_len: vals.len(),
+                    known_len: Some(vals.len()),
                 }))
             }
             Value::List { vals, .. }

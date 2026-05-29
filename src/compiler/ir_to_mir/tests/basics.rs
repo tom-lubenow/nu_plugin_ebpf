@@ -6476,6 +6476,115 @@ fn test_lower_leading_annotated_mut_record_array_with_nested_numeric_list_field(
 }
 
 #[test]
+fn test_lower_leading_annotated_mut_record_array_nested_numeric_list_upsert() {
+    let global_var = VarId::new(253);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: global_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![int_member(1), string_member("samples"), int_member(1)],
+                    })),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(9),
+                },
+                HirStmt::UpsertCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                    new_value: RegId::new(2),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+
+    let mut first = Record::new();
+    first.push(
+        "samples",
+        Value::list(
+            vec![
+                Value::int(1, Span::test_data()),
+                Value::int(2, Span::test_data()),
+            ],
+            Span::test_data(),
+        ),
+    );
+    let mut second = Record::new();
+    second.push(
+        "samples",
+        Value::list(
+            vec![
+                Value::int(3, Span::test_data()),
+                Value::int(4, Span::test_data()),
+            ],
+            Span::test_data(),
+        ),
+    );
+
+    let mut hir = HirProgram::new(func, HashMap::new(), vec![], None);
+    hir.annotated_mut_globals = vec![AnnotatedMutGlobal {
+        var_id: global_var,
+        declared_type: Type::List(Box::new(Type::Record(Box::new([(
+            "samples".to_string(),
+            Type::List(Box::new(Type::Int)),
+        )])))),
+        initial_value: Value::list(
+            vec![
+                Value::record(first, Span::test_data()),
+                Value::record(second, Span::test_data()),
+            ],
+            Span::test_data(),
+        ),
+    }];
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("annotated fixed record arrays should allow nested numeric-list item upserts");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Store {
+                    offset: 40,
+                    ty: MirType::I64,
+                    ..
+                }
+            )),
+        "expected $rows.1.samples.1 = ... to store at the logical nested list item slot"
+    );
+}
+
+#[test]
 fn test_lower_leading_annotated_mut_record_array_with_nested_string_field() {
     let global_var = VarId::new(250);
     let func = HirFunction {

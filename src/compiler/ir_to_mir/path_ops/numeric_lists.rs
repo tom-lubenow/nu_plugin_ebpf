@@ -25,13 +25,13 @@ impl<'a> HirToMirLowering<'a> {
     fn numeric_list_semantics_at_path(
         semantics: Option<&AnnotatedValueSemantics>,
         list_path: &[PathMember],
-    ) -> Option<usize> {
-        let AnnotatedValueSemantics::NumericList { max_len } =
+    ) -> Option<(usize, Option<usize>)> {
+        let AnnotatedValueSemantics::NumericList { max_len, known_len } =
             Self::project_annotated_value_semantics(semantics?, list_path)?
         else {
             return None;
         };
-        Some(max_len)
+        Some((max_len, known_len))
     }
 
     fn constant_numeric_list_len_at_path(value: &Value, list_path: &[PathMember]) -> Option<usize> {
@@ -163,7 +163,9 @@ impl<'a> HirToMirLowering<'a> {
         let Some((list_path, index)) = Self::numeric_list_index_path(path_members) else {
             return Ok(false);
         };
-        let Some(max_len) = Self::numeric_list_semantics_at_path(base_semantics, list_path) else {
+        let Some((max_len, known_len)) =
+            Self::numeric_list_semantics_at_path(base_semantics, list_path)
+        else {
             return Ok(false);
         };
         if index >= max_len {
@@ -175,7 +177,7 @@ impl<'a> HirToMirLowering<'a> {
 
         let list_vreg = self.func.alloc_vreg();
         let list_path_desc = Self::typed_value_path_desc(list_path);
-        let list_semantics = AnnotatedValueSemantics::NumericList { max_len };
+        let list_semantics = AnnotatedValueSemantics::NumericList { max_len, known_len };
         self.lower_typed_value_projection(
             dst_reg,
             list_vreg,
@@ -222,7 +224,7 @@ impl<'a> HirToMirLowering<'a> {
         let Some(base_meta) = self.get_metadata(src_dst).cloned() else {
             return Ok(false);
         };
-        let Some(max_len) =
+        let Some((max_len, known_len)) =
             Self::numeric_list_semantics_at_path(base_meta.annotated_semantics.as_ref(), list_path)
         else {
             return Ok(false);
@@ -231,6 +233,7 @@ impl<'a> HirToMirLowering<'a> {
             .constant_value
             .as_ref()
             .and_then(|value| Self::constant_numeric_list_len_at_path(value, list_path))
+            .or(known_len)
             .ok_or_else(|| {
                 CompileError::UnsupportedInstruction(format!(
                     "cell path update '.{} = ...' requires compile-time numeric list length metadata",
@@ -379,13 +382,15 @@ impl<'a> HirToMirLowering<'a> {
         else {
             return Ok(false);
         };
-        let Some(AnnotatedValueSemantics::NumericList { max_len }) = existing_field.semantics
+        let Some(AnnotatedValueSemantics::NumericList { max_len, known_len }) =
+            existing_field.semantics
         else {
             return Ok(false);
         };
         let current_len = self
             .get_metadata(src_dst)
             .and_then(|meta| Self::metadata_record_numeric_list_len(meta, field_name))
+            .or(known_len)
             .ok_or_else(|| {
                 CompileError::UnsupportedInstruction(format!(
                     "cell path update '.{} = ...' requires compile-time numeric list length metadata",
@@ -545,6 +550,7 @@ impl<'a> HirToMirLowering<'a> {
             ty: list_ty,
             semantics: Some(AnnotatedValueSemantics::NumericList {
                 max_len: new_max_len,
+                known_len: Some(current_len + 1),
             }),
             is_context: false,
             root_ctx_field: None,

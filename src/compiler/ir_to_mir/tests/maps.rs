@@ -4846,7 +4846,10 @@ fn test_map_value_type_spec_supports_fixed_array_numeric_list_semantics() {
     assert_eq!(
         semantics,
         Some(AnnotatedValueSemantics::FixedArray {
-            elem: Box::new(AnnotatedValueSemantics::NumericList { max_len: 4 }),
+            elem: Box::new(AnnotatedValueSemantics::NumericList {
+                max_len: 4,
+                known_len: None,
+            }),
             len: 2,
         })
     );

@@ -20003,6 +20003,21 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-annotated-record-array-nested-numeric-list-upsert-local"
+        category: "language-core"
+        tags: [aggregate record list upsert nested annotated local]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  mut rows: list<record<samples: list<int>>> = [{samples: [1 2]} {samples: [3 4]}]'
+            '  $rows.1.samples.1 = 9'
+            '  $rows.1.samples.1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-record-upsert-nested-numeric-list-sparse-append-reject"
         category: "language-core"
         tags: [aggregate record list upsert append nested reject]

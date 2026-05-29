@@ -691,7 +691,10 @@ impl ParsedNamedGlobalType {
                 list_max_len: Some(max_len),
                 string_slot_len: None,
                 string_content_cap: None,
-                semantics: Some(AnnotatedValueSemantics::NumericList { max_len }),
+                semantics: Some(AnnotatedValueSemantics::NumericList {
+                    max_len,
+                    known_len: None,
+                }),
                 shape: NamedGlobalTypeShape::NumericList { max_len },
             });
         }
@@ -1229,7 +1232,10 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         if let Some((_, max_len)) = meta.list_buffer {
-            return Ok(Some(AnnotatedValueSemantics::NumericList { max_len }));
+            return Ok(Some(AnnotatedValueSemantics::NumericList {
+                max_len,
+                known_len: None,
+            }));
         }
 
         if let Some(slot) = meta.string_slot {

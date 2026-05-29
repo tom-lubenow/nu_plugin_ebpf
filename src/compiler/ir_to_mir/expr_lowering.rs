@@ -1209,7 +1209,7 @@ impl<'a> HirToMirLowering<'a> {
                 if projected_by_ref(&next_ty) {
                     match address_space {
                         AddressSpace::Stack | AddressSpace::Map | AddressSpace::Context => {
-                            if let Some(AnnotatedValueSemantics::NumericList { max_len }) =
+                            if let Some(AnnotatedValueSemantics::NumericList { max_len, .. }) =
                                 projected_semantics
                             {
                                 let buffer_size =
