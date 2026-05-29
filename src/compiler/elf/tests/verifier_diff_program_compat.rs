@@ -4,7 +4,8 @@ use std::process::Command;
 use crate::compiler::mir::CtxField;
 use crate::compiler::{
     CompiledFeatureCompatibilityRequirement, ContextFieldCompatibilityRequirement, EbpfProgramType,
-    MapKind, MapValueCompatibilityRequirement, ProgramCompatibilityRequirement,
+    KfuncCompatibilityRequirement, MapKind, MapValueCompatibilityRequirement,
+    ProgramCompatibilityRequirement,
 };
 use crate::program_spec::{IterTargetKind, ProgramSpec};
 
@@ -48,7 +49,7 @@ const REPRESENTATIVE_CONTEXT_FIELD_SPEC_SOURCES: &[&str] = &[
     "iter:unix",
 ];
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct VerifierDiffFeatureRecord {
     key: String,
     min_kernel: String,
@@ -154,6 +155,38 @@ fn verifier_diff_feature_table_records(
         assert!(
             records.insert(table_key.to_string(), record).is_none(),
             "duplicate scripts/verifier_diff.nu {const_name} entry for {table_key}"
+        );
+    }
+
+    records
+}
+
+fn verifier_diff_kfunc_fallback_records(
+    source: &str,
+) -> BTreeMap<String, VerifierDiffFeatureRecord> {
+    let body = verifier_diff_const_body(source, "KFUNC_KERNEL_FEATURE_FALLBACKS", '[');
+    let mut records = BTreeMap::new();
+
+    for line in body.lines() {
+        let Some(name) = verifier_diff_quoted_field(line, "name") else {
+            continue;
+        };
+        let min_kernel = verifier_diff_quoted_field(line, "min_kernel").unwrap_or_else(|| {
+            panic!("KFUNC_KERNEL_FEATURE_FALLBACKS entry {name} missing min_kernel")
+        });
+        let source = verifier_diff_quoted_field(line, "source").unwrap_or_else(|| {
+            panic!("KFUNC_KERNEL_FEATURE_FALLBACKS entry {name} missing source")
+        });
+        let record = VerifierDiffFeatureRecord {
+            key: format!("kfunc:{name}"),
+            min_kernel: min_kernel.to_string(),
+            source: source.to_string(),
+            max_kernel_exclusive: verifier_diff_quoted_field(line, "max_kernel_exclusive")
+                .map(str::to_string),
+        };
+        assert!(
+            records.insert(name.to_string(), record).is_none(),
+            "duplicate scripts/verifier_diff.nu KFUNC_KERNEL_FEATURE_FALLBACKS entry for {name}"
         );
     }
 
@@ -591,6 +624,33 @@ fn assert_verifier_feature_record_matches_context_requirement(
     );
 }
 
+fn assert_verifier_feature_record_matches_kfunc_requirement(
+    name: &str,
+    requirement: KfuncCompatibilityRequirement,
+    record: &VerifierDiffFeatureRecord,
+) {
+    assert_eq!(
+        record.key,
+        requirement.key(),
+        "scripts/verifier_diff.nu kfunc feature key drifted for {name}"
+    );
+    assert_eq!(
+        record.min_kernel,
+        requirement.minimum_kernel(),
+        "scripts/verifier_diff.nu kfunc min_kernel drifted for {name}"
+    );
+    assert_eq!(
+        record.source,
+        requirement.minimum_kernel_source(),
+        "scripts/verifier_diff.nu kfunc source drifted for {name}"
+    );
+    assert_eq!(
+        record.max_kernel_exclusive.as_deref(),
+        requirement.maximum_kernel_exclusive(),
+        "scripts/verifier_diff.nu kfunc max_kernel_exclusive drifted for {name}"
+    );
+}
+
 fn verifier_feature_record_matches_context_requirement(
     requirement: &ContextFieldCompatibilityRequirement,
     record: &VerifierDiffFeatureRecord,
@@ -928,6 +988,42 @@ fn test_verifier_diff_tracepoint_field_feature_metadata_matches_rust() {
     assert!(
         !records.is_empty(),
         "expected verifier_diff.nu tracepoint-field feature metadata"
+    );
+}
+
+#[test]
+fn test_verifier_diff_kfunc_feature_metadata_matches_rust() {
+    let verifier_diff = include_str!("../../../../scripts/verifier_diff.nu");
+    let explicit_records =
+        verifier_diff_feature_table_records(verifier_diff, "KFUNC_KERNEL_FEATURES", "name");
+    let fallback_records = verifier_diff_kfunc_fallback_records(verifier_diff);
+
+    for (name, record) in &explicit_records {
+        let requirement = KfuncCompatibilityRequirement::for_name(name).unwrap_or_else(|| {
+            panic!("scripts/verifier_diff.nu KFUNC_KERNEL_FEATURES has unknown kfunc {name}")
+        });
+        assert_verifier_feature_record_matches_kfunc_requirement(name, requirement, record);
+
+        if let Some(fallback_record) = fallback_records.get(name) {
+            assert_eq!(
+                record, fallback_record,
+                "scripts/verifier_diff.nu explicit and fallback kfunc metadata drifted for {name}"
+            );
+        }
+    }
+
+    for (name, record) in &fallback_records {
+        let requirement = KfuncCompatibilityRequirement::for_name(name).unwrap_or_else(|| {
+            panic!(
+                "scripts/verifier_diff.nu KFUNC_KERNEL_FEATURE_FALLBACKS has unknown kfunc {name}"
+            )
+        });
+        assert_verifier_feature_record_matches_kfunc_requirement(name, requirement, record);
+    }
+
+    assert!(
+        !explicit_records.is_empty() && !fallback_records.is_empty(),
+        "expected verifier_diff.nu kfunc feature metadata"
     );
 }
 
