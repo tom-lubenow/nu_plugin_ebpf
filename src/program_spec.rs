@@ -1,6 +1,6 @@
 use crate::compiler::{
     EbpfProgramType, ProgramAttachKind, ProgramBtfCallableSurface, ProgramCompatibilityRequirement,
-    ProgramTargetKind, ProgramValueAccess,
+    ProgramCompatibilityTestLane, ProgramTargetKind, ProgramValueAccess,
 };
 use aya::programs::{
     CgroupSkbAttachType, CgroupSockAddrAttachType, CgroupSockAttachType, CgroupSockoptAttachType,
@@ -3197,6 +3197,23 @@ impl ProgramSpec {
         self.compatibility_requirements().contains(&requirement)
     }
 
+    pub fn compatibility_default_test_lane(&self) -> ProgramCompatibilityTestLane {
+        ProgramCompatibilityRequirement::effective_test_lane(&self.compatibility_requirements())
+    }
+
+    pub fn live_attach_default_test_lane(&self) -> ProgramCompatibilityTestLane {
+        let compatibility_lane = self.compatibility_default_test_lane();
+        let live_attach_policy = self.live_attach_policy();
+
+        if !live_attach_policy.loader_supported {
+            ProgramCompatibilityTestLane::DryRun
+        } else if live_attach_policy.requires_opt_in {
+            compatibility_lane.max(ProgramCompatibilityTestLane::VmOnly)
+        } else {
+            compatibility_lane
+        }
+    }
+
     pub fn sleepable(&self) -> bool {
         match self {
             ProgramSpec::Fentry {
@@ -4407,6 +4424,14 @@ mod tests {
                 note: None,
             }
         );
+        assert_eq!(
+            xdp.compatibility_default_test_lane(),
+            ProgramCompatibilityTestLane::HostGated
+        );
+        assert_eq!(
+            xdp.live_attach_default_test_lane(),
+            ProgramCompatibilityTestLane::HostGated
+        );
 
         let raw_tracepoint_writable =
             ProgramSpec::parse("raw_tracepoint.w:sys_enter").expect("raw_tp.w spec should parse");
@@ -4464,6 +4489,14 @@ mod tests {
             xdp_devmap_policy.note,
             Some(ProgramLiveAttachUnsupportedReason::XdpMapProgram.note())
         );
+        assert_eq!(
+            xdp_devmap.compatibility_default_test_lane(),
+            ProgramCompatibilityTestLane::HostGated
+        );
+        assert_eq!(
+            xdp_devmap.live_attach_default_test_lane(),
+            ProgramCompatibilityTestLane::DryRun
+        );
 
         let sched_ext =
             ProgramSpec::parse("struct_ops:sched_ext_ops").expect("sched_ext spec should parse");
@@ -4483,6 +4516,10 @@ mod tests {
         assert_eq!(
             sched_ext_policy.note,
             Some(ProgramLiveAttachOptInReason::SchedExt.note())
+        );
+        assert_eq!(
+            sched_ext.live_attach_default_test_lane(),
+            ProgramCompatibilityTestLane::VmOnly
         );
 
         let generic_struct_ops = ProgramSpec::parse("struct_ops:demo_ops")

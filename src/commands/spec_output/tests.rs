@@ -919,6 +919,30 @@ fn test_spec_record_reports_target_specific_live_attach_policy() {
             .expect("live_attach_note should be a string"),
         ProgramLiveAttachUnsupportedReason::CgroupSockAddrUnix.note()
     );
+    assert_eq!(
+        record
+            .get("compatibility_default_test_lane")
+            .expect("compatibility_default_test_lane should be present")
+            .as_str()
+            .expect("compatibility_default_test_lane should be a string"),
+        "host-gated"
+    );
+    assert_eq!(
+        record
+            .get("live_attach_default_test_lane")
+            .expect("live_attach_default_test_lane should be present")
+            .as_str()
+            .expect("live_attach_default_test_lane should be a string"),
+        "dry-run"
+    );
+    assert!(
+        record
+            .get("live_attach_default_test_lane_description")
+            .expect("live_attach_default_test_lane_description should be present")
+            .as_str()
+            .expect("live_attach_default_test_lane_description should be a string")
+            .contains("dry-run")
+    );
 
     let generic_struct_ops =
         ProgramSpec::parse("struct_ops:demo_ops").expect("generic struct_ops spec should parse");
@@ -994,6 +1018,14 @@ fn test_spec_record_reports_target_specific_live_attach_policy() {
             .as_str()
             .expect("live_attach_note should be a string"),
         ProgramLiveAttachOptInReason::UnclassifiedStructOps.note()
+    );
+    assert_eq!(
+        record
+            .get("live_attach_default_test_lane")
+            .expect("live_attach_default_test_lane should be present")
+            .as_str()
+            .expect("live_attach_default_test_lane should be a string"),
+        "vm-only"
     );
 }
 

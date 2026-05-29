@@ -1761,6 +1761,7 @@ pub(super) fn spec_record(
     let live_attach_note = live_attach_policy.note.unwrap_or("");
     let live_attach_unsupported_reason = live_attach_policy.unsupported_reason;
     let live_attach_opt_in_reason = live_attach_policy.opt_in_reason;
+    let live_attach_default_test_lane = spec.live_attach_default_test_lane();
     let kernel_target_validation = program_type.kernel_target_validation();
     let kernel_target_validation_key = kernel_target_validation.map(|validation| validation.key());
     let kernel_target_validation_help =
@@ -1888,6 +1889,8 @@ pub(super) fn spec_record(
             "live_attach_opt_in_reason" => optional_static_str(live_attach_opt_in_reason.map(|reason| reason.key()), span),
             "live_attach_opt_in_reason_description" => optional_static_str(live_attach_opt_in_reason.map(|reason| reason.description()), span),
             "live_attach_note" => Value::string(live_attach_note, span),
+            "live_attach_default_test_lane" => Value::string(live_attach_default_test_lane.key(), span),
+            "live_attach_default_test_lane_description" => Value::string(live_attach_default_test_lane.description(), span),
             "context_fields" => Value::list(context_fields, span),
             "tracepoint_fields" => Value::list(tracepoint_fields, span),
             "tracepoint_field_error" => optional_string(tracepoint_field_error, span),
