@@ -6076,6 +6076,27 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "map-define-array-record-key-contains-delete"
+        category: "maps"
+        tags: [maps map-define records arrays map-contains map-delete accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define keyed_batches_ops --kind hash --key-type "array{record{pid:int,cpu:int}:2}" --value-type int'
+            '  let put_key = [{ pid: 7 cpu: 2 } { pid: 9 cpu: 3 }]'
+            '  42 | map-put keyed_batches_ops $put_key --kind hash'
+            '  let contains_key = [{ pid: 7 cpu: 2 } { pid: 9 cpu: 3 }]'
+            '  if (map-contains keyed_batches_ops $contains_key --kind hash) {'
+            '    let delete_key = [{ pid: 7 cpu: 2 } { pid: 9 cpu: 3 }]'
+            '    map-delete keyed_batches_ops $delete_key --kind hash'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "annotated-mut-record-alignment"
         category: "globals"
         tags: [globals records alignment accept]
