@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::process::Command;
 
 use crate::compiler::mir::CtxField;
 use crate::compiler::{
@@ -6,6 +7,46 @@ use crate::compiler::{
     MapKind, MapValueCompatibilityRequirement, ProgramCompatibilityRequirement,
 };
 use crate::program_spec::{IterTargetKind, ProgramSpec};
+
+const REPRESENTATIVE_CONTEXT_FIELD_SPEC_SOURCES: &[&str] = &[
+    "raw_tracepoint:sys_enter",
+    "tracepoint:syscalls/sys_enter_openat",
+    "fentry:security_file_open",
+    "fexit:ksys_read",
+    "lsm:file_open",
+    "socket_filter:udp4:127.0.0.1:31337",
+    "tc_action:diff-action",
+    "tc:lo:ingress",
+    "tcx:lo:ingress",
+    "netkit:lo:primary",
+    "xdp:lo",
+    "sk_msg:/sys/fs/bpf/demo_sockmap",
+    "sk_skb:/sys/fs/bpf/demo_sockmap",
+    "sk_skb_parser:/sys/fs/bpf/demo_sockmap",
+    "sk_lookup:/proc/self/ns/net",
+    "sk_reuseport:migrate",
+    "cgroup_skb:/sys/fs/cgroup:egress",
+    "cgroup_sock:/sys/fs/cgroup:sock_create",
+    "cgroup_sock_addr:/sys/fs/cgroup:connect4",
+    "cgroup_sock_addr:/sys/fs/cgroup:connect_unix",
+    "cgroup_sockopt:/sys/fs/cgroup:get",
+    "cgroup_sockopt:/sys/fs/cgroup:set",
+    "cgroup_sysctl:/sys/fs/cgroup",
+    "cgroup_device:/sys/fs/cgroup",
+    "sock_ops:/sys/fs/cgroup",
+    "lwt_xmit:demo-route",
+    "flow_dissector:/proc/self/ns/net",
+    "netfilter:ipv4:pre_routing:priority=-100:defrag",
+    "perf_event:software:cpu-clock:period=100000",
+    "lirc_mode2:/dev/lirc0",
+    "iter:task_file",
+    "iter:task_vma",
+    "iter:bpf_map_elem",
+    "iter:bpf_sk_storage_map",
+    "iter:sockmap",
+    "iter:udp",
+    "iter:unix",
+];
 
 #[derive(Debug, Clone)]
 struct VerifierDiffFeatureRecord {
@@ -550,6 +591,16 @@ fn assert_verifier_feature_record_matches_context_requirement(
     );
 }
 
+fn verifier_feature_record_matches_context_requirement(
+    requirement: &ContextFieldCompatibilityRequirement,
+    record: &VerifierDiffFeatureRecord,
+) -> bool {
+    record.key == requirement.key()
+        && record.min_kernel == requirement.minimum_kernel()
+        && record.source == requirement.minimum_kernel_source()
+        && record.max_kernel_exclusive.is_none()
+}
+
 #[test]
 fn test_verifier_diff_map_value_feature_metadata_matches_rust() {
     let verifier_diff = include_str!("../../../../scripts/verifier_diff.nu");
@@ -615,6 +666,165 @@ fn test_verifier_diff_context_field_feature_metadata_matches_rust() {
     assert!(
         !records.is_empty(),
         "expected verifier_diff.nu context-field feature metadata"
+    );
+}
+
+#[test]
+fn test_verifier_diff_context_field_feature_metadata_covers_representative_rust_fields() {
+    #[derive(Clone)]
+    struct ExpectedContextFieldFeature {
+        target: String,
+        field: String,
+        requirement: ContextFieldCompatibilityRequirement,
+    }
+
+    let mut expected = Vec::new();
+
+    for spec_text in REPRESENTATIVE_CONTEXT_FIELD_SPEC_SOURCES {
+        let spec = ProgramSpec::parse(spec_text).unwrap_or_else(|err| {
+            panic!("representative context field target {spec_text} should parse: {err}")
+        });
+        let mut seen_requirement_keys = BTreeSet::new();
+
+        for entry in spec.program_type().ctx_field_name_entries() {
+            if spec.ctx_field_access_error(&entry.field).is_some() {
+                continue;
+            }
+            let Some(requirement) = ContextFieldCompatibilityRequirement::for_field_on_program_spec(
+                &entry.field,
+                &spec,
+            ) else {
+                continue;
+            };
+            let requirement_key = requirement.key();
+            if !seen_requirement_keys.insert(requirement_key.clone()) {
+                continue;
+            }
+
+            expected.push(ExpectedContextFieldFeature {
+                target: (*spec_text).to_string(),
+                field: entry.name.to_string(),
+                requirement,
+            });
+        }
+    }
+
+    let check_rows = expected
+        .iter()
+        .map(|check| {
+            format!(
+                "    {{ target: {:?} field: {:?} }}",
+                check.target, check.field
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let script = format!(
+        r#"source scripts/verifier_diff.nu
+let checks = [
+{check_rows}
+]
+$checks
+| enumerate
+| each {{|row|
+    let check = $row.item
+    let feature = (context-field-kernel-feature $check.field $check.target)
+    {{
+        index: $row.index
+        target: $check.target
+        field: $check.field
+        key: ($feature | get -o key)
+        min_kernel: ($feature | get -o min_kernel)
+        source: ($feature | get -o source)
+        max_kernel_exclusive: ($feature | get -o max_kernel_exclusive)
+    }}
+}}
+| to json"#
+    );
+
+    let output = match Command::new("nu")
+        .arg("-c")
+        .arg(script)
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .output()
+    {
+        Ok(output) => output,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            eprintln!(
+                "skipping verifier_diff.nu context scanner coverage: nu binary was not found"
+            );
+            return;
+        }
+        Err(err) => panic!("failed to run nu for verifier_diff.nu context scanner: {err}"),
+    };
+    assert!(
+        output.status.success(),
+        "verifier_diff.nu context scanner failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let actual: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .expect("verifier_diff.nu context scanner should emit JSON");
+    let actual = actual
+        .as_array()
+        .expect("verifier_diff.nu context scanner output should be a JSON list");
+    assert_eq!(
+        actual.len(),
+        expected.len(),
+        "verifier_diff.nu context scanner should return one result per checked field"
+    );
+
+    let mut mismatches = Vec::new();
+    for value in actual {
+        let index = value
+            .get("index")
+            .and_then(serde_json::Value::as_u64)
+            .expect("verifier_diff.nu context scanner result should include index")
+            as usize;
+        let check = expected
+            .get(index)
+            .expect("verifier_diff.nu context scanner index should refer to a checked field");
+        let record = VerifierDiffFeatureRecord {
+            key: value
+                .get("key")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("")
+                .to_string(),
+            min_kernel: value
+                .get("min_kernel")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("")
+                .to_string(),
+            source: value
+                .get("source")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("")
+                .to_string(),
+            max_kernel_exclusive: value
+                .get("max_kernel_exclusive")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_string),
+        };
+        if !verifier_feature_record_matches_context_requirement(&check.requirement, &record) {
+            mismatches.push(format!(
+                "{} ctx.{} expected key={} min_kernel={} source={} actual key={} min_kernel={} source={}",
+                check.target,
+                check.field,
+                check.requirement.key(),
+                check.requirement.minimum_kernel(),
+                check.requirement.minimum_kernel_source(),
+                record.key,
+                record.min_kernel,
+                record.source
+            ));
+        }
+    }
+
+    assert!(
+        mismatches.is_empty(),
+        "scripts/verifier_diff.nu context-field scanner drifted from Rust metadata: {}",
+        mismatches.join(", ")
     );
 }
 
