@@ -516,6 +516,19 @@ impl<'a> HirToMirLowering<'a> {
         if meta.is_context {
             return true;
         }
+        if meta.root_ctx_field.is_some()
+            && matches!(
+                meta.field_type.as_ref(),
+                Some(MirType::Ptr {
+                    address_space: AddressSpace::Context
+                        | AddressSpace::Kernel
+                        | AddressSpace::Packet,
+                    ..
+                })
+            )
+        {
+            return true;
+        }
 
         meta.record_fields.iter().any(|field| {
             field.is_context

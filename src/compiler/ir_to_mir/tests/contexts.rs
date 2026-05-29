@@ -5303,6 +5303,67 @@ fn test_lower_context_emit_rejects_pointer_escape() {
 }
 
 #[test]
+fn test_lower_context_derived_pointer_emit_rejects_pointer_escape() {
+    let ctx_var = VarId::new(0);
+    let emit_decl = DeclId::new(42);
+    let decl_names = HashMap::from([(emit_decl, "emit".to_string())]);
+    let hir = HirProgram::new(
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(0),
+                        var_id: ctx_var,
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::CellPath(Box::new(CellPath {
+                            members: vec![string_member("data")],
+                        })),
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(0),
+                        path: RegId::new(1),
+                    },
+                    HirStmt::Call {
+                        decl_id: emit_decl,
+                        src_dst: RegId::new(0),
+                        args: HirCallArgs::default(),
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            }],
+            entry: HirBlockId(0),
+            spans: vec![],
+            ast: vec![],
+            comments: vec![],
+            register_count: 2,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        Some(ctx_var),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("context-derived packet pointer must not escape through emit");
+
+    assert!(
+        err.to_string()
+            .contains("emit cannot use context pointers as values")
+    );
+}
+
+#[test]
 fn test_lower_context_histogram_rejects_pointer_escape() {
     let ctx_var = VarId::new(0);
     let histogram_decl = DeclId::new(42);

@@ -19248,6 +19248,51 @@ const FIXTURES = [
         error_contains: "cannot use context pointers as values"
     }
     {
+        name: "core-context-packet-pointer-emit-rejects-pointer-escape"
+        category: "language-core"
+        tags: [context emit packet reject]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  $ctx.data | emit'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "cannot use context pointers as values"
+    }
+    {
+        name: "core-context-optval-pointer-emit-rejects-pointer-escape"
+        category: "language-core"
+        tags: [context emit cgroup-sockopt reject]
+        target: "cgroup_sockopt:/sys/fs/cgroup:get"
+        program: [
+            '{|ctx|'
+            '  $ctx.optval | emit'
+            '  "allow"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "cannot use context pointers as values"
+    }
+    {
+        name: "core-context-flow-keys-pointer-emit-rejects-pointer-escape"
+        category: "language-core"
+        tags: [context emit flow-dissector reject]
+        target: "flow_dissector:/proc/self/ns/net"
+        program: [
+            '{|ctx|'
+            '  $ctx.flow_keys | emit'
+            '  "fallback"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "cannot use context pointers as values"
+    }
+    {
         name: "core-context-histogram-rejects-pointer-escape"
         category: "language-core"
         tags: [context histogram reject]
