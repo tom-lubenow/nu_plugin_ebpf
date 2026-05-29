@@ -1541,6 +1541,24 @@ fn test_lower_record_context_sun_path_assignment_records_kfunc_metadata() {
         compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
             .expect("record-held cgroup_sock_addr ctx.sun_path assignment should compile");
     assert!(compiled.used_kfuncs.contains("bpf_sock_addr_set_sun_path"));
+
+    let program = compiled.into_program(
+        EbpfProgramType::CgroupSockAddr,
+        "/sys/fs/cgroup:connect_unix",
+        "main",
+        HashMap::new(),
+        HashMap::new(),
+    );
+    let requirement = program
+        .kfunc_compatibility_requirements()
+        .into_iter()
+        .find(|requirement| requirement.name() == "bpf_sock_addr_set_sun_path")
+        .expect(
+            "record-held ctx.sun_path assignment should report bpf_sock_addr_set_sun_path metadata",
+        );
+    assert_eq!(requirement.minimum_kernel(), "6.7");
+    assert_eq!(program.kfunc_compatibility_minimum_kernel(), Some("6.7"));
+    assert_eq!(program.compatibility_minimum_kernel(), Some("6.7"));
 }
 
 #[test]
