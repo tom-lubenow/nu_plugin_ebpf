@@ -4,6 +4,72 @@ use crate::program_spec::{
     ProgramLiveAttachOptInReason, ProgramLiveAttachUnsupportedReason, ProgramSpec,
 };
 
+const CONTEXT_FIELD_SPEC_SOURCES: &[&str] = &[
+    "raw_tracepoint:sys_enter",
+    "tracepoint:syscalls/sys_enter_openat",
+    "fentry:security_file_open",
+    "fexit:ksys_read",
+    "lsm:file_open",
+    "socket_filter:udp4:127.0.0.1:31337",
+    "tc_action:diff-action",
+    "tc:lo:ingress",
+    "tcx:lo:ingress",
+    "netkit:lo:primary",
+    "xdp:lo",
+    "sk_msg:/sys/fs/bpf/demo_sockmap",
+    "sk_skb:/sys/fs/bpf/demo_sockmap",
+    "sk_skb_parser:/sys/fs/bpf/demo_sockmap",
+    "sk_lookup:/proc/self/ns/net",
+    "sk_reuseport:migrate",
+    "cgroup_skb:/sys/fs/cgroup:egress",
+    "cgroup_sock:/sys/fs/cgroup:sock_create",
+    "cgroup_sock_addr:/sys/fs/cgroup:connect4",
+    "cgroup_sock_addr:/sys/fs/cgroup:connect_unix",
+    "cgroup_sockopt:/sys/fs/cgroup:set",
+    "cgroup_sysctl:/sys/fs/cgroup",
+    "cgroup_device:/sys/fs/cgroup",
+    "sock_ops:/sys/fs/cgroup",
+    "lwt_xmit:demo-route",
+    "flow_dissector:/proc/self/ns/net",
+    "netfilter:ipv4:pre_routing:priority=-100:defrag",
+    "perf_event:software:cpu-clock",
+    "lirc_mode2:/dev/lirc0",
+    "iter:task_file",
+    "iter:bpf_map_elem",
+    "iter:sockmap",
+];
+
+const CONTEXT_WRITE_SPEC_SOURCES: &[&str] = &[
+    "socket_filter:udp4:127.0.0.1:31337",
+    "tc_action:diff-action",
+    "tc:lo:ingress",
+    "tc:lo:egress",
+    "tcx:lo:ingress",
+    "tcx:lo:egress",
+    "netkit:lo:primary",
+    "sk_skb:/sys/fs/bpf/demo_sockmap",
+    "sk_skb_parser:/sys/fs/bpf/demo_sockmap",
+    "lwt_in:demo-route",
+    "lwt_out:demo-route",
+    "lwt_xmit:demo-route",
+    "lwt_seg6local:demo-route",
+    "cgroup_skb:/sys/fs/cgroup:ingress",
+    "cgroup_skb:/sys/fs/cgroup:egress",
+    "cgroup_sock:/sys/fs/cgroup:sock_create",
+    "cgroup_sock:/sys/fs/cgroup:post_bind4",
+    "cgroup_sysctl:/sys/fs/cgroup",
+    "sock_ops:/sys/fs/cgroup",
+    "cgroup_sockopt:/sys/fs/cgroup:get",
+    "cgroup_sockopt:/sys/fs/cgroup:set",
+    "cgroup_sock_addr:/sys/fs/cgroup:connect4",
+    "cgroup_sock_addr:/sys/fs/cgroup:connect6",
+    "cgroup_sock_addr:/sys/fs/cgroup:sendmsg4",
+    "cgroup_sock_addr:/sys/fs/cgroup:sendmsg6",
+    "cgroup_sock_addr:/sys/fs/cgroup:connect_unix",
+    "sk_lookup:/proc/self/ns/net",
+    "flow_dissector:/proc/self/ns/net",
+];
+
 fn field<'a>(fields: &'a [SpecContextField], field_name: &str) -> &'a SpecContextField {
     fields
         .iter()
@@ -750,20 +816,24 @@ fn test_spec_context_fields_report_backing_helper_metadata_invariants() {
 
 #[test]
 fn test_context_field_compatibility_metadata_invariants() {
-    for spec_text in [
-        "raw_tracepoint:sys_enter",
-        "fentry:security_file_open",
-        "tc:lo:ingress",
-        "sk_lookup:/proc/self/ns/net",
-        "perf_event:software:cpu-clock",
-        "xdp:lo",
-        "cgroup_sysctl:/sys/fs/cgroup",
-        "sock_ops:/sys/fs/cgroup",
-    ] {
+    for spec_text in CONTEXT_FIELD_SPEC_SOURCES {
         let spec = ProgramSpec::parse(spec_text)
             .unwrap_or_else(|err| panic!("{spec_text} should parse: {err}"));
 
         for field in spec_context_fields(&spec, false) {
+            if field.requirement_key.is_some() {
+                assert!(
+                    field.minimum_kernel.is_some(),
+                    "{spec_text} ctx.{} should report a context-field minimum kernel",
+                    field.field
+                );
+                assert!(
+                    field.minimum_kernel_source.is_some(),
+                    "{spec_text} ctx.{} should report a context-field minimum kernel source",
+                    field.field
+                );
+            }
+
             let component_floors = [field.minimum_kernel, field.backing_helper_minimum_kernel];
             if component_floors.iter().any(Option::is_some) {
                 let compatibility_minimum =
@@ -4898,19 +4968,24 @@ fn test_context_write_records_include_backing_abi_metadata() {
 
 #[test]
 fn test_context_write_backing_abi_metadata_invariants() {
-    for spec_source in [
-        "tc_action:diff-action",
-        "tc:lo:ingress",
-        "tcx:lo:ingress",
-        "cgroup_sysctl:/sys/fs/cgroup",
-        "sock_ops:/sys/fs/cgroup",
-        "cgroup_sock_addr:/sys/fs/cgroup:connect_unix",
-        "sk_lookup:/proc/self/ns/net",
-    ] {
+    for spec_source in CONTEXT_WRITE_SPEC_SOURCES {
         let spec = ProgramSpec::parse(spec_source)
             .unwrap_or_else(|err| panic!("{spec_source} should parse: {err}"));
 
         for write in spec_context_writes(&spec) {
+            if write.context_field_requirement_key.is_some() {
+                assert!(
+                    write.minimum_kernel.is_some(),
+                    "{spec_source} ctx.{} write should report a context-field minimum kernel",
+                    write.field
+                );
+                assert!(
+                    write.minimum_kernel_source.is_some(),
+                    "{spec_source} ctx.{} write should report a context-field minimum kernel source",
+                    write.field
+                );
+            }
+
             let component_floors = [
                 write.minimum_kernel,
                 write.helper_minimum_kernel,
