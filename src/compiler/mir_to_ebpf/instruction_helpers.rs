@@ -1,5 +1,5 @@
 use super::*;
-use crate::compiler::elf::ContextFieldStoreTransform;
+use crate::compiler::elf::{ContextFieldPhysicalStore, ContextFieldStoreTransform};
 use crate::compiler::mir::AddressSpace;
 use crate::compiler::mir::CtxStoreTarget;
 
@@ -94,37 +94,39 @@ impl<'a> MirToEbpfCompiler<'a> {
                 .push(EbpfInsn::call(BpfHelper::SockOpsCbFlagsSet));
             return Ok(());
         }
-        if let Some(store) = target.ctx_field_direct_store() {
-            self.emit_store(EbpfReg::R9, store.offset, val_reg, size)?;
-            return Ok(());
-        }
-        if let Some(store) = target.ctx_field_indexed_store() {
-            let store_reg = if store.convert_to_big_endian {
-                self.instructions
-                    .push(EbpfInsn::mov64_reg(EbpfReg::R0, val_reg));
-                self.instructions.push(EbpfInsn::end32_to_be(EbpfReg::R0));
-                EbpfReg::R0
-            } else {
-                val_reg
-            };
-            self.emit_store(EbpfReg::R9, store.offset, store_reg, size)?;
-            return Ok(());
-        }
-        if let Some(store) = target.ctx_field_transformed_store() {
-            match store.transform {
-                ContextFieldStoreTransform::HostU32ToBigEndian => {
-                    self.instructions
-                        .push(EbpfInsn::mov64_reg(EbpfReg::R0, val_reg));
-                    self.instructions.push(EbpfInsn::end32_to_be(EbpfReg::R0));
+        if let Some(store) = target.ctx_field_physical_store() {
+            match store {
+                ContextFieldPhysicalStore::Direct(store) => {
+                    self.emit_store(EbpfReg::R9, store.offset, val_reg, size)?;
                 }
-                ContextFieldStoreTransform::HostPortToBigEndianU32 => {
-                    self.instructions
-                        .push(EbpfInsn::mov64_reg(EbpfReg::R0, val_reg));
-                    self.instructions.push(EbpfInsn::lsh64_imm(EbpfReg::R0, 16));
-                    self.instructions.push(EbpfInsn::end32_to_be(EbpfReg::R0));
+                ContextFieldPhysicalStore::Indexed(store) => {
+                    let store_reg = if store.convert_to_big_endian {
+                        self.instructions
+                            .push(EbpfInsn::mov64_reg(EbpfReg::R0, val_reg));
+                        self.instructions.push(EbpfInsn::end32_to_be(EbpfReg::R0));
+                        EbpfReg::R0
+                    } else {
+                        val_reg
+                    };
+                    self.emit_store(EbpfReg::R9, store.offset, store_reg, size)?;
+                }
+                ContextFieldPhysicalStore::Transformed(store) => {
+                    match store.transform {
+                        ContextFieldStoreTransform::HostU32ToBigEndian => {
+                            self.instructions
+                                .push(EbpfInsn::mov64_reg(EbpfReg::R0, val_reg));
+                            self.instructions.push(EbpfInsn::end32_to_be(EbpfReg::R0));
+                        }
+                        ContextFieldStoreTransform::HostPortToBigEndianU32 => {
+                            self.instructions
+                                .push(EbpfInsn::mov64_reg(EbpfReg::R0, val_reg));
+                            self.instructions.push(EbpfInsn::lsh64_imm(EbpfReg::R0, 16));
+                            self.instructions.push(EbpfInsn::end32_to_be(EbpfReg::R0));
+                        }
+                    }
+                    self.emit_store(EbpfReg::R9, store.offset, EbpfReg::R0, size)?;
                 }
             }
-            self.emit_store(EbpfReg::R9, store.offset, EbpfReg::R0, size)?;
             return Ok(());
         }
         match target {

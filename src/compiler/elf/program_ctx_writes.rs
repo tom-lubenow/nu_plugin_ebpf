@@ -1,7 +1,7 @@
 use super::{
-    ContextFieldDirectStore, ContextFieldIndexedStore, ContextFieldStoreTransform,
-    ContextFieldTransformedStore, CtxWriteTarget, EbpfProgramType, ProgramCompatibilityRequirement,
-    ProgramContextFamily,
+    ContextFieldDirectStore, ContextFieldIndexedStore, ContextFieldPhysicalStore,
+    ContextFieldStoreTransform, ContextFieldTransformedStore, CtxWriteTarget, EbpfProgramType,
+    ProgramCompatibilityRequirement, ProgramContextFamily,
 };
 use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::{ContextFieldCompatibilityRequirement, CtxField, CtxStoreTarget};
@@ -252,8 +252,23 @@ impl ContextStoreTargetSpec {
         spec: &ProgramSpec,
         field_name: &str,
     ) -> Option<ContextFieldDirectStore> {
-        self.representative_store_target(spec, field_name)
-            .and_then(|target| target.ctx_field_direct_store())
+        match self.physical_store(spec, field_name)? {
+            ContextFieldPhysicalStore::Direct(store) => Some(store),
+            ContextFieldPhysicalStore::Indexed(_) | ContextFieldPhysicalStore::Transformed(_) => {
+                None
+            }
+        }
+    }
+
+    fn indexed_store_count(&self) -> Option<usize> {
+        match self {
+            Self::SockOpsReplyLongWord => Some(4),
+            Self::SkbCbWord => Some(5),
+            Self::CgroupSockAddrUserIp6Word
+            | Self::CgroupSockAddrMsgSrcIp6Word
+            | Self::CgroupSockAddrLocalIp6WordAlias => Some(4),
+            Self::Fixed(_) | Self::CgroupSockAddrLocalIp4Alias => None,
+        }
     }
 
     fn indexed_store(
@@ -261,18 +276,14 @@ impl ContextStoreTargetSpec {
         spec: &ProgramSpec,
         field_name: &str,
     ) -> Option<(ContextFieldIndexedStore, usize)> {
-        let count = match self {
-            Self::SockOpsReplyLongWord => 4,
-            Self::SkbCbWord => 5,
-            Self::CgroupSockAddrUserIp6Word
-            | Self::CgroupSockAddrMsgSrcIp6Word
-            | Self::CgroupSockAddrLocalIp6WordAlias => 4,
-            Self::Fixed(_) | Self::CgroupSockAddrLocalIp4Alias => return None,
-        };
+        let count = self.indexed_store_count()?;
 
-        self.representative_store_target(spec, field_name)
-            .and_then(|target| target.ctx_field_indexed_store())
-            .map(|store| (store, count))
+        match self.physical_store(spec, field_name)? {
+            ContextFieldPhysicalStore::Indexed(store) => Some((store, count)),
+            ContextFieldPhysicalStore::Direct(_) | ContextFieldPhysicalStore::Transformed(_) => {
+                None
+            }
+        }
     }
 
     fn transformed_store(
@@ -280,8 +291,19 @@ impl ContextStoreTargetSpec {
         spec: &ProgramSpec,
         field_name: &str,
     ) -> Option<ContextFieldTransformedStore> {
+        match self.physical_store(spec, field_name)? {
+            ContextFieldPhysicalStore::Transformed(store) => Some(store),
+            ContextFieldPhysicalStore::Direct(_) | ContextFieldPhysicalStore::Indexed(_) => None,
+        }
+    }
+
+    fn physical_store(
+        &self,
+        spec: &ProgramSpec,
+        field_name: &str,
+    ) -> Option<ContextFieldPhysicalStore> {
         self.representative_store_target(spec, field_name)
-            .and_then(|target| target.ctx_field_transformed_store())
+            .and_then(|target| target.ctx_field_physical_store())
     }
 }
 
@@ -1055,104 +1077,84 @@ impl CtxStoreTarget {
         }
     }
 
-    pub(crate) fn ctx_field_direct_store(&self) -> Option<ContextFieldDirectStore> {
+    pub(crate) fn ctx_field_physical_store(&self) -> Option<ContextFieldPhysicalStore> {
         match self {
-            CtxStoreTarget::SockOpsReply => Some(ContextFieldDirectStore::new(4)),
-            CtxStoreTarget::SockOpsSkTxhash => Some(ContextFieldDirectStore::new(164)),
-            CtxStoreTarget::CgroupSockBoundDevIf => Some(ContextFieldDirectStore::new(0)),
-            CtxStoreTarget::CgroupSockMark => Some(ContextFieldDirectStore::new(16)),
-            CtxStoreTarget::CgroupSockPriority => Some(ContextFieldDirectStore::new(20)),
-            CtxStoreTarget::SkbMark => Some(ContextFieldDirectStore::new(8)),
-            CtxStoreTarget::SkbQueueMapping => Some(ContextFieldDirectStore::new(12)),
-            CtxStoreTarget::SkbPriority => Some(ContextFieldDirectStore::new(32)),
-            CtxStoreTarget::SkbTcIndex => Some(ContextFieldDirectStore::new(44)),
-            CtxStoreTarget::SkbTcClassid => Some(ContextFieldDirectStore::new(72)),
-            CtxStoreTarget::SkbTstamp => Some(ContextFieldDirectStore::new(152)),
-            CtxStoreTarget::SysctlFilePos => Some(ContextFieldDirectStore::new(4)),
-            CtxStoreTarget::SockoptLevel => Some(ContextFieldDirectStore::new(24)),
-            CtxStoreTarget::SockoptOptname => Some(ContextFieldDirectStore::new(28)),
-            CtxStoreTarget::SockoptOptlen => Some(ContextFieldDirectStore::new(32)),
-            CtxStoreTarget::SockoptRetval => Some(ContextFieldDirectStore::new(36)),
-            CtxStoreTarget::SockOpsReplyLong(_)
-            | CtxStoreTarget::SockOpsCbFlags
-            | CtxStoreTarget::SkbCbWord(_)
-            | CtxStoreTarget::CgroupSockAddrUserIp4
-            | CtxStoreTarget::CgroupSockAddrUserIp6Word(_)
-            | CtxStoreTarget::CgroupSockAddrUserPort
-            | CtxStoreTarget::CgroupSockAddrMsgSrcIp4
-            | CtxStoreTarget::CgroupSockAddrMsgSrcIp6Word(_) => None,
-        }
-    }
-
-    pub(crate) fn ctx_field_indexed_store(&self) -> Option<ContextFieldIndexedStore> {
-        match self {
-            CtxStoreTarget::SockOpsReplyLong(index) => {
-                Some(ContextFieldIndexedStore::new(4 + i16::from(*index) * 4))
+            CtxStoreTarget::SockOpsReply => Some(ContextFieldPhysicalStore::Direct(
+                ContextFieldDirectStore::new(4),
+            )),
+            CtxStoreTarget::SockOpsSkTxhash => Some(ContextFieldPhysicalStore::Direct(
+                ContextFieldDirectStore::new(164),
+            )),
+            CtxStoreTarget::CgroupSockBoundDevIf => Some(ContextFieldPhysicalStore::Direct(
+                ContextFieldDirectStore::new(0),
+            )),
+            CtxStoreTarget::CgroupSockMark => Some(ContextFieldPhysicalStore::Direct(
+                ContextFieldDirectStore::new(16),
+            )),
+            CtxStoreTarget::CgroupSockPriority => Some(ContextFieldPhysicalStore::Direct(
+                ContextFieldDirectStore::new(20),
+            )),
+            CtxStoreTarget::SkbMark => Some(ContextFieldPhysicalStore::Direct(
+                ContextFieldDirectStore::new(8),
+            )),
+            CtxStoreTarget::SkbQueueMapping => Some(ContextFieldPhysicalStore::Direct(
+                ContextFieldDirectStore::new(12),
+            )),
+            CtxStoreTarget::SkbPriority => Some(ContextFieldPhysicalStore::Direct(
+                ContextFieldDirectStore::new(32),
+            )),
+            CtxStoreTarget::SkbTcIndex => Some(ContextFieldPhysicalStore::Direct(
+                ContextFieldDirectStore::new(44),
+            )),
+            CtxStoreTarget::SkbTcClassid => Some(ContextFieldPhysicalStore::Direct(
+                ContextFieldDirectStore::new(72),
+            )),
+            CtxStoreTarget::SkbTstamp => Some(ContextFieldPhysicalStore::Direct(
+                ContextFieldDirectStore::new(152),
+            )),
+            CtxStoreTarget::SysctlFilePos => Some(ContextFieldPhysicalStore::Direct(
+                ContextFieldDirectStore::new(4),
+            )),
+            CtxStoreTarget::SockoptLevel => Some(ContextFieldPhysicalStore::Direct(
+                ContextFieldDirectStore::new(24),
+            )),
+            CtxStoreTarget::SockoptOptname => Some(ContextFieldPhysicalStore::Direct(
+                ContextFieldDirectStore::new(28),
+            )),
+            CtxStoreTarget::SockoptOptlen => Some(ContextFieldPhysicalStore::Direct(
+                ContextFieldDirectStore::new(32),
+            )),
+            CtxStoreTarget::SockoptRetval => Some(ContextFieldPhysicalStore::Direct(
+                ContextFieldDirectStore::new(36),
+            )),
+            CtxStoreTarget::SockOpsReplyLong(index) => Some(ContextFieldPhysicalStore::Indexed(
+                ContextFieldIndexedStore::new(4 + i16::from(*index) * 4),
+            )),
+            CtxStoreTarget::SkbCbWord(index) => Some(ContextFieldPhysicalStore::Indexed(
+                ContextFieldIndexedStore::new(48 + i16::from(*index) * 4),
+            )),
+            CtxStoreTarget::CgroupSockAddrUserIp6Word(index) => {
+                Some(ContextFieldPhysicalStore::Indexed(
+                    ContextFieldIndexedStore::big_endian_u32(8 + i16::from(*index) * 4),
+                ))
             }
-            CtxStoreTarget::SkbCbWord(index) => {
-                Some(ContextFieldIndexedStore::new(48 + i16::from(*index) * 4))
+            CtxStoreTarget::CgroupSockAddrMsgSrcIp6Word(index) => {
+                Some(ContextFieldPhysicalStore::Indexed(
+                    ContextFieldIndexedStore::big_endian_u32(44 + i16::from(*index) * 4),
+                ))
             }
-            CtxStoreTarget::CgroupSockAddrUserIp6Word(index) => Some(
-                ContextFieldIndexedStore::big_endian_u32(8 + i16::from(*index) * 4),
-            ),
-            CtxStoreTarget::CgroupSockAddrMsgSrcIp6Word(index) => Some(
-                ContextFieldIndexedStore::big_endian_u32(44 + i16::from(*index) * 4),
-            ),
-            CtxStoreTarget::SockOpsReply
-            | CtxStoreTarget::SockOpsCbFlags
-            | CtxStoreTarget::SockOpsSkTxhash
-            | CtxStoreTarget::CgroupSockBoundDevIf
-            | CtxStoreTarget::CgroupSockMark
-            | CtxStoreTarget::CgroupSockPriority
-            | CtxStoreTarget::SkbMark
-            | CtxStoreTarget::SkbQueueMapping
-            | CtxStoreTarget::SkbPriority
-            | CtxStoreTarget::SkbTcIndex
-            | CtxStoreTarget::SkbTcClassid
-            | CtxStoreTarget::SkbTstamp
-            | CtxStoreTarget::SysctlFilePos
-            | CtxStoreTarget::SockoptLevel
-            | CtxStoreTarget::SockoptOptname
-            | CtxStoreTarget::SockoptOptlen
-            | CtxStoreTarget::SockoptRetval
-            | CtxStoreTarget::CgroupSockAddrUserIp4
-            | CtxStoreTarget::CgroupSockAddrUserPort
-            | CtxStoreTarget::CgroupSockAddrMsgSrcIp4 => None,
-        }
-    }
-
-    pub(crate) fn ctx_field_transformed_store(&self) -> Option<ContextFieldTransformedStore> {
-        match self {
-            CtxStoreTarget::CgroupSockAddrUserIp4 => {
-                Some(ContextFieldTransformedStore::host_u32_to_big_endian(4))
-            }
-            CtxStoreTarget::CgroupSockAddrUserPort => Some(
+            CtxStoreTarget::CgroupSockAddrUserIp4 => Some(ContextFieldPhysicalStore::Transformed(
+                ContextFieldTransformedStore::host_u32_to_big_endian(4),
+            )),
+            CtxStoreTarget::CgroupSockAddrUserPort => Some(ContextFieldPhysicalStore::Transformed(
                 ContextFieldTransformedStore::host_port_to_big_endian_u32(24),
-            ),
+            )),
             CtxStoreTarget::CgroupSockAddrMsgSrcIp4 => {
-                Some(ContextFieldTransformedStore::host_u32_to_big_endian(40))
+                Some(ContextFieldPhysicalStore::Transformed(
+                    ContextFieldTransformedStore::host_u32_to_big_endian(40),
+                ))
             }
-            CtxStoreTarget::SockOpsReply
-            | CtxStoreTarget::SockOpsReplyLong(_)
-            | CtxStoreTarget::SockOpsCbFlags
-            | CtxStoreTarget::SockOpsSkTxhash
-            | CtxStoreTarget::CgroupSockBoundDevIf
-            | CtxStoreTarget::CgroupSockMark
-            | CtxStoreTarget::CgroupSockPriority
-            | CtxStoreTarget::SkbMark
-            | CtxStoreTarget::SkbQueueMapping
-            | CtxStoreTarget::SkbPriority
-            | CtxStoreTarget::SkbTcIndex
-            | CtxStoreTarget::SkbCbWord(_)
-            | CtxStoreTarget::SkbTcClassid
-            | CtxStoreTarget::SkbTstamp
-            | CtxStoreTarget::SysctlFilePos
-            | CtxStoreTarget::SockoptLevel
-            | CtxStoreTarget::SockoptOptname
-            | CtxStoreTarget::SockoptOptlen
-            | CtxStoreTarget::SockoptRetval
-            | CtxStoreTarget::CgroupSockAddrUserIp6Word(_)
-            | CtxStoreTarget::CgroupSockAddrMsgSrcIp6Word(_) => None,
+            CtxStoreTarget::SockOpsCbFlags => None,
         }
     }
 
@@ -1641,7 +1643,16 @@ mod tests {
             (CtxStoreTarget::CgroupSockAddrMsgSrcIp4, None),
             (CtxStoreTarget::CgroupSockAddrMsgSrcIp6Word(0), None),
         ] {
-            assert_eq!(target.ctx_field_direct_store(), expected);
+            let actual = match target.ctx_field_physical_store() {
+                Some(ContextFieldPhysicalStore::Direct(store)) => Some(store),
+                Some(ContextFieldPhysicalStore::Indexed(_))
+                | Some(ContextFieldPhysicalStore::Transformed(_))
+                | None => None,
+            };
+            assert_eq!(
+                actual, expected,
+                "{target:?} direct store metadata should match"
+            );
         }
     }
 
@@ -1669,7 +1680,16 @@ mod tests {
             (CtxStoreTarget::CgroupSockAddrUserPort, None),
             (CtxStoreTarget::CgroupSockAddrMsgSrcIp4, None),
         ] {
-            assert_eq!(target.ctx_field_indexed_store(), expected);
+            let actual = match target.ctx_field_physical_store() {
+                Some(ContextFieldPhysicalStore::Indexed(store)) => Some(store),
+                Some(ContextFieldPhysicalStore::Direct(_))
+                | Some(ContextFieldPhysicalStore::Transformed(_))
+                | None => None,
+            };
+            assert_eq!(
+                actual, expected,
+                "{target:?} indexed store metadata should match"
+            );
         }
     }
 
@@ -1695,30 +1715,30 @@ mod tests {
             (CtxStoreTarget::CgroupSockAddrUserIp6Word(0), None),
             (CtxStoreTarget::CgroupSockAddrMsgSrcIp6Word(0), None),
         ] {
-            assert_eq!(target.ctx_field_transformed_store(), expected);
+            let actual = match target.ctx_field_physical_store() {
+                Some(ContextFieldPhysicalStore::Transformed(store)) => Some(store),
+                Some(ContextFieldPhysicalStore::Direct(_))
+                | Some(ContextFieldPhysicalStore::Indexed(_))
+                | None => None,
+            };
+            assert_eq!(
+                actual, expected,
+                "{target:?} transformed store metadata should match"
+            );
         }
     }
 
     #[test]
     fn test_ctx_store_targets_have_exclusive_physical_store_shapes() {
         for target in representative_ctx_store_targets() {
-            let shape_count = [
-                target.ctx_field_direct_store().is_some(),
-                target.ctx_field_indexed_store().is_some(),
-                target.ctx_field_transformed_store().is_some(),
-            ]
-            .into_iter()
-            .filter(|has_shape| *has_shape)
-            .count();
-
             if matches!(target, CtxStoreTarget::SockOpsCbFlags) {
-                assert_eq!(
-                    shape_count, 0,
+                assert!(
+                    target.ctx_field_physical_store().is_none(),
                     "{target:?} is helper-backed and should not expose physical store metadata"
                 );
             } else {
-                assert_eq!(
-                    shape_count, 1,
+                assert!(
+                    target.ctx_field_physical_store().is_some(),
                     "{target:?} should expose exactly one physical store shape"
                 );
             }

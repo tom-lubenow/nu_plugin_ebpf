@@ -2939,6 +2939,13 @@ impl ContextFieldTransformedStore {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum ContextFieldPhysicalStore {
+    Direct(ContextFieldDirectStore),
+    Indexed(ContextFieldIndexedStore),
+    Transformed(ContextFieldTransformedStore),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum SocketContextLayout {
     SockAddr,
     CgroupSock,
