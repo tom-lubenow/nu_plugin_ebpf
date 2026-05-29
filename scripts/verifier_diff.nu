@@ -17097,6 +17097,44 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "callback-user-ringbuf-drain-dynptr-data-guarded"
+        category: "callbacks"
+        tags: [helper-call callback dynptr user-ringbuf null-check accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_user_ringbuf_drain" user_events {|dyn cb|'
+            '    let data = (helper-call "bpf_dynptr_data" $dyn 0 4)'
+            '    if $data {'
+            '      $data | count'
+            '    }'
+            '    0'
+            '  } "ctx" 0'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "callback-user-ringbuf-drain-dynptr-data-requires-null-check"
+        category: "callbacks"
+        tags: [helper-call callback dynptr user-ringbuf null-check reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_user_ringbuf_drain" user_events {|dyn cb|'
+            '    helper-call "bpf_dynptr_data" $dyn 0 4 | count'
+            '    0'
+            '  } "ctx" 0'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "may dereference null pointer"
+    }
+    {
         name: "callback-user-ringbuf-drain-allows-prefix-params"
         category: "callbacks"
         tags: [helper-call callback dynptr user-ringbuf prefix-arity accept]
