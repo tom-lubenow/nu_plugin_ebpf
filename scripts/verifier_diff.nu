@@ -4126,6 +4126,17 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         feature_keys: ["ctx:optval"]
     }
     {
+        target: "cgroup_sockopt:/sys/fs/cgroup:get"
+        program: [
+            '{|ctx|'
+            '  mut optval = $ctx.optval'
+            '  $optval.2 = 42'
+            '  "allow"'
+            '}'
+        ]
+        feature_keys: ["ctx:optval"]
+    }
+    {
         target: "cgroup_sockopt:/sys/fs/cgroup:set"
         program: [
             '{|ctx|'
@@ -10865,6 +10876,22 @@ const FIXTURES = [
             '{|ctx|'
             '  mut event = $ctx'
             '  $event.optval.2 = 42'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "cgroup-sockopt-optval-bound-byte-write"
+        category: "context-surface"
+        tags: [cgroup-sockopt context writable alias source metadata]
+        requires: [cgroup-v2]
+        target: "cgroup_sockopt:/sys/fs/cgroup:get"
+        program: [
+            '{|ctx|'
+            '  mut optval = $ctx.optval'
+            '  $optval.2 = 42'
             '  "allow"'
             '}'
         ]

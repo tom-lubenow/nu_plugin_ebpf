@@ -6778,6 +6778,71 @@ fn test_lower_cgroup_sockopt_ctx_optval_byte_assignment() {
 }
 
 #[test]
+fn test_lower_bound_cgroup_sockopt_ctx_optval_byte_assignment() {
+    let hir = make_bound_ctx_upsert_program(
+        CellPath {
+            members: vec![string_member("optval")],
+        },
+        CellPath {
+            members: vec![int_member(2)],
+        },
+        HirLiteral::Int(42),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bound cgroup_sockopt ctx.optval byte assignment should lower");
+
+    let blocks = &result.program.main.blocks;
+    assert!(
+        blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::LoadCtxField {
+                    field: CtxField::SockoptOptval,
+                    ..
+                }
+            )),
+        "expected bound ctx.optval alias to originate from the context field"
+    );
+    assert!(
+        blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::LoadCtxField {
+                    field: CtxField::SockoptOptvalEnd,
+                    ..
+                }
+            )),
+        "expected bound ctx.optval byte write to guard against optval_end"
+    );
+    assert!(
+        blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Store {
+                    ty: MirType::U8,
+                    ..
+                }
+            )),
+        "expected bound ctx.optval byte write to emit a guarded u8 store"
+    );
+}
+
+#[test]
 fn test_lower_tc_ctx_data_byte_assignment_adds_guarded_packet_store() {
     let hir = make_ctx_upsert_program(
         CellPath {

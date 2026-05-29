@@ -1254,6 +1254,30 @@ impl<'a> HirToMirLowering<'a> {
                 path_desc
             )));
         }
+        if let MirType::Ptr {
+            address_space: AddressSpace::Kernel,
+            ..
+        } = &base_runtime_ty
+            && root_ctx_field == Some(CtxField::SockoptOptval)
+        {
+            let [PathMember::Int { val: index, .. }] = path.members.as_slice() else {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "cell path update '.{} = ...' for a ctx.optval alias requires a fixed integer byte index, e.g. $ctx.optval.N = ...",
+                    path_desc
+                )));
+            };
+            let index = usize::try_from(*index).map_err(|_| {
+                CompileError::UnsupportedInstruction(format!(
+                    "cell path update '.{} = ...' requires a non-negative ctx.optval byte index",
+                    path_desc
+                ))
+            })?;
+            self.lower_cgroup_sockopt_optval_byte_update_from_ptr(
+                base_vreg, index, new_value, &path_desc,
+            )?;
+            self.set_reg_constant_value(src_dst, constant_value);
+            return Ok(());
+        }
         let MirType::Ptr {
             pointee,
             address_space: AddressSpace::Stack | AddressSpace::Map,

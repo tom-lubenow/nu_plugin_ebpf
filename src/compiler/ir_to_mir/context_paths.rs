@@ -869,9 +869,6 @@ impl<'a> HirToMirLowering<'a> {
         ctx.validate_load_ctx_field(&CtxField::SockoptOptval)?;
         ctx.validate_load_ctx_field(&CtxField::SockoptOptvalEnd)?;
 
-        let stored_vreg =
-            self.materialize_scalar_assignment_value(new_value, &MirType::U8, &path_desc)?;
-
         let ptr_ty = MirType::Ptr {
             pointee: Box::new(MirType::U8),
             address_space: AddressSpace::Kernel,
@@ -884,6 +881,40 @@ impl<'a> HirToMirLowering<'a> {
             slot: None,
         });
 
+        self.lower_cgroup_sockopt_optval_byte_update_from_ptr(
+            optval_vreg,
+            index,
+            new_value,
+            path_desc,
+        )?;
+
+        let meta = self.get_or_create_metadata(src_dst);
+        meta.is_context = true;
+        Ok(())
+    }
+
+    pub(super) fn lower_cgroup_sockopt_optval_byte_update_from_ptr(
+        &mut self,
+        optval_vreg: VReg,
+        index: usize,
+        new_value: RegId,
+        path_desc: &str,
+    ) -> Result<(), CompileError> {
+        let Some(ctx) = self.probe_ctx else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "context cell path update '.{} = ...' requires probe context",
+                path_desc
+            )));
+        };
+        ctx.validate_load_ctx_field(&CtxField::SockoptOptvalEnd)?;
+
+        let stored_vreg =
+            self.materialize_scalar_assignment_value(new_value, &MirType::U8, path_desc)?;
+
+        let ptr_ty = MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        };
         let join_block = self.func.alloc_block();
         let guard_block = self.func.alloc_block();
         let store_block = self.func.alloc_block();
@@ -961,8 +992,6 @@ impl<'a> HirToMirLowering<'a> {
         self.terminate(MirInst::Jump { target: join_block });
 
         self.current_block = join_block;
-        let meta = self.get_or_create_metadata(src_dst);
-        meta.is_context = true;
         Ok(())
     }
 }
