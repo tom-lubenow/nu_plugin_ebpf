@@ -1032,7 +1032,13 @@ fn test_verifier_diff_tracepoint_payload_scanner_matches_rust_fallback_fields() 
     let checks = [
         ("tracepoint:syscalls/sys_enter_openat", "id"),
         ("tracepoint:syscalls/sys_enter_openat", "args"),
+        ("tracepoint:syscalls/sys_enter_read", "buf"),
+        ("tracepoint:syscalls/sys_enter_read", "count"),
+        ("tracepoint:syscalls/sys_enter_write", "fd"),
+        ("tracepoint:syscalls/sys_enter_close", "fd"),
+        ("tracepoint:syscalls/sys_enter_execve", "argv"),
         ("tracepoint:syscalls/sys_enter_openat2", "args"),
+        ("tracepoint:syscalls/sys_enter_openat2", "how"),
         ("tracepoint:syscalls/sys_exit_openat", "ret"),
         ("tracepoint:syscalls/sys_exit_openat2", "id"),
         ("tracepoint:syscalls/sys_exit_openat2", "ret"),

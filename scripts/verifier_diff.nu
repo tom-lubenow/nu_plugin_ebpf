@@ -4499,6 +4499,69 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         ]
     }
     {
+        target: "tracepoint:syscalls/sys_enter_read"
+        program: [
+            '{|ctx|'
+            '  let buf = $ctx.buf'
+            '  if $buf { 1 | count }'
+            '  ($ctx.fd + $ctx.count) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_read:field:buf"
+            "tracepoint:syscalls/sys_enter_read:field:fd"
+            "tracepoint:syscalls/sys_enter_read:field:count"
+        ]
+    }
+    {
+        target: "tracepoint:syscalls/sys_enter_write"
+        program: [
+            '{|ctx|'
+            '  let buf = $ctx.buf'
+            '  if $buf { 1 | count }'
+            '  ($ctx.fd + $ctx.count) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_write:field:buf"
+            "tracepoint:syscalls/sys_enter_write:field:fd"
+            "tracepoint:syscalls/sys_enter_write:field:count"
+        ]
+    }
+    {
+        target: "tracepoint:syscalls/sys_enter_close"
+        program: [
+            '{|ctx|'
+            '  $ctx.fd | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_close:field:fd"
+        ]
+    }
+    {
+        target: "tracepoint:syscalls/sys_enter_execve"
+        program: [
+            '{|ctx|'
+            '  let filename = $ctx.filename'
+            '  if $filename { 1 | count }'
+            '  let argv = $ctx.argv'
+            '  if $argv { 1 | count }'
+            '  let envp = $ctx.envp'
+            '  if $envp { 1 | count }'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_execve:field:filename"
+            "tracepoint:syscalls/sys_enter_execve:field:argv"
+            "tracepoint:syscalls/sys_enter_execve:field:envp"
+        ]
+    }
+    {
         target: "tracepoint:syscalls/sys_enter_openat"
         program: [
             '{|ctx|'
