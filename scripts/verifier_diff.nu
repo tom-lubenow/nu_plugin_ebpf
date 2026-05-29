@@ -902,6 +902,12 @@ const PROGRAM_GLOBAL_KERNEL_FEATURE_EXPECTATIONS = [
     }
     {
         program: [
+            '{|ctx| mut state: int = 0; $state | count }'
+        ]
+        feature_keys: ["global:bpf-data-sections"]
+    }
+    {
+        program: [
             '{|ctx|'
             '  let text = "global-get seen"'
             '  0'
@@ -25809,6 +25815,17 @@ def line-invokes-global-command? [line: string] {
     false
 }
 
+def line-declares-annotated-mut-global? [line: string] {
+    for tail in (command-invocation-tails $line "mut") {
+        let lhs = ($tail | split row "=" | first | str trim)
+        if ($lhs | str contains ":") {
+            return true
+        }
+    }
+
+    false
+}
+
 def program-global-kernel-features [source: string] {
     for line in ($source | lines) {
         let trimmed = ($line | str trim)
@@ -25820,7 +25837,7 @@ def program-global-kernel-features [source: string] {
             return [$KERNEL_FEATURE_GLOBAL_DATA_SECTIONS]
         }
 
-        if (($trimmed | str starts-with "mut ") and ($trimmed | str contains ":")) {
+        if (line-declares-annotated-mut-global? $trimmed) {
             return [$KERNEL_FEATURE_GLOBAL_DATA_SECTIONS]
         }
 
