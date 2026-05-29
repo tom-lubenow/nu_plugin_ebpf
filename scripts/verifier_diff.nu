@@ -7115,6 +7115,43 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "map-push-array-record-initializer"
+        category: "maps"
+        tags: [maps records arrays queue map-push map-pop accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  [{ pid: 7 cpu: 2 } { pid: 9 cpu: 3 }] | map-push entry_batches --kind queue'
+            '  let entries = (map-pop entry_batches --kind queue)'
+            '  if $entries {'
+            '    (($entries | get 1).cpu) | count'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "map-push-array-record-spread-initializer"
+        category: "maps"
+        tags: [maps records arrays queue list-spread map-push map-pop accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let tail = [{ pid: 9 cpu: 3 }]'
+            '  [{ pid: 7 cpu: 2 }, ...$tail] | map-push entry_batches --kind queue'
+            '  let entries = (map-pop entry_batches --kind queue)'
+            '  if $entries {'
+            '    (($entries | get 1).cpu) | count'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "ringbuf-query-built-in-events"
         category: "maps"
         tags: [helper-call ringbuf reserved-name]

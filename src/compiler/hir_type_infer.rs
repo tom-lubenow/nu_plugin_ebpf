@@ -14,9 +14,8 @@ use super::hindley_milner::{
     HMType, Substitution, TypeScheme, TypeVar, TypeVarGenerator, UnifyError, unify,
 };
 use super::hir::{
-    AnnotatedMutGlobal, CompileTimeValueFlow, FixedLayoutValueConsumer, HirBlock, HirFunction,
-    HirLiteral, HirProgram, HirStmt, HirTerminator,
-    compile_time_value_flows_to_fixed_layout_consumer, supports_numeric_constant_list,
+    AnnotatedMutGlobal, HirBlock, HirFunction, HirLiteral, HirProgram, HirStmt, HirTerminator,
+    compile_time_value_flows_to_fixed_layout_aggregate_consumer, supports_numeric_constant_list,
 };
 use super::mir::AddressSpace;
 use super::type_infer::TypeError;
@@ -210,34 +209,18 @@ impl<'a> HirTypeInference<'a> {
         let mut errors = Vec::new();
 
         for (stmt_index, stmt) in block.stmts.iter().enumerate() {
-            let compile_time_only_global_initializer_list = match stmt {
+            let compile_time_only_fixed_layout_list_builder = match stmt {
                 HirStmt::ListPush { src_dst, .. } => {
-                    compile_time_value_flows_to_fixed_layout_consumer(
+                    compile_time_value_flows_to_fixed_layout_aggregate_consumer(
                         &block.stmts,
                         stmt_index,
                         *src_dst,
                         self.decl_names,
-                        FixedLayoutValueConsumer::TypedGlobalDefine,
-                        CompileTimeValueFlow::AggregateBuilder,
-                    ) || compile_time_value_flows_to_fixed_layout_consumer(
-                        &block.stmts,
-                        stmt_index,
-                        *src_dst,
-                        self.decl_names,
-                        FixedLayoutValueConsumer::GlobalSet,
-                        CompileTimeValueFlow::AggregateBuilder,
-                    ) || compile_time_value_flows_to_fixed_layout_consumer(
-                        &block.stmts,
-                        stmt_index,
-                        *src_dst,
-                        self.decl_names,
-                        FixedLayoutValueConsumer::MapPut,
-                        CompileTimeValueFlow::AggregateBuilder,
                     )
                 }
                 _ => false,
             };
-            if let Err(err) = self.infer_stmt(stmt, compile_time_only_global_initializer_list) {
+            if let Err(err) = self.infer_stmt(stmt, compile_time_only_fixed_layout_list_builder) {
                 errors.push(err);
             }
         }
@@ -256,7 +239,7 @@ impl<'a> HirTypeInference<'a> {
     fn infer_stmt(
         &mut self,
         stmt: &HirStmt,
-        compile_time_only_global_initializer_list: bool,
+        compile_time_only_fixed_layout_list_builder: bool,
     ) -> Result<(), TypeError> {
         match stmt {
             HirStmt::LoadLiteral { dst, lit } => {
@@ -342,7 +325,7 @@ impl<'a> HirTypeInference<'a> {
                 let list_ty = self.reg_type(*src_dst);
                 let item_ty = self.reg_type(*item);
                 self.constrain(list_ty, stack_list_ptr_type(), "list_push_list")?;
-                if !compile_time_only_global_initializer_list {
+                if !compile_time_only_fixed_layout_list_builder {
                     self.constrain(item_ty.clone(), HMType::I64, "list_push_item")
                         .map_err(|err| self.list_push_item_error(item_ty, err))?;
                 }

@@ -525,7 +525,7 @@ impl<'a> HirToMirLowering<'a> {
                     continue;
                 }
                 if let HirStmt::ListPush { src_dst, item } = stmt
-                    && self.is_compile_time_only_global_initializer_builder_value(
+                    && self.is_compile_time_only_fixed_layout_builder_value(
                         &block.stmts,
                         stmt_index,
                         *src_dst,
@@ -535,7 +535,7 @@ impl<'a> HirToMirLowering<'a> {
                     continue;
                 }
                 if let HirStmt::ListSpread { src_dst, items } = stmt
-                    && self.is_compile_time_only_global_initializer_builder_value(
+                    && self.is_compile_time_only_fixed_layout_builder_value(
                         &block.stmts,
                         stmt_index,
                         *src_dst,
@@ -758,33 +758,17 @@ impl<'a> HirToMirLowering<'a> {
         )
     }
 
-    fn is_compile_time_only_global_initializer_builder_value(
+    fn is_compile_time_only_fixed_layout_builder_value(
         &self,
         stmts: &[HirStmt],
         stmt_index: usize,
         dst: RegId,
     ) -> bool {
-        compile_time_value_flows_to_fixed_layout_consumer(
+        compile_time_value_flows_to_fixed_layout_aggregate_consumer(
             stmts,
             stmt_index,
             dst,
             self.decl_names,
-            FixedLayoutValueConsumer::TypedGlobalDefine,
-            CompileTimeValueFlow::AggregateBuilder,
-        ) || compile_time_value_flows_to_fixed_layout_consumer(
-            stmts,
-            stmt_index,
-            dst,
-            self.decl_names,
-            FixedLayoutValueConsumer::GlobalSet,
-            CompileTimeValueFlow::AggregateBuilder,
-        ) || compile_time_value_flows_to_fixed_layout_consumer(
-            stmts,
-            stmt_index,
-            dst,
-            self.decl_names,
-            FixedLayoutValueConsumer::MapPut,
-            CompileTimeValueFlow::AggregateBuilder,
         )
     }
 

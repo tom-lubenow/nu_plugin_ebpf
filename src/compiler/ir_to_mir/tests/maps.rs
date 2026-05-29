@@ -2512,6 +2512,191 @@ fn test_lower_map_push_registers_queue_value_schema() {
 }
 
 #[test]
+fn test_lower_map_push_fixed_record_array_source_list_builder_skips_runtime_list_ops() {
+    let map_push_decl = DeclId::new(225);
+    let decl_names = HashMap::from([(map_push_decl, "map-push".to_string())]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::List { capacity: 2 },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Record { capacity: 2 },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String("pid".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::Int(7),
+                },
+                HirStmt::RecordInsert {
+                    src_dst: RegId::new(1),
+                    key: RegId::new(2),
+                    val: RegId::new(3),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::String("cpu".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(5),
+                    lit: HirLiteral::Int(2),
+                },
+                HirStmt::RecordInsert {
+                    src_dst: RegId::new(1),
+                    key: RegId::new(4),
+                    val: RegId::new(5),
+                },
+                HirStmt::ListPush {
+                    src_dst: RegId::new(0),
+                    item: RegId::new(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(6),
+                    lit: HirLiteral::Record { capacity: 2 },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(7),
+                    lit: HirLiteral::String("pid".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(8),
+                    lit: HirLiteral::Int(9),
+                },
+                HirStmt::RecordInsert {
+                    src_dst: RegId::new(6),
+                    key: RegId::new(7),
+                    val: RegId::new(8),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(9),
+                    lit: HirLiteral::String("cpu".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(10),
+                    lit: HirLiteral::Int(3),
+                },
+                HirStmt::RecordInsert {
+                    src_dst: RegId::new(6),
+                    key: RegId::new(9),
+                    val: RegId::new(10),
+                },
+                HirStmt::ListPush {
+                    src_dst: RegId::new(0),
+                    item: RegId::new(6),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(11),
+                    lit: HirLiteral::String("entry_batches".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(12),
+                    lit: HirLiteral::String("queue".into()),
+                },
+                HirStmt::Call {
+                    decl_id: map_push_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(11)],
+                        named: vec![(b"kind".to_vec(), RegId::new(12))],
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 13,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("source list-of-record map-push value should lower as fixed map data");
+
+    let expected_ty = MirType::Array {
+        elem: Box::new(MirType::Struct {
+            name: None,
+            kernel_btf_type_id: None,
+            fields: vec![
+                StructField {
+                    name: "pid".to_string(),
+                    ty: MirType::I64,
+                    offset: 0,
+                    synthetic: false,
+                    bitfield: None,
+                },
+                StructField {
+                    name: "cpu".to_string(),
+                    ty: MirType::I64,
+                    offset: 8,
+                    synthetic: false,
+                    bitfield: None,
+                },
+            ],
+        }),
+        len: 2,
+    };
+    let map_ref = MapRef {
+        name: "entry_batches".to_string(),
+        kind: MapKind::Queue,
+    };
+    assert_eq!(
+        result.generic_map_value_types.get(&map_ref),
+        Some(&expected_ty)
+    );
+    assert!(
+        !result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| {
+                matches!(
+                    inst,
+                    MirInst::ListPush { .. } | MirInst::ListLen { .. } | MirInst::ListGet { .. }
+                )
+            }),
+        "compile-time map-push list-of-record builders must not emit runtime list operations"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::MapPush {
+                    map: MapRef { name, kind },
+                    ..
+                } if name == "entry_batches" && *kind == MapKind::Queue
+            )),
+        "expected fixed record-array map-push value to push to the target map"
+    );
+}
+
+#[test]
 fn test_lower_map_peek_uses_prior_queue_schema() {
     let hir = make_map_peek_program(Some(DeclId::new(42)), DeclId::new(43), "queue");
     let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");

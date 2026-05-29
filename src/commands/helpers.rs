@@ -1089,6 +1089,9 @@ Use `--kind queue` for FIFO behavior, `--kind stack` for LIFO behavior, or
 not take an explicit key. Queue/stack pushed value layouts become available to
 later `map-peek` and `map-pop` uses in the same closure, and to pinned peers
 when attached with the same `--pin` group.
+Metadata-built fixed-record and fixed-array values, including arrays of records
+assembled with list spread, can establish the pushed value layout when every
+field has an honest fixed representation.
 
 Example:
   $ctx.pid | map-push recent_pids --kind queue"#

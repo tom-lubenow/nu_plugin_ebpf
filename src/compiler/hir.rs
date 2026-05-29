@@ -292,6 +292,7 @@ pub enum FixedLayoutValueConsumer {
     TypedGlobalDefine,
     GlobalSet,
     MapPut,
+    MapPush,
 }
 
 pub fn compile_time_value_flows_to_fixed_layout_consumer(
@@ -453,6 +454,31 @@ pub fn compile_time_value_flows_to_fixed_layout_consumer(
     false
 }
 
+pub fn compile_time_value_flows_to_fixed_layout_aggregate_consumer(
+    stmts: &[HirStmt],
+    stmt_index: usize,
+    dst: RegId,
+    decl_names: &HashMap<DeclId, String>,
+) -> bool {
+    [
+        FixedLayoutValueConsumer::TypedGlobalDefine,
+        FixedLayoutValueConsumer::GlobalSet,
+        FixedLayoutValueConsumer::MapPut,
+        FixedLayoutValueConsumer::MapPush,
+    ]
+    .into_iter()
+    .any(|consumer| {
+        compile_time_value_flows_to_fixed_layout_consumer(
+            stmts,
+            stmt_index,
+            dst,
+            decl_names,
+            consumer,
+            CompileTimeValueFlow::AggregateBuilder,
+        )
+    })
+}
+
 fn compile_time_value_consumer_matches(
     decl_name: Option<&str>,
     args: &HirCallArgs,
@@ -479,6 +505,18 @@ fn compile_time_value_consumer_matches(
             decl_name == Some("map-put")
                 && args.pipeline_input.is_some()
                 && args.positional.len() == 2
+                && args.rest.is_empty()
+                && args
+                    .named
+                    .iter()
+                    .all(|(name, _)| matches!(name.as_slice(), b"kind" | b"flags"))
+                && args.flags.is_empty()
+                && args.parser_info.is_empty()
+        }
+        FixedLayoutValueConsumer::MapPush => {
+            decl_name == Some("map-push")
+                && args.pipeline_input.is_some()
+                && args.positional.len() == 1
                 && args.rest.is_empty()
                 && args
                     .named
