@@ -4562,6 +4562,38 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         ]
     }
     {
+        target: "tracepoint:syscalls/sys_enter_execve"
+        program: [
+            '{|ctx|'
+            '  let event = $ctx'
+            '  let rec = { root: $ctx }'
+            '  $event.filename | count'
+            '  $rec.root.argv | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_execve:field:filename"
+            "tracepoint:syscalls/sys_enter_execve:field:argv"
+        ]
+    }
+    {
+        target: "tracepoint:syscalls/sys_enter_execve"
+        program: [
+            '{|ctx|'
+            '  def read_env [event] {'
+            '    $event.envp | count'
+            '    0'
+            '  }'
+            '  read_env $ctx'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_execve:field:envp"
+        ]
+    }
+    {
         target: "tracepoint:syscalls/sys_enter_openat"
         program: [
             '{|ctx|'
