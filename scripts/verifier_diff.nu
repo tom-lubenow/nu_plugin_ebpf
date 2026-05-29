@@ -6858,6 +6858,23 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "global-define-type-root-list-append-past-capacity-rejects"
+        category: "globals"
+        tags: [globals list upsert global-define reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  [11] | global-define --type "list:int:1" samples'
+            '  mut samples = (global-get samples)'
+            '  $samples.1 = 22'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "cannot append beyond numeric list capacity 1"
+    }
+    {
         name: "global-set-mutated-root-numeric-list"
         category: "globals"
         tags: [globals list upsert global-set accept]

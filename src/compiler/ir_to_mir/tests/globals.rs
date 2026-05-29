@@ -5615,6 +5615,97 @@ fn test_lower_global_define_type_initialized_list_supports_root_append() {
 }
 
 #[test]
+fn test_lower_global_define_type_full_root_list_append_rejects() {
+    let define_decl = DeclId::new(424);
+    let get_decl = DeclId::new(425);
+    let decl_names = HashMap::from([
+        (define_decl, "global-define".to_string()),
+        (get_decl, "global-get".to_string()),
+    ]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::list(
+                        vec![Value::int(11, Span::test_data())],
+                        Span::test_data(),
+                    )),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("samples".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String("list:int:1".into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        named: vec![(b"type".to_vec(), RegId::new(2))],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: get_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![int_member(1)],
+                    })),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(5),
+                    lit: HirLiteral::Int(22),
+                },
+                HirStmt::UpsertCellPath {
+                    src_dst: RegId::new(3),
+                    path: RegId::new(4),
+                    new_value: RegId::new(5),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(3) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 6,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("full typed root numeric list append should reject");
+
+    match err {
+        CompileError::UnsupportedInstruction(message) => assert!(
+            message.contains("cannot append beyond numeric list capacity 1"),
+            "unexpected error: {message}"
+        ),
+        other => panic!("unexpected error: {other:?}"),
+    }
+}
+
+#[test]
 fn test_lower_global_set_persists_mutated_root_numeric_list() {
     let define_decl = DeclId::new(421);
     let get_decl = DeclId::new(422);

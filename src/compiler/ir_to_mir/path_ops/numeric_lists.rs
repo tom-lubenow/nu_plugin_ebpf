@@ -260,6 +260,12 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         if index == current_len && current_len == max_len {
+            if list_path.is_empty() {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "cell path update '.{} = ...' cannot append beyond numeric list capacity {}",
+                    path_desc, max_len
+                )));
+            }
             let Some(Value::Record { val: record, .. }) = constant_value.as_ref() else {
                 return Err(CompileError::UnsupportedInstruction(format!(
                     "cell path update '.{} = ...' requires updated constant record metadata to grow a nested numeric list",
