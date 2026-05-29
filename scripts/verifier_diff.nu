@@ -6922,6 +6922,22 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "global-define-type-zero-record-list-field-append"
+        category: "globals"
+        tags: [globals records list upsert global-define accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  global-define --type "record{samples:list:int:2}" seen_state'
+            '  mut state = (global-get seen_state)'
+            '  $state.samples.0 = 11'
+            '  $state.samples.0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "global-define-type-record-array-field-initializer"
         category: "globals"
         tags: [globals records arrays global-define accept]

@@ -1338,6 +1338,8 @@ impl<'a> HirToMirLowering<'a> {
             ) if existing_max_len == incoming_max_len => {
                 let known_len = match (existing_known_len, incoming_known_len) {
                     (Some(existing), Some(incoming)) if existing == incoming => Some(*existing),
+                    (Some(0), Some(incoming)) => Some(*incoming),
+                    (Some(existing), Some(0)) => Some(*existing),
                     (Some(_), Some(_)) => return None,
                     (Some(existing), None) => Some(*existing),
                     (None, Some(incoming)) => Some(*incoming),
@@ -1470,14 +1472,6 @@ impl<'a> HirToMirLowering<'a> {
     pub(super) fn parse_named_map_key_type_spec(spec: &str) -> Result<MirType, CompileError> {
         let parsed = ParsedNamedGlobalType::parse_with_context(spec, NamedTypeSpecContext::MapKey)?;
         Ok(parsed.ty)
-    }
-
-    fn typed_named_program_global_layout(
-        symbol: String,
-        spec: &str,
-    ) -> Result<(MutableCaptureGlobal, Option<AnnotatedValueSemantics>), CompileError> {
-        let parsed = ParsedNamedGlobalType::parse(spec)?;
-        Ok(parsed.layout(symbol))
     }
 
     fn infer_mutable_global_layout(
@@ -1754,7 +1748,9 @@ impl<'a> HirToMirLowering<'a> {
         spec: &str,
     ) -> Result<MutableCaptureGlobal, CompileError> {
         let symbol = Self::named_program_global_symbol(name);
-        let (inferred, semantics) = Self::typed_named_program_global_layout(symbol.clone(), spec)?;
+        let parsed = ParsedNamedGlobalType::parse(spec)?;
+        let (inferred, semantics) = parsed.layout(symbol.clone());
+        let semantics = parsed.initializer_semantics(None)?.or(semantics);
 
         if let Some(existing) = self.named_program_globals.get(name).cloned() {
             if existing != inferred {
