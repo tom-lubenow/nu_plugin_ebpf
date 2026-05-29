@@ -19382,6 +19382,24 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-loop-early-return"
+        category: "language-core"
+        tags: [control-flow loop return]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  mut seen = 0'
+            '  for i in 0..3 {'
+            '    if $i == 2 { return $i }'
+            '    $seen = $i'
+            '  }'
+            '  $seen'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-inline-bounded-loop"
         category: "language-core"
         tags: [control-flow loop]
