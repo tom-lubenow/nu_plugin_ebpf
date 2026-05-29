@@ -3903,6 +3903,30 @@ const CONTEXT_PROJECTION_KERNEL_FEATURE_EXPECTATIONS = [
 
 const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
     {
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let docs = "$ctx.pid $ctx.sk.family"'
+            '  # $ctx.pid $ctx.sk.family'
+            '  0'
+            '}'
+        ]
+        feature_keys: []
+    }
+    {
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let sk = $ctx.sk'
+            '  let rec = { root: $ctx }'
+            '  let docs = "$sk.family $rec.root.sk.family"'
+            '  # $sk.family $rec.root.sk.family'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:sk"]
+    }
+    {
         target: "raw_tracepoint:sys_enter"
         program: [
             '{|event|'
@@ -19578,6 +19602,32 @@ def line-contains-outside-simple-string? [line: string marker: string] {
     false
 }
 
+def marker-tails-outside-simple-string [line: string marker: string] {
+    let trimmed = ($line | str trim)
+    if $trimmed == "" or ($trimmed | str starts-with "#") {
+        return []
+    }
+
+    let parts = ($trimmed | split row $marker)
+    if ($parts | length) <= 1 {
+        return []
+    }
+
+    mut tails = []
+    for part in ($parts | enumerate) {
+        if $part.index == 0 {
+            continue
+        }
+
+        let before = ($parts | first $part.index | str join $marker)
+        if (outside-simple-string? $before) and not (line-contains-outside-simple-string? $before "#") {
+            $tails = ($tails | append $part.item)
+        }
+    }
+
+    $tails
+}
+
 def command-tail-after-token [raw_after: string] {
     if $raw_after == "" {
         return ""
@@ -21311,12 +21361,7 @@ def record-context-projection-kernel-features [source: string target context_nam
     for line in ($source | lines) {
         for alias in $aliases {
             let prefix = $"$($alias.name).($alias.field)."
-            let parts = ($line | split row $prefix)
-            if ($parts | length) <= 1 {
-                continue
-            }
-
-            for raw_tail in ($parts | skip 1) {
+            for raw_tail in (marker-tails-outside-simple-string $line $prefix) {
                 let field = (normalize-context-field-token $raw_tail)
                 if $field == "" {
                     continue
@@ -21365,12 +21410,7 @@ def bound-context-projection-kernel-features [source: string target context_name
     for line in ($source | lines) {
         for alias in $aliases {
             let prefix = $"$($alias.name)."
-            let parts = ($line | split row $prefix)
-            if ($parts | length) <= 1 {
-                continue
-            }
-
-            for raw_tail in ($parts | skip 1) {
+            for raw_tail in (marker-tails-outside-simple-string $line $prefix) {
                 let raw_access = $"($alias.root).($raw_tail)"
                 let projection_feature = (context-projection-kernel-feature $raw_access $target)
                 if $projection_feature != null {
@@ -21754,12 +21794,7 @@ def program-context-field-kernel-features [source: string target] {
 
     for line in ($source | lines) {
         for context_name in $context_names {
-            let parts = ($line | split row $"$($context_name).")
-            if ($parts | length) <= 1 {
-                continue
-            }
-
-            for raw_access in ($parts | skip 1) {
+            for raw_access in (marker-tails-outside-simple-string $line $"$($context_name).") {
                 let field = (normalize-context-field-token $raw_access)
                 if $field == "" {
                     continue
