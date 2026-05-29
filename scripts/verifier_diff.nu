@@ -12567,6 +12567,27 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "timer-callback-allows-prefix-params"
+        category: "helper-state"
+        tags: [timer callback prefix-arity accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define timers --kind array --value-type "record{timer:bpf_timer,cookie:u64}"'
+            '  let entry = (0 | map-get timers --kind array)'
+            '  if $entry {'
+            '    helper-call "bpf_timer_set_callback" $entry.timer {|timer key|'
+            '      $key | count'
+            '      0'
+            '    }'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "timer-callback-map-btf-field"
         category: "helper-state"
         tags: [timer callback btf kernel-btf]
@@ -16872,6 +16893,20 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "callback-bpf-loop-allows-prefix-params"
+        category: "callbacks"
+        tags: [helper-call callback bpf-loop prefix-arity accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_loop" 4 {|i| $i } "ctx" 0'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "callback-bpf-loop-rejects-extra-declared-param"
         category: "callbacks"
         tags: [helper-call callback bpf-loop reject]
@@ -16938,6 +16973,24 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
+    }
+    {
+        name: "callback-for-each-map-elem-allows-prefix-params"
+        category: "callbacks"
+        tags: [helper-call callback map array prefix-arity accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define elems --kind array --value-type "record{seen:u64}"'
+            '  helper-call "bpf_for_each_map_elem" elems {|m k v|'
+            '    $v.seen | count'
+            '    0'
+            '  } "ctx" 0 --kind array'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
     }
     {
         name: "callback-for-each-map-elem-map-btf-field"
@@ -17012,6 +17065,24 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "callback-find-vma-allows-prefix-params"
+        category: "callbacks"
+        tags: [helper-call callback btf kernel-btf prefix-arity accept]
+        requires: [kernel-btf]
+        target: "kprobe:tcp_connect"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_find_vma" $ctx.current_task 0 {|task vma|'
+            '    $task.pid | count'
+            '    0'
+            '  } "ctx" 0'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "callback-user-ringbuf-drain"
         category: "callbacks"
         tags: [helper-call callback dynptr user-ringbuf]
@@ -17019,6 +17090,20 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  helper-call "bpf_user_ringbuf_drain" user_events {|dyn cb| 0 } "ctx" 0'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "callback-user-ringbuf-drain-allows-prefix-params"
+        category: "callbacks"
+        tags: [helper-call callback dynptr user-ringbuf prefix-arity accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_user_ringbuf_drain" user_events {|dyn| 0 } "ctx" 0'
             '  0'
             '}'
         ]
