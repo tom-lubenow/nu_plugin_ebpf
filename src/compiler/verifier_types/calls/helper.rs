@@ -1087,7 +1087,9 @@ fn validate_named_helper_arg_shape(
     if helper_pointer_arg_allows_const_zero(helper as u32, arg_idx, arg, state, None, None) {
         return;
     }
-    if helper_arg_has_tracked_kfunc_ref(arg, state) {
+    if helper_named_arg_shape_allows_tracked_kfunc_ref(helper, arg_idx)
+        && helper_arg_has_tracked_kfunc_ref(arg, state)
+    {
         return;
     }
     let matches = match arg {
@@ -1116,6 +1118,10 @@ fn helper_arg_has_tracked_kfunc_ref(arg: &MirValue, state: &VerifierState) -> bo
             ..
         }
     )
+}
+
+fn helper_named_arg_shape_allows_tracked_kfunc_ref(helper: BpfHelper, arg_idx: usize) -> bool {
+    helper_pointer_arg_ref_kind(helper, arg_idx).is_some()
 }
 
 fn helper_expected_named_arg_shape(

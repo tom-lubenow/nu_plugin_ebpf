@@ -1557,7 +1557,9 @@ impl<'a> VccLowerer<'a> {
         {
             return Ok(());
         }
-        if self.helper_arg_has_tracked_kfunc_ref(arg) {
+        if Self::helper_named_arg_shape_allows_tracked_kfunc_ref(helper, arg_idx)
+            && self.helper_arg_has_tracked_kfunc_ref(arg)
+        {
             return Ok(());
         }
         let matches = match arg {
@@ -1580,6 +1582,13 @@ impl<'a> VccLowerer<'a> {
                 matches!(info.space, VccAddrSpace::Kernel | VccAddrSpace::KernelBtf)
                     && info.kfunc_ref.is_some()
             })
+    }
+
+    fn helper_named_arg_shape_allows_tracked_kfunc_ref(
+        helper: BpfHelper,
+        arg_idx: usize,
+    ) -> bool {
+        Self::helper_pointer_arg_expected_ref_kind(helper as u32, arg_idx).is_some()
     }
 
     fn helper_expected_named_arg_shape(

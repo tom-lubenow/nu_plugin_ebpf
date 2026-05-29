@@ -225,6 +225,50 @@ fn test_verify_mir_timer_start_rejects_stack_timer_pointer() {
 }
 
 #[test]
+fn test_verify_mir_timer_start_rejects_acquired_task_reference() {
+    let (mut func, entry) = new_mir_function();
+    let pid = func.alloc_vreg();
+    let task = func.alloc_vreg();
+    let helper_ret = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(1),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: task,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: helper_ret,
+            helper: BpfHelper::TimerStart as u32,
+            args: vec![
+                MirValue::VReg(task),
+                MirValue::Const(1000),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(pid, MirType::I64);
+    types.insert(task, MirType::named_kernel_struct_ptr("task_struct"));
+    types.insert(helper_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected task ref timer pointer error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_timer_start' arg0 expects map-backed bpf_timer pointer")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_timer_init_rejects_invalid_clock_flags() {
     let (mut func, entry) = new_mir_function();
     let timer = func.alloc_vreg();
