@@ -4006,6 +4006,53 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         feature_keys: ["ctx:pid" "helper:bpf_get_current_pid_tgid"]
     }
     {
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  def read_pid [c] {'
+            '    $c.pid | count'
+            '    0'
+            '  }'
+            '  read_pid $ctx'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:pid" "helper:bpf_get_current_pid_tgid"]
+    }
+    {
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  def id [x] { $x }'
+            '  def read_pid [c] {'
+            '    let actual = (id $c)'
+            '    $actual.pid | count'
+            '    0'
+            '  }'
+            '  read_pid $ctx'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:pid" "helper:bpf_get_current_pid_tgid"]
+    }
+    {
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  def id [x] { $x }'
+            '  def id2 [x] { id $x }'
+            '  def read_pid [c] {'
+            '    let actual = (id2 $c)'
+            '    $actual.pid | count'
+            '    0'
+            '  }'
+            '  read_pid $ctx'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:pid" "helper:bpf_get_current_pid_tgid"]
+    }
+    {
         target: "raw_tracepoint.w:sys_enter"
         program: [
             '{|ctx|'
@@ -22983,6 +23030,292 @@ def record-wrapper-context-bindings [line: string context_names bound_aliases wr
     $bindings
 }
 
+def identity-wrapper-definitions [source: string] {
+    mut identities = []
+    mut changed = true
+
+    loop {
+        if not $changed {
+            break
+        }
+        $changed = false
+
+        for line in ($source | lines) {
+            for parsed in (
+                $line
+                | parse --regex '^\s*def\s+(?P<name>[A-Za-z_][A-Za-z0-9_-]*)\s+\[\s*(?P<param>[A-Za-z_][A-Za-z0-9_-]*)\s*\]\s*\{\s*\$(?P<value>[A-Za-z_][A-Za-z0-9_-]*)\s*\}\s*$'
+            ) {
+                if $parsed.param != $parsed.value {
+                    continue
+                }
+                if $parsed.name not-in $identities {
+                    $identities = ($identities | append $parsed.name)
+                    $changed = true
+                }
+            }
+
+            for parsed in (
+                $line
+                | parse --regex '^\s*def\s+(?P<name>[A-Za-z_][A-Za-z0-9_-]*)\s+\[\s*(?P<param>[A-Za-z_][A-Za-z0-9_-]*)\s*\]\s*\{\s*(?P<callee>[A-Za-z_][A-Za-z0-9_-]*)\s+\$(?P<value>[A-Za-z_][A-Za-z0-9_-]*)\s*\}\s*$'
+            ) {
+                if $parsed.param != $parsed.value {
+                    continue
+                }
+                if $parsed.callee not-in $identities {
+                    continue
+                }
+                if $parsed.name not-in $identities {
+                    $identities = ($identities | append $parsed.name)
+                    $changed = true
+                }
+            }
+        }
+    }
+
+    $identities
+}
+
+def one-param-user-functions [source: string] {
+    mut functions = []
+    mut in_function = false
+    mut current_name = ""
+    mut current_param = ""
+    mut current_body = []
+
+    for line in ($source | lines) {
+        let trimmed = ($line | str trim)
+
+        if not $in_function {
+            let one_line = (
+                $line
+                | parse --regex '^\s*def\s+(?P<name>[A-Za-z_][A-Za-z0-9_-]*)\s+\[\s*(?P<param>[A-Za-z_][A-Za-z0-9_-]*)\s*\]\s*\{\s*(?P<body>.*?)\s*\}\s*$'
+            )
+            if not ($one_line | is-empty) {
+                let parsed = ($one_line | first)
+                $functions = ($functions | append {
+                    name: $parsed.name
+                    param: $parsed.param
+                    body: [$parsed.body]
+                })
+                continue
+            }
+
+            let header = (
+                $line
+                | parse --regex '^\s*def\s+(?P<name>[A-Za-z_][A-Za-z0-9_-]*)\s+\[\s*(?P<param>[A-Za-z_][A-Za-z0-9_-]*)\s*\]\s*\{\s*$'
+            )
+            if not ($header | is-empty) {
+                let parsed = ($header | first)
+                $in_function = true
+                $current_name = $parsed.name
+                $current_param = $parsed.param
+                $current_body = []
+            }
+            continue
+        }
+
+        if $trimmed == "}" {
+            $functions = ($functions | append {
+                name: $current_name
+                param: $current_param
+                body: $current_body
+            })
+            $in_function = false
+            $current_name = ""
+            $current_param = ""
+            $current_body = []
+            continue
+        }
+
+        $current_body = ($current_body | append $line)
+    }
+
+    $functions
+}
+
+def upsert-context-root-alias [aliases name: string root: string] {
+    if ($aliases | any {|alias| $alias.name == $name }) {
+        $aliases | each {|alias|
+            if $alias.name == $name {
+                { name: $name root: $root }
+            } else {
+                $alias
+            }
+        }
+    } else {
+        $aliases | append { name: $name root: $root }
+    }
+}
+
+def function-context-root-aliases [body param: string identity_wrappers] {
+    mut aliases = []
+
+    for line in $body {
+        let assignment = (declaration-assignment $line)
+        if $assignment == null {
+            continue
+        }
+
+        let rhs = (declaration-rhs-token $assignment)
+        mut root = (context-root-from-value-token $rhs [$param] $aliases)
+        if $root == null {
+            let tokens = (
+                $rhs
+                | split row " "
+                | each {|part| $part | str trim }
+                | where {|part| $part != "" }
+            )
+            if ($tokens | length) == 2 {
+                let callee = ($tokens | get 0)
+                let arg = ($tokens | get 1)
+                if $callee in $identity_wrappers {
+                    $root = (context-root-from-value-token $arg [$param] $aliases)
+                }
+            }
+        }
+
+        if $root != null {
+            $aliases = (upsert-context-root-alias $aliases $assignment.name $root)
+        }
+    }
+
+    $aliases
+}
+
+def function-context-field-accesses [function identity_wrappers] {
+    mut accesses = []
+    let param = $function.param
+    let aliases = (function-context-root-aliases $function.body $param $identity_wrappers)
+    let roots = ([{ name: $param root: "" }] | append $aliases)
+
+    for line in $function.body {
+        for root in $roots {
+            let prefix = $"$($root.name)."
+            for raw_tail in (marker-tails-outside-simple-string $line $prefix) {
+                let raw_access = if $root.root == "" {
+                    $raw_tail
+                } else {
+                    $"($root.root).($raw_tail)"
+                }
+                let field = (normalize-context-field-token $raw_access)
+                if $field == "" {
+                    continue
+                }
+                if not (
+                    $accesses
+                    | any {|access| $access.name == $function.name and $access.raw_access == $raw_access }
+                ) {
+                    $accesses = ($accesses | append {
+                        name: $function.name
+                        raw_access: $raw_access
+                    })
+                }
+            }
+        }
+    }
+
+    $accesses
+}
+
+def user-function-context-field-accesses [source: string] {
+    mut accesses = []
+    let identity_wrappers = (identity-wrapper-definitions $source)
+
+    for function in (one-param-user-functions $source) {
+        $accesses = (
+            $accesses
+            | append (function-context-field-accesses $function $identity_wrappers)
+        )
+    }
+
+    $accesses
+}
+
+def context-access-kernel-features [raw_access: string target] {
+    mut features = []
+    let field = (normalize-context-field-token $raw_access)
+    if $field == "" {
+        return $features
+    }
+
+    let feature = (context-field-kernel-feature $field $target)
+    if $feature != null {
+        $features = (append-missing-kernel-features $features [$feature])
+    }
+    let tracepoint_feature = (tracepoint-payload-field-kernel-feature $field $target)
+    if $tracepoint_feature != null {
+        $features = (append-missing-kernel-features $features [$tracepoint_feature])
+    }
+    if not (context-field-access-is-assignment-lhs? $raw_access $field) {
+        let helper_feature = (context-field-helper-kernel-feature $field $target)
+        if $helper_feature != null {
+            $features = (append-missing-kernel-features $features [$helper_feature])
+        }
+    }
+    let projection_feature = (context-projection-kernel-feature $raw_access $target)
+    if $projection_feature != null {
+        $features = (append-missing-kernel-features $features [$projection_feature])
+    }
+    let read_feature = (context-projection-kernel-read-feature $raw_access $target)
+    if $read_feature != null {
+        $features = (append-missing-kernel-features $features [$read_feature])
+    }
+    let task_pt_regs_feature = (context-task-pt-regs-kernel-feature $raw_access)
+    if $task_pt_regs_feature != null {
+        $features = (append-missing-kernel-features $features [$task_pt_regs_feature])
+    }
+
+    $features
+}
+
+def user-function-context-field-kernel-features [source: string target context_names] {
+    mut features = []
+    let accesses = (user-function-context-field-accesses $source)
+    if ($accesses | is-empty) {
+        return $features
+    }
+
+    let bound_aliases = (program-bound-context-root-aliases $source $context_names)
+
+    for line in ($source | lines) {
+        let trimmed = ($line | str trim)
+        if $trimmed == "" or ($trimmed | str starts-with "#") or ($trimmed | str starts-with "def ") {
+            continue
+        }
+
+        let tokens = (
+            $trimmed
+            | split row " "
+            | each {|part| $part | str trim }
+            | where {|part| $part != "" }
+        )
+        if ($tokens | length) < 2 {
+            continue
+        }
+
+        let callee = (normalize-map-name-token ($tokens | get 0))
+        let arg = ($tokens | get 1)
+        for access in ($accesses | where {|access| $access.name == $callee }) {
+            let root = (context-root-from-value-token $arg $context_names $bound_aliases)
+            if $root == null {
+                continue
+            }
+            let raw_access = if $root == "" {
+                $access.raw_access
+            } else {
+                $"($root).($access.raw_access)"
+            }
+            $features = (
+                append-missing-kernel-features
+                    $features
+                    (context-access-kernel-features $raw_access $target)
+            )
+        }
+    }
+
+    $features
+}
+
 def program-record-context-aliases [source: string context_names] {
     mut aliases = []
     let bound_aliases = (program-bound-context-root-aliases $source $context_names)
@@ -23492,6 +23825,7 @@ def program-context-field-kernel-features [source: string target] {
         }
     }
 
+    $features = (append-missing-kernel-features $features (user-function-context-field-kernel-features $source $target $context_names))
     $features = (append-missing-kernel-features $features (bound-context-projection-kernel-features $source $target $context_names))
     $features = (append-missing-kernel-features $features (record-context-projection-kernel-features $source $target $context_names))
 
