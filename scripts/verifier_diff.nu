@@ -706,6 +706,34 @@ const PROGRAM_GLOBAL_KERNEL_FEATURE_EXPECTATIONS = [
     {
         program: [
             '{|ctx|'
+            '  let config = ({ pid: 7 samples: [11 22] })'
+            '  (($config.samples | get 1) + $config.pid) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["global:bpf-data-sections"]
+    }
+    {
+        program: [
+            '{|ctx|'
+            '  let samples = []'
+            '  0'
+            '}'
+        ]
+        feature_keys: []
+    }
+    {
+        program: [
+            '{|ctx|'
+            '  let payload = 0x[]'
+            '  0'
+            '}'
+        ]
+        feature_keys: []
+    }
+    {
+        program: [
+            '{|ctx|'
             '  7 | global-define --type i64 seen'
             '  global-get seen'
             '}'
@@ -21135,12 +21163,12 @@ def line-declares-readonly-aggregate-constant? [line: string] {
     }
 
     let rhs = (declaration-rhs-token $assignment)
-    let compact = ($rhs | str replace --all " " "")
+    let compact = (trim-simple-parentheses $rhs | str replace --all " " "")
 
-    if ($compact | str starts-with "{") {
+    if (($compact | str starts-with "{") and $compact != "{}") {
         return true
     }
-    if ($compact | str starts-with "[") {
+    if (($compact | str starts-with "[") and $compact != "[]") {
         return true
     }
     if (($compact | str starts-with "0x[") and $compact != "0x[]") {
