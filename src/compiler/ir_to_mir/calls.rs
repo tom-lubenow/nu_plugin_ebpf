@@ -208,6 +208,11 @@ impl<'a> HirToMirLowering<'a> {
             }
 
             "start-timer" => {
+                if self.pipeline_input.is_some() || src_dst_had_value {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "start-timer does not accept pipeline input in eBPF".into(),
+                    ));
+                }
                 self.needs_timestamp_map = true;
                 self.emit(MirInst::StartTimer);
                 // Return 0 (void)
@@ -219,6 +224,11 @@ impl<'a> HirToMirLowering<'a> {
             }
 
             "stop-timer" => {
+                if self.pipeline_input.is_some() || src_dst_had_value {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "stop-timer does not accept pipeline input in eBPF".into(),
+                    ));
+                }
                 self.needs_timestamp_map = true;
                 self.emit(MirInst::StopTimer { dst: dst_vreg });
             }

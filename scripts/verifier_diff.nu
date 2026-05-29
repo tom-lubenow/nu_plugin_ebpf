@@ -17837,6 +17837,36 @@ const FIXTURES = [
         error_contains: "cannot use context pointers as values"
     }
     {
+        name: "core-start-timer-rejects-pipeline-input"
+        category: "language-core"
+        tags: [timer reject]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  $ctx | start-timer'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "does not accept pipeline input"
+    }
+    {
+        name: "core-stop-timer-rejects-pipeline-input"
+        category: "language-core"
+        tags: [timer reject]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  $ctx | stop-timer'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "does not accept pipeline input"
+    }
+    {
         name: "core-context-map-get-rejects-pointer-key"
         category: "language-core"
         tags: [context map reject]
