@@ -14721,6 +14721,22 @@ const FIXTURES = [
         error_contains: "may dereference null pointer"
     }
     {
+        name: "bpf-wq-start-rejects-stack-value"
+        category: "helper-state"
+        tags: [bpf_wq kfunc-call stack reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let work = "0123456789abcdef"'
+            '  kfunc-call "bpf_wq_start" $work 0'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'bpf_wq_start' arg0 expects bpf_wq pointer"
+    }
+    {
         name: "bpf-wq-set-callback-requires-null-checked-map-lookup"
         category: "helper-state"
         tags: [bpf_wq kfunc-call callback nullability reject]
@@ -14736,6 +14752,22 @@ const FIXTURES = [
         local: "reject"
         kernel: "skip"
         error_contains: "may dereference null pointer"
+    }
+    {
+        name: "bpf-wq-set-callback-rejects-stack-value"
+        category: "helper-state"
+        tags: [bpf_wq kfunc-call callback stack reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let work = "0123456789abcdef"'
+            '  kfunc-call "bpf_wq_set_callback_impl" $work {|map key work| 0} 0 0'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "requires arg0 to be a bpf_wq field projected from a concrete map value"
     }
     {
         name: "bpf-wq-kfunc-set-callback"
