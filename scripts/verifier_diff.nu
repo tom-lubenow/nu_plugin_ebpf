@@ -16879,6 +16879,71 @@ const FIXTURES = [
         error_contains: "kfunc 'bpf_percpu_obj_drop_impl' arg0 reference already released"
     }
     {
+        name: "source-kfunc-percpu-obj-drop-accepts-both-branch-release"
+        category: "helper-state"
+        tags: [kfunc object ref-lifetime branch source accept]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let obj = (kfunc-call "bpf_percpu_obj_new_impl" 1 0)'
+            '  if $obj {'
+            '    if $ctx.pid {'
+            '      kfunc-call "bpf_percpu_obj_drop_impl" $obj 0'
+            '    } else {'
+            '      kfunc-call "bpf_percpu_obj_drop_impl" $obj 0'
+            '    }'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-kfunc-percpu-obj-drop-rejects-one-branch-release-leak"
+        category: "helper-state"
+        tags: [kfunc object ref-lifetime branch source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let obj = (kfunc-call "bpf_percpu_obj_new_impl" 1 0)'
+            '  if $obj {'
+            '    if $ctx.pid {'
+            '      kfunc-call "bpf_percpu_obj_drop_impl" $obj 0'
+            '    }'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "unreleased kfunc reference at function exit"
+    }
+    {
+        name: "source-kfunc-percpu-obj-drop-rejects-release-after-conditional-release"
+        category: "helper-state"
+        tags: [kfunc object ref-lifetime branch source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let obj = (kfunc-call "bpf_percpu_obj_new_impl" 1 0)'
+            '  if $obj {'
+            '    if $ctx.pid {'
+            '      kfunc-call "bpf_percpu_obj_drop_impl" $obj 0'
+            '    }'
+            '    kfunc-call "bpf_percpu_obj_drop_impl" $obj 0'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'bpf_percpu_obj_drop_impl' arg0 reference already released"
+    }
+    {
         name: "source-kfunc-list-push-front-map-root"
         category: "helper-state"
         tags: [kfunc object graph source accept]
