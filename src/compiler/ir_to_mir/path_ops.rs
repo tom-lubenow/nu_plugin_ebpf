@@ -1320,31 +1320,116 @@ impl<'a> HirToMirLowering<'a> {
         Ok(())
     }
 
-    fn string_path_members(members: &[PathMember]) -> Option<Vec<String>> {
-        members
-            .iter()
-            .map(|member| match member {
-                PathMember::String { val, .. } => Some(val.clone()),
-                PathMember::Int { .. } => None,
-            })
-            .collect()
-    }
-
-    fn record_field_from_string_path(
+    fn record_numeric_list_field_from_terminal_index(
         &mut self,
-        field_names: &[String],
+        field_name: String,
+        index: usize,
         new_value: RegId,
+        path_desc: &str,
     ) -> Result<RecordField, CompileError> {
-        let Some((field_name, rest)) = field_names.split_first() else {
-            return Err(CompileError::UnsupportedInstruction(
-                "cell path update requires at least one record field".into(),
-            ));
-        };
-        if rest.is_empty() {
-            return self.record_field_from_value(field_name.clone(), new_value);
+        if index != 0 {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "cell path update '.{} = ...' can only create a missing list field at index 0",
+                path_desc
+            )));
         }
 
-        let child_field = self.record_field_from_string_path(rest, new_value)?;
+        let new_value_vreg = self.get_vreg(new_value);
+        let new_value_runtime_ty = self
+            .typed_value_runtime_type(new_value, new_value_vreg)
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "cell path update '.{} = ...' requires type information for the new list value",
+                    path_desc
+                ))
+            })?;
+        let Some(item_vreg) = self.coerce_scalar_assignment_value(
+            new_value_vreg,
+            &new_value_runtime_ty,
+            &MirType::I64,
+        ) else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "cell path update '.{} = ...' cannot create a numeric list from value type {:?}",
+                path_desc, new_value_runtime_ty
+            )));
+        };
+
+        let max_len = 1;
+        let list_ty = MirType::Array {
+            elem: Box::new(MirType::I64),
+            len: max_len + 1,
+        };
+        let slot = self
+            .func
+            .alloc_stack_slot(list_ty.size(), 8, StackSlotKind::ListBuffer);
+        self.record_list_buffer_slot_type(slot, max_len);
+
+        let list_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::ListNew {
+            dst: list_vreg,
+            buffer: slot,
+            max_len,
+        });
+        self.vreg_type_hints.insert(
+            list_vreg,
+            MirType::Ptr {
+                pointee: Box::new(list_ty.clone()),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        self.emit(MirInst::ListPush {
+            list: list_vreg,
+            item: item_vreg,
+        });
+
+        Ok(RecordField {
+            name: field_name,
+            value_vreg: list_vreg,
+            source_reg: None,
+            stack_offset: None,
+            ty: list_ty,
+            semantics: Some(AnnotatedValueSemantics::NumericList { max_len }),
+            is_context: false,
+            root_ctx_field: None,
+        })
+    }
+
+    fn record_field_from_path_members(
+        &mut self,
+        field_name: String,
+        rest: &[PathMember],
+        new_value: RegId,
+        path_desc: &str,
+    ) -> Result<RecordField, CompileError> {
+        let Some((next_member, tail)) = rest.split_first() else {
+            return self.record_field_from_value(field_name, new_value);
+        };
+
+        let PathMember::String {
+            val: child_field_name,
+            ..
+        } = next_member
+        else {
+            return match next_member {
+                PathMember::Int { val, .. } if tail.is_empty() => self
+                    .record_numeric_list_field_from_terminal_index(
+                        field_name, *val, new_value, path_desc,
+                    ),
+                PathMember::Int { .. } => Err(CompileError::UnsupportedInstruction(format!(
+                    "cell path update '.{} = ...' cannot synthesize list-of-aggregate fields yet",
+                    path_desc
+                ))),
+                PathMember::String { .. } => unreachable!(),
+            };
+        };
+
+        let child_field = self.record_field_from_path_members(
+            child_field_name.clone(),
+            tail,
+            new_value,
+            path_desc,
+        )?;
+
         let mut child_meta = RegMetadata {
             record_fields: vec![child_field],
             ..Default::default()
@@ -1352,7 +1437,7 @@ impl<'a> HirToMirLowering<'a> {
         let child_ty = Self::metadata_record_layout(&child_meta).ok_or_else(|| {
             CompileError::UnsupportedInstruction(format!(
                 "cell path update '.{} = ...' could not infer nested record layout",
-                field_names.join(".")
+                path_desc
             ))
         })?;
         child_meta.field_type = Some(child_ty.clone());
@@ -1362,12 +1447,12 @@ impl<'a> HirToMirLowering<'a> {
             .ok_or_else(|| {
                 CompileError::UnsupportedInstruction(format!(
                     "cell path update '.{} = ...' could not materialize nested record",
-                    field_names.join(".")
+                    path_desc
                 ))
             })?;
 
         Ok(RecordField {
-            name: field_name.clone(),
+            name: field_name,
             value_vreg: child_vreg,
             source_reg: None,
             stack_offset: None,
@@ -1378,16 +1463,23 @@ impl<'a> HirToMirLowering<'a> {
         })
     }
 
-    fn lower_metadata_record_string_path_creation(
+    fn lower_metadata_record_path_creation(
         &mut self,
         src_dst: RegId,
-        field_names: &[String],
+        path_members: &[PathMember],
         new_value: RegId,
         constant_value: Option<Value>,
     ) -> Result<bool, CompileError> {
-        if field_names.len() < 2 {
+        if path_members.len() < 2 {
             return Ok(false);
         }
+        let Some(PathMember::String {
+            val: first_field, ..
+        }) = path_members.first()
+        else {
+            return Ok(false);
+        };
+
         let Some(base_meta) = self.get_metadata(src_dst).cloned() else {
             return Ok(false);
         };
@@ -1411,7 +1503,6 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(false);
         }
 
-        let first_field = &field_names[0];
         let existing_index = base_meta
             .record_fields
             .iter()
@@ -1423,7 +1514,13 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(false);
         }
 
-        let field = self.record_field_from_string_path(field_names, new_value)?;
+        let path_desc = Self::typed_value_path_desc(path_members);
+        let field = self.record_field_from_path_members(
+            first_field.clone(),
+            &path_members[1..],
+            new_value,
+            &path_desc,
+        )?;
         let meta = self.get_or_create_metadata(src_dst);
         if let Some(index) = existing_index {
             meta.record_fields[index] = field;
@@ -1536,14 +1633,12 @@ impl<'a> HirToMirLowering<'a> {
                 Self::constant_upsert_cell_path(value, &path, new_value.clone())
             });
 
-        if let Some(field_names) = Self::string_path_members(&path.members)
-            && self.lower_metadata_record_string_path_creation(
-                src_dst,
-                &field_names,
-                new_value,
-                constant_value.clone(),
-            )?
-        {
+        if self.lower_metadata_record_path_creation(
+            src_dst,
+            &path.members,
+            new_value,
+            constant_value.clone(),
+        )? {
             return Ok(());
         }
 

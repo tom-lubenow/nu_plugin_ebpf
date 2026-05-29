@@ -423,10 +423,16 @@ impl<'a> HirToMirLowering<'a> {
                     let updated = if rest.is_empty() {
                         new_value.clone()
                     } else {
-                        let current_child = record.get(val).cloned().or_else(|| {
-                            matches!(rest.first(), Some(PathMember::String { .. }))
-                                .then(|| Value::record(Record::new(), Span::unknown()))
-                        })?;
+                        let current_child =
+                            record.get(val).cloned().or_else(|| match rest.first() {
+                                Some(PathMember::String { .. }) => {
+                                    Some(Value::record(Record::new(), Span::unknown()))
+                                }
+                                Some(PathMember::Int { val: 0, .. }) => {
+                                    Some(Value::list(Vec::new(), Span::unknown()))
+                                }
+                                _ => None,
+                            })?;
                         upsert(&current_child, rest, new_value)?
                     };
                     record.insert(val.clone(), updated);
@@ -436,14 +442,34 @@ impl<'a> HirToMirLowering<'a> {
                     let Value::List { vals, .. } = current else {
                         return None;
                     };
-                    let idx = *val as usize;
-                    let current_child = vals.get(idx)?;
+                    let idx = *val;
                     let mut vals = vals.clone();
-                    vals[idx] = if rest.is_empty() {
+                    let updated = if rest.is_empty() {
                         new_value.clone()
                     } else {
-                        upsert(current_child, rest, new_value)?
+                        let current_child = vals.get(idx).cloned().or_else(|| {
+                            if idx != vals.len() {
+                                return None;
+                            }
+                            match rest.first() {
+                                Some(PathMember::String { .. }) => {
+                                    Some(Value::record(Record::new(), Span::unknown()))
+                                }
+                                Some(PathMember::Int { val: 0, .. }) => {
+                                    Some(Value::list(Vec::new(), Span::unknown()))
+                                }
+                                _ => None,
+                            }
+                        })?;
+                        upsert(&current_child, rest, new_value)?
                     };
+                    if idx < vals.len() {
+                        vals[idx] = updated;
+                    } else if idx == vals.len() {
+                        vals.push(updated);
+                    } else {
+                        return None;
+                    }
                     Some(Value::list(vals, Span::unknown()))
                 }
             }
