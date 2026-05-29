@@ -5617,6 +5617,21 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "tracepoint-openat-common-context"
+        category: "tracing"
+        tags: [tracepoint context compatibility]
+        requires: [tracefs kernel-btf]
+        target: "tracepoint:syscalls/sys_enter_openat"
+        program: [
+            '{|ctx|'
+            '  ($ctx.id + ($ctx.args | get 0)) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "tracepoint-read-context"
         category: "tracing"
         tags: [tracepoint context]
@@ -5678,6 +5693,21 @@ const FIXTURES = [
             '  let how = $ctx.how'
             '  if $how { 1 | count }'
             '  ($ctx.dfd + $ctx.usize) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-exit-openat2-context"
+        category: "tracing"
+        tags: [tracepoint context compatibility]
+        requires: [tracefs kernel-btf]
+        target: "tracepoint:syscalls/sys_exit_openat2"
+        program: [
+            '{|ctx|'
+            '  ($ctx.id + $ctx.ret) | count'
             '  0'
             '}'
         ]
