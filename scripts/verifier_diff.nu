@@ -6402,6 +6402,22 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "global-define-type-array-list-int-initializer"
+        category: "globals"
+        tags: [globals arrays list global-define accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  [[11 22] [33 44]] | global-define --type "array{list:int:4:2}" sample_sets'
+            '  let sample_sets = (global-get sample_sets)'
+            '  (($sample_sets | get 1) | get 0) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "global-define-type-record-list-field-initializer"
         category: "globals"
         tags: [globals records list global-define accept]

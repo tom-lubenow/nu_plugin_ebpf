@@ -4829,6 +4829,30 @@ fn test_map_value_type_spec_supports_fixed_array_string_semantics() {
 }
 
 #[test]
+fn test_map_value_type_spec_supports_fixed_array_numeric_list_semantics() {
+    let (ty, semantics) = HirToMirLowering::parse_named_map_value_type_spec("array{list:int:4:2}")
+        .expect("fixed-array numeric-list map value type should parse");
+
+    assert_eq!(
+        ty,
+        MirType::Array {
+            elem: Box::new(MirType::Array {
+                elem: Box::new(MirType::I64),
+                len: 5,
+            }),
+            len: 2,
+        }
+    );
+    assert_eq!(
+        semantics,
+        Some(AnnotatedValueSemantics::FixedArray {
+            elem: Box::new(AnnotatedValueSemantics::NumericList { max_len: 4 }),
+            len: 2,
+        })
+    );
+}
+
+#[test]
 fn test_map_value_type_spec_rejects_fixed_array_kptr_element() {
     let err = HirToMirLowering::parse_named_map_value_type_spec("array{kptr:task_struct:2}")
         .expect_err("fixed arrays of kptr slots should remain unsupported");
