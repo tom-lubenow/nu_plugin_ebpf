@@ -496,10 +496,44 @@ const PROGRAM_MAP_KERNEL_FEATURE_EXPECTATIONS = [
             '{|ctx|'
             '  let text = "helper-call \"bpf_ringbuf_query\" custom_ringbuf 0"'
             '  # helper-call "bpf_redirect_map" redirects 0 0 --kind devmap-hash'
+            '  let docs = "redirect-map tx_ports 0 --kind devmap"'
+            '  let more_docs = "map-define xsks --kind xskmap"'
             '  0'
             '}'
         ]
         feature_keys: []
+    }
+    {
+        program: [
+            '{|ctx|'
+            '  redirect-map tx_ports 0 --kind devmap'
+            '  redirect-map tx_hash 0 --kind devmap-hash'
+            '  redirect-map cpu_targets 0 --kind cpumap'
+            '  redirect-map xsks 0 --kind xskmap'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "map:BPF_MAP_TYPE_DEVMAP"
+            "map:BPF_MAP_TYPE_DEVMAP_HASH"
+            "map:BPF_MAP_TYPE_CPUMAP"
+            "map:BPF_MAP_TYPE_XSKMAP"
+        ]
+    }
+    {
+        program: [
+            '{|ctx|'
+            '  redirect-socket peers 0 --kind sockmap'
+            '  redirect-socket hash_peers 0 --kind sockhash'
+            '  redirect-socket sockets 0 --kind reuseport-sockarray'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "map:BPF_MAP_TYPE_SOCKMAP"
+            "map:BPF_MAP_TYPE_SOCKHASH"
+            "map:BPF_MAP_TYPE_REUSEPORT_SOCKARRAY"
+        ]
     }
     {
         program: [
@@ -4554,6 +4588,98 @@ const PROGRAM_SURFACE_KERNEL_FEATURE_EXPECTATIONS = [
             '}'
         ]
         feature_keys: []
+    }
+    {
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  redirect-map tx_ports 0 --kind devmap'
+            '  "pass"'
+            '}'
+        ]
+        feature_keys: ["helper:bpf_redirect_map"]
+    }
+    {
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  adjust-packet --head 0'
+            '  adjust-packet --meta 0'
+            '  adjust-packet --tail 0'
+            '  "pass"'
+            '}'
+        ]
+        feature_keys: [
+            "helper:bpf_xdp_adjust_head"
+            "helper:bpf_xdp_adjust_meta"
+            "helper:bpf_xdp_adjust_tail"
+        ]
+    }
+    {
+        target: "tc_action:demo"
+        program: [
+            '{|ctx|'
+            '  adjust-packet --pull 0'
+            '  adjust-packet --head 0'
+            '  adjust-packet --tail 0'
+            '  adjust-packet --room 0 --mode 0'
+            '  "ok"'
+            '}'
+        ]
+        feature_keys: [
+            "helper:bpf_skb_pull_data"
+            "helper:bpf_skb_change_head"
+            "helper:bpf_skb_change_tail"
+            "helper:bpf_skb_adjust_room"
+        ]
+    }
+    {
+        target: "sk_msg:/sys/fs/bpf/demo_sockmap"
+        program: [
+            '{|ctx|'
+            '  adjust-message --apply 8'
+            '  adjust-message --cork 8'
+            '  adjust-message --pull 0 1'
+            '  adjust-message --push 0 1'
+            '  adjust-message --pop 0 1'
+            '  redirect-socket peers 0 --kind sockmap'
+            '  redirect-socket hash_peers 0 --kind sockhash'
+            '  "pass"'
+            '}'
+        ]
+        feature_keys: [
+            "helper:bpf_msg_apply_bytes"
+            "helper:bpf_msg_cork_bytes"
+            "helper:bpf_msg_pull_data"
+            "helper:bpf_msg_push_data"
+            "helper:bpf_msg_pop_data"
+            "helper:bpf_msg_redirect_map"
+            "helper:bpf_msg_redirect_hash"
+        ]
+    }
+    {
+        target: "sk_skb:/sys/fs/bpf/demo_sockmap"
+        program: [
+            '{|ctx|'
+            '  redirect-socket peers 0 --kind sockmap'
+            '  redirect-socket hash_peers 0 --kind sockhash'
+            '  "pass"'
+            '}'
+        ]
+        feature_keys: [
+            "helper:bpf_sk_redirect_map"
+            "helper:bpf_sk_redirect_hash"
+        ]
+    }
+    {
+        target: "sk_reuseport:select"
+        program: [
+            '{|ctx|'
+            '  redirect-socket sockets 0 --kind reuseport-sockarray'
+            '  "select"'
+            '}'
+        ]
+        feature_keys: ["helper:bpf_sk_select_reuseport"]
     }
     {
         target: "sk_lookup:/proc/self/ns/net"
@@ -19551,6 +19677,27 @@ def source-line-map-kind [line: string default_kind: string] {
     normalize-map-kind-token $raw_kind
 }
 
+def line-invokes-map-kind-surface? [line: string] {
+    for command in [
+        "map-define"
+        "map-get"
+        "map-put"
+        "map-delete"
+        "map-contains"
+        "map-push"
+        "map-peek"
+        "map-pop"
+        "redirect-map"
+        "redirect-socket"
+    ] {
+        if (line-invokes-command? $line $command) {
+            return true
+        }
+    }
+
+    false
+}
+
 def generic-map-lookup-kind? [kind: string] {
     $kind in [
         "hash"
@@ -21242,6 +21389,10 @@ def program-map-kernel-features [source: string] {
             if $feature != null {
                 $features = (append-missing-kernel-features $features [$feature])
             }
+            continue
+        }
+
+        if not (line-invokes-map-kind-surface? $trimmed) {
             continue
         }
 
