@@ -1505,6 +1505,90 @@ fn test_lower_cgroup_sock_addr_ctx_sun_path_assignment_records_kfunc_metadata() 
 }
 
 #[test]
+fn test_lower_record_context_sun_path_assignment_records_kfunc_metadata() {
+    let ctx_var = VarId::new(0);
+    let hir = HirProgram::new(
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(0),
+                        lit: HirLiteral::Record { capacity: 1 },
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::String(b"event".to_vec()),
+                    },
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(2),
+                        var_id: ctx_var,
+                    },
+                    HirStmt::RecordInsert {
+                        src_dst: RegId::new(0),
+                        key: RegId::new(1),
+                        val: RegId::new(2),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(3),
+                        lit: HirLiteral::CellPath(Box::new(CellPath {
+                            members: vec![string_member("event"), string_member("sun_path")],
+                        })),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(4),
+                        lit: HirLiteral::String(b"/tmp/nu-ebpf.sock".to_vec()),
+                    },
+                    HirStmt::UpsertCellPath {
+                        src_dst: RegId::new(0),
+                        path: RegId::new(3),
+                        new_value: RegId::new(4),
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            }],
+            entry: HirBlockId(0),
+            spans: vec![],
+            ast: vec![],
+            comments: vec![],
+            register_count: 5,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        Some(ctx_var),
+    );
+    let probe_ctx = ProbeContext::new(
+        EbpfProgramType::CgroupSockAddr,
+        "/sys/fs/cgroup:connect_unix",
+    );
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("record-held cgroup_sock_addr ctx.sun_path assignment should lower");
+
+    assert!(result.program.main.blocks.iter().any(|block| {
+        block.instructions.iter().any(|inst| {
+            matches!(
+                inst,
+                MirInst::CallKfunc { kfunc, .. } if kfunc == "bpf_sock_addr_set_sun_path"
+            )
+        })
+    }));
+
+    let compiled =
+        compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+            .expect("record-held cgroup_sock_addr ctx.sun_path assignment should compile");
+    assert!(compiled.used_kfuncs.contains("bpf_sock_addr_set_sun_path"));
+}
+
+#[test]
 fn test_lower_cgroup_sock_ctx_family_field() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("family")],

@@ -5589,6 +5589,17 @@ const PROGRAM_KFUNC_KERNEL_FEATURE_EXPECTATIONS = [
     {
         target: "cgroup_sock_addr:/sys/fs/cgroup:connect_unix"
         program: [
+            '{|ctx|'
+            '  mut rec = { event: $ctx }'
+            '  $rec.event.sun_path = "/tmp/nu-ebpf.sock"'
+            '  "allow"'
+            '}'
+        ]
+        feature_keys: ["kfunc:bpf_sock_addr_set_sun_path"]
+    }
+    {
+        target: "cgroup_sock_addr:/sys/fs/cgroup:connect_unix"
+        program: [
             '{|event|'
             '  let text = "$event.sun_path = /tmp/nu-ebpf.sock"'
             '  # $event.sun_path = /tmp/nu-ebpf.sock'
@@ -11164,6 +11175,22 @@ const FIXTURES = [
             '{|ctx|'
             '  mut event = $ctx'
             '  $event.sun_path = "/tmp/nu-ebpf.sock"'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "cgroup-sock-addr-unix-sun-path-record-write"
+        category: "context-surface"
+        tags: [cgroup-sock-addr context unix writable kfunc record source metadata]
+        requires: [cgroup-v2]
+        target: "cgroup_sock_addr:/sys/fs/cgroup:connect_unix"
+        program: [
+            '{|ctx|'
+            '  mut rec = { event: $ctx }'
+            '  $rec.event.sun_path = "/tmp/nu-ebpf.sock"'
             '  "allow"'
             '}'
         ]
@@ -23495,6 +23522,36 @@ def line-assigns-context-field? [line: string context_names fields] {
     false
 }
 
+def line-assigns-record-context-field? [line: string aliases fields roots] {
+    let trimmed = ($line | str trim)
+    for alias in $aliases {
+        let root = ($alias | get -o root | default "")
+        if $root not-in $roots {
+            continue
+        }
+
+        for field in $fields {
+            let marker = $"$($alias.name).($alias.field).($field)"
+            for raw_tail in (marker-tails-outside-simple-string $trimmed $marker) {
+                let tail = ($raw_tail | str trim)
+                if not ($tail | str starts-with "=") {
+                    continue
+                }
+                if ($tail | str starts-with "==") {
+                    continue
+                }
+
+                let rhs = ($tail | str substring 1.. | str trim)
+                if $rhs != "" {
+                    return true
+                }
+            }
+        }
+    }
+
+    false
+}
+
 def iter-btf-context-projection-root? [root: string] {
     $root in [
         "meta"
@@ -25001,6 +25058,7 @@ def program-kfunc-kernel-features [source: string target] {
         ""
     }
     let context_names = (program-context-variable-names $source)
+    let record_context_aliases = (program-record-context-aliases $source $context_names)
 
     for kfunc_name in (program-kfunc-names $source) {
         let feature = (program-kfunc-kernel-feature $kfunc_name $target_text)
@@ -25014,7 +25072,10 @@ def program-kfunc-kernel-features [source: string target] {
         if (
             ($target_text | str starts-with "cgroup_sock_addr:")
             and ($cgroup_sock_addr_hook | str ends-with "_unix")
-            and (line-assigns-context-field? $trimmed $context_names ["sun_path"])
+            and (
+                (line-assigns-context-field? $trimmed $context_names ["sun_path"])
+                or (line-assigns-record-context-field? $trimmed $record_context_aliases ["sun_path"] [""])
+            )
         ) {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_KFUNC_BPF_SOCK_ADDR_SET_SUN_PATH])
         }

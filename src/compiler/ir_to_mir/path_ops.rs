@@ -2438,6 +2438,25 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         let path_desc = Self::typed_value_path_desc(&path.members);
+        if let Some((tail, saved_meta)) = self.get_metadata(src_dst).cloned().and_then(|meta| {
+            let PathMember::String { val, .. } = path.members.first()? else {
+                return None;
+            };
+            meta.record_fields
+                .iter()
+                .find(|field| field.name == *val && field.is_context)?;
+            let tail: Vec<PathMember> = path.members.iter().skip(1).cloned().collect();
+            (!tail.is_empty()).then_some((tail, meta.clone()))
+        }) {
+            let result = self.lower_context_upsert_cell_path(
+                src_dst,
+                &CellPath { members: tail },
+                new_value,
+            );
+            self.reg_metadata.insert(src_dst.get(), saved_meta);
+            return result;
+        }
+
         if let [
             PathMember::String {
                 val: field_name, ..
