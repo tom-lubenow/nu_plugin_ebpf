@@ -200,6 +200,16 @@ mod tests {
             let live_attach_opt_in_reason = record
                 .get("live_attach_opt_in_reason")
                 .expect("live_attach_opt_in_reason should be present");
+            let live_attach_default_test_lane = record
+                .get("live_attach_default_test_lane")
+                .expect("live_attach_default_test_lane should be present")
+                .as_str()
+                .expect("live_attach_default_test_lane should be a string");
+            let live_attach_default_test_lane_description = record
+                .get("live_attach_default_test_lane_description")
+                .expect("live_attach_default_test_lane_description should be present")
+                .as_str()
+                .expect("live_attach_default_test_lane_description should be a string");
 
             let parsed_type = EbpfProgramType::from_spec_prefix(program_type)
                 .expect("program_type should be a modeled canonical prefix");
@@ -235,6 +245,18 @@ mod tests {
                 live_attach_status,
                 live_attach_policy.status().key(),
                 "{program_type} list row should report structured live-attach status"
+            );
+            assert_eq!(
+                live_attach_default_test_lane,
+                representative_spec.live_attach_default_test_lane().key(),
+                "{program_type} list row should report loader-aware test lane"
+            );
+            assert_eq!(
+                live_attach_default_test_lane_description,
+                representative_spec
+                    .live_attach_default_test_lane()
+                    .description(),
+                "{program_type} list row should report loader-aware test lane description"
             );
             if let Some(reason) = live_attach_policy.unsupported_reason {
                 assert_eq!(
