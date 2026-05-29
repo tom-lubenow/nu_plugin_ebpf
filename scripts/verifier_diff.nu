@@ -4137,6 +4137,31 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         feature_keys: ["ctx:optval"]
     }
     {
+        target: "cgroup_sockopt:/sys/fs/cgroup:get"
+        program: [
+            '{|ctx|'
+            '  let base = { optval: $ctx.optval }'
+            '  mut rec = { ok: true, ...$base }'
+            '  $rec.optval.2 = 42'
+            '  "allow"'
+            '}'
+        ]
+        feature_keys: ["ctx:optval"]
+    }
+    {
+        target: "cgroup_sockopt:/sys/fs/cgroup:get"
+        program: [
+            '{|ctx|'
+            '  def wrap [optval] { { optval: $optval } }'
+            '  let optval = $ctx.optval'
+            '  mut rec = (wrap $optval)'
+            '  $rec.optval.2 = 42'
+            '  "allow"'
+            '}'
+        ]
+        feature_keys: ["ctx:optval"]
+    }
+    {
         target: "cgroup_sockopt:/sys/fs/cgroup:set"
         program: [
             '{|ctx|'
@@ -4307,6 +4332,42 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
             '{|ctx|'
             '  mut keys = $ctx.flow_keys'
             '  $keys.ip_proto = 17'
+            '  "parsed"'
+            '}'
+        ]
+        feature_keys: ["ctx:flow_keys"]
+    }
+    {
+        target: "flow_dissector:/proc/self/ns/net"
+        program: [
+            '{|ctx|'
+            '  mut rec = { keys: $ctx.flow_keys }'
+            '  $rec.keys.ip_proto = 6'
+            '  "parsed"'
+            '}'
+        ]
+        feature_keys: ["ctx:flow_keys"]
+    }
+    {
+        target: "flow_dissector:/proc/self/ns/net"
+        program: [
+            '{|ctx|'
+            '  let base = { keys: $ctx.flow_keys }'
+            '  mut rec = { ok: true, ...$base }'
+            '  $rec.keys.ip_proto = 6'
+            '  "parsed"'
+            '}'
+        ]
+        feature_keys: ["ctx:flow_keys"]
+    }
+    {
+        target: "flow_dissector:/proc/self/ns/net"
+        program: [
+            '{|ctx|'
+            '  def wrap [keys] { { keys: $keys } }'
+            '  let keys = $ctx.flow_keys'
+            '  mut rec = (wrap $keys)'
+            '  $rec.keys.ip_proto = 6'
             '  "parsed"'
             '}'
         ]
@@ -4710,6 +4771,42 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
             '}'
         ]
         feature_keys: ["ctx:data"]
+    }
+    {
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  mut rec = { meta: $ctx.data_meta }'
+            '  $rec.meta.0 = 7'
+            '  "pass"'
+            '}'
+        ]
+        feature_keys: ["ctx:data_meta"]
+    }
+    {
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  let base = { meta: $ctx.data_meta }'
+            '  mut rec = { ok: true, ...$base }'
+            '  $rec.meta.0 = 7'
+            '  "pass"'
+            '}'
+        ]
+        feature_keys: ["ctx:data_meta"]
+    }
+    {
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  def wrap [meta] { { meta: $meta } }'
+            '  let meta = $ctx.data_meta'
+            '  mut rec = (wrap $meta)'
+            '  $rec.meta.0 = 7'
+            '  "pass"'
+            '}'
+        ]
+        feature_keys: ["ctx:data_meta"]
     }
     {
         target: "sk_skb_parser:/sys/fs/bpf/demo_sockmap"
@@ -9311,6 +9408,57 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "xdp-record-data-meta-write"
+        category: "context-surface"
+        tags: [xdp context packet writable record source metadata]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  mut rec = { meta: $ctx.data_meta }'
+            '  $rec.meta.0 = 7'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "xdp-record-spread-data-meta-write"
+        category: "context-surface"
+        tags: [xdp context packet writable record spread source metadata]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  let base = { meta: $ctx.data_meta }'
+            '  mut rec = { ok: true, ...$base }'
+            '  $rec.meta.0 = 7'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "xdp-user-function-record-data-meta-write"
+        category: "context-surface"
+        tags: [xdp context packet writable user-function record source metadata]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  def wrap [meta] { { meta: $meta } }'
+            '  let meta = $ctx.data_meta'
+            '  mut rec = (wrap $meta)'
+            '  $rec.meta.0 = 7'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "tc-egress-rejects-context-socket-write"
         category: "context-policy"
         tags: [tc context writable socket reject egress-only]
@@ -10690,6 +10838,57 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "flow-dissector-record-flow-key-write-context"
+        category: "context-surface"
+        tags: [flow-dissector context writable record source metadata]
+        requires: [netns-self]
+        target: "flow_dissector:/proc/self/ns/net"
+        program: [
+            '{|ctx|'
+            '  mut rec = { keys: $ctx.flow_keys }'
+            '  $rec.keys.ip_proto = 6'
+            '  "parsed"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "flow-dissector-record-spread-flow-key-write-context"
+        category: "context-surface"
+        tags: [flow-dissector context writable record spread source metadata]
+        requires: [netns-self]
+        target: "flow_dissector:/proc/self/ns/net"
+        program: [
+            '{|ctx|'
+            '  let base = { keys: $ctx.flow_keys }'
+            '  mut rec = { ok: true, ...$base }'
+            '  $rec.keys.ip_proto = 6'
+            '  "parsed"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "flow-dissector-user-function-record-flow-key-write-context"
+        category: "context-surface"
+        tags: [flow-dissector context writable user-function record source metadata]
+        requires: [netns-self]
+        target: "flow_dissector:/proc/self/ns/net"
+        program: [
+            '{|ctx|'
+            '  def wrap [keys] { { keys: $keys } }'
+            '  let keys = $ctx.flow_keys'
+            '  mut rec = (wrap $keys)'
+            '  $rec.keys.ip_proto = 6'
+            '  "parsed"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "flow-dissector-rejects-flow-key-root-write"
         category: "context-surface"
         tags: [flow-dissector reject context writable]
@@ -11038,6 +11237,41 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  mut rec = { optval: $ctx.optval }'
+            '  $rec.optval.2 = 42'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "cgroup-sockopt-optval-record-spread-byte-write"
+        category: "context-surface"
+        tags: [cgroup-sockopt context writable record spread source metadata]
+        requires: [cgroup-v2]
+        target: "cgroup_sockopt:/sys/fs/cgroup:get"
+        program: [
+            '{|ctx|'
+            '  let base = { optval: $ctx.optval }'
+            '  mut rec = { ok: true, ...$base }'
+            '  $rec.optval.2 = 42'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "cgroup-sockopt-optval-user-function-record-byte-write"
+        category: "context-surface"
+        tags: [cgroup-sockopt context writable user-function record source metadata]
+        requires: [cgroup-v2]
+        target: "cgroup_sockopt:/sys/fs/cgroup:get"
+        program: [
+            '{|ctx|'
+            '  def wrap [optval] { { optval: $optval } }'
+            '  let optval = $ctx.optval'
+            '  mut rec = (wrap $optval)'
             '  $rec.optval.2 = 42'
             '  "allow"'
             '}'
