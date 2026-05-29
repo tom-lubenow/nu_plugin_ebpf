@@ -120,6 +120,8 @@ struct SpecContextProjection {
     name: String,
     path: String,
     source: &'static str,
+    compatibility_minimum_kernel: Option<&'static str>,
+    compatibility_minimum_kernel_source: Option<&'static str>,
     context_field_requirement_key: Option<String>,
     minimum_kernel: Option<&'static str>,
     minimum_kernel_source: Option<&'static str>,
@@ -922,11 +924,15 @@ fn push_context_field_projection(
     field: &StructField,
     compatibility_requirement: Option<ContextFieldCompatibilityRequirement>,
 ) {
+    let compatibility_floor =
+        context_projection_compatibility_floor(compatibility_requirement.as_ref(), None);
     projections.push(SpecContextProjection {
         root: root.to_string(),
         path: format!("{root}.{name}"),
         name: name.to_string(),
         source,
+        compatibility_minimum_kernel: compatibility_floor.map(|floor| floor.0),
+        compatibility_minimum_kernel_source: compatibility_floor.map(|floor| floor.1),
         context_field_requirement_key: compatibility_requirement
             .as_ref()
             .map(ContextFieldCompatibilityRequirement::key),
@@ -968,6 +974,7 @@ fn push_struct_field_projections(
     let helper_requirement_feature_key = helper.and_then(helper_requirement_key);
     let helper_minimum_kernel = helper.and_then(BpfHelper::minimum_kernel);
     let helper_minimum_kernel_source = helper.and_then(BpfHelper::minimum_kernel_source);
+    let compatibility_floor = context_projection_compatibility_floor(None, helper);
     let include_bpf_sock_aliases = name.as_deref() == Some("bpf_sock");
 
     for field in fields.into_iter().filter(|field| !field.synthetic) {
@@ -976,6 +983,8 @@ fn push_struct_field_projections(
             path: format!("{root}.{}", field.name),
             name: field.name.clone(),
             source,
+            compatibility_minimum_kernel: compatibility_floor.map(|floor| floor.0),
+            compatibility_minimum_kernel_source: compatibility_floor.map(|floor| floor.1),
             context_field_requirement_key: None,
             minimum_kernel: None,
             minimum_kernel_source: None,
@@ -997,6 +1006,8 @@ fn push_struct_field_projections(
                     path: format!("{root}.{alias}"),
                     name: (*alias).to_string(),
                     source: "helper_return_alias",
+                    compatibility_minimum_kernel: compatibility_floor.map(|floor| floor.0),
+                    compatibility_minimum_kernel_source: compatibility_floor.map(|floor| floor.1),
                     context_field_requirement_key: None,
                     minimum_kernel: None,
                     minimum_kernel_source: None,
@@ -1029,12 +1040,15 @@ fn push_helper_call_projection(
     if unsupported_reason.is_some() {
         return;
     }
+    let compatibility_floor = context_projection_compatibility_floor(None, Some(helper));
 
     projections.push(SpecContextProjection {
         root: root.to_string(),
         name: name.to_string(),
         path: path.to_string(),
         source: "helper_call",
+        compatibility_minimum_kernel: compatibility_floor.map(|floor| floor.0),
+        compatibility_minimum_kernel_source: compatibility_floor.map(|floor| floor.1),
         context_field_requirement_key: None,
         minimum_kernel: None,
         minimum_kernel_source: None,
@@ -1141,6 +1155,23 @@ fn push_helper_backed_socket_projections(
 }
 
 #[cfg(target_os = "linux")]
+fn context_projection_compatibility_floor(
+    context_requirement: Option<&ContextFieldCompatibilityRequirement>,
+    helper: Option<BpfHelper>,
+) -> Option<(&'static str, &'static str)> {
+    let context_floor = context_requirement.map(|requirement| {
+        (
+            requirement.minimum_kernel(),
+            requirement.minimum_kernel_source(),
+        )
+    });
+    let helper_floor =
+        helper.and_then(|helper| Some((helper.minimum_kernel()?, helper.minimum_kernel_source()?)));
+
+    later_kernel_floor(context_floor, helper_floor)
+}
+
+#[cfg(target_os = "linux")]
 fn context_projection_records(spec: &crate::program_spec::ProgramSpec, span: Span) -> Vec<Value> {
     spec_context_projections(spec)
         .into_iter()
@@ -1151,6 +1182,8 @@ fn context_projection_records(spec: &crate::program_spec::ProgramSpec, span: Spa
                     "name" => Value::string(projection.name, span),
                     "path" => Value::string(projection.path, span),
                     "source" => Value::string(projection.source, span),
+                    "compatibility_minimum_kernel" => optional_static_str(projection.compatibility_minimum_kernel, span),
+                    "compatibility_minimum_kernel_source" => optional_static_str(projection.compatibility_minimum_kernel_source, span),
                     "context_field_requirement_key" => optional_string(projection.context_field_requirement_key, span),
                     "minimum_kernel" => optional_static_str(projection.minimum_kernel, span),
                     "minimum_kernel_source" => optional_static_str(projection.minimum_kernel_source, span),

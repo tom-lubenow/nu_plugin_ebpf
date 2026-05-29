@@ -695,8 +695,9 @@ are valid for the parsed attach shape. For example, socket fields or
 helper-backed socket projections that are invalid on a particular hook are
 omitted from the projection table; attempting to use them in a program still
 produces the normal compiler diagnostic. Projection rows include source-backed
-minimum kernels when known; helper-backed rows also include the selected helper
-and its own floor. Helper-call projections such as `task.pt_regs.arg0` and
+minimum kernels when known; helper-backed rows also include an aggregate
+compatibility floor, the selected helper, and its own floor. Helper-call
+projections such as `task.pt_regs.arg0` and
 parameterized helper projections such as `ancestor_cgroup_id.N`,
 `skb_ancestor_cgroup_id.N`, or `sk.ancestor_cgroup_id.N` use
 `source = helper_call` and a null `offset`, because they are not direct

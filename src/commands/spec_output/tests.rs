@@ -391,6 +391,12 @@ fn assert_helper_backed_context_projections_report_metadata(spec_text: &str) {
             "{spec_text} projection {} should report helper minimum kernel",
             projection.path
         );
+        assert_eq!(
+            projection.compatibility_minimum_kernel,
+            Some(minimum_kernel),
+            "{spec_text} projection {} should report aggregate compatibility minimum kernel",
+            projection.path
+        );
         assert!(
             projection
                 .helper_minimum_kernel_source
@@ -1119,6 +1125,22 @@ fn test_spec_record_context_projections_include_helper_kernel_metadata() {
     );
     assert_eq!(
         tcp_snd_cwnd
+            .get("compatibility_minimum_kernel")
+            .expect("compatibility minimum kernel should be present")
+            .as_str()
+            .expect("compatibility minimum kernel should be a string"),
+        "5.1"
+    );
+    assert!(
+        tcp_snd_cwnd
+            .get("compatibility_minimum_kernel_source")
+            .expect("compatibility minimum kernel source should be present")
+            .as_str()
+            .expect("compatibility minimum kernel source should be a string")
+            .contains("/v5.1/")
+    );
+    assert_eq!(
+        tcp_snd_cwnd
             .get("helper_minimum_kernel")
             .expect("helper minimum kernel should be present")
             .as_str()
@@ -1156,6 +1178,14 @@ fn test_spec_record_context_projections_include_helper_kernel_metadata() {
     );
     assert_eq!(
         sk_family
+            .get("compatibility_minimum_kernel")
+            .expect("compatibility minimum kernel should be present")
+            .as_str()
+            .expect("compatibility minimum kernel should be a string"),
+        "5.1"
+    );
+    assert_eq!(
+        sk_family
             .get("minimum_kernel")
             .expect("minimum kernel should be present")
             .as_str()
@@ -1179,6 +1209,51 @@ fn projection_absent(projections: &[SpecContextProjection], path: &str) {
         !projections.iter().any(|projection| projection.path == path),
         "did not expect {path} in spec context projections"
     );
+}
+
+#[test]
+fn test_context_projection_compatibility_metadata_invariants() {
+    for spec_source in [
+        "tc:lo:ingress",
+        "cgroup_skb:/sys/fs/cgroup:egress",
+        "cgroup_sock:/sys/fs/cgroup:post_bind4",
+        "cgroup_sockopt:/sys/fs/cgroup:get",
+        "cgroup_sock_addr:/sys/fs/cgroup:connect4",
+        "sk_reuseport:select",
+        "flow_dissector:/proc/self/ns/net",
+    ] {
+        let spec = ProgramSpec::parse(spec_source)
+            .unwrap_or_else(|err| panic!("{spec_source} should parse: {err}"));
+
+        for projection in spec_context_projections(&spec) {
+            let component_floors = [projection.minimum_kernel, projection.helper_minimum_kernel];
+            if component_floors.iter().any(Option::is_some) {
+                let compatibility_minimum = projection
+                    .compatibility_minimum_kernel
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "{spec_source} projection {} should report an aggregate compatibility minimum kernel",
+                            projection.path
+                        )
+                    });
+                assert!(
+                    projection.compatibility_minimum_kernel_source.is_some(),
+                    "{spec_source} projection {} should report an aggregate compatibility source",
+                    projection.path
+                );
+                for floor in component_floors.into_iter().flatten() {
+                    assert!(
+                        ContextFieldCompatibilityRequirement::kernel_version_at_least(
+                            compatibility_minimum,
+                            floor
+                        ),
+                        "{spec_source} projection {} aggregate floor {compatibility_minimum} should cover component floor {floor}",
+                        projection.path
+                    );
+                }
+            }
+        }
+    }
 }
 
 #[test]
@@ -3826,6 +3901,7 @@ fn test_spec_context_projections_include_socket_members() {
         Some("ctx:family")
     );
     assert_eq!(family.minimum_kernel, Some("4.10"));
+    assert_eq!(family.compatibility_minimum_kernel, Some("4.10"));
     assert!(
         family
             .minimum_kernel_source
@@ -3846,6 +3922,7 @@ fn test_spec_context_projections_include_socket_members() {
         Some("ctx:remote_port")
     );
     assert_eq!(remote_port.minimum_kernel, Some("5.1"));
+    assert_eq!(remote_port.compatibility_minimum_kernel, Some("5.1"));
     assert_eq!(remote_port.helper, None);
     assert_eq!(remote_port.ty, "u16");
     assert_eq!(remote_port.offset, Some(48));
@@ -3868,6 +3945,7 @@ fn test_spec_context_projections_include_helper_backed_socket_members() {
     assert_eq!(tcp_snd_cwnd.helper, Some("bpf_tcp_sock"));
     assert_eq!(tcp_snd_cwnd.context_field_requirement_key, None);
     assert_eq!(tcp_snd_cwnd.helper_minimum_kernel, Some("5.1"));
+    assert_eq!(tcp_snd_cwnd.compatibility_minimum_kernel, Some("5.1"));
     assert!(
         tcp_snd_cwnd
             .helper_minimum_kernel_source
@@ -3880,6 +3958,7 @@ fn test_spec_context_projections_include_helper_backed_socket_members() {
     let full_family = projection(&projections, "sk.full.family");
     assert_eq!(full_family.helper, Some("bpf_sk_fullsock"));
     assert_eq!(full_family.helper_minimum_kernel, Some("5.1"));
+    assert_eq!(full_family.compatibility_minimum_kernel, Some("5.1"));
     assert_eq!(full_family.ty, "u32");
     assert!(full_family.supported);
     assert!(full_family.unsupported_reason.is_none());
@@ -3890,6 +3969,7 @@ fn test_spec_context_projections_include_helper_backed_socket_members() {
     assert_eq!(full_remote_port.source, "helper_return_alias");
     assert_eq!(full_remote_port.helper, Some("bpf_sk_fullsock"));
     assert_eq!(full_remote_port.helper_minimum_kernel, Some("5.1"));
+    assert_eq!(full_remote_port.compatibility_minimum_kernel, Some("5.1"));
     assert_eq!(full_remote_port.ty, "u16");
     assert_eq!(full_remote_port.offset, Some(48));
     assert!(full_remote_port.supported);
