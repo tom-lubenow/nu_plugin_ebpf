@@ -10834,9 +10834,27 @@ fn test_compile_sk_reuseport_ctx_packet_and_socket_projection_counter_programs()
             "sk_reuseport:select ctx.sk.bound_dev_if count",
         ),
         (
+            "select",
+            vec![string_member("sock"), string_member("family")],
+            "sk_reuseport:select ctx.sock.family count",
+        ),
+        (
+            "select",
+            vec![string_member("socket"), string_member("priority")],
+            "sk_reuseport:select ctx.socket.priority count",
+        ),
+        (
             "migrate",
             vec![string_member("migrating_sk"), string_member("bound_dev_if")],
             "sk_reuseport:migrate ctx.migrating_sk.bound_dev_if count",
+        ),
+        (
+            "migrate",
+            vec![
+                string_member("migrating_socket"),
+                string_member("remote_port"),
+            ],
+            "sk_reuseport:migrate ctx.migrating_socket.remote_port count",
         ),
     ] {
         assert_ctx_path_count_program_compiles(
@@ -11572,6 +11590,46 @@ fn test_compile_sk_msg_ctx_netns_cookie_counter_program() {
         },
         "sk_msg ctx.netns_cookie count",
     );
+}
+
+#[test]
+fn test_compile_stream_socket_root_alias_projection_programs() {
+    let cases = [
+        (
+            EbpfProgramType::SockOps,
+            "/sys/fs/cgroup",
+            vec![string_member("sock"), string_member("state")],
+            "sock_ops ctx.sock.state count",
+        ),
+        (
+            EbpfProgramType::SockOps,
+            "/sys/fs/cgroup",
+            vec![string_member("socket"), string_member("rx_queue_mapping")],
+            "sock_ops ctx.socket.rx_queue_mapping count",
+        ),
+        (
+            EbpfProgramType::SkMsg,
+            "/sys/fs/bpf/demo_sockmap",
+            vec![string_member("socket"), string_member("family")],
+            "sk_msg ctx.socket.family count",
+        ),
+        (
+            EbpfProgramType::SkSkb,
+            "/sys/fs/bpf/demo_sockmap",
+            vec![string_member("sock"), string_member("local_port")],
+            "sk_skb ctx.sock.local_port count",
+        ),
+        (
+            EbpfProgramType::SkSkbParser,
+            "/sys/fs/bpf/demo_sockmap",
+            vec![string_member("socket"), string_member("remote_port")],
+            "sk_skb_parser ctx.socket.remote_port count",
+        ),
+    ];
+
+    for (program_type, target, members, context) in cases {
+        assert_ctx_path_count_program_compiles(program_type, target, CellPath { members }, context);
+    }
 }
 
 #[test]

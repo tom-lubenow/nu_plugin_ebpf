@@ -15147,6 +15147,22 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "sock-ops-socket-root-alias-context"
+        category: "context-surface"
+        tags: [sock-ops context socket alias source metadata]
+        requires: [cgroup-v2]
+        target: "sock_ops:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  let sock = $ctx.sock'
+            '  ($sock.rx_queue_mapping + $ctx.socket.state) | count'
+            '  1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "sock-ops-enable-tx-tstamp-kfunc"
         category: "kfunc"
         tags: [sock-ops kfunc timestamp source metadata]
@@ -15327,6 +15343,20 @@ const FIXTURES = [
             '{|ctx|'
             '  (($ctx.data | get 0) + $ctx.packet_len + $ctx.eth_protocol + $ctx.protocol + $ctx.hash + $ctx.bind_inany + $ctx.socket_cookie) | count'
             '  ($ctx.sk.family + $ctx.sk.type + $ctx.sk.protocol + $ctx.sk.mark + $ctx.sk.priority + $ctx.sk.rx_queue_mapping) | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "sk-reuseport-socket-root-alias-context"
+        category: "context-surface"
+        tags: [sk-reuseport context socket alias source metadata]
+        target: "sk_reuseport:select"
+        program: [
+            '{|ctx|'
+            '  ($ctx.sock.family + $ctx.socket.priority) | count'
             '  "pass"'
             '}'
         ]
@@ -15633,6 +15663,20 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "sk-msg-socket-root-alias-context"
+        category: "context-surface"
+        tags: [sk-msg context socket alias source metadata]
+        target: "sk_msg:/sys/fs/bpf/demo_sockmap"
+        program: [
+            '{|ctx|'
+            '  ($ctx.sock.src_port + $ctx.socket.dst_port + $ctx.socket.priority) | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "sk-msg-data-context-write"
         category: "context-surface"
         tags: [sk-msg context packet writable]
@@ -15746,6 +15790,20 @@ const FIXTURES = [
             '{|ctx|'
             '  let sk = $ctx.sk'
             '  ($sk.local_port + $sk.remote_port + $sk.priority) | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "sk-skb-socket-root-alias-context"
+        category: "context-surface"
+        tags: [sk-skb context socket alias source metadata]
+        target: "sk_skb:/sys/fs/bpf/demo_sockmap"
+        program: [
+            '{|ctx|'
+            '  ($ctx.sock.local_port + $ctx.socket.remote_port + $ctx.socket.priority) | count'
             '  "pass"'
             '}'
         ]
@@ -15900,6 +15958,20 @@ const FIXTURES = [
             '{|ctx|'
             '  let sk = $ctx.sk'
             '  ($sk.local_port + $sk.remote_port + $sk.priority) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "sk-skb-parser-socket-root-alias-context"
+        category: "context-surface"
+        tags: [sk-skb-parser context socket alias source metadata]
+        target: "sk_skb_parser:/sys/fs/bpf/demo_sockmap"
+        program: [
+            '{|ctx|'
+            '  ($ctx.sock.local_port + $ctx.socket.remote_port + $ctx.socket.priority) | count'
             '  0'
             '}'
         ]
