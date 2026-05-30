@@ -23,12 +23,16 @@ const CLONE3_MIN_KERNEL: &str = "5.3";
 const CLONE3_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.3/kernel/fork.c";
 const NSPROXY_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/nsproxy.c";
 const FILE_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/file.c";
+const FCNTL_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/fcntl.c";
+const LOCKS_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/locks.c";
+const IOCTL_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/ioctl.c";
 const PIPE_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/pipe.c";
 const EVENTFD_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/eventfd.c";
 const EVENTPOLL_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/eventpoll.c";
 const EPOLL_PWAIT2_MIN_KERNEL: &str = "5.11";
 const EPOLL_PWAIT2_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.11/fs/eventpoll.c";
 const SELECT_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/select.c";
+const SYNC_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/sync.c";
 const STAT_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/stat.c";
 const STATX_MIN_KERNEL: &str = "4.11";
 const STATX_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.11/fs/stat.c";
@@ -55,6 +59,8 @@ const MM_MSYNC_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/mm/ms
 const MEMFD_CREATE_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/mm/shmem.c";
 const MEMFD_SECRET_MIN_KERNEL: &str = "5.14";
 const MEMFD_SECRET_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.14/mm/secretmem.c";
+const FADVISE_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/mm/fadvise.c";
+const READAHEAD_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/mm/readahead.c";
 const PROCESS_MADVISE_MIN_KERNEL: &str = "5.10";
 const PROCESS_MADVISE_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.10/mm/madvise.c";
 const PROCESS_MRELEASE_MIN_KERNEL: &str = "5.15";
@@ -134,6 +140,18 @@ const WELL_KNOWN_SYS_ENTER_SYSCALLS: &[&str] = &[
     "unshare",
     "clone3",
     "setns",
+    "lseek",
+    "fadvise64",
+    "readahead",
+    "fallocate",
+    "sync",
+    "syncfs",
+    "fsync",
+    "fdatasync",
+    "sync_file_range",
+    "fcntl",
+    "flock",
+    "ioctl",
     "dup",
     "dup2",
     "dup3",
@@ -744,6 +762,16 @@ impl TracepointContext {
             "unshare" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, FORK_SOURCE),
             "clone3" => (CLONE3_MIN_KERNEL, CLONE3_SOURCE),
             "setns" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, NSPROXY_SOURCE),
+            "lseek" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, READ_WRITE_SOURCE),
+            "fadvise64" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, FADVISE_SOURCE),
+            "readahead" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, READAHEAD_SOURCE),
+            "fallocate" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, OPEN_SOURCE),
+            "sync" | "syncfs" | "fsync" | "fdatasync" | "sync_file_range" => {
+                (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, SYNC_SOURCE)
+            }
+            "fcntl" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, FCNTL_SOURCE),
+            "flock" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, LOCKS_SOURCE),
+            "ioctl" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, IOCTL_SOURCE),
             "dup" | "dup2" | "dup3" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, FILE_SOURCE),
             "pipe" | "pipe2" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, PIPE_SOURCE),
             "eventfd" | "eventfd2" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, EVENTFD_SOURCE),
@@ -1082,6 +1110,51 @@ impl TracepointContext {
             "setns" => vec![
                 ("fd", Self::syscall_arg_int(true)),
                 ("nstype", Self::syscall_arg_int(true)),
+            ],
+            "lseek" => vec![
+                ("fd", Self::syscall_arg_int(false)),
+                ("offset", Self::syscall_arg_int(true)),
+                ("whence", Self::syscall_arg_int(false)),
+            ],
+            "fadvise64" => vec![
+                ("fd", Self::syscall_arg_int(true)),
+                ("offset", Self::syscall_arg_int(true)),
+                ("len", Self::syscall_arg_int(false)),
+                ("advice", Self::syscall_arg_int(true)),
+            ],
+            "readahead" => vec![
+                ("fd", Self::syscall_arg_int(true)),
+                ("offset", Self::syscall_arg_int(true)),
+                ("count", Self::syscall_arg_int(false)),
+            ],
+            "fallocate" => vec![
+                ("fd", Self::syscall_arg_int(true)),
+                ("mode", Self::syscall_arg_int(true)),
+                ("offset", Self::syscall_arg_int(true)),
+                ("len", Self::syscall_arg_int(true)),
+            ],
+            "sync" => vec![],
+            "syncfs" => vec![("fd", Self::syscall_arg_int(true))],
+            "fsync" | "fdatasync" => vec![("fd", Self::syscall_arg_int(false))],
+            "sync_file_range" => vec![
+                ("fd", Self::syscall_arg_int(true)),
+                ("offset", Self::syscall_arg_int(true)),
+                ("nbytes", Self::syscall_arg_int(true)),
+                ("flags", Self::syscall_arg_int(false)),
+            ],
+            "fcntl" => vec![
+                ("fd", Self::syscall_arg_int(false)),
+                ("cmd", Self::syscall_arg_int(false)),
+                ("arg", Self::syscall_arg_int(false)),
+            ],
+            "flock" => vec![
+                ("fd", Self::syscall_arg_int(false)),
+                ("cmd", Self::syscall_arg_int(false)),
+            ],
+            "ioctl" => vec![
+                ("fd", Self::syscall_arg_int(false)),
+                ("cmd", Self::syscall_arg_int(false)),
+                ("arg", Self::syscall_arg_int(false)),
             ],
             "dup" => vec![("fildes", Self::syscall_arg_int(false))],
             "dup2" => vec![

@@ -2572,6 +2572,60 @@ const PROCESS_TRACEPOINT_FIELD_SPECS = [
 ]
 const FD_TRACEPOINT_FIELD_SPECS = [
     {
+        syscalls: ["lseek"]
+        fields: ["fd" "offset" "whence"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/read_write.c"
+    }
+    {
+        syscalls: ["fadvise64"]
+        fields: ["fd" "offset" "len" "advice"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/mm/fadvise.c"
+    }
+    {
+        syscalls: ["readahead"]
+        fields: ["fd" "offset" "count"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/mm/readahead.c"
+    }
+    {
+        syscalls: ["fallocate"]
+        fields: ["fd" "mode" "offset" "len"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/open.c"
+    }
+    {
+        syscalls: ["syncfs" "fsync" "fdatasync"]
+        fields: ["fd"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/sync.c"
+    }
+    {
+        syscalls: ["sync_file_range"]
+        fields: ["fd" "offset" "nbytes" "flags"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/sync.c"
+    }
+    {
+        syscalls: ["fcntl"]
+        fields: ["fd" "cmd"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/fcntl.c"
+    }
+    {
+        syscalls: ["flock"]
+        fields: ["fd" "cmd"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/locks.c"
+    }
+    {
+        syscalls: ["ioctl"]
+        fields: ["fd" "cmd"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/ioctl.c"
+    }
+    {
         syscalls: ["dup"]
         fields: ["fildes"]
         min_kernel: "4.7"
@@ -6021,6 +6075,34 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         ]
     }
     {
+        target: "tracepoint:syscalls/sys_enter_sync_file_range"
+        program: [
+            '{|ctx|'
+            '  ($ctx.fd + $ctx.offset + $ctx.nbytes + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_sync_file_range:field:fd"
+            "tracepoint:syscalls/sys_enter_sync_file_range:field:offset"
+            "tracepoint:syscalls/sys_enter_sync_file_range:field:nbytes"
+            "tracepoint:syscalls/sys_enter_sync_file_range:field:flags"
+        ]
+    }
+    {
+        target: "tracepoint:syscalls/sys_enter_ioctl"
+        program: [
+            '{|ctx|'
+            '  ($ctx.fd + $ctx.cmd) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_ioctl:field:fd"
+            "tracepoint:syscalls/sys_enter_ioctl:field:cmd"
+        ]
+    }
+    {
         target: "tracepoint:syscalls/sys_enter_fchownat"
         program: [
             '{|ctx|'
@@ -8928,6 +9010,66 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  ($ctx.oldfd + $ctx.newfd + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-lseek-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_lseek]
+        target: "tracepoint:syscalls/sys_enter_lseek"
+        program: [
+            '{|ctx|'
+            '  ($ctx.fd + $ctx.offset + $ctx.whence) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-fallocate-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_fallocate]
+        target: "tracepoint:syscalls/sys_enter_fallocate"
+        program: [
+            '{|ctx|'
+            '  ($ctx.fd + $ctx.mode + $ctx.offset + $ctx.len) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-sync-file-range-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_sync_file_range]
+        target: "tracepoint:syscalls/sys_enter_sync_file_range"
+        program: [
+            '{|ctx|'
+            '  ($ctx.fd + $ctx.offset + $ctx.nbytes + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-ioctl-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_ioctl]
+        target: "tracepoint:syscalls/sys_enter_ioctl"
+        program: [
+            '{|ctx|'
+            '  ($ctx.fd + $ctx.cmd) | count'
             '  0'
             '}'
         ]

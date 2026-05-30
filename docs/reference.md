@@ -931,9 +931,10 @@ Extended-attribute fallbacks expose aliases for
 control fallbacks expose stable aliases for entry tracepoints such as
 `sys_enter_execveat`, `sys_enter_wait4`, and `sys_enter_setns`. File-descriptor
 and event fallbacks expose aliases for common entry tracepoints such as
-`sys_enter_dup3`, `sys_enter_pipe2`, `sys_enter_epoll_ctl`,
-`sys_enter_epoll_pwait2`, `sys_enter_poll`, `sys_enter_ppoll`,
-`sys_enter_select`, and `sys_enter_pselect6`.
+`sys_enter_lseek`, `sys_enter_fallocate`, `sys_enter_sync_file_range`,
+`sys_enter_fcntl`, `sys_enter_ioctl`, `sys_enter_dup3`, `sys_enter_pipe2`,
+`sys_enter_epoll_ctl`, `sys_enter_epoll_pwait2`, `sys_enter_poll`,
+`sys_enter_ppoll`, `sys_enter_select`, and `sys_enter_pselect6`.
 File data-movement fallbacks expose aliases for common entry tracepoints such
 as `sys_enter_pread64`, `sys_enter_pwrite64`, `sys_enter_readv`,
 `sys_enter_writev`, `sys_enter_preadv2`, `sys_enter_sendfile`,

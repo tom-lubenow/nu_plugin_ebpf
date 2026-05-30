@@ -1031,6 +1031,30 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
             .is_some_and(|source| source.contains("/v5.11/fs/eventpoll.c"))
     );
 
+    let sync_file_range = TracepointContext::sys_enter("sys_enter_sync_file_range");
+    assert!(sync_file_range.has_field("fd"));
+    assert!(sync_file_range.has_field("offset"));
+    assert!(sync_file_range.has_field("nbytes"));
+    assert!(sync_file_range.has_field("flags"));
+    let (_, sync_source) = TracepointContext::syscall_fallback_field_minimum_kernel(
+        "syscalls",
+        "sys_enter_sync_file_range",
+        "nbytes",
+    )
+    .expect("expected sync_file_range source metadata");
+    assert!(sync_source.contains("/v4.7/fs/sync.c"));
+
+    let ioctl = TracepointContext::sys_enter("sys_enter_ioctl");
+    assert!(ioctl.has_field("fd"));
+    assert!(ioctl.has_field("cmd"));
+    let (_, ioctl_source) = TracepointContext::syscall_fallback_field_minimum_kernel(
+        "syscalls",
+        "sys_enter_ioctl",
+        "cmd",
+    )
+    .expect("expected ioctl source metadata");
+    assert!(ioctl_source.contains("/v4.7/fs/ioctl.c"));
+
     let futex = TracepointContext::sys_enter("sys_enter_futex");
     assert!(futex.has_field("uaddr"));
     assert!(futex.has_field("op"));
@@ -1169,6 +1193,24 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
             "sys_enter_pselect6",
             &["n", "inp", "outp", "exp", "tsp", "sig"][..],
         ),
+        ("sys_enter_lseek", &["fd", "offset", "whence"][..]),
+        (
+            "sys_enter_fadvise64",
+            &["fd", "offset", "len", "advice"][..],
+        ),
+        ("sys_enter_readahead", &["fd", "offset", "count"][..]),
+        ("sys_enter_fallocate", &["fd", "mode", "offset", "len"][..]),
+        ("sys_enter_sync", &[][..]),
+        ("sys_enter_syncfs", &["fd"][..]),
+        ("sys_enter_fsync", &["fd"][..]),
+        ("sys_enter_fdatasync", &["fd"][..]),
+        (
+            "sys_enter_sync_file_range",
+            &["fd", "offset", "nbytes", "flags"][..],
+        ),
+        ("sys_enter_fcntl", &["fd", "cmd"][..]),
+        ("sys_enter_flock", &["fd", "cmd"][..]),
+        ("sys_enter_ioctl", &["fd", "cmd"][..]),
         ("sys_enter_stat", &["filename", "statbuf"][..]),
         ("sys_enter_newstat", &["filename", "statbuf"][..]),
         ("sys_enter_fstat", &["fd", "statbuf"][..]),
