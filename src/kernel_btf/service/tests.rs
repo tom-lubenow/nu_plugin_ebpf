@@ -573,6 +573,17 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         ("sys_enter_setgroups", &["gidsetsize", "grouplist"][..]),
         ("sys_enter_capget", &["header", "dataptr"][..]),
         ("sys_enter_capset", &["header", "data"][..]),
+        ("sys_enter_nice", &["increment"][..]),
+        ("sys_enter_sched_setscheduler", &["policy", "param"][..]),
+        ("sys_enter_sched_setparam", &["param"][..]),
+        ("sys_enter_sched_setattr", &["uattr", "flags"][..]),
+        ("sys_enter_sched_getparam", &["param"][..]),
+        ("sys_enter_sched_getattr", &["uattr", "size", "flags"][..]),
+        ("sys_enter_sched_setaffinity", &["len", "user_mask_ptr"][..]),
+        ("sys_enter_sched_getaffinity", &["len", "user_mask_ptr"][..]),
+        ("sys_enter_sched_get_priority_max", &["policy"][..]),
+        ("sys_enter_sched_get_priority_min", &["policy"][..]),
+        ("sys_enter_sched_rr_get_interval", &["interval"][..]),
     ] {
         let ctx = TracepointContext::sys_enter(name);
         for field in fields {
@@ -652,6 +663,42 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
     )
     .expect("expected setgroups grouplist source metadata");
     assert!(setgroups_source.contains("/v4.7/kernel/groups.c"));
+
+    let sched_setscheduler = TracepointContext::sys_enter("sys_enter_sched_setscheduler");
+    assert!(!sched_setscheduler.has_field("pid"));
+    assert_eq!(
+        sched_setscheduler
+            .get_field("policy")
+            .expect("expected sched_setscheduler policy")
+            .offset,
+        24
+    );
+    assert!(matches!(
+        sched_setscheduler
+            .get_field("param")
+            .expect("expected sched_setscheduler param")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+    let (_, sched_source) = TracepointContext::syscall_fallback_field_minimum_kernel(
+        "syscalls",
+        "sys_enter_sched_setscheduler",
+        "policy",
+    )
+    .expect("expected sched_setscheduler policy source metadata");
+    assert!(sched_source.contains("/v4.7/kernel/sched/core.c"));
+
+    let sched_getscheduler = TracepointContext::sys_enter("sys_enter_sched_getscheduler");
+    assert!(!sched_getscheduler.has_field("pid"));
+    let sched_getattr = TracepointContext::sys_enter("sys_enter_sched_getattr");
+    assert_eq!(
+        sched_getattr
+            .get_field("uattr")
+            .expect("expected sched_getattr uattr")
+            .offset,
+        24
+    );
+    assert!(!sched_getattr.has_field("pid"));
 
     let unknown = TracepointContext::sys_enter("sys_enter_unknown");
     assert!(unknown.has_field("id"));

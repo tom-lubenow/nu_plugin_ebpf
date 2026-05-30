@@ -915,6 +915,10 @@ Credential and process-control fallbacks expose source-known aliases for common
 entry tracepoints such as `sys_enter_setresuid`, `sys_enter_getresgid`,
 `sys_enter_setgroups`, `sys_enter_capset`, `sys_enter_prctl`, and
 `sys_enter_getcpu`.
+Scheduler fallbacks expose source-known aliases for common entry tracepoints
+such as `sys_enter_sched_setscheduler`, `sys_enter_sched_setaffinity`,
+`sys_enter_sched_getattr`, `sys_enter_sched_rr_get_interval`, and
+`sys_enter_nice`.
 When a syscall argument name collides with a preserved tracepoint builtin or
 reserved context path such as `pid`, `tgid`, or `arg`, the fallback exposes the
 non-conflicting arguments and the raw payload remains available through

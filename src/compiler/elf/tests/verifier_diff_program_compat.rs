@@ -1117,6 +1117,17 @@ fn test_verifier_diff_tracepoint_payload_scanner_matches_rust_fallback_fields() 
         ("tracepoint:syscalls/sys_enter_capset", "data"),
         ("tracepoint:syscalls/sys_enter_prctl", "option"),
         ("tracepoint:syscalls/sys_enter_getcpu", "nodep"),
+        ("tracepoint:syscalls/sys_enter_sched_setscheduler", "policy"),
+        (
+            "tracepoint:syscalls/sys_enter_sched_setaffinity",
+            "user_mask_ptr",
+        ),
+        ("tracepoint:syscalls/sys_enter_sched_getattr", "uattr"),
+        (
+            "tracepoint:syscalls/sys_enter_sched_rr_get_interval",
+            "interval",
+        ),
+        ("tracepoint:syscalls/sys_enter_nice", "increment"),
     ]
     .into_iter()
     .map(|(target, field)| (target.to_string(), field.to_string()))

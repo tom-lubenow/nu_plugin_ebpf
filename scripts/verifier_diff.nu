@@ -2680,6 +2680,56 @@ const IDENTITY_TRACEPOINT_FIELD_SPECS = [
         source: "https://github.com/torvalds/linux/blob/v4.7/kernel/capability.c"
     }
 ]
+const SCHED_TRACEPOINT_FIELD_SPECS = [
+    {
+        syscalls: ["nice"]
+        fields: ["increment"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/sched/core.c"
+    }
+    {
+        syscalls: ["sched_setscheduler"]
+        fields: ["policy" "param"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/sched/core.c"
+    }
+    {
+        syscalls: ["sched_setparam" "sched_getparam"]
+        fields: ["param"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/sched/core.c"
+    }
+    {
+        syscalls: ["sched_setattr"]
+        fields: ["uattr" "flags"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/sched/core.c"
+    }
+    {
+        syscalls: ["sched_getattr"]
+        fields: ["uattr" "size" "flags"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/sched/core.c"
+    }
+    {
+        syscalls: ["sched_setaffinity" "sched_getaffinity"]
+        fields: ["len" "user_mask_ptr"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/sched/core.c"
+    }
+    {
+        syscalls: ["sched_get_priority_max" "sched_get_priority_min"]
+        fields: ["policy"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/sched/core.c"
+    }
+    {
+        syscalls: ["sched_rr_get_interval"]
+        fields: ["interval"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/sched/core.c"
+    }
+]
 const TRACEPOINT_FIELD_KERNEL_FEATURES = [
     { target: "tracepoint:syscalls/sys_enter_read" field: "fd" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_READ_FD }
     { target: "tracepoint:syscalls/sys_enter_read" field: "buf" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_READ_BUF }
@@ -7646,6 +7696,88 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  ($ctx.option + ($ctx.args | get 1)) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-sched-setscheduler-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_sched_setscheduler]
+        target: "tracepoint:syscalls/sys_enter_sched_setscheduler"
+        program: [
+            '{|ctx|'
+            '  $ctx.policy | count'
+            '  let param = $ctx.param'
+            '  if $param { 1 | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-sched-setaffinity-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_sched_setaffinity]
+        target: "tracepoint:syscalls/sys_enter_sched_setaffinity"
+        program: [
+            '{|ctx|'
+            '  $ctx.len | count'
+            '  let mask = $ctx.user_mask_ptr'
+            '  if $mask { 1 | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-sched-getattr-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_sched_getattr]
+        target: "tracepoint:syscalls/sys_enter_sched_getattr"
+        program: [
+            '{|ctx|'
+            '  ($ctx.size + $ctx.flags) | count'
+            '  let uattr = $ctx.uattr'
+            '  if $uattr { 1 | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-sched-rr-get-interval-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_sched_rr_get_interval]
+        target: "tracepoint:syscalls/sys_enter_sched_rr_get_interval"
+        program: [
+            '{|ctx|'
+            '  let interval = $ctx.interval'
+            '  if $interval { 1 | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-nice-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_nice]
+        target: "tracepoint:syscalls/sys_enter_nice"
+        program: [
+            '{|ctx|'
+            '  $ctx.increment | count'
             '  0'
             '}'
         ]
@@ -26259,6 +26391,7 @@ def tracepoint-payload-field-kernel-feature [field: string target] {
         | append $TIME_TRACEPOINT_FIELD_SPECS
         | append $SIGNAL_TRACEPOINT_FIELD_SPECS
         | append $IDENTITY_TRACEPOINT_FIELD_SPECS
+        | append $SCHED_TRACEPOINT_FIELD_SPECS
     )
     let source_backed_feature = (
         source-backed-sys-enter-tracepoint-field-kernel-feature $field $target $source_backed_syscall_specs
@@ -29212,8 +29345,11 @@ def validate-status-option [label: string value] {
 
 def validate-host-features [fixture field: string] {
     for feature in (optional $fixture $field []) {
+        if ($feature | str starts-with "tracepoint:") {
+            continue
+        }
         if $feature not-in $VALID_HOST_FEATURES {
-            fail $"fixture ($fixture.name) declares unknown ($field) feature '($feature)'; expected one of ($VALID_HOST_FEATURES | str join ', ')"
+            fail $"fixture ($fixture.name) declares unknown ($field) feature '($feature)'; expected one of ($VALID_HOST_FEATURES | str join ', ') or tracepoint:<system>/<event>"
         }
     }
 }
@@ -29658,6 +29794,9 @@ def host-feature-available [feature: string] {
         "/proc/self/ns/net" | path exists
     } else if $feature == "lirc-device" {
         "/dev/lirc0" | path exists
+    } else if ($feature | str starts-with "tracepoint:") {
+        let event = ($feature | str substring 11..)
+        ("/sys/kernel/tracing/events" | path join $event) | path exists
     } else {
         false
     }

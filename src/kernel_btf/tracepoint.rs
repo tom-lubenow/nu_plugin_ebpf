@@ -44,6 +44,7 @@ const PIDFD_SEND_SIGNAL_SOURCE: &str =
 const KERNEL_SYS_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/sys.c";
 const GROUPS_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/groups.c";
 const CAPABILITY_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/capability.c";
+const SCHED_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/sched/core.c";
 const TRACEPOINT_PRESERVED_FALLBACK_FIELD_NAMES: &[&str] = &[
     "pid",
     "tid",
@@ -437,6 +438,19 @@ impl TracepointContext {
             | "getcpu" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, KERNEL_SYS_SOURCE),
             "getgroups" | "setgroups" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, GROUPS_SOURCE),
             "capget" | "capset" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, CAPABILITY_SOURCE),
+            "nice"
+            | "sched_setscheduler"
+            | "sched_setparam"
+            | "sched_setattr"
+            | "sched_getscheduler"
+            | "sched_getparam"
+            | "sched_getattr"
+            | "sched_setaffinity"
+            | "sched_getaffinity"
+            | "sched_yield"
+            | "sched_get_priority_max"
+            | "sched_get_priority_min"
+            | "sched_rr_get_interval" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, SCHED_SOURCE),
             _ => return None,
         })
     }
@@ -987,6 +1001,45 @@ impl TracepointContext {
             "capset" => vec![
                 ("header", Self::syscall_arg_user_ptr()),
                 ("data", Self::syscall_arg_user_ptr()),
+            ],
+            "nice" => vec![("increment", Self::syscall_arg_int(true))],
+            "sched_setscheduler" => vec![
+                ("pid", Self::syscall_arg_int(true)),
+                ("policy", Self::syscall_arg_int(true)),
+                ("param", Self::syscall_arg_user_ptr()),
+            ],
+            "sched_setparam" => vec![
+                ("pid", Self::syscall_arg_int(true)),
+                ("param", Self::syscall_arg_user_ptr()),
+            ],
+            "sched_setattr" => vec![
+                ("pid", Self::syscall_arg_int(true)),
+                ("uattr", Self::syscall_arg_user_ptr()),
+                ("flags", Self::syscall_arg_int(false)),
+            ],
+            "sched_getscheduler" => vec![("pid", Self::syscall_arg_int(true))],
+            "sched_getparam" => vec![
+                ("pid", Self::syscall_arg_int(true)),
+                ("param", Self::syscall_arg_user_ptr()),
+            ],
+            "sched_getattr" => vec![
+                ("pid", Self::syscall_arg_int(true)),
+                ("uattr", Self::syscall_arg_user_ptr()),
+                ("size", Self::syscall_arg_int(false)),
+                ("flags", Self::syscall_arg_int(false)),
+            ],
+            "sched_setaffinity" | "sched_getaffinity" => vec![
+                ("pid", Self::syscall_arg_int(true)),
+                ("len", Self::syscall_arg_int(false)),
+                ("user_mask_ptr", Self::syscall_arg_user_ptr()),
+            ],
+            "sched_yield" => vec![],
+            "sched_get_priority_max" | "sched_get_priority_min" => {
+                vec![("policy", Self::syscall_arg_int(true))]
+            }
+            "sched_rr_get_interval" => vec![
+                ("pid", Self::syscall_arg_int(true)),
+                ("interval", Self::syscall_arg_user_ptr()),
             ],
             _ => return Vec::new(),
         };

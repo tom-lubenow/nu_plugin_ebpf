@@ -1159,6 +1159,19 @@ mod tests {
             "sys_enter_setgroups",
             "sys_enter_capget",
             "sys_enter_capset",
+            "sys_enter_nice",
+            "sys_enter_sched_setscheduler",
+            "sys_enter_sched_setparam",
+            "sys_enter_sched_setattr",
+            "sys_enter_sched_getscheduler",
+            "sys_enter_sched_getparam",
+            "sys_enter_sched_getattr",
+            "sys_enter_sched_setaffinity",
+            "sys_enter_sched_getaffinity",
+            "sys_enter_sched_yield",
+            "sys_enter_sched_get_priority_max",
+            "sys_enter_sched_get_priority_min",
+            "sys_enter_sched_rr_get_interval",
         ];
 
         for syscall in modeled_syscalls {
