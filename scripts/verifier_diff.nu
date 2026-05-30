@@ -12269,6 +12269,83 @@ const FIXTURES = [
         error_contains: "helper 'bpf_read_branch_records' is only valid in perf_event programs"
     }
     {
+        name: "source-helper-get-task-stack-accepts-current-task"
+        category: "helper-state"
+        tags: [helper task stack-copy accept]
+        target: "kprobe:do_exit"
+        program: [
+            '{|ctx|'
+            '  let buf = "0123456789abcdefghijklmn"'
+            '  helper-call "bpf_get_task_stack" $ctx.current_task $buf 24 0'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "source-helper-get-task-stack-accepts-zero-size-null-buffer"
+        category: "helper-state"
+        tags: [helper task stack-copy zero-size accept]
+        target: "kprobe:do_exit"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_get_task_stack" $ctx.current_task 0 0 0'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "source-helper-get-task-stack-rejects-null-nonzero-size"
+        category: "helper-state"
+        tags: [helper task stack-copy zero-size reject]
+        target: "kprobe:do_exit"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_get_task_stack" $ctx.current_task 0 24 0'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 141 arg1 requires arg2 = 0 when arg1 is null"
+    }
+    {
+        name: "source-helper-get-task-stack-rejects-negative-size"
+        category: "helper-state"
+        tags: [helper task stack-copy size reject]
+        target: "kprobe:do_exit"
+        program: [
+            '{|ctx|'
+            '  let buf = "0123456789abcdefghijklmn"'
+            '  let size = (0 - 1)'
+            '  helper-call "bpf_get_task_stack" $ctx.current_task $buf $size 0'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 141 arg2 must be >= 0"
+    }
+    {
+        name: "source-helper-get-task-stack-rejects-invalid-flags"
+        category: "helper-state"
+        tags: [helper task stack-copy flags reject]
+        target: "kprobe:do_exit"
+        program: [
+            '{|ctx|'
+            '  let buf = "0123456789abcdefghijklmn"'
+            '  helper-call "bpf_get_task_stack" $ctx.current_task $buf 24 4096'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "stack-copy helpers require flags"
+    }
+    {
         name: "dynptr-kfunc-copy-from-user-initializes-dynptr"
         category: "helper-state"
         tags: [kfunc dynptr accept]
