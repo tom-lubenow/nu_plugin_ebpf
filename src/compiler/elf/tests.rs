@@ -224,6 +224,31 @@ fn test_with_program_spec_makes_parsed_spec_authoritative() {
 }
 
 #[test]
+fn test_validate_runtime_artifacts_rejects_mismatched_cached_program_spec() {
+    let mut program =
+        EbpfProgram::from_bytecode(EbpfProgramType::Kprobe, "sys_clone", "test", vec![]);
+    program.program_spec = Some(
+        ProgramSpec::parse("tracepoint:syscalls/sys_enter_openat")
+            .expect("tracepoint spec should parse"),
+    );
+
+    let err = program
+        .validate_runtime_artifacts()
+        .expect_err("mismatched cached program spec should be rejected");
+    assert!(
+        matches!(err, CompileError::InvalidProgram(msg) if msg.contains("declares kprobe") && msg.contains("resolves to tracepoint"))
+    );
+
+    let err = program
+        .into_object()
+        .validate_runtime_artifacts()
+        .expect_err("object validation should reject mismatched cached program spec");
+    assert!(
+        matches!(err, CompileError::InvalidProgram(msg) if msg.contains("declares kprobe") && msg.contains("resolves to tracepoint"))
+    );
+}
+
+#[test]
 fn test_tp_btf_section_name() {
     let prog = EbpfProgram::from_bytecode(EbpfProgramType::TpBtf, "sys_enter", "test", vec![]);
     assert_eq!(

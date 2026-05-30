@@ -860,6 +860,16 @@ impl EbpfProgram {
     }
 
     pub fn validate_runtime_artifacts(&self) -> Result<(), CompileError> {
+        if let Some(program_spec) = &self.program_spec {
+            let spec_type = program_spec.program_type();
+            if spec_type != self.prog_type {
+                return Err(CompileError::InvalidProgram(format!(
+                    "program '{}' declares {} but cached program spec '{}' resolves to {}",
+                    self.name, self.prog_type, program_spec, spec_type
+                )));
+            }
+        }
+
         self.validate_runtime_artifacts_for_info(self.prog_type.info())
     }
 
