@@ -17667,6 +17667,146 @@ const FIXTURES = [
         error_contains: "helper 'bpf_fib_lookup' arg0 expects raw context pointer"
     }
     {
+        name: "tc-fib-lookup-helper"
+        category: "helper-state"
+        tags: [tc helper fib accept source metadata]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  map-define fib_params --kind array --value-type bytes:64 --max-entries 1'
+            '  let params = (0 | map-get fib_params --kind array)'
+            '  if $params { helper-call "bpf_fib_lookup" $ctx $params 64 0 }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tc-fib-lookup-rejects-small-params-buffer"
+        category: "helper-state"
+        tags: [tc helper fib bounds reject source metadata]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  map-define fib_params --kind array --value-type bytes:8 --max-entries 1'
+            '  let params = (0 | map-get fib_params --kind array)'
+            '  if $params { helper-call "bpf_fib_lookup" $ctx $params 64 0 }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper fib_lookup params requires 64 bytes"
+    }
+    {
+        name: "xdp-check-mtu-helper"
+        category: "helper-state"
+        tags: [xdp helper mtu accept source metadata]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  map-define mtu_len --kind array --value-type bytes:4 --max-entries 1'
+            '  let len = (0 | map-get mtu_len --kind array)'
+            '  if $len { helper-call "bpf_check_mtu" $ctx 0 $len 0 0 }'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "xdp-check-mtu-rejects-nonzero-flags"
+        category: "helper-state"
+        tags: [xdp helper mtu flags reject source metadata]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  map-define mtu_len --kind array --value-type bytes:4 --max-entries 1'
+            '  let len = (0 | map-get mtu_len --kind array)'
+            '  if $len { helper-call "bpf_check_mtu" $ctx 0 $len 0 1 }'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_check_mtu' requires arg4 = 0 in xdp programs"
+    }
+    {
+        name: "tc-skb-get-tunnel-key-helper"
+        category: "helper-state"
+        tags: [tc helper tunnel accept source metadata]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  map-define tunnel_key --kind array --value-type bytes:16 --max-entries 1'
+            '  let key = (0 | map-get tunnel_key --kind array)'
+            '  if $key { helper-call "bpf_skb_get_tunnel_key" $ctx $key 16 0 }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tc-skb-get-tunnel-key-rejects-invalid-flags"
+        category: "helper-state"
+        tags: [tc helper tunnel flags reject source metadata]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  map-define tunnel_key --kind array --value-type bytes:16 --max-entries 1'
+            '  let key = (0 | map-get tunnel_key --kind array)'
+            '  if $key { helper-call "bpf_skb_get_tunnel_key" $ctx $key 16 2 }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_skb_get_tunnel_key' requires arg3 flags"
+    }
+    {
+        name: "tc-skb-get-tunnel-opt-helper"
+        category: "helper-state"
+        tags: [tc helper tunnel accept source metadata]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  map-define tunnel_opt --kind array --value-type bytes:16 --max-entries 1'
+            '  let opt = (0 | map-get tunnel_opt --kind array)'
+            '  if $opt { helper-call "bpf_skb_get_tunnel_opt" $ctx $opt 16 }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tc-skb-set-tunnel-opt-rejects-small-buffer"
+        category: "helper-state"
+        tags: [tc helper tunnel bounds reject source metadata]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  map-define tunnel_opt --kind array --value-type bytes:8 --max-entries 1'
+            '  let opt = (0 | map-get tunnel_opt --kind array)'
+            '  if $opt { helper-call "bpf_skb_set_tunnel_opt" $ctx $opt 16 }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper skb_tunnel buffer requires 16 bytes"
+    }
+    {
         name: "helper-get-stack-rejects-task-ctx-arg"
         category: "helper-state"
         tags: [helper raw-context reject source metadata]
@@ -21797,6 +21937,85 @@ const FIXTURES = [
         local: "reject"
         kernel: "skip"
         error_contains: "helper 'bpf_lwt_push_encap' is only valid in lwt_in and lwt_xmit programs"
+    }
+    {
+        name: "lwt-xmit-push-encap-helper"
+        category: "helper-state"
+        tags: [lwt helper-call accept source metadata]
+        target: "lwt_xmit:demo-route"
+        program: [
+            '{|ctx|'
+            '  map-define encap_hdr --kind array --value-type bytes:16 --max-entries 1'
+            '  let hdr = (0 | map-get encap_hdr --kind array)'
+            '  if $hdr { helper-call "bpf_lwt_push_encap" $ctx 0 $hdr 16 }'
+            '  "reroute"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "lwt-seg6local-store-bytes-helper"
+        category: "helper-state"
+        tags: [lwt helper-call seg6local accept source metadata]
+        target: "lwt_seg6local:demo-route"
+        program: [
+            '{|ctx|'
+            '  map-define seg6_bytes --kind array --value-type bytes:16 --max-entries 1'
+            '  let bytes = (0 | map-get seg6_bytes --kind array)'
+            '  if $bytes { helper-call "bpf_lwt_seg6_store_bytes" $ctx 0 $bytes 16 }'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "lwt-seg6local-adjust-srh-helper"
+        category: "helper-state"
+        tags: [lwt helper-call seg6local accept source metadata]
+        target: "lwt_seg6local:demo-route"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_lwt_seg6_adjust_srh" $ctx 0 4'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "lwt-seg6local-action-helper"
+        category: "helper-state"
+        tags: [lwt helper-call seg6local accept source metadata]
+        target: "lwt_seg6local:demo-route"
+        program: [
+            '{|ctx|'
+            '  map-define seg6_action --kind array --value-type bytes:16 --max-entries 1'
+            '  let param = (0 | map-get seg6_action --kind array)'
+            '  if $param { helper-call "bpf_lwt_seg6_action" $ctx 0 $param 16 }'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "lwt-seg6local-store-bytes-rejects-small-buffer"
+        category: "helper-state"
+        tags: [lwt helper-call seg6local bounds reject source metadata]
+        target: "lwt_seg6local:demo-route"
+        program: [
+            '{|ctx|'
+            '  map-define seg6_bytes --kind array --value-type bytes:8 --max-entries 1'
+            '  let bytes = (0 | map-get seg6_bytes --kind array)'
+            '  if $bytes { helper-call "bpf_lwt_seg6_store_bytes" $ctx 0 $bytes 16 }'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper lwt buffer requires 16 bytes"
     }
     {
         name: "lirc-mode2-context"
