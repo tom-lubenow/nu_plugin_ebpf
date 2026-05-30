@@ -1426,6 +1426,11 @@ const KERNEL_FEATURE_BPF_SKB_LOAD_BYTES = {
     min_kernel: "4.5"
     source: "https://github.com/torvalds/linux/blob/v4.5/include/uapi/linux/bpf.h"
 }
+const KERNEL_FEATURE_BPF_FIB_LOOKUP = {
+    key: "helper:bpf_fib_lookup"
+    min_kernel: "4.18"
+    source: "https://github.com/torvalds/linux/blob/v4.18/include/uapi/linux/bpf.h"
+}
 const KERNEL_FEATURE_BPF_CSUM_DIFF = {
     key: "helper:bpf_csum_diff"
     min_kernel: "4.6"
@@ -1500,6 +1505,11 @@ const KERNEL_FEATURE_BPF_REDIRECT_MAP = {
     key: "helper:bpf_redirect_map"
     min_kernel: "4.14"
     source: "https://github.com/torvalds/linux/blob/v4.14/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_BPF_CHECK_MTU = {
+    key: "helper:bpf_check_mtu"
+    min_kernel: "5.12"
+    source: "https://github.com/torvalds/linux/blob/v5.12/include/uapi/linux/bpf.h"
 }
 const KERNEL_FEATURE_BPF_TAIL_CALL = {
     key: "helper:bpf_tail_call"
@@ -5439,6 +5449,7 @@ const HELPER_KERNEL_FEATURES = [
     { name: "bpf_get_hash_recalc", feature: $KERNEL_FEATURE_BPF_GET_HASH_RECALC }
     { name: "bpf_csum_level", feature: $KERNEL_FEATURE_BPF_CSUM_LEVEL }
     { name: "bpf_skb_load_bytes", feature: $KERNEL_FEATURE_BPF_SKB_LOAD_BYTES }
+    { name: "bpf_fib_lookup", feature: $KERNEL_FEATURE_BPF_FIB_LOOKUP }
     { name: "bpf_skb_under_cgroup", feature: $KERNEL_FEATURE_BPF_SKB_UNDER_CGROUP }
     { name: "bpf_current_task_under_cgroup", feature: $KERNEL_FEATURE_BPF_CURRENT_TASK_UNDER_CGROUP }
     { name: "bpf_skb_pull_data", feature: $KERNEL_FEATURE_BPF_SKB_PULL_DATA }
@@ -5450,6 +5461,7 @@ const HELPER_KERNEL_FEATURES = [
     { name: "bpf_xdp_adjust_tail", feature: $KERNEL_FEATURE_BPF_XDP_ADJUST_TAIL }
     { name: "bpf_xdp_get_buff_len", feature: $KERNEL_FEATURE_BPF_XDP_GET_BUFF_LEN }
     { name: "bpf_redirect_map", feature: $KERNEL_FEATURE_BPF_REDIRECT_MAP }
+    { name: "bpf_check_mtu", feature: $KERNEL_FEATURE_BPF_CHECK_MTU }
     { name: "bpf_sk_redirect_map", feature: $KERNEL_FEATURE_BPF_SK_REDIRECT_MAP }
     { name: "bpf_sk_redirect_hash", feature: $KERNEL_FEATURE_BPF_SK_REDIRECT_HASH }
     { name: "bpf_msg_apply_bytes", feature: $KERNEL_FEATURE_BPF_MSG_APPLY_BYTES }
@@ -8794,6 +8806,28 @@ const PROGRAM_HELPER_KERNEL_FEATURE_EXPECTATIONS = [
             '}'
         ]
         feature_keys: ["helper:bpf_skb_cgroup_classid"]
+    }
+    {
+        program: [
+            '{|ctx|'
+            '  map-define fib_params --kind array --value-type bytes:64 --max-entries 1'
+            '  let params = (0 | map-get fib_params --kind array)'
+            '  if $params { helper-call "bpf_fib_lookup" $ctx $params 64 0 }'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["helper:bpf_fib_lookup"]
+    }
+    {
+        program: [
+            '{|ctx|'
+            '  map-define mtu_len --kind array --value-type bytes:4 --max-entries 1'
+            '  let len = (0 | map-get mtu_len --kind array)'
+            '  if $len { helper-call "bpf_check_mtu" $ctx 0 $len 0 0 }'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["helper:bpf_check_mtu"]
     }
     {
         program: [
@@ -18898,6 +18932,76 @@ const FIXTURES = [
         error_contains: "helper fib_lookup params requires 64 bytes"
     }
     {
+        name: "xdp-fib-lookup-helper"
+        category: "helper-state"
+        tags: [xdp helper fib accept source metadata]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  map-define fib_params --kind array --value-type bytes:64 --max-entries 1'
+            '  let params = (0 | map-get fib_params --kind array)'
+            '  if $params { helper-call "bpf_fib_lookup" $ctx $params 64 0 }'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "xdp-fib-lookup-rejects-invalid-flags"
+        category: "helper-state"
+        tags: [xdp helper fib flags reject source metadata]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  map-define fib_params --kind array --value-type bytes:64 --max-entries 1'
+            '  let params = (0 | map-get fib_params --kind array)'
+            '  if $params { helper-call "bpf_fib_lookup" $ctx $params 64 64 }'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_fib_lookup' requires arg3 flags"
+    }
+    {
+        name: "xdp-fib-lookup-rejects-small-params-buffer"
+        category: "helper-state"
+        tags: [xdp helper fib bounds reject source metadata]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  map-define fib_params --kind array --value-type bytes:8 --max-entries 1'
+            '  let params = (0 | map-get fib_params --kind array)'
+            '  if $params { helper-call "bpf_fib_lookup" $ctx $params 64 0 }'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper fib_lookup params requires 64 bytes"
+    }
+    {
+        name: "sk-skb-fib-lookup-rejects-program"
+        category: "helper-state"
+        tags: [sk-skb helper fib program-policy reject source metadata]
+        target: "sk_skb:/sys/fs/bpf/demo_sockmap"
+        program: [
+            '{|ctx|'
+            '  map-define fib_params --kind array --value-type bytes:64 --max-entries 1'
+            '  let params = (0 | map-get fib_params --kind array)'
+            '  if $params { helper-call "bpf_fib_lookup" $ctx $params 64 0 }'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_fib_lookup' is only valid in xdp, tc_action, tc, tcx, and netkit programs"
+    }
+    {
         name: "xdp-check-mtu-helper"
         category: "helper-state"
         tags: [xdp helper mtu accept source metadata]
@@ -18931,6 +19035,58 @@ const FIXTURES = [
         local: "reject"
         kernel: "skip"
         error_contains: "helper 'bpf_check_mtu' requires arg4 = 0 in xdp programs"
+    }
+    {
+        name: "tc-check-mtu-helper"
+        category: "helper-state"
+        tags: [tc helper mtu accept source metadata]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  map-define mtu_len --kind array --value-type bytes:4 --max-entries 1'
+            '  let len = (0 | map-get mtu_len --kind array)'
+            '  if $len { helper-call "bpf_check_mtu" $ctx 0 $len 0 1 }'
+            '  "ok"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tc-check-mtu-rejects-small-mtu-len"
+        category: "helper-state"
+        tags: [tc helper mtu bounds reject source metadata]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  map-define mtu_len --kind array --value-type bytes:2 --max-entries 1'
+            '  let len = (0 | map-get mtu_len --kind array)'
+            '  if $len { helper-call "bpf_check_mtu" $ctx 0 $len 0 0 }'
+            '  "ok"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper check_mtu mtu_len requires 4 bytes"
+    }
+    {
+        name: "sk-skb-check-mtu-rejects-program"
+        category: "helper-state"
+        tags: [sk-skb helper mtu program-policy reject source metadata]
+        target: "sk_skb:/sys/fs/bpf/demo_sockmap"
+        program: [
+            '{|ctx|'
+            '  map-define mtu_len --kind array --value-type bytes:4 --max-entries 1'
+            '  let len = (0 | map-get mtu_len --kind array)'
+            '  if $len { helper-call "bpf_check_mtu" $ctx 0 $len 0 0 }'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_check_mtu' is only valid in xdp, tc_action, tc, tcx, and netkit programs"
     }
     {
         name: "tc-skb-get-tunnel-key-helper"
@@ -31085,6 +31241,33 @@ const FIXTURES = [
         local: "reject"
         kernel: "skip"
         error_contains: "helper 'bpf_redirect_neigh' requires arg2 = 0 when arg1 is null"
+    }
+    {
+        name: "redirect-peer-helper"
+        category: "helper-state"
+        tags: [redirect-peer tc-action accept source metadata]
+        target: "tc_action:diff-action"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_redirect_peer" 1 0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "redirect-peer-rejects-nonzero-flags"
+        category: "helper-state"
+        tags: [redirect-peer flags reject tc]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_redirect_peer" 1 1'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_redirect_peer' requires arg1 = 0"
     }
     {
         name: "core-early-return"
