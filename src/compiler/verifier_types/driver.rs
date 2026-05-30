@@ -220,6 +220,7 @@ fn verify_mir_with_subfunction_summaries_impl(
     }
     if let Some(summary) = current_summary {
         seed_entry_critical_section_state(&mut entry_state, func, summary);
+        seed_entry_iter_state(&mut entry_state, func, summary);
         for i in 0..func.param_count {
             if !summary.releases_ringbuf_dynptr_arg(i) {
                 continue;
@@ -352,51 +353,7 @@ fn verify_mir_with_subfunction_summaries_impl(
                         "unreleased res spin lock irqsave at function exit",
                     ));
                 }
-                if state.has_live_iter_task_vma() {
-                    errors.push(VerifierTypeError::new(
-                        "unreleased iter_task_vma iterator at function exit",
-                    ));
-                }
-                if state.has_live_iter_task() {
-                    errors.push(VerifierTypeError::new(
-                        "unreleased iter_task iterator at function exit",
-                    ));
-                }
-                if state.has_live_iter_scx_dsq() {
-                    errors.push(VerifierTypeError::new(
-                        "unreleased iter_scx_dsq iterator at function exit",
-                    ));
-                }
-                if state.has_live_iter_num() {
-                    errors.push(VerifierTypeError::new(
-                        "unreleased iter_num iterator at function exit",
-                    ));
-                }
-                if state.has_live_iter_bits() {
-                    errors.push(VerifierTypeError::new(
-                        "unreleased iter_bits iterator at function exit",
-                    ));
-                }
-                if state.has_live_iter_css() {
-                    errors.push(VerifierTypeError::new(
-                        "unreleased iter_css iterator at function exit",
-                    ));
-                }
-                if state.has_live_iter_css_task() {
-                    errors.push(VerifierTypeError::new(
-                        "unreleased iter_css_task iterator at function exit",
-                    ));
-                }
-                if state.has_live_iter_dmabuf() {
-                    errors.push(VerifierTypeError::new(
-                        "unreleased iter_dmabuf iterator at function exit",
-                    ));
-                }
-                if state.has_live_iter_kmem_cache() {
-                    errors.push(VerifierTypeError::new(
-                        "unreleased iter_kmem_cache iterator at function exit",
-                    ));
-                }
+                check_live_iter_families_at_return(current_summary, func, &state, &mut errors);
                 if let Some(slot) = state.first_live_ringbuf_dynptr_slot() {
                     errors.push(VerifierTypeError::new(format!(
                         "unreleased ringbuf dynptr reservation at function exit: stack slot {}",
@@ -554,6 +511,27 @@ fn seed_entry_critical_section_state(
     }
 }
 
+fn seed_entry_iter_state(
+    state: &mut VerifierState,
+    func: &MirFunction,
+    summary: SubfunctionSummary,
+) {
+    for idx in 0..func.param_count {
+        let Some(delta) = summary.iter_delta_arg(idx) else {
+            continue;
+        };
+        if delta.delta >= 0 {
+            continue;
+        }
+        let Some(slot) = func.param_stack_slots.get(&idx).copied() else {
+            continue;
+        };
+        for _ in 0..delta.delta.unsigned_abs() {
+            let _ = apply_iter_lifecycle_op(state, delta.family, KfuncIterLifecycleOp::New, slot);
+        }
+    }
+}
+
 fn allowed_rcu_depth(current_summary: Option<SubfunctionSummary>) -> u32 {
     current_summary
         .map(|summary| summary.rcu_read_lock_delta().max(0) as u32)
@@ -582,6 +560,71 @@ fn allowed_local_irq_slots(
         if let Some(slot) = func.param_stack_slots.get(&idx).copied() {
             let entry = allowed.entry(slot).or_insert(0u32);
             *entry = entry.saturating_add(delta);
+        }
+    }
+    allowed
+}
+
+fn check_live_iter_families_at_return(
+    current_summary: Option<SubfunctionSummary>,
+    func: &MirFunction,
+    state: &VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    for family in [
+        KfuncIterFamily::TaskVma,
+        KfuncIterFamily::Task,
+        KfuncIterFamily::ScxDsq,
+        KfuncIterFamily::Num,
+        KfuncIterFamily::Bits,
+        KfuncIterFamily::Css,
+        KfuncIterFamily::CssTask,
+        KfuncIterFamily::Dmabuf,
+        KfuncIterFamily::KmemCache,
+    ] {
+        let allowed_slots = allowed_iter_slots(current_summary, func, family);
+        if state.has_live_iter_family_except_slots(family, &allowed_slots) {
+            errors.push(VerifierTypeError::new(format!(
+                "unreleased {} iterator at function exit",
+                iter_exit_label(family)
+            )));
+        }
+    }
+}
+
+fn iter_exit_label(family: KfuncIterFamily) -> &'static str {
+    match family {
+        KfuncIterFamily::TaskVma => "iter_task_vma",
+        KfuncIterFamily::Task => "iter_task",
+        KfuncIterFamily::ScxDsq => "iter_scx_dsq",
+        KfuncIterFamily::Num => "iter_num",
+        KfuncIterFamily::Bits => "iter_bits",
+        KfuncIterFamily::Css => "iter_css",
+        KfuncIterFamily::CssTask => "iter_css_task",
+        KfuncIterFamily::Dmabuf => "iter_dmabuf",
+        KfuncIterFamily::KmemCache => "iter_kmem_cache",
+    }
+}
+
+fn allowed_iter_slots(
+    current_summary: Option<SubfunctionSummary>,
+    func: &MirFunction,
+    family: KfuncIterFamily,
+) -> HashMap<StackSlotId, u32> {
+    let mut allowed = HashMap::new();
+    let Some(summary) = current_summary else {
+        return allowed;
+    };
+    for idx in 0..func.param_count {
+        let Some(delta) = summary.iter_delta_arg(idx) else {
+            continue;
+        };
+        if delta.family != family || delta.delta <= 0 {
+            continue;
+        }
+        if let Some(slot) = func.param_stack_slots.get(&idx).copied() {
+            let entry = allowed.entry(slot).or_insert(0u32);
+            *entry = entry.saturating_add(delta.delta as u32);
         }
     }
     allowed

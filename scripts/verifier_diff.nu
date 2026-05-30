@@ -18951,6 +18951,33 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "source-kfunc-iter-num-user-function-new-destroy"
+        category: "helper-state"
+        tags: [kfunc iter ref-lifetime source accept user-function]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  def iter-new [iter start end] {'
+            '    kfunc-call "bpf_iter_num_new" $iter $start $end'
+            '    0'
+            '  }'
+            '  def iter-destroy [iter] {'
+            '    kfunc-call "bpf_iter_num_destroy" $iter'
+            '    0'
+            '  }'
+            '  let iter = "0123456789abcdef"'
+            '  iter-new $iter 0 4'
+            '  let item = (kfunc-call "bpf_iter_num_next" $iter)'
+            '  if $item { 0 }'
+            '  iter-destroy $iter'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "source-kfunc-iter-num-rejects-next-without-new"
         category: "helper-state"
         tags: [kfunc iter ref-lifetime source reject]

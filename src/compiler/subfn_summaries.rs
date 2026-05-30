@@ -1,8 +1,9 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use super::instruction::{
-    BpfHelper, KfuncRefKind, helper_acquire_ref_kind, helper_release_ref_kind,
-    kfunc_acquire_ref_kind, kfunc_release_ref_arg_index, kfunc_release_ref_kind,
+    BpfHelper, KfuncIterFamily, KfuncIterLifecycleOp, KfuncRefKind, helper_acquire_ref_kind,
+    helper_release_ref_kind, kfunc_acquire_ref_kind, kfunc_iter_lifecycle,
+    kfunc_release_ref_arg_index, kfunc_release_ref_kind,
 };
 use super::mir::{BlockId, MirFunction, MirInst, MirValue, SubfunctionId, VReg};
 
@@ -42,6 +43,53 @@ impl SubfunctionReturnSummary {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SubfunctionIterDelta {
+    pub(crate) family: KfuncIterFamily,
+    pub(crate) delta: i8,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct IterDeltaState {
+    family: Option<KfuncIterFamily>,
+    delta: i8,
+}
+
+impl IterDeltaState {
+    const ZERO: Self = Self {
+        family: None,
+        delta: 0,
+    };
+
+    fn add(self, family: KfuncIterFamily, delta: i8) -> Option<Self> {
+        let next_delta = self.delta.checked_add(delta)?;
+        if next_delta == 0 {
+            return Some(Self::ZERO);
+        }
+        match self.family {
+            None => Some(Self {
+                family: Some(family),
+                delta: next_delta,
+            }),
+            Some(existing_family) if existing_family == family => Some(Self {
+                family: Some(family),
+                delta: next_delta,
+            }),
+            Some(_) => None,
+        }
+    }
+
+    fn to_summary(self) -> Option<SubfunctionIterDelta> {
+        if self.delta == 0 {
+            return None;
+        }
+        self.family.map(|family| SubfunctionIterDelta {
+            family,
+            delta: self.delta,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct SubfunctionSummary {
     return_summary: SubfunctionReturnSummary,
     ringbuf_record_return: bool,
@@ -49,6 +97,7 @@ pub(crate) struct SubfunctionSummary {
     rcu_read_lock_delta: i8,
     preempt_disable_delta: i8,
     local_irq_deltas: [i8; SUMMARY_ARG_SLOTS],
+    iter_deltas: [Option<SubfunctionIterDelta>; SUMMARY_ARG_SLOTS],
     ringbuf_record_release_args: u8,
     ringbuf_dynptr_release_args: u8,
     kfunc_ref_release_args: [Option<KfuncRefKind>; SUMMARY_ARG_SLOTS],
@@ -63,6 +112,7 @@ impl SubfunctionSummary {
             rcu_read_lock_delta: 0,
             preempt_disable_delta: 0,
             local_irq_deltas: [0; SUMMARY_ARG_SLOTS],
+            iter_deltas: [None; SUMMARY_ARG_SLOTS],
             ringbuf_record_release_args: 0,
             ringbuf_dynptr_release_args: 0,
             kfunc_ref_release_args: [None; SUMMARY_ARG_SLOTS],
@@ -77,6 +127,7 @@ impl SubfunctionSummary {
             rcu_read_lock_delta: 0,
             preempt_disable_delta: 0,
             local_irq_deltas: [0; SUMMARY_ARG_SLOTS],
+            iter_deltas: [None; SUMMARY_ARG_SLOTS],
             ringbuf_record_release_args: 0,
             ringbuf_dynptr_release_args: 0,
             kfunc_ref_release_args: [None; SUMMARY_ARG_SLOTS],
@@ -115,6 +166,14 @@ impl SubfunctionSummary {
         }
     }
 
+    pub(crate) const fn iter_delta_arg(self, idx: usize) -> Option<SubfunctionIterDelta> {
+        if idx < SUMMARY_ARG_SLOTS {
+            self.iter_deltas[idx]
+        } else {
+            None
+        }
+    }
+
     pub(crate) const fn changes_packet_data(self) -> bool {
         self.return_summary.changes_packet_data()
     }
@@ -142,6 +201,7 @@ impl SubfunctionSummary {
         rcu_read_lock_delta: i8,
         preempt_disable_delta: i8,
         local_irq_deltas: [i8; SUMMARY_ARG_SLOTS],
+        iter_deltas: [Option<SubfunctionIterDelta>; SUMMARY_ARG_SLOTS],
         changes_packet_data: bool,
         ringbuf_record_release_args: u8,
         ringbuf_dynptr_release_args: u8,
@@ -154,6 +214,7 @@ impl SubfunctionSummary {
             rcu_read_lock_delta,
             preempt_disable_delta,
             local_irq_deltas,
+            iter_deltas,
             ringbuf_record_release_args,
             ringbuf_dynptr_release_args,
             kfunc_ref_release_args,
@@ -187,6 +248,7 @@ struct SummaryState {
     rcu_read_lock_delta: Option<i8>,
     preempt_disable_delta: Option<i8>,
     local_irq_deltas: [Option<i8>; SUMMARY_ARG_SLOTS],
+    iter_deltas: [Option<IterDeltaState>; SUMMARY_ARG_SLOTS],
     ringbuf_record_release_args: u8,
     ringbuf_dynptr_release_args: u8,
     kfunc_ref_release_args: [Option<KfuncRefKind>; SUMMARY_ARG_SLOTS],
@@ -271,6 +333,7 @@ fn summarize_function(
             rcu_read_lock_delta: Some(0),
             preempt_disable_delta: Some(0),
             local_irq_deltas: [Some(0); SUMMARY_ARG_SLOTS],
+            iter_deltas: [Some(IterDeltaState::ZERO); SUMMARY_ARG_SLOTS],
             ringbuf_record_release_args: 0,
             ringbuf_dynptr_release_args: 0,
             kfunc_ref_release_args: [None; SUMMARY_ARG_SLOTS],
@@ -284,6 +347,7 @@ fn summarize_function(
     let mut returned_rcu_delta: Option<Option<i8>> = None;
     let mut returned_preempt_delta: Option<Option<i8>> = None;
     let mut returned_local_irq_deltas: Option<[Option<i8>; SUMMARY_ARG_SLOTS]> = None;
+    let mut returned_iter_deltas: Option<[Option<IterDeltaState>; SUMMARY_ARG_SLOTS]> = None;
     let mut changes_packet_data = false;
     let mut returned_record_releases: Option<u8> = None;
     let mut returned_dynptr_releases: Option<u8> = None;
@@ -365,6 +429,10 @@ fn summarize_function(
                     None => state.local_irq_deltas,
                     Some(existing) => merge_delta_args(existing, state.local_irq_deltas),
                 });
+                returned_iter_deltas = Some(match returned_iter_deltas {
+                    None => state.iter_deltas,
+                    Some(existing) => merge_iter_delta_args(existing, state.iter_deltas),
+                });
                 returned_record_releases = Some(match returned_record_releases {
                     None => state.ringbuf_record_release_args,
                     Some(existing) => existing & state.ringbuf_record_release_args,
@@ -396,6 +464,7 @@ fn summarize_function(
         returned_rcu_delta.flatten().unwrap_or(0),
         returned_preempt_delta.flatten().unwrap_or(0),
         finalize_delta_args(returned_local_irq_deltas),
+        finalize_iter_delta_args(returned_iter_deltas),
         changes_packet_data,
         returned_record_releases.unwrap_or(0),
         returned_dynptr_releases.unwrap_or(0),
@@ -478,6 +547,11 @@ fn merge_alias_states(existing: &mut SummaryState, incoming: &SummaryState) -> b
         existing.local_irq_deltas = local_irq_deltas;
         changed = true;
     }
+    let iter_deltas = merge_iter_delta_args(existing.iter_deltas, incoming.iter_deltas);
+    if existing.iter_deltas != iter_deltas {
+        existing.iter_deltas = iter_deltas;
+        changed = true;
+    }
     let record_releases =
         existing.ringbuf_record_release_args & incoming.ringbuf_record_release_args;
     if existing.ringbuf_record_release_args != record_releases {
@@ -525,6 +599,34 @@ fn finalize_delta_args(
     let mut finalized = [0; SUMMARY_ARG_SLOTS];
     for idx in 0..SUMMARY_ARG_SLOTS {
         finalized[idx] = returned[idx].unwrap_or(0);
+    }
+    finalized
+}
+
+fn merge_iter_delta_args(
+    existing: [Option<IterDeltaState>; SUMMARY_ARG_SLOTS],
+    incoming: [Option<IterDeltaState>; SUMMARY_ARG_SLOTS],
+) -> [Option<IterDeltaState>; SUMMARY_ARG_SLOTS] {
+    let mut merged = [None; SUMMARY_ARG_SLOTS];
+    for idx in 0..SUMMARY_ARG_SLOTS {
+        merged[idx] = if existing[idx] == incoming[idx] {
+            existing[idx]
+        } else {
+            None
+        };
+    }
+    merged
+}
+
+fn finalize_iter_delta_args(
+    returned: Option<[Option<IterDeltaState>; SUMMARY_ARG_SLOTS]>,
+) -> [Option<SubfunctionIterDelta>; SUMMARY_ARG_SLOTS] {
+    let Some(returned) = returned else {
+        return [None; SUMMARY_ARG_SLOTS];
+    };
+    let mut finalized = [None; SUMMARY_ARG_SLOTS];
+    for idx in 0..SUMMARY_ARG_SLOTS {
+        finalized[idx] = returned[idx].and_then(IterDeltaState::to_summary);
     }
     finalized
 }
@@ -757,6 +859,18 @@ fn apply_subfunction_critical_delta(
         };
         add_delta_arg(&mut state.local_irq_deltas, param_idx, delta);
     }
+    for idx in 0..SUMMARY_ARG_SLOTS {
+        let Some(delta) = summary.iter_delta_arg(idx) else {
+            continue;
+        };
+        let Some(arg) = args.get(idx) else {
+            continue;
+        };
+        let AliasSource::Param(param_idx) = get_alias(&state.aliases, *arg) else {
+            continue;
+        };
+        add_iter_delta_arg(&mut state.iter_deltas, param_idx, delta.family, delta.delta);
+    }
 }
 
 fn apply_kfunc_critical_delta(kfunc: &str, args: &[VReg], state: &mut SummaryState) {
@@ -767,7 +881,7 @@ fn apply_kfunc_critical_delta(kfunc: &str, args: &[VReg], state: &mut SummarySta
         "bpf_preempt_enable" => add_delta(&mut state.preempt_disable_delta, -1),
         "bpf_local_irq_save" => apply_local_irq_delta(args, state, 1),
         "bpf_local_irq_restore" => apply_local_irq_delta(args, state, -1),
-        _ => {}
+        _ => apply_kfunc_iter_delta(kfunc, args, state),
     }
 }
 
@@ -788,6 +902,35 @@ fn add_delta(slot: &mut Option<i8>, delta: i8) {
 fn add_delta_arg(slots: &mut [Option<i8>; SUMMARY_ARG_SLOTS], idx: usize, delta: i8) {
     if let Some(slot) = slots.get_mut(idx) {
         add_delta(slot, delta);
+    }
+}
+
+fn apply_kfunc_iter_delta(kfunc: &str, args: &[VReg], state: &mut SummaryState) {
+    let Some(lifecycle) = kfunc_iter_lifecycle(kfunc) else {
+        return;
+    };
+    let delta = match lifecycle.op {
+        KfuncIterLifecycleOp::New => 1,
+        KfuncIterLifecycleOp::Destroy => -1,
+        KfuncIterLifecycleOp::Next => return,
+    };
+    let Some(arg) = args.get(lifecycle.arg_idx) else {
+        return;
+    };
+    let AliasSource::Param(param_idx) = get_alias(&state.aliases, *arg) else {
+        return;
+    };
+    add_iter_delta_arg(&mut state.iter_deltas, param_idx, lifecycle.family, delta);
+}
+
+fn add_iter_delta_arg(
+    slots: &mut [Option<IterDeltaState>; SUMMARY_ARG_SLOTS],
+    idx: usize,
+    family: KfuncIterFamily,
+    delta: i8,
+) {
+    if let Some(slot) = slots.get_mut(idx) {
+        *slot = slot.and_then(|state| state.add(family, delta));
     }
 }
 
@@ -1741,5 +1884,95 @@ mod tests {
             .copied()
             .expect("expected summary");
         assert_eq!(summary.local_irq_delta_arg(0), 0);
+    }
+
+    #[test]
+    fn test_infer_summary_tracks_iter_delta() {
+        let mut new = MirFunction::new();
+        let new_entry = new.alloc_block();
+        new.entry = new_entry;
+        new.param_count = 1;
+        new.vreg_count = 1;
+        let start = new.alloc_vreg();
+        let end = new.alloc_vreg();
+        let new_ret = new.alloc_vreg();
+        new.block_mut(new_entry)
+            .instructions
+            .push(MirInst::CallKfunc {
+                dst: new_ret,
+                kfunc: "bpf_iter_num_new".to_string(),
+                btf_id: None,
+                args: vec![VReg(0), start, end],
+            });
+        new.block_mut(new_entry).terminator = MirInst::Return { val: None };
+
+        let mut destroy = MirFunction::new();
+        let destroy_entry = destroy.alloc_block();
+        destroy.entry = destroy_entry;
+        destroy.param_count = 1;
+        destroy.vreg_count = 1;
+        let destroy_ret = destroy.alloc_vreg();
+        destroy
+            .block_mut(destroy_entry)
+            .instructions
+            .push(MirInst::CallKfunc {
+                dst: destroy_ret,
+                kfunc: "bpf_iter_num_destroy".to_string(),
+                btf_id: None,
+                args: vec![VReg(0)],
+            });
+        destroy.block_mut(destroy_entry).terminator = MirInst::Return { val: None };
+
+        let summaries = infer_subfunction_summaries(&[new, destroy]);
+        let new_delta = summaries
+            .get(&SubfunctionId(0))
+            .copied()
+            .expect("expected new summary")
+            .iter_delta_arg(0)
+            .expect("expected iterator delta");
+        assert_eq!(new_delta.family, KfuncIterFamily::Num);
+        assert_eq!(new_delta.delta, 1);
+        let destroy_delta = summaries
+            .get(&SubfunctionId(1))
+            .copied()
+            .expect("expected destroy summary")
+            .iter_delta_arg(0)
+            .expect("expected iterator delta");
+        assert_eq!(destroy_delta.family, KfuncIterFamily::Num);
+        assert_eq!(destroy_delta.delta, -1);
+    }
+
+    #[test]
+    fn test_infer_summary_requires_iter_delta_on_all_returns() {
+        let mut subfn = MirFunction::new();
+        let entry = subfn.alloc_block();
+        let new = subfn.alloc_block();
+        let done = subfn.alloc_block();
+        subfn.entry = entry;
+        subfn.param_count = 1;
+        subfn.vreg_count = 2;
+        subfn.block_mut(entry).terminator = MirInst::Branch {
+            cond: VReg(1),
+            if_true: new,
+            if_false: done,
+        };
+        let start = subfn.alloc_vreg();
+        let end = subfn.alloc_vreg();
+        let new_ret = subfn.alloc_vreg();
+        subfn.block_mut(new).instructions.push(MirInst::CallKfunc {
+            dst: new_ret,
+            kfunc: "bpf_iter_num_new".to_string(),
+            btf_id: None,
+            args: vec![VReg(0), start, end],
+        });
+        subfn.block_mut(new).terminator = MirInst::Return { val: None };
+        subfn.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let summaries = infer_subfunction_summaries(&[subfn]);
+        let summary = summaries
+            .get(&SubfunctionId(0))
+            .copied()
+            .expect("expected summary");
+        assert_eq!(summary.iter_delta_arg(0), None);
     }
 }

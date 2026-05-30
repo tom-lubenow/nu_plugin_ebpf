@@ -615,10 +615,6 @@ impl VccState {
         true
     }
 
-    fn has_live_iter_task_vma(&self) -> bool {
-        self.iter_task_vma_max_depth > 0
-    }
-
     fn acquire_iter_task_slot(&mut self, slot: StackSlotId) -> bool {
         acquire_slot_depth(
             &mut self.iter_task_slots,
@@ -644,10 +640,6 @@ impl VccState {
         self.iter_task_min_depth -= 1;
         self.iter_task_max_depth -= 1;
         true
-    }
-
-    fn has_live_iter_task(&self) -> bool {
-        self.iter_task_max_depth > 0
     }
 
     fn acquire_iter_scx_dsq_slot(&mut self, slot: StackSlotId) -> bool {
@@ -677,10 +669,6 @@ impl VccState {
         true
     }
 
-    fn has_live_iter_scx_dsq(&self) -> bool {
-        self.iter_scx_dsq_max_depth > 0
-    }
-
     fn acquire_iter_num_slot(&mut self, slot: StackSlotId) -> bool {
         acquire_slot_depth(
             &mut self.iter_num_slots,
@@ -706,10 +694,6 @@ impl VccState {
         self.iter_num_min_depth -= 1;
         self.iter_num_max_depth -= 1;
         true
-    }
-
-    fn has_live_iter_num(&self) -> bool {
-        self.iter_num_max_depth > 0
     }
 
     fn acquire_iter_bits_slot(&mut self, slot: StackSlotId) -> bool {
@@ -739,10 +723,6 @@ impl VccState {
         true
     }
 
-    fn has_live_iter_bits(&self) -> bool {
-        self.iter_bits_max_depth > 0
-    }
-
     fn acquire_iter_css_slot(&mut self, slot: StackSlotId) -> bool {
         acquire_slot_depth(
             &mut self.iter_css_slots,
@@ -768,10 +748,6 @@ impl VccState {
         self.iter_css_min_depth -= 1;
         self.iter_css_max_depth -= 1;
         true
-    }
-
-    fn has_live_iter_css(&self) -> bool {
-        self.iter_css_max_depth > 0
     }
 
     fn acquire_iter_css_task_slot(&mut self, slot: StackSlotId) -> bool {
@@ -801,10 +777,6 @@ impl VccState {
         true
     }
 
-    fn has_live_iter_css_task(&self) -> bool {
-        self.iter_css_task_max_depth > 0
-    }
-
     fn acquire_iter_dmabuf_slot(&mut self, slot: StackSlotId) -> bool {
         acquire_slot_depth(
             &mut self.iter_dmabuf_slots,
@@ -830,10 +802,6 @@ impl VccState {
         self.iter_dmabuf_min_depth -= 1;
         self.iter_dmabuf_max_depth -= 1;
         true
-    }
-
-    fn has_live_iter_dmabuf(&self) -> bool {
-        self.iter_dmabuf_max_depth > 0
     }
 
     fn acquire_iter_kmem_cache_slot(&mut self, slot: StackSlotId) -> bool {
@@ -863,8 +831,58 @@ impl VccState {
         true
     }
 
-    fn has_live_iter_kmem_cache(&self) -> bool {
-        self.iter_kmem_cache_max_depth > 0
+    fn has_live_iter_family_except_slots(
+        &self,
+        family: KfuncIterFamily,
+        allowed_slots: &HashMap<StackSlotId, u32>,
+    ) -> bool {
+        match family {
+            KfuncIterFamily::TaskVma => has_live_slot_depth_except(
+                &self.iter_task_vma_slots,
+                self.iter_task_vma_max_depth,
+                allowed_slots,
+            ),
+            KfuncIterFamily::Task => has_live_slot_depth_except(
+                &self.iter_task_slots,
+                self.iter_task_max_depth,
+                allowed_slots,
+            ),
+            KfuncIterFamily::ScxDsq => has_live_slot_depth_except(
+                &self.iter_scx_dsq_slots,
+                self.iter_scx_dsq_max_depth,
+                allowed_slots,
+            ),
+            KfuncIterFamily::Num => has_live_slot_depth_except(
+                &self.iter_num_slots,
+                self.iter_num_max_depth,
+                allowed_slots,
+            ),
+            KfuncIterFamily::Bits => has_live_slot_depth_except(
+                &self.iter_bits_slots,
+                self.iter_bits_max_depth,
+                allowed_slots,
+            ),
+            KfuncIterFamily::Css => has_live_slot_depth_except(
+                &self.iter_css_slots,
+                self.iter_css_max_depth,
+                allowed_slots,
+            ),
+            KfuncIterFamily::CssTask => has_live_slot_depth_except(
+                &self.iter_css_task_slots,
+                self.iter_css_task_max_depth,
+                allowed_slots,
+            ),
+            KfuncIterFamily::Dmabuf => has_live_slot_depth_except(
+                &self.iter_dmabuf_slots,
+                self.iter_dmabuf_max_depth,
+                allowed_slots,
+            ),
+            KfuncIterFamily::KmemCache => has_live_slot_depth_except(
+                &self.iter_kmem_cache_slots,
+                self.iter_kmem_cache_max_depth,
+                allowed_slots,
+            ),
+        }
     }
 
     fn res_spin_lock_identity(&self, reg: VccReg) -> ResSpinLockIdentity {
@@ -2173,6 +2191,24 @@ fn increment_slot_depth(depths: &mut HashMap<StackSlotId, (u32, u32)>, slot: Sta
     let entry = depths.entry(slot).or_insert((0, 0));
     entry.0 = entry.0.saturating_add(1);
     entry.1 = entry.1.saturating_add(1);
+}
+
+fn has_live_slot_depth_except(
+    depths: &HashMap<StackSlotId, (u32, u32)>,
+    max_depth: u32,
+    allowed_slots: &HashMap<StackSlotId, u32>,
+) -> bool {
+    let tracked_total: u32 = depths.values().map(|(_, max_depth)| *max_depth).sum();
+    if max_depth > tracked_total {
+        return true;
+    }
+    let allowed_total = allowed_slots.values().copied().sum();
+    if max_depth > allowed_total {
+        return true;
+    }
+    depths
+        .iter()
+        .any(|(slot, (_, slot_max))| *slot_max > allowed_slots.get(slot).copied().unwrap_or(0))
 }
 
 fn acquire_slot_depth(

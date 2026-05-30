@@ -735,7 +735,7 @@ pub(in crate::compiler::verifier_types) fn kfunc_unknown_stack_object_copy(
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum IterLifecycleFailure {
+pub(in crate::compiler::verifier_types) enum IterLifecycleFailure {
     LiveSlot,
     MissingMatchingConstructor,
 }
@@ -747,7 +747,7 @@ fn iter_lifecycle_result(
     if valid { Ok(()) } else { Err(failure) }
 }
 
-fn apply_iter_lifecycle_op(
+pub(in crate::compiler::verifier_types) fn apply_iter_lifecycle_op(
     state: &mut VerifierState,
     family: KfuncIterFamily,
     op: KfuncIterLifecycleOp,
@@ -865,7 +865,7 @@ fn apply_iter_lifecycle_op(
     }
 }
 
-fn iter_lifecycle_error_message(
+pub(in crate::compiler::verifier_types) fn iter_lifecycle_error_message(
     kfunc: &str,
     family: KfuncIterFamily,
     failure: IterLifecycleFailure,

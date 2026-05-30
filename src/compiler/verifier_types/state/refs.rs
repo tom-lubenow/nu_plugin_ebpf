@@ -828,6 +828,60 @@ impl VerifierState {
         self.iter_kmem_cache_max_depth > 0
     }
 
+    pub(in crate::compiler::verifier_types) fn has_live_iter_family_except_slots(
+        &self,
+        family: KfuncIterFamily,
+        allowed_slots: &HashMap<StackSlotId, u32>,
+    ) -> bool {
+        match family {
+            KfuncIterFamily::TaskVma => has_live_slot_depth_except(
+                &self.iter_task_vma_slots,
+                self.iter_task_vma_max_depth,
+                allowed_slots,
+            ),
+            KfuncIterFamily::Task => has_live_slot_depth_except(
+                &self.iter_task_slots,
+                self.iter_task_max_depth,
+                allowed_slots,
+            ),
+            KfuncIterFamily::ScxDsq => has_live_slot_depth_except(
+                &self.iter_scx_dsq_slots,
+                self.iter_scx_dsq_max_depth,
+                allowed_slots,
+            ),
+            KfuncIterFamily::Num => has_live_slot_depth_except(
+                &self.iter_num_slots,
+                self.iter_num_max_depth,
+                allowed_slots,
+            ),
+            KfuncIterFamily::Bits => has_live_slot_depth_except(
+                &self.iter_bits_slots,
+                self.iter_bits_max_depth,
+                allowed_slots,
+            ),
+            KfuncIterFamily::Css => has_live_slot_depth_except(
+                &self.iter_css_slots,
+                self.iter_css_max_depth,
+                allowed_slots,
+            ),
+            KfuncIterFamily::CssTask => has_live_slot_depth_except(
+                &self.iter_css_task_slots,
+                self.iter_css_task_max_depth,
+                allowed_slots,
+            ),
+            KfuncIterFamily::Dmabuf => has_live_slot_depth_except(
+                &self.iter_dmabuf_slots,
+                self.iter_dmabuf_max_depth,
+                allowed_slots,
+            ),
+            KfuncIterFamily::KmemCache => has_live_slot_depth_except(
+                &self.iter_kmem_cache_slots,
+                self.iter_kmem_cache_max_depth,
+                allowed_slots,
+            ),
+        }
+    }
+
     pub(in crate::compiler::verifier_types) fn res_spin_lock_identity(
         &self,
         reg: VReg,
@@ -1086,6 +1140,24 @@ fn increment_slot_depth(depths: &mut HashMap<StackSlotId, (u32, u32)>, slot: Sta
     let entry = depths.entry(slot).or_insert((0, 0));
     entry.0 = entry.0.saturating_add(1);
     entry.1 = entry.1.saturating_add(1);
+}
+
+fn has_live_slot_depth_except(
+    depths: &HashMap<StackSlotId, (u32, u32)>,
+    max_depth: u32,
+    allowed_slots: &HashMap<StackSlotId, u32>,
+) -> bool {
+    let tracked_total: u32 = depths.values().map(|(_, max_depth)| *max_depth).sum();
+    if max_depth > tracked_total {
+        return true;
+    }
+    let allowed_total = allowed_slots.values().copied().sum();
+    if max_depth > allowed_total {
+        return true;
+    }
+    depths
+        .iter()
+        .any(|(slot, (_, slot_max))| *slot_max > allowed_slots.get(slot).copied().unwrap_or(0))
 }
 
 fn acquire_slot_depth(

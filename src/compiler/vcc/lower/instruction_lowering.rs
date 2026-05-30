@@ -1863,6 +1863,26 @@ impl<'a> VccLowerer<'a> {
             for _ in 0..summary.local_irq_delta_arg(idx).saturating_neg() {
                 out.push(VccInst::LocalIrqDisableRelease { flags: reg });
             }
+            if let Some(delta) = summary.iter_delta_arg(idx) {
+                let op = if delta.delta > 0 {
+                    KfuncIterLifecycleOp::New
+                } else {
+                    KfuncIterLifecycleOp::Destroy
+                };
+                let kfunc = if delta.delta > 0 {
+                    "subfunction"
+                } else {
+                    "subfunction destroy"
+                };
+                for _ in 0..delta.delta.unsigned_abs() {
+                    out.push(VccInst::IterLifecycle {
+                        iter: reg,
+                        kfunc: kfunc.to_string(),
+                        family: delta.family,
+                        op,
+                    });
+                }
+            }
         }
     }
 

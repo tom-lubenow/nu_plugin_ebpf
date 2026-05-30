@@ -460,6 +460,45 @@ fn apply_subfunction_critical_delta(
             }
         }
     }
+    for idx in 0..5 {
+        let Some(delta) = summary.iter_delta_arg(idx) else {
+            continue;
+        };
+        let Some(arg) = args.get(idx).copied() else {
+            errors.push(VerifierTypeError::new(format!(
+                "subfunction arg{} iterator argument is missing",
+                idx
+            )));
+            continue;
+        };
+        let Some(slot) = stack_slot_base_from_vreg(arg, state) else {
+            errors.push(VerifierTypeError::new(format!(
+                "subfunction arg{} expects {} stack slot pointer",
+                idx,
+                delta.family.stack_object_type_name()
+            )));
+            continue;
+        };
+        let op = if delta.delta > 0 {
+            KfuncIterLifecycleOp::New
+        } else {
+            KfuncIterLifecycleOp::Destroy
+        };
+        let kfunc = if delta.delta > 0 {
+            "subfunction"
+        } else {
+            "subfunction destroy"
+        };
+        for _ in 0..delta.delta.unsigned_abs() {
+            if let Err(failure) = apply_iter_lifecycle_op(state, delta.family, op, slot) {
+                errors.push(VerifierTypeError::new(iter_lifecycle_error_message(
+                    kfunc,
+                    delta.family,
+                    failure,
+                )));
+            }
+        }
+    }
 }
 
 fn apply_subfunction_release_summary(

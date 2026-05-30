@@ -35,6 +35,20 @@ fn iter_lifecycle_error_message(
     }
 }
 
+fn iter_exit_label(family: KfuncIterFamily) -> &'static str {
+    match family {
+        KfuncIterFamily::TaskVma => "iter_task_vma",
+        KfuncIterFamily::Task => "iter_task",
+        KfuncIterFamily::ScxDsq => "iter_scx_dsq",
+        KfuncIterFamily::Num => "iter_num",
+        KfuncIterFamily::Bits => "iter_bits",
+        KfuncIterFamily::Css => "iter_css",
+        KfuncIterFamily::CssTask => "iter_css_task",
+        KfuncIterFamily::Dmabuf => "iter_dmabuf",
+        KfuncIterFamily::KmemCache => "iter_kmem_cache",
+    }
+}
+
 impl VccVerifier {
     fn apply_iter_lifecycle_op(
         state: &mut VccState,
@@ -2372,60 +2386,7 @@ impl VccVerifier {
                         "unreleased res spin lock irqsave at function exit",
                     ));
                 }
-                if state.has_live_iter_task_vma() {
-                    self.errors.push(VccError::new(
-                        VccErrorKind::PointerBounds,
-                        "unreleased iter_task_vma iterator at function exit",
-                    ));
-                }
-                if state.has_live_iter_task() {
-                    self.errors.push(VccError::new(
-                        VccErrorKind::PointerBounds,
-                        "unreleased iter_task iterator at function exit",
-                    ));
-                }
-                if state.has_live_iter_scx_dsq() {
-                    self.errors.push(VccError::new(
-                        VccErrorKind::PointerBounds,
-                        "unreleased iter_scx_dsq iterator at function exit",
-                    ));
-                }
-                if state.has_live_iter_num() {
-                    self.errors.push(VccError::new(
-                        VccErrorKind::PointerBounds,
-                        "unreleased iter_num iterator at function exit",
-                    ));
-                }
-                if state.has_live_iter_bits() {
-                    self.errors.push(VccError::new(
-                        VccErrorKind::PointerBounds,
-                        "unreleased iter_bits iterator at function exit",
-                    ));
-                }
-                if state.has_live_iter_css() {
-                    self.errors.push(VccError::new(
-                        VccErrorKind::PointerBounds,
-                        "unreleased iter_css iterator at function exit",
-                    ));
-                }
-                if state.has_live_iter_css_task() {
-                    self.errors.push(VccError::new(
-                        VccErrorKind::PointerBounds,
-                        "unreleased iter_css_task iterator at function exit",
-                    ));
-                }
-                if state.has_live_iter_dmabuf() {
-                    self.errors.push(VccError::new(
-                        VccErrorKind::PointerBounds,
-                        "unreleased iter_dmabuf iterator at function exit",
-                    ));
-                }
-                if state.has_live_iter_kmem_cache() {
-                    self.errors.push(VccError::new(
-                        VccErrorKind::PointerBounds,
-                        "unreleased iter_kmem_cache iterator at function exit",
-                    ));
-                }
+                self.check_live_iter_families_at_return(state);
                 if let Some(slot) = state.first_live_ringbuf_dynptr_slot() {
                     self.errors.push(VccError::new(
                         VccErrorKind::PointerBounds,
@@ -2584,6 +2545,55 @@ impl VccVerifier {
             if let VccAddrSpace::Stack(slot) = ptr.space {
                 let entry = allowed.entry(slot).or_insert(0u32);
                 *entry = entry.saturating_add(delta);
+            }
+        }
+        allowed
+    }
+
+    fn check_live_iter_families_at_return(&mut self, state: &VccState) {
+        for family in [
+            KfuncIterFamily::TaskVma,
+            KfuncIterFamily::Task,
+            KfuncIterFamily::ScxDsq,
+            KfuncIterFamily::Num,
+            KfuncIterFamily::Bits,
+            KfuncIterFamily::Css,
+            KfuncIterFamily::CssTask,
+            KfuncIterFamily::Dmabuf,
+            KfuncIterFamily::KmemCache,
+        ] {
+            let allowed_slots = self.allowed_iter_slots(state, family);
+            if state.has_live_iter_family_except_slots(family, &allowed_slots) {
+                self.errors.push(VccError::new(
+                    VccErrorKind::PointerBounds,
+                    format!("unreleased {} iterator at function exit", iter_exit_label(family)),
+                ));
+            }
+        }
+    }
+
+    fn allowed_iter_slots(
+        &self,
+        state: &VccState,
+        family: KfuncIterFamily,
+    ) -> HashMap<StackSlotId, u32> {
+        let mut allowed = HashMap::new();
+        let Some(summary) = self.current_summary else {
+            return allowed;
+        };
+        for idx in 0..5 {
+            let Some(delta) = summary.iter_delta_arg(idx) else {
+                continue;
+            };
+            if delta.family != family || delta.delta <= 0 {
+                continue;
+            }
+            let Ok(VccValueType::Ptr(ptr)) = state.reg_type(VccReg(idx as u32)) else {
+                continue;
+            };
+            if let VccAddrSpace::Stack(slot) = ptr.space {
+                let entry = allowed.entry(slot).or_insert(0u32);
+                *entry = entry.saturating_add(delta.delta as u32);
             }
         }
         allowed

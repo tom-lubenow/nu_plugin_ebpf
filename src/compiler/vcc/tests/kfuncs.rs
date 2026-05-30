@@ -6507,6 +6507,136 @@ fn test_verify_mir_kfunc_iter_num_lifecycle_balanced() {
 }
 
 #[test]
+fn test_verify_mir_kfunc_iter_num_subfn_new_destroy_balanced() {
+    let (mut new, new_entry) = new_mir_function();
+    new.param_count = 3;
+    new.vreg_count = 3;
+    let new_slot = new.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    new.param_stack_slots.insert(0, new_slot);
+    let new_ret = new.alloc_vreg();
+    new.block_mut(new_entry)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: new_ret,
+            kfunc: "bpf_iter_num_new".to_string(),
+            btf_id: None,
+            args: vec![VReg(0), VReg(1), VReg(2)],
+        });
+    new.block_mut(new_entry).terminator = MirInst::Return { val: None };
+
+    let (mut destroy, destroy_entry) = new_mir_function();
+    destroy.param_count = 1;
+    destroy.vreg_count = 1;
+    let destroy_slot = destroy.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    destroy.param_stack_slots.insert(0, destroy_slot);
+    let destroy_ret = destroy.alloc_vreg();
+    destroy
+        .block_mut(destroy_entry)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: destroy_ret,
+            kfunc: "bpf_iter_num_destroy".to_string(),
+            btf_id: None,
+            args: vec![VReg(0)],
+        });
+    destroy.block_mut(destroy_entry).terminator = MirInst::Return { val: None };
+
+    let summaries = infer_subfunction_summaries(&[new.clone(), destroy.clone()]);
+    let new_summary = summaries
+        .get(&SubfunctionId(0))
+        .copied()
+        .expect("expected iter new summary");
+    let destroy_summary = summaries
+        .get(&SubfunctionId(1))
+        .copied()
+        .expect("expected iter destroy summary");
+    let iter_ty = MirType::Ptr {
+        pointee: Box::new(MirType::Unknown),
+        address_space: AddressSpace::Stack,
+    };
+    let mut new_types = HashMap::new();
+    new_types.insert(VReg(0), iter_ty.clone());
+    new_types.insert(VReg(1), MirType::I64);
+    new_types.insert(VReg(2), MirType::I64);
+    new_types.insert(new_ret, MirType::I64);
+    verify_mir_with_subfunction_summaries_for_probe_context_with_current_summary(
+        &new,
+        &new_types,
+        &summaries,
+        Some(new_summary),
+        None,
+        None,
+    )
+    .expect("expected iter new wrapper to verify");
+    let mut destroy_types = HashMap::new();
+    destroy_types.insert(VReg(0), iter_ty.clone());
+    destroy_types.insert(destroy_ret, MirType::I64);
+    verify_mir_with_subfunction_summaries_for_probe_context_with_current_summary(
+        &destroy,
+        &destroy_types,
+        &summaries,
+        Some(destroy_summary),
+        None,
+        None,
+    )
+    .expect("expected iter destroy wrapper to verify");
+
+    let (mut func, entry) = new_mir_function();
+    let iter = func.alloc_vreg();
+    let start = func.alloc_vreg();
+    let end = func.alloc_vreg();
+    let call_new_ret = func.alloc_vreg();
+    let next_ret = func.alloc_vreg();
+    let call_destroy_ret = func.alloc_vreg();
+    let iter_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: iter,
+        src: MirValue::StackSlot(iter_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: start,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: end,
+        src: MirValue::Const(8),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallSubfn {
+        dst: call_new_ret,
+        subfn: SubfunctionId(0),
+        args: vec![iter, start, end],
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: next_ret,
+        kfunc: "bpf_iter_num_next".to_string(),
+        btf_id: None,
+        args: vec![iter],
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallSubfn {
+        dst: call_destroy_ret,
+        subfn: SubfunctionId(1),
+        args: vec![iter],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(iter, iter_ty);
+    types.insert(start, MirType::I64);
+    types.insert(end, MirType::I64);
+    types.insert(call_new_ret, MirType::I64);
+    types.insert(
+        next_ret,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(call_destroy_ret, MirType::I64);
+    verify_mir_with_subfunction_summaries(&func, &types, &summaries)
+        .expect("expected iter_num new/destroy wrappers to balance");
+}
+
+#[test]
 fn test_verify_mir_kfunc_iter_num_new_rejects_reinit_live_slot() {
     let (mut func, entry) = new_mir_function();
     func.param_count = 1;
