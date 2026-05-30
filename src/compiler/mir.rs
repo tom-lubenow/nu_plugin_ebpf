@@ -1023,6 +1023,16 @@ impl MirType {
         Some(name)
     }
 
+    pub fn is_sk_buff_kernel_ptr(&self) -> bool {
+        self.kernel_struct_ptr_pointee_name()
+            .is_some_and(|name| matches!(name, "sk_buff" | "struct sk_buff"))
+    }
+
+    pub fn is_xdp_buff_kernel_ptr(&self) -> bool {
+        self.kernel_struct_ptr_pointee_name()
+            .is_some_and(|name| matches!(name, "xdp_buff" | "struct xdp_buff"))
+    }
+
     pub fn named_kernel_struct_ptr(name: &str) -> Self {
         MirType::Ptr {
             pointee: Box::new(Self::opaque_named_struct(name)),

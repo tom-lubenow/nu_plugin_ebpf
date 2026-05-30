@@ -13225,6 +13225,56 @@ const FIXTURES = [
         error_contains: "helper 'bpf_get_stack' arg0 expects raw context pointer"
     }
     {
+        name: "helper-packet-output-accepts-skb-argument"
+        category: "helper-state"
+        tags: [helper packet-output skb tracing accept source metadata]
+        requires: [kernel-btf]
+        target: "fentry:netif_receive_skb"
+        program: [
+            '{|ctx|'
+            '  let data = "abcd"'
+            '  helper-call "bpf_skb_output" $ctx.arg0 packet_events 0 $data 4'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "helper-packet-output-rejects-raw-tracing-context"
+        category: "helper-state"
+        tags: [helper packet-output skb tracing raw-context reject source metadata]
+        requires: [kernel-btf]
+        target: "fentry:netif_receive_skb"
+        program: [
+            '{|ctx|'
+            '  let data = "abcd"'
+            '  helper-call "bpf_skb_output" $ctx packet_events 0 $data 4'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_skb_output' arg0 expects sk_buff pointer"
+    }
+    {
+        name: "helper-xdp-output-rejects-raw-tracing-context"
+        category: "helper-state"
+        tags: [helper packet-output xdp tracing raw-context reject source metadata]
+        requires: [kernel-btf]
+        target: "fentry:xdp_do_redirect"
+        program: [
+            '{|ctx|'
+            '  let data = "abcd"'
+            '  helper-call "bpf_xdp_output" $ctx packet_events 0 $data 4'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_xdp_output' arg0 expects xdp_buff pointer"
+    }
+    {
         name: "xdp-load-bytes-helper"
         category: "helper-state"
         tags: [xdp helper bytes accept source metadata]

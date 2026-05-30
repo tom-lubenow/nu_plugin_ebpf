@@ -1662,6 +1662,12 @@ impl<'a> VccLowerer<'a> {
                 "map-backed bpf_spin_lock pointer",
             ));
         }
+        if matches!((helper, arg_idx), (BpfHelper::SkbOutput, 0)) {
+            return Some((MirType::is_sk_buff_kernel_ptr, "sk_buff pointer"));
+        }
+        if matches!((helper, arg_idx), (BpfHelper::XdpOutput, 0)) {
+            return Some((MirType::is_xdp_buff_kernel_ptr, "xdp_buff pointer"));
+        }
         match Self::helper_pointer_arg_expected_ref_kind(helper as u32, arg_idx)? {
             KfuncRefKind::Socket => Some((MirType::is_socket_ptr, "socket pointer")),
             KfuncRefKind::Task => Some((MirType::is_task_struct_ptr, "task pointer")),

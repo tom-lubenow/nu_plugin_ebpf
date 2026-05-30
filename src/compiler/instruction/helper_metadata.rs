@@ -303,7 +303,6 @@ impl BpfHelper {
             | BpfHelper::SkbGetXfrmState
             | BpfHelper::SkbLoadBytes
             | BpfHelper::SkbLoadBytesRelative
-            | BpfHelper::SkbOutput
             | BpfHelper::SkbPullData
             | BpfHelper::SkbSetTunnelKey
             | BpfHelper::SkbSetTunnelOpt
@@ -335,7 +334,6 @@ impl BpfHelper {
             | BpfHelper::XdpAdjustTail
             | BpfHelper::XdpGetBuffLen
             | BpfHelper::XdpLoadBytes
-            | BpfHelper::XdpOutput
             | BpfHelper::XdpStoreBytes => Some("raw context"),
             BpfHelper::GetSocketCookie => None,
             _ => None,

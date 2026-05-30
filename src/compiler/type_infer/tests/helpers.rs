@@ -4818,6 +4818,15 @@ fn test_type_error_perf_event_read_helpers_reject_invalid_flags() {
 }
 
 fn make_packet_output_call(helper: BpfHelper, size: i64, data_size: usize) -> (MirFunction, VReg) {
+    make_packet_output_call_with_arg0(helper, size, data_size, CtxField::Context)
+}
+
+fn make_packet_output_call_with_arg0(
+    helper: BpfHelper,
+    size: i64,
+    data_size: usize,
+    arg0_field: CtxField,
+) -> (MirFunction, VReg) {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();
     let map = func.alloc_vreg();
@@ -4826,7 +4835,7 @@ fn make_packet_output_call(helper: BpfHelper, size: i64, data_size: usize) -> (M
     let block = func.block_mut(BlockId(0));
     block.instructions.push(MirInst::LoadCtxField {
         dst: ctx,
-        field: CtxField::Context,
+        field: arg0_field,
         slot: None,
     });
     block.instructions.push(MirInst::LoadMapFd {
@@ -4852,23 +4861,41 @@ fn make_packet_output_call(helper: BpfHelper, size: i64, data_size: usize) -> (M
 }
 
 #[test]
-fn test_infer_packet_output_helpers_in_tracing_programs() {
-    for (helper, probe_ctx) in [
+fn test_infer_packet_output_helper_accepts_typed_skb_argument() {
+    let (func, dst) =
+        make_packet_output_call_with_arg0(BpfHelper::SkbOutput, 8, 8, CtxField::Arg(0));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "netif_receive_skb");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let types = ti
+        .infer(&func)
+        .expect("expected packet output helper to infer");
+    assert_eq!(types.get(&dst), Some(&MirType::I64));
+}
+
+#[test]
+fn test_type_error_packet_output_helpers_reject_raw_tracing_context() {
+    for (helper, probe_ctx, expected) in [
         (
             BpfHelper::SkbOutput,
             ProbeContext::new(EbpfProgramType::Fentry, "netif_receive_skb"),
+            "helper 'bpf_skb_output' arg0 expects sk_buff pointer",
         ),
         (
             BpfHelper::XdpOutput,
             ProbeContext::new(EbpfProgramType::Tracepoint, "net:netif_receive_skb"),
+            "helper 'bpf_xdp_output' arg0 expects xdp_buff pointer",
         ),
     ] {
-        let (func, dst) = make_packet_output_call(helper, 8, 8);
+        let (func, _) = make_packet_output_call(helper, 8, 8);
         let mut ti = TypeInference::new(Some(probe_ctx));
-        let types = ti
+        let errs = ti
             .infer(&func)
-            .expect("expected packet output helper to infer");
-        assert_eq!(types.get(&dst), Some(&MirType::I64));
+            .expect_err("expected raw tracing context to fail packet output arg0");
+        assert!(
+            errs.iter().any(|e| e.message.contains(expected)),
+            "unexpected errors for {helper:?}: {:?}",
+            errs
+        );
     }
 }
 
@@ -4888,7 +4915,8 @@ fn test_type_error_packet_output_helper_rejects_packet_program() {
 
 #[test]
 fn test_type_error_packet_output_helper_rejects_small_data_buffer() {
-    let (func, _) = make_packet_output_call(BpfHelper::SkbOutput, 16, 8);
+    let (func, _) =
+        make_packet_output_call_with_arg0(BpfHelper::SkbOutput, 16, 8, CtxField::Arg(0));
     let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "netif_receive_skb");
     let mut ti = TypeInference::new(Some(probe_ctx));
     let errs = ti

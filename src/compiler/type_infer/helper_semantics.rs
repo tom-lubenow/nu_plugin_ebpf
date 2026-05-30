@@ -1201,6 +1201,12 @@ fn helper_expected_named_arg_shape(
             "map-backed bpf_spin_lock pointer",
         ));
     }
+    if matches!((helper, arg_idx), (BpfHelper::SkbOutput, 0)) {
+        return Some((MirType::is_sk_buff_kernel_ptr, "sk_buff pointer"));
+    }
+    if matches!((helper, arg_idx), (BpfHelper::XdpOutput, 0)) {
+        return Some((MirType::is_xdp_buff_kernel_ptr, "xdp_buff pointer"));
+    }
     match helper_pointer_arg_ref_kind(helper, arg_idx)? {
         KfuncRefKind::Socket => Some((MirType::is_socket_ptr, "socket pointer")),
         KfuncRefKind::Task => Some((MirType::is_task_struct_ptr, "task pointer")),

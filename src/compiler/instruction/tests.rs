@@ -6599,6 +6599,14 @@ fn test_helper_pointer_arg_requires_raw_context_mappings() {
         None
     );
     assert_eq!(
+        BpfHelper::SkbOutput.pointer_arg_requires_raw_context(0),
+        None
+    );
+    assert_eq!(
+        BpfHelper::XdpOutput.pointer_arg_requires_raw_context(0),
+        None
+    );
+    assert_eq!(
         BpfHelper::MapLookupElem.pointer_arg_requires_raw_context(0),
         None
     );
@@ -6615,6 +6623,9 @@ fn test_helper_arg0_context_pointer_semantics_have_raw_context_metadata() {
         }
         for rule in helper.semantics().ptr_arg_rules {
             if rule.arg_idx != 0 {
+                continue;
+            }
+            if matches!(helper, BpfHelper::SkbOutput | BpfHelper::XdpOutput) {
                 continue;
             }
             let is_context_like = rule.op.ends_with(" ctx") || rule.op.ends_with(" skb");

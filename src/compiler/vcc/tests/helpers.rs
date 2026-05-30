@@ -6252,6 +6252,32 @@ fn make_packet_output_vcc_call(
     size: i64,
     data_size: usize,
 ) -> (MirFunction, HashMap<VReg, MirType>) {
+    make_packet_output_vcc_call_with_arg0(
+        helper,
+        size,
+        data_size,
+        CtxField::Context,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    )
+}
+
+fn kernel_struct_ptr(name: &str) -> MirType {
+    MirType::Ptr {
+        pointee: Box::new(MirType::opaque_named_struct(name)),
+        address_space: AddressSpace::Kernel,
+    }
+}
+
+fn make_packet_output_vcc_call_with_arg0(
+    helper: BpfHelper,
+    size: i64,
+    data_size: usize,
+    arg0_field: CtxField,
+    arg0_type: MirType,
+) -> (MirFunction, HashMap<VReg, MirType>) {
     let (mut func, entry) = new_mir_function();
     let ctx = func.alloc_vreg();
     let map = func.alloc_vreg();
@@ -6262,7 +6288,7 @@ fn make_packet_output_vcc_call(
         .instructions
         .push(MirInst::LoadCtxField {
             dst: ctx,
-            field: CtxField::Context,
+            field: arg0_field,
             slot: None,
         });
     func.block_mut(entry).instructions.push(MirInst::LoadMapFd {
@@ -6288,13 +6314,7 @@ fn make_packet_output_vcc_call(
     func.block_mut(entry).terminator = MirInst::Return { val: None };
 
     let mut types = HashMap::new();
-    types.insert(
-        ctx,
-        MirType::Ptr {
-            pointee: Box::new(MirType::U8),
-            address_space: AddressSpace::Kernel,
-        },
-    );
+    types.insert(ctx, arg0_type);
     types.insert(
         map,
         MirType::MapRef {
@@ -6308,20 +6328,48 @@ fn make_packet_output_vcc_call(
 }
 
 #[test]
-fn test_verify_mir_for_probe_context_packet_output_helpers_accept_tracing_programs() {
-    for (helper, probe_ctx) in [
+fn test_verify_mir_for_probe_context_packet_output_helpers_accept_typed_packet_args() {
+    for (helper, arg0_type, probe_ctx) in [
         (
             BpfHelper::SkbOutput,
+            kernel_struct_ptr("sk_buff"),
             ProbeContext::new(EbpfProgramType::Fentry, "netif_receive_skb"),
         ),
         (
             BpfHelper::XdpOutput,
-            ProbeContext::new(EbpfProgramType::Tracepoint, "net:netif_receive_skb"),
+            kernel_struct_ptr("xdp_buff"),
+            ProbeContext::new(EbpfProgramType::Fentry, "xdp_do_redirect"),
+        ),
+    ] {
+        let (func, types) =
+            make_packet_output_vcc_call_with_arg0(helper, 8, 8, CtxField::Arg(0), arg0_type);
+        verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect("expected packet output helper to verify");
+    }
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_packet_output_helpers_reject_raw_context() {
+    for (helper, probe_ctx, expected) in [
+        (
+            BpfHelper::SkbOutput,
+            ProbeContext::new(EbpfProgramType::Fentry, "netif_receive_skb"),
+            "helper 'bpf_skb_output' arg0 expects sk_buff pointer",
+        ),
+        (
+            BpfHelper::XdpOutput,
+            ProbeContext::new(EbpfProgramType::Fentry, "xdp_do_redirect"),
+            "helper 'bpf_xdp_output' arg0 expects xdp_buff pointer",
         ),
     ] {
         let (func, types) = make_packet_output_vcc_call(helper, 8, 8);
-        verify_mir_for_probe_context(&func, &types, &probe_ctx)
-            .expect("expected packet output helper to verify");
+        let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect_err("expected raw tracing context to fail packet output arg0");
+        assert!(
+            err.iter().any(|e| e.message.contains(expected)),
+            "unexpected error messages for {helper:?}: {:?}",
+            err
+        );
     }
 }
 
@@ -6339,7 +6387,13 @@ fn test_verify_mir_for_probe_context_packet_output_helper_rejects_packet_program
 
 #[test]
 fn test_verify_mir_for_probe_context_packet_output_helper_rejects_small_data_buffer() {
-    let (func, types) = make_packet_output_vcc_call(BpfHelper::SkbOutput, 16, 8);
+    let (func, types) = make_packet_output_vcc_call_with_arg0(
+        BpfHelper::SkbOutput,
+        16,
+        8,
+        CtxField::Arg(0),
+        kernel_struct_ptr("sk_buff"),
+    );
     let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "netif_receive_skb");
     let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
         .expect_err("expected bpf_skb_output data bounds error");
