@@ -3488,6 +3488,44 @@ const FUTEX_TRACEPOINT_FIELD_SPECS = [
         source: "https://github.com/torvalds/linux/blob/v4.7/kernel/futex.c"
     }
 ]
+const MQUEUE_TRACEPOINT_FIELD_SPECS = [
+    {
+        syscalls: ["mq_open"]
+        fields: ["u_name" "oflag" "mode" "u_attr"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/ipc/mqueue.c"
+    }
+    {
+        syscalls: ["mq_unlink"]
+        fields: ["u_name"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/ipc/mqueue.c"
+    }
+    {
+        syscalls: ["mq_timedsend"]
+        fields: ["mqdes" "u_msg_ptr" "msg_len" "msg_prio" "u_abs_timeout"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/ipc/mqueue.c"
+    }
+    {
+        syscalls: ["mq_timedreceive"]
+        fields: ["mqdes" "u_msg_ptr" "msg_len" "u_msg_prio" "u_abs_timeout"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/ipc/mqueue.c"
+    }
+    {
+        syscalls: ["mq_notify"]
+        fields: ["mqdes" "u_notification"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/ipc/mqueue.c"
+    }
+    {
+        syscalls: ["mq_getsetattr"]
+        fields: ["mqdes" "u_mqstat" "u_omqstat"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/ipc/mqueue.c"
+    }
+]
 const IPC_TRACEPOINT_FIELD_SPECS = [
     {
         syscalls: ["msgget"]
@@ -7040,6 +7078,65 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         ]
     }
     {
+        target: "tracepoint:syscalls/sys_enter_mq_open"
+        program: [
+            '{|ctx|'
+            '  let name = $ctx.u_name'
+            '  let attr = $ctx.u_attr'
+            '  if $name { 1 | count }'
+            '  if $attr { 1 | count }'
+            '  ($ctx.oflag + $ctx.mode) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_mq_open:field:u_name"
+            "tracepoint:syscalls/sys_enter_mq_open:field:u_attr"
+            "tracepoint:syscalls/sys_enter_mq_open:field:oflag"
+            "tracepoint:syscalls/sys_enter_mq_open:field:mode"
+        ]
+    }
+    {
+        target: "tracepoint:syscalls/sys_enter_mq_timedreceive"
+        program: [
+            '{|ctx|'
+            '  let msg = $ctx.u_msg_ptr'
+            '  let prio = $ctx.u_msg_prio'
+            '  let timeout = $ctx.u_abs_timeout'
+            '  if $msg { 1 | count }'
+            '  if $prio { 1 | count }'
+            '  if $timeout { 1 | count }'
+            '  ($ctx.mqdes + $ctx.msg_len) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_mq_timedreceive:field:u_msg_ptr"
+            "tracepoint:syscalls/sys_enter_mq_timedreceive:field:u_msg_prio"
+            "tracepoint:syscalls/sys_enter_mq_timedreceive:field:u_abs_timeout"
+            "tracepoint:syscalls/sys_enter_mq_timedreceive:field:mqdes"
+            "tracepoint:syscalls/sys_enter_mq_timedreceive:field:msg_len"
+        ]
+    }
+    {
+        target: "tracepoint:syscalls/sys_enter_mq_getsetattr"
+        program: [
+            '{|ctx|'
+            '  let mqstat = $ctx.u_mqstat'
+            '  let omqstat = $ctx.u_omqstat'
+            '  if $mqstat { 1 | count }'
+            '  if $omqstat { 1 | count }'
+            '  $ctx.mqdes | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_mq_getsetattr:field:u_mqstat"
+            "tracepoint:syscalls/sys_enter_mq_getsetattr:field:u_omqstat"
+            "tracepoint:syscalls/sys_enter_mq_getsetattr:field:mqdes"
+        ]
+    }
+    {
         target: "tracepoint:syscalls/sys_enter_openat"
         program: [
             '{|ctx|'
@@ -9392,6 +9489,65 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  ($ctx.start + $ctx.len + $ctx.home_node + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-mq-open-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_mq_open]
+        target: "tracepoint:syscalls/sys_enter_mq_open"
+        program: [
+            '{|ctx|'
+            '  let name = $ctx.u_name'
+            '  let attr = $ctx.u_attr'
+            '  if $name { 1 | count }'
+            '  if $attr { 1 | count }'
+            '  ($ctx.oflag + $ctx.mode) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-mq-timedreceive-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_mq_timedreceive]
+        target: "tracepoint:syscalls/sys_enter_mq_timedreceive"
+        program: [
+            '{|ctx|'
+            '  let msg = $ctx.u_msg_ptr'
+            '  let prio = $ctx.u_msg_prio'
+            '  let timeout = $ctx.u_abs_timeout'
+            '  if $msg { 1 | count }'
+            '  if $prio { 1 | count }'
+            '  if $timeout { 1 | count }'
+            '  ($ctx.mqdes + $ctx.msg_len) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-mq-getsetattr-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_mq_getsetattr]
+        target: "tracepoint:syscalls/sys_enter_mq_getsetattr"
+        program: [
+            '{|ctx|'
+            '  let mqstat = $ctx.u_mqstat'
+            '  let omqstat = $ctx.u_omqstat'
+            '  if $mqstat { 1 | count }'
+            '  if $omqstat { 1 | count }'
+            '  $ctx.mqdes | count'
             '  0'
             '}'
         ]
@@ -32114,6 +32270,7 @@ def tracepoint-payload-field-kernel-feature [field: string target] {
         | append $IDENTITY_TRACEPOINT_FIELD_SPECS
         | append $SCHED_TRACEPOINT_FIELD_SPECS
         | append $FUTEX_TRACEPOINT_FIELD_SPECS
+        | append $MQUEUE_TRACEPOINT_FIELD_SPECS
         | append $IPC_TRACEPOINT_FIELD_SPECS
     )
     let source_backed_feature = (

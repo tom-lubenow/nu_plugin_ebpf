@@ -110,6 +110,7 @@ const GROUPS_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/
 const CAPABILITY_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/capability.c";
 const SCHED_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/sched/core.c";
 const FUTEX_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/futex.c";
+const POSIX_MQUEUE_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/ipc/mqueue.c";
 const IPC_MSG_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/ipc/msg.c";
 const IPC_SEM_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/ipc/sem.c";
 const IPC_SHM_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/ipc/shm.c";
@@ -402,6 +403,12 @@ const WELL_KNOWN_SYS_ENTER_SYSCALLS: &[&str] = &[
     "sched_get_priority_min",
     "sched_rr_get_interval",
     "futex",
+    "mq_open",
+    "mq_unlink",
+    "mq_timedsend",
+    "mq_timedreceive",
+    "mq_notify",
+    "mq_getsetattr",
     "msgget",
     "msgctl",
     "msgsnd",
@@ -981,6 +988,8 @@ impl TracepointContext {
             | "sched_get_priority_min"
             | "sched_rr_get_interval" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, SCHED_SOURCE),
             "futex" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, FUTEX_SOURCE),
+            "mq_open" | "mq_unlink" | "mq_timedsend" | "mq_timedreceive" | "mq_notify"
+            | "mq_getsetattr" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, POSIX_MQUEUE_SOURCE),
             "msgget" | "msgctl" | "msgsnd" | "msgrcv" => {
                 (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, IPC_MSG_SOURCE)
             }
@@ -2189,6 +2198,36 @@ impl TracepointContext {
                 ("utime", Self::syscall_arg_user_ptr()),
                 ("uaddr2", Self::syscall_arg_user_ptr()),
                 ("val3", Self::syscall_arg_int(false)),
+            ],
+            "mq_open" => vec![
+                ("u_name", Self::syscall_arg_user_ptr()),
+                ("oflag", Self::syscall_arg_int(true)),
+                ("mode", Self::syscall_arg_int(false)),
+                ("u_attr", Self::syscall_arg_user_ptr()),
+            ],
+            "mq_unlink" => vec![("u_name", Self::syscall_arg_user_ptr())],
+            "mq_timedsend" => vec![
+                ("mqdes", Self::syscall_arg_int(true)),
+                ("u_msg_ptr", Self::syscall_arg_user_ptr()),
+                ("msg_len", Self::syscall_arg_int(false)),
+                ("msg_prio", Self::syscall_arg_int(false)),
+                ("u_abs_timeout", Self::syscall_arg_user_ptr()),
+            ],
+            "mq_timedreceive" => vec![
+                ("mqdes", Self::syscall_arg_int(true)),
+                ("u_msg_ptr", Self::syscall_arg_user_ptr()),
+                ("msg_len", Self::syscall_arg_int(false)),
+                ("u_msg_prio", Self::syscall_arg_user_ptr()),
+                ("u_abs_timeout", Self::syscall_arg_user_ptr()),
+            ],
+            "mq_notify" => vec![
+                ("mqdes", Self::syscall_arg_int(true)),
+                ("u_notification", Self::syscall_arg_user_ptr()),
+            ],
+            "mq_getsetattr" => vec![
+                ("mqdes", Self::syscall_arg_int(true)),
+                ("u_mqstat", Self::syscall_arg_user_ptr()),
+                ("u_omqstat", Self::syscall_arg_user_ptr()),
             ],
             "msgget" => vec![
                 ("key", Self::syscall_arg_int(true)),

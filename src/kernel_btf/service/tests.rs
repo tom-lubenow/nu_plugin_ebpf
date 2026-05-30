@@ -676,6 +676,40 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
     .expect("expected keyctl source metadata");
     assert!(keyctl_source.contains("/v4.7/security/keys/keyctl.c"));
 
+    let mq_open = TracepointContext::sys_enter("sys_enter_mq_open");
+    assert!(mq_open.has_field("u_name"));
+    assert!(mq_open.has_field("oflag"));
+    assert!(mq_open.has_field("mode"));
+    assert!(mq_open.has_field("u_attr"));
+    assert!(matches!(
+        mq_open
+            .get_field("u_name")
+            .expect("expected mq_open u_name")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+    let (_, mq_open_source) = TracepointContext::syscall_fallback_field_minimum_kernel(
+        "syscalls",
+        "sys_enter_mq_open",
+        "u_attr",
+    )
+    .expect("expected mq_open source metadata");
+    assert!(mq_open_source.contains("/v4.7/ipc/mqueue.c"));
+
+    let mq_timedreceive = TracepointContext::sys_enter("sys_enter_mq_timedreceive");
+    assert!(mq_timedreceive.has_field("mqdes"));
+    assert!(mq_timedreceive.has_field("u_msg_ptr"));
+    assert!(mq_timedreceive.has_field("msg_len"));
+    assert!(mq_timedreceive.has_field("u_msg_prio"));
+    assert!(mq_timedreceive.has_field("u_abs_timeout"));
+    assert_eq!(
+        mq_timedreceive
+            .get_field("u_abs_timeout")
+            .expect("expected mq_timedreceive u_abs_timeout")
+            .offset,
+        48
+    );
+
     let epoll_ctl = TracepointContext::sys_enter("sys_enter_epoll_ctl");
     assert!(epoll_ctl.has_field("epfd"));
     assert!(epoll_ctl.has_field("op"));
@@ -1727,6 +1761,30 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         (
             "sys_enter_futex",
             &["uaddr", "op", "val", "utime", "uaddr2", "val3"][..],
+        ),
+        (
+            "sys_enter_mq_open",
+            &["u_name", "oflag", "mode", "u_attr"][..],
+        ),
+        ("sys_enter_mq_unlink", &["u_name"][..]),
+        (
+            "sys_enter_mq_timedsend",
+            &["mqdes", "u_msg_ptr", "msg_len", "msg_prio", "u_abs_timeout"][..],
+        ),
+        (
+            "sys_enter_mq_timedreceive",
+            &[
+                "mqdes",
+                "u_msg_ptr",
+                "msg_len",
+                "u_msg_prio",
+                "u_abs_timeout",
+            ][..],
+        ),
+        ("sys_enter_mq_notify", &["mqdes", "u_notification"][..]),
+        (
+            "sys_enter_mq_getsetattr",
+            &["mqdes", "u_mqstat", "u_omqstat"][..],
         ),
         ("sys_enter_msgget", &["key", "msgflg"][..]),
         ("sys_enter_msgctl", &["msqid", "cmd", "buf"][..]),
