@@ -947,7 +947,9 @@ as `sys_enter_pread64`, `sys_enter_pwrite64`, `sys_enter_readv`,
 Memory-management fallbacks expose aliases for common entry tracepoints such as
 `sys_enter_mmap`, `sys_enter_mprotect`, `sys_enter_mremap`, `sys_enter_mincore`,
 `sys_enter_msync`, NUMA memory-policy calls such as `sys_enter_mbind` and
-`sys_enter_move_pages`, and Linux 5.17+ `sys_enter_set_mempolicy_home_node`.
+`sys_enter_move_pages`, process-memory calls such as `sys_enter_process_vm_readv`,
+Linux 4.9+ pkey calls such as `sys_enter_pkey_mprotect`, and Linux 5.17+
+`sys_enter_set_mempolicy_home_node`.
 Time and timer fallbacks expose aliases for common entry tracepoints such as
 `sys_enter_utime`, `sys_enter_utimes`, `sys_enter_futimesat`,
 `sys_enter_utimensat`, `sys_enter_gettimeofday`, `sys_enter_clock_gettime`,
@@ -964,7 +966,9 @@ Credential and process-control fallbacks expose source-known aliases for common
 entry tracepoints such as `sys_enter_setresuid`, `sys_enter_getresgid`,
 `sys_enter_setgroups`, `sys_enter_capset`, `sys_enter_prctl`, and
 `sys_enter_getcpu`, plus query-style system calls such as `sys_enter_getrandom`,
-`sys_enter_times`, `sys_enter_newuname`, and `sys_enter_sysinfo`.
+`sys_enter_times`, `sys_enter_newuname`, and `sys_enter_sysinfo`, and
+process-state calls such as `sys_enter_prlimit64`, `sys_enter_membarrier`,
+Linux 4.18+ `sys_enter_rseq`, and `sys_enter_set_tid_address`.
 Key-management fallbacks expose source-known aliases for entry tracepoints such
 as `sys_enter_add_key`, `sys_enter_request_key`, and `sys_enter_keyctl`.
 Scheduler fallbacks expose source-known aliases for common entry tracepoints

@@ -59,6 +59,8 @@ const X86_MMAP_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v4.7/arch/x86/kernel/sys_x86_64.c";
 const MM_MMAP_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/mm/mmap.c";
 const MM_MPROTECT_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/mm/mprotect.c";
+const PKEY_MIN_KERNEL: &str = "4.9";
+const PKEY_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.9/mm/mprotect.c";
 const MM_MREMAP_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/mm/mremap.c";
 const MM_MADVISE_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/mm/madvise.c";
 const MM_MLOCK_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/mm/mlock.c";
@@ -71,6 +73,8 @@ const FADVISE_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/mm/fad
 const READAHEAD_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/mm/readahead.c";
 const PROCESS_MADVISE_MIN_KERNEL: &str = "5.10";
 const PROCESS_MADVISE_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.10/mm/madvise.c";
+const PROCESS_VM_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v4.7/mm/process_vm_access.c";
 const PROCESS_MRELEASE_MIN_KERNEL: &str = "5.15";
 const PROCESS_MRELEASE_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.15/mm/oom_kill.c";
 const MEMPOLICY_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/mm/mempolicy.c";
@@ -106,6 +110,9 @@ const LANDLOCK_MIN_KERNEL: &str = "5.13";
 const LANDLOCK_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.13/security/landlock/syscalls.c";
 const KERNEL_SYS_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/sys.c";
+const MEMBARRIER_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/membarrier.c";
+const RSEQ_MIN_KERNEL: &str = "4.18";
+const RSEQ_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.18/kernel/rseq.c";
 const GROUPS_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/groups.c";
 const CAPABILITY_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/capability.c";
 const SCHED_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/sched/core.c";
@@ -282,8 +289,13 @@ const WELL_KNOWN_SYS_ENTER_SYSCALLS: &[&str] = &[
     "munmap",
     "remap_file_pages",
     "mprotect",
+    "pkey_mprotect",
+    "pkey_alloc",
+    "pkey_free",
     "mremap",
     "madvise",
+    "process_vm_readv",
+    "process_vm_writev",
     "process_madvise",
     "process_mrelease",
     "mbind",
@@ -378,6 +390,7 @@ const WELL_KNOWN_SYS_ENTER_SYSCALLS: &[&str] = &[
     "getrlimit",
     "setrlimit",
     "getrusage",
+    "prlimit64",
     "umask",
     "prctl",
     "getcpu",
@@ -385,6 +398,9 @@ const WELL_KNOWN_SYS_ENTER_SYSCALLS: &[&str] = &[
     "times",
     "newuname",
     "sysinfo",
+    "membarrier",
+    "rseq",
+    "set_tid_address",
     "getgroups",
     "setgroups",
     "capget",
@@ -403,6 +419,8 @@ const WELL_KNOWN_SYS_ENTER_SYSCALLS: &[&str] = &[
     "sched_get_priority_min",
     "sched_rr_get_interval",
     "futex",
+    "set_robust_list",
+    "get_robust_list",
     "mq_open",
     "mq_unlink",
     "mq_timedsend",
@@ -692,6 +710,9 @@ impl TracepointContext {
             Some("mount_setattr") => (Some(MOUNT_SETATTR_MIN_KERNEL), Some(MOUNT_SETATTR_SOURCE)),
             Some("statx") => (Some(STATX_MIN_KERNEL), Some(STATX_SOURCE)),
             Some("clone3") => (Some(CLONE3_MIN_KERNEL), Some(CLONE3_SOURCE)),
+            Some("pkey_mprotect" | "pkey_alloc" | "pkey_free") => {
+                (Some(PKEY_MIN_KERNEL), Some(PKEY_SOURCE))
+            }
             Some("io_uring_setup" | "io_uring_enter" | "io_uring_register") => {
                 (Some(IO_URING_MIN_KERNEL), Some(IO_URING_SOURCE))
             }
@@ -709,6 +730,7 @@ impl TracepointContext {
                 Some(SET_MEMPOLICY_HOME_NODE_MIN_KERNEL),
                 Some(SET_MEMPOLICY_HOME_NODE_SOURCE),
             ),
+            Some("rseq") => (Some(RSEQ_MIN_KERNEL), Some(RSEQ_SOURCE)),
             Some("pidfd_send_signal") => (
                 Some(PIDFD_SEND_SIGNAL_MIN_KERNEL),
                 Some(PIDFD_SEND_SIGNAL_SOURCE),
@@ -776,6 +798,7 @@ impl TracepointContext {
             "mount_setattr" => (MOUNT_SETATTR_MIN_KERNEL, MOUNT_SETATTR_SOURCE),
             "statx" => (STATX_MIN_KERNEL, STATX_SOURCE),
             "clone3" => (CLONE3_MIN_KERNEL, CLONE3_SOURCE),
+            "pkey_mprotect" | "pkey_alloc" | "pkey_free" => (PKEY_MIN_KERNEL, PKEY_SOURCE),
             "io_uring_setup" | "io_uring_enter" | "io_uring_register" => {
                 (IO_URING_MIN_KERNEL, IO_URING_SOURCE)
             }
@@ -787,6 +810,7 @@ impl TracepointContext {
                 SET_MEMPOLICY_HOME_NODE_MIN_KERNEL,
                 SET_MEMPOLICY_HOME_NODE_SOURCE,
             ),
+            "rseq" => (RSEQ_MIN_KERNEL, RSEQ_SOURCE),
             "pidfd_send_signal" => (PIDFD_SEND_SIGNAL_MIN_KERNEL, PIDFD_SEND_SIGNAL_SOURCE),
             "pidfd_open" => (PIDFD_OPEN_MIN_KERNEL, PIDFD_OPEN_SOURCE),
             "pidfd_getfd" => (PIDFD_GETFD_MIN_KERNEL, PIDFD_GETFD_SOURCE),
@@ -906,8 +930,12 @@ impl TracepointContext {
                 (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, MM_MMAP_SOURCE)
             }
             "mprotect" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, MM_MPROTECT_SOURCE),
+            "pkey_mprotect" | "pkey_alloc" | "pkey_free" => (PKEY_MIN_KERNEL, PKEY_SOURCE),
             "mremap" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, MM_MREMAP_SOURCE),
             "madvise" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, MM_MADVISE_SOURCE),
+            "process_vm_readv" | "process_vm_writev" => {
+                (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, PROCESS_VM_SOURCE)
+            }
             "process_madvise" => (PROCESS_MADVISE_MIN_KERNEL, PROCESS_MADVISE_SOURCE),
             "process_mrelease" => (PROCESS_MRELEASE_MIN_KERNEL, PROCESS_MRELEASE_SOURCE),
             "mlock" | "mlock2" | "munlock" | "mlockall" => {
@@ -967,10 +995,13 @@ impl TracepointContext {
             "setpriority" | "getpriority" | "setregid" | "setgid" | "setreuid" | "setuid"
             | "setresuid" | "getresuid" | "setresgid" | "getresgid" | "setfsuid" | "setfsgid"
             | "setpgid" | "getpgid" | "getsid" | "sethostname" | "gethostname"
-            | "setdomainname" | "getrlimit" | "setrlimit" | "getrusage" | "umask" | "prctl"
-            | "getcpu" | "times" | "newuname" | "sysinfo" => {
+            | "setdomainname" | "getrlimit" | "setrlimit" | "getrusage" | "prlimit64" | "umask"
+            | "prctl" | "getcpu" | "times" | "newuname" | "sysinfo" => {
                 (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, KERNEL_SYS_SOURCE)
             }
+            "membarrier" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, MEMBARRIER_SOURCE),
+            "rseq" => (RSEQ_MIN_KERNEL, RSEQ_SOURCE),
+            "set_tid_address" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, FORK_SOURCE),
             "getrandom" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, RANDOM_SOURCE),
             "getgroups" | "setgroups" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, GROUPS_SOURCE),
             "capget" | "capset" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, CAPABILITY_SOURCE),
@@ -987,7 +1018,9 @@ impl TracepointContext {
             | "sched_get_priority_max"
             | "sched_get_priority_min"
             | "sched_rr_get_interval" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, SCHED_SOURCE),
-            "futex" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, FUTEX_SOURCE),
+            "futex" | "set_robust_list" | "get_robust_list" => {
+                (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, FUTEX_SOURCE)
+            }
             "mq_open" | "mq_unlink" | "mq_timedsend" | "mq_timedreceive" | "mq_notify"
             | "mq_getsetattr" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, POSIX_MQUEUE_SOURCE),
             "msgget" | "msgctl" | "msgsnd" | "msgrcv" => {
@@ -1721,6 +1754,17 @@ impl TracepointContext {
                 ("len", Self::syscall_arg_int(false)),
                 ("prot", Self::syscall_arg_int(false)),
             ],
+            "pkey_mprotect" => vec![
+                ("start", Self::syscall_arg_int(false)),
+                ("len", Self::syscall_arg_int(false)),
+                ("prot", Self::syscall_arg_int(false)),
+                ("pkey", Self::syscall_arg_int(true)),
+            ],
+            "pkey_alloc" => vec![
+                ("flags", Self::syscall_arg_int(false)),
+                ("init_val", Self::syscall_arg_int(false)),
+            ],
+            "pkey_free" => vec![("pkey", Self::syscall_arg_int(true))],
             "mremap" => vec![
                 ("addr", Self::syscall_arg_int(false)),
                 ("old_len", Self::syscall_arg_int(false)),
@@ -1732,6 +1776,14 @@ impl TracepointContext {
                 ("start", Self::syscall_arg_int(false)),
                 ("len_in", Self::syscall_arg_int(false)),
                 ("behavior", Self::syscall_arg_int(true)),
+            ],
+            "process_vm_readv" | "process_vm_writev" => vec![
+                ("pid", Self::syscall_arg_int(true)),
+                ("lvec", Self::syscall_arg_user_ptr()),
+                ("liovcnt", Self::syscall_arg_int(false)),
+                ("rvec", Self::syscall_arg_user_ptr()),
+                ("riovcnt", Self::syscall_arg_int(false)),
+                ("flags", Self::syscall_arg_int(false)),
             ],
             "process_madvise" => vec![
                 ("pidfd", Self::syscall_arg_int(true)),
@@ -2119,6 +2171,12 @@ impl TracepointContext {
                 ("who", Self::syscall_arg_int(true)),
                 ("ru", Self::syscall_arg_user_ptr()),
             ],
+            "prlimit64" => vec![
+                ("pid", Self::syscall_arg_int(true)),
+                ("resource", Self::syscall_arg_int(false)),
+                ("new_rlim", Self::syscall_arg_user_ptr()),
+                ("old_rlim", Self::syscall_arg_user_ptr()),
+            ],
             "umask" => vec![("mask", Self::syscall_arg_int(false))],
             "prctl" => vec![
                 ("option", Self::syscall_arg_int(true)),
@@ -2140,6 +2198,17 @@ impl TracepointContext {
             "times" => vec![("tbuf", Self::syscall_arg_user_ptr())],
             "newuname" => vec![("name", Self::syscall_arg_user_ptr())],
             "sysinfo" => vec![("info", Self::syscall_arg_user_ptr())],
+            "membarrier" => vec![
+                ("cmd", Self::syscall_arg_int(true)),
+                ("flags", Self::syscall_arg_int(true)),
+            ],
+            "rseq" => vec![
+                ("rseq", Self::syscall_arg_user_ptr()),
+                ("rseq_len", Self::syscall_arg_int(false)),
+                ("flags", Self::syscall_arg_int(true)),
+                ("sig", Self::syscall_arg_int(false)),
+            ],
+            "set_tid_address" => vec![("tidptr", Self::syscall_arg_user_ptr())],
             "getgroups" | "setgroups" => vec![
                 ("gidsetsize", Self::syscall_arg_int(true)),
                 ("grouplist", Self::syscall_arg_user_ptr()),
@@ -2198,6 +2267,15 @@ impl TracepointContext {
                 ("utime", Self::syscall_arg_user_ptr()),
                 ("uaddr2", Self::syscall_arg_user_ptr()),
                 ("val3", Self::syscall_arg_int(false)),
+            ],
+            "set_robust_list" => vec![
+                ("head", Self::syscall_arg_user_ptr()),
+                ("len", Self::syscall_arg_int(false)),
+            ],
+            "get_robust_list" => vec![
+                ("pid", Self::syscall_arg_int(true)),
+                ("head_ptr", Self::syscall_arg_user_ptr()),
+                ("len_ptr", Self::syscall_arg_user_ptr()),
             ],
             "mq_open" => vec![
                 ("u_name", Self::syscall_arg_user_ptr()),

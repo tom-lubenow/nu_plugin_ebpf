@@ -644,6 +644,51 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
             .is_some_and(|source| source.contains("/v5.17/mm/mempolicy.c"))
     );
 
+    let process_vm_readv = TracepointContext::sys_enter("sys_enter_process_vm_readv");
+    assert!(!process_vm_readv.has_field("pid"));
+    assert!(process_vm_readv.has_field("lvec"));
+    assert!(process_vm_readv.has_field("liovcnt"));
+    assert!(process_vm_readv.has_field("rvec"));
+    assert!(process_vm_readv.has_field("riovcnt"));
+    assert!(process_vm_readv.has_field("flags"));
+    assert_eq!(
+        process_vm_readv
+            .get_field("lvec")
+            .expect("expected process_vm_readv lvec")
+            .offset,
+        24
+    );
+    let (_, process_vm_source) = TracepointContext::syscall_fallback_field_minimum_kernel(
+        "syscalls",
+        "sys_enter_process_vm_readv",
+        "lvec",
+    )
+    .expect("expected process_vm_readv source metadata");
+    assert!(process_vm_source.contains("/v4.7/mm/process_vm_access.c"));
+
+    let pkey_mprotect = TracepointContext::sys_enter("sys_enter_pkey_mprotect");
+    assert!(pkey_mprotect.has_field("start"));
+    assert!(pkey_mprotect.has_field("len"));
+    assert!(pkey_mprotect.has_field("prot"));
+    assert!(pkey_mprotect.has_field("pkey"));
+    assert_eq!(pkey_mprotect.minimum_kernel(), Some("4.9"));
+    assert!(
+        pkey_mprotect
+            .minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v4.9/mm/mprotect.c"))
+    );
+
+    let rseq = TracepointContext::sys_enter("sys_enter_rseq");
+    assert!(rseq.has_field("rseq"));
+    assert!(rseq.has_field("rseq_len"));
+    assert!(rseq.has_field("flags"));
+    assert!(rseq.has_field("sig"));
+    assert_eq!(rseq.minimum_kernel(), Some("4.18"));
+    assert!(
+        rseq.minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v4.18/kernel/rseq.c"))
+    );
+
     let add_key = TracepointContext::sys_enter("sys_enter_add_key");
     assert!(add_key.has_field("_type"));
     assert!(add_key.has_field("_description"));
@@ -1584,6 +1629,14 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
             &["dfd", "path", "flags", "uattr", "usize"][..],
         ),
         (
+            "sys_enter_process_vm_readv",
+            &["lvec", "liovcnt", "rvec", "riovcnt", "flags"][..],
+        ),
+        (
+            "sys_enter_process_vm_writev",
+            &["lvec", "liovcnt", "rvec", "riovcnt", "flags"][..],
+        ),
+        (
             "sys_enter_process_madvise",
             &["pidfd", "vec", "vlen", "behavior", "flags"][..],
         ),
@@ -1609,6 +1662,12 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
             "sys_enter_set_mempolicy_home_node",
             &["start", "len", "home_node", "flags"][..],
         ),
+        (
+            "sys_enter_pkey_mprotect",
+            &["start", "len", "prot", "pkey"][..],
+        ),
+        ("sys_enter_pkey_alloc", &["flags", "init_val"][..]),
+        ("sys_enter_pkey_free", &["pkey"][..]),
         ("sys_enter_memfd_create", &["uname", "flags"][..]),
         ("sys_enter_memfd_secret", &["flags"][..]),
         ("sys_enter_utime", &["filename", "times"][..]),
@@ -1736,6 +1795,10 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         ("sys_enter_getrlimit", &["resource", "rlim"][..]),
         ("sys_enter_setrlimit", &["resource", "rlim"][..]),
         ("sys_enter_getrusage", &["who", "ru"][..]),
+        (
+            "sys_enter_prlimit64",
+            &["resource", "new_rlim", "old_rlim"][..],
+        ),
         ("sys_enter_umask", &["mask"][..]),
         ("sys_enter_prctl", &["option"][..]),
         ("sys_enter_getcpu", &["cpup", "nodep", "unused"][..]),
@@ -1743,6 +1806,9 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         ("sys_enter_times", &["tbuf"][..]),
         ("sys_enter_newuname", &["name"][..]),
         ("sys_enter_sysinfo", &["info"][..]),
+        ("sys_enter_membarrier", &["cmd", "flags"][..]),
+        ("sys_enter_rseq", &["rseq", "rseq_len", "flags", "sig"][..]),
+        ("sys_enter_set_tid_address", &["tidptr"][..]),
         ("sys_enter_getgroups", &["gidsetsize", "grouplist"][..]),
         ("sys_enter_setgroups", &["gidsetsize", "grouplist"][..]),
         ("sys_enter_capget", &["header", "dataptr"][..]),
@@ -1762,6 +1828,8 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
             "sys_enter_futex",
             &["uaddr", "op", "val", "utime", "uaddr2", "val3"][..],
         ),
+        ("sys_enter_set_robust_list", &["head", "len"][..]),
+        ("sys_enter_get_robust_list", &["head_ptr", "len_ptr"][..]),
         (
             "sys_enter_mq_open",
             &["u_name", "oflag", "mode", "u_attr"][..],

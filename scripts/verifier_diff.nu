@@ -2635,6 +2635,12 @@ const PROCESS_TRACEPOINT_FIELD_SPECS = [
         min_kernel: "4.7"
         source: "https://github.com/torvalds/linux/blob/v4.7/kernel/nsproxy.c"
     }
+    {
+        syscalls: ["set_tid_address"]
+        fields: ["tidptr"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/fork.c"
+    }
 ]
 const FD_TRACEPOINT_FIELD_SPECS = [
     {
@@ -2868,6 +2874,24 @@ const MM_TRACEPOINT_FIELD_SPECS = [
         source: "https://github.com/torvalds/linux/blob/v4.7/mm/mprotect.c"
     }
     {
+        syscalls: ["pkey_mprotect"]
+        fields: ["start" "len" "prot" "pkey"]
+        min_kernel: "4.9"
+        source: "https://github.com/torvalds/linux/blob/v4.9/mm/mprotect.c"
+    }
+    {
+        syscalls: ["pkey_alloc"]
+        fields: ["flags" "init_val"]
+        min_kernel: "4.9"
+        source: "https://github.com/torvalds/linux/blob/v4.9/mm/mprotect.c"
+    }
+    {
+        syscalls: ["pkey_free"]
+        fields: ["pkey"]
+        min_kernel: "4.9"
+        source: "https://github.com/torvalds/linux/blob/v4.9/mm/mprotect.c"
+    }
+    {
         syscalls: ["mremap"]
         fields: ["addr" "old_len" "new_len" "flags" "new_addr"]
         min_kernel: "4.7"
@@ -2878,6 +2902,12 @@ const MM_TRACEPOINT_FIELD_SPECS = [
         fields: ["start" "len_in" "behavior"]
         min_kernel: "4.7"
         source: "https://github.com/torvalds/linux/blob/v4.7/mm/madvise.c"
+    }
+    {
+        syscalls: ["process_vm_readv" "process_vm_writev"]
+        fields: ["lvec" "liovcnt" "rvec" "riovcnt" "flags"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/mm/process_vm_access.c"
     }
     {
         syscalls: ["process_madvise"]
@@ -3370,6 +3400,12 @@ const IDENTITY_TRACEPOINT_FIELD_SPECS = [
         source: "https://github.com/torvalds/linux/blob/v4.7/kernel/sys.c"
     }
     {
+        syscalls: ["prlimit64"]
+        fields: ["resource" "new_rlim" "old_rlim"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/sys.c"
+    }
+    {
         syscalls: ["umask"]
         fields: ["mask"]
         min_kernel: "4.7"
@@ -3410,6 +3446,18 @@ const IDENTITY_TRACEPOINT_FIELD_SPECS = [
         fields: ["info"]
         min_kernel: "4.7"
         source: "https://github.com/torvalds/linux/blob/v4.7/kernel/sys.c"
+    }
+    {
+        syscalls: ["membarrier"]
+        fields: ["cmd" "flags"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/membarrier.c"
+    }
+    {
+        syscalls: ["rseq"]
+        fields: ["rseq" "rseq_len" "flags" "sig"]
+        min_kernel: "4.18"
+        source: "https://github.com/torvalds/linux/blob/v4.18/kernel/rseq.c"
     }
     {
         syscalls: ["getgroups" "setgroups"]
@@ -3484,6 +3532,18 @@ const FUTEX_TRACEPOINT_FIELD_SPECS = [
     {
         syscalls: ["futex"]
         fields: ["uaddr" "op" "val" "utime" "uaddr2" "val3"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/futex.c"
+    }
+    {
+        syscalls: ["set_robust_list"]
+        fields: ["head" "len"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/futex.c"
+    }
+    {
+        syscalls: ["get_robust_list"]
+        fields: ["head_ptr" "len_ptr"]
         min_kernel: "4.7"
         source: "https://github.com/torvalds/linux/blob/v4.7/kernel/futex.c"
     }
@@ -7137,6 +7197,92 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         ]
     }
     {
+        target: "tracepoint:syscalls/sys_enter_process_vm_readv"
+        program: [
+            '{|ctx|'
+            '  let lvec = $ctx.lvec'
+            '  let rvec = $ctx.rvec'
+            '  if $lvec { 1 | count }'
+            '  if $rvec { 1 | count }'
+            '  ($ctx.liovcnt + $ctx.riovcnt + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_process_vm_readv:field:lvec"
+            "tracepoint:syscalls/sys_enter_process_vm_readv:field:rvec"
+            "tracepoint:syscalls/sys_enter_process_vm_readv:field:liovcnt"
+            "tracepoint:syscalls/sys_enter_process_vm_readv:field:riovcnt"
+            "tracepoint:syscalls/sys_enter_process_vm_readv:field:flags"
+        ]
+    }
+    {
+        target: "tracepoint:syscalls/sys_enter_pkey_mprotect"
+        program: [
+            '{|ctx|'
+            '  ($ctx.start + $ctx.len + $ctx.prot + $ctx.pkey) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_pkey_mprotect:field:start"
+            "tracepoint:syscalls/sys_enter_pkey_mprotect:field:len"
+            "tracepoint:syscalls/sys_enter_pkey_mprotect:field:prot"
+            "tracepoint:syscalls/sys_enter_pkey_mprotect:field:pkey"
+        ]
+    }
+    {
+        target: "tracepoint:syscalls/sys_enter_prlimit64"
+        program: [
+            '{|ctx|'
+            '  let new_rlim = $ctx.new_rlim'
+            '  let old_rlim = $ctx.old_rlim'
+            '  if $new_rlim { 1 | count }'
+            '  if $old_rlim { 1 | count }'
+            '  $ctx.resource | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_prlimit64:field:new_rlim"
+            "tracepoint:syscalls/sys_enter_prlimit64:field:old_rlim"
+            "tracepoint:syscalls/sys_enter_prlimit64:field:resource"
+        ]
+    }
+    {
+        target: "tracepoint:syscalls/sys_enter_get_robust_list"
+        program: [
+            '{|ctx|'
+            '  let head_ptr = $ctx.head_ptr'
+            '  let len_ptr = $ctx.len_ptr'
+            '  if $head_ptr { 1 | count }'
+            '  if $len_ptr { 1 | count }'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_get_robust_list:field:head_ptr"
+            "tracepoint:syscalls/sys_enter_get_robust_list:field:len_ptr"
+        ]
+    }
+    {
+        target: "tracepoint:syscalls/sys_enter_rseq"
+        program: [
+            '{|ctx|'
+            '  let user_rseq = $ctx.rseq'
+            '  if $user_rseq { 1 | count }'
+            '  ($ctx.rseq_len + $ctx.flags + $ctx.sig) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_rseq:field:rseq"
+            "tracepoint:syscalls/sys_enter_rseq:field:rseq_len"
+            "tracepoint:syscalls/sys_enter_rseq:field:flags"
+            "tracepoint:syscalls/sys_enter_rseq:field:sig"
+        ]
+    }
+    {
         target: "tracepoint:syscalls/sys_enter_openat"
         program: [
             '{|ctx|'
@@ -9548,6 +9694,94 @@ const FIXTURES = [
             '  if $mqstat { 1 | count }'
             '  if $omqstat { 1 | count }'
             '  $ctx.mqdes | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-process-vm-readv-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_process_vm_readv]
+        target: "tracepoint:syscalls/sys_enter_process_vm_readv"
+        program: [
+            '{|ctx|'
+            '  let lvec = $ctx.lvec'
+            '  let rvec = $ctx.rvec'
+            '  if $lvec { 1 | count }'
+            '  if $rvec { 1 | count }'
+            '  ($ctx.liovcnt + $ctx.riovcnt + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-pkey-mprotect-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_pkey_mprotect]
+        target: "tracepoint:syscalls/sys_enter_pkey_mprotect"
+        program: [
+            '{|ctx|'
+            '  ($ctx.start + $ctx.len + $ctx.prot + $ctx.pkey) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-prlimit64-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_prlimit64]
+        target: "tracepoint:syscalls/sys_enter_prlimit64"
+        program: [
+            '{|ctx|'
+            '  let new_rlim = $ctx.new_rlim'
+            '  let old_rlim = $ctx.old_rlim'
+            '  if $new_rlim { 1 | count }'
+            '  if $old_rlim { 1 | count }'
+            '  $ctx.resource | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-get-robust-list-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_get_robust_list]
+        target: "tracepoint:syscalls/sys_enter_get_robust_list"
+        program: [
+            '{|ctx|'
+            '  let head_ptr = $ctx.head_ptr'
+            '  let len_ptr = $ctx.len_ptr'
+            '  if $head_ptr { 1 | count }'
+            '  if $len_ptr { 1 | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-rseq-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_rseq]
+        target: "tracepoint:syscalls/sys_enter_rseq"
+        program: [
+            '{|ctx|'
+            '  let user_rseq = $ctx.rseq'
+            '  if $user_rseq { 1 | count }'
+            '  ($ctx.rseq_len + $ctx.flags + $ctx.sig) | count'
             '  0'
             '}'
         ]
@@ -32145,6 +32379,8 @@ def syscall-tracepoint-fallback-field-kernel-feature [field: string target] {
         "6.13"
     } else if $syscall == "clone3" {
         "5.3"
+    } else if $syscall in ["pkey_mprotect" "pkey_alloc" "pkey_free"] {
+        "4.9"
     } else if $syscall in ["io_uring_setup" "io_uring_enter" "io_uring_register"] {
         "5.1"
     } else if $syscall == "io_pgetevents" {
@@ -32157,6 +32393,8 @@ def syscall-tracepoint-fallback-field-kernel-feature [field: string target] {
         "5.15"
     } else if $syscall == "set_mempolicy_home_node" {
         "5.17"
+    } else if $syscall == "rseq" {
+        "4.18"
     } else if $syscall == "statx" {
         "4.11"
     } else {
@@ -32190,6 +32428,8 @@ def syscall-tracepoint-fallback-field-kernel-feature [field: string target] {
         "https://github.com/torvalds/linux/blob/v6.13/fs/xattr.c"
     } else if $syscall == "clone3" {
         "https://github.com/torvalds/linux/blob/v5.3/kernel/fork.c"
+    } else if $syscall in ["pkey_mprotect" "pkey_alloc" "pkey_free"] {
+        "https://github.com/torvalds/linux/blob/v4.9/mm/mprotect.c"
     } else if $syscall in ["io_uring_setup" "io_uring_enter" "io_uring_register"] {
         "https://github.com/torvalds/linux/blob/v5.1/fs/io_uring.c"
     } else if $syscall == "io_pgetevents" {
@@ -32202,6 +32442,8 @@ def syscall-tracepoint-fallback-field-kernel-feature [field: string target] {
         "https://github.com/torvalds/linux/blob/v5.15/mm/oom_kill.c"
     } else if $syscall == "set_mempolicy_home_node" {
         "https://github.com/torvalds/linux/blob/v5.17/mm/mempolicy.c"
+    } else if $syscall == "rseq" {
+        "https://github.com/torvalds/linux/blob/v4.18/kernel/rseq.c"
     } else if $syscall == "statx" {
         "https://github.com/torvalds/linux/blob/v4.11/fs/stat.c"
     } else {
