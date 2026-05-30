@@ -21512,6 +21512,23 @@ const FIXTURES = [
         error_contains: "kfunc path_d_path buffer expects pointer in [Stack, Map], got Kernel"
     }
     {
+        name: "source-kfunc-path-d-path-rejects-small-buffer"
+        category: "helper-state"
+        tags: [kfunc file path source reject]
+        requires: [kernel-btf]
+        target: "lsm:file_open"
+        program: [
+            '{|ctx|'
+            '  let buf = "0123456789abcdef"'
+            '  kfunc-call "bpf_path_d_path" $ctx.arg0.f_path $buf 64'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc path_d_path buffer requires 64 bytes"
+    }
+    {
         name: "source-kfunc-path-d-path-rejects-zero-size"
         category: "helper-state"
         tags: [kfunc file path source reject]
