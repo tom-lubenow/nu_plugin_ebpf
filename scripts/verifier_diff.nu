@@ -23930,7 +23930,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "core-user-function-record-context-direct-spread-return"
@@ -23949,7 +23949,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "core-context-emit-rejects-pointer-escape"
