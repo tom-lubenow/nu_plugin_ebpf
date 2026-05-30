@@ -2110,6 +2110,12 @@ const FILE_TRACEPOINT_FIELD_SPECS = [
         source: "https://github.com/torvalds/linux/blob/v4.7/fs/open.c"
     }
     {
+        syscalls: ["faccessat2"]
+        fields: ["dfd" "filename" "mode" "flags"]
+        min_kernel: "5.8"
+        source: "https://github.com/torvalds/linux/blob/v5.8/fs/open.c"
+    }
+    {
         syscalls: ["truncate" "truncate64"]
         fields: ["path" "length"]
         min_kernel: "4.7"
@@ -2437,6 +2443,12 @@ const FD_TRACEPOINT_FIELD_SPECS = [
         source: "https://github.com/torvalds/linux/blob/v4.7/fs/eventfd.c"
     }
     {
+        syscalls: ["close_range"]
+        fields: ["fd" "max_fd" "flags"]
+        min_kernel: "5.9"
+        source: "https://github.com/torvalds/linux/blob/v5.9/fs/open.c"
+    }
+    {
         syscalls: ["epoll_create"]
         fields: ["size"]
         min_kernel: "4.7"
@@ -2517,6 +2529,18 @@ const MM_TRACEPOINT_FIELD_SPECS = [
         source: "https://github.com/torvalds/linux/blob/v4.7/mm/madvise.c"
     }
     {
+        syscalls: ["process_madvise"]
+        fields: ["pidfd" "vec" "vlen" "behavior" "flags"]
+        min_kernel: "5.10"
+        source: "https://github.com/torvalds/linux/blob/v5.10/mm/madvise.c"
+    }
+    {
+        syscalls: ["process_mrelease"]
+        fields: ["pidfd" "flags"]
+        min_kernel: "5.15"
+        source: "https://github.com/torvalds/linux/blob/v5.15/mm/oom_kill.c"
+    }
+    {
         syscalls: ["mlock" "munlock"]
         fields: ["start" "len"]
         min_kernel: "4.7"
@@ -2545,6 +2569,18 @@ const MM_TRACEPOINT_FIELD_SPECS = [
         fields: ["start" "len" "flags"]
         min_kernel: "4.7"
         source: "https://github.com/torvalds/linux/blob/v4.7/mm/msync.c"
+    }
+    {
+        syscalls: ["memfd_create"]
+        fields: ["uname" "flags"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/mm/shmem.c"
+    }
+    {
+        syscalls: ["memfd_secret"]
+        fields: ["flags"]
+        min_kernel: "5.14"
+        source: "https://github.com/torvalds/linux/blob/v5.14/mm/secretmem.c"
     }
 ]
 const TIME_TRACEPOINT_FIELD_SPECS = [
@@ -7605,6 +7641,21 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "tracepoint-close-range-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_close_range]
+        target: "tracepoint:syscalls/sys_enter_close_range"
+        program: [
+            '{|ctx|'
+            '  ($ctx.fd + $ctx.max_fd + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "tracepoint-openat2-context"
         category: "tracing"
         tags: [tracepoint context]
@@ -7617,6 +7668,23 @@ const FIXTURES = [
             '  let how = $ctx.how'
             '  if $how { 1 | count }'
             '  ($ctx.dfd + $ctx.usize) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-faccessat2-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_faccessat2]
+        target: "tracepoint:syscalls/sys_enter_faccessat2"
+        program: [
+            '{|ctx|'
+            '  let filename = $ctx.filename'
+            '  if $filename { $filename | read-str --max-len 64 | count }'
+            '  ($ctx.dfd + $ctx.mode + $ctx.flags) | count'
             '  0'
             '}'
         ]
@@ -8108,6 +8176,70 @@ const FIXTURES = [
             '  let vec = $ctx.vec'
             '  if $vec { 1 | count }'
             '  ($ctx.start + $ctx.len) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-process-madvise-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_process_madvise]
+        target: "tracepoint:syscalls/sys_enter_process_madvise"
+        program: [
+            '{|ctx|'
+            '  let vec = $ctx.vec'
+            '  if $vec { 1 | count }'
+            '  ($ctx.pidfd + $ctx.vlen + $ctx.behavior + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-process-mrelease-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_process_mrelease]
+        target: "tracepoint:syscalls/sys_enter_process_mrelease"
+        program: [
+            '{|ctx|'
+            '  ($ctx.pidfd + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-memfd-create-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_memfd_create]
+        target: "tracepoint:syscalls/sys_enter_memfd_create"
+        program: [
+            '{|ctx|'
+            '  let uname = $ctx.uname'
+            '  if $uname { $uname | read-str --max-len 64 | count }'
+            '  $ctx.flags | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-memfd-secret-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_memfd_secret]
+        target: "tracepoint:syscalls/sys_enter_memfd_secret"
+        program: [
+            '{|ctx|'
+            '  $ctx.flags | count'
             '  0'
             '}'
         ]
@@ -29310,6 +29442,10 @@ def syscall-tracepoint-fallback-field-kernel-feature [field: string target] {
 
     let min_kernel = if $syscall == "openat2" {
         "5.6"
+    } else if $syscall == "faccessat2" {
+        "5.8"
+    } else if $syscall == "close_range" {
+        "5.9"
     } else if $syscall == "pidfd_send_signal" {
         "5.1"
     } else if $syscall == "pidfd_open" {
@@ -29320,6 +29456,12 @@ def syscall-tracepoint-fallback-field-kernel-feature [field: string target] {
         "5.3"
     } else if $syscall in ["io_uring_setup" "io_uring_enter" "io_uring_register"] {
         "5.1"
+    } else if $syscall == "memfd_secret" {
+        "5.14"
+    } else if $syscall == "process_madvise" {
+        "5.10"
+    } else if $syscall == "process_mrelease" {
+        "5.15"
     } else if $syscall == "statx" {
         "4.11"
     } else {
@@ -29327,6 +29469,10 @@ def syscall-tracepoint-fallback-field-kernel-feature [field: string target] {
     }
     let source = if $syscall == "openat2" {
         "https://github.com/torvalds/linux/blob/v5.6/fs/open.c"
+    } else if $syscall == "faccessat2" {
+        "https://github.com/torvalds/linux/blob/v5.8/fs/open.c"
+    } else if $syscall == "close_range" {
+        "https://github.com/torvalds/linux/blob/v5.9/fs/open.c"
     } else if $syscall == "pidfd_send_signal" {
         "https://github.com/torvalds/linux/blob/v5.1/kernel/signal.c"
     } else if $syscall == "pidfd_open" {
@@ -29337,6 +29483,12 @@ def syscall-tracepoint-fallback-field-kernel-feature [field: string target] {
         "https://github.com/torvalds/linux/blob/v5.3/kernel/fork.c"
     } else if $syscall in ["io_uring_setup" "io_uring_enter" "io_uring_register"] {
         "https://github.com/torvalds/linux/blob/v5.1/fs/io_uring.c"
+    } else if $syscall == "memfd_secret" {
+        "https://github.com/torvalds/linux/blob/v5.14/mm/secretmem.c"
+    } else if $syscall == "process_madvise" {
+        "https://github.com/torvalds/linux/blob/v5.10/mm/madvise.c"
+    } else if $syscall == "process_mrelease" {
+        "https://github.com/torvalds/linux/blob/v5.15/mm/oom_kill.c"
     } else if $syscall == "statx" {
         "https://github.com/torvalds/linux/blob/v4.11/fs/stat.c"
     } else {

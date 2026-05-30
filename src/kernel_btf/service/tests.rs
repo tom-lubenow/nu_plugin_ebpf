@@ -217,6 +217,17 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
     assert!(close.has_field("fd"));
     assert!(!close.has_field("buf"));
 
+    let close_range = TracepointContext::sys_enter("sys_enter_close_range");
+    assert!(close_range.has_field("fd"));
+    assert!(close_range.has_field("max_fd"));
+    assert!(close_range.has_field("flags"));
+    assert_eq!(close_range.minimum_kernel(), Some("5.9"));
+    assert!(
+        close_range
+            .minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v5.9/fs/open.c"))
+    );
+
     let openat2 = TracepointContext::sys_enter("sys_enter_openat2");
     assert!(openat2.has_field("dfd"));
     assert!(openat2.has_field("filename"));
@@ -229,6 +240,25 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
             .minimum_kernel_source()
             .is_some_and(|source| source.contains("/v5.6/fs/open.c"))
     );
+
+    let faccessat2 = TracepointContext::sys_enter("sys_enter_faccessat2");
+    assert!(faccessat2.has_field("dfd"));
+    assert!(faccessat2.has_field("filename"));
+    assert!(faccessat2.has_field("mode"));
+    assert!(faccessat2.has_field("flags"));
+    assert_eq!(faccessat2.minimum_kernel(), Some("5.8"));
+    assert!(
+        faccessat2
+            .minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v5.8/fs/open.c"))
+    );
+    assert!(matches!(
+        faccessat2
+            .get_field("filename")
+            .expect("expected faccessat2 filename")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
 
     let open = TracepointContext::sys_enter("sys_enter_open");
     assert!(open.has_field("filename"));
@@ -420,6 +450,70 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         TypeInfo::Ptr { is_user: true, .. }
     ));
 
+    let memfd_create = TracepointContext::sys_enter("sys_enter_memfd_create");
+    assert!(memfd_create.has_field("uname"));
+    assert!(memfd_create.has_field("flags"));
+    let (_, memfd_create_source) = TracepointContext::syscall_fallback_field_minimum_kernel(
+        "syscalls",
+        "sys_enter_memfd_create",
+        "uname",
+    )
+    .expect("expected memfd_create uname source metadata");
+    assert!(memfd_create_source.contains("/v4.7/mm/shmem.c"));
+    assert!(matches!(
+        memfd_create
+            .get_field("uname")
+            .expect("expected memfd_create uname")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+
+    let memfd_secret = TracepointContext::sys_enter("sys_enter_memfd_secret");
+    assert!(memfd_secret.has_field("flags"));
+    assert_eq!(memfd_secret.minimum_kernel(), Some("5.14"));
+    assert!(
+        memfd_secret
+            .minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v5.14/mm/secretmem.c"))
+    );
+
+    let process_madvise = TracepointContext::sys_enter("sys_enter_process_madvise");
+    assert!(process_madvise.has_field("pidfd"));
+    assert!(process_madvise.has_field("vec"));
+    assert!(process_madvise.has_field("vlen"));
+    assert!(process_madvise.has_field("behavior"));
+    assert!(process_madvise.has_field("flags"));
+    assert_eq!(process_madvise.minimum_kernel(), Some("5.10"));
+    assert!(
+        process_madvise
+            .minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v5.10/mm/madvise.c"))
+    );
+    assert!(matches!(
+        process_madvise
+            .get_field("vec")
+            .expect("expected process_madvise vec")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+    assert_eq!(
+        process_madvise
+            .get_field("flags")
+            .expect("expected process_madvise flags")
+            .offset,
+        48
+    );
+
+    let process_mrelease = TracepointContext::sys_enter("sys_enter_process_mrelease");
+    assert!(process_mrelease.has_field("pidfd"));
+    assert!(process_mrelease.has_field("flags"));
+    assert_eq!(process_mrelease.minimum_kernel(), Some("5.15"));
+    assert!(
+        process_mrelease
+            .minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v5.15/mm/oom_kill.c"))
+    );
+
     let pidfd_send_signal = TracepointContext::sys_enter("sys_enter_pidfd_send_signal");
     assert!(pidfd_send_signal.has_field("pidfd"));
     assert!(pidfd_send_signal.has_field("sig"));
@@ -587,6 +681,10 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         ("sys_enter_creat", &["pathname", "mode"][..]),
         ("sys_enter_access", &["filename", "mode"][..]),
         ("sys_enter_faccessat", &["dfd", "filename", "mode"][..]),
+        (
+            "sys_enter_faccessat2",
+            &["dfd", "filename", "mode", "flags"][..],
+        ),
         ("sys_enter_truncate", &["path", "length"][..]),
         ("sys_enter_truncate64", &["path", "length"][..]),
         ("sys_enter_ftruncate", &["fd", "length"][..]),
@@ -644,6 +742,7 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         ("sys_enter_pipe2", &["fildes", "flags"][..]),
         ("sys_enter_eventfd", &["count"][..]),
         ("sys_enter_eventfd2", &["count", "flags"][..]),
+        ("sys_enter_close_range", &["fd", "max_fd", "flags"][..]),
         ("sys_enter_epoll_create", &["size"][..]),
         ("sys_enter_epoll_create1", &["flags"][..]),
         (
@@ -688,6 +787,13 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
             "sys_enter_renameat2",
             &["olddfd", "oldname", "newdfd", "newname", "flags"][..],
         ),
+        (
+            "sys_enter_process_madvise",
+            &["pidfd", "vec", "vlen", "behavior", "flags"][..],
+        ),
+        ("sys_enter_process_mrelease", &["pidfd", "flags"][..]),
+        ("sys_enter_memfd_create", &["uname", "flags"][..]),
+        ("sys_enter_memfd_secret", &["flags"][..]),
         ("sys_enter_time", &["tloc"][..]),
         ("sys_enter_gettimeofday", &["tv", "tz"][..]),
         ("sys_enter_settimeofday", &["tv", "tz"][..]),

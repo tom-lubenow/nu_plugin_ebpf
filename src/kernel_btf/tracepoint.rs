@@ -9,6 +9,10 @@ const READ_WRITE_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/
 const OPEN_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/open.c";
 const OPENAT2_MIN_KERNEL: &str = "5.6";
 const OPENAT2_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.6/fs/open.c";
+const FACCESSAT2_MIN_KERNEL: &str = "5.8";
+const FACCESSAT2_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.8/fs/open.c";
+const CLOSE_RANGE_MIN_KERNEL: &str = "5.9";
+const CLOSE_RANGE_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.9/fs/open.c";
 const EXEC_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/exec.c";
 const EXIT_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/exit.c";
 const FORK_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/fork.c";
@@ -33,6 +37,13 @@ const MM_MADVISE_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/mm/
 const MM_MLOCK_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/mm/mlock.c";
 const MM_MINCORE_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/mm/mincore.c";
 const MM_MSYNC_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/mm/msync.c";
+const MEMFD_CREATE_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/mm/shmem.c";
+const MEMFD_SECRET_MIN_KERNEL: &str = "5.14";
+const MEMFD_SECRET_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.14/mm/secretmem.c";
+const PROCESS_MADVISE_MIN_KERNEL: &str = "5.10";
+const PROCESS_MADVISE_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.10/mm/madvise.c";
+const PROCESS_MRELEASE_MIN_KERNEL: &str = "5.15";
+const PROCESS_MRELEASE_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.15/mm/oom_kill.c";
 const TIME_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/time/time.c";
 const ITIMER_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/time/itimer.c";
 const HRTIMER_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/time/hrtimer.c";
@@ -61,12 +72,14 @@ const WELL_KNOWN_SYS_ENTER_SYSCALLS: &[&str] = &[
     "read",
     "write",
     "close",
+    "close_range",
     "open",
     "openat",
     "openat2",
     "creat",
     "access",
     "faccessat",
+    "faccessat2",
     "truncate",
     "truncate64",
     "ftruncate",
@@ -150,12 +163,16 @@ const WELL_KNOWN_SYS_ENTER_SYSCALLS: &[&str] = &[
     "mprotect",
     "mremap",
     "madvise",
+    "process_madvise",
+    "process_mrelease",
     "mlock",
     "mlock2",
     "munlock",
     "mlockall",
     "mincore",
     "msync",
+    "memfd_create",
+    "memfd_secret",
     "time",
     "gettimeofday",
     "settimeofday",
@@ -505,11 +522,22 @@ impl TracepointContext {
             .or_else(|| name.strip_prefix("sys_exit_"));
         match syscall {
             Some("openat2") => (Some(OPENAT2_MIN_KERNEL), Some(OPENAT2_SOURCE)),
+            Some("faccessat2") => (Some(FACCESSAT2_MIN_KERNEL), Some(FACCESSAT2_SOURCE)),
+            Some("close_range") => (Some(CLOSE_RANGE_MIN_KERNEL), Some(CLOSE_RANGE_SOURCE)),
             Some("statx") => (Some(STATX_MIN_KERNEL), Some(STATX_SOURCE)),
             Some("clone3") => (Some(CLONE3_MIN_KERNEL), Some(CLONE3_SOURCE)),
             Some("io_uring_setup" | "io_uring_enter" | "io_uring_register") => {
                 (Some(IO_URING_MIN_KERNEL), Some(IO_URING_SOURCE))
             }
+            Some("memfd_secret") => (Some(MEMFD_SECRET_MIN_KERNEL), Some(MEMFD_SECRET_SOURCE)),
+            Some("process_madvise") => (
+                Some(PROCESS_MADVISE_MIN_KERNEL),
+                Some(PROCESS_MADVISE_SOURCE),
+            ),
+            Some("process_mrelease") => (
+                Some(PROCESS_MRELEASE_MIN_KERNEL),
+                Some(PROCESS_MRELEASE_SOURCE),
+            ),
             Some("pidfd_send_signal") => (
                 Some(PIDFD_SEND_SIGNAL_MIN_KERNEL),
                 Some(PIDFD_SEND_SIGNAL_SOURCE),
@@ -560,11 +588,16 @@ impl TracepointContext {
 
         Some(match syscall {
             "openat2" => (OPENAT2_MIN_KERNEL, OPENAT2_SOURCE),
+            "faccessat2" => (FACCESSAT2_MIN_KERNEL, FACCESSAT2_SOURCE),
+            "close_range" => (CLOSE_RANGE_MIN_KERNEL, CLOSE_RANGE_SOURCE),
             "statx" => (STATX_MIN_KERNEL, STATX_SOURCE),
             "clone3" => (CLONE3_MIN_KERNEL, CLONE3_SOURCE),
             "io_uring_setup" | "io_uring_enter" | "io_uring_register" => {
                 (IO_URING_MIN_KERNEL, IO_URING_SOURCE)
             }
+            "memfd_secret" => (MEMFD_SECRET_MIN_KERNEL, MEMFD_SECRET_SOURCE),
+            "process_madvise" => (PROCESS_MADVISE_MIN_KERNEL, PROCESS_MADVISE_SOURCE),
+            "process_mrelease" => (PROCESS_MRELEASE_MIN_KERNEL, PROCESS_MRELEASE_SOURCE),
             "pidfd_send_signal" => (PIDFD_SEND_SIGNAL_MIN_KERNEL, PIDFD_SEND_SIGNAL_SOURCE),
             "pidfd_open" => (PIDFD_OPEN_MIN_KERNEL, PIDFD_OPEN_SOURCE),
             "pidfd_getfd" => (PIDFD_GETFD_MIN_KERNEL, PIDFD_GETFD_SOURCE),
@@ -599,6 +632,8 @@ impl TracepointContext {
                 SYSCALL_TRACEPOINT_FALLBACK_SOURCE,
             ),
             "openat2" => (OPENAT2_MIN_KERNEL, OPENAT2_SOURCE),
+            "faccessat2" => (FACCESSAT2_MIN_KERNEL, FACCESSAT2_SOURCE),
+            "close_range" => (CLOSE_RANGE_MIN_KERNEL, CLOSE_RANGE_SOURCE),
             "execve" | "execveat" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, EXEC_SOURCE),
             "exit" | "exit_group" | "waitid" | "wait4" => {
                 (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, EXIT_SOURCE)
@@ -633,11 +668,15 @@ impl TracepointContext {
             "mprotect" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, MM_MPROTECT_SOURCE),
             "mremap" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, MM_MREMAP_SOURCE),
             "madvise" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, MM_MADVISE_SOURCE),
+            "process_madvise" => (PROCESS_MADVISE_MIN_KERNEL, PROCESS_MADVISE_SOURCE),
+            "process_mrelease" => (PROCESS_MRELEASE_MIN_KERNEL, PROCESS_MRELEASE_SOURCE),
             "mlock" | "mlock2" | "munlock" | "mlockall" => {
                 (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, MM_MLOCK_SOURCE)
             }
             "mincore" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, MM_MINCORE_SOURCE),
             "msync" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, MM_MSYNC_SOURCE),
+            "memfd_create" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, MEMFD_CREATE_SOURCE),
+            "memfd_secret" => (MEMFD_SECRET_MIN_KERNEL, MEMFD_SECRET_SOURCE),
             "time" | "gettimeofday" | "settimeofday" | "adjtimex" => {
                 (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, TIME_SOURCE)
             }
@@ -742,6 +781,11 @@ impl TracepointContext {
                 ("count", Self::syscall_arg_int(false)),
             ],
             "close" => vec![("fd", Self::syscall_arg_int(false))],
+            "close_range" => vec![
+                ("fd", Self::syscall_arg_int(false)),
+                ("max_fd", Self::syscall_arg_int(false)),
+                ("flags", Self::syscall_arg_int(false)),
+            ],
             "open" => vec![
                 ("filename", Self::syscall_arg_user_ptr()),
                 ("flags", Self::syscall_arg_int(false)),
@@ -771,6 +815,12 @@ impl TracepointContext {
                 ("dfd", Self::syscall_arg_int(true)),
                 ("filename", Self::syscall_arg_user_ptr()),
                 ("mode", Self::syscall_arg_int(true)),
+            ],
+            "faccessat2" => vec![
+                ("dfd", Self::syscall_arg_int(true)),
+                ("filename", Self::syscall_arg_user_ptr()),
+                ("mode", Self::syscall_arg_int(true)),
+                ("flags", Self::syscall_arg_int(true)),
             ],
             "truncate" | "truncate64" => vec![
                 ("path", Self::syscall_arg_user_ptr()),
@@ -1103,6 +1153,17 @@ impl TracepointContext {
                 ("len_in", Self::syscall_arg_int(false)),
                 ("behavior", Self::syscall_arg_int(true)),
             ],
+            "process_madvise" => vec![
+                ("pidfd", Self::syscall_arg_int(true)),
+                ("vec", Self::syscall_arg_user_ptr()),
+                ("vlen", Self::syscall_arg_int(false)),
+                ("behavior", Self::syscall_arg_int(true)),
+                ("flags", Self::syscall_arg_int(false)),
+            ],
+            "process_mrelease" => vec![
+                ("pidfd", Self::syscall_arg_int(true)),
+                ("flags", Self::syscall_arg_int(false)),
+            ],
             "mlock" | "munlock" => vec![
                 ("start", Self::syscall_arg_int(false)),
                 ("len", Self::syscall_arg_int(false)),
@@ -1123,6 +1184,11 @@ impl TracepointContext {
                 ("len", Self::syscall_arg_int(false)),
                 ("flags", Self::syscall_arg_int(true)),
             ],
+            "memfd_create" => vec![
+                ("uname", Self::syscall_arg_user_ptr()),
+                ("flags", Self::syscall_arg_int(false)),
+            ],
+            "memfd_secret" => vec![("flags", Self::syscall_arg_int(false))],
             "time" => vec![("tloc", Self::syscall_arg_user_ptr())],
             "gettimeofday" | "settimeofday" => vec![
                 ("tv", Self::syscall_arg_user_ptr()),
