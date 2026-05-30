@@ -57,6 +57,50 @@ impl<'a> VccLowerer<'a> {
         })
     }
 
+    fn scalar_identity_alias_for_binop(
+        &self,
+        dst: VReg,
+        op: BinOpKind,
+        lhs: &MirValue,
+        rhs: &MirValue,
+    ) -> Option<VccReg> {
+        if !self.vreg_is_scalar_aliasable(dst) {
+            return None;
+        }
+
+        fn vreg(value: &MirValue) -> Option<VReg> {
+            match value {
+                MirValue::VReg(reg) => Some(*reg),
+                MirValue::Const(_) | MirValue::StackSlot(_) => None,
+            }
+        }
+
+        fn const_value(value: &MirValue) -> Option<i64> {
+            match value {
+                MirValue::Const(value) => Some(*value),
+                MirValue::VReg(_) | MirValue::StackSlot(_) => None,
+            }
+        }
+
+        let preserved = match (op, vreg(lhs), const_value(lhs), vreg(rhs), const_value(rhs)) {
+            (BinOpKind::Add | BinOpKind::Or | BinOpKind::Xor, Some(reg), _, _, Some(0)) => {
+                Some(reg)
+            }
+            (BinOpKind::Add | BinOpKind::Or | BinOpKind::Xor, _, Some(0), Some(reg), _) => {
+                Some(reg)
+            }
+            (BinOpKind::Sub | BinOpKind::Shl | BinOpKind::Shr, Some(reg), _, _, Some(0)) => {
+                Some(reg)
+            }
+            (BinOpKind::Mul, Some(reg), _, _, Some(1)) => Some(reg),
+            (BinOpKind::Mul, _, Some(1), Some(reg), _) => Some(reg),
+            (BinOpKind::Div, Some(reg), _, _, Some(1)) => Some(reg),
+            _ => None,
+        }?;
+
+        Some(self.scalar_alias_root_for_value(preserved))
+    }
+
     fn map_fd_source_for_phi(&self, args: &[(BlockId, VReg)]) -> Option<MapRef> {
         let mut source = None;
         for (_, vreg) in args {
@@ -276,6 +320,8 @@ impl<'a> VccLowerer<'a> {
 
                 let vcc_op = to_vcc_binop(*op);
                 let dst_reg = VccReg(dst.0);
+                let scalar_identity_alias =
+                    self.scalar_identity_alias_for_binop(*dst, *op, lhs, rhs);
 
                 match op {
                     BinOpKind::Add | BinOpKind::Sub if lhs_ptr.is_some() ^ rhs_ptr.is_some() => {
@@ -331,6 +377,19 @@ impl<'a> VccLowerer<'a> {
                             lhs: vcc_lhs,
                             rhs: vcc_rhs,
                         });
+                        if let Some(root) = scalar_identity_alias {
+                            if root != dst_reg {
+                                out.push(VccInst::ScalarAlias {
+                                    dst: dst_reg,
+                                    src: root,
+                                });
+                                self.scalar_alias_regs.insert(dst_reg, root);
+                            } else {
+                                self.scalar_alias_regs.remove(&dst_reg);
+                            }
+                        } else {
+                            self.scalar_alias_regs.remove(&dst_reg);
+                        }
                     }
                 }
             }
