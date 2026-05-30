@@ -2053,22 +2053,102 @@ const KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_EXECVE_ENVP = {
     source: "https://github.com/torvalds/linux/blob/v4.7/fs/exec.c"
 }
 const SOCKET_TRACEPOINT_FIELD_SPECS = [
-    { syscall: "socket" fields: ["family" "type" "protocol"] }
-    { syscall: "socketpair" fields: ["family" "type" "protocol" "usockvec"] }
-    { syscall: "bind" fields: ["fd" "umyaddr" "addrlen"] }
-    { syscall: "listen" fields: ["fd" "backlog"] }
-    { syscall: "accept" fields: ["fd" "upeer_sockaddr" "upeer_addrlen"] }
-    { syscall: "connect" fields: ["fd" "uservaddr" "addrlen"] }
-    { syscall: "sendto" fields: ["fd" "buff" "len" "flags" "addr" "addr_len"] }
-    { syscall: "recvfrom" fields: ["fd" "ubuf" "size" "flags" "addr" "addr_len"] }
-    { syscall: "accept4" fields: ["fd" "upeer_sockaddr" "upeer_addrlen" "flags"] }
-    { syscall: "setsockopt" fields: ["fd" "level" "optname" "optval" "optlen"] }
-    { syscall: "getsockopt" fields: ["fd" "level" "optname" "optval" "optlen"] }
-    { syscall: "shutdown" fields: ["fd" "how"] }
-    { syscall: "sendmsg" fields: ["fd" "msg" "flags"] }
-    { syscall: "recvmsg" fields: ["fd" "msg" "flags"] }
-    { syscall: "sendmmsg" fields: ["fd" "mmsg" "vlen" "flags"] }
-    { syscall: "recvmmsg" fields: ["fd" "mmsg" "vlen" "flags" "timeout"] }
+    {
+        syscalls: ["socket"]
+        fields: ["family" "type" "protocol"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/net/socket.c"
+    }
+    {
+        syscalls: ["socketpair"]
+        fields: ["family" "type" "protocol" "usockvec"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/net/socket.c"
+    }
+    {
+        syscalls: ["bind"]
+        fields: ["fd" "umyaddr" "addrlen"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/net/socket.c"
+    }
+    {
+        syscalls: ["listen"]
+        fields: ["fd" "backlog"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/net/socket.c"
+    }
+    {
+        syscalls: ["accept"]
+        fields: ["fd" "upeer_sockaddr" "upeer_addrlen"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/net/socket.c"
+    }
+    {
+        syscalls: ["connect"]
+        fields: ["fd" "uservaddr" "addrlen"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/net/socket.c"
+    }
+    {
+        syscalls: ["sendto"]
+        fields: ["fd" "buff" "len" "flags" "addr" "addr_len"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/net/socket.c"
+    }
+    {
+        syscalls: ["recvfrom"]
+        fields: ["fd" "ubuf" "size" "flags" "addr" "addr_len"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/net/socket.c"
+    }
+    {
+        syscalls: ["accept4"]
+        fields: ["fd" "upeer_sockaddr" "upeer_addrlen" "flags"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/net/socket.c"
+    }
+    {
+        syscalls: ["setsockopt"]
+        fields: ["fd" "level" "optname" "optval" "optlen"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/net/socket.c"
+    }
+    {
+        syscalls: ["getsockopt"]
+        fields: ["fd" "level" "optname" "optval" "optlen"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/net/socket.c"
+    }
+    {
+        syscalls: ["shutdown"]
+        fields: ["fd" "how"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/net/socket.c"
+    }
+    {
+        syscalls: ["sendmsg"]
+        fields: ["fd" "msg" "flags"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/net/socket.c"
+    }
+    {
+        syscalls: ["recvmsg"]
+        fields: ["fd" "msg" "flags"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/net/socket.c"
+    }
+    {
+        syscalls: ["sendmmsg"]
+        fields: ["fd" "mmsg" "vlen" "flags"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/net/socket.c"
+    }
+    {
+        syscalls: ["recvmmsg"]
+        fields: ["fd" "mmsg" "vlen" "flags" "timeout"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/net/socket.c"
+    }
 ]
 const PATH_TRACEPOINT_FIELD_SPECS = [
     {
@@ -25481,95 +25561,22 @@ def syscall-tracepoint-fallback-field-kernel-feature [field: string target] {
     }
 }
 
-def socket-tracepoint-field-kernel-feature [field: string target] {
+def source-backed-sys-enter-tracepoint-field-kernel-feature [field: string target specs] {
     let target_text = ($target | default "")
     if not ($target_text | str starts-with "tracepoint:syscalls/sys_enter_") {
         return null
     }
 
     let syscall = ($target_text | str replace "tracepoint:syscalls/sys_enter_" "")
-    let matches = ($SOCKET_TRACEPOINT_FIELD_SPECS | where {|entry| $entry.syscall == $syscall })
+    let matches = (
+        $specs
+        | where {|entry| $syscall in $entry.syscalls and $field in $entry.fields }
+    )
     if ($matches | is-empty) {
         return null
     }
 
     let spec = ($matches | first)
-    if $field not-in $spec.fields {
-        return null
-    }
-
-    {
-        key: $"tracepoint:syscalls/sys_enter_($syscall):field:($field)"
-        min_kernel: "4.7"
-        source: "https://github.com/torvalds/linux/blob/v4.7/net/socket.c"
-    }
-}
-
-def path-tracepoint-field-kernel-feature [field: string target] {
-    let target_text = ($target | default "")
-    if not ($target_text | str starts-with "tracepoint:syscalls/sys_enter_") {
-        return null
-    }
-
-    let syscall = ($target_text | str replace "tracepoint:syscalls/sys_enter_" "")
-    let matches = ($PATH_TRACEPOINT_FIELD_SPECS | where {|entry| $syscall in $entry.syscalls })
-    if ($matches | is-empty) {
-        return null
-    }
-
-    let spec = ($matches | first)
-    if $field not-in $spec.fields {
-        return null
-    }
-
-    {
-        key: $"tracepoint:syscalls/sys_enter_($syscall):field:($field)"
-        min_kernel: $spec.min_kernel
-        source: $spec.source
-    }
-}
-
-def process-tracepoint-field-kernel-feature [field: string target] {
-    let target_text = ($target | default "")
-    if not ($target_text | str starts-with "tracepoint:syscalls/sys_enter_") {
-        return null
-    }
-
-    let syscall = ($target_text | str replace "tracepoint:syscalls/sys_enter_" "")
-    let matches = ($PROCESS_TRACEPOINT_FIELD_SPECS | where {|entry| $syscall in $entry.syscalls })
-    if ($matches | is-empty) {
-        return null
-    }
-
-    let spec = ($matches | first)
-    if $field not-in $spec.fields {
-        return null
-    }
-
-    {
-        key: $"tracepoint:syscalls/sys_enter_($syscall):field:($field)"
-        min_kernel: $spec.min_kernel
-        source: $spec.source
-    }
-}
-
-def fd-tracepoint-field-kernel-feature [field: string target] {
-    let target_text = ($target | default "")
-    if not ($target_text | str starts-with "tracepoint:syscalls/sys_enter_") {
-        return null
-    }
-
-    let syscall = ($target_text | str replace "tracepoint:syscalls/sys_enter_" "")
-    let matches = ($FD_TRACEPOINT_FIELD_SPECS | where {|entry| $syscall in $entry.syscalls })
-    if ($matches | is-empty) {
-        return null
-    }
-
-    let spec = ($matches | first)
-    if $field not-in $spec.fields {
-        return null
-    }
-
     {
         key: $"tracepoint:syscalls/sys_enter_($syscall):field:($field)"
         min_kernel: $spec.min_kernel
@@ -25591,24 +25598,17 @@ def tracepoint-payload-field-kernel-feature [field: string target] {
         return $fallback
     }
 
-    let socket_feature = (socket-tracepoint-field-kernel-feature $field $target)
-    if $socket_feature != null {
-        return $socket_feature
-    }
-
-    let path_feature = (path-tracepoint-field-kernel-feature $field $target)
-    if $path_feature != null {
-        return $path_feature
-    }
-
-    let process_feature = (process-tracepoint-field-kernel-feature $field $target)
-    if $process_feature != null {
-        return $process_feature
-    }
-
-    let fd_feature = (fd-tracepoint-field-kernel-feature $field $target)
-    if $fd_feature != null {
-        return $fd_feature
+    let source_backed_syscall_specs = (
+        $SOCKET_TRACEPOINT_FIELD_SPECS
+        | append $PATH_TRACEPOINT_FIELD_SPECS
+        | append $PROCESS_TRACEPOINT_FIELD_SPECS
+        | append $FD_TRACEPOINT_FIELD_SPECS
+    )
+    let source_backed_feature = (
+        source-backed-sys-enter-tracepoint-field-kernel-feature $field $target $source_backed_syscall_specs
+    )
+    if $source_backed_feature != null {
+        return $source_backed_feature
     }
 
     let matches = (
