@@ -6,7 +6,7 @@ pub(in crate::compiler::verifier_types) fn join_type(
 ) -> VerifierType {
     use VerifierType::*;
     match (a, b) {
-        (Uninit, other) | (other, Uninit) => other,
+        (Uninit, other) | (other, Uninit) => clear_resource_refs_after_partial_join(other),
         (StalePacketPtr, _) | (_, StalePacketPtr) => StalePacketPtr,
         (Unknown, _) | (_, Unknown) => Unknown,
         (Scalar, Scalar) => Scalar,
@@ -44,6 +44,26 @@ pub(in crate::compiler::verifier_types) fn join_type(
         }
         (Scalar, Bool) | (Bool, Scalar) => Scalar,
         _ => Unknown,
+    }
+}
+
+fn clear_resource_refs_after_partial_join(ty: VerifierType) -> VerifierType {
+    match ty {
+        // A resource pointer that exists on only one predecessor may keep its
+        // pointer type, but ownership identity is no longer valid on all paths.
+        VerifierType::Ptr {
+            space,
+            nullability,
+            bounds,
+            ..
+        } => VerifierType::Ptr {
+            space,
+            nullability,
+            bounds,
+            ringbuf_ref: None,
+            kfunc_ref: None,
+        },
+        other => other,
     }
 }
 
