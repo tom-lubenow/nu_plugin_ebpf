@@ -722,6 +722,7 @@ impl EbpfProgram {
     /// Attach the parsed program spec so target-sensitive metadata survives
     /// from command parsing through ELF section emission and loader attach.
     pub fn with_program_spec(mut self, program_spec: ProgramSpec) -> Self {
+        self.prog_type = program_spec.program_type();
         self.target = program_spec.target_string();
         self.program_spec = Some(program_spec);
         self

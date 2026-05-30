@@ -198,6 +198,32 @@ fn test_sleepable_btf_program_section_name_uses_program_spec() {
 }
 
 #[test]
+fn test_with_program_spec_makes_parsed_spec_authoritative() {
+    let spec = ProgramSpec::parse("tracepoint:syscalls/sys_enter_openat")
+        .expect("tracepoint spec should parse");
+    let prog = EbpfProgram::from_bytecode(EbpfProgramType::Kprobe, "sys_clone", "test", vec![])
+        .with_program_spec(spec.clone());
+
+    assert_eq!(prog.prog_type, EbpfProgramType::Tracepoint);
+    assert_eq!(prog.target, "syscalls/sys_enter_openat");
+    assert_eq!(prog.parsed_program_spec(), Some(&spec));
+    assert_eq!(
+        prog.section_name()
+            .expect("tracepoint section name should build"),
+        "tracepoint/syscalls/sys_enter_openat"
+    );
+    assert!(
+        prog.program_compatibility_requirements()
+            .contains(&ProgramCompatibilityRequirement::TracepointProgram)
+    );
+    assert!(
+        !prog
+            .program_compatibility_requirements()
+            .contains(&ProgramCompatibilityRequirement::KprobeProgram)
+    );
+}
+
+#[test]
 fn test_tp_btf_section_name() {
     let prog = EbpfProgram::from_bytecode(EbpfProgramType::TpBtf, "sys_enter", "test", vec![]);
     assert_eq!(
