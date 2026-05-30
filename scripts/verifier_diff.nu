@@ -22344,7 +22344,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "seq-write-rejects-non-iter"
@@ -22376,7 +22376,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "seq-printf-rejects-unaligned-data-len"
