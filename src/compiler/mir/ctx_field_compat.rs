@@ -43,6 +43,8 @@ const LINUX_BPF_H_V5_2_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.2/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V5_3_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.3/include/uapi/linux/bpf.h";
+const LINUX_BPF_H_V5_5_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.5/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V5_7_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.7/include/uapi/linux/bpf.h";
 const LINUX_BPF_H_V5_8_SOURCE: &str =
@@ -254,6 +256,28 @@ fn direct_context_field_kernel_floor(
     prog_type: Option<EbpfProgramType>,
 ) -> Option<(&'static str, &'static str)> {
     Some(match field {
+        CtxField::RetVal
+            if matches!(
+                prog_type,
+                Some(
+                    EbpfProgramType::Kretprobe
+                        | EbpfProgramType::KretprobeMulti
+                        | EbpfProgramType::KretSyscall
+                        | EbpfProgramType::Uretprobe
+                        | EbpfProgramType::UretprobeMulti
+                )
+            ) =>
+        {
+            ("4.1", LINUX_BPF_H_V4_1_SOURCE)
+        }
+        CtxField::RetVal
+            if matches!(
+                prog_type,
+                Some(EbpfProgramType::Fexit | EbpfProgramType::FmodRet)
+            ) =>
+        {
+            ("5.5", LINUX_BPF_H_V5_5_SOURCE)
+        }
         CtxField::PacketLen if prog_type == Some(EbpfProgramType::SockOps) => {
             ("5.10", LINUX_BPF_H_V5_10_SOURCE)
         }

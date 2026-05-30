@@ -3834,6 +3834,16 @@ const KERNEL_FEATURE_CTX_SOCKOPT_RETVAL = {
     min_kernel: "5.3"
     source: "https://github.com/torvalds/linux/blob/v5.3/include/uapi/linux/bpf.h"
 }
+const KERNEL_FEATURE_CTX_RETVAL_PT_REGS = {
+    key: "ctx:retval"
+    min_kernel: "4.1"
+    source: "https://github.com/torvalds/linux/blob/v4.1/include/uapi/linux/bpf.h"
+}
+const KERNEL_FEATURE_CTX_RETVAL_TRAMPOLINE = {
+    key: "ctx:retval"
+    min_kernel: "5.5"
+    source: "https://github.com/torvalds/linux/blob/v5.5/include/uapi/linux/bpf.h"
+}
 const KERNEL_FEATURE_CTX_ARG_COUNT = {
     key: "ctx:arg_count"
     min_kernel: "5.17"
@@ -4674,6 +4684,8 @@ const CONTEXT_FIELD_KERNEL_FEATURES = [
 ]
 
 const TARGET_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
+    { target: "kretprobe:ksys_read" field: "retval" feature: $KERNEL_FEATURE_CTX_RETVAL_PT_REGS }
+    { target: "fexit:ksys_read" field: "retval" feature: $KERNEL_FEATURE_CTX_RETVAL_TRAMPOLINE }
     { target: "xdp:lo" field: "packet_len" feature: $KERNEL_FEATURE_CTX_XDP_PACKET_LEN }
     { target: "xdp:lo" field: "data" feature: $KERNEL_FEATURE_CTX_XDP_DATA }
     { target: "sk_msg:/sys/fs/bpf/demo_sockmap" field: "packet_len" feature: $KERNEL_FEATURE_CTX_SK_MSG_PACKET_LEN }
@@ -4779,6 +4791,26 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
             '}'
         ]
         feature_keys: ["ctx:pid" "helper:bpf_get_current_pid_tgid"]
+    }
+    {
+        target: "kretprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  $ctx.retval | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:retval"]
+    }
+    {
+        target: "fexit:ksys_read"
+        program: [
+            '{|ctx|'
+            '  $ctx.retval | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:retval"]
     }
     {
         target: "raw_tracepoint:sys_enter"
@@ -26079,6 +26111,28 @@ def sock-ops-context-field-kernel-feature [field: string] {
 
 def target-context-field-alias-kernel-feature [field: string target] {
     let target_text = ($target | default "")
+
+    if $field == "retval" {
+        if (
+            ($target_text | str starts-with "kretprobe:")
+            or ($target_text | str starts-with "kretprobe.multi:")
+            or ($target_text | str starts-with "kretsyscall:")
+            or ($target_text | str starts-with "uretprobe:")
+            or ($target_text | str starts-with "uretprobe.s:")
+            or ($target_text | str starts-with "uretprobe.multi:")
+            or ($target_text | str starts-with "uretprobe.multi.s:")
+        ) {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_RETVAL_PT_REGS }
+        }
+        if (
+            ($target_text | str starts-with "fexit:")
+            or ($target_text | str starts-with "fexit.s:")
+            or ($target_text | str starts-with "fmod_ret:")
+            or ($target_text | str starts-with "fmod_ret.s:")
+        ) {
+            return { matched: true, feature: $KERNEL_FEATURE_CTX_RETVAL_TRAMPOLINE }
+        }
+    }
 
     if ($target_text | str starts-with "xdp:") {
         if $field == "packet_len" or $field == "len" {

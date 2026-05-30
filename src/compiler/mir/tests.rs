@@ -788,6 +788,35 @@ fn test_context_field_compatibility_requirements_are_source_backed() {
     .expect("tc_action ctx.sk should use __sk_buff socket floor");
     assert_eq!(tc_socket.minimum_kernel(), "5.1");
 
+    assert!(
+        ContextFieldCompatibilityRequirement::for_field(&CtxField::RetVal).is_none(),
+        "ctx.retval needs a target/program family to report an honest floor"
+    );
+    let kretprobe_retval = ContextFieldCompatibilityRequirement::for_field_on_program(
+        &CtxField::RetVal,
+        Some(crate::compiler::EbpfProgramType::Kretprobe),
+    )
+    .expect("kretprobe ctx.retval should use the pt_regs return-value floor");
+    assert_eq!(kretprobe_retval.key(), "ctx:retval");
+    assert_eq!(kretprobe_retval.minimum_kernel(), "4.1");
+    assert!(
+        kretprobe_retval
+            .minimum_kernel_source()
+            .contains("/v4.1/include/uapi/linux/bpf.h")
+    );
+    let fexit_retval = ContextFieldCompatibilityRequirement::for_field_on_program(
+        &CtxField::RetVal,
+        Some(crate::compiler::EbpfProgramType::Fexit),
+    )
+    .expect("fexit ctx.retval should use the BPF tracing return-value floor");
+    assert_eq!(fexit_retval.key(), "ctx:retval");
+    assert_eq!(fexit_retval.minimum_kernel(), "5.5");
+    assert!(
+        fexit_retval
+            .minimum_kernel_source()
+            .contains("/v5.5/include/uapi/linux/bpf.h")
+    );
+
     for (field, minimum_kernel, source_fragment) in [
         (CtxField::IterMeta, "5.8", "/v5.8/include/linux/bpf.h"),
         (CtxField::IterTask, "5.8", "/v5.8/kernel/bpf/task_iter.c"),
