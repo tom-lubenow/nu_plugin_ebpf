@@ -47,7 +47,8 @@ pub use crate::program_spec::{
 };
 pub use ctx_field_schema::{ContextFieldLoadGuard, SockOpsCallbackGuard};
 pub(crate) use ctx_field_schema::{
-    bpf_sock_projection_member_aliases, canonical_bpf_sock_projection_member,
+    bpf_flow_keys_projection_member_aliases, bpf_sock_projection_member_aliases,
+    canonical_bpf_flow_keys_projection_member, canonical_bpf_sock_projection_member,
     ctx_field_backing_helper, ctx_field_for_bpf_sock_projection_member,
 };
 pub(crate) use ctx_field_schema::{synthetic_bpf_sock_type, synthetic_bpf_tcp_sock_type};

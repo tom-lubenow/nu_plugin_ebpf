@@ -301,6 +301,49 @@ pub(crate) fn bpf_sock_projection_member_aliases(member: &str) -> &'static [&'st
     }
 }
 
+pub(crate) fn canonical_bpf_flow_keys_projection_member(member: &str) -> Option<&'static str> {
+    Some(match member {
+        "nhoff" | "network_header_offset" | "network_offset" => "nhoff",
+        "thoff" | "transport_header_offset" | "transport_offset" => "thoff",
+        "addr_proto" | "address_protocol" => "addr_proto",
+        "is_frag" | "fragmented" => "is_frag",
+        "is_first_frag" | "first_fragment" => "is_first_frag",
+        "is_encap" | "encapsulated" => "is_encap",
+        "ip_proto" | "protocol" | "l4_protocol" | "transport_protocol" => "ip_proto",
+        "n_proto" | "network_protocol" | "eth_protocol" | "ether_type" => "n_proto",
+        "sport" | "src_port" | "source_port" => "sport",
+        "dport" | "dst_port" | "dest_port" | "destination_port" => "dport",
+        "ipv4_src" | "src_ip4" | "source_ip4" => "ipv4_src",
+        "ipv4_dst" | "dst_ip4" | "dest_ip4" | "destination_ip4" => "ipv4_dst",
+        "ipv6_src" | "src_ip6" | "source_ip6" => "ipv6_src",
+        "ipv6_dst" | "dst_ip6" | "dest_ip6" | "destination_ip6" => "ipv6_dst",
+        "flags" => "flags",
+        "flow_label" | "ipv6_flow_label" => "flow_label",
+        _ => return None,
+    })
+}
+
+pub(crate) fn bpf_flow_keys_projection_member_aliases(member: &str) -> &'static [&'static str] {
+    match member {
+        "nhoff" => &["network_header_offset", "network_offset"],
+        "thoff" => &["transport_header_offset", "transport_offset"],
+        "addr_proto" => &["address_protocol"],
+        "is_frag" => &["fragmented"],
+        "is_first_frag" => &["first_fragment"],
+        "is_encap" => &["encapsulated"],
+        "ip_proto" => &["protocol", "l4_protocol", "transport_protocol"],
+        "n_proto" => &["network_protocol", "eth_protocol", "ether_type"],
+        "sport" => &["src_port", "source_port"],
+        "dport" => &["dst_port", "dest_port", "destination_port"],
+        "ipv4_src" => &["src_ip4", "source_ip4"],
+        "ipv4_dst" => &["dst_ip4", "dest_ip4", "destination_ip4"],
+        "ipv6_src" => &["src_ip6", "source_ip6"],
+        "ipv6_dst" => &["dst_ip6", "dest_ip6", "destination_ip6"],
+        "flow_label" => &["ipv6_flow_label"],
+        _ => &[],
+    }
+}
+
 pub(crate) fn ctx_field_for_bpf_sock_projection_member(member: &str) -> Option<CtxField> {
     Some(match canonical_bpf_sock_projection_member(member)? {
         "bound_dev_if" => CtxField::BoundDevIf,
@@ -1002,6 +1045,45 @@ mod tests {
                 );
                 assert!(
                     bpf_sock_projection_member_aliases(alias).is_empty(),
+                    "alias table should be keyed by canonical member names only"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_bpf_flow_keys_projection_aliases_canonicalize_to_same_member() {
+        for canonical in [
+            "nhoff",
+            "thoff",
+            "addr_proto",
+            "is_frag",
+            "is_first_frag",
+            "is_encap",
+            "ip_proto",
+            "n_proto",
+            "sport",
+            "dport",
+            "ipv4_src",
+            "ipv4_dst",
+            "ipv6_src",
+            "ipv6_dst",
+            "flow_label",
+        ] {
+            assert_eq!(
+                canonical_bpf_flow_keys_projection_member(canonical),
+                Some(canonical),
+                "{canonical} should resolve as its own canonical member"
+            );
+
+            for alias in bpf_flow_keys_projection_member_aliases(canonical) {
+                assert_eq!(
+                    canonical_bpf_flow_keys_projection_member(alias),
+                    Some(canonical),
+                    "{alias} should canonicalize to {canonical}"
+                );
+                assert!(
+                    bpf_flow_keys_projection_member_aliases(alias).is_empty(),
                     "alias table should be keyed by canonical member names only"
                 );
             }

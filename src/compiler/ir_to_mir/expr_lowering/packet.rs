@@ -701,17 +701,21 @@ impl<'a> HirToMirLowering<'a> {
                 },
                 PathMember::String { val, .. },
             ) => {
-                let field_name =
-                    if name.as_deref() == Some("bpf_sock") && kernel_btf_type_id.is_none() {
-                        crate::compiler::canonical_bpf_sock_projection_member(val)
-                            .unwrap_or(val.as_str())
-                    } else if let Some(header) =
-                        name.as_deref().and_then(PacketHeaderKind::from_type_name)
-                    {
-                        header.canonical_field_name(val).unwrap_or(val.as_str())
-                    } else {
-                        val.as_str()
-                    };
+                let field_name = if name.as_deref() == Some("bpf_sock")
+                    && kernel_btf_type_id.is_none()
+                {
+                    crate::compiler::canonical_bpf_sock_projection_member(val)
+                        .unwrap_or(val.as_str())
+                } else if name.as_deref() == Some("bpf_flow_keys") && kernel_btf_type_id.is_none() {
+                    crate::compiler::canonical_bpf_flow_keys_projection_member(val)
+                        .unwrap_or(val.as_str())
+                } else if let Some(header) =
+                    name.as_deref().and_then(PacketHeaderKind::from_type_name)
+                {
+                    header.canonical_field_name(val).unwrap_or(val.as_str())
+                } else {
+                    val.as_str()
+                };
                 let field = fields
                     .iter()
                     .find(|field| !field.synthetic && field.name == field_name)

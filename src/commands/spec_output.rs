@@ -12,7 +12,8 @@ use crate::compiler::{
     BpfHelper, ContextFieldCompatibilityRequirement, ContextFieldDirectLoadWidth,
     ContextFieldLoadGuard, HelperCompatibilityRequirement, MapKind, PacketContextKind,
     ProbeContext, ProgramCompatibilityRequirement, ProgramIntrinsic, ProgramValueAccess,
-    SockOpsCallbackGuard, bpf_sock_projection_member_aliases, ctx_field_backing_helper,
+    SockOpsCallbackGuard, bpf_flow_keys_projection_member_aliases,
+    bpf_sock_projection_member_aliases, ctx_field_backing_helper,
     ctx_field_for_bpf_sock_projection_member, synthetic_bpf_sock_type, synthetic_bpf_tcp_sock_type,
 };
 use crate::kernel_btf::{
@@ -954,6 +955,22 @@ fn spec_context_projections(spec: &crate::program_spec::ProgramSpec) -> Vec<Spec
                     if unsupported_reason.is_some() {
                         continue;
                     }
+                    let compatibility_requirement =
+                        context_projection_compatibility_requirement(spec, &entry.field, alias);
+                    push_context_field_projection(
+                        &mut projections,
+                        &root,
+                        alias,
+                        "context_field_alias",
+                        &field,
+                        compatibility_requirement,
+                        read_helper,
+                    );
+                }
+            }
+
+            if matches!(entry.field, CtxField::FlowKeys) {
+                for alias in bpf_flow_keys_projection_member_aliases(&field.name) {
                     let compatibility_requirement =
                         context_projection_compatibility_requirement(spec, &entry.field, alias);
                     push_context_field_projection(

@@ -13714,6 +13714,22 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "flow-dissector-flow-key-alias-context"
+        category: "context-surface"
+        tags: [flow-dissector context alias source metadata]
+        requires: [netns-self]
+        target: "flow_dissector:/proc/self/ns/net"
+        program: [
+            '{|ctx|'
+            '  let keys = $ctx.flow_keys'
+            '  ($keys.protocol + $keys.transport_header_offset + $keys.src_port + $keys.destination_ip4 + ($keys.dst_ip6 | get 3)) | count'
+            '  "fallback"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "flow-dissector-flow-key-write-context"
         category: "context-surface"
         tags: [flow-dissector context writable source metadata]
@@ -13725,6 +13741,24 @@ const FIXTURES = [
             '  $ctx.flow_keys.ip_proto = 6'
             '  $ctx.flow_keys.nhoff = 14'
             '  $ctx.flow_keys.ipv6_dst.3 = 1'
+            '  "parsed"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "flow-dissector-flow-key-alias-write-context"
+        category: "context-surface"
+        tags: [flow-dissector context writable alias source metadata]
+        requires: [netns-self]
+        target: "flow_dissector:/proc/self/ns/net"
+        program: [
+            '{|ctx|'
+            '  mut keys = $ctx.flow_keys'
+            '  $keys.protocol = 6'
+            '  $keys.network_header_offset = 14'
+            '  $keys.dst_ip6.3 = 1'
             '  "parsed"'
             '}'
         ]

@@ -10329,6 +10329,46 @@ fn test_compile_flow_dissector_ctx_flow_keys_counter_program() {
 }
 
 #[test]
+fn test_compile_flow_dissector_ctx_flow_key_alias_counter_program() {
+    for (members, context) in [
+        (
+            vec![
+                string_member("flow_keys"),
+                string_member("transport_header_offset"),
+            ],
+            "flow_dissector ctx.flow_keys.transport_header_offset count",
+        ),
+        (
+            vec![string_member("flow_keys"), string_member("protocol")],
+            "flow_dissector ctx.flow_keys.protocol count",
+        ),
+        (
+            vec![string_member("flow_keys"), string_member("src_port")],
+            "flow_dissector ctx.flow_keys.src_port count",
+        ),
+        (
+            vec![string_member("flow_keys"), string_member("destination_ip4")],
+            "flow_dissector ctx.flow_keys.destination_ip4 count",
+        ),
+        (
+            vec![
+                string_member("flow_keys"),
+                string_member("dst_ip6"),
+                int_member(3),
+            ],
+            "flow_dissector ctx.flow_keys.dst_ip6[3] count",
+        ),
+    ] {
+        assert_ctx_path_count_program_compiles(
+            EbpfProgramType::FlowDissector,
+            "/proc/self/ns/net",
+            CellPath { members },
+            context,
+        );
+    }
+}
+
+#[test]
 fn test_compile_netfilter_ctx_scalar_counter_programs() {
     for (field, context) in [
         ("hook", "netfilter ctx.hook count"),

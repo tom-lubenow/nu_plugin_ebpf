@@ -3420,6 +3420,42 @@ fn test_lower_flow_dissector_flow_keys_scalar_assignment() {
 }
 
 #[test]
+fn test_lower_flow_dissector_flow_keys_alias_assignment_canonicalizes() {
+    let hir = make_ctx_upsert_program(
+        CellPath {
+            members: vec![string_member("flow_keys"), string_member("protocol")],
+        },
+        HirLiteral::Int(17),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::FlowDissector, "/proc/self/ns/net");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("flow_dissector ctx.flow_keys.protocol alias assignment should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::Store {
+            offset: 9,
+            ty: MirType::U8,
+            ..
+        }
+    )));
+
+    let compiled =
+        compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+            .expect("flow_dissector ctx.flow_keys.protocol alias assignment should compile");
+    assert!(compiled.used_ctx_fields.contains(&CtxField::FlowKeys));
+}
+
+#[test]
 fn test_lower_flow_dissector_flow_keys_array_assignment() {
     let hir = make_ctx_upsert_program(
         CellPath {

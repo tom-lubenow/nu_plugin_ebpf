@@ -4752,6 +4752,36 @@ fn test_spec_context_projections_include_socket_members() {
 }
 
 #[test]
+fn test_spec_context_projections_include_flow_key_alias_members() {
+    let spec = ProgramSpec::parse("flow_dissector:/proc/self/ns/net")
+        .expect("flow_dissector spec should parse");
+    let projections = spec_context_projections(&spec);
+
+    let protocol = projection(&projections, "flow_keys.protocol");
+    assert_eq!(protocol.root, "flow_keys");
+    assert_eq!(protocol.name, "protocol");
+    assert_eq!(protocol.source, "context_field_alias");
+    assert_eq!(
+        protocol.context_field_requirement_key.as_deref(),
+        Some("ctx:flow_keys")
+    );
+    assert_eq!(protocol.minimum_kernel, Some("4.20"));
+    assert_eq!(protocol.compatibility_minimum_kernel, Some("4.20"));
+    assert_eq!(protocol.ty, "u8");
+    assert_eq!(protocol.offset, Some(9));
+    assert!(protocol.supported);
+    assert!(protocol.unsupported_reason.is_none());
+
+    let dst_ip6 = projection(&projections, "flow_keys.dst_ip6");
+    assert_eq!(dst_ip6.source, "context_field_alias");
+    assert_eq!(dst_ip6.ty, "array<u32; 4>");
+    assert_eq!(dst_ip6.offset, Some(32));
+
+    let canonical_dst_ip6 = projection(&projections, "flow_keys.ipv6_dst");
+    assert_eq!(dst_ip6.offset, canonical_dst_ip6.offset);
+}
+
+#[test]
 fn test_spec_context_projections_include_helper_backed_socket_members() {
     let spec = ProgramSpec::parse("tc:lo:ingress").expect("tc spec should parse");
     let projections = spec_context_projections(&spec);
