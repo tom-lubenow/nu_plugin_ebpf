@@ -16157,6 +16157,89 @@ fn test_verify_mir_helper_kptr_xchg_clear_returns_typed_cgroup_reference() {
 }
 
 #[test]
+fn test_verify_mir_helper_kptr_xchg_release_rejected_after_partial_swap_join() {
+    let (mut func, entry) = new_mir_function();
+    let swap = func.alloc_block();
+    let join = func.alloc_block();
+    let release_old = func.alloc_block();
+    let done = func.alloc_block();
+    func.param_count = 1;
+
+    let dst_ptr = func.alloc_vreg();
+    let dst_non_null = func.alloc_vreg();
+    let swapped = func.alloc_vreg();
+    let swapped_non_null = func.alloc_vreg();
+    let release_ret = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: dst_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(dst_ptr),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: dst_non_null,
+        if_true: swap,
+        if_false: join,
+    };
+
+    func.block_mut(swap).instructions.push(MirInst::CallHelper {
+        dst: swapped,
+        helper: BpfHelper::KptrXchg as u32,
+        args: vec![MirValue::VReg(dst_ptr), MirValue::Const(0)],
+    });
+    func.block_mut(swap).terminator = MirInst::Jump { target: join };
+
+    func.block_mut(join).instructions.push(MirInst::BinOp {
+        dst: swapped_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(swapped),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(join).terminator = MirInst::Branch {
+        cond: swapped_non_null,
+        if_true: release_old,
+        if_false: done,
+    };
+
+    func.block_mut(release_old)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: release_ret,
+            kfunc: "bpf_cgroup_release".to_string(),
+            btf_id: None,
+            args: vec![swapped],
+        });
+    func.block_mut(release_old).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        dst_ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::bpf_kptr_slot_struct("cgroup")),
+            address_space: AddressSpace::Map,
+        },
+    );
+    types.insert(dst_non_null, MirType::Bool);
+    types.insert(swapped, MirType::named_kernel_struct_ptr("cgroup"));
+    types.insert(swapped_non_null, MirType::Bool);
+    types.insert(release_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected partial-join release rejection");
+    assert!(
+        err.iter().any(|e| {
+            e.message
+                .contains("kfunc 'bpf_cgroup_release' arg0 pointer is not tracked")
+                || e.message.contains("expects acquired cgroup reference")
+                || e.message.contains("uninitialized")
+        }),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_helper_sk_lookup_release_socket_reference() {
     let (mut func, entry) = new_mir_function();
     let lookup = func.alloc_block();
