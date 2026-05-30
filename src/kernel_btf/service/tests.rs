@@ -1639,6 +1639,41 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
     .expect("expected futex_wait timeout source metadata");
     assert!(futex_wait_source.contains("/v6.7/kernel/futex/syscalls.c"));
 
+    let arch_prctl = TracepointContext::sys_enter("sys_enter_arch_prctl");
+    assert!(arch_prctl.has_field("option"));
+    assert!(!arch_prctl.has_field("arg2"));
+    assert_eq!(arch_prctl.minimum_kernel(), Some("5.0"));
+    assert!(
+        arch_prctl
+            .minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v5.0/arch/x86/kernel/process_64.c"))
+    );
+
+    let modify_ldt = TracepointContext::sys_enter("sys_enter_modify_ldt");
+    assert!(modify_ldt.has_field("func"));
+    assert!(modify_ldt.has_field("ptr"));
+    assert!(modify_ldt.has_field("bytecount"));
+    assert!(matches!(
+        modify_ldt
+            .get_field("ptr")
+            .expect("expected modify_ldt ptr")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+
+    let map_shadow_stack = TracepointContext::sys_enter("sys_enter_map_shadow_stack");
+    assert!(map_shadow_stack.has_field("addr"));
+    assert!(map_shadow_stack.has_field("size"));
+    assert!(map_shadow_stack.has_field("flags"));
+    assert_eq!(map_shadow_stack.minimum_kernel(), Some("6.6"));
+    let (_, shstk_source) = TracepointContext::syscall_fallback_field_minimum_kernel(
+        "syscalls",
+        "sys_enter_map_shadow_stack",
+        "flags",
+    )
+    .expect("expected map_shadow_stack flags source metadata");
+    assert!(shstk_source.contains("/v6.6/arch/x86/kernel/shstk.c"));
+
     for (name, fields) in [
         ("sys_enter_open", &["filename", "flags", "mode"][..]),
         ("sys_enter_creat", &["pathname", "mode"][..]),
@@ -2240,6 +2275,12 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         ("sys_enter_shmctl", &["shmid", "cmd", "buf"][..]),
         ("sys_enter_shmat", &["shmid", "shmaddr", "shmflg"][..]),
         ("sys_enter_shmdt", &["shmaddr"][..]),
+        ("sys_enter_arch_prctl", &["option"][..]),
+        ("sys_enter_ioperm", &["from", "num", "turn_on"][..]),
+        ("sys_enter_iopl", &["level"][..]),
+        ("sys_enter_modify_ldt", &["func", "ptr", "bytecount"][..]),
+        ("sys_enter_rt_sigreturn", &[][..]),
+        ("sys_enter_map_shadow_stack", &["addr", "size", "flags"][..]),
     ] {
         let ctx = TracepointContext::sys_enter(name);
         for field in fields {

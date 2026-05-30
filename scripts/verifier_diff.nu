@@ -3880,6 +3880,38 @@ const IPC_TRACEPOINT_FIELD_SPECS = [
         source: "https://github.com/torvalds/linux/blob/v4.7/ipc/shm.c"
     }
 ]
+const X86_TRACEPOINT_FIELD_SPECS = [
+    {
+        syscalls: ["arch_prctl"]
+        fields: ["option"]
+        min_kernel: "5.0"
+        source: "https://github.com/torvalds/linux/blob/v5.0/arch/x86/kernel/process_64.c"
+    }
+    {
+        syscalls: ["ioperm"]
+        fields: ["from" "num" "turn_on"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/arch/x86/kernel/ioport.c"
+    }
+    {
+        syscalls: ["iopl"]
+        fields: ["level"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/arch/x86/kernel/ioport.c"
+    }
+    {
+        syscalls: ["modify_ldt"]
+        fields: ["func" "ptr" "bytecount"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/arch/x86/kernel/ldt.c"
+    }
+    {
+        syscalls: ["map_shadow_stack"]
+        fields: ["addr" "size" "flags"]
+        min_kernel: "6.6"
+        source: "https://github.com/torvalds/linux/blob/v6.6/arch/x86/kernel/shstk.c"
+    }
+]
 const TRACEPOINT_FIELD_KERNEL_FEATURES = [
     { target: "tracepoint:syscalls/sys_enter_read" field: "fd" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_READ_FD }
     { target: "tracepoint:syscalls/sys_enter_read" field: "buf" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_READ_BUF }
@@ -11824,6 +11856,98 @@ const FIXTURES = [
             '  let waiters = $ctx.waiters'
             '  if $waiters { 1 | count }'
             '  ($ctx.flags + $ctx.nr_wake + $ctx.nr_requeue) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-arch-prctl-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_arch_prctl]
+        target: "tracepoint:syscalls/sys_enter_arch_prctl"
+        program: [
+            '{|ctx|'
+            '  $ctx.option | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-ioperm-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_ioperm]
+        target: "tracepoint:syscalls/sys_enter_ioperm"
+        program: [
+            '{|ctx|'
+            '  ($ctx.from + $ctx.num + $ctx.turn_on) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-iopl-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_iopl]
+        target: "tracepoint:syscalls/sys_enter_iopl"
+        program: [
+            '{|ctx|'
+            '  $ctx.level | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-modify-ldt-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_modify_ldt]
+        target: "tracepoint:syscalls/sys_enter_modify_ldt"
+        program: [
+            '{|ctx|'
+            '  let ptr = $ctx.ptr'
+            '  if $ptr { 1 | count }'
+            '  ($ctx.func + $ctx.bytecount) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-rt-sigreturn-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_rt_sigreturn]
+        target: "tracepoint:syscalls/sys_enter_rt_sigreturn"
+        program: [
+            '{|ctx|'
+            '  $ctx.id | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-map-shadow-stack-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_map_shadow_stack]
+        target: "tracepoint:syscalls/sys_enter_map_shadow_stack"
+        program: [
+            '{|ctx|'
+            '  ($ctx.addr + $ctx.size + $ctx.flags) | count'
             '  0'
             '}'
         ]
@@ -33206,6 +33330,10 @@ def syscall-tracepoint-fallback-field-kernel-feature [field: string target] {
         "5.16"
     } else if $syscall in ["futex_wake" "futex_wait" "futex_requeue"] {
         "6.7"
+    } else if $syscall == "arch_prctl" {
+        "5.0"
+    } else if $syscall == "map_shadow_stack" {
+        "6.6"
     } else if $syscall == "clone3" {
         "5.3"
     } else if $syscall in ["pkey_mprotect" "pkey_alloc" "pkey_free"] {
@@ -33273,6 +33401,16 @@ def syscall-tracepoint-fallback-field-kernel-feature [field: string target] {
         "https://github.com/torvalds/linux/blob/v5.16/kernel/futex/syscalls.c"
     } else if $syscall in ["futex_wake" "futex_wait" "futex_requeue"] {
         "https://github.com/torvalds/linux/blob/v6.7/kernel/futex/syscalls.c"
+    } else if $syscall == "arch_prctl" {
+        "https://github.com/torvalds/linux/blob/v5.0/arch/x86/kernel/process_64.c"
+    } else if $syscall in ["ioperm" "iopl"] {
+        "https://github.com/torvalds/linux/blob/v4.7/arch/x86/kernel/ioport.c"
+    } else if $syscall == "modify_ldt" {
+        "https://github.com/torvalds/linux/blob/v4.7/arch/x86/kernel/ldt.c"
+    } else if $syscall == "rt_sigreturn" {
+        "https://github.com/torvalds/linux/blob/v4.7/arch/x86/kernel/signal.c"
+    } else if $syscall == "map_shadow_stack" {
+        "https://github.com/torvalds/linux/blob/v6.6/arch/x86/kernel/shstk.c"
     } else if $syscall == "clone3" {
         "https://github.com/torvalds/linux/blob/v5.3/kernel/fork.c"
     } else if $syscall in ["fork" "vfork" "clone" "set_tid_address"] {
@@ -33377,6 +33515,7 @@ def tracepoint-payload-field-kernel-feature [field: string target] {
         | append $FUTEX_TRACEPOINT_FIELD_SPECS
         | append $MQUEUE_TRACEPOINT_FIELD_SPECS
         | append $IPC_TRACEPOINT_FIELD_SPECS
+        | append $X86_TRACEPOINT_FIELD_SPECS
     )
     let source_backed_feature = (
         source-backed-sys-enter-tracepoint-field-kernel-feature $field $target $source_backed_syscall_specs

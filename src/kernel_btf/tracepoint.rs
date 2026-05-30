@@ -71,6 +71,17 @@ const QUOTA_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/quota
 const QUOTACTL_FD_MIN_KERNEL: &str = "5.14";
 const QUOTACTL_FD_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.14/fs/quota/quota.c";
 const SOCKET_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/net/socket.c";
+const X86_ARCH_PRCTL_MIN_KERNEL: &str = "5.0";
+const X86_ARCH_PRCTL_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.0/arch/x86/kernel/process_64.c";
+const X86_IOPORT_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v4.7/arch/x86/kernel/ioport.c";
+const X86_LDT_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/arch/x86/kernel/ldt.c";
+const X86_SIGNAL_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v4.7/arch/x86/kernel/signal.c";
+const X86_SHSTK_MIN_KERNEL: &str = "6.6";
+const X86_SHSTK_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v6.6/arch/x86/kernel/shstk.c";
 const X86_MMAP_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v4.7/arch/x86/kernel/sys_x86_64.c";
 const MM_MMAP_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/mm/mmap.c";
@@ -521,6 +532,12 @@ const WELL_KNOWN_SYS_ENTER_SYSCALLS: &[&str] = &[
     "shmctl",
     "shmat",
     "shmdt",
+    "arch_prctl",
+    "ioperm",
+    "iopl",
+    "modify_ldt",
+    "rt_sigreturn",
+    "map_shadow_stack",
 ];
 const TRACEPOINT_PRESERVED_FALLBACK_FIELD_NAMES: &[&str] = &[
     "pid",
@@ -879,6 +896,20 @@ impl TracepointContext {
             Some("futex_wake" | "futex_wait" | "futex_requeue") => {
                 (Some(FUTEX2_MIN_KERNEL), Some(FUTEX2_SOURCE))
             }
+            Some("arch_prctl") => (Some(X86_ARCH_PRCTL_MIN_KERNEL), Some(X86_ARCH_PRCTL_SOURCE)),
+            Some("ioperm" | "iopl") => (
+                Some(SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL),
+                Some(X86_IOPORT_SOURCE),
+            ),
+            Some("modify_ldt") => (
+                Some(SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL),
+                Some(X86_LDT_SOURCE),
+            ),
+            Some("rt_sigreturn") => (
+                Some(SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL),
+                Some(X86_SIGNAL_SOURCE),
+            ),
+            Some("map_shadow_stack") => (Some(X86_SHSTK_MIN_KERNEL), Some(X86_SHSTK_SOURCE)),
             _ => (
                 Some(SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL),
                 Some(SYSCALL_TRACEPOINT_FALLBACK_SOURCE),
@@ -979,6 +1010,11 @@ impl TracepointContext {
             }
             "futex_waitv" => (FUTEX_WAITV_MIN_KERNEL, FUTEX_WAITV_SOURCE),
             "futex_wake" | "futex_wait" | "futex_requeue" => (FUTEX2_MIN_KERNEL, FUTEX2_SOURCE),
+            "arch_prctl" => (X86_ARCH_PRCTL_MIN_KERNEL, X86_ARCH_PRCTL_SOURCE),
+            "ioperm" | "iopl" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, X86_IOPORT_SOURCE),
+            "modify_ldt" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, X86_LDT_SOURCE),
+            "rt_sigreturn" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, X86_SIGNAL_SOURCE),
+            "map_shadow_stack" => (X86_SHSTK_MIN_KERNEL, X86_SHSTK_SOURCE),
             _ => (
                 SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL,
                 SYSCALL_TRACEPOINT_FALLBACK_SOURCE,
@@ -1226,6 +1262,10 @@ impl TracepointContext {
             "shmget" | "shmctl" | "shmat" | "shmdt" => {
                 (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, IPC_SHM_SOURCE)
             }
+            "arch_prctl" => (X86_ARCH_PRCTL_MIN_KERNEL, X86_ARCH_PRCTL_SOURCE),
+            "ioperm" | "iopl" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, X86_IOPORT_SOURCE),
+            "modify_ldt" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, X86_LDT_SOURCE),
+            "map_shadow_stack" => (X86_SHSTK_MIN_KERNEL, X86_SHSTK_SOURCE),
             _ => return None,
         })
     }
@@ -2742,6 +2782,27 @@ impl TracepointContext {
                 ("shmflg", Self::syscall_arg_int(true)),
             ],
             "shmdt" => vec![("shmaddr", Self::syscall_arg_user_ptr())],
+            "arch_prctl" => vec![
+                ("option", Self::syscall_arg_int(true)),
+                ("arg2", Self::syscall_arg_int(false)),
+            ],
+            "ioperm" => vec![
+                ("from", Self::syscall_arg_int(false)),
+                ("num", Self::syscall_arg_int(false)),
+                ("turn_on", Self::syscall_arg_int(true)),
+            ],
+            "iopl" => vec![("level", Self::syscall_arg_int(false))],
+            "modify_ldt" => vec![
+                ("func", Self::syscall_arg_int(true)),
+                ("ptr", Self::syscall_arg_user_ptr()),
+                ("bytecount", Self::syscall_arg_int(false)),
+            ],
+            "rt_sigreturn" => vec![],
+            "map_shadow_stack" => vec![
+                ("addr", Self::syscall_arg_int(false)),
+                ("size", Self::syscall_arg_int(false)),
+                ("flags", Self::syscall_arg_int(false)),
+            ],
             _ => return Vec::new(),
         };
 

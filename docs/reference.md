@@ -1005,6 +1005,10 @@ POSIX message-queue fallbacks expose aliases for entry tracepoints such as
 `sys_enter_mq_open`, `sys_enter_mq_timedsend`,
 `sys_enter_mq_timedreceive`, `sys_enter_mq_notify`, and
 `sys_enter_mq_getsetattr`.
+x86-specific syscall fallbacks expose source-known aliases for entry
+tracepoints such as Linux 5.0+ `sys_enter_arch_prctl`, legacy
+`sys_enter_ioperm`, `sys_enter_iopl`, `sys_enter_modify_ldt`,
+`sys_enter_rt_sigreturn`, and Linux 6.6+ `sys_enter_map_shadow_stack`.
 When a syscall argument name collides with a preserved tracepoint builtin or
 reserved context path such as `pid`, `tgid`, or `arg`, the fallback exposes the
 non-conflicting arguments and the raw payload remains available through
