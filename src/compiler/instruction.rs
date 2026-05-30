@@ -1596,11 +1596,12 @@ impl BpfHelper {
                 | Self::SkbAdjustRoom
                 | Self::XdpAdjustTail
                 | Self::MsgPullData
+                | Self::TailCall
         )
     }
 
     pub const fn changes_packet_data_in_subprogram(self) -> bool {
-        self.invalidates_packet_pointers() || matches!(self, Self::TailCall)
+        self.invalidates_packet_pointers()
     }
 
     pub const fn supports_local_helper_map_fd(self, arg_idx: usize) -> bool {

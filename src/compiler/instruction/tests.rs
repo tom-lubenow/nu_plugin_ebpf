@@ -2420,6 +2420,7 @@ fn test_helpers_with_packet_pointer_invalidation() {
         BpfHelper::SkbAdjustRoom,
         BpfHelper::XdpAdjustTail,
         BpfHelper::MsgPullData,
+        BpfHelper::TailCall,
     ] {
         assert!(
             helper.invalidates_packet_pointers(),
@@ -2453,8 +2454,8 @@ fn test_helpers_with_packet_pointer_invalidation() {
         "tail_call should be tracked as packet-changing for subprogram summaries"
     );
     assert!(
-        !BpfHelper::TailCall.invalidates_packet_pointers(),
-        "top-level tail_call continuations should not be modeled as packet-mutating"
+        BpfHelper::TailCall.invalidates_packet_pointers(),
+        "tail_call continuations must reload packet pointers after a failed tail call"
     );
 }
 

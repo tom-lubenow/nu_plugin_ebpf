@@ -26490,6 +26490,24 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "tail-call-helper-xdp-rejects-stale-data"
+        category: "language-surface"
+        tags: [tail-call xdp packet-bounds reject]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  let data = $ctx.data'
+            '  helper-call "bpf_tail_call" $ctx jumps 0'
+            '  ($data | get 0) | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "stale packet pointer"
+    }
+    {
         name: "emit-ringbuf-output-surface"
         category: "language-surface"
         tags: [emit ringbuf helper metadata]
