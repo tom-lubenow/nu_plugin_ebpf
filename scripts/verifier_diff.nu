@@ -12210,7 +12210,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "tc-skb-store-bytes-rejects-stale-data"
@@ -12246,7 +12246,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "tc-subfn-skb-store-bytes-rejects-stale-data"
@@ -12290,7 +12290,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "tc-subfn-skb-pull-data-rejects-stale-data"
@@ -12332,7 +12332,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "tc-nested-subfn-skb-pull-data-rejects-stale-data"
@@ -12372,7 +12372,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "tc-user-function-record-context-helper-arg"
@@ -12389,7 +12389,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "tc-l3-csum-replace-rejects-stale-data"
@@ -12423,7 +12423,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "tc-l4-csum-replace-rejects-stale-data"
@@ -12457,7 +12457,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "tc-csum-update-preserves-packet-data"
@@ -12474,7 +12474,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "tc-set-hash-invalid-preserves-packet-data"
@@ -12491,7 +12491,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "tc-set-hash-invalid-rejects-return-use"
