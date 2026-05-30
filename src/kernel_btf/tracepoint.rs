@@ -1580,3 +1580,60 @@ impl TracepointContext {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sys_enter_fallback_payload_collision_policy_preserves_context_builtins() {
+        for name in TRACEPOINT_PRESERVED_FALLBACK_FIELD_NAMES {
+            assert!(
+                !TracepointContext::sys_enter_arg_field_name_is_reachable(name),
+                "{name} should keep resolving to the tracepoint context builtin"
+            );
+        }
+
+        for name in [
+            "arg", "arg0", "arg1", "arg2", "arg3", "arg4", "arg5", "arg99",
+        ] {
+            assert!(
+                !TracepointContext::sys_enter_arg_field_name_is_reachable(name),
+                "{name} should keep resolving to generic argument access"
+            );
+        }
+
+        for name in ["argument", "arg_name", "pidfd", "flags", "oldname"] {
+            assert!(
+                TracepointContext::sys_enter_arg_field_name_is_reachable(name),
+                "{name} should remain available as a syscall payload field"
+            );
+        }
+    }
+
+    #[test]
+    fn sys_enter_fallback_hides_collisions_without_repacking_argument_offsets() {
+        let pidfd_open = TracepointContext::sys_enter("sys_enter_pidfd_open");
+        assert!(!pidfd_open.has_field("pid"));
+        assert_eq!(
+            pidfd_open
+                .get_field("flags")
+                .expect("expected pidfd_open flags")
+                .offset,
+            24
+        );
+
+        let prctl = TracepointContext::sys_enter("sys_enter_prctl");
+        assert!(prctl.has_field("option"));
+        for hidden in ["arg2", "arg3", "arg4", "arg5"] {
+            assert!(
+                !prctl.has_field(hidden),
+                "{hidden} should keep resolving to generic argument access"
+            );
+        }
+
+        let old_mmap = TracepointContext::sys_enter("sys_enter_old_mmap");
+        assert!(old_mmap.has_field("args"));
+        assert!(!old_mmap.has_field("arg"));
+    }
+}
