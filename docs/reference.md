@@ -911,6 +911,10 @@ and `sys_enter_timerfd_settime`.
 Signal fallbacks expose aliases for common entry tracepoints such as
 `sys_enter_kill`, `sys_enter_tgkill`, `sys_enter_rt_sigaction`,
 `sys_enter_rt_sigtimedwait`, and `sys_enter_pidfd_send_signal`.
+Credential and process-control fallbacks expose source-known aliases for common
+entry tracepoints such as `sys_enter_setresuid`, `sys_enter_getresgid`,
+`sys_enter_setgroups`, `sys_enter_capset`, `sys_enter_prctl`, and
+`sys_enter_getcpu`.
 When a syscall argument name collides with a preserved tracepoint builtin or
 reserved context path such as `pid`, `tgid`, or `arg`, the fallback exposes the
 non-conflicting arguments and the raw payload remains available through

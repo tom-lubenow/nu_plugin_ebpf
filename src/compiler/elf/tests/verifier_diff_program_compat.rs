@@ -1109,6 +1109,14 @@ fn test_verifier_diff_tracepoint_payload_scanner_matches_rust_fallback_fields() 
         ("tracepoint:syscalls/sys_enter_rt_sigaction", "oact"),
         ("tracepoint:syscalls/sys_enter_pidfd_send_signal", "info"),
         ("tracepoint:syscalls/sys_enter_pidfd_send_signal", "args"),
+        ("tracepoint:syscalls/sys_enter_setpriority", "niceval"),
+        ("tracepoint:syscalls/sys_enter_setresuid", "euid"),
+        ("tracepoint:syscalls/sys_enter_getresgid", "sgidp"),
+        ("tracepoint:syscalls/sys_enter_setpgid", "pgid"),
+        ("tracepoint:syscalls/sys_enter_setgroups", "grouplist"),
+        ("tracepoint:syscalls/sys_enter_capset", "data"),
+        ("tracepoint:syscalls/sys_enter_prctl", "option"),
+        ("tracepoint:syscalls/sys_enter_getcpu", "nodep"),
     ]
     .into_iter()
     .map(|(target, field)| (target.to_string(), field.to_string()))

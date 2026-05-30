@@ -335,6 +335,36 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         "sys_enter_old_mmap's kernel argument name collides with ctx.arg.<name>"
     );
 
+    let setresuid = TracepointContext::sys_enter("sys_enter_setresuid");
+    assert!(setresuid.has_field("ruid"));
+    assert!(setresuid.has_field("euid"));
+    assert!(setresuid.has_field("suid"));
+    let (_, setresuid_source) = TracepointContext::syscall_fallback_field_minimum_kernel(
+        "syscalls",
+        "sys_enter_setresuid",
+        "euid",
+    )
+    .expect("expected setresuid euid source metadata");
+    assert!(setresuid_source.contains("/v4.7/kernel/sys.c"));
+
+    let capset = TracepointContext::sys_enter("sys_enter_capset");
+    assert!(capset.has_field("header"));
+    assert!(capset.has_field("data"));
+    assert!(matches!(
+        capset
+            .get_field("data")
+            .expect("expected capset data")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+    let (_, capset_source) = TracepointContext::syscall_fallback_field_minimum_kernel(
+        "syscalls",
+        "sys_enter_capset",
+        "data",
+    )
+    .expect("expected capset data source metadata");
+    assert!(capset_source.contains("/v4.7/kernel/capability.c"));
+
     let connect = TracepointContext::sys_enter("sys_enter_connect");
     assert!(connect.has_field("fd"));
     assert!(connect.has_field("uservaddr"));
@@ -521,6 +551,28 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
             &["sig", "act", "oact", "sigsetsize"][..],
         ),
         ("sys_enter_rt_sigsuspend", &["unewset", "sigsetsize"][..]),
+        ("sys_enter_setpriority", &["which", "who", "niceval"][..]),
+        ("sys_enter_getpriority", &["which", "who"][..]),
+        ("sys_enter_setregid", &["rgid", "egid"][..]),
+        ("sys_enter_setreuid", &["ruid", "euid"][..]),
+        ("sys_enter_setresuid", &["ruid", "euid", "suid"][..]),
+        ("sys_enter_getresuid", &["ruidp", "euidp", "suidp"][..]),
+        ("sys_enter_setresgid", &["rgid", "egid", "sgid"][..]),
+        ("sys_enter_getresgid", &["rgidp", "egidp", "sgidp"][..]),
+        ("sys_enter_setpgid", &["pgid"][..]),
+        ("sys_enter_sethostname", &["name", "len"][..]),
+        ("sys_enter_gethostname", &["name", "len"][..]),
+        ("sys_enter_setdomainname", &["name", "len"][..]),
+        ("sys_enter_getrlimit", &["resource", "rlim"][..]),
+        ("sys_enter_setrlimit", &["resource", "rlim"][..]),
+        ("sys_enter_getrusage", &["who", "ru"][..]),
+        ("sys_enter_umask", &["mask"][..]),
+        ("sys_enter_prctl", &["option"][..]),
+        ("sys_enter_getcpu", &["cpup", "nodep", "unused"][..]),
+        ("sys_enter_getgroups", &["gidsetsize", "grouplist"][..]),
+        ("sys_enter_setgroups", &["gidsetsize", "grouplist"][..]),
+        ("sys_enter_capget", &["header", "dataptr"][..]),
+        ("sys_enter_capset", &["header", "data"][..]),
     ] {
         let ctx = TracepointContext::sys_enter(name);
         for field in fields {
@@ -564,6 +616,42 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
             .offset,
         40
     );
+
+    let setuid = TracepointContext::sys_enter("sys_enter_setuid");
+    assert!(!setuid.has_field("uid"));
+    let setpgid = TracepointContext::sys_enter("sys_enter_setpgid");
+    assert!(!setpgid.has_field("pid"));
+    assert_eq!(
+        setpgid
+            .get_field("pgid")
+            .expect("expected setpgid pgid")
+            .offset,
+        24
+    );
+    let prctl = TracepointContext::sys_enter("sys_enter_prctl");
+    assert_eq!(
+        prctl
+            .get_field("option")
+            .expect("expected prctl option")
+            .offset,
+        16
+    );
+    assert!(!prctl.has_field("arg2"));
+    let setgroups = TracepointContext::sys_enter("sys_enter_setgroups");
+    assert!(matches!(
+        setgroups
+            .get_field("grouplist")
+            .expect("expected setgroups grouplist")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+    let (_, setgroups_source) = TracepointContext::syscall_fallback_field_minimum_kernel(
+        "syscalls",
+        "sys_enter_setgroups",
+        "grouplist",
+    )
+    .expect("expected setgroups grouplist source metadata");
+    assert!(setgroups_source.contains("/v4.7/kernel/groups.c"));
 
     let unknown = TracepointContext::sys_enter("sys_enter_unknown");
     assert!(unknown.has_field("id"));

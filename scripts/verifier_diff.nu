@@ -2570,6 +2570,116 @@ const SIGNAL_TRACEPOINT_FIELD_SPECS = [
         source: "https://github.com/torvalds/linux/blob/v5.1/kernel/signal.c"
     }
 ]
+const IDENTITY_TRACEPOINT_FIELD_SPECS = [
+    {
+        syscalls: ["setpriority"]
+        fields: ["which" "who" "niceval"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/sys.c"
+    }
+    {
+        syscalls: ["getpriority"]
+        fields: ["which" "who"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/sys.c"
+    }
+    {
+        syscalls: ["setregid"]
+        fields: ["rgid" "egid"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/sys.c"
+    }
+    {
+        syscalls: ["setreuid"]
+        fields: ["ruid" "euid"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/sys.c"
+    }
+    {
+        syscalls: ["setresuid"]
+        fields: ["ruid" "euid" "suid"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/sys.c"
+    }
+    {
+        syscalls: ["getresuid"]
+        fields: ["ruidp" "euidp" "suidp"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/sys.c"
+    }
+    {
+        syscalls: ["setresgid"]
+        fields: ["rgid" "egid" "sgid"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/sys.c"
+    }
+    {
+        syscalls: ["getresgid"]
+        fields: ["rgidp" "egidp" "sgidp"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/sys.c"
+    }
+    {
+        syscalls: ["setpgid"]
+        fields: ["pgid"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/sys.c"
+    }
+    {
+        syscalls: ["sethostname" "gethostname" "setdomainname"]
+        fields: ["name" "len"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/sys.c"
+    }
+    {
+        syscalls: ["getrlimit" "setrlimit"]
+        fields: ["resource" "rlim"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/sys.c"
+    }
+    {
+        syscalls: ["getrusage"]
+        fields: ["who" "ru"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/sys.c"
+    }
+    {
+        syscalls: ["umask"]
+        fields: ["mask"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/sys.c"
+    }
+    {
+        syscalls: ["prctl"]
+        fields: ["option"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/sys.c"
+    }
+    {
+        syscalls: ["getcpu"]
+        fields: ["cpup" "nodep" "unused"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/sys.c"
+    }
+    {
+        syscalls: ["getgroups" "setgroups"]
+        fields: ["gidsetsize" "grouplist"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/groups.c"
+    }
+    {
+        syscalls: ["capget"]
+        fields: ["header" "dataptr"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/capability.c"
+    }
+    {
+        syscalls: ["capset"]
+        fields: ["header" "data"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/capability.c"
+    }
+]
 const TRACEPOINT_FIELD_KERNEL_FEATURES = [
     { target: "tracepoint:syscalls/sys_enter_read" field: "fd" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_READ_FD }
     { target: "tracepoint:syscalls/sys_enter_read" field: "buf" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_READ_BUF }
@@ -7451,6 +7561,91 @@ const FIXTURES = [
             '  ($ctx.pidfd + $ctx.sig + $ctx.flags) | count'
             '  let info = $ctx.info'
             '  if $info { 1 | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-setresuid-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf]
+        target: "tracepoint:syscalls/sys_enter_setresuid"
+        program: [
+            '{|ctx|'
+            '  ($ctx.ruid + $ctx.euid + $ctx.suid) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-getresgid-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf]
+        target: "tracepoint:syscalls/sys_enter_getresgid"
+        program: [
+            '{|ctx|'
+            '  let rgidp = $ctx.rgidp'
+            '  let egidp = $ctx.egidp'
+            '  let sgidp = $ctx.sgidp'
+            '  if $rgidp { 1 | count }'
+            '  if $egidp { 1 | count }'
+            '  if $sgidp { 1 | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-setgroups-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf]
+        target: "tracepoint:syscalls/sys_enter_setgroups"
+        program: [
+            '{|ctx|'
+            '  $ctx.gidsetsize | count'
+            '  let grouplist = $ctx.grouplist'
+            '  if $grouplist { 1 | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-capset-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf]
+        target: "tracepoint:syscalls/sys_enter_capset"
+        program: [
+            '{|ctx|'
+            '  let header = $ctx.header'
+            '  let data = $ctx.data'
+            '  if $header { 1 | count }'
+            '  if $data { 1 | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-prctl-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf]
+        target: "tracepoint:syscalls/sys_enter_prctl"
+        program: [
+            '{|ctx|'
+            '  ($ctx.option + ($ctx.args | get 1)) | count'
             '  0'
             '}'
         ]
@@ -26063,6 +26258,7 @@ def tracepoint-payload-field-kernel-feature [field: string target] {
         | append $MM_TRACEPOINT_FIELD_SPECS
         | append $TIME_TRACEPOINT_FIELD_SPECS
         | append $SIGNAL_TRACEPOINT_FIELD_SPECS
+        | append $IDENTITY_TRACEPOINT_FIELD_SPECS
     )
     let source_backed_feature = (
         source-backed-sys-enter-tracepoint-field-kernel-feature $field $target $source_backed_syscall_specs

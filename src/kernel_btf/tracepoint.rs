@@ -41,6 +41,9 @@ const SIGNAL_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/
 const PIDFD_SEND_SIGNAL_MIN_KERNEL: &str = "5.1";
 const PIDFD_SEND_SIGNAL_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.1/kernel/signal.c";
+const KERNEL_SYS_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/sys.c";
+const GROUPS_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/groups.c";
+const CAPABILITY_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/capability.c";
 const TRACEPOINT_PRESERVED_FALLBACK_FIELD_NAMES: &[&str] = &[
     "pid",
     "tid",
@@ -427,6 +430,13 @@ impl TracepointContext {
                 (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, SIGNAL_SOURCE)
             }
             "pidfd_send_signal" => (PIDFD_SEND_SIGNAL_MIN_KERNEL, PIDFD_SEND_SIGNAL_SOURCE),
+            "setpriority" | "getpriority" | "setregid" | "setgid" | "setreuid" | "setuid"
+            | "setresuid" | "getresuid" | "setresgid" | "getresgid" | "setfsuid" | "setfsgid"
+            | "setpgid" | "getpgid" | "getsid" | "sethostname" | "gethostname"
+            | "setdomainname" | "getrlimit" | "setrlimit" | "getrusage" | "umask" | "prctl"
+            | "getcpu" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, KERNEL_SYS_SOURCE),
+            "getgroups" | "setgroups" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, GROUPS_SOURCE),
+            "capget" | "capset" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, CAPABILITY_SOURCE),
             _ => return None,
         })
     }
@@ -894,6 +904,89 @@ impl TracepointContext {
                 ("sig", Self::syscall_arg_int(true)),
                 ("info", Self::syscall_arg_user_ptr()),
                 ("flags", Self::syscall_arg_int(false)),
+            ],
+            "setpriority" => vec![
+                ("which", Self::syscall_arg_int(true)),
+                ("who", Self::syscall_arg_int(true)),
+                ("niceval", Self::syscall_arg_int(true)),
+            ],
+            "getpriority" => vec![
+                ("which", Self::syscall_arg_int(true)),
+                ("who", Self::syscall_arg_int(true)),
+            ],
+            "setregid" => vec![
+                ("rgid", Self::syscall_arg_int(false)),
+                ("egid", Self::syscall_arg_int(false)),
+            ],
+            "setgid" => vec![("gid", Self::syscall_arg_int(false))],
+            "setreuid" => vec![
+                ("ruid", Self::syscall_arg_int(false)),
+                ("euid", Self::syscall_arg_int(false)),
+            ],
+            "setuid" => vec![("uid", Self::syscall_arg_int(false))],
+            "setresuid" => vec![
+                ("ruid", Self::syscall_arg_int(false)),
+                ("euid", Self::syscall_arg_int(false)),
+                ("suid", Self::syscall_arg_int(false)),
+            ],
+            "getresuid" => vec![
+                ("ruidp", Self::syscall_arg_user_ptr()),
+                ("euidp", Self::syscall_arg_user_ptr()),
+                ("suidp", Self::syscall_arg_user_ptr()),
+            ],
+            "setresgid" => vec![
+                ("rgid", Self::syscall_arg_int(false)),
+                ("egid", Self::syscall_arg_int(false)),
+                ("sgid", Self::syscall_arg_int(false)),
+            ],
+            "getresgid" => vec![
+                ("rgidp", Self::syscall_arg_user_ptr()),
+                ("egidp", Self::syscall_arg_user_ptr()),
+                ("sgidp", Self::syscall_arg_user_ptr()),
+            ],
+            "setfsuid" => vec![("uid", Self::syscall_arg_int(false))],
+            "setfsgid" => vec![("gid", Self::syscall_arg_int(false))],
+            "setpgid" => vec![
+                ("pid", Self::syscall_arg_int(true)),
+                ("pgid", Self::syscall_arg_int(true)),
+            ],
+            "getpgid" | "getsid" => vec![("pid", Self::syscall_arg_int(true))],
+            "sethostname" | "gethostname" | "setdomainname" => vec![
+                ("name", Self::syscall_arg_user_ptr()),
+                ("len", Self::syscall_arg_int(true)),
+            ],
+            "getrlimit" | "setrlimit" => vec![
+                ("resource", Self::syscall_arg_int(false)),
+                ("rlim", Self::syscall_arg_user_ptr()),
+            ],
+            "getrusage" => vec![
+                ("who", Self::syscall_arg_int(true)),
+                ("ru", Self::syscall_arg_user_ptr()),
+            ],
+            "umask" => vec![("mask", Self::syscall_arg_int(false))],
+            "prctl" => vec![
+                ("option", Self::syscall_arg_int(true)),
+                ("arg2", Self::syscall_arg_int(false)),
+                ("arg3", Self::syscall_arg_int(false)),
+                ("arg4", Self::syscall_arg_int(false)),
+                ("arg5", Self::syscall_arg_int(false)),
+            ],
+            "getcpu" => vec![
+                ("cpup", Self::syscall_arg_user_ptr()),
+                ("nodep", Self::syscall_arg_user_ptr()),
+                ("unused", Self::syscall_arg_user_ptr()),
+            ],
+            "getgroups" | "setgroups" => vec![
+                ("gidsetsize", Self::syscall_arg_int(true)),
+                ("grouplist", Self::syscall_arg_user_ptr()),
+            ],
+            "capget" => vec![
+                ("header", Self::syscall_arg_user_ptr()),
+                ("dataptr", Self::syscall_arg_user_ptr()),
+            ],
+            "capset" => vec![
+                ("header", Self::syscall_arg_user_ptr()),
+                ("data", Self::syscall_arg_user_ptr()),
             ],
             _ => return Vec::new(),
         };
