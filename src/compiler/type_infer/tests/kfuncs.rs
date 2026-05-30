@@ -1939,6 +1939,27 @@ fn test_type_error_dynptr_from_skb_rejects_packet_pointer_arg0() {
 }
 
 #[test]
+fn test_type_error_dynptr_from_skb_rejects_indirect_skb_raw_context() {
+    for probe_ctx in [
+        ProbeContext::new(EbpfProgramType::Netfilter, "ipv4:pre_routing"),
+        ProbeContext::new(EbpfProgramType::Fentry, "tcp_v4_rcv"),
+    ] {
+        let func = make_packet_dynptr_kfunc_type_call("bpf_dynptr_from_skb", 0);
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected raw context to fail dynptr_from_skb arg0");
+        assert!(
+            errs.iter().any(|e| e.message.contains(
+                "kfunc 'bpf_dynptr_from_skb' arg0 expects __sk_buff context or sk_buff pointer"
+            )),
+            "unexpected errors: {:?}",
+            errs
+        );
+    }
+}
+
+#[test]
 fn test_type_error_dynptr_from_skb_rejects_non_skb_program() {
     let func = make_packet_dynptr_kfunc_type_call("bpf_dynptr_from_skb", 0);
     let mut ti = TypeInference::new(Some(ProbeContext::new(

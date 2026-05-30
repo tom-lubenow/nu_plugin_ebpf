@@ -228,6 +228,7 @@ pub(super) fn apply_call_kfunc_inst(
     kfunc: &str,
     args: &[VReg],
     types: &HashMap<VReg, MirType>,
+    program: Option<&ProgramTypeInfo>,
     probe_ctx: Option<&ProbeContext>,
     state: &mut VerifierState,
     errors: &mut Vec<VerifierTypeError>,
@@ -267,7 +268,17 @@ pub(super) fn apply_call_kfunc_inst(
         ));
     }
     for (idx, arg) in args.iter().take(sig.max_args.min(5)).enumerate() {
-        check_kfunc_arg(kfunc, idx, *arg, sig.arg_kind(idx), types, state, errors);
+        check_kfunc_arg(
+            kfunc,
+            idx,
+            *arg,
+            sig.arg_kind(idx),
+            types,
+            state,
+            program,
+            probe_ctx,
+            errors,
+        );
     }
     check_kfunc_semantics(kfunc, args, types, state, errors);
     apply_kfunc_semantics(kfunc, args, types, state, errors);

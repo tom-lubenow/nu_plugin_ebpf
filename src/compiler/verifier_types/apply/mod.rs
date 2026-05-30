@@ -80,7 +80,7 @@ pub(super) fn apply_inst(
         MirInst::CallKfunc {
             dst, kfunc, args, ..
         } => {
-            apply_call_kfunc_inst(*dst, kfunc, args, types, probe_ctx, state, errors);
+            apply_call_kfunc_inst(*dst, kfunc, args, types, program, probe_ctx, state, errors);
         }
         MirInst::CallSubfn { dst, subfn, args } => {
             apply_call_subfn_inst(

@@ -2148,6 +2148,27 @@ fn test_verify_mir_dynptr_from_skb_rejects_packet_pointer_arg0() {
 }
 
 #[test]
+fn test_verify_mir_dynptr_from_skb_rejects_indirect_skb_raw_context() {
+    let (func, types) =
+        make_packet_dynptr_kfunc_vcc_function("bpf_dynptr_from_skb", 0, false, false);
+
+    for probe_ctx in [
+        ProbeContext::new(EbpfProgramType::Netfilter, "ipv4:pre_routing"),
+        ProbeContext::new(EbpfProgramType::Fentry, "tcp_v4_rcv"),
+    ] {
+        let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect_err("expected raw context to fail dynptr_from_skb arg0");
+        assert!(
+            err.iter().any(|e| e.message.contains(
+                "kfunc 'bpf_dynptr_from_skb' arg0 expects __sk_buff context or sk_buff pointer"
+            )),
+            "unexpected error messages: {:?}",
+            err
+        );
+    }
+}
+
+#[test]
 fn test_verify_mir_dynptr_from_skb_rejects_non_skb_program() {
     let (func, types) =
         make_packet_dynptr_kfunc_vcc_function("bpf_dynptr_from_skb", 0, false, false);

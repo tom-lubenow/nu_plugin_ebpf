@@ -1,4 +1,42 @@
 use super::*;
+use crate::compiler::{ProbeContext, ProgramTypeInfo};
+
+fn ctx_field_is_raw_context_pointer(
+    field: &CtxField,
+    program: Option<&ProgramTypeInfo>,
+    probe_ctx: Option<&ProbeContext>,
+) -> bool {
+    probe_ctx.map_or_else(
+        || {
+            program
+                .is_some_and(|program| program.program_type.ctx_field_is_raw_context_pointer(field))
+                || (program.is_none() && matches!(field, CtxField::Context))
+        },
+        |ctx| ctx.ctx_field_is_raw_context_pointer(field),
+    )
+}
+
+fn kfunc_arg_accepts_raw_skb_context_source(
+    kfunc: &str,
+    arg_idx: usize,
+    arg: VReg,
+    state: &VerifierState,
+    program: Option<&ProgramTypeInfo>,
+    probe_ctx: Option<&ProbeContext>,
+) -> bool {
+    let Some(field) = state.ctx_field_source(arg) else {
+        return false;
+    };
+    if !ctx_field_is_raw_context_pointer(field, program, probe_ctx) {
+        return false;
+    }
+    probe_ctx
+        .map(|ctx| ctx.program_type())
+        .or_else(|| program.map(|program| program.program_type))
+        .map_or(true, |program_type| {
+            program_type.kfunc_arg_accepts_raw_skb_context(kfunc, arg_idx)
+        })
+}
 
 pub(in crate::compiler::verifier_types) fn check_kfunc_arg(
     kfunc: &str,
@@ -7,6 +45,8 @@ pub(in crate::compiler::verifier_types) fn check_kfunc_arg(
     expected: KfuncArgKind,
     types: &HashMap<VReg, MirType>,
     state: &VerifierState,
+    program: Option<&ProgramTypeInfo>,
+    probe_ctx: Option<&ProbeContext>,
     errors: &mut Vec<VerifierTypeError>,
 ) {
     let ty = state.get(arg);
@@ -145,7 +185,9 @@ pub(in crate::compiler::verifier_types) fn check_kfunc_arg(
                                 kfunc, arg_idx, expected, pointee
                             )));
                         } else if kfunc_arg_requires_skb_context_or_pointer(kfunc, arg_idx)
-                            && state.ctx_field_source(arg) != Some(&CtxField::Context)
+                            && !kfunc_arg_accepts_raw_skb_context_source(
+                                kfunc, arg_idx, arg, state, program, probe_ctx,
+                            )
                             && !(*address_space == AddressSpace::Kernel
                                 && matches!(
                                     pointee.as_ref(),

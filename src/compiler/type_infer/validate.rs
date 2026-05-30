@@ -36,6 +36,21 @@ impl<'a> TypeInference<'a> {
         }
     }
 
+    fn kfunc_arg_accepts_raw_skb_context_source(
+        &self,
+        kfunc: &str,
+        arg_idx: usize,
+        field: &CtxField,
+    ) -> bool {
+        if !ProbeContext::resolve_ctx_field_is_raw_context_pointer(self.probe_ctx.as_ref(), field) {
+            return false;
+        }
+        self.probe_ctx.as_ref().map_or(true, |ctx| {
+            ctx.program_type()
+                .kfunc_arg_accepts_raw_skb_context(kfunc, arg_idx)
+        })
+    }
+
     fn helper_callback_subprogram_error(
         &self,
         helper: BpfHelper,
@@ -1092,9 +1107,8 @@ impl<'a> TypeInference<'a> {
                                     kfunc, idx,
                                 ) && !direct_ctx_field_sources.get(arg).is_some_and(
                                     |field| {
-                                        ProbeContext::resolve_ctx_field_is_raw_context_pointer(
-                                            self.probe_ctx.as_ref(),
-                                            field,
+                                        self.kfunc_arg_accepts_raw_skb_context_source(
+                                            kfunc, idx, field,
                                         )
                                     },
                                 ) && !(address_space == AddressSpace::Kernel

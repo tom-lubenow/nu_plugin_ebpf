@@ -218,11 +218,7 @@ impl<'a> VccLowerer<'a> {
         if !kfunc_arg_requires_skb_context_or_pointer(kfunc, arg_idx) {
             return Ok(());
         }
-        if self
-            .direct_ctx_field_regs
-            .get(&VccReg(arg.0))
-            .is_some_and(|field| self.ctx_field_is_raw_context_pointer(field))
-        {
+        if self.kfunc_arg_accepts_raw_skb_context_source(kfunc, arg_idx, arg) {
             return Ok(());
         }
         if *address_space == AddressSpace::Kernel
@@ -1559,6 +1555,26 @@ impl<'a> VccLowerer<'a> {
             return program.program_type.ctx_field_is_raw_context_pointer(field);
         }
         matches!(field, CtxField::Context)
+    }
+
+    fn kfunc_arg_accepts_raw_skb_context_source(
+        &self,
+        kfunc: &str,
+        arg_idx: usize,
+        arg: VReg,
+    ) -> bool {
+        let Some(field) = self.direct_ctx_field_regs.get(&VccReg(arg.0)) else {
+            return false;
+        };
+        if !self.ctx_field_is_raw_context_pointer(field) {
+            return false;
+        }
+        self.probe_ctx
+            .map(|ctx| ctx.program_type())
+            .or_else(|| self.program.map(|program| program.program_type))
+            .map_or(true, |program_type| {
+                program_type.kfunc_arg_accepts_raw_skb_context(kfunc, arg_idx)
+            })
     }
 
     fn helper_arg_is_socket_cookie_socket_pointer(&self, arg: &MirValue) -> bool {

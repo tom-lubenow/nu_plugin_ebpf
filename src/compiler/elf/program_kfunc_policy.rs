@@ -48,6 +48,20 @@ const SKB_PACKET_DYNPTR_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::TcAction,
     EbpfProgramType::CgroupSkb,
 ];
+const SKB_RAW_CONTEXT_DYNPTR_PROGRAMS: &[EbpfProgramType] = &[
+    EbpfProgramType::SocketFilter,
+    EbpfProgramType::LwtIn,
+    EbpfProgramType::LwtOut,
+    EbpfProgramType::LwtXmit,
+    EbpfProgramType::LwtSeg6Local,
+    EbpfProgramType::SkSkb,
+    EbpfProgramType::SkSkbParser,
+    EbpfProgramType::Tc,
+    EbpfProgramType::Tcx,
+    EbpfProgramType::Netkit,
+    EbpfProgramType::TcAction,
+    EbpfProgramType::CgroupSkb,
+];
 const SKB_TRACING_DYNPTR_PROGRAMS: &[EbpfProgramType] = &[
     EbpfProgramType::Fentry,
     EbpfProgramType::Fexit,
@@ -120,6 +134,14 @@ fn skb_tracing_dynptr_kfunc_allowed(program_type: EbpfProgramType) -> bool {
 
 fn skb_dynptr_kfunc_allowed(program_type: EbpfProgramType) -> bool {
     skb_packet_dynptr_kfunc_allowed(program_type) || skb_tracing_dynptr_kfunc_allowed(program_type)
+}
+
+impl EbpfProgramType {
+    pub(crate) fn kfunc_arg_accepts_raw_skb_context(self, kfunc: &str, arg_idx: usize) -> bool {
+        SKB_PACKET_DYNPTR_KFUNCS.contains(&kfunc)
+            && arg_idx == 0
+            && SKB_RAW_CONTEXT_DYNPTR_PROGRAMS.contains(&self)
+    }
 }
 
 fn format_sched_ext_callback_list(callbacks: &[&str]) -> String {
@@ -394,6 +416,24 @@ mod tests {
                 program_type
             );
         }
+        assert!(!SKB_RAW_CONTEXT_DYNPTR_PROGRAMS.is_empty());
+        let mut raw_skb_context_programs = HashSet::new();
+        for program_type in SKB_RAW_CONTEXT_DYNPTR_PROGRAMS {
+            assert!(
+                SKB_PACKET_DYNPTR_PROGRAMS.contains(program_type),
+                "raw skb context program type {:?} must be an skb packet dynptr program",
+                program_type
+            );
+            assert!(
+                raw_skb_context_programs.insert(*program_type),
+                "duplicate raw skb context dynptr program type {:?}",
+                program_type
+            );
+        }
+        assert!(
+            !SKB_RAW_CONTEXT_DYNPTR_PROGRAMS.contains(&EbpfProgramType::Netfilter),
+            "netfilter raw context is bpf_nf_ctx; bpf_dynptr_from_skb must use ctx.skb"
+        );
         assert!(!SKB_TRACING_DYNPTR_PROGRAMS.is_empty());
         for program_type in SKB_TRACING_DYNPTR_PROGRAMS {
             assert!(
@@ -781,6 +821,26 @@ mod tests {
             assert!(
                 !kfunc_surface_names(&spec).contains(&"bpf_dynptr_from_skb"),
                 "{program_type:?} should not advertise bpf_dynptr_from_skb"
+            );
+        }
+    }
+
+    #[test]
+    fn test_skb_dynptr_raw_context_arg_policy_excludes_indirect_skb_programs() {
+        assert!(EbpfProgramType::Tc.kfunc_arg_accepts_raw_skb_context("bpf_dynptr_from_skb", 0));
+        assert!(!EbpfProgramType::Tc.kfunc_arg_accepts_raw_skb_context("bpf_dynptr_from_skb", 1));
+        assert!(!EbpfProgramType::Xdp.kfunc_arg_accepts_raw_skb_context("bpf_dynptr_from_skb", 0));
+
+        for program_type in [
+            EbpfProgramType::Netfilter,
+            EbpfProgramType::Fentry,
+            EbpfProgramType::Fexit,
+            EbpfProgramType::FmodRet,
+            EbpfProgramType::TpBtf,
+        ] {
+            assert!(
+                !program_type.kfunc_arg_accepts_raw_skb_context("bpf_dynptr_from_skb", 0),
+                "{program_type:?} must pass an explicit sk_buff pointer, not raw ctx"
             );
         }
     }

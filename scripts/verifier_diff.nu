@@ -11630,6 +11630,40 @@ const FIXTURES = [
         error_contains: "kfunc 'bpf_dynptr_from_skb' arg0 expects __sk_buff context or sk_buff pointer"
     }
     {
+        name: "dynptr-kfunc-from-skb-rejects-netfilter-raw-context"
+        category: "helper-state"
+        tags: [kfunc dynptr skb netfilter source reject]
+        requires: [kernel-btf]
+        target: "netfilter:ipv4:pre_routing"
+        program: [
+            '{|ctx|'
+            '  let d = "0123456789abcdef"'
+            '  kfunc-call "bpf_dynptr_from_skb" $ctx 0 $d'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'bpf_dynptr_from_skb' arg0 expects __sk_buff context or sk_buff pointer"
+    }
+    {
+        name: "dynptr-kfunc-from-skb-rejects-tracing-raw-context"
+        category: "helper-state"
+        tags: [kfunc dynptr skb tracing source reject]
+        requires: [kernel-btf]
+        target: "fentry:tcp_v4_rcv"
+        program: [
+            '{|ctx|'
+            '  let d = "0123456789abcdef"'
+            '  kfunc-call "bpf_dynptr_from_skb" $ctx 0 $d'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'bpf_dynptr_from_skb' arg0 expects __sk_buff context or sk_buff pointer"
+    }
+    {
         name: "dynptr-kfunc-from-skb-rejects-reinitialize"
         category: "helper-state"
         tags: [kfunc dynptr skb tc reject]
