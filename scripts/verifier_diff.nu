@@ -2170,6 +2170,80 @@ const PROCESS_TRACEPOINT_FIELD_SPECS = [
         source: "https://github.com/torvalds/linux/blob/v4.7/kernel/nsproxy.c"
     }
 ]
+const FD_TRACEPOINT_FIELD_SPECS = [
+    {
+        syscalls: ["dup"]
+        fields: ["fildes"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/file.c"
+    }
+    {
+        syscalls: ["dup2"]
+        fields: ["oldfd" "newfd"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/file.c"
+    }
+    {
+        syscalls: ["dup3"]
+        fields: ["oldfd" "newfd" "flags"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/file.c"
+    }
+    {
+        syscalls: ["pipe"]
+        fields: ["fildes"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/pipe.c"
+    }
+    {
+        syscalls: ["pipe2"]
+        fields: ["fildes" "flags"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/pipe.c"
+    }
+    {
+        syscalls: ["eventfd"]
+        fields: ["count"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/eventfd.c"
+    }
+    {
+        syscalls: ["eventfd2"]
+        fields: ["count" "flags"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/eventfd.c"
+    }
+    {
+        syscalls: ["epoll_create"]
+        fields: ["size"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/eventpoll.c"
+    }
+    {
+        syscalls: ["epoll_create1"]
+        fields: ["flags"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/eventpoll.c"
+    }
+    {
+        syscalls: ["epoll_ctl"]
+        fields: ["epfd" "op" "fd" "event"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/eventpoll.c"
+    }
+    {
+        syscalls: ["epoll_wait"]
+        fields: ["epfd" "events" "maxevents" "timeout"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/eventpoll.c"
+    }
+    {
+        syscalls: ["epoll_pwait"]
+        fields: ["epfd" "events" "maxevents" "timeout" "sigmask" "sigsetsize"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/eventpoll.c"
+    }
+]
 const TRACEPOINT_FIELD_KERNEL_FEATURES = [
     { target: "tracepoint:syscalls/sys_enter_read" field: "fd" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_READ_FD }
     { target: "tracepoint:syscalls/sys_enter_read" field: "buf" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_READ_BUF }
@@ -6776,6 +6850,74 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  ($ctx.fd + $ctx.nstype) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-dup3-context"
+        category: "tracing"
+        tags: [tracepoint context]
+        requires: [tracefs kernel-btf]
+        target: "tracepoint:syscalls/sys_enter_dup3"
+        program: [
+            '{|ctx|'
+            '  ($ctx.oldfd + $ctx.newfd + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-pipe2-context"
+        category: "tracing"
+        tags: [tracepoint context]
+        requires: [tracefs kernel-btf]
+        target: "tracepoint:syscalls/sys_enter_pipe2"
+        program: [
+            '{|ctx|'
+            '  let fildes = $ctx.fildes'
+            '  if $fildes { 1 | count }'
+            '  $ctx.flags | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-epoll-ctl-context"
+        category: "tracing"
+        tags: [tracepoint context]
+        requires: [tracefs kernel-btf]
+        target: "tracepoint:syscalls/sys_enter_epoll_ctl"
+        program: [
+            '{|ctx|'
+            '  let event = $ctx.event'
+            '  if $event { 1 | count }'
+            '  ($ctx.epfd + $ctx.op + $ctx.fd) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-epoll-pwait-context"
+        category: "tracing"
+        tags: [tracepoint context]
+        requires: [tracefs kernel-btf]
+        target: "tracepoint:syscalls/sys_enter_epoll_pwait"
+        program: [
+            '{|ctx|'
+            '  let events = $ctx.events'
+            '  if $events { 1 | count }'
+            '  let sigmask = $ctx.sigmask'
+            '  if $sigmask { 1 | count }'
+            '  ($ctx.epfd + $ctx.maxevents + $ctx.timeout + $ctx.sigsetsize) | count'
             '  0'
             '}'
         ]
@@ -25411,6 +25553,30 @@ def process-tracepoint-field-kernel-feature [field: string target] {
     }
 }
 
+def fd-tracepoint-field-kernel-feature [field: string target] {
+    let target_text = ($target | default "")
+    if not ($target_text | str starts-with "tracepoint:syscalls/sys_enter_") {
+        return null
+    }
+
+    let syscall = ($target_text | str replace "tracepoint:syscalls/sys_enter_" "")
+    let matches = ($FD_TRACEPOINT_FIELD_SPECS | where {|entry| $syscall in $entry.syscalls })
+    if ($matches | is-empty) {
+        return null
+    }
+
+    let spec = ($matches | first)
+    if $field not-in $spec.fields {
+        return null
+    }
+
+    {
+        key: $"tracepoint:syscalls/sys_enter_($syscall):field:($field)"
+        min_kernel: $spec.min_kernel
+        source: $spec.source
+    }
+}
+
 def tracepoint-payload-field-kernel-feature [field: string target] {
     let target_text = ($target | default "")
     if not ($target_text | str starts-with "tracepoint:") {
@@ -25438,6 +25604,11 @@ def tracepoint-payload-field-kernel-feature [field: string target] {
     let process_feature = (process-tracepoint-field-kernel-feature $field $target)
     if $process_feature != null {
         return $process_feature
+    }
+
+    let fd_feature = (fd-tracepoint-field-kernel-feature $field $target)
+    if $fd_feature != null {
+        return $fd_feature
     }
 
     let matches = (

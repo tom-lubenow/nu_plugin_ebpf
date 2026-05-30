@@ -1073,6 +1073,12 @@ fn test_verifier_diff_tracepoint_payload_scanner_matches_rust_fallback_fields() 
         ("tracepoint:syscalls/sys_enter_wait4", "stat_addr"),
         ("tracepoint:syscalls/sys_enter_unshare", "unshare_flags"),
         ("tracepoint:syscalls/sys_enter_setns", "nstype"),
+        ("tracepoint:syscalls/sys_enter_dup3", "oldfd"),
+        ("tracepoint:syscalls/sys_enter_pipe2", "fildes"),
+        ("tracepoint:syscalls/sys_enter_eventfd2", "count"),
+        ("tracepoint:syscalls/sys_enter_epoll_ctl", "event"),
+        ("tracepoint:syscalls/sys_enter_epoll_wait", "events"),
+        ("tracepoint:syscalls/sys_enter_epoll_pwait", "sigmask"),
     ]
     .into_iter()
     .map(|(target, field)| (target.to_string(), field.to_string()))

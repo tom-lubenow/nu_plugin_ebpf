@@ -262,6 +262,19 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         TypeInfo::Ptr { is_user: true, .. }
     ));
 
+    let epoll_ctl = TracepointContext::sys_enter("sys_enter_epoll_ctl");
+    assert!(epoll_ctl.has_field("epfd"));
+    assert!(epoll_ctl.has_field("op"));
+    assert!(epoll_ctl.has_field("fd"));
+    assert!(epoll_ctl.has_field("event"));
+    assert!(matches!(
+        epoll_ctl
+            .get_field("event")
+            .expect("expected epoll_ctl event")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+
     let newfstatat = TracepointContext::sys_enter("sys_enter_newfstatat");
     assert!(newfstatat.has_field("dfd"));
     assert!(newfstatat.has_field("filename"));
@@ -386,6 +399,30 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         ),
         ("sys_enter_unshare", &["unshare_flags"][..]),
         ("sys_enter_setns", &["fd", "nstype"][..]),
+        ("sys_enter_dup", &["fildes"][..]),
+        ("sys_enter_dup2", &["oldfd", "newfd"][..]),
+        ("sys_enter_dup3", &["oldfd", "newfd", "flags"][..]),
+        ("sys_enter_pipe", &["fildes"][..]),
+        ("sys_enter_pipe2", &["fildes", "flags"][..]),
+        ("sys_enter_eventfd", &["count"][..]),
+        ("sys_enter_eventfd2", &["count", "flags"][..]),
+        ("sys_enter_epoll_create", &["size"][..]),
+        ("sys_enter_epoll_create1", &["flags"][..]),
+        (
+            "sys_enter_epoll_wait",
+            &["epfd", "events", "maxevents", "timeout"][..],
+        ),
+        (
+            "sys_enter_epoll_pwait",
+            &[
+                "epfd",
+                "events",
+                "maxevents",
+                "timeout",
+                "sigmask",
+                "sigsetsize",
+            ][..],
+        ),
         ("sys_enter_stat", &["filename", "statbuf"][..]),
         ("sys_enter_newstat", &["filename", "statbuf"][..]),
         ("sys_enter_fstat", &["fd", "statbuf"][..]),

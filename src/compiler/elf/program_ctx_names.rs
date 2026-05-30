@@ -1038,6 +1038,18 @@ mod tests {
             "sys_enter_wait4",
             "sys_enter_unshare",
             "sys_enter_setns",
+            "sys_enter_dup",
+            "sys_enter_dup2",
+            "sys_enter_dup3",
+            "sys_enter_pipe",
+            "sys_enter_pipe2",
+            "sys_enter_eventfd",
+            "sys_enter_eventfd2",
+            "sys_enter_epoll_create",
+            "sys_enter_epoll_create1",
+            "sys_enter_epoll_ctl",
+            "sys_enter_epoll_wait",
+            "sys_enter_epoll_pwait",
             "sys_enter_stat",
             "sys_enter_lstat",
             "sys_enter_newstat",
@@ -1082,7 +1094,8 @@ mod tests {
                 }
 
                 assert!(
-                    !tracepoint_preserves_builtin_ctx_field_name(&field.name),
+                    !tracepoint_preserves_builtin_ctx_field_name(&field.name)
+                        && field.name != "arg",
                     "{syscall} fallback payload field '{}' is shadowed by tracepoint builtin resolution",
                     field.name
                 );

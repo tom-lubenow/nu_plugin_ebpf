@@ -899,7 +899,9 @@ tracepoints such as `sys_enter_socket`, `sys_enter_bind`, `sys_enter_connect`,
 and pathname operation aliases such as `sys_enter_newfstatat`,
 `sys_enter_statx`, `sys_enter_linkat`, and `sys_enter_renameat2`. Process
 control fallbacks expose stable aliases for entry tracepoints such as
-`sys_enter_execveat`, `sys_enter_wait4`, and `sys_enter_setns`.
+`sys_enter_execveat`, `sys_enter_wait4`, and `sys_enter_setns`. File-descriptor
+and event fallbacks expose aliases for common entry tracepoints such as
+`sys_enter_dup3`, `sys_enter_pipe2`, and `sys_enter_epoll_ctl`.
 syscall-entry pointer fields are modeled as userspace pointers, so
 `ctx.filename | read-str --max-len 64` is the preferred form. The generic
 fallback `($ctx.args | get 1)` is only a raw numeric ABI value and is not enough

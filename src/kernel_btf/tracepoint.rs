@@ -13,6 +13,10 @@ const EXEC_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/exec.c
 const EXIT_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/exit.c";
 const FORK_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/fork.c";
 const NSPROXY_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/nsproxy.c";
+const FILE_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/file.c";
+const PIPE_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/pipe.c";
+const EVENTFD_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/eventfd.c";
+const EVENTPOLL_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/eventpoll.c";
 const STAT_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/stat.c";
 const STATX_MIN_KERNEL: &str = "4.11";
 const STATX_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.11/fs/stat.c";
@@ -310,6 +314,12 @@ impl TracepointContext {
             }
             "unshare" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, FORK_SOURCE),
             "setns" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, NSPROXY_SOURCE),
+            "dup" | "dup2" | "dup3" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, FILE_SOURCE),
+            "pipe" | "pipe2" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, PIPE_SOURCE),
+            "eventfd" | "eventfd2" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, EVENTFD_SOURCE),
+            "epoll_create" | "epoll_create1" | "epoll_ctl" | "epoll_wait" | "epoll_pwait" => {
+                (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, EVENTPOLL_SOURCE)
+            }
             "stat" | "lstat" | "newstat" | "newlstat" | "stat64" | "lstat64" | "fstat"
             | "newfstat" | "fstat64" | "newfstatat" | "fstatat64" => {
                 (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, STAT_SOURCE)
@@ -406,6 +416,48 @@ impl TracepointContext {
             "setns" => vec![
                 ("fd", Self::syscall_arg_int(true)),
                 ("nstype", Self::syscall_arg_int(true)),
+            ],
+            "dup" => vec![("fildes", Self::syscall_arg_int(false))],
+            "dup2" => vec![
+                ("oldfd", Self::syscall_arg_int(false)),
+                ("newfd", Self::syscall_arg_int(false)),
+            ],
+            "dup3" => vec![
+                ("oldfd", Self::syscall_arg_int(false)),
+                ("newfd", Self::syscall_arg_int(false)),
+                ("flags", Self::syscall_arg_int(true)),
+            ],
+            "pipe" => vec![("fildes", Self::syscall_arg_user_ptr())],
+            "pipe2" => vec![
+                ("fildes", Self::syscall_arg_user_ptr()),
+                ("flags", Self::syscall_arg_int(true)),
+            ],
+            "eventfd" => vec![("count", Self::syscall_arg_int(false))],
+            "eventfd2" => vec![
+                ("count", Self::syscall_arg_int(false)),
+                ("flags", Self::syscall_arg_int(true)),
+            ],
+            "epoll_create" => vec![("size", Self::syscall_arg_int(true))],
+            "epoll_create1" => vec![("flags", Self::syscall_arg_int(true))],
+            "epoll_ctl" => vec![
+                ("epfd", Self::syscall_arg_int(true)),
+                ("op", Self::syscall_arg_int(true)),
+                ("fd", Self::syscall_arg_int(true)),
+                ("event", Self::syscall_arg_user_ptr()),
+            ],
+            "epoll_wait" => vec![
+                ("epfd", Self::syscall_arg_int(true)),
+                ("events", Self::syscall_arg_user_ptr()),
+                ("maxevents", Self::syscall_arg_int(true)),
+                ("timeout", Self::syscall_arg_int(true)),
+            ],
+            "epoll_pwait" => vec![
+                ("epfd", Self::syscall_arg_int(true)),
+                ("events", Self::syscall_arg_user_ptr()),
+                ("maxevents", Self::syscall_arg_int(true)),
+                ("timeout", Self::syscall_arg_int(true)),
+                ("sigmask", Self::syscall_arg_user_ptr()),
+                ("sigsetsize", Self::syscall_arg_int(false)),
             ],
             "stat" | "lstat" | "newstat" | "newlstat" | "stat64" | "lstat64" => vec![
                 ("filename", Self::syscall_arg_user_ptr()),
