@@ -13053,6 +13053,25 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "tc-user-function-raw-context-helper-arg"
+        category: "helper-state"
+        tags: [tc helper user-function context accept]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  def pull [skb] {'
+            '    helper-call "bpf_skb_pull_data" $skb 0'
+            '    0'
+            '  }'
+            '  pull $ctx'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "tc-l3-csum-replace-rejects-stale-data"
         category: "helper-state"
         tags: [tc helper checksum packet-bounds reject]
@@ -14293,6 +14312,26 @@ const FIXTURES = [
             '  let raw_ctx = $ctx'
             '  let path = "/tmp/nu-ebpf.sock"'
             '  kfunc-call "bpf_sock_addr_set_sun_path" $raw_ctx $path 17'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-kfunc-sock-addr-set-sun-path-user-function-raw-context"
+        category: "kfunc"
+        tags: [cgroup-sock-addr kfunc unix source accept user-function]
+        requires: [cgroup-v2 kernel-btf]
+        target: "cgroup_sock_addr:/sys/fs/cgroup:connect_unix"
+        program: [
+            '{|ctx|'
+            '  def set_path [raw_ctx] {'
+            '    let path = "/tmp/nu-ebpf.sock"'
+            '    kfunc-call "bpf_sock_addr_set_sun_path" $raw_ctx $path 17'
+            '    0'
+            '  }'
+            '  set_path $ctx'
             '  "allow"'
             '}'
         ]
@@ -15838,6 +15877,25 @@ const FIXTURES = [
             '{|ctx|'
             '  let raw_ctx = $ctx'
             '  kfunc-call "bpf_sock_ops_enable_tx_tstamp" $raw_ctx 0'
+            '  1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "sock-ops-enable-tx-tstamp-user-function-raw-context"
+        category: "kfunc"
+        tags: [sock-ops kfunc timestamp source metadata user-function]
+        requires: [cgroup-v2 kernel-btf]
+        target: "sock_ops:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  def enable [raw_ctx] {'
+            '    kfunc-call "bpf_sock_ops_enable_tx_tstamp" $raw_ctx 0'
+            '    0'
+            '  }'
+            '  enable $ctx'
             '  1'
             '}'
         ]
@@ -19418,6 +19476,27 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "source-kfunc-xdp-metadata-rx-timestamp-user-function-raw-context"
+        category: "helper-state"
+        tags: [kfunc btf xdp metadata source accept user-function]
+        requires: [kernel-btf]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  def read_timestamp [raw_ctx] {'
+            '    let timestamp = "01234567"'
+            '    let rc = (kfunc-call "bpf_xdp_metadata_rx_timestamp" $raw_ctx $timestamp)'
+            '    $rc | count'
+            '    0'
+            '  }'
+            '  read_timestamp $ctx'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "source-kfunc-xdp-metadata-rx-hash"
         category: "helper-state"
         tags: [kfunc btf xdp metadata source accept]
@@ -19586,6 +19665,29 @@ const FIXTURES = [
             '  if $state {'
             '    kfunc-call "bpf_xdp_xfrm_state_release" $state'
             '  }'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "source-kfunc-xdp-xfrm-state-user-function-raw-context-release"
+        category: "helper-state"
+        tags: [kfunc btf xdp ref-lifetime source accept user-function]
+        requires: [kernel-btf]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  def get_state [raw_ctx] {'
+            '    let opts = { error: 0, netns_id: -1, mark: 0, daddr: [0 0 0 0], spi: 0, proto: 50, family: 2 }'
+            '    let state = (kfunc-call "bpf_xdp_get_xfrm_state" $raw_ctx $opts 32)'
+            '    if $state {'
+            '      kfunc-call "bpf_xdp_xfrm_state_release" $state'
+            '    }'
+            '    0'
+            '  }'
+            '  get_state $ctx'
             '  "pass"'
             '}'
         ]
