@@ -20348,7 +20348,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "source-kfunc-crypto-ctx-create-record-field-err"
@@ -20372,7 +20372,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "source-kfunc-crypto-ctx-create-rejects-leak"
@@ -20423,7 +20423,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "source-kfunc-crypto-decrypt-accepts-tracked-ctx"
@@ -20450,7 +20450,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "source-kfunc-crypto-encrypt-allows-null-siv"
@@ -20476,7 +20476,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "source-kfunc-crypto-encrypt-allows-zero-vreg-siv"
@@ -20503,7 +20503,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "source-kfunc-crypto-encrypt-rejects-nonzero-siv"
@@ -20584,7 +20584,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "source-kfunc-crypto-decrypt-rejects-nonzero-siv"
