@@ -612,6 +612,37 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
             .is_some_and(|source| source.contains("/v5.6/kernel/pid.c"))
     );
 
+    let landlock_create_ruleset = TracepointContext::sys_enter("sys_enter_landlock_create_ruleset");
+    assert!(landlock_create_ruleset.has_field("attr"));
+    assert!(landlock_create_ruleset.has_field("size"));
+    assert!(landlock_create_ruleset.has_field("flags"));
+    assert_eq!(landlock_create_ruleset.minimum_kernel(), Some("5.13"));
+    assert!(
+        landlock_create_ruleset
+            .minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v5.13/security/landlock/syscalls.c"))
+    );
+    assert!(matches!(
+        landlock_create_ruleset
+            .get_field("attr")
+            .expect("expected landlock_create_ruleset attr")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+
+    let landlock_add_rule = TracepointContext::sys_enter("sys_enter_landlock_add_rule");
+    assert!(landlock_add_rule.has_field("ruleset_fd"));
+    assert!(landlock_add_rule.has_field("rule_type"));
+    assert!(landlock_add_rule.has_field("rule_attr"));
+    assert!(landlock_add_rule.has_field("flags"));
+    assert!(matches!(
+        landlock_add_rule
+            .get_field("rule_attr")
+            .expect("expected landlock_add_rule rule_attr")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+
     let old_mmap = TracepointContext::sys_enter("sys_enter_old_mmap");
     assert!(old_mmap.has_field("id"));
     assert!(old_mmap.has_field("args"));
@@ -937,6 +968,18 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         ("sys_enter_rt_sigsuspend", &["unewset", "sigsetsize"][..]),
         ("sys_enter_pidfd_open", &["flags"][..]),
         ("sys_enter_pidfd_getfd", &["pidfd", "fd", "flags"][..]),
+        (
+            "sys_enter_landlock_create_ruleset",
+            &["attr", "size", "flags"][..],
+        ),
+        (
+            "sys_enter_landlock_add_rule",
+            &["ruleset_fd", "rule_type", "rule_attr", "flags"][..],
+        ),
+        (
+            "sys_enter_landlock_restrict_self",
+            &["ruleset_fd", "flags"][..],
+        ),
         ("sys_enter_setpriority", &["which", "who", "niceval"][..]),
         ("sys_enter_getpriority", &["which", "who"][..]),
         ("sys_enter_setregid", &["rgid", "egid"][..]),

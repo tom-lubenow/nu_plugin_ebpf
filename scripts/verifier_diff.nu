@@ -2823,6 +2823,26 @@ const SIGNAL_TRACEPOINT_FIELD_SPECS = [
         source: "https://github.com/torvalds/linux/blob/v5.6/kernel/pid.c"
     }
 ]
+const LANDLOCK_TRACEPOINT_FIELD_SPECS = [
+    {
+        syscalls: ["landlock_create_ruleset"]
+        fields: ["attr" "size" "flags"]
+        min_kernel: "5.13"
+        source: "https://github.com/torvalds/linux/blob/v5.13/security/landlock/syscalls.c"
+    }
+    {
+        syscalls: ["landlock_add_rule"]
+        fields: ["ruleset_fd" "rule_type" "rule_attr" "flags"]
+        min_kernel: "5.13"
+        source: "https://github.com/torvalds/linux/blob/v5.13/security/landlock/syscalls.c"
+    }
+    {
+        syscalls: ["landlock_restrict_self"]
+        fields: ["ruleset_fd" "flags"]
+        min_kernel: "5.13"
+        source: "https://github.com/torvalds/linux/blob/v5.13/security/landlock/syscalls.c"
+    }
+]
 const IDENTITY_TRACEPOINT_FIELD_SPECS = [
     {
         syscalls: ["setpriority"]
@@ -8629,6 +8649,55 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  ($ctx.pidfd + $ctx.fd + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-landlock-create-ruleset-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_landlock_create_ruleset]
+        target: "tracepoint:syscalls/sys_enter_landlock_create_ruleset"
+        program: [
+            '{|ctx|'
+            '  let attr = $ctx.attr'
+            '  if $attr { 1 | count }'
+            '  ($ctx.size + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-landlock-add-rule-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_landlock_add_rule]
+        target: "tracepoint:syscalls/sys_enter_landlock_add_rule"
+        program: [
+            '{|ctx|'
+            '  let rule_attr = $ctx.rule_attr'
+            '  if $rule_attr { 1 | count }'
+            '  ($ctx.ruleset_fd + $ctx.rule_type + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-landlock-restrict-self-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_landlock_restrict_self]
+        target: "tracepoint:syscalls/sys_enter_landlock_restrict_self"
+        program: [
+            '{|ctx|'
+            '  ($ctx.ruleset_fd + $ctx.flags) | count'
             '  0'
             '}'
         ]
@@ -29621,6 +29690,8 @@ def syscall-tracepoint-fallback-field-kernel-feature [field: string target] {
         "5.3"
     } else if $syscall == "pidfd_getfd" {
         "5.6"
+    } else if $syscall in ["landlock_create_ruleset" "landlock_add_rule" "landlock_restrict_self"] {
+        "5.13"
     } else if $syscall == "clone3" {
         "5.3"
     } else if $syscall in ["io_uring_setup" "io_uring_enter" "io_uring_register"] {
@@ -29654,6 +29725,8 @@ def syscall-tracepoint-fallback-field-kernel-feature [field: string target] {
         "https://github.com/torvalds/linux/blob/v5.3/kernel/pid.c"
     } else if $syscall == "pidfd_getfd" {
         "https://github.com/torvalds/linux/blob/v5.6/kernel/pid.c"
+    } else if $syscall in ["landlock_create_ruleset" "landlock_add_rule" "landlock_restrict_self"] {
+        "https://github.com/torvalds/linux/blob/v5.13/security/landlock/syscalls.c"
     } else if $syscall == "clone3" {
         "https://github.com/torvalds/linux/blob/v5.3/kernel/fork.c"
     } else if $syscall in ["io_uring_setup" "io_uring_enter" "io_uring_register"] {
@@ -29724,6 +29797,7 @@ def tracepoint-payload-field-kernel-feature [field: string target] {
         | append $TIME_TRACEPOINT_FIELD_SPECS
         | append $IO_URING_TRACEPOINT_FIELD_SPECS
         | append $SIGNAL_TRACEPOINT_FIELD_SPECS
+        | append $LANDLOCK_TRACEPOINT_FIELD_SPECS
         | append $IDENTITY_TRACEPOINT_FIELD_SPECS
         | append $SCHED_TRACEPOINT_FIELD_SPECS
         | append $FUTEX_TRACEPOINT_FIELD_SPECS

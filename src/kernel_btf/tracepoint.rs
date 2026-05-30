@@ -66,6 +66,9 @@ const PIDFD_OPEN_MIN_KERNEL: &str = "5.3";
 const PIDFD_OPEN_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.3/kernel/pid.c";
 const PIDFD_GETFD_MIN_KERNEL: &str = "5.6";
 const PIDFD_GETFD_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.6/kernel/pid.c";
+const LANDLOCK_MIN_KERNEL: &str = "5.13";
+const LANDLOCK_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.13/security/landlock/syscalls.c";
 const KERNEL_SYS_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/sys.c";
 const GROUPS_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/groups.c";
 const CAPABILITY_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/capability.c";
@@ -223,6 +226,9 @@ const WELL_KNOWN_SYS_ENTER_SYSCALLS: &[&str] = &[
     "pidfd_send_signal",
     "pidfd_open",
     "pidfd_getfd",
+    "landlock_create_ruleset",
+    "landlock_add_rule",
+    "landlock_restrict_self",
     "setpriority",
     "getpriority",
     "setregid",
@@ -564,6 +570,9 @@ impl TracepointContext {
             ),
             Some("pidfd_open") => (Some(PIDFD_OPEN_MIN_KERNEL), Some(PIDFD_OPEN_SOURCE)),
             Some("pidfd_getfd") => (Some(PIDFD_GETFD_MIN_KERNEL), Some(PIDFD_GETFD_SOURCE)),
+            Some("landlock_create_ruleset" | "landlock_add_rule" | "landlock_restrict_self") => {
+                (Some(LANDLOCK_MIN_KERNEL), Some(LANDLOCK_SOURCE))
+            }
             _ => (
                 Some(SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL),
                 Some(SYSCALL_TRACEPOINT_FALLBACK_SOURCE),
@@ -626,6 +635,9 @@ impl TracepointContext {
             "pidfd_send_signal" => (PIDFD_SEND_SIGNAL_MIN_KERNEL, PIDFD_SEND_SIGNAL_SOURCE),
             "pidfd_open" => (PIDFD_OPEN_MIN_KERNEL, PIDFD_OPEN_SOURCE),
             "pidfd_getfd" => (PIDFD_GETFD_MIN_KERNEL, PIDFD_GETFD_SOURCE),
+            "landlock_create_ruleset" | "landlock_add_rule" | "landlock_restrict_self" => {
+                (LANDLOCK_MIN_KERNEL, LANDLOCK_SOURCE)
+            }
             _ => (
                 SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL,
                 SYSCALL_TRACEPOINT_FALLBACK_SOURCE,
@@ -731,6 +743,9 @@ impl TracepointContext {
             "pidfd_send_signal" => (PIDFD_SEND_SIGNAL_MIN_KERNEL, PIDFD_SEND_SIGNAL_SOURCE),
             "pidfd_open" => (PIDFD_OPEN_MIN_KERNEL, PIDFD_OPEN_SOURCE),
             "pidfd_getfd" => (PIDFD_GETFD_MIN_KERNEL, PIDFD_GETFD_SOURCE),
+            "landlock_create_ruleset" | "landlock_add_rule" | "landlock_restrict_self" => {
+                (LANDLOCK_MIN_KERNEL, LANDLOCK_SOURCE)
+            }
             "setpriority" | "getpriority" | "setregid" | "setgid" | "setreuid" | "setuid"
             | "setresuid" | "getresuid" | "setresgid" | "getresgid" | "setfsuid" | "setfsgid"
             | "setpgid" | "getpgid" | "getsid" | "sethostname" | "gethostname"
@@ -1405,6 +1420,21 @@ impl TracepointContext {
             "pidfd_getfd" => vec![
                 ("pidfd", Self::syscall_arg_int(true)),
                 ("fd", Self::syscall_arg_int(true)),
+                ("flags", Self::syscall_arg_int(false)),
+            ],
+            "landlock_create_ruleset" => vec![
+                ("attr", Self::syscall_arg_user_ptr()),
+                ("size", Self::syscall_arg_int(false)),
+                ("flags", Self::syscall_arg_int(false)),
+            ],
+            "landlock_add_rule" => vec![
+                ("ruleset_fd", Self::syscall_arg_int(true)),
+                ("rule_type", Self::syscall_arg_int(true)),
+                ("rule_attr", Self::syscall_arg_user_ptr()),
+                ("flags", Self::syscall_arg_int(false)),
+            ],
+            "landlock_restrict_self" => vec![
+                ("ruleset_fd", Self::syscall_arg_int(true)),
                 ("flags", Self::syscall_arg_int(false)),
             ],
             "setpriority" => vec![
