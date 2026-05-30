@@ -15305,7 +15305,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "sk-msg-rich-context"
@@ -15320,7 +15320,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "sk-msg-bound-socket-projection-context"
@@ -15335,7 +15335,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "sk-msg-data-context-write"
@@ -15351,7 +15351,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "sk-msg-rejects-fullsock-projection"
@@ -15425,7 +15425,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "sk-skb-rich-context"
@@ -15440,7 +15440,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "sk-skb-bound-socket-projection-context"
@@ -15455,7 +15455,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "sk-skb-data-context-write"
@@ -15472,7 +15472,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "sk-skb-metadata-context-write"
@@ -15488,7 +15488,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "sk-skb-rejects-mark-context"
@@ -15562,7 +15562,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "sk-skb-parser-rich-context"
@@ -15577,7 +15577,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "sk-skb-parser-data-context-write"
@@ -15594,7 +15594,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "sk-skb-parser-bound-socket-projection-context"
@@ -15609,7 +15609,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "sk-skb-parser-metadata-context-write"
@@ -15625,7 +15625,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "sk-skb-parser-rejects-mark-context"
