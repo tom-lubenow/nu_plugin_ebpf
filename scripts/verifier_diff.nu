@@ -5059,6 +5059,22 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         target: "tc:lo:ingress"
         program: [
             '{|ctx|'
+            '  def read_family [sk] {'
+            '    $sk.family | count'
+            '    0'
+            '  }'
+            '  let sk = $ctx.sk'
+            '  let seen = (read_family $sk)'
+            '  $seen | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:family" "ctx:sk" "helper:bpf_probe_read_kernel"]
+    }
+    {
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
             '  let rec = { socket: $ctx.sk }'
             '  $rec.socket.family | count'
             '  0'
@@ -12217,6 +12233,26 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  ($ctx.sk.tcp.snd_cwnd + $ctx.sk.full.family + $ctx.sk.listener.family) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tc-user-function-bound-socket-projection"
+        category: "context-surface"
+        tags: [tc context socket user-function source metadata]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  def read_family [sk] {'
+            '    $sk.family | count'
+            '    0'
+            '  }'
+            '  let sk = $ctx.sk'
+            '  let seen = (read_family $sk)'
+            '  $seen | count'
             '  0'
             '}'
         ]
