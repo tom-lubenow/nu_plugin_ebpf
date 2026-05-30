@@ -24,8 +24,8 @@ use crate::compiler::{
     EbpfObject, MapRef, MirCompileResult, MirType, ProbeContext, ProgramIntrinsic,
     StructOpsObjectSpec, UserFunctionSig, UserParam, UserParamKind,
     compile_mir_to_ebpf_with_hints_and_globals, hir::AnnotatedMutGlobal, hir::HirFunction,
-    hir::HirProgram, hir::HirStmt, hir::supports_constant_value, hir_type_infer, infer_ctx_param,
-    lower_hir_to_mir_with_hints_key_value_maps_and_semantics, lower_ir_to_hir,
+    hir::HirProgram, hir::HirStmt, hir::infer_ctx_param_excluding, hir::supports_constant_value,
+    hir_type_infer, lower_hir_to_mir_with_hints_key_value_maps_and_semantics, lower_ir_to_hir,
     passes::optimize_with_ssa_hints,
 };
 use crate::kernel_btf::TrampolineFieldSelector;
@@ -1492,7 +1492,8 @@ pub(super) fn compile_closure_with_context(
     )?;
 
     let captures = lower_capture_literals(closure)?;
-    let ctx_param = infer_ctx_param(&ir_block);
+    let captured_vars: HashSet<_> = captures.iter().map(|(var_id, _)| *var_id).collect();
+    let ctx_param = infer_ctx_param_excluding(&ir_block, &captured_vars);
     let closure_param_sources =
         recover_closure_param_sources(&closure_source, closure.span, &closure_spans, &closure_irs);
 

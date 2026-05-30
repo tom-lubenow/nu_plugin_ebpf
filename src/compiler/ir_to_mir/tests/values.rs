@@ -2,6 +2,7 @@ use super::*;
 use crate::compiler::hir::{
     HirBlock, HirBlockId, HirFunction, HirLiteral, HirProgram, HirStmt, HirTerminator,
 };
+use crate::compiler::mir::AddressSpace;
 use nu_protocol::ast::{CellPath, PathMember};
 use nu_protocol::casing::Casing;
 use nu_protocol::{DeclId, Record, RegId, Span, Value, VarId};
@@ -1329,5 +1330,144 @@ fn test_lower_captured_numeric_list_uses_readonly_global_payload() {
     assert_eq!(
         list_push_count, 0,
         "expected captured numeric list lowering to avoid ListPush materialization"
+    );
+}
+
+#[test]
+fn test_lower_captured_binary_uses_readonly_global_payload() {
+    let capture_var = VarId::new(16);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::LoadVariable {
+                dst: RegId::new(0),
+                var_id: capture_var,
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 1,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(
+        func,
+        HashMap::new(),
+        vec![(
+            capture_var,
+            Value::binary(vec![0x61, 0x62, 0x63, 0], Span::test_data()),
+        )],
+        None,
+    );
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("captured binary should lower through rodata");
+
+    assert_eq!(
+        result.readonly_globals.len(),
+        1,
+        "expected captured binary lowering to emit one readonly global"
+    );
+    assert_eq!(result.readonly_globals[0].data, vec![0x61, 0x62, 0x63, 0]);
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::LoadGlobal { symbol, .. }
+                    if symbol == &result.readonly_globals[0].name
+            )),
+        "expected captured binary lowering to load from the emitted readonly global"
+    );
+    assert!(
+        result.type_hints.main.values().any(|ty| matches!(
+            ty,
+            MirType::Ptr {
+                address_space: AddressSpace::Map,
+                ..
+            }
+        )),
+        "expected captured binary runtime value to be a map-backed pointer"
+    );
+}
+
+#[test]
+fn test_lower_captured_string_uses_stack_string_payload() {
+    let capture_var = VarId::new(17);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::LoadVariable {
+                dst: RegId::new(0),
+                var_id: capture_var,
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 1,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(
+        func,
+        HashMap::new(),
+        vec![(capture_var, Value::string("abc", Span::test_data()))],
+        None,
+    );
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("captured string should lower as a stack string");
+
+    assert!(
+        result.readonly_globals.is_empty(),
+        "captured strings should preserve string-literal stack semantics"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Copy {
+                    src: MirValue::StackSlot(_),
+                    ..
+                }
+            )),
+        "expected captured string lowering to materialize a stack slot"
+    );
+    assert!(
+        result.type_hints.main.values().any(|ty| matches!(
+            ty,
+            MirType::Ptr {
+                address_space: AddressSpace::Stack,
+                ..
+            }
+        )),
+        "expected captured string runtime value to be a stack-backed pointer"
     );
 }

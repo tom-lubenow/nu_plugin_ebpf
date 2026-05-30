@@ -979,6 +979,19 @@ pub fn supports_constant_value(value: &Value) -> bool {
 /// Closure parameters are variables that are loaded but never stored to within the closure.
 /// The first such variable (by order of first load) is the context parameter.
 pub fn infer_ctx_param(ir_block: &IrBlock) -> Option<VarId> {
+    infer_ctx_param_excluding(ir_block, &HashSet::new())
+}
+
+/// Infer the context parameter VarId while excluding known captured variables.
+///
+/// Nushell omits unused closure parameters from the IR. In a closure like
+/// `{|ctx| $captured }`, the first load-only variable may be a capture, not the
+/// declared context parameter. Excluding captures prevents us from typing an
+/// ordinary captured constant as the kernel context pointer.
+pub fn infer_ctx_param_excluding(
+    ir_block: &IrBlock,
+    excluded_vars: &HashSet<VarId>,
+) -> Option<VarId> {
     // Real Nushell closures often materialize the first parameter by collecting the
     // incoming pipeline value, cloning it, and storing that clone into a variable
     // before any later `LoadVariable` uses. Recognize that leading setup pattern
@@ -992,7 +1005,9 @@ pub fn infer_ctx_param(ir_block: &IrBlock) -> Option<VarId> {
             Instruction::Clone { dst, src } if collected_regs.contains(src) => {
                 collected_regs.insert(*dst);
             }
-            Instruction::StoreVariable { var_id, src } if collected_regs.contains(src) => {
+            Instruction::StoreVariable { var_id, src }
+                if collected_regs.contains(src) && !excluded_vars.contains(var_id) =>
+            {
                 return Some(*var_id);
             }
             Instruction::RedirectOut { .. } | Instruction::RedirectErr { .. } => {}
@@ -1013,7 +1028,10 @@ pub fn infer_ctx_param(ir_block: &IrBlock) -> Option<VarId> {
     // Second pass: find loaded variables that were never stored (parameters)
     for instruction in &ir_block.instructions {
         if let Instruction::LoadVariable { var_id, .. } = instruction {
-            if !stored_vars.contains(var_id) && !first_loaded.contains(var_id) {
+            if !stored_vars.contains(var_id)
+                && !excluded_vars.contains(var_id)
+                && !first_loaded.contains(var_id)
+            {
                 first_loaded.push(*var_id);
             }
         }

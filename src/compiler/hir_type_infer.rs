@@ -528,8 +528,8 @@ fn hm_type_for_literal(lit: &HirLiteral) -> HMType {
         | HirLiteral::Duration(_)
         | HirLiteral::Date(_) => HMType::I64,
         HirLiteral::Range { .. } => HMType::I64,
-        HirLiteral::Binary(_)
-        | HirLiteral::String(_)
+        HirLiteral::Binary(_) => readonly_binary_ptr_type(),
+        HirLiteral::String(_)
         | HirLiteral::RawString(_)
         | HirLiteral::Filepath { .. }
         | HirLiteral::Directory { .. }
@@ -548,7 +548,7 @@ fn hm_type_for_value(val: &Value) -> HMType {
         | Value::Filesize { .. }
         | Value::Duration { .. }
         | Value::Date { .. } => HMType::I64,
-        Value::Binary { .. } => stack_string_ptr_type(),
+        Value::Binary { .. } => readonly_binary_ptr_type(),
         Value::String { .. } | Value::Glob { .. } => stack_string_ptr_type(),
         Value::Record { .. } => stack_record_ptr_type(),
         value if supports_numeric_constant_list(value) => stack_list_ptr_type(),
@@ -561,7 +561,7 @@ fn hm_type_for_declared_global_type(ty: &Type) -> HMType {
         Type::Bool => HMType::Bool,
         Type::Int | Type::Duration | Type::Filesize => HMType::I64,
         Type::String | Type::Glob => stack_string_ptr_type(),
-        Type::Binary => stack_string_ptr_type(),
+        Type::Binary => readonly_binary_ptr_type(),
         Type::List(inner) if matches!(inner.as_ref(), Type::Int | Type::Nothing) => {
             stack_list_ptr_type()
         }
@@ -613,6 +613,13 @@ fn stack_string_ptr_type() -> HMType {
     HMType::Ptr {
         pointee: Box::new(HMType::U8),
         address_space: AddressSpace::Stack,
+    }
+}
+
+fn readonly_binary_ptr_type() -> HMType {
+    HMType::Ptr {
+        pointee: Box::new(HMType::U8),
+        address_space: AddressSpace::Map,
     }
 }
 

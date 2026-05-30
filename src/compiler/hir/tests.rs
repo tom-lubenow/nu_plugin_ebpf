@@ -3,6 +3,7 @@ use nu_protocol::DeclId;
 use nu_protocol::RegId;
 use nu_protocol::ir::{DataSlice, Instruction};
 use nu_protocol::{Record, Span, Value, VarId};
+use std::collections::HashSet;
 use std::sync::Arc;
 
 #[test]
@@ -227,4 +228,63 @@ fn test_infer_ctx_param_from_leading_collect_store_pattern() {
     };
 
     assert_eq!(infer_ctx_param(&ir), Some(ctx_var));
+}
+
+#[test]
+fn test_infer_ctx_param_excludes_captured_load_only_variable() {
+    let captured_var = VarId::new(73);
+    let ir = IrBlock {
+        instructions: vec![
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: captured_var,
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![],
+        data: Arc::from([]),
+        ast: vec![],
+        comments: vec![],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    assert_eq!(infer_ctx_param(&ir), Some(captured_var));
+    assert_eq!(
+        infer_ctx_param_excluding(&ir, &HashSet::from([captured_var])),
+        None
+    );
+}
+
+#[test]
+fn test_infer_ctx_param_exclusion_keeps_real_leading_context_store() {
+    let ctx_var = VarId::new(80);
+    let captured_var = VarId::new(73);
+    let ir = IrBlock {
+        instructions: vec![
+            Instruction::Collect {
+                src_dst: RegId::new(0),
+            },
+            Instruction::StoreVariable {
+                var_id: ctx_var,
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(1),
+                var_id: captured_var,
+            },
+            Instruction::Return { src: RegId::new(1) },
+        ],
+        spans: vec![],
+        data: Arc::from([]),
+        ast: vec![],
+        comments: vec![],
+        register_count: 2,
+        file_count: 0,
+    };
+
+    assert_eq!(
+        infer_ctx_param_excluding(&ir, &HashSet::from([captured_var])),
+        Some(ctx_var)
+    );
 }

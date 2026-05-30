@@ -901,6 +901,70 @@ fn test_capture_seeded_into_hm_environment() {
 }
 
 #[test]
+fn test_captured_binary_infers_readonly_map_ptr() {
+    let capture_var = VarId::new(8);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::LoadVariable {
+                dst: RegId::new(0),
+                var_id: capture_var,
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let program = HirProgram::new(
+        func,
+        HashMap::new(),
+        vec![(capture_var, Value::binary(vec![1, 2, 3], Span::test_data()))],
+        None,
+    );
+    let decl_names = HashMap::new();
+    let inferred = infer_hir_types(&program, &decl_names).expect("captured binary should infer");
+
+    assert_eq!(
+        inferred.main.get(&RegId::new(0)),
+        Some(&readonly_binary_ptr_type())
+    );
+}
+
+#[test]
+fn test_load_literal_binary_infers_readonly_map_ptr() {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::LoadLiteral {
+                dst: RegId::new(0),
+                lit: HirLiteral::Binary(vec![1, 2, 3]),
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let program = HirProgram::new(func, HashMap::new(), Vec::new(), None);
+    let decl_names = HashMap::new();
+    let inferred = infer_hir_types(&program, &decl_names).expect("binary literal should infer");
+
+    assert_eq!(
+        inferred.main.get(&RegId::new(0)),
+        Some(&readonly_binary_ptr_type())
+    );
+}
+
+#[test]
 fn test_load_value_string_infers_stack_string_ptr() {
     let func = HirFunction {
         blocks: vec![HirBlock {
