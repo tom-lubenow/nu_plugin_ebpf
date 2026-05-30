@@ -4936,6 +4936,18 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         target: "raw_tracepoint:sys_enter"
         program: [
             '{|ctx|'
+            '  def id [x] { $x }'
+            '  let event = (id $ctx)'
+            '  $event.pid | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:pid" "helper:bpf_get_current_pid_tgid"]
+    }
+    {
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
             '  def read_pid [event] {'
             '    $event.pid | count'
             '    0'
@@ -5187,6 +5199,31 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         program: [
             '{|ctx|'
             '  $ctx.sk.family | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:family" "ctx:sk" "helper:bpf_probe_read_kernel"]
+    }
+    {
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  def id [x] { $x }'
+            '  let sk = (id $ctx.sk)'
+            '  $sk.family | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:family" "ctx:sk" "helper:bpf_probe_read_kernel"]
+    }
+    {
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  def id [x] { $x }'
+            '  let sk = $ctx.sk'
+            '  let same = (id $sk)'
+            '  $same.family | count'
             '  0'
             '}'
         ]
@@ -26023,6 +26060,22 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-user-function-returned-context-alias"
+        category: "language-core"
+        tags: [user-function context source metadata accept]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  def id [x] { $x }'
+            '  let actual = (id $ctx)'
+            '  $actual.pid | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-record-context-field-access"
         category: "language-core"
         tags: [record context accept]
@@ -29862,12 +29915,30 @@ def declaration-rhs-token [assignment] {
     trim-simple-parentheses (($assignment.rhs | split row ";" | first) | str trim)
 }
 
-def context-variable-binding [line: string context_names] {
+def context-variable-binding [line: string context_names identity_wrappers] {
     for assignment in (declaration-assignments $line) {
         let rhs = (declaration-rhs-token $assignment)
         for context_name in $context_names {
             if $rhs == $"$($context_name)" {
                 return $assignment.name
+            }
+        }
+
+        let tokens = (
+            $rhs
+            | split row " "
+            | each {|part| $part | str trim }
+            | where {|part| $part != "" }
+        )
+        if ($tokens | length) == 2 {
+            let callee = ($tokens | get 0)
+            let arg = ($tokens | get 1)
+            if $callee in $identity_wrappers {
+                for context_name in $context_names {
+                    if $arg == $"$($context_name)" {
+                        return $assignment.name
+                    }
+                }
             }
         }
     }
@@ -29878,6 +29949,7 @@ def context-variable-binding [line: string context_names] {
 def program-context-variable-names [source: string] {
     mut names = ["ctx"]
     mut found_closure = false
+    let identity_wrappers = (identity-wrapper-definitions $source)
 
     for line in ($source | lines) {
         if $found_closure {
@@ -29913,7 +29985,7 @@ def program-context-variable-names [source: string] {
     }
 
     for line in ($source | lines) {
-        let binding = (context-variable-binding $line $names)
+        let binding = (context-variable-binding $line $names $identity_wrappers)
         if $binding != null {
             $names = (append-unique-name $names $binding)
         }
@@ -29922,9 +29994,31 @@ def program-context-variable-names [source: string] {
     $names
 }
 
-def context-root-binding [line: string context_names] {
+def context-root-binding [line: string context_names bound_aliases identity_wrappers] {
     for assignment in (declaration-assignments $line) {
         let rhs = (declaration-rhs-token $assignment)
+        let direct_root = (context-root-from-value-token $rhs $context_names $bound_aliases)
+        if $direct_root != null and $direct_root != "" {
+            return { name: $assignment.name root: $direct_root }
+        }
+
+        let tokens = (
+            $rhs
+            | split row " "
+            | each {|part| $part | str trim }
+            | where {|part| $part != "" }
+        )
+        if ($tokens | length) == 2 {
+            let callee = ($tokens | get 0)
+            let arg = ($tokens | get 1)
+            if $callee in $identity_wrappers {
+                let root_path = (context-root-from-value-token $arg $context_names $bound_aliases)
+                if $root_path != null and $root_path != "" {
+                    return { name: $assignment.name root: $root_path }
+                }
+            }
+        }
+
         for context_name in $context_names {
             let prefix = $"$($context_name)."
             if not ($rhs | str starts-with $prefix) {
@@ -29944,9 +30038,10 @@ def context-root-binding [line: string context_names] {
 
 def program-bound-context-root-aliases [source: string context_names] {
     mut aliases = []
+    let identity_wrappers = (identity-wrapper-definitions $source)
 
     for line in ($source | lines) {
-        let binding = (context-root-binding $line $context_names)
+        let binding = (context-root-binding $line $context_names $aliases $identity_wrappers)
         if $binding == null {
             continue
         }
