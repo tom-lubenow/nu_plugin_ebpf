@@ -24064,6 +24064,37 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-annotated-record-array-nested-string-field-local"
+        category: "language-core"
+        tags: [aggregate record string nested annotated local]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  mut rows: list<record<name: string>> = [{name: "aa"} {name: "bb"}]'
+            '  $rows.1.name | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-annotated-record-array-nested-string-upsert-local"
+        category: "language-core"
+        tags: [aggregate record string upsert nested annotated local]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  mut rows: list<record<name: string>> = [{name: "aa"} {name: "bb"}]'
+            '  $rows.1.name = "cc"'
+            '  $rows.1.name | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-record-upsert-nested-numeric-list-sparse-append-reject"
         category: "language-core"
         tags: [aggregate record list upsert append nested reject]
