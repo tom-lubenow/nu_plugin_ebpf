@@ -623,6 +623,47 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         TypeInfo::Ptr { is_user: true, .. }
     ));
 
+    let setxattrat = TracepointContext::sys_enter("sys_enter_setxattrat");
+    assert!(setxattrat.has_field("dfd"));
+    assert!(setxattrat.has_field("pathname"));
+    assert!(setxattrat.has_field("at_flags"));
+    assert!(setxattrat.has_field("name"));
+    assert!(setxattrat.has_field("uargs"));
+    assert!(setxattrat.has_field("usize"));
+    assert_eq!(setxattrat.minimum_kernel(), Some("6.13"));
+    assert!(
+        setxattrat
+            .minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v6.13/fs/xattr.c"))
+    );
+    let (_, setxattrat_source) = TracepointContext::syscall_fallback_field_minimum_kernel(
+        "syscalls",
+        "sys_enter_setxattrat",
+        "uargs",
+    )
+    .expect("expected setxattrat uargs source metadata");
+    assert!(setxattrat_source.contains("/v6.13/fs/xattr.c"));
+    assert!(matches!(
+        setxattrat
+            .get_field("uargs")
+            .expect("expected setxattrat uargs")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+
+    let listxattrat = TracepointContext::sys_enter("sys_enter_listxattrat");
+    assert!(listxattrat.has_field("dfd"));
+    assert!(listxattrat.has_field("pathname"));
+    assert!(listxattrat.has_field("at_flags"));
+    assert!(listxattrat.has_field("list"));
+    assert!(listxattrat.has_field("size"));
+
+    let removexattrat = TracepointContext::sys_enter("sys_enter_removexattrat");
+    assert!(removexattrat.has_field("dfd"));
+    assert!(removexattrat.has_field("pathname"));
+    assert!(removexattrat.has_field("at_flags"));
+    assert!(removexattrat.has_field("name"));
+
     let open_tree = TracepointContext::sys_enter("sys_enter_open_tree");
     assert!(open_tree.has_field("dfd"));
     assert!(open_tree.has_field("filename"));
@@ -1066,6 +1107,22 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         ("sys_enter_flistxattr", &["fd", "list", "size"][..]),
         ("sys_enter_removexattr", &["pathname", "name"][..]),
         ("sys_enter_fremovexattr", &["fd", "name"][..]),
+        (
+            "sys_enter_setxattrat",
+            &["dfd", "pathname", "at_flags", "name", "uargs", "usize"][..],
+        ),
+        (
+            "sys_enter_getxattrat",
+            &["dfd", "pathname", "at_flags", "name", "uargs", "usize"][..],
+        ),
+        (
+            "sys_enter_listxattrat",
+            &["dfd", "pathname", "at_flags", "list", "size"][..],
+        ),
+        (
+            "sys_enter_removexattrat",
+            &["dfd", "pathname", "at_flags", "name"][..],
+        ),
         ("sys_enter_open_tree", &["dfd", "filename", "flags"][..]),
         (
             "sys_enter_move_mount",

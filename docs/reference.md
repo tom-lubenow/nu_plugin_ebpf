@@ -924,7 +924,9 @@ open, permission, ownership, and pathname operation aliases such as
 and `sys_enter_renameat2`. Extended-attribute fallbacks expose aliases for
 `sys_enter_setxattr`, `sys_enter_fsetxattr`, `sys_enter_getxattr`,
 `sys_enter_fgetxattr`, `sys_enter_listxattr`, `sys_enter_flistxattr`,
-`sys_enter_removexattr`, and `sys_enter_fremovexattr`. Process
+`sys_enter_removexattr`, `sys_enter_fremovexattr`, and Linux 6.13+
+`sys_enter_setxattrat` / `sys_enter_getxattrat` / `sys_enter_listxattrat` /
+`sys_enter_removexattrat`. Process
 control fallbacks expose stable aliases for entry tracepoints such as
 `sys_enter_execveat`, `sys_enter_wait4`, and `sys_enter_setns`. File-descriptor
 and event fallbacks expose aliases for common entry tracepoints such as

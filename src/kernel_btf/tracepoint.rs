@@ -29,6 +29,8 @@ const STATX_MIN_KERNEL: &str = "4.11";
 const STATX_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.11/fs/stat.c";
 const NAMEI_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/namei.c";
 const XATTR_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/xattr.c";
+const XATTRAT_MIN_KERNEL: &str = "6.13";
+const XATTRAT_SOURCE: &str = "https://github.com/torvalds/linux/blob/v6.13/fs/xattr.c";
 const MOUNT_API_MIN_KERNEL: &str = "5.2";
 const MOUNT_API_NAMESPACE_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.2/fs/namespace.c";
@@ -175,6 +177,10 @@ const WELL_KNOWN_SYS_ENTER_SYSCALLS: &[&str] = &[
     "removexattr",
     "lremovexattr",
     "fremovexattr",
+    "setxattrat",
+    "getxattrat",
+    "listxattrat",
+    "removexattrat",
     "open_tree",
     "move_mount",
     "fsopen",
@@ -601,6 +607,9 @@ impl TracepointContext {
             Some("landlock_create_ruleset" | "landlock_add_rule" | "landlock_restrict_self") => {
                 (Some(LANDLOCK_MIN_KERNEL), Some(LANDLOCK_SOURCE))
             }
+            Some("setxattrat" | "getxattrat" | "listxattrat" | "removexattrat") => {
+                (Some(XATTRAT_MIN_KERNEL), Some(XATTRAT_SOURCE))
+            }
             _ => (
                 Some(SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL),
                 Some(SYSCALL_TRACEPOINT_FALLBACK_SOURCE),
@@ -666,6 +675,9 @@ impl TracepointContext {
             "landlock_create_ruleset" | "landlock_add_rule" | "landlock_restrict_self" => {
                 (LANDLOCK_MIN_KERNEL, LANDLOCK_SOURCE)
             }
+            "setxattrat" | "getxattrat" | "listxattrat" | "removexattrat" => {
+                (XATTRAT_MIN_KERNEL, XATTRAT_SOURCE)
+            }
             _ => (
                 SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL,
                 SYSCALL_TRACEPOINT_FALLBACK_SOURCE,
@@ -729,6 +741,9 @@ impl TracepointContext {
             "setxattr" | "lsetxattr" | "fsetxattr" | "getxattr" | "lgetxattr" | "fgetxattr"
             | "listxattr" | "llistxattr" | "flistxattr" | "removexattr" | "lremovexattr"
             | "fremovexattr" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, XATTR_SOURCE),
+            "setxattrat" | "getxattrat" | "listxattrat" | "removexattrat" => {
+                (XATTRAT_MIN_KERNEL, XATTRAT_SOURCE)
+            }
             "open_tree" | "move_mount" | "fsmount" => {
                 (MOUNT_API_MIN_KERNEL, MOUNT_API_NAMESPACE_SOURCE)
             }
@@ -1194,6 +1209,27 @@ impl TracepointContext {
             ],
             "fremovexattr" => vec![
                 ("fd", Self::syscall_arg_int(true)),
+                ("name", Self::syscall_arg_user_ptr()),
+            ],
+            "setxattrat" | "getxattrat" => vec![
+                ("dfd", Self::syscall_arg_int(true)),
+                ("pathname", Self::syscall_arg_user_ptr()),
+                ("at_flags", Self::syscall_arg_int(false)),
+                ("name", Self::syscall_arg_user_ptr()),
+                ("uargs", Self::syscall_arg_user_ptr()),
+                ("usize", Self::syscall_arg_int(false)),
+            ],
+            "listxattrat" => vec![
+                ("dfd", Self::syscall_arg_int(true)),
+                ("pathname", Self::syscall_arg_user_ptr()),
+                ("at_flags", Self::syscall_arg_int(false)),
+                ("list", Self::syscall_arg_user_ptr()),
+                ("size", Self::syscall_arg_int(false)),
+            ],
+            "removexattrat" => vec![
+                ("dfd", Self::syscall_arg_int(true)),
+                ("pathname", Self::syscall_arg_user_ptr()),
+                ("at_flags", Self::syscall_arg_int(false)),
                 ("name", Self::syscall_arg_user_ptr()),
             ],
             "open_tree" => vec![

@@ -2460,6 +2460,24 @@ const PATH_TRACEPOINT_FIELD_SPECS = [
         source: "https://github.com/torvalds/linux/blob/v4.7/fs/xattr.c"
     }
     {
+        syscalls: ["setxattrat" "getxattrat"]
+        fields: ["dfd" "pathname" "at_flags" "name" "uargs" "usize"]
+        min_kernel: "6.13"
+        source: "https://github.com/torvalds/linux/blob/v6.13/fs/xattr.c"
+    }
+    {
+        syscalls: ["listxattrat"]
+        fields: ["dfd" "pathname" "at_flags" "list" "size"]
+        min_kernel: "6.13"
+        source: "https://github.com/torvalds/linux/blob/v6.13/fs/xattr.c"
+    }
+    {
+        syscalls: ["removexattrat"]
+        fields: ["dfd" "pathname" "at_flags" "name"]
+        min_kernel: "6.13"
+        source: "https://github.com/torvalds/linux/blob/v6.13/fs/xattr.c"
+    }
+    {
         syscalls: ["open_tree"]
         fields: ["dfd" "filename" "flags"]
         min_kernel: "5.2"
@@ -6081,6 +6099,49 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         ]
     }
     {
+        target: "tracepoint:syscalls/sys_enter_setxattrat"
+        program: [
+            '{|ctx|'
+            '  let pathname = $ctx.pathname'
+            '  if $pathname { 1 | count }'
+            '  let name = $ctx.name'
+            '  if $name { 1 | count }'
+            '  let uargs = $ctx.uargs'
+            '  if $uargs { 1 | count }'
+            '  ($ctx.dfd + $ctx.at_flags + $ctx.usize) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_setxattrat:field:pathname"
+            "tracepoint:syscalls/sys_enter_setxattrat:field:name"
+            "tracepoint:syscalls/sys_enter_setxattrat:field:uargs"
+            "tracepoint:syscalls/sys_enter_setxattrat:field:dfd"
+            "tracepoint:syscalls/sys_enter_setxattrat:field:at_flags"
+            "tracepoint:syscalls/sys_enter_setxattrat:field:usize"
+        ]
+    }
+    {
+        target: "tracepoint:syscalls/sys_enter_listxattrat"
+        program: [
+            '{|ctx|'
+            '  let pathname = $ctx.pathname'
+            '  if $pathname { 1 | count }'
+            '  let list = $ctx.list'
+            '  if $list { 1 | count }'
+            '  ($ctx.dfd + $ctx.at_flags + $ctx.size) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_listxattrat:field:pathname"
+            "tracepoint:syscalls/sys_enter_listxattrat:field:list"
+            "tracepoint:syscalls/sys_enter_listxattrat:field:dfd"
+            "tracepoint:syscalls/sys_enter_listxattrat:field:at_flags"
+            "tracepoint:syscalls/sys_enter_listxattrat:field:size"
+        ]
+    }
+    {
         target: "tracepoint:syscalls/sys_enter_close"
         program: [
             '{|ctx|'
@@ -8104,6 +8165,46 @@ const FIXTURES = [
             '  let list = $ctx.list'
             '  if $list { 1 | count }'
             '  $ctx.size | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-setxattrat-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_setxattrat]
+        target: "tracepoint:syscalls/sys_enter_setxattrat"
+        program: [
+            '{|ctx|'
+            '  let pathname = $ctx.pathname'
+            '  if $pathname { 1 | count }'
+            '  let name = $ctx.name'
+            '  if $name { 1 | count }'
+            '  let uargs = $ctx.uargs'
+            '  if $uargs { 1 | count }'
+            '  ($ctx.dfd + $ctx.at_flags + $ctx.usize) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-listxattrat-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_listxattrat]
+        target: "tracepoint:syscalls/sys_enter_listxattrat"
+        program: [
+            '{|ctx|'
+            '  let pathname = $ctx.pathname'
+            '  if $pathname { 1 | count }'
+            '  let list = $ctx.list'
+            '  if $list { 1 | count }'
+            '  ($ctx.dfd + $ctx.at_flags + $ctx.size) | count'
             '  0'
             '}'
         ]
@@ -30775,6 +30876,8 @@ def syscall-tracepoint-fallback-field-kernel-feature [field: string target] {
         "5.6"
     } else if $syscall in ["landlock_create_ruleset" "landlock_add_rule" "landlock_restrict_self"] {
         "5.13"
+    } else if $syscall in ["setxattrat" "getxattrat" "listxattrat" "removexattrat"] {
+        "6.13"
     } else if $syscall == "clone3" {
         "5.3"
     } else if $syscall in ["io_uring_setup" "io_uring_enter" "io_uring_register"] {
@@ -30810,6 +30913,8 @@ def syscall-tracepoint-fallback-field-kernel-feature [field: string target] {
         "https://github.com/torvalds/linux/blob/v5.6/kernel/pid.c"
     } else if $syscall in ["landlock_create_ruleset" "landlock_add_rule" "landlock_restrict_self"] {
         "https://github.com/torvalds/linux/blob/v5.13/security/landlock/syscalls.c"
+    } else if $syscall in ["setxattrat" "getxattrat" "listxattrat" "removexattrat"] {
+        "https://github.com/torvalds/linux/blob/v6.13/fs/xattr.c"
     } else if $syscall == "clone3" {
         "https://github.com/torvalds/linux/blob/v5.3/kernel/fork.c"
     } else if $syscall in ["io_uring_setup" "io_uring_enter" "io_uring_register"] {
