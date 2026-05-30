@@ -2770,6 +2770,36 @@ const FD_TRACEPOINT_FIELD_SPECS = [
         source: "https://github.com/torvalds/linux/blob/v5.11/fs/eventpoll.c"
     }
     {
+        syscalls: ["inotify_init1"]
+        fields: ["flags"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/notify/inotify/inotify_user.c"
+    }
+    {
+        syscalls: ["inotify_add_watch"]
+        fields: ["fd" "pathname" "mask"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/notify/inotify/inotify_user.c"
+    }
+    {
+        syscalls: ["inotify_rm_watch"]
+        fields: ["fd" "wd"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/notify/inotify/inotify_user.c"
+    }
+    {
+        syscalls: ["fanotify_init"]
+        fields: ["flags" "event_f_flags"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/notify/fanotify/fanotify_user.c"
+    }
+    {
+        syscalls: ["fanotify_mark"]
+        fields: ["fanotify_fd" "flags" "mask" "dfd" "pathname"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/notify/fanotify/fanotify_user.c"
+    }
+    {
         syscalls: ["poll"]
         fields: ["ufds" "nfds" "timeout_msecs"]
         min_kernel: "4.7"
@@ -6135,6 +6165,24 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         ]
     }
     {
+        target: "tracepoint:syscalls/sys_enter_fanotify_mark"
+        program: [
+            '{|ctx|'
+            '  let pathname = $ctx.pathname'
+            '  if $pathname { 1 | count }'
+            '  ($ctx.fanotify_fd + $ctx.flags + $ctx.mask + $ctx.dfd) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_fanotify_mark:field:pathname"
+            "tracepoint:syscalls/sys_enter_fanotify_mark:field:fanotify_fd"
+            "tracepoint:syscalls/sys_enter_fanotify_mark:field:flags"
+            "tracepoint:syscalls/sys_enter_fanotify_mark:field:mask"
+            "tracepoint:syscalls/sys_enter_fanotify_mark:field:dfd"
+        ]
+    }
+    {
         target: "tracepoint:syscalls/sys_enter_sync_file_range"
         program: [
             '{|ctx|'
@@ -9302,6 +9350,40 @@ const FIXTURES = [
             '  if $timeout { 1 | count }'
             '  if $sigmask { 1 | count }'
             '  ($ctx.epfd + $ctx.maxevents + $ctx.sigsetsize) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-inotify-add-watch-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_inotify_add_watch]
+        target: "tracepoint:syscalls/sys_enter_inotify_add_watch"
+        program: [
+            '{|ctx|'
+            '  let pathname = $ctx.pathname'
+            '  if $pathname { $pathname | read-str --max-len 64 | count }'
+            '  ($ctx.fd + $ctx.mask) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-fanotify-mark-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_fanotify_mark]
+        target: "tracepoint:syscalls/sys_enter_fanotify_mark"
+        program: [
+            '{|ctx|'
+            '  let pathname = $ctx.pathname'
+            '  if $pathname { $pathname | read-str --max-len 64 | count }'
+            '  ($ctx.fanotify_fd + $ctx.flags + $ctx.mask + $ctx.dfd) | count'
             '  0'
             '}'
         ]
@@ -35551,6 +35633,10 @@ def parse-main-args [args] {
 }
 
 def --wrapped main [...args] {
+    if (($env | get -o VERIFIER_DIFF_SOURCE_ONLY) == "1") {
+        return
+    }
+
     let options = (parse-main-args $args)
     if $options.help {
         print-main-help

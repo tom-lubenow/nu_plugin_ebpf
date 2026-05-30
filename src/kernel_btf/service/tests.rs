@@ -1089,6 +1089,27 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
     .expect("expected name_to_handle_at source metadata");
     assert!(handle_source.contains("/v4.7/fs/fhandle.c"));
 
+    let fanotify_mark = TracepointContext::sys_enter("sys_enter_fanotify_mark");
+    assert!(fanotify_mark.has_field("fanotify_fd"));
+    assert!(fanotify_mark.has_field("flags"));
+    assert!(fanotify_mark.has_field("mask"));
+    assert!(fanotify_mark.has_field("dfd"));
+    assert!(fanotify_mark.has_field("pathname"));
+    assert!(matches!(
+        fanotify_mark
+            .get_field("pathname")
+            .expect("expected fanotify_mark pathname")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+    let (_, fanotify_source) = TracepointContext::syscall_fallback_field_minimum_kernel(
+        "syscalls",
+        "sys_enter_fanotify_mark",
+        "pathname",
+    )
+    .expect("expected fanotify_mark source metadata");
+    assert!(fanotify_source.contains("/v4.7/fs/notify/fanotify/fanotify_user.c"));
+
     let futex = TracepointContext::sys_enter("sys_enter_futex");
     assert!(futex.has_field("uaddr"));
     assert!(futex.has_field("op"));
@@ -1216,6 +1237,18 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
                 "sigmask",
                 "sigsetsize",
             ][..],
+        ),
+        ("sys_enter_inotify_init", &[][..]),
+        ("sys_enter_inotify_init1", &["flags"][..]),
+        (
+            "sys_enter_inotify_add_watch",
+            &["fd", "pathname", "mask"][..],
+        ),
+        ("sys_enter_inotify_rm_watch", &["fd", "wd"][..]),
+        ("sys_enter_fanotify_init", &["flags", "event_f_flags"][..]),
+        (
+            "sys_enter_fanotify_mark",
+            &["fanotify_fd", "flags", "mask", "dfd", "pathname"][..],
         ),
         ("sys_enter_poll", &["ufds", "nfds", "timeout_msecs"][..]),
         (

@@ -31,6 +31,10 @@ const EVENTFD_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/eve
 const EVENTPOLL_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/eventpoll.c";
 const EPOLL_PWAIT2_MIN_KERNEL: &str = "5.11";
 const EPOLL_PWAIT2_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.11/fs/eventpoll.c";
+const INOTIFY_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v4.7/fs/notify/inotify/inotify_user.c";
+const FANOTIFY_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v4.7/fs/notify/fanotify/fanotify_user.c";
 const SELECT_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/select.c";
 const SYNC_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/sync.c";
 const STAT_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/stat.c";
@@ -181,6 +185,12 @@ const WELL_KNOWN_SYS_ENTER_SYSCALLS: &[&str] = &[
     "epoll_wait",
     "epoll_pwait",
     "epoll_pwait2",
+    "inotify_init",
+    "inotify_init1",
+    "inotify_add_watch",
+    "inotify_rm_watch",
+    "fanotify_init",
+    "fanotify_mark",
     "poll",
     "ppoll",
     "select",
@@ -797,6 +807,12 @@ impl TracepointContext {
                 (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, EVENTPOLL_SOURCE)
             }
             "epoll_pwait2" => (EPOLL_PWAIT2_MIN_KERNEL, EPOLL_PWAIT2_SOURCE),
+            "inotify_init" | "inotify_init1" | "inotify_add_watch" | "inotify_rm_watch" => {
+                (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, INOTIFY_SOURCE)
+            }
+            "fanotify_init" | "fanotify_mark" => {
+                (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, FANOTIFY_SOURCE)
+            }
             "poll" | "ppoll" | "select" | "pselect6" => {
                 (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, SELECT_SOURCE)
             }
@@ -1271,6 +1287,28 @@ impl TracepointContext {
                 ("timeout", Self::syscall_arg_user_ptr()),
                 ("sigmask", Self::syscall_arg_user_ptr()),
                 ("sigsetsize", Self::syscall_arg_int(false)),
+            ],
+            "inotify_init" => vec![],
+            "inotify_init1" => vec![("flags", Self::syscall_arg_int(true))],
+            "inotify_add_watch" => vec![
+                ("fd", Self::syscall_arg_int(true)),
+                ("pathname", Self::syscall_arg_user_ptr()),
+                ("mask", Self::syscall_arg_int(false)),
+            ],
+            "inotify_rm_watch" => vec![
+                ("fd", Self::syscall_arg_int(true)),
+                ("wd", Self::syscall_arg_int(true)),
+            ],
+            "fanotify_init" => vec![
+                ("flags", Self::syscall_arg_int(false)),
+                ("event_f_flags", Self::syscall_arg_int(false)),
+            ],
+            "fanotify_mark" => vec![
+                ("fanotify_fd", Self::syscall_arg_int(true)),
+                ("flags", Self::syscall_arg_int(false)),
+                ("mask", Self::syscall_arg_int(false)),
+                ("dfd", Self::syscall_arg_int(true)),
+                ("pathname", Self::syscall_arg_user_ptr()),
             ],
             "poll" => vec![
                 ("ufds", Self::syscall_arg_user_ptr()),

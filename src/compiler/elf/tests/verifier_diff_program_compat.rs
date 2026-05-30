@@ -1,5 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::process::Command;
+use std::fs;
+use std::process::{Command, Output};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::compiler::mir::CtxField;
 use crate::compiler::{
@@ -49,6 +51,42 @@ const REPRESENTATIVE_CONTEXT_FIELD_SPEC_SOURCES: &[&str] = &[
     "iter:udp",
     "iter:unix",
 ];
+
+fn run_nu_script(script: &str, label: &str) -> Option<Output> {
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system time should be after UNIX_EPOCH")
+        .as_nanos();
+    let script_path = std::env::temp_dir().join(format!(
+        "nu_plugin_ebpf_verifier_diff_{}_{}.nu",
+        std::process::id(),
+        unique
+    ));
+    let verifier_diff_path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/verifier_diff.nu");
+    let script = script.replace(
+        "source scripts/verifier_diff.nu",
+        &format!("source {}", verifier_diff_path.display()),
+    );
+    fs::write(&script_path, script)
+        .unwrap_or_else(|err| panic!("failed to write temporary Nu script for {label}: {err}"));
+
+    let output = Command::new("nu")
+        .arg(&script_path)
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .env("VERIFIER_DIFF_SOURCE_ONLY", "1")
+        .output();
+    let _ = fs::remove_file(&script_path);
+
+    match output {
+        Ok(output) => Some(output),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            eprintln!("skipping verifier_diff.nu {label}: nu binary was not found");
+            None
+        }
+        Err(err) => panic!("failed to run nu for verifier_diff.nu {label}: {err}"),
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct VerifierDiffFeatureRecord {
@@ -712,21 +750,7 @@ $checks
 | to json"#
     );
 
-    let output = match Command::new("nu")
-        .arg("-c")
-        .arg(script)
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .output()
-    {
-        Ok(output) => output,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-            eprintln!(
-                "skipping verifier_diff.nu {function_name} scanner coverage: nu binary was not found"
-            );
-            return None;
-        }
-        Err(err) => panic!("failed to run nu for verifier_diff.nu {function_name}: {err}"),
-    };
+    let output = run_nu_script(&script, &format!("{function_name} scanner coverage"))?;
     assert!(
         output.status.success(),
         "verifier_diff.nu {function_name} scanner failed\nstdout:\n{}\nstderr:\n{}",
@@ -808,21 +832,7 @@ $targets
 | to json"#
     );
 
-    let output = match Command::new("nu")
-        .arg("-c")
-        .arg(script)
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .output()
-    {
-        Ok(output) => output,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-            eprintln!(
-                "skipping verifier_diff.nu target-kernel-features coverage: nu binary was not found"
-            );
-            return None;
-        }
-        Err(err) => panic!("failed to run nu for verifier_diff.nu target-kernel-features: {err}"),
-    };
+    let output = run_nu_script(&script, "target-kernel-features coverage")?;
     assert!(
         output.status.success(),
         "verifier_diff.nu target-kernel-features failed\nstdout:\n{}\nstderr:\n{}",
