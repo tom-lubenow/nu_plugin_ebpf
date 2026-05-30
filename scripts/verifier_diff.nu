@@ -8567,6 +8567,17 @@ const PROGRAM_SURFACE_KERNEL_FEATURE_EXPECTATIONS = [
         target: "cgroup_sysctl:/sys/fs/cgroup"
         program: [
             '{|ctx|'
+            '  mut rec = { event: $ctx }'
+            '  $rec.event.new_value = "1"'
+            '  "allow"'
+            '}'
+        ]
+        feature_keys: ["helper:bpf_sysctl_set_new_value"]
+    }
+    {
+        target: "cgroup_sysctl:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
             '  let text = "$ctx.new_value = 1"'
             '  # $ctx.new_value = 1'
             '  if $ctx.new_value == 1 { 0 }'
@@ -8586,10 +8597,32 @@ const PROGRAM_SURFACE_KERNEL_FEATURE_EXPECTATIONS = [
         feature_keys: ["helper:bpf_sk_assign"]
     }
     {
+        target: "tc_action:demo"
+        program: [
+            '{|ctx|'
+            '  mut rec = { event: $ctx }'
+            '  $rec.event.sk = 0'
+            '  1'
+            '}'
+        ]
+        feature_keys: ["helper:bpf_sk_assign"]
+    }
+    {
         target: "sock_ops:/sys/fs/cgroup"
         program: [
             '{|event|'
             '  $event.cb_flags = 1'
+            '  1'
+            '}'
+        ]
+        feature_keys: ["helper:bpf_sock_ops_cb_flags_set"]
+    }
+    {
+        target: "sock_ops:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  mut rec = { event: $ctx }'
+            '  $rec.event.cb_flags = 1'
             '  1'
             '}'
         ]
@@ -35783,6 +35816,8 @@ def program-surface-kernel-features [source: string target] {
     mut features = []
     let target_text = ($target | default "")
     let context_names = (program-context-variable-names $source)
+    mut record_context_aliases = []
+    mut record_context_aliases_loaded = false
     let target_uses_skb_cgroup_helper = (
         ($target_text | str starts-with "tc_action:")
         or ($target_text | str starts-with "tc:")
@@ -35845,8 +35880,36 @@ def program-surface-kernel-features [source: string target] {
             or (($target_text | str starts-with "tc:") and ($target_text | str contains ":ingress"))
             or (($target_text | str starts-with "tcx:") and ($target_text | str contains ":ingress"))
         )
+        let may_have_record_context_helper_write = (
+            (($target_text | str starts-with "cgroup_sysctl:") and (
+                ($trimmed | str contains ".new_value")
+                or ($trimmed | str contains ".sysctl_new_value")
+            ))
+            or ($target_supports_ctx_sk_assign and (
+                ($trimmed | str contains ".sk")
+                or ($trimmed | str contains ".sock")
+                or ($trimmed | str contains ".socket")
+            ))
+            or (($target_text | str starts-with "sock_ops:") and ($trimmed | str contains ".cb_flags"))
+        )
+        if $may_have_record_context_helper_write and not $record_context_aliases_loaded {
+            $record_context_aliases = (program-record-context-aliases $source $context_names)
+            $record_context_aliases_loaded = true
+        }
         let assigns_ctx_sk = (
             line-assigns-context-field? $trimmed $context_names ["sk" "sock" "socket"]
+        )
+        let assigns_record_ctx_sk = (
+            $target_supports_ctx_sk_assign
+            and (line-assigns-record-context-field? $trimmed $record_context_aliases ["sk" "sock" "socket"] [""])
+        )
+        let assigns_record_sysctl_new_value = (
+            ($target_text | str starts-with "cgroup_sysctl:")
+            and (line-assigns-record-context-field? $trimmed $record_context_aliases ["new_value" "sysctl_new_value"] [""])
+        )
+        let assigns_record_sock_ops_cb_flags = (
+            ($target_text | str starts-with "sock_ops:")
+            and (line-assigns-record-context-field? $trimmed $record_context_aliases ["cb_flags"] [""])
         )
         let map_kind = (source-line-map-kind $trimmed "hash")
         if (line-invokes-command? $trimmed "map-get") and (generic-map-lookup-kind? $map_kind) {
@@ -35910,10 +35973,10 @@ def program-surface-kernel-features [source: string target] {
                 $features = (append-missing-kernel-features $features [$socket_context_feature])
             }
         }
-        if ($target_text | str starts-with "cgroup_sysctl:") and $assigns_sysctl_new_value {
+        if ($target_text | str starts-with "cgroup_sysctl:") and ($assigns_sysctl_new_value or $assigns_record_sysctl_new_value) {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SYSCTL_SET_NEW_VALUE])
         }
-        if $target_supports_ctx_sk_assign and $assigns_ctx_sk {
+        if $target_supports_ctx_sk_assign and ($assigns_ctx_sk or $assigns_record_ctx_sk) {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SK_ASSIGN])
         }
         if (line-invokes-command-with-tail-prefix? $trimmed "adjust-message" "--apply") {
@@ -35951,7 +36014,7 @@ def program-surface-kernel-features [source: string target] {
                 $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SK_SELECT_REUSEPORT])
             }
         }
-        if ($target_text | str starts-with "sock_ops:") and (line-assigns-context-field? $trimmed $context_names ["cb_flags"]) {
+        if ($target_text | str starts-with "sock_ops:") and ((line-assigns-context-field? $trimmed $context_names ["cb_flags"]) or $assigns_record_sock_ops_cb_flags) {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SOCK_OPS_CB_FLAGS_SET])
         }
         if ($target_text | str starts-with "xdp:") {
