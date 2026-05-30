@@ -173,8 +173,8 @@ data structures. For most cases, use read-str instead."#
 
     fn examples(&self) -> Vec<Example<'_>> {
         vec![Example {
-            example: "ebpf attach -s 'kprobe:do_exit' {|ctx| $ctx.current_task | read-kernel-str --max-len 16 }",
-            description: "Debug-read from a typed kernel pointer",
+            example: "ebpf attach -s 'kprobe:do_exit' {|ctx| let task = (helper-call \"bpf_get_current_task_btf\"); $task.comm | read-kernel-str --max-len 16 }",
+            description: "Read a bounded kernel string field from a typed kernel pointer",
             result: None,
         }]
     }

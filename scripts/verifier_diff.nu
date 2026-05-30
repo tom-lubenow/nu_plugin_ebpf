@@ -24939,7 +24939,8 @@ const FIXTURES = [
         target: "kprobe:do_exit"
         program: [
             '{|ctx|'
-            '  $ctx.current_task | read-kernel-str --max-len 64 | emit'
+            '  let task = (helper-call "bpf_get_current_task_btf")'
+            '  $task.comm | read-kernel-str --max-len 16 | emit'
             '  0'
             '}'
         ]
@@ -25487,6 +25488,9 @@ def marker-tails-outside-simple-string [line: string marker: string] {
     if $trimmed == "" or ($trimmed | str starts-with "#") {
         return []
     }
+    if not ($trimmed | str contains $marker) {
+        return []
+    }
 
     let parts = ($trimmed | split row $marker)
     if ($parts | length) <= 1 {
@@ -25531,6 +25535,9 @@ def command-tail-after-token [raw_after: string] {
 def command-invocation-tails [line: string command: string] {
     let trimmed = ($line | str trim)
     if $trimmed == "" or ($trimmed | str starts-with "#") {
+        return []
+    }
+    if not ($trimmed | str contains $command) {
         return []
     }
 
@@ -25588,6 +25595,10 @@ def line-invokes-command-with-tail-prefix? [line: string command: string tail_pr
 }
 
 def source-invokes-command? [source: string command: string] {
+    if not ($source | str contains $command) {
+        return false
+    }
+
     for line in ($source | lines) {
         if (line-invokes-command? $line $command) {
             return true
@@ -25598,6 +25609,10 @@ def source-invokes-command? [source: string command: string] {
 }
 
 def source-invokes-command-with-tail-prefix? [source: string command: string tail_prefix: string] {
+    if not ($source | str contains $command) {
+        return false
+    }
+
     for line in ($source | lines) {
         if (line-invokes-command-with-tail-prefix? $line $command $tail_prefix) {
             return true
@@ -27995,6 +28010,10 @@ def context-access-kernel-features [raw_access: string target] {
 }
 
 def user-function-context-field-kernel-features [source: string target context_names] {
+    if not ($source | str contains "def ") {
+        return []
+    }
+
     mut features = []
     let accesses = (user-function-context-field-accesses $source)
     if ($accesses | is-empty) {
@@ -28087,6 +28106,14 @@ def program-record-context-aliases [source: string context_names] {
 }
 
 def record-context-projection-kernel-features [source: string target context_names] {
+    if (
+        not ($source | str contains "let")
+        and not ($source | str contains "mut")
+        and not ($source | str contains "def ")
+    ) {
+        return []
+    }
+
     mut features = []
     let aliases = (program-record-context-aliases $source $context_names)
     if ($aliases | is-empty) {
@@ -28116,6 +28143,10 @@ def record-context-projection-kernel-features [source: string target context_nam
 }
 
 def bound-context-projection-kernel-features [source: string target context_names] {
+    if not ($source | str contains "let") and not ($source | str contains "mut") {
+        return []
+    }
+
     mut features = []
     let aliases = (program-bound-context-root-aliases $source $context_names)
     if ($aliases | is-empty) {
@@ -28370,25 +28401,38 @@ def program-kfunc-kernel-features [source: string target] {
     } else {
         ""
     }
-    let context_names = (program-context-variable-names $source)
-    let record_context_aliases = (program-record-context-aliases $source $context_names)
+    let has_kfunc_call = ($source | str contains "kfunc-call")
+    let may_assign_unix_sun_path = (
+        ($target_text | str starts-with "cgroup_sock_addr:")
+        and ($cgroup_sock_addr_hook | str ends-with "_unix")
+        and ($source | str contains "sun_path")
+    )
 
-    for kfunc_name in (program-kfunc-names $source) {
-        let feature = (program-kfunc-kernel-feature $kfunc_name $target_text)
-        if $feature != null {
-            $features = (append-missing-kernel-features $features [$feature])
+    if not $has_kfunc_call and not $may_assign_unix_sun_path {
+        return []
+    }
+
+    if $has_kfunc_call {
+        for kfunc_name in (program-kfunc-names $source) {
+            let feature = (program-kfunc-kernel-feature $kfunc_name $target_text)
+            if $feature != null {
+                $features = (append-missing-kernel-features $features [$feature])
+            }
         }
     }
+
+    if not $may_assign_unix_sun_path {
+        return $features
+    }
+
+    let context_names = (program-context-variable-names $source)
+    let record_context_aliases = (program-record-context-aliases $source $context_names)
 
     for line in ($source | lines) {
         let trimmed = ($line | str trim)
         if (
-            ($target_text | str starts-with "cgroup_sock_addr:")
-            and ($cgroup_sock_addr_hook | str ends-with "_unix")
-            and (
-                (line-assigns-context-field? $trimmed $context_names ["sun_path"])
-                or (line-assigns-record-context-field? $trimmed $record_context_aliases ["sun_path"] [""])
-            )
+            (line-assigns-context-field? $trimmed $context_names ["sun_path"])
+            or (line-assigns-record-context-field? $trimmed $record_context_aliases ["sun_path"] [""])
         ) {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_KFUNC_BPF_SOCK_ADDR_SET_SUN_PATH])
         }
