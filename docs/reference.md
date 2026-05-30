@@ -921,7 +921,8 @@ open, permission, ownership, and pathname operation aliases such as
 `sys_enter_newfstatat`, `sys_enter_statx`, `sys_enter_open`,
 `sys_enter_creat`, `sys_enter_fchmodat`, `sys_enter_fchownat`,
 `sys_enter_mknod`, `sys_enter_link`, `sys_enter_linkat`, `sys_enter_rename`,
-and `sys_enter_renameat2`. Extended-attribute fallbacks expose aliases for
+`sys_enter_renameat2`, and Linux 6.6+ `sys_enter_fchmodat2`.
+Extended-attribute fallbacks expose aliases for
 `sys_enter_setxattr`, `sys_enter_fsetxattr`, `sys_enter_getxattr`,
 `sys_enter_fgetxattr`, `sys_enter_listxattr`, `sys_enter_flistxattr`,
 `sys_enter_removexattr`, `sys_enter_fremovexattr`, and Linux 6.13+

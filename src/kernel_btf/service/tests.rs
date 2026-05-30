@@ -390,6 +390,32 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         TypeInfo::Ptr { is_user: true, .. }
     ));
 
+    let fchmodat2 = TracepointContext::sys_enter("sys_enter_fchmodat2");
+    assert!(fchmodat2.has_field("dfd"));
+    assert!(fchmodat2.has_field("filename"));
+    assert!(fchmodat2.has_field("mode"));
+    assert!(fchmodat2.has_field("flags"));
+    assert_eq!(fchmodat2.minimum_kernel(), Some("6.6"));
+    assert!(
+        fchmodat2
+            .minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v6.6/fs/open.c"))
+    );
+    let (_, fchmodat2_source) = TracepointContext::syscall_fallback_field_minimum_kernel(
+        "syscalls",
+        "sys_enter_fchmodat2",
+        "flags",
+    )
+    .expect("expected fchmodat2 flags source metadata");
+    assert!(fchmodat2_source.contains("/v6.6/fs/open.c"));
+    assert!(matches!(
+        fchmodat2
+            .get_field("filename")
+            .expect("expected fchmodat2 filename")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+
     let open = TracepointContext::sys_enter("sys_enter_open");
     assert!(open.has_field("filename"));
     assert!(open.has_field("flags"));
@@ -995,6 +1021,10 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         ("sys_enter_chmod", &["filename", "mode"][..]),
         ("sys_enter_fchmod", &["fd", "mode"][..]),
         ("sys_enter_fchmodat", &["dfd", "filename", "mode"][..]),
+        (
+            "sys_enter_fchmodat2",
+            &["dfd", "filename", "mode", "flags"][..],
+        ),
         ("sys_enter_chown", &["filename", "user", "group"][..]),
         ("sys_enter_lchown", &["filename", "user", "group"][..]),
         ("sys_enter_fchown", &["fd", "user", "group"][..]),

@@ -12,6 +12,8 @@ const OPENAT2_MIN_KERNEL: &str = "5.6";
 const OPENAT2_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.6/fs/open.c";
 const FACCESSAT2_MIN_KERNEL: &str = "5.8";
 const FACCESSAT2_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.8/fs/open.c";
+const FCHMODAT2_MIN_KERNEL: &str = "6.6";
+const FCHMODAT2_SOURCE: &str = "https://github.com/torvalds/linux/blob/v6.6/fs/open.c";
 const CLOSE_RANGE_MIN_KERNEL: &str = "5.9";
 const CLOSE_RANGE_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.9/fs/open.c";
 const EXEC_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/exec.c";
@@ -114,6 +116,7 @@ const WELL_KNOWN_SYS_ENTER_SYSCALLS: &[&str] = &[
     "chmod",
     "fchmod",
     "fchmodat",
+    "fchmodat2",
     "chown",
     "lchown",
     "fchown",
@@ -576,6 +579,7 @@ impl TracepointContext {
         match syscall {
             Some("openat2") => (Some(OPENAT2_MIN_KERNEL), Some(OPENAT2_SOURCE)),
             Some("faccessat2") => (Some(FACCESSAT2_MIN_KERNEL), Some(FACCESSAT2_SOURCE)),
+            Some("fchmodat2") => (Some(FCHMODAT2_MIN_KERNEL), Some(FCHMODAT2_SOURCE)),
             Some("close_range") => (Some(CLOSE_RANGE_MIN_KERNEL), Some(CLOSE_RANGE_SOURCE)),
             Some("open_tree" | "move_mount" | "fsmount") => {
                 (Some(MOUNT_API_MIN_KERNEL), Some(MOUNT_API_NAMESPACE_SOURCE))
@@ -655,6 +659,7 @@ impl TracepointContext {
         Some(match syscall {
             "openat2" => (OPENAT2_MIN_KERNEL, OPENAT2_SOURCE),
             "faccessat2" => (FACCESSAT2_MIN_KERNEL, FACCESSAT2_SOURCE),
+            "fchmodat2" => (FCHMODAT2_MIN_KERNEL, FCHMODAT2_SOURCE),
             "close_range" => (CLOSE_RANGE_MIN_KERNEL, CLOSE_RANGE_SOURCE),
             "open_tree" | "move_mount" | "fsmount" => {
                 (MOUNT_API_MIN_KERNEL, MOUNT_API_NAMESPACE_SOURCE)
@@ -715,6 +720,7 @@ impl TracepointContext {
             ),
             "openat2" => (OPENAT2_MIN_KERNEL, OPENAT2_SOURCE),
             "faccessat2" => (FACCESSAT2_MIN_KERNEL, FACCESSAT2_SOURCE),
+            "fchmodat2" => (FCHMODAT2_MIN_KERNEL, FCHMODAT2_SOURCE),
             "close_range" => (CLOSE_RANGE_MIN_KERNEL, CLOSE_RANGE_SOURCE),
             "execve" | "execveat" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, EXEC_SOURCE),
             "exit" | "exit_group" | "waitid" | "wait4" => {
@@ -994,6 +1000,12 @@ impl TracepointContext {
                 ("dfd", Self::syscall_arg_int(true)),
                 ("filename", Self::syscall_arg_user_ptr()),
                 ("mode", Self::syscall_arg_int(false)),
+            ],
+            "fchmodat2" => vec![
+                ("dfd", Self::syscall_arg_int(true)),
+                ("filename", Self::syscall_arg_user_ptr()),
+                ("mode", Self::syscall_arg_int(false)),
+                ("flags", Self::syscall_arg_int(false)),
             ],
             "chown" | "lchown" => vec![
                 ("filename", Self::syscall_arg_user_ptr()),

@@ -2146,6 +2146,12 @@ const FILE_TRACEPOINT_FIELD_SPECS = [
         source: "https://github.com/torvalds/linux/blob/v4.7/fs/open.c"
     }
     {
+        syscalls: ["fchmodat2"]
+        fields: ["dfd" "filename" "mode" "flags"]
+        min_kernel: "6.6"
+        source: "https://github.com/torvalds/linux/blob/v6.6/fs/open.c"
+    }
+    {
         syscalls: ["chown" "lchown"]
         fields: ["filename" "user" "group"]
         min_kernel: "4.7"
@@ -5880,6 +5886,23 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         ]
     }
     {
+        target: "tracepoint:syscalls/sys_enter_fchmodat2"
+        program: [
+            '{|ctx|'
+            '  let filename = $ctx.filename'
+            '  if $filename { 1 | count }'
+            '  ($ctx.dfd + $ctx.mode + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_fchmodat2:field:filename"
+            "tracepoint:syscalls/sys_enter_fchmodat2:field:dfd"
+            "tracepoint:syscalls/sys_enter_fchmodat2:field:mode"
+            "tracepoint:syscalls/sys_enter_fchmodat2:field:flags"
+        ]
+    }
+    {
         target: "tracepoint:syscalls/sys_enter_fchownat"
         program: [
             '{|ctx|'
@@ -8266,6 +8289,23 @@ const FIXTURES = [
         tags: [tracepoint context source metadata]
         requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_faccessat2]
         target: "tracepoint:syscalls/sys_enter_faccessat2"
+        program: [
+            '{|ctx|'
+            '  let filename = $ctx.filename'
+            '  if $filename { $filename | read-str --max-len 64 | count }'
+            '  ($ctx.dfd + $ctx.mode + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-fchmodat2-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_fchmodat2]
+        target: "tracepoint:syscalls/sys_enter_fchmodat2"
         program: [
             '{|ctx|'
             '  let filename = $ctx.filename'
@@ -30862,6 +30902,8 @@ def syscall-tracepoint-fallback-field-kernel-feature [field: string target] {
         "5.6"
     } else if $syscall == "faccessat2" {
         "5.8"
+    } else if $syscall == "fchmodat2" {
+        "6.6"
     } else if $syscall == "close_range" {
         "5.9"
     } else if $syscall in ["open_tree" "move_mount" "fsmount" "fsopen" "fsconfig" "fspick"] {
@@ -30897,6 +30939,8 @@ def syscall-tracepoint-fallback-field-kernel-feature [field: string target] {
         "https://github.com/torvalds/linux/blob/v5.6/fs/open.c"
     } else if $syscall == "faccessat2" {
         "https://github.com/torvalds/linux/blob/v5.8/fs/open.c"
+    } else if $syscall == "fchmodat2" {
+        "https://github.com/torvalds/linux/blob/v6.6/fs/open.c"
     } else if $syscall == "close_range" {
         "https://github.com/torvalds/linux/blob/v5.9/fs/open.c"
     } else if $syscall in ["open_tree" "move_mount" "fsmount"] {
