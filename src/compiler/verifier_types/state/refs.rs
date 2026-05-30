@@ -153,6 +153,17 @@ impl VerifierState {
             })
     }
 
+    pub(in crate::compiler::verifier_types) fn first_live_ringbuf_dynptr_slot_except_slots(
+        &self,
+        allowed_slots: &HashMap<StackSlotId, u32>,
+    ) -> Option<StackSlotId> {
+        self.ringbuf_dynptr_slots
+            .iter()
+            .find_map(|(slot, (_, max_depth))| {
+                (*max_depth > allowed_slots.get(slot).copied().unwrap_or(0)).then_some(*slot)
+            })
+    }
+
     fn ringbuf_dynptr_root(&self, slot: StackSlotId) -> Option<StackSlotId> {
         self.ringbuf_dynptr_alias_roots.get(&slot).copied()
     }

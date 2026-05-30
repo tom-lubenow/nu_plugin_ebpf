@@ -2387,7 +2387,10 @@ impl VccVerifier {
                     ));
                 }
                 self.check_live_iter_families_at_return(state);
-                if let Some(slot) = state.first_live_ringbuf_dynptr_slot() {
+                let allowed_ringbuf_dynptr_slots = self.allowed_ringbuf_dynptr_slots(state);
+                if let Some(slot) =
+                    state.first_live_ringbuf_dynptr_slot_except_slots(&allowed_ringbuf_dynptr_slots)
+                {
                     self.errors.push(VccError::new(
                         VccErrorKind::PointerBounds,
                         format!(
@@ -2594,6 +2597,27 @@ impl VccVerifier {
             if let VccAddrSpace::Stack(slot) = ptr.space {
                 let entry = allowed.entry(slot).or_insert(0u32);
                 *entry = entry.saturating_add(delta.delta as u32);
+            }
+        }
+        allowed
+    }
+
+    fn allowed_ringbuf_dynptr_slots(&self, state: &VccState) -> HashMap<StackSlotId, u32> {
+        let mut allowed = HashMap::new();
+        let Some(summary) = self.current_summary else {
+            return allowed;
+        };
+        for idx in 0..5 {
+            let delta = summary.ringbuf_dynptr_delta_arg(idx).max(0) as u32;
+            if delta == 0 {
+                continue;
+            }
+            let Ok(VccValueType::Ptr(ptr)) = state.reg_type(VccReg(idx as u32)) else {
+                continue;
+            };
+            if let VccAddrSpace::Stack(slot) = ptr.space {
+                let entry = allowed.entry(slot).or_insert(0u32);
+                *entry = entry.saturating_add(delta);
             }
         }
         allowed

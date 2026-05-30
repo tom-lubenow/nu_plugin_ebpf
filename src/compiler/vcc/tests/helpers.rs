@@ -1698,6 +1698,116 @@ fn test_verify_mir_ringbuf_dynptr_reserve_submit_balanced() {
 }
 
 #[test]
+fn test_verify_mir_ringbuf_dynptr_subfn_reserve_submit_balanced() {
+    let (mut reserve, reserve_entry) = new_mir_function();
+    reserve.param_count = 1;
+    reserve.vreg_count = 1;
+    let reserve_param_slot = reserve.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let reserve_map_slot = reserve.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    reserve.param_stack_slots.insert(0, reserve_param_slot);
+    let reserve_ret = reserve.alloc_vreg();
+    reserve
+        .block_mut(reserve_entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: reserve_ret,
+            helper: BpfHelper::RingbufReserveDynptr as u32,
+            args: vec![
+                MirValue::StackSlot(reserve_map_slot),
+                MirValue::Const(8),
+                MirValue::Const(0),
+                MirValue::VReg(VReg(0)),
+            ],
+        });
+    reserve.block_mut(reserve_entry).terminator = MirInst::Return { val: None };
+
+    let (mut submit, submit_entry) = new_mir_function();
+    submit.param_count = 1;
+    submit.vreg_count = 1;
+    let submit_param_slot = submit.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    submit.param_stack_slots.insert(0, submit_param_slot);
+    let submit_ret = submit.alloc_vreg();
+    submit
+        .block_mut(submit_entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: submit_ret,
+            helper: BpfHelper::RingbufSubmitDynptr as u32,
+            args: vec![MirValue::VReg(VReg(0)), MirValue::Const(0)],
+        });
+    submit.block_mut(submit_entry).terminator = MirInst::Return { val: None };
+
+    let summaries = infer_subfunction_summaries(&[reserve.clone(), submit.clone()]);
+    let reserve_summary = summaries
+        .get(&SubfunctionId(0))
+        .copied()
+        .expect("expected reserve summary");
+    let submit_summary = summaries
+        .get(&SubfunctionId(1))
+        .copied()
+        .expect("expected submit summary");
+    assert_eq!(reserve_summary.ringbuf_dynptr_delta_arg(0), 1);
+    assert!(submit_summary.releases_ringbuf_dynptr_arg(0));
+
+    let dynptr_ty = MirType::Ptr {
+        pointee: Box::new(MirType::Unknown),
+        address_space: AddressSpace::Stack,
+    };
+    let mut reserve_types = HashMap::new();
+    reserve_types.insert(VReg(0), dynptr_ty.clone());
+    reserve_types.insert(reserve_ret, MirType::I64);
+    verify_mir_with_subfunction_summaries_for_probe_context_with_current_summary(
+        &reserve,
+        &reserve_types,
+        &summaries,
+        Some(reserve_summary),
+        None,
+        None,
+    )
+    .expect("expected reserve wrapper to verify");
+    let mut submit_types = HashMap::new();
+    submit_types.insert(VReg(0), dynptr_ty.clone());
+    submit_types.insert(submit_ret, MirType::I64);
+    verify_mir_with_subfunction_summaries_for_probe_context_with_current_summary(
+        &submit,
+        &submit_types,
+        &summaries,
+        Some(submit_summary),
+        None,
+        None,
+    )
+    .expect("expected submit wrapper to verify");
+
+    let (mut func, entry) = new_mir_function();
+    let dynptr = func.alloc_vreg();
+    let call_reserve_ret = func.alloc_vreg();
+    let call_submit_ret = func.alloc_vreg();
+    let dynptr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: dynptr,
+        src: MirValue::StackSlot(dynptr_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallSubfn {
+        dst: call_reserve_ret,
+        subfn: SubfunctionId(0),
+        args: vec![dynptr],
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallSubfn {
+        dst: call_submit_ret,
+        subfn: SubfunctionId(1),
+        args: vec![dynptr],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(dynptr, dynptr_ty);
+    types.insert(call_reserve_ret, MirType::I64);
+    types.insert(call_submit_ret, MirType::I64);
+    verify_mir_with_subfunction_summaries(&func, &types, &summaries)
+        .expect("expected subfunction reserve/submit wrappers to balance");
+}
+
+#[test]
 fn test_verify_mir_ringbuf_dynptr_leak_is_rejected() {
     let (mut func, entry) = new_mir_function();
     let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);

@@ -99,7 +99,7 @@ pub(crate) struct SubfunctionSummary {
     local_irq_deltas: [i8; SUMMARY_ARG_SLOTS],
     iter_deltas: [Option<SubfunctionIterDelta>; SUMMARY_ARG_SLOTS],
     ringbuf_record_release_args: u8,
-    ringbuf_dynptr_release_args: u8,
+    ringbuf_dynptr_deltas: [i8; SUMMARY_ARG_SLOTS],
     kfunc_ref_release_args: [Option<KfuncRefKind>; SUMMARY_ARG_SLOTS],
 }
 
@@ -114,7 +114,7 @@ impl SubfunctionSummary {
             local_irq_deltas: [0; SUMMARY_ARG_SLOTS],
             iter_deltas: [None; SUMMARY_ARG_SLOTS],
             ringbuf_record_release_args: 0,
-            ringbuf_dynptr_release_args: 0,
+            ringbuf_dynptr_deltas: [0; SUMMARY_ARG_SLOTS],
             kfunc_ref_release_args: [None; SUMMARY_ARG_SLOTS],
         }
     }
@@ -129,7 +129,7 @@ impl SubfunctionSummary {
             local_irq_deltas: [0; SUMMARY_ARG_SLOTS],
             iter_deltas: [None; SUMMARY_ARG_SLOTS],
             ringbuf_record_release_args: 0,
-            ringbuf_dynptr_release_args: 0,
+            ringbuf_dynptr_deltas: [0; SUMMARY_ARG_SLOTS],
             kfunc_ref_release_args: [None; SUMMARY_ARG_SLOTS],
         }
     }
@@ -182,8 +182,16 @@ impl SubfunctionSummary {
         idx < 8 && (self.ringbuf_record_release_args & (1 << idx)) != 0
     }
 
+    pub(crate) const fn ringbuf_dynptr_delta_arg(self, idx: usize) -> i8 {
+        if idx < SUMMARY_ARG_SLOTS {
+            self.ringbuf_dynptr_deltas[idx]
+        } else {
+            0
+        }
+    }
+
     pub(crate) const fn releases_ringbuf_dynptr_arg(self, idx: usize) -> bool {
-        idx < 8 && (self.ringbuf_dynptr_release_args & (1 << idx)) != 0
+        self.ringbuf_dynptr_delta_arg(idx) < 0
     }
 
     pub(crate) const fn kfunc_ref_release_arg_kind(self, idx: usize) -> Option<KfuncRefKind> {
@@ -204,7 +212,7 @@ impl SubfunctionSummary {
         iter_deltas: [Option<SubfunctionIterDelta>; SUMMARY_ARG_SLOTS],
         changes_packet_data: bool,
         ringbuf_record_release_args: u8,
-        ringbuf_dynptr_release_args: u8,
+        ringbuf_dynptr_deltas: [i8; SUMMARY_ARG_SLOTS],
         kfunc_ref_release_args: [Option<KfuncRefKind>; SUMMARY_ARG_SLOTS],
     ) -> Self {
         Self {
@@ -216,7 +224,7 @@ impl SubfunctionSummary {
             local_irq_deltas,
             iter_deltas,
             ringbuf_record_release_args,
-            ringbuf_dynptr_release_args,
+            ringbuf_dynptr_deltas,
             kfunc_ref_release_args,
         }
     }
@@ -250,7 +258,7 @@ struct SummaryState {
     local_irq_deltas: [Option<i8>; SUMMARY_ARG_SLOTS],
     iter_deltas: [Option<IterDeltaState>; SUMMARY_ARG_SLOTS],
     ringbuf_record_release_args: u8,
-    ringbuf_dynptr_release_args: u8,
+    ringbuf_dynptr_deltas: [Option<i8>; SUMMARY_ARG_SLOTS],
     kfunc_ref_release_args: [Option<KfuncRefKind>; SUMMARY_ARG_SLOTS],
 }
 
@@ -335,7 +343,7 @@ fn summarize_function(
             local_irq_deltas: [Some(0); SUMMARY_ARG_SLOTS],
             iter_deltas: [Some(IterDeltaState::ZERO); SUMMARY_ARG_SLOTS],
             ringbuf_record_release_args: 0,
-            ringbuf_dynptr_release_args: 0,
+            ringbuf_dynptr_deltas: [Some(0); SUMMARY_ARG_SLOTS],
             kfunc_ref_release_args: [None; SUMMARY_ARG_SLOTS],
         },
     );
@@ -350,7 +358,7 @@ fn summarize_function(
     let mut returned_iter_deltas: Option<[Option<IterDeltaState>; SUMMARY_ARG_SLOTS]> = None;
     let mut changes_packet_data = false;
     let mut returned_record_releases: Option<u8> = None;
-    let mut returned_dynptr_releases: Option<u8> = None;
+    let mut returned_dynptr_deltas: Option<[Option<i8>; SUMMARY_ARG_SLOTS]> = None;
     let mut returned_kfunc_releases: Option<[Option<KfuncRefKind>; SUMMARY_ARG_SLOTS]> = None;
 
     while let Some(block_id) = worklist.pop_front() {
@@ -437,9 +445,9 @@ fn summarize_function(
                     None => state.ringbuf_record_release_args,
                     Some(existing) => existing & state.ringbuf_record_release_args,
                 });
-                returned_dynptr_releases = Some(match returned_dynptr_releases {
-                    None => state.ringbuf_dynptr_release_args,
-                    Some(existing) => existing & state.ringbuf_dynptr_release_args,
+                returned_dynptr_deltas = Some(match returned_dynptr_deltas {
+                    None => state.ringbuf_dynptr_deltas,
+                    Some(existing) => merge_delta_args(existing, state.ringbuf_dynptr_deltas),
                 });
                 returned_kfunc_releases = Some(match returned_kfunc_releases {
                     None => state.kfunc_ref_release_args,
@@ -467,7 +475,7 @@ fn summarize_function(
         finalize_iter_delta_args(returned_iter_deltas),
         changes_packet_data,
         returned_record_releases.unwrap_or(0),
-        returned_dynptr_releases.unwrap_or(0),
+        finalize_delta_args(returned_dynptr_deltas),
         returned_kfunc_releases.unwrap_or([None; SUMMARY_ARG_SLOTS]),
     )
 }
@@ -558,10 +566,12 @@ fn merge_alias_states(existing: &mut SummaryState, incoming: &SummaryState) -> b
         existing.ringbuf_record_release_args = record_releases;
         changed = true;
     }
-    let dynptr_releases =
-        existing.ringbuf_dynptr_release_args & incoming.ringbuf_dynptr_release_args;
-    if existing.ringbuf_dynptr_release_args != dynptr_releases {
-        existing.ringbuf_dynptr_release_args = dynptr_releases;
+    let dynptr_deltas = merge_delta_args(
+        existing.ringbuf_dynptr_deltas,
+        incoming.ringbuf_dynptr_deltas,
+    );
+    if existing.ringbuf_dynptr_deltas != dynptr_deltas {
+        existing.ringbuf_dynptr_deltas = dynptr_deltas;
         changed = true;
     }
     let kfunc_releases = merge_kfunc_release_args(
@@ -956,8 +966,9 @@ fn apply_subfunction_release_summary(
         if summary.releases_ringbuf_record_arg(idx) {
             set_mask_bit(&mut state.ringbuf_record_release_args, param_idx);
         }
-        if summary.releases_ringbuf_dynptr_arg(idx) {
-            set_mask_bit(&mut state.ringbuf_dynptr_release_args, param_idx);
+        let dynptr_delta = summary.ringbuf_dynptr_delta_arg(idx);
+        if dynptr_delta != 0 {
+            add_delta_arg(&mut state.ringbuf_dynptr_deltas, param_idx, dynptr_delta);
         }
         if let Some(kind) = summary.kfunc_ref_release_arg_kind(idx) {
             set_kfunc_release_arg(&mut state.kfunc_ref_release_args, param_idx, kind);
@@ -976,37 +987,53 @@ fn apply_helper_release_summary(
     let Some(helper) = BpfHelper::from_u32(*helper) else {
         return;
     };
-    let Some(arg0) = args.first() else {
-        return;
-    };
-    let alias = alias_for_mir_value(arg0, &state.aliases, param_stack_aliases);
-    let param_idx = match alias {
-        AliasSource::Param(param_idx) => Some(param_idx),
-        AliasSource::Unknown => None,
-    };
     match helper {
         BpfHelper::RingbufSubmit | BpfHelper::RingbufDiscard => {
+            let Some(arg0) = args.first() else {
+                return;
+            };
             if let MirValue::VReg(arg) = arg0 {
                 clear_ringbuf_record_source_for_vreg(state, *arg);
             }
-            if let Some(param_idx) = param_idx {
+            if let Some(param_idx) = helper_arg_param_alias(args, 0, state, param_stack_aliases) {
                 set_mask_bit(&mut state.ringbuf_record_release_args, param_idx);
             }
         }
+        BpfHelper::RingbufReserveDynptr => {
+            if let Some(param_idx) = helper_arg_param_alias(args, 3, state, param_stack_aliases) {
+                add_delta_arg(&mut state.ringbuf_dynptr_deltas, param_idx, 1);
+            }
+        }
         BpfHelper::RingbufSubmitDynptr | BpfHelper::RingbufDiscardDynptr => {
-            if let Some(param_idx) = param_idx {
-                set_mask_bit(&mut state.ringbuf_dynptr_release_args, param_idx);
+            if let Some(param_idx) = helper_arg_param_alias(args, 0, state, param_stack_aliases) {
+                add_delta_arg(&mut state.ringbuf_dynptr_deltas, param_idx, -1);
             }
         }
         _ => {}
     }
     if let Some(kind) = helper_release_ref_kind(helper) {
+        let Some(arg0) = args.first() else {
+            return;
+        };
         if let MirValue::VReg(arg) = arg0 {
             clear_kfunc_ref_source_for_vreg(state, *arg);
         }
-        if let Some(param_idx) = param_idx {
+        if let Some(param_idx) = helper_arg_param_alias(args, 0, state, param_stack_aliases) {
             set_kfunc_release_arg(&mut state.kfunc_ref_release_args, param_idx, kind);
         }
+    }
+}
+
+fn helper_arg_param_alias(
+    args: &[MirValue],
+    idx: usize,
+    state: &SummaryState,
+    param_stack_aliases: &HashMap<super::mir::StackSlotId, usize>,
+) -> Option<usize> {
+    let arg = args.get(idx)?;
+    match alias_for_mir_value(arg, &state.aliases, param_stack_aliases) {
+        AliasSource::Param(param_idx) => Some(param_idx),
+        AliasSource::Unknown => None,
     }
 }
 
@@ -1178,7 +1205,7 @@ fn set_alias(state: &mut [AliasSource], vreg: VReg, alias: AliasSource) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::compiler::mir::{MirFunction, MirInst, MirValue};
+    use crate::compiler::mir::{MirFunction, MirInst, MirValue, StackSlotKind};
 
     #[test]
     fn test_infer_return_summary_for_copied_param() {
@@ -1517,6 +1544,81 @@ mod tests {
             .expect("expected summary");
         assert!(summary.releases_ringbuf_dynptr_arg(0));
         assert!(!summary.releases_ringbuf_dynptr_arg(1));
+    }
+
+    #[test]
+    fn test_infer_summary_tracks_ringbuf_dynptr_acquire_arg() {
+        let mut subfn = MirFunction::new();
+        let entry = subfn.alloc_block();
+        subfn.entry = entry;
+        subfn.param_count = 1;
+        subfn.vreg_count = 1;
+        let map_slot = subfn.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let reserve_ret = subfn.alloc_vreg();
+        subfn
+            .block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: reserve_ret,
+                helper: BpfHelper::RingbufReserveDynptr as u32,
+                args: vec![
+                    MirValue::StackSlot(map_slot),
+                    MirValue::Const(8),
+                    MirValue::Const(0),
+                    MirValue::VReg(VReg(0)),
+                ],
+            });
+        subfn.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let summaries = infer_subfunction_summaries(&[subfn]);
+        let summary = summaries
+            .get(&SubfunctionId(0))
+            .copied()
+            .expect("expected summary");
+        assert_eq!(summary.ringbuf_dynptr_delta_arg(0), 1);
+        assert!(!summary.releases_ringbuf_dynptr_arg(0));
+    }
+
+    #[test]
+    fn test_infer_summary_cancels_balanced_ringbuf_dynptr_lifecycle() {
+        let mut subfn = MirFunction::new();
+        let entry = subfn.alloc_block();
+        subfn.entry = entry;
+        subfn.param_count = 1;
+        subfn.vreg_count = 1;
+        let map_slot = subfn.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let reserve_ret = subfn.alloc_vreg();
+        let submit_ret = subfn.alloc_vreg();
+        subfn
+            .block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: reserve_ret,
+                helper: BpfHelper::RingbufReserveDynptr as u32,
+                args: vec![
+                    MirValue::StackSlot(map_slot),
+                    MirValue::Const(8),
+                    MirValue::Const(0),
+                    MirValue::VReg(VReg(0)),
+                ],
+            });
+        subfn
+            .block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: submit_ret,
+                helper: BpfHelper::RingbufSubmitDynptr as u32,
+                args: vec![MirValue::VReg(VReg(0)), MirValue::Const(0)],
+            });
+        subfn.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let summaries = infer_subfunction_summaries(&[subfn]);
+        let summary = summaries
+            .get(&SubfunctionId(0))
+            .copied()
+            .expect("expected summary");
+        assert_eq!(summary.ringbuf_dynptr_delta_arg(0), 0);
+        assert!(!summary.releases_ringbuf_dynptr_arg(0));
     }
 
     #[test]

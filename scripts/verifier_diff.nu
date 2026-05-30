@@ -10792,6 +10792,30 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "ringbuf-dynptr-user-function-reserve-submit-balanced"
+        category: "helper-state"
+        tags: [ringbuf dynptr ref-lifetime user-function]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  def reserve [d] {'
+            '    helper-call "bpf_ringbuf_reserve_dynptr" events 8 0 $d'
+            '    0'
+            '  }'
+            '  def submit [d] {'
+            '    helper-call "bpf_ringbuf_submit_dynptr" $d 0'
+            '    0'
+            '  }'
+            '  let d = "0123456789abcdef"'
+            '  reserve $d'
+            '  submit $d'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "ringbuf-dynptr-reserve-discard-balanced"
         category: "helper-state"
         tags: [ringbuf dynptr ref-lifetime]

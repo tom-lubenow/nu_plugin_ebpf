@@ -285,7 +285,7 @@ impl<'a> VccLowerer<'a> {
             if summary.releases_ringbuf_record_arg(idx) {
                 out.push(VccInst::RingbufAcquire { id: reg });
             }
-            if summary.releases_ringbuf_dynptr_arg(idx) {
+            for _ in 0..summary.ringbuf_dynptr_delta_arg(idx).saturating_neg() {
                 out.push(VccInst::HelperRingbufDynptrAcquire {
                     ptr: reg,
                     helper: "subfunction parameter".to_string(),

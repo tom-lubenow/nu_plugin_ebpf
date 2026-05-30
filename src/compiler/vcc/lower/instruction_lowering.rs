@@ -1810,8 +1810,16 @@ impl<'a> VccLowerer<'a> {
                     ptr: VccValue::Reg(VccReg(arg.0)),
                 });
             }
-            if summary.releases_ringbuf_dynptr_arg(idx) {
-                let ptr = VccReg(arg.0);
+            let dynptr_delta = summary.ringbuf_dynptr_delta_arg(idx);
+            let ptr = VccReg(arg.0);
+            for _ in 0..dynptr_delta.max(0) {
+                out.push(VccInst::HelperRingbufDynptrAcquire {
+                    ptr,
+                    helper: format!("subfunction arg{}", idx),
+                    arg_idx: idx,
+                });
+            }
+            for _ in 0..dynptr_delta.saturating_neg() {
                 out.push(VccInst::HelperDynptrRequireInitialized {
                     ptr,
                     helper: format!("subfunction arg{}", idx),

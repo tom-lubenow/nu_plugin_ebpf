@@ -514,7 +514,11 @@ fn apply_subfunction_release_summary(
         if summary.releases_ringbuf_record_arg(idx) {
             release_subfunction_ringbuf_record_arg(idx, arg, state, errors);
         }
-        if summary.releases_ringbuf_dynptr_arg(idx) {
+        let dynptr_delta = summary.ringbuf_dynptr_delta_arg(idx);
+        for _ in 0..dynptr_delta.max(0) {
+            acquire_subfunction_ringbuf_dynptr_arg(idx, arg, state, errors);
+        }
+        for _ in 0..dynptr_delta.saturating_neg() {
             release_subfunction_ringbuf_dynptr_arg(idx, arg, state, errors);
         }
         if let Some(kind) = summary.kfunc_ref_release_arg_kind(idx) {
@@ -564,6 +568,30 @@ fn release_subfunction_ringbuf_record_arg(
             idx
         ))),
     }
+}
+
+fn acquire_subfunction_ringbuf_dynptr_arg(
+    idx: usize,
+    arg: VReg,
+    state: &mut VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    let Some(slot) = stack_slot_base_from_vreg(arg, state) else {
+        errors.push(VerifierTypeError::new(format!(
+            "subfunction arg{} expects stack slot base pointer",
+            idx
+        )));
+        return;
+    };
+    if state.is_dynptr_slot_maybe_initialized(slot) || state.has_live_ringbuf_dynptr_slot(slot) {
+        errors.push(VerifierTypeError::new(format!(
+            "subfunction arg{} requires uninitialized dynptr stack object slot",
+            idx
+        )));
+        return;
+    }
+    state.initialize_dynptr_slot(slot);
+    state.acquire_ringbuf_dynptr_slot(slot);
 }
 
 fn release_subfunction_ringbuf_dynptr_arg(

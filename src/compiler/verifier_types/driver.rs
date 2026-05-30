@@ -222,12 +222,11 @@ fn verify_mir_with_subfunction_summaries_impl(
         seed_entry_critical_section_state(&mut entry_state, func, summary);
         seed_entry_iter_state(&mut entry_state, func, summary);
         for i in 0..func.param_count {
-            if !summary.releases_ringbuf_dynptr_arg(i) {
-                continue;
-            }
             if let Some(slot) = func.param_stack_slots.get(&i).copied() {
-                entry_state.initialize_dynptr_slot(slot);
-                entry_state.acquire_ringbuf_dynptr_slot(slot);
+                for _ in 0..summary.ringbuf_dynptr_delta_arg(i).saturating_neg() {
+                    entry_state.initialize_dynptr_slot(slot);
+                    entry_state.acquire_ringbuf_dynptr_slot(slot);
+                }
             }
         }
     }
@@ -354,7 +353,11 @@ fn verify_mir_with_subfunction_summaries_impl(
                     ));
                 }
                 check_live_iter_families_at_return(current_summary, func, &state, &mut errors);
-                if let Some(slot) = state.first_live_ringbuf_dynptr_slot() {
+                let allowed_ringbuf_dynptr_slots =
+                    allowed_ringbuf_dynptr_slots(current_summary, func);
+                if let Some(slot) =
+                    state.first_live_ringbuf_dynptr_slot_except_slots(&allowed_ringbuf_dynptr_slots)
+                {
                     errors.push(VerifierTypeError::new(format!(
                         "unreleased ringbuf dynptr reservation at function exit: stack slot {}",
                         slot.0
@@ -625,6 +628,27 @@ fn allowed_iter_slots(
         if let Some(slot) = func.param_stack_slots.get(&idx).copied() {
             let entry = allowed.entry(slot).or_insert(0u32);
             *entry = entry.saturating_add(delta.delta as u32);
+        }
+    }
+    allowed
+}
+
+fn allowed_ringbuf_dynptr_slots(
+    current_summary: Option<SubfunctionSummary>,
+    func: &MirFunction,
+) -> HashMap<StackSlotId, u32> {
+    let mut allowed = HashMap::new();
+    let Some(summary) = current_summary else {
+        return allowed;
+    };
+    for idx in 0..func.param_count {
+        let delta = summary.ringbuf_dynptr_delta_arg(idx).max(0) as u32;
+        if delta == 0 {
+            continue;
+        }
+        if let Some(slot) = func.param_stack_slots.get(&idx).copied() {
+            let entry = allowed.entry(slot).or_insert(0u32);
+            *entry = entry.saturating_add(delta);
         }
     }
     allowed
