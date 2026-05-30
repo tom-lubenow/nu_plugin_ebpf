@@ -10745,7 +10745,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "dynptr-kfunc-copy-from-user-rejects-reinitialize"
@@ -10787,7 +10787,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "dynptr-kfunc-copy-from-user-task-str-initializes-dynptr"
@@ -10808,7 +10808,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "source-kfunc-copy-from-user-str-accepts-user-src"
@@ -10960,7 +10960,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "dynptr-kfunc-from-xdp-rejects-reinitialize"
@@ -11030,7 +11030,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "dynptr-kfunc-from-skb-accepts-netfilter-skb-pointer"
@@ -11066,7 +11066,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "dynptr-kfunc-from-skb-rejects-reinitialize"
@@ -11137,7 +11137,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "dynptr-kfunc-size-rejects-uninitialized"
@@ -11172,7 +11172,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "dynptr-record-field-local-tracks-lifecycle"
@@ -11191,7 +11191,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "dynptr-record-field-direct-rejects-distinct-projection"
@@ -11247,7 +11247,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "dynptr-kfunc-slice-rejects-nonzero-vreg-buffer"
@@ -11322,7 +11322,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "dynptr-kfunc-slice-rdwr-rejects-uninitialized"
@@ -11377,7 +11377,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "dynptr-kfunc-slice-rdwr-rejects-nonzero-vreg-buffer"
@@ -11437,7 +11437,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "dynptr-kfunc-adjust-rejects-uninitialized"
@@ -11472,7 +11472,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "dynptr-kfunc-memset-rejects-uninitialized"
@@ -11510,7 +11510,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "dynptr-kfunc-copy-initialized-ringbuf"
@@ -11530,7 +11530,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "dynptr-kfunc-copy-rejects-uninitialized-destination"
@@ -11591,7 +11591,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "dynptr-kfunc-clone-rejects-same-stack-slot"
@@ -11651,7 +11651,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "dynptr-kfunc-clone-submit-through-clone-invalidates-source"
