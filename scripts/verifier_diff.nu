@@ -25846,6 +25846,40 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "adjust-packet-xdp-head-rejects-stale-data"
+        category: "language-surface"
+        tags: [adjust-packet xdp packet-bounds reject]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  let data = $ctx.data'
+            '  adjust-packet --head 0'
+            '  ($data | get 0) | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "stale packet pointer"
+    }
+    {
+        name: "adjust-packet-xdp-head-allows-reloaded-data"
+        category: "language-surface"
+        tags: [adjust-packet xdp packet-bounds accept]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  adjust-packet --head 0'
+            '  ($ctx.data | get 0) | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "adjust-packet-xdp-meta"
         category: "language-surface"
         tags: [adjust-packet xdp]
@@ -25952,6 +25986,40 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "adjust-packet-xdp-tail-rejects-stale-data"
+        category: "language-surface"
+        tags: [adjust-packet xdp packet-bounds reject]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  let data = $ctx.data'
+            '  adjust-packet --tail 0'
+            '  ($data | get 0) | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "stale packet pointer"
+    }
+    {
+        name: "adjust-packet-xdp-tail-allows-reloaded-data"
+        category: "language-surface"
+        tags: [adjust-packet xdp packet-bounds accept]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  adjust-packet --tail 0'
+            '  ($ctx.data | get 0) | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "adjust-packet-tc-action-room"
         category: "language-surface"
         tags: [adjust-packet tc-action]
@@ -25959,6 +26027,38 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  adjust-packet --room 0 --mode 0'
+            '  "ok"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "adjust-packet-tc-action-room-rejects-stale-data"
+        category: "language-surface"
+        tags: [adjust-packet tc-action packet-bounds reject]
+        target: "tc_action:diff-action"
+        program: [
+            '{|ctx|'
+            '  let data = $ctx.data'
+            '  adjust-packet --room 0 --mode 0'
+            '  ($data | get 0) | count'
+            '  "ok"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "stale packet pointer"
+    }
+    {
+        name: "adjust-packet-tc-action-room-allows-reloaded-data"
+        category: "language-surface"
+        tags: [adjust-packet tc-action packet-bounds accept]
+        target: "tc_action:diff-action"
+        program: [
+            '{|ctx|'
+            '  adjust-packet --room 0 --mode 0'
+            '  ($ctx.data | get 0) | count'
             '  "ok"'
             '}'
         ]
@@ -26407,6 +26507,38 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "adjust-message-sk-msg-push-rejects-stale-data"
+        category: "language-surface"
+        tags: [adjust-message sk-msg packet-bounds reject]
+        target: "sk_msg:/sys/fs/bpf/demo_sockmap"
+        program: [
+            '{|ctx|'
+            '  let data = $ctx.data'
+            '  adjust-message --push 0 1'
+            '  ($data | get 0) | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "stale packet pointer"
+    }
+    {
+        name: "adjust-message-sk-msg-push-allows-reloaded-data"
+        category: "language-surface"
+        tags: [adjust-message sk-msg packet-bounds accept]
+        target: "sk_msg:/sys/fs/bpf/demo_sockmap"
+        program: [
+            '{|ctx|'
+            '  adjust-message --push 0 1'
+            '  ($ctx.data | get 0) | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "adjust-message-sk-msg-pop"
         category: "language-surface"
         tags: [adjust-message sk-msg]
@@ -26414,6 +26546,38 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  adjust-message --pop 0 1'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "adjust-message-sk-msg-pop-rejects-stale-data"
+        category: "language-surface"
+        tags: [adjust-message sk-msg packet-bounds reject]
+        target: "sk_msg:/sys/fs/bpf/demo_sockmap"
+        program: [
+            '{|ctx|'
+            '  let data = $ctx.data'
+            '  adjust-message --pop 0 1'
+            '  ($data | get 0) | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "stale packet pointer"
+    }
+    {
+        name: "adjust-message-sk-msg-pop-allows-reloaded-data"
+        category: "language-surface"
+        tags: [adjust-message sk-msg packet-bounds accept]
+        target: "sk_msg:/sys/fs/bpf/demo_sockmap"
+        program: [
+            '{|ctx|'
+            '  adjust-message --pop 0 1'
+            '  ($ctx.data | get 0) | count'
             '  "pass"'
             '}'
         ]
