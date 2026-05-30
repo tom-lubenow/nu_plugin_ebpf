@@ -4,6 +4,7 @@ use super::attach::{
     kernel_helper_minimum_requirement_detail, kernel_kfunc_minimum_requirement_detail,
     kernel_map_minimum_requirement_detail, kernel_map_value_minimum_requirement_detail,
     kernel_minimum_requirement_detail, kernel_object_compatibility_requirement_detail,
+    unsupported_live_map_in_map_error,
 };
 use super::*;
 use crate::compiler::instruction::{EbpfBuilder, EbpfInsn};
@@ -1556,17 +1557,26 @@ fn test_attach_with_pin_rejects_struct_ops_objects() {
     );
 }
 
-#[test]
-fn test_attach_rejects_live_map_in_map_before_aya_load() {
-    let state = EbpfState::new();
+fn map_in_map_fixture_refs() -> (MapRef, MapRef, MapRef) {
     let inner_ref = MapRef {
         name: "inner".to_string(),
         kind: MapKind::Hash,
+    };
+    let other_ref = MapRef {
+        name: "other".to_string(),
+        kind: MapKind::Array,
     };
     let outer_ref = MapRef {
         name: "outer".to_string(),
         kind: MapKind::ArrayOfMaps,
     };
+    (inner_ref, other_ref, outer_ref)
+}
+
+fn live_map_in_map_fixture(
+    first_inner_templates: HashMap<MapRef, MapRef>,
+    extra_inner_templates: Vec<HashMap<MapRef, MapRef>>,
+) -> EbpfObject {
     let object = EbpfProgram::with_maps(
         EbpfProgramType::Xdp,
         "lo",
@@ -1579,6 +1589,10 @@ fn test_attach_rejects_live_map_in_map_before_aya_load() {
                 def: BpfMapDef::hash(4, 8, 16),
             },
             EbpfMap {
+                name: "other".to_string(),
+                def: BpfMapDef::array(4, 16),
+            },
+            EbpfMap {
                 name: "outer".to_string(),
                 def: BpfMapDef::array_of_maps(4),
             },
@@ -1587,12 +1601,33 @@ fn test_attach_rejects_live_map_in_map_before_aya_load() {
         vec![],
         None,
         None,
-        HashMap::from([(inner_ref.clone(), MirType::U64)]),
+        HashMap::new(),
         HashMap::new(),
     )
-    .with_generic_map_key_types(HashMap::from([(inner_ref.clone(), MirType::U32)]))
-    .with_generic_map_inner_templates(HashMap::from([(outer_ref, inner_ref)]))
+    .with_generic_map_inner_templates(first_inner_templates)
     .into_object();
+
+    let mut object = object;
+    for (index, inner_templates) in extra_inner_templates.into_iter().enumerate() {
+        object.programs.push(
+            EbpfProgram::from_bytecode(
+                EbpfProgramType::Xdp,
+                "lo",
+                &format!("extra_{index}"),
+                vec![],
+            )
+            .with_generic_map_inner_templates(inner_templates)
+            .into_program_section(),
+        );
+    }
+    object
+}
+
+#[test]
+fn test_attach_rejects_live_map_in_map_before_aya_load() {
+    let state = EbpfState::new();
+    let (inner_ref, _, outer_ref) = map_in_map_fixture_refs();
+    let object = live_map_in_map_fixture(HashMap::from([(outer_ref, inner_ref)]), vec![]);
 
     let err = state
         .attach(&object)
@@ -1605,6 +1640,54 @@ fn test_attach_rejects_live_map_in_map_before_aya_load() {
                 if msg.contains("live loading map-in-map runtime map 'outer'")
                     && msg.contains("declared inner template is 'inner' (hash)")
                     && msg.contains("Aya's map creation path")
+                    && msg.contains("inner_map_fd")
+                    && msg.contains("--dry-run")
+        ),
+        "unexpected map-in-map live attach error: {err:?}"
+    );
+}
+
+#[test]
+fn test_attach_rejects_live_map_in_map_without_inner_template_metadata() {
+    let state = EbpfState::new();
+    let object = live_map_in_map_fixture(HashMap::new(), vec![]);
+
+    let err = state
+        .attach(&object)
+        .expect_err("live map-in-map should reject before Aya load");
+
+    assert!(
+        matches!(
+            err,
+            LoadError::Load(ref msg)
+                if msg.contains("live loading map-in-map runtime map 'outer'")
+                    && msg.contains("no compiled inner-template metadata was found")
+                    && msg.contains("inner_map_fd")
+                    && msg.contains("--dry-run")
+        ),
+        "unexpected map-in-map live attach error: {err:?}"
+    );
+}
+
+#[test]
+fn test_live_map_in_map_diagnostic_reports_ambiguous_inner_template_metadata() {
+    let (inner_ref, other_ref, outer_ref) = map_in_map_fixture_refs();
+    let object = live_map_in_map_fixture(
+        HashMap::from([(outer_ref.clone(), inner_ref)]),
+        vec![HashMap::from([(outer_ref, other_ref)])],
+    );
+
+    let err = unsupported_live_map_in_map_error(&object)
+        .expect("live map-in-map diagnostic should reject ambiguous metadata");
+
+    assert!(
+        matches!(
+            err,
+            LoadError::Load(ref msg)
+                if msg.contains("live loading map-in-map runtime map 'outer'")
+                    && msg.contains("compiled inner-template metadata is ambiguous")
+                    && msg.contains("'inner' (hash)")
+                    && msg.contains("'other' (array)")
                     && msg.contains("inner_map_fd")
                     && msg.contains("--dry-run")
         ),

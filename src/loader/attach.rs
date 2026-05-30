@@ -76,7 +76,7 @@ fn map_in_map_inner_template_detail(object: &EbpfObject, outer: &MapRef) -> Stri
     }
 }
 
-fn unsupported_live_map_in_map_error(object: &EbpfObject) -> Option<LoadError> {
+pub(super) fn unsupported_live_map_in_map_error(object: &EbpfObject) -> Option<LoadError> {
     object.maps.iter().find_map(|map| {
         let kind = map.def.map_kind()?;
         kind.is_map_in_map().then(|| {
