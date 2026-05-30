@@ -1031,7 +1031,7 @@ mod tests {
     }
 
     #[test]
-    fn test_well_known_syscall_tracepoint_payload_names_do_not_collide_with_builtins() {
+    fn test_well_known_syscall_tracepoint_payload_names_are_model_consistent() {
         let modeled_syscalls = [
             "sys_enter_read",
             "sys_enter_write",
@@ -1196,7 +1196,27 @@ mod tests {
 
         for syscall in modeled_syscalls {
             let ctx = TracepointContext::sys_enter(syscall);
+            let target = format!("tracepoint:syscalls/{syscall}");
+            let spec = ProgramSpec::parse(&target)
+                .unwrap_or_else(|err| panic!("{target} should parse: {err}"));
             for field in &ctx.fields {
+                let requirement = ContextFieldCompatibilityRequirement::for_field_on_program_spec(
+                    &CtxField::TracepointField(field.name.clone()),
+                    &spec,
+                )
+                .unwrap_or_else(|| {
+                    panic!(
+                        "{target} ctx.{} fallback field should have source-backed compatibility metadata",
+                        field.name
+                    )
+                });
+                assert_eq!(
+                    requirement.key(),
+                    format!("{target}:field:{}", field.name),
+                    "{target} ctx.{} compatibility key should stay target-scoped",
+                    field.name
+                );
+
                 if matches!(field.name.as_str(), "id" | "args") {
                     continue;
                 }
