@@ -15519,6 +15519,95 @@ const FIXTURES = [
         error_contains: "helper 'bpf_probe_read' is only valid"
     }
     {
+        name: "source-helper-current-identity-and-clock-helpers"
+        category: "helper-state"
+        tags: [helper current time accept source metadata]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_get_current_pid_tgid"'
+            '  helper-call "bpf_get_current_uid_gid"'
+            '  helper-call "bpf_get_current_task"'
+            '  helper-call "bpf_get_current_task_btf"'
+            '  helper-call "bpf_get_smp_processor_id"'
+            '  helper-call "bpf_get_numa_node_id"'
+            '  helper-call "bpf_jiffies64"'
+            '  helper-call "bpf_ktime_get_boot_ns"'
+            '  helper-call "bpf_ktime_get_tai_ns"'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "source-helper-get-current-comm-accepts-map-buffer"
+        category: "helper-state"
+        tags: [helper current comm map-bounds accept source metadata]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define comm_buf_ok --kind array --value-type bytes:16 --max-entries 1'
+            '  let dst = (0 | map-get comm_buf_ok)'
+            '  if $dst {'
+            '    helper-call "bpf_get_current_comm" $dst 16'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "source-helper-get-current-comm-rejects-short-map-buffer"
+        category: "helper-state"
+        tags: [helper current comm map-bounds reject source metadata]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define comm_buf_short --kind array --value-type bytes:8 --max-entries 1'
+            '  let dst = (0 | map-get comm_buf_short)'
+            '  if $dst {'
+            '    helper-call "bpf_get_current_comm" $dst 16'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper get_current_comm dst requires 16 bytes"
+    }
+    {
+        name: "xdp-ktime-get-coarse-helper"
+        category: "helper-state"
+        tags: [helper time accept source metadata]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_ktime_get_coarse_ns"'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "source-helper-ktime-get-coarse-rejects-raw-tracepoint"
+        category: "helper-state"
+        tags: [helper time program-policy reject source metadata]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_ktime_get_coarse_ns"'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_ktime_get_coarse_ns' is only valid"
+    }
+    {
         name: "source-helper-probe-write-user-accepts-user-dst"
         category: "helper-state"
         tags: [helper probe-write-user hazardous accept]
