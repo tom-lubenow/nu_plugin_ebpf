@@ -1349,6 +1349,78 @@ fn test_lower_cgroup_sysctl_ctx_alias_new_value_assignment_preserves_metadata() 
 }
 
 #[test]
+fn test_lower_record_context_sysctl_new_value_assignment_preserves_metadata() {
+    let hir = make_record_context_upsert_program(
+        "event",
+        CellPath {
+            members: vec![string_member("new_value")],
+        },
+        HirLiteral::String(b"1".to_vec()),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSysctl, "/sys/fs/cgroup");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("record-held cgroup_sysctl ctx.new_value assignment should lower");
+
+    assert!(
+        result
+            .type_hints
+            .used_ctx_fields
+            .contains(&CtxField::SysctlNewValue),
+        "record-held ctx.new_value assignment should preserve context compatibility metadata"
+    );
+    assert!(result.program.main.blocks.iter().any(|block| {
+        block.instructions.iter().any(|inst| {
+            matches!(
+                inst,
+                MirInst::CallHelper {
+                    helper,
+                    args,
+                    ..
+                } if *helper == BpfHelper::SysctlSetNewValue as u32
+                    && matches!(args.as_slice(), [
+                        MirValue::VReg(_),
+                        MirValue::VReg(_),
+                        MirValue::Const(1),
+                    ])
+            )
+        })
+    }));
+
+    let compiled =
+        compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+            .expect("record-held cgroup_sysctl ctx.new_value assignment should compile");
+    let program = compiled.into_program(
+        EbpfProgramType::CgroupSysctl,
+        "/sys/fs/cgroup",
+        "main",
+        HashMap::new(),
+        HashMap::new(),
+    );
+    assert!(
+        program
+            .helper_compatibility_requirements()
+            .into_iter()
+            .any(|requirement| requirement.helper() == BpfHelper::SysctlSetNewValue),
+        "record-held ctx.new_value assignment should report bpf_sysctl_set_new_value metadata"
+    );
+    assert!(
+        program
+            .context_field_compatibility_requirements()
+            .into_iter()
+            .any(|requirement| requirement.field() == &CtxField::SysctlNewValue),
+        "record-held ctx.new_value assignment should report sysctl_new_value context metadata"
+    );
+}
+
+#[test]
 fn test_lower_cgroup_sysctl_ctx_alias_new_value_read_preserves_metadata() {
     let ctx_var = VarId::new(0);
     let alias_var = VarId::new(1);
@@ -3879,6 +3951,82 @@ fn test_lower_sk_lookup_ctx_socket_assignment_aliases_call_sk_assign() {
 }
 
 #[test]
+fn test_lower_record_context_sk_assignment_calls_sk_assign() {
+    let hir = make_record_context_upsert_program(
+        "event",
+        CellPath {
+            members: vec![string_member("sk")],
+        },
+        HirLiteral::Int(0),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkLookup, "/proc/self/ns/net");
+
+    let mut result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("record-held sk_lookup ctx.sk assignment should lower to bpf_sk_assign");
+
+    assert!(
+        result
+            .type_hints
+            .used_ctx_fields
+            .contains(&CtxField::Socket),
+        "record-held ctx.sk assignment should preserve socket context compatibility metadata"
+    );
+    assert!(result.program.main.blocks.iter().any(|block| {
+        block.instructions.iter().any(|inst| {
+            matches!(
+                inst,
+                MirInst::CallHelper {
+                    helper,
+                    args,
+                    ..
+                } if *helper == BpfHelper::SkAssign as u32
+                    && args.len() == 3
+                    && matches!(args.get(2), Some(MirValue::Const(0)))
+            )
+        })
+    }));
+
+    optimize_with_ssa_hints(
+        &mut result.program.main,
+        Some(&probe_ctx),
+        &mut result.type_hints.main,
+        &result.type_hints.main_stack_slots,
+        &result.type_hints.generic_map_value_types,
+    );
+    let compiled =
+        compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+            .expect("record-held sk_lookup ctx.sk assignment should compile");
+    let program = compiled.into_program(
+        EbpfProgramType::SkLookup,
+        "/proc/self/ns/net",
+        "main",
+        HashMap::new(),
+        HashMap::new(),
+    );
+    assert!(
+        program
+            .helper_compatibility_requirements()
+            .into_iter()
+            .any(|requirement| requirement.helper() == BpfHelper::SkAssign),
+        "record-held ctx.sk assignment should report bpf_sk_assign metadata"
+    );
+    assert!(
+        program
+            .context_field_compatibility_requirements()
+            .into_iter()
+            .any(|requirement| requirement.field() == &CtxField::Socket),
+        "record-held ctx.sk assignment should report socket context metadata"
+    );
+}
+
+#[test]
 fn test_lower_tc_egress_ctx_sk_assignment_rejects_sk_assign() {
     let hir = make_ctx_upsert_program(
         CellPath {
@@ -4431,6 +4579,66 @@ fn test_lower_sock_ops_ctx_cb_flags_assignment() {
         .find(|requirement| requirement.key() == "ctx:cb_flags")
         .expect("ctx.cb_flags assignment should report ctx.cb_flags metadata");
     assert_eq!(ctx_requirement.minimum_kernel(), "4.16");
+}
+
+#[test]
+fn test_lower_record_context_sock_ops_cb_flags_assignment_preserves_metadata() {
+    let hir = make_record_context_upsert_program(
+        "event",
+        CellPath {
+            members: vec![string_member("cb_flags")],
+        },
+        HirLiteral::Int(7),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("record-held sock_ops ctx.cb_flags assignment should lower");
+
+    assert!(result.program.main.blocks.iter().any(|block| {
+        block.instructions.iter().any(|inst| {
+            matches!(
+                inst,
+                MirInst::StoreCtxField {
+                    target: CtxStoreTarget::SockOpsCbFlags,
+                    ty: MirType::U32,
+                    ..
+                }
+            )
+        })
+    }));
+
+    let compiled =
+        compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+            .expect("record-held sock_ops ctx.cb_flags assignment should compile");
+    let program = compiled.into_program(
+        EbpfProgramType::SockOps,
+        "/sys/fs/cgroup",
+        "main",
+        HashMap::new(),
+        HashMap::new(),
+    );
+    assert!(
+        program
+            .helper_compatibility_requirements()
+            .into_iter()
+            .any(|requirement| requirement.helper() == BpfHelper::SockOpsCbFlagsSet),
+        "record-held ctx.cb_flags assignment should report bpf_sock_ops_cb_flags_set metadata"
+    );
+    assert!(
+        program
+            .context_field_compatibility_requirements()
+            .into_iter()
+            .any(|requirement| requirement.key() == "ctx:cb_flags"),
+        "record-held ctx.cb_flags assignment should report ctx.cb_flags metadata"
+    );
 }
 
 #[test]
