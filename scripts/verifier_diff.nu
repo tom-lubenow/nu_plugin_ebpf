@@ -18550,6 +18550,26 @@ const FIXTURES = [
         error_contains: "unreleased kfunc reference at function exit"
     }
     {
+        name: "source-kfunc-task-release-rejects-partial-acquire-release"
+        category: "helper-state"
+        tags: [kfunc ref-lifetime phi source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let selector = (helper-call "bpf_get_prandom_u32")'
+            '  let task = (if $selector == 0 { kfunc-call "bpf_task_from_pid" 1 } else { 0 })'
+            '  if $task {'
+            '    kfunc-call "bpf_task_release" $task'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "unreleased kfunc reference at function exit"
+    }
+    {
         name: "source-kfunc-xdp-xfrm-state-rejects-wrong-pointer-pointee"
         category: "helper-state"
         tags: [kfunc btf source reject]
