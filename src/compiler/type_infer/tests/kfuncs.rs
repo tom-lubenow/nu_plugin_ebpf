@@ -5488,8 +5488,25 @@ fn make_xdp_metadata_kfunc_type_call(
     outputs: &[usize],
     packet_output_idx: Option<usize>,
 ) -> MirFunction {
+    make_xdp_metadata_kfunc_type_call_with_arg0(
+        kfunc,
+        outputs,
+        packet_output_idx,
+        CtxField::Context,
+        false,
+    )
+}
+
+fn make_xdp_metadata_kfunc_type_call_with_arg0(
+    kfunc: &str,
+    outputs: &[usize],
+    packet_output_idx: Option<usize>,
+    arg0_field: CtxField,
+    copy_arg0: bool,
+) -> MirFunction {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();
+    let call_ctx = if copy_arg0 { func.alloc_vreg() } else { ctx };
     let output_vregs = (0..outputs.len())
         .map(|_| func.alloc_vreg())
         .collect::<Vec<_>>();
@@ -5499,9 +5516,15 @@ fn make_xdp_metadata_kfunc_type_call(
         .instructions
         .push(MirInst::LoadCtxField {
             dst: ctx,
-            field: CtxField::Context,
+            field: arg0_field,
             slot: None,
         });
+    if copy_arg0 {
+        func.block_mut(BlockId(0)).instructions.push(MirInst::Copy {
+            dst: call_ctx,
+            src: MirValue::VReg(ctx),
+        });
+    }
     for (idx, (output, size)) in output_vregs.iter().zip(outputs.iter()).enumerate() {
         if packet_output_idx == Some(idx) {
             func.block_mut(BlockId(0))
@@ -5525,7 +5548,7 @@ fn make_xdp_metadata_kfunc_type_call(
             dst: ret,
             kfunc: kfunc.to_string(),
             btf_id: None,
-            args: std::iter::once(ctx)
+            args: std::iter::once(call_ctx)
                 .chain(output_vregs.iter().copied())
                 .collect(),
         });
@@ -5556,6 +5579,30 @@ fn assert_xdp_metadata_kfunc_rejects_packet_output(kfunc: &str, outputs: &[usize
     }
 }
 
+fn assert_xdp_metadata_kfunc_accepts_copied_raw_context_arg0(kfunc: &str, outputs: &[usize]) {
+    let func =
+        make_xdp_metadata_kfunc_type_call_with_arg0(kfunc, outputs, None, CtxField::Context, true);
+    let mut ti = TypeInference::new(Some(ProbeContext::new(EbpfProgramType::Xdp, "lo")));
+    ti.infer(&func)
+        .unwrap_or_else(|err| panic!("expected {kfunc} to infer copied raw context: {err:?}"));
+}
+
+fn assert_xdp_metadata_kfunc_rejects_copied_packet_arg0(kfunc: &str, outputs: &[usize]) {
+    let func =
+        make_xdp_metadata_kfunc_type_call_with_arg0(kfunc, outputs, None, CtxField::Data, true);
+    let mut ti = TypeInference::new(Some(ProbeContext::new(EbpfProgramType::Xdp, "lo")));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected copied packet arg0 to be rejected");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains(&format!("kfunc '{kfunc}' arg0 expects xdp_md pointer"))),
+        "unexpected errors for {kfunc}: {:?}",
+        errs
+    );
+}
+
 #[test]
 fn test_infer_xdp_metadata_rx_timestamp_accepts_stack_output_buffer() {
     assert_xdp_metadata_kfunc_infers_stack_outputs("bpf_xdp_metadata_rx_timestamp", &[8]);
@@ -5584,6 +5631,32 @@ fn test_infer_xdp_metadata_rx_vlan_tag_accepts_stack_output_buffers() {
 #[test]
 fn test_type_error_xdp_metadata_rx_vlan_tag_rejects_packet_output_buffers() {
     assert_xdp_metadata_kfunc_rejects_packet_output("bpf_xdp_metadata_rx_vlan_tag", &[2, 2]);
+}
+
+#[test]
+fn test_infer_xdp_metadata_kfuncs_accept_copied_raw_context_arg0() {
+    let cases: &[(&str, &[usize])] = &[
+        ("bpf_xdp_metadata_rx_timestamp", &[8]),
+        ("bpf_xdp_metadata_rx_hash", &[4, 4]),
+        ("bpf_xdp_metadata_rx_vlan_tag", &[2, 2]),
+    ];
+
+    for (kfunc, outputs) in cases {
+        assert_xdp_metadata_kfunc_accepts_copied_raw_context_arg0(kfunc, outputs);
+    }
+}
+
+#[test]
+fn test_type_error_xdp_metadata_kfuncs_reject_copied_packet_arg0() {
+    let cases: &[(&str, &[usize])] = &[
+        ("bpf_xdp_metadata_rx_timestamp", &[8]),
+        ("bpf_xdp_metadata_rx_hash", &[4, 4]),
+        ("bpf_xdp_metadata_rx_vlan_tag", &[2, 2]),
+    ];
+
+    for (kfunc, outputs) in cases {
+        assert_xdp_metadata_kfunc_rejects_copied_packet_arg0(kfunc, outputs);
+    }
 }
 
 fn make_sock_ops_enable_tx_tstamp_type_call(arg0_field: CtxField) -> MirFunction {
@@ -5713,8 +5786,26 @@ fn make_xdp_get_xfrm_state_type_call_with_arg0(
     size: i64,
     buffer_size: usize,
 ) -> (MirFunction, VReg) {
+    make_xdp_get_xfrm_state_type_call_with_arg0_copy(arg0_field, size, buffer_size, false)
+}
+
+fn make_xdp_get_xfrm_state_type_call_with_copied_arg0(
+    arg0_field: CtxField,
+    size: i64,
+    buffer_size: usize,
+) -> (MirFunction, VReg) {
+    make_xdp_get_xfrm_state_type_call_with_arg0_copy(arg0_field, size, buffer_size, true)
+}
+
+fn make_xdp_get_xfrm_state_type_call_with_arg0_copy(
+    arg0_field: CtxField,
+    size: i64,
+    buffer_size: usize,
+    copy_arg0: bool,
+) -> (MirFunction, VReg) {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();
+    let call_ctx = if copy_arg0 { func.alloc_vreg() } else { ctx };
     let opts = func.alloc_vreg();
     let opts_size = func.alloc_vreg();
     let state = func.alloc_vreg();
@@ -5725,6 +5816,12 @@ fn make_xdp_get_xfrm_state_type_call_with_arg0(
         field: arg0_field,
         slot: None,
     });
+    if copy_arg0 {
+        block.instructions.push(MirInst::Copy {
+            dst: call_ctx,
+            src: MirValue::VReg(ctx),
+        });
+    }
     block.instructions.push(MirInst::Copy {
         dst: opts,
         src: MirValue::StackSlot(opts_slot),
@@ -5737,7 +5834,7 @@ fn make_xdp_get_xfrm_state_type_call_with_arg0(
         dst: state,
         kfunc: "bpf_xdp_get_xfrm_state".to_string(),
         btf_id: None,
-        args: vec![ctx, opts, opts_size],
+        args: vec![call_ctx, opts, opts_size],
     });
     block.terminator = MirInst::Return { val: None };
     (func, state)
@@ -5798,6 +5895,39 @@ fn test_type_error_xdp_get_xfrm_state_rejects_packet_pointer_arg0() {
     let errs = ti
         .infer(&func)
         .expect_err("expected bpf_xdp_get_xfrm_state arg0 context pointer error");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("kfunc 'bpf_xdp_get_xfrm_state' arg0 expects xdp_md pointer")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_infer_xdp_get_xfrm_state_accepts_copied_raw_context_arg0() {
+    let (func, state) =
+        make_xdp_get_xfrm_state_type_call_with_copied_arg0(CtxField::Context, 32, 32);
+    let mut ti = TypeInference::new(Some(ProbeContext::new(EbpfProgramType::Xdp, "lo")));
+    let types = ti
+        .infer(&func)
+        .expect("expected copied raw context to satisfy bpf_xdp_get_xfrm_state arg0");
+
+    match types.get(&state) {
+        Some(MirType::Ptr { address_space, .. }) => {
+            assert_eq!(*address_space, AddressSpace::Kernel);
+        }
+        other => panic!("expected xfrm_state kernel pointer, got {:?}", other),
+    }
+}
+
+#[test]
+fn test_type_error_xdp_get_xfrm_state_rejects_copied_packet_arg0() {
+    let (func, _) = make_xdp_get_xfrm_state_type_call_with_copied_arg0(CtxField::Data, 32, 32);
+    let mut ti = TypeInference::new(Some(ProbeContext::new(EbpfProgramType::Xdp, "lo")));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected copied packet pointer to fail bpf_xdp_get_xfrm_state arg0");
     assert!(
         errs.iter().any(|e| e
             .message

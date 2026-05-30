@@ -19367,6 +19367,24 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "source-kfunc-xdp-metadata-rx-timestamp-copied-raw-context"
+        category: "helper-state"
+        tags: [kfunc btf xdp metadata source accept context-alias]
+        requires: [kernel-btf]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  let raw_ctx = $ctx'
+            '  let timestamp = "01234567"'
+            '  let rc = (kfunc-call "bpf_xdp_metadata_rx_timestamp" $raw_ctx $timestamp)'
+            '  $rc | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "source-kfunc-xdp-metadata-rx-hash"
         category: "helper-state"
         tags: [kfunc btf xdp metadata source accept]
@@ -19385,6 +19403,25 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "source-kfunc-xdp-metadata-rx-hash-copied-raw-context"
+        category: "helper-state"
+        tags: [kfunc btf xdp metadata source accept context-alias]
+        requires: [kernel-btf]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  let raw_ctx = $ctx'
+            '  let hash = "0123"'
+            '  let rss_type = "4567"'
+            '  let rc = (kfunc-call "bpf_xdp_metadata_rx_hash" $raw_ctx $hash $rss_type)'
+            '  $rc | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "source-kfunc-xdp-metadata-rx-vlan-tag"
         category: "helper-state"
         tags: [kfunc btf xdp metadata source accept]
@@ -19395,6 +19432,25 @@ const FIXTURES = [
             '  let vlan_proto = "01"'
             '  let vlan_tci = "23"'
             '  let rc = (kfunc-call "bpf_xdp_metadata_rx_vlan_tag" $ctx $vlan_proto $vlan_tci)'
+            '  $rc | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "source-kfunc-xdp-metadata-rx-vlan-tag-copied-raw-context"
+        category: "helper-state"
+        tags: [kfunc btf xdp metadata source accept context-alias]
+        requires: [kernel-btf]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  let raw_ctx = $ctx'
+            '  let vlan_proto = "01"'
+            '  let vlan_tci = "23"'
+            '  let rc = (kfunc-call "bpf_xdp_metadata_rx_vlan_tag" $raw_ctx $vlan_proto $vlan_tci)'
             '  $rc | count'
             '  "pass"'
             '}'
@@ -19474,6 +19530,26 @@ const FIXTURES = [
             '{|ctx|'
             '  let opts = { error: 0, netns_id: -1, mark: 0, daddr: [0 0 0 0], spi: 0, proto: 50, family: 2 }'
             '  let state = (kfunc-call "bpf_xdp_get_xfrm_state" $ctx $opts 32)'
+            '  if $state {'
+            '    kfunc-call "bpf_xdp_xfrm_state_release" $state'
+            '  }'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "source-kfunc-xdp-xfrm-state-copied-raw-context-release"
+        category: "helper-state"
+        tags: [kfunc btf xdp ref-lifetime source accept context-alias]
+        requires: [kernel-btf]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  let raw_ctx = $ctx'
+            '  let opts = { error: 0, netns_id: -1, mark: 0, daddr: [0 0 0 0], spi: 0, proto: 50, family: 2 }'
+            '  let state = (kfunc-call "bpf_xdp_get_xfrm_state" $raw_ctx $opts 32)'
             '  if $state {'
             '    kfunc-call "bpf_xdp_xfrm_state_release" $state'
             '  }'

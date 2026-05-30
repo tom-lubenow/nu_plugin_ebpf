@@ -16352,6 +16352,41 @@ fn make_xdp_get_xfrm_state_verify_function_with_arg0(
     buffer_size: usize,
     release_state: bool,
 ) -> (MirFunction, HashMap<VReg, MirType>) {
+    make_xdp_get_xfrm_state_verify_function_with_arg0_copy(
+        arg0_field,
+        arg0_type,
+        opts_size,
+        buffer_size,
+        release_state,
+        false,
+    )
+}
+
+fn make_xdp_get_xfrm_state_verify_function_with_copied_arg0(
+    arg0_field: CtxField,
+    arg0_type: MirType,
+    opts_size: i64,
+    buffer_size: usize,
+    release_state: bool,
+) -> (MirFunction, HashMap<VReg, MirType>) {
+    make_xdp_get_xfrm_state_verify_function_with_arg0_copy(
+        arg0_field,
+        arg0_type,
+        opts_size,
+        buffer_size,
+        release_state,
+        true,
+    )
+}
+
+fn make_xdp_get_xfrm_state_verify_function_with_arg0_copy(
+    arg0_field: CtxField,
+    arg0_type: MirType,
+    opts_size: i64,
+    buffer_size: usize,
+    release_state: bool,
+    copy_arg0: bool,
+) -> (MirFunction, HashMap<VReg, MirType>) {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
     let release = func.alloc_block();
@@ -16359,6 +16394,7 @@ fn make_xdp_get_xfrm_state_verify_function_with_arg0(
     func.entry = entry;
 
     let ctx = func.alloc_vreg();
+    let call_ctx = if copy_arg0 { func.alloc_vreg() } else { ctx };
     let opts = func.alloc_vreg();
     let size = func.alloc_vreg();
     let state = func.alloc_vreg();
@@ -16373,6 +16409,12 @@ fn make_xdp_get_xfrm_state_verify_function_with_arg0(
             field: arg0_field,
             slot: None,
         });
+    if copy_arg0 {
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: call_ctx,
+            src: MirValue::VReg(ctx),
+        });
+    }
     func.block_mut(entry).instructions.push(MirInst::Copy {
         dst: opts,
         src: MirValue::StackSlot(opts_slot),
@@ -16385,7 +16427,7 @@ fn make_xdp_get_xfrm_state_verify_function_with_arg0(
         dst: state,
         kfunc: "bpf_xdp_get_xfrm_state".to_string(),
         btf_id: None,
-        args: vec![ctx, opts, size],
+        args: vec![call_ctx, opts, size],
     });
     func.block_mut(entry).instructions.push(MirInst::BinOp {
         dst: state_non_null,
@@ -16413,7 +16455,10 @@ fn make_xdp_get_xfrm_state_verify_function_with_arg0(
     func.block_mut(done).terminator = MirInst::Return { val: None };
 
     let mut types = HashMap::new();
-    types.insert(ctx, arg0_type);
+    types.insert(ctx, arg0_type.clone());
+    if copy_arg0 {
+        types.insert(call_ctx, arg0_type);
+    }
     types.insert(
         opts,
         MirType::Ptr {
@@ -16507,6 +16552,49 @@ fn test_xdp_get_xfrm_state_rejects_packet_pointer_arg0() {
 
     let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
         .expect_err("expected bpf_xdp_get_xfrm_state arg0 context pointer error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("kfunc 'bpf_xdp_get_xfrm_state' arg0 expects xdp_md pointer")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_xdp_get_xfrm_state_accepts_copied_raw_context_arg0() {
+    let (func, types) = make_xdp_get_xfrm_state_verify_function_with_copied_arg0(
+        CtxField::Context,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+        32,
+        32,
+        true,
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected copied raw xdp context to satisfy xfrm kfunc arg0");
+}
+
+#[test]
+fn test_xdp_get_xfrm_state_rejects_copied_packet_arg0() {
+    let (func, types) = make_xdp_get_xfrm_state_verify_function_with_copied_arg0(
+        CtxField::Data,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Packet,
+        },
+        32,
+        32,
+        true,
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected copied packet pointer to fail bpf_xdp_get_xfrm_state arg0");
     assert!(
         err.iter().any(|e| e
             .message
