@@ -9,6 +9,7 @@ mod context;
 mod core;
 mod dynptr_kfuncs;
 mod helpers;
+mod iter_kfuncs;
 mod kfuncs;
 mod map_ops;
 mod records;
