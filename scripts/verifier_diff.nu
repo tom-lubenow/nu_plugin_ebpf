@@ -2167,6 +2167,30 @@ const FILE_TRACEPOINT_FIELD_SPECS = [
 
 const FILE_DATA_TRACEPOINT_FIELD_SPECS = [
     {
+        syscalls: ["pread64" "pwrite64"]
+        fields: ["fd" "buf" "count" "pos"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/read_write.c"
+    }
+    {
+        syscalls: ["readv" "writev"]
+        fields: ["fd" "vec" "vlen"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/read_write.c"
+    }
+    {
+        syscalls: ["preadv" "pwritev"]
+        fields: ["fd" "vec" "vlen" "pos_l" "pos_h"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/read_write.c"
+    }
+    {
+        syscalls: ["preadv2" "pwritev2"]
+        fields: ["fd" "vec" "vlen" "pos_l" "pos_h" "flags"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/read_write.c"
+    }
+    {
         syscalls: ["sendfile" "sendfile64"]
         fields: ["out_fd" "in_fd" "offset" "count"]
         min_kernel: "4.7"
@@ -5856,6 +5880,58 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         ]
     }
     {
+        target: "tracepoint:syscalls/sys_enter_pread64"
+        program: [
+            '{|ctx|'
+            '  let buf = $ctx.buf'
+            '  if $buf { 1 | count }'
+            '  ($ctx.fd + $ctx.count + $ctx.pos) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_pread64:field:buf"
+            "tracepoint:syscalls/sys_enter_pread64:field:fd"
+            "tracepoint:syscalls/sys_enter_pread64:field:count"
+            "tracepoint:syscalls/sys_enter_pread64:field:pos"
+        ]
+    }
+    {
+        target: "tracepoint:syscalls/sys_enter_readv"
+        program: [
+            '{|ctx|'
+            '  let vec = $ctx.vec'
+            '  if $vec { 1 | count }'
+            '  ($ctx.fd + $ctx.vlen) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_readv:field:vec"
+            "tracepoint:syscalls/sys_enter_readv:field:fd"
+            "tracepoint:syscalls/sys_enter_readv:field:vlen"
+        ]
+    }
+    {
+        target: "tracepoint:syscalls/sys_enter_preadv2"
+        program: [
+            '{|ctx|'
+            '  let vec = $ctx.vec'
+            '  if $vec { 1 | count }'
+            '  ($ctx.fd + $ctx.vlen + $ctx.pos_l + $ctx.pos_h + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_preadv2:field:vec"
+            "tracepoint:syscalls/sys_enter_preadv2:field:fd"
+            "tracepoint:syscalls/sys_enter_preadv2:field:vlen"
+            "tracepoint:syscalls/sys_enter_preadv2:field:pos_l"
+            "tracepoint:syscalls/sys_enter_preadv2:field:pos_h"
+            "tracepoint:syscalls/sys_enter_preadv2:field:flags"
+        ]
+    }
+    {
         target: "tracepoint:syscalls/sys_enter_copy_file_range"
         program: [
             '{|ctx|'
@@ -7756,6 +7832,57 @@ const FIXTURES = [
             '  let buf = $ctx.buf'
             '  if $buf { $buf | read-str --max-len 16 | count }'
             '  ($ctx.fd + $ctx.count) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-pread64-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_pread64]
+        target: "tracepoint:syscalls/sys_enter_pread64"
+        program: [
+            '{|ctx|'
+            '  let buf = $ctx.buf'
+            '  if $buf { 1 | count }'
+            '  ($ctx.fd + $ctx.count + $ctx.pos) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-readv-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_readv]
+        target: "tracepoint:syscalls/sys_enter_readv"
+        program: [
+            '{|ctx|'
+            '  let vec = $ctx.vec'
+            '  if $vec { 1 | count }'
+            '  ($ctx.fd + $ctx.vlen) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-preadv2-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_preadv2]
+        target: "tracepoint:syscalls/sys_enter_preadv2"
+        program: [
+            '{|ctx|'
+            '  let vec = $ctx.vec'
+            '  if $vec { 1 | count }'
+            '  ($ctx.fd + $ctx.vlen + $ctx.pos_l + $ctx.pos_h + $ctx.flags) | count'
             '  0'
             '}'
         ]

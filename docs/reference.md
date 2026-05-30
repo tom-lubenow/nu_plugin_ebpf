@@ -927,8 +927,10 @@ control fallbacks expose stable aliases for entry tracepoints such as
 and event fallbacks expose aliases for common entry tracepoints such as
 `sys_enter_dup3`, `sys_enter_pipe2`, and `sys_enter_epoll_ctl`.
 File data-movement fallbacks expose aliases for common entry tracepoints such
-as `sys_enter_sendfile`, `sys_enter_copy_file_range`, `sys_enter_splice`,
-`sys_enter_tee`, and `sys_enter_vmsplice`.
+as `sys_enter_pread64`, `sys_enter_pwrite64`, `sys_enter_readv`,
+`sys_enter_writev`, `sys_enter_preadv2`, `sys_enter_sendfile`,
+`sys_enter_copy_file_range`, `sys_enter_splice`, `sys_enter_tee`, and
+`sys_enter_vmsplice`.
 Memory-management fallbacks expose aliases for common entry tracepoints such as
 `sys_enter_mmap`, `sys_enter_mprotect`, `sys_enter_mremap`, `sys_enter_mincore`,
 and `sys_enter_msync`.

@@ -81,6 +81,14 @@ const IPC_SHM_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/ipc/sh
 const WELL_KNOWN_SYS_ENTER_SYSCALLS: &[&str] = &[
     "read",
     "write",
+    "pread64",
+    "pwrite64",
+    "readv",
+    "writev",
+    "preadv",
+    "pwritev",
+    "preadv2",
+    "pwritev2",
     "sendfile",
     "sendfile64",
     "copy_file_range",
@@ -665,9 +673,9 @@ impl TracepointContext {
         }
 
         Some(match syscall {
-            "read" | "write" | "sendfile" | "sendfile64" | "copy_file_range" => {
-                (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, READ_WRITE_SOURCE)
-            }
+            "read" | "write" | "pread64" | "pwrite64" | "readv" | "writev" | "preadv"
+            | "pwritev" | "preadv2" | "pwritev2" | "sendfile" | "sendfile64"
+            | "copy_file_range" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, READ_WRITE_SOURCE),
             "splice" | "tee" | "vmsplice" => {
                 (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, SPLICE_SOURCE)
             }
@@ -836,6 +844,32 @@ impl TracepointContext {
                 ("fd", Self::syscall_arg_int(false)),
                 ("buf", Self::syscall_arg_user_ptr()),
                 ("count", Self::syscall_arg_int(false)),
+            ],
+            "pread64" | "pwrite64" => vec![
+                ("fd", Self::syscall_arg_int(false)),
+                ("buf", Self::syscall_arg_user_ptr()),
+                ("count", Self::syscall_arg_int(false)),
+                ("pos", Self::syscall_arg_int(true)),
+            ],
+            "readv" | "writev" => vec![
+                ("fd", Self::syscall_arg_int(false)),
+                ("vec", Self::syscall_arg_user_ptr()),
+                ("vlen", Self::syscall_arg_int(false)),
+            ],
+            "preadv" | "pwritev" => vec![
+                ("fd", Self::syscall_arg_int(false)),
+                ("vec", Self::syscall_arg_user_ptr()),
+                ("vlen", Self::syscall_arg_int(false)),
+                ("pos_l", Self::syscall_arg_int(false)),
+                ("pos_h", Self::syscall_arg_int(false)),
+            ],
+            "preadv2" | "pwritev2" => vec![
+                ("fd", Self::syscall_arg_int(false)),
+                ("vec", Self::syscall_arg_user_ptr()),
+                ("vlen", Self::syscall_arg_int(false)),
+                ("pos_l", Self::syscall_arg_int(false)),
+                ("pos_h", Self::syscall_arg_int(false)),
+                ("flags", Self::syscall_arg_int(true)),
             ],
             "sendfile" | "sendfile64" => vec![
                 ("out_fd", Self::syscall_arg_int(true)),

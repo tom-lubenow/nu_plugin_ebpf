@@ -213,6 +213,60 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         TypeInfo::Ptr { is_user: true, .. }
     ));
 
+    let pread64 = TracepointContext::sys_enter("sys_enter_pread64");
+    assert!(pread64.has_field("fd"));
+    assert!(pread64.has_field("buf"));
+    assert!(pread64.has_field("count"));
+    assert!(pread64.has_field("pos"));
+    let (_, pread64_source) = TracepointContext::syscall_fallback_field_minimum_kernel(
+        "syscalls",
+        "sys_enter_pread64",
+        "buf",
+    )
+    .expect("expected pread64 buf source metadata");
+    assert!(pread64_source.contains("/v4.7/fs/read_write.c"));
+    assert!(matches!(
+        pread64
+            .get_field("buf")
+            .expect("expected pread64 buf")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+
+    let readv = TracepointContext::sys_enter("sys_enter_readv");
+    assert!(readv.has_field("fd"));
+    assert!(readv.has_field("vec"));
+    assert!(readv.has_field("vlen"));
+    assert!(matches!(
+        readv
+            .get_field("vec")
+            .expect("expected readv vec")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+
+    let preadv = TracepointContext::sys_enter("sys_enter_preadv");
+    assert!(preadv.has_field("fd"));
+    assert!(preadv.has_field("vec"));
+    assert!(preadv.has_field("vlen"));
+    assert!(preadv.has_field("pos_l"));
+    assert!(preadv.has_field("pos_h"));
+
+    let preadv2 = TracepointContext::sys_enter("sys_enter_preadv2");
+    assert!(preadv2.has_field("fd"));
+    assert!(preadv2.has_field("vec"));
+    assert!(preadv2.has_field("vlen"));
+    assert!(preadv2.has_field("pos_l"));
+    assert!(preadv2.has_field("pos_h"));
+    assert!(preadv2.has_field("flags"));
+    assert!(matches!(
+        preadv2
+            .get_field("vec")
+            .expect("expected preadv2 vec")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+
     let sendfile = TracepointContext::sys_enter("sys_enter_sendfile");
     assert!(sendfile.has_field("out_fd"));
     assert!(sendfile.has_field("in_fd"));
