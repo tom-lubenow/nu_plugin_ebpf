@@ -6822,6 +6822,98 @@ fn test_helper_semantics_are_consistent_with_signatures() {
 }
 
 #[test]
+fn test_kfunc_semantics_are_consistent_with_signatures() {
+    for name in quoted_kfunc_names(include_str!("kfunc_signature.rs")) {
+        let signature = KfuncSignature::for_name(name)
+            .unwrap_or_else(|| panic!("expected modeled kfunc signature for {name}"));
+        let semantics = kfunc_semantics(name);
+
+        assert!(
+            signature.min_args <= signature.max_args,
+            "{name} has invalid kfunc signature arity"
+        );
+        assert!(
+            signature.max_args <= signature.arg_kinds.len(),
+            "{name} kfunc signature exceeds the BPF kfunc argument limit"
+        );
+
+        let mut seen_positive_size_args = Vec::new();
+        for &arg_idx in semantics.positive_size_args {
+            assert!(
+                arg_idx < signature.max_args,
+                "{name} marks out-of-range arg{arg_idx} as a positive size argument"
+            );
+            assert_eq!(
+                signature.arg_kind(arg_idx),
+                KfuncArgKind::Scalar,
+                "{name} marks non-scalar arg{arg_idx} as a positive size argument"
+            );
+            assert!(
+                !seen_positive_size_args.contains(&arg_idx),
+                "{name} repeats arg{arg_idx} in positive size metadata"
+            );
+            seen_positive_size_args.push(arg_idx);
+        }
+
+        for rule in semantics.ptr_arg_rules {
+            assert!(
+                rule.arg_idx < signature.max_args,
+                "{name} semantic rule '{}' references out-of-range arg{}",
+                rule.op,
+                rule.arg_idx
+            );
+            assert_eq!(
+                signature.arg_kind(rule.arg_idx),
+                KfuncArgKind::Pointer,
+                "{name} semantic rule '{}' references non-pointer arg{}",
+                rule.op,
+                rule.arg_idx
+            );
+            assert!(
+                !rule.op.is_empty(),
+                "{name} semantic rule for arg{} must describe the checked operation",
+                rule.arg_idx
+            );
+            assert!(
+                rule.allowed.allow_stack
+                    || rule.allowed.allow_map
+                    || rule.allowed.allow_kernel
+                    || rule.allowed.allow_user,
+                "{name} semantic rule '{}' must allow at least one pointer address space",
+                rule.op
+            );
+            if let Some(size) = rule.fixed_size {
+                assert!(
+                    size > 0,
+                    "{name} semantic rule '{}' has a zero fixed size",
+                    rule.op
+                );
+            }
+            assert!(
+                rule.fixed_size.is_none() || rule.size_from_arg.is_none(),
+                "{name} semantic rule '{}' must not declare both fixed_size and size_from_arg",
+                rule.op
+            );
+            if let Some(size_arg_idx) = rule.size_from_arg {
+                assert!(
+                    size_arg_idx < signature.max_args,
+                    "{name} semantic rule '{}' references out-of-range size arg{}",
+                    rule.op,
+                    size_arg_idx
+                );
+                assert_eq!(
+                    signature.arg_kind(size_arg_idx),
+                    KfuncArgKind::Scalar,
+                    "{name} semantic rule '{}' uses non-scalar arg{} as a size",
+                    rule.op,
+                    size_arg_idx
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn test_kfunc_pointer_arg_requires_user_mappings() {
     assert!(kfunc_pointer_arg_requires_user("bpf_copy_from_user_str", 2));
     assert!(kfunc_pointer_arg_requires_user(
