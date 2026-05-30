@@ -210,6 +210,16 @@ mod tests {
                 .expect("live_attach_default_test_lane_description should be present")
                 .as_str()
                 .expect("live_attach_default_test_lane_description should be a string");
+            let external_alpha_status = record
+                .get("external_alpha_status")
+                .expect("external_alpha_status should be present")
+                .as_str()
+                .expect("external_alpha_status should be a string");
+            let external_alpha_status_description = record
+                .get("external_alpha_status_description")
+                .expect("external_alpha_status_description should be present")
+                .as_str()
+                .expect("external_alpha_status_description should be a string");
 
             let parsed_type = EbpfProgramType::from_spec_prefix(program_type)
                 .expect("program_type should be a modeled canonical prefix");
@@ -257,6 +267,16 @@ mod tests {
                     .live_attach_default_test_lane()
                     .description(),
                 "{program_type} list row should report loader-aware test lane description"
+            );
+            assert_eq!(
+                external_alpha_status,
+                representative_spec.external_alpha_status().key(),
+                "{program_type} list row should report derived external-alpha status"
+            );
+            assert_eq!(
+                external_alpha_status_description,
+                representative_spec.external_alpha_status().description(),
+                "{program_type} list row should report derived external-alpha status description"
             );
             if let Some(reason) = live_attach_policy.unsupported_reason {
                 assert_eq!(
