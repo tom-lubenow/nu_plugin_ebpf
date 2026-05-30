@@ -13914,7 +13914,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "cgroup-sockopt-retval-alias-write"
@@ -13930,7 +13930,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "cgroup-sockopt-set-scalar-writes"
@@ -13948,7 +13948,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "cgroup-sockopt-set-scalar-alias-writes"
@@ -13966,7 +13966,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "cgroup-sockopt-optval-byte-write"
@@ -13982,7 +13982,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "cgroup-sockopt-optval-alias-byte-write"
@@ -13998,7 +13998,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "cgroup-sockopt-optval-bound-byte-write"
@@ -14014,7 +14014,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "cgroup-sockopt-optval-record-byte-write"
@@ -14030,7 +14030,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "cgroup-sockopt-optval-record-spread-byte-write"
@@ -14047,7 +14047,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "cgroup-sockopt-optval-user-function-record-byte-write"
@@ -14065,7 +14065,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "cgroup-sockopt-optval-user-function-record-direct-spread-byte-write"
@@ -14086,7 +14086,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "source-helper-getsockopt-cgroup-sockopt"
@@ -14257,7 +14257,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "cgroup-sockopt-get-optlen-write"
@@ -14273,7 +14273,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "cgroup-sockopt-get-rejects-level-write"
