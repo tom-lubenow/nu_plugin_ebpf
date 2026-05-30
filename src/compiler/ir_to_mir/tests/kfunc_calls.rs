@@ -5043,6 +5043,103 @@ fn test_adjust_packet_intrinsic_lowers_to_xdp_adjust_meta_and_compiles() {
 }
 
 #[test]
+fn test_adjust_packet_materializes_bound_ctx_data_before_invalidating_helper() {
+    let ctx_var = VarId::new(0);
+    let data_var = VarId::new(1);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![nu_protocol::ast::PathMember::test_string(
+                            "data".to_string(),
+                            false,
+                            nu_protocol::casing::Casing::Sensitive,
+                        )],
+                    })),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+                HirStmt::StoreVariable {
+                    var_id: data_var,
+                    src: RegId::new(0),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(-4),
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(42),
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(2)],
+                        flags: vec![b"meta".to_vec()],
+                        ..Default::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 3,
+        file_count: 0,
+    };
+
+    let hir_program = HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var));
+    let decl_names = HashMap::from([(DeclId::new(42), "adjust-packet".to_string())]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let hir_types = infer_hir_types(&hir_program, &decl_names)
+        .expect("adjust-packet stale-alias program should type-check");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        Some(&probe_ctx),
+        &decl_names,
+        Some(&hir_types),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("adjust-packet stale-alias program should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    let call_index = block
+        .instructions
+        .iter()
+        .position(|inst| {
+            matches!(
+                inst,
+                MirInst::CallHelper {
+                    helper,
+                    ..
+                } if *helper == BpfHelper::XdpAdjustMeta as u32
+            )
+        })
+        .expect("expected xdp_adjust_meta call");
+    assert!(
+        matches!(
+            block.instructions.get(call_index.saturating_sub(1)),
+            Some(MirInst::LoadCtxField {
+                field: CtxField::Data,
+                ..
+            })
+        ),
+        "expected bound ctx.data alias to materialize immediately before helper: {:#?}",
+        block.instructions
+    );
+}
+
+#[test]
 fn test_adjust_packet_intrinsic_rejects_conflicting_mode_flags() {
     let func = HirFunction {
         blocks: vec![HirBlock {
@@ -5643,6 +5740,107 @@ fn test_adjust_message_intrinsic_lowers_to_msg_pull_data_on_sk_msg() {
             && args.len() == 4
             && matches!(args.get(3), Some(MirValue::Const(0)))
     )));
+}
+
+#[test]
+fn test_adjust_message_materializes_bound_ctx_data_before_invalidating_helper() {
+    let ctx_var = VarId::new(0);
+    let data_var = VarId::new(1);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![nu_protocol::ast::PathMember::test_string(
+                            "data".to_string(),
+                            false,
+                            nu_protocol::casing::Casing::Sensitive,
+                        )],
+                    })),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+                HirStmt::StoreVariable {
+                    var_id: data_var,
+                    src: RegId::new(0),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::Int(1),
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(42),
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(2), RegId::new(3)],
+                        flags: vec![b"pull".to_vec()],
+                        ..Default::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 4,
+        file_count: 0,
+    };
+
+    let hir_program = HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var));
+    let decl_names = HashMap::from([(DeclId::new(42), "adjust-message".to_string())]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkMsg, "/sys/fs/bpf/demo_sockmap");
+    let hir_types = infer_hir_types(&hir_program, &decl_names)
+        .expect("adjust-message stale-alias program should type-check");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        Some(&probe_ctx),
+        &decl_names,
+        Some(&hir_types),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("adjust-message stale-alias program should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    let call_index = block
+        .instructions
+        .iter()
+        .position(|inst| {
+            matches!(
+                inst,
+                MirInst::CallHelper {
+                    helper,
+                    ..
+                } if *helper == BpfHelper::MsgPullData as u32
+            )
+        })
+        .expect("expected msg_pull_data call");
+    assert!(
+        matches!(
+            block.instructions.get(call_index.saturating_sub(1)),
+            Some(MirInst::LoadCtxField {
+                field: CtxField::Data,
+                ..
+            })
+        ),
+        "expected bound ctx.data alias to materialize immediately before helper: {:#?}",
+        block.instructions
+    );
 }
 
 #[test]
