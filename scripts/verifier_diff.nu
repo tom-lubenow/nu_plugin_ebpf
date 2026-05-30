@@ -15661,6 +15661,38 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "sock-ops-enable-tx-tstamp-rejects-socket-arg"
+        category: "kfunc"
+        tags: [sock-ops kfunc timestamp source reject]
+        requires: [cgroup-v2 kernel-btf]
+        target: "sock_ops:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  kfunc-call "bpf_sock_ops_enable_tx_tstamp" $ctx.sk 0'
+            '  1'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'bpf_sock_ops_enable_tx_tstamp' arg0 expects bpf_sock_ops pointer"
+    }
+    {
+        name: "sock-ops-enable-tx-tstamp-rejects-non-sock-ops"
+        category: "kfunc"
+        tags: [sock-ops kfunc timestamp source reject]
+        requires: [kernel-btf]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  kfunc-call "bpf_sock_ops_enable_tx_tstamp" $ctx 0'
+            '  2'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'bpf_sock_ops_enable_tx_tstamp' is only valid in sock_ops programs"
+    }
+    {
         name: "sock-ops-hdr-opt-helpers"
         category: "helper-state"
         tags: [sock-ops helper-call hdr-opt source metadata]

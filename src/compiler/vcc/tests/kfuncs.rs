@@ -15416,6 +15416,87 @@ fn test_verify_mir_xdp_metadata_rx_timestamp_rejects_copied_packet_arg0() {
     );
 }
 
+fn make_sock_ops_enable_tx_tstamp_vcc_function_with_copied_arg0(
+    arg0_field: CtxField,
+) -> (MirFunction, HashMap<VReg, MirType>) {
+    let (mut func, entry) = new_mir_function();
+
+    let ctx = func.alloc_vreg();
+    let ctx_alias = func.alloc_vreg();
+    let flags = func.alloc_vreg();
+    let ret = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: arg0_field,
+            slot: None,
+        });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: ctx_alias,
+        src: MirValue::VReg(ctx),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: flags,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: ret,
+        kfunc: "bpf_sock_ops_enable_tx_tstamp".to_string(),
+        btf_id: None,
+        args: vec![ctx_alias, flags],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(
+        ctx_alias,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(flags, MirType::I64);
+    types.insert(ret, MirType::I64);
+
+    (func, types)
+}
+
+#[test]
+fn test_verify_mir_sock_ops_enable_tx_tstamp_accepts_copied_raw_context_arg0() {
+    let (func, types) =
+        make_sock_ops_enable_tx_tstamp_vcc_function_with_copied_arg0(CtxField::Context);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected copied raw sock_ops context to satisfy tx timestamp kfunc arg0");
+}
+
+#[test]
+fn test_verify_mir_sock_ops_enable_tx_tstamp_rejects_copied_socket_arg0() {
+    let (func, types) =
+        make_sock_ops_enable_tx_tstamp_vcc_function_with_copied_arg0(CtxField::Socket);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected copied socket pointer to fail tx timestamp kfunc arg0");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("kfunc 'bpf_sock_ops_enable_tx_tstamp' arg0 expects bpf_sock_ops pointer")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
 fn make_xdp_get_xfrm_state_vcc_function(
     opts_size: i64,
     buffer_size: usize,

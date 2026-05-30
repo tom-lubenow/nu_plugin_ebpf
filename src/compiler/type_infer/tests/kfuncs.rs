@@ -5523,6 +5523,62 @@ fn test_type_error_xdp_metadata_rx_vlan_tag_rejects_packet_output_buffers() {
     assert_xdp_metadata_kfunc_rejects_packet_output("bpf_xdp_metadata_rx_vlan_tag", &[2, 2]);
 }
 
+fn make_sock_ops_enable_tx_tstamp_type_call(arg0_field: CtxField) -> MirFunction {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let flags = func.alloc_vreg();
+    let ret = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: arg0_field,
+        slot: None,
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: flags,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: ret,
+        kfunc: "bpf_sock_ops_enable_tx_tstamp".to_string(),
+        btf_id: None,
+        args: vec![ctx, flags],
+    });
+    block.terminator = MirInst::Return { val: None };
+    func
+}
+
+#[test]
+fn test_infer_sock_ops_enable_tx_tstamp_accepts_raw_context_arg0() {
+    let func = make_sock_ops_enable_tx_tstamp_type_call(CtxField::Context);
+    let mut ti = TypeInference::new(Some(ProbeContext::new(
+        EbpfProgramType::SockOps,
+        "/sys/fs/cgroup",
+    )));
+
+    ti.infer(&func)
+        .expect("expected sock_ops raw context to satisfy tx timestamp kfunc arg0");
+}
+
+#[test]
+fn test_type_error_sock_ops_enable_tx_tstamp_rejects_socket_arg0() {
+    let func = make_sock_ops_enable_tx_tstamp_type_call(CtxField::Socket);
+    let mut ti = TypeInference::new(Some(ProbeContext::new(
+        EbpfProgramType::SockOps,
+        "/sys/fs/cgroup",
+    )));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected sock pointer to fail tx timestamp kfunc arg0");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("kfunc 'bpf_sock_ops_enable_tx_tstamp' arg0 expects bpf_sock_ops pointer")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
 fn make_xdp_get_xfrm_state_type_call(size: i64, buffer_size: usize) -> (MirFunction, VReg) {
     make_xdp_get_xfrm_state_type_call_with_arg0(CtxField::Context, size, buffer_size)
 }
