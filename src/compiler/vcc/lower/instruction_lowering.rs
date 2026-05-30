@@ -1801,6 +1801,21 @@ impl<'a> VccLowerer<'a> {
         args: &[VReg],
         out: &mut Vec<VccInst>,
     ) {
+        for requirement in summary.map_value_map_fd_requirements() {
+            let (Some(map_value), Some(map_fd)) = (
+                args.get(requirement.map_value_arg_idx),
+                args.get(requirement.map_fd_arg_idx),
+            ) else {
+                continue;
+            };
+            out.push(VccInst::AssertMapFdMatchesMapValue {
+                map_value: VccReg(map_value.0),
+                map_fd: VccReg(map_fd.0),
+                map_value_arg_idx: requirement.map_value_arg_idx,
+                map_fd_arg_idx: requirement.map_fd_arg_idx,
+                call: requirement.call.clone(),
+            });
+        }
         for idx in 0..5 {
             let Some(arg) = args.get(idx).copied() else {
                 continue;

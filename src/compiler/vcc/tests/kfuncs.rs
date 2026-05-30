@@ -13405,6 +13405,61 @@ fn test_verify_mir_kfunc_map_sum_elem_count_accepts_kernel_pointer_arg() {
     verify_mir(&func, &types).expect("expected map_sum_elem_count kernel-pointer call to verify");
 }
 
+fn wq_init_test_map(name: &str) -> MapRef {
+    MapRef {
+        name: name.to_string(),
+        kind: MapKind::Array,
+    }
+}
+
+fn wq_init_test_value_ty() -> MirType {
+    MirType::Struct {
+        name: Some("wq_value".to_string()),
+        kernel_btf_type_id: None,
+        fields: vec![StructField {
+            name: "work".to_string(),
+            ty: MirType::bpf_wq_struct(),
+            offset: 0,
+            synthetic: false,
+            bitfield: None,
+        }],
+    }
+}
+
+fn wq_init_test_map_ptr_ty(value_ty: MirType) -> MirType {
+    MirType::Ptr {
+        pointee: Box::new(value_ty),
+        address_space: AddressSpace::Map,
+    }
+}
+
+fn wq_init_test_map_ref_ty(value_ty: MirType) -> MirType {
+    MirType::MapRef {
+        key_ty: Box::new(MirType::U32),
+        val_ty: Box::new(value_ty),
+    }
+}
+
+fn wq_init_subfunction() -> MirFunction {
+    let mut subfn = MirFunction::new();
+    let entry = subfn.alloc_block();
+    subfn.entry = entry;
+    subfn.param_count = 3;
+    subfn.vreg_count = 3;
+    let dst = subfn.alloc_vreg();
+    subfn
+        .block_mut(entry)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst,
+            kfunc: "bpf_wq_init".to_string(),
+            btf_id: None,
+            args: vec![VReg(0), VReg(1), VReg(2)],
+        });
+    subfn.block_mut(entry).terminator = MirInst::Return { val: None };
+    subfn
+}
+
 #[test]
 fn test_verify_mir_kfunc_bpf_wq_init_accepts_map_backed_wq_and_map_fd() {
     let (mut func, entry) = new_mir_function();
@@ -13558,6 +13613,151 @@ fn test_verify_mir_kfunc_bpf_wq_init_rejects_mismatched_map_fd() {
     types.insert(dst, MirType::I64);
 
     let err = verify_mir(&func, &types).expect_err("expected mismatched bpf_wq_init map fd error");
+    assert!(
+        err.iter().any(|e| e.message.contains(
+            "kfunc 'bpf_wq_init' arg1 map 'other_work_items' does not match arg0 map value 'work_items'"
+        )),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_kfunc_bpf_wq_init_subfn_accepts_matching_map_fd() {
+    let (mut func, entry) = new_mir_function();
+    let wq_loaded = func.alloc_block();
+    let done = func.alloc_block();
+
+    let key = func.alloc_vreg();
+    let wq = func.alloc_vreg();
+    let wq_non_null = func.alloc_vreg();
+    let map_fd = func.alloc_vreg();
+    let flags = func.alloc_vreg();
+    let subfn_ret = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: key,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::MapLookup {
+        dst: wq,
+        map: wq_init_test_map("work_items"),
+        key,
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: wq_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(wq),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: wq_non_null,
+        if_true: wq_loaded,
+        if_false: done,
+    };
+    func.block_mut(wq_loaded)
+        .instructions
+        .push(MirInst::LoadMapFd {
+            dst: map_fd,
+            map: wq_init_test_map("work_items"),
+        });
+    func.block_mut(wq_loaded).instructions.push(MirInst::Copy {
+        dst: flags,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(wq_loaded)
+        .instructions
+        .push(MirInst::CallSubfn {
+            dst: subfn_ret,
+            subfn: SubfunctionId(0),
+            args: vec![wq, map_fd, flags],
+        });
+    func.block_mut(wq_loaded).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let value_ty = wq_init_test_value_ty();
+    let mut types = HashMap::new();
+    types.insert(key, MirType::I64);
+    types.insert(wq, wq_init_test_map_ptr_ty(value_ty.clone()));
+    types.insert(wq_non_null, MirType::Bool);
+    types.insert(map_fd, wq_init_test_map_ref_ty(value_ty));
+    types.insert(flags, MirType::I64);
+    types.insert(subfn_ret, MirType::I64);
+
+    let summaries = infer_subfunction_summaries(&[wq_init_subfunction()]);
+    assert_eq!(
+        summaries[&SubfunctionId(0)]
+            .map_value_map_fd_requirements()
+            .len(),
+        1
+    );
+    verify_mir_with_subfunction_summaries(&func, &types, &summaries)
+        .expect("expected bpf_wq_init subfunction with matching map fd to verify");
+}
+
+#[test]
+fn test_verify_mir_kfunc_bpf_wq_init_subfn_rejects_mismatched_map_fd() {
+    let (mut func, entry) = new_mir_function();
+    let wq_loaded = func.alloc_block();
+    let done = func.alloc_block();
+
+    let key = func.alloc_vreg();
+    let wq = func.alloc_vreg();
+    let wq_non_null = func.alloc_vreg();
+    let map_fd = func.alloc_vreg();
+    let flags = func.alloc_vreg();
+    let subfn_ret = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: key,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::MapLookup {
+        dst: wq,
+        map: wq_init_test_map("work_items"),
+        key,
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: wq_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(wq),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: wq_non_null,
+        if_true: wq_loaded,
+        if_false: done,
+    };
+    func.block_mut(wq_loaded)
+        .instructions
+        .push(MirInst::LoadMapFd {
+            dst: map_fd,
+            map: wq_init_test_map("other_work_items"),
+        });
+    func.block_mut(wq_loaded).instructions.push(MirInst::Copy {
+        dst: flags,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(wq_loaded)
+        .instructions
+        .push(MirInst::CallSubfn {
+            dst: subfn_ret,
+            subfn: SubfunctionId(0),
+            args: vec![wq, map_fd, flags],
+        });
+    func.block_mut(wq_loaded).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let value_ty = wq_init_test_value_ty();
+    let mut types = HashMap::new();
+    types.insert(key, MirType::I64);
+    types.insert(wq, wq_init_test_map_ptr_ty(value_ty.clone()));
+    types.insert(wq_non_null, MirType::Bool);
+    types.insert(map_fd, wq_init_test_map_ref_ty(value_ty));
+    types.insert(flags, MirType::I64);
+    types.insert(subfn_ret, MirType::I64);
+
+    let summaries = infer_subfunction_summaries(&[wq_init_subfunction()]);
+    let err = verify_mir_with_subfunction_summaries(&func, &types, &summaries)
+        .expect_err("expected bpf_wq_init subfunction map fd mismatch");
     assert!(
         err.iter().any(|e| e.message.contains(
             "kfunc 'bpf_wq_init' arg1 map 'other_work_items' does not match arg0 map value 'work_items'"

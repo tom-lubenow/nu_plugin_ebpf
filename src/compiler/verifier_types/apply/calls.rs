@@ -348,6 +348,7 @@ pub(super) fn apply_call_subfn_inst(
 
     apply_subfunction_critical_delta(&summary, args, state, errors);
     apply_subfunction_release_summary(&summary, args, state, errors);
+    apply_subfunction_map_value_map_fd_requirements(&summary, args, state, errors);
 
     if let Some(idx) = summary.return_arg()
         && let Some(arg) = args.get(idx)
@@ -568,6 +569,56 @@ fn apply_subfunction_release_summary(
         }
         if let Some(kind) = summary.kfunc_ref_release_arg_kind(idx) {
             release_subfunction_kfunc_ref_arg(idx, arg, kind, state, errors);
+        }
+    }
+}
+
+fn apply_subfunction_map_value_map_fd_requirements(
+    summary: &SubfunctionSummary,
+    args: &[VReg],
+    state: &VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    for requirement in summary.map_value_map_fd_requirements() {
+        let Some(map_value) = args.get(requirement.map_value_arg_idx).copied() else {
+            errors.push(VerifierTypeError::new(format!(
+                "subfunction arg{} map value argument is missing",
+                requirement.map_value_arg_idx
+            )));
+            continue;
+        };
+        let Some(map_fd) = args.get(requirement.map_fd_arg_idx).copied() else {
+            errors.push(VerifierTypeError::new(format!(
+                "subfunction arg{} map fd argument is missing",
+                requirement.map_fd_arg_idx
+            )));
+            continue;
+        };
+        let Some(map_fd_source) = state.map_fd_source(map_fd) else {
+            continue;
+        };
+        if state.map_value_source_is_ambiguous(map_value) {
+            errors.push(VerifierTypeError::new(format!(
+                "{} arg{} map value may come from multiple maps and cannot be matched to arg{} map '{}'",
+                requirement.call,
+                requirement.map_value_arg_idx,
+                requirement.map_fd_arg_idx,
+                map_fd_source.name
+            )));
+            continue;
+        }
+        let Some(map_value_source) = state.map_value_source(map_value) else {
+            continue;
+        };
+        if map_value_source.map != *map_fd_source {
+            errors.push(VerifierTypeError::new(format!(
+                "{} arg{} map '{}' does not match arg{} map value '{}'",
+                requirement.call,
+                requirement.map_fd_arg_idx,
+                map_fd_source.name,
+                requirement.map_value_arg_idx,
+                map_value_source.map.name
+            )));
         }
     }
 }

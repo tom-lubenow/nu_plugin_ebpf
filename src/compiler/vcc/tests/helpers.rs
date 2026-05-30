@@ -119,6 +119,29 @@ fn emit_checked_timer_map_lookup(
     (timer_loaded, timer_non_null)
 }
 
+fn timer_init_subfunction() -> MirFunction {
+    let mut subfn = MirFunction::new();
+    let entry = subfn.alloc_block();
+    subfn.entry = entry;
+    subfn.param_count = 3;
+    subfn.vreg_count = 3;
+    let helper_ret = subfn.alloc_vreg();
+    subfn
+        .block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: helper_ret,
+            helper: BpfHelper::TimerInit as u32,
+            args: vec![
+                MirValue::VReg(VReg(0)),
+                MirValue::VReg(VReg(1)),
+                MirValue::VReg(VReg(2)),
+            ],
+        });
+    subfn.block_mut(entry).terminator = MirInst::Return { val: None };
+    subfn
+}
+
 #[test]
 fn test_verify_mir_signal_helpers() {
     for helper in [BpfHelper::SendSignal, BpfHelper::SendSignalThread] {
@@ -456,6 +479,104 @@ fn test_verify_mir_timer_init_rejects_phi_mismatched_map_fd() {
     types.insert(helper_ret, MirType::I64);
 
     let err = verify_mir(&func, &types).expect_err("expected phi mismatched timer map fd error");
+    assert!(
+        err.iter().any(|e| e.message.contains(
+            "helper 'bpf_timer_init' arg1 map 'other_timer_map' does not match arg0 map value 'timer_map'"
+        )),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_timer_init_subfn_accepts_matching_map_fd() {
+    let (mut func, entry) = new_mir_function();
+    let timer = func.alloc_vreg();
+    let map = func.alloc_vreg();
+    let flags = func.alloc_vreg();
+    let subfn_ret = func.alloc_vreg();
+    let (timer_loaded, timer_non_null) = emit_checked_timer_map_lookup(&mut func, entry, timer);
+    func.block_mut(timer_loaded)
+        .instructions
+        .push(MirInst::LoadMapFd {
+            dst: map,
+            map: timer_map_ref(),
+        });
+    func.block_mut(timer_loaded)
+        .instructions
+        .push(MirInst::Copy {
+            dst: flags,
+            src: MirValue::Const(0),
+        });
+    func.block_mut(timer_loaded)
+        .instructions
+        .push(MirInst::CallSubfn {
+            dst: subfn_ret,
+            subfn: SubfunctionId(0),
+            args: vec![timer, map, flags],
+        });
+    func.block_mut(timer_loaded).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(timer, bpf_timer_map_ptr_ty());
+    types.insert(timer_non_null, MirType::Bool);
+    types.insert(map, timer_map_ref_ty());
+    types.insert(flags, MirType::I64);
+    types.insert(subfn_ret, MirType::I64);
+
+    let summaries = infer_subfunction_summaries(&[timer_init_subfunction()]);
+    assert_eq!(
+        summaries[&SubfunctionId(0)]
+            .map_value_map_fd_requirements()
+            .len(),
+        1
+    );
+    verify_mir_with_subfunction_summaries(&func, &types, &summaries)
+        .expect("expected timer init subfunction with matching map fd to verify");
+}
+
+#[test]
+fn test_verify_mir_timer_init_subfn_rejects_mismatched_map_fd() {
+    let (mut func, entry) = new_mir_function();
+    let timer = func.alloc_vreg();
+    let map = func.alloc_vreg();
+    let flags = func.alloc_vreg();
+    let subfn_ret = func.alloc_vreg();
+    let (timer_loaded, timer_non_null) = emit_checked_timer_map_lookup(&mut func, entry, timer);
+    func.block_mut(timer_loaded)
+        .instructions
+        .push(MirInst::LoadMapFd {
+            dst: map,
+            map: MapRef {
+                name: "other_timer_map".to_string(),
+                kind: MapKind::Array,
+            },
+        });
+    func.block_mut(timer_loaded)
+        .instructions
+        .push(MirInst::Copy {
+            dst: flags,
+            src: MirValue::Const(0),
+        });
+    func.block_mut(timer_loaded)
+        .instructions
+        .push(MirInst::CallSubfn {
+            dst: subfn_ret,
+            subfn: SubfunctionId(0),
+            args: vec![timer, map, flags],
+        });
+    func.block_mut(timer_loaded).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(timer, bpf_timer_map_ptr_ty());
+    types.insert(timer_non_null, MirType::Bool);
+    types.insert(map, timer_map_ref_ty());
+    types.insert(flags, MirType::I64);
+    types.insert(subfn_ret, MirType::I64);
+
+    let summaries = infer_subfunction_summaries(&[timer_init_subfunction()]);
+    let err = verify_mir_with_subfunction_summaries(&func, &types, &summaries)
+        .expect_err("expected timer init subfunction map fd mismatch");
     assert!(
         err.iter().any(|e| e.message.contains(
             "helper 'bpf_timer_init' arg1 map 'other_timer_map' does not match arg0 map value 'timer_map'"

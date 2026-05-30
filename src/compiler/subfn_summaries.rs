@@ -114,6 +114,13 @@ pub(crate) struct SubfunctionUnknownStackObjectDelta {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SubfunctionMapValueMapFdRequirement {
+    pub(crate) map_value_arg_idx: usize,
+    pub(crate) map_fd_arg_idx: usize,
+    pub(crate) call: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct UnknownStackObjectDeltaState {
     object_type: Option<SubfunctionUnknownStackObjectType>,
     delta: i8,
@@ -178,6 +185,7 @@ pub(crate) struct SubfunctionSummary {
     unknown_stack_object_deltas: [Option<SubfunctionUnknownStackObjectDelta>; SUMMARY_ARG_SLOTS],
     unknown_stack_object_maybe_initialized:
         [Option<SubfunctionUnknownStackObjectType>; SUMMARY_ARG_SLOTS],
+    map_value_map_fd_requirements: Vec<SubfunctionMapValueMapFdRequirement>,
     ringbuf_record_release_args: u8,
     ringbuf_dynptr_deltas: [i8; SUMMARY_ARG_SLOTS],
     kfunc_ref_release_args: [Option<KfuncRefKind>; SUMMARY_ARG_SLOTS],
@@ -199,6 +207,7 @@ impl SubfunctionSummary {
             unknown_stack_object_required: std::array::from_fn(|_| None),
             unknown_stack_object_deltas: std::array::from_fn(|_| None),
             unknown_stack_object_maybe_initialized: std::array::from_fn(|_| None),
+            map_value_map_fd_requirements: Vec::new(),
             ringbuf_record_release_args: 0,
             ringbuf_dynptr_deltas: [0; SUMMARY_ARG_SLOTS],
             kfunc_ref_release_args: [None; SUMMARY_ARG_SLOTS],
@@ -220,6 +229,7 @@ impl SubfunctionSummary {
             unknown_stack_object_required: std::array::from_fn(|_| None),
             unknown_stack_object_deltas: std::array::from_fn(|_| None),
             unknown_stack_object_maybe_initialized: std::array::from_fn(|_| None),
+            map_value_map_fd_requirements: Vec::new(),
             ringbuf_record_release_args: 0,
             ringbuf_dynptr_deltas: [0; SUMMARY_ARG_SLOTS],
             kfunc_ref_release_args: [None; SUMMARY_ARG_SLOTS],
@@ -309,6 +319,10 @@ impl SubfunctionSummary {
             .and_then(Option::as_ref)
     }
 
+    pub(crate) fn map_value_map_fd_requirements(&self) -> &[SubfunctionMapValueMapFdRequirement] {
+        &self.map_value_map_fd_requirements
+    }
+
     pub(crate) const fn changes_packet_data(&self) -> bool {
         self.return_summary.changes_packet_data()
     }
@@ -354,6 +368,7 @@ impl SubfunctionSummary {
             SUMMARY_ARG_SLOTS],
         unknown_stack_object_maybe_initialized: [Option<SubfunctionUnknownStackObjectType>;
             SUMMARY_ARG_SLOTS],
+        map_value_map_fd_requirements: Vec<SubfunctionMapValueMapFdRequirement>,
         changes_packet_data: bool,
         ringbuf_record_release_args: u8,
         ringbuf_dynptr_deltas: [i8; SUMMARY_ARG_SLOTS],
@@ -373,6 +388,7 @@ impl SubfunctionSummary {
             unknown_stack_object_required,
             unknown_stack_object_deltas,
             unknown_stack_object_maybe_initialized,
+            map_value_map_fd_requirements,
             ringbuf_record_release_args,
             ringbuf_dynptr_deltas,
             kfunc_ref_release_args,
@@ -414,6 +430,7 @@ struct SummaryState {
     unknown_stack_object_deltas: [Option<UnknownStackObjectDeltaState>; SUMMARY_ARG_SLOTS],
     unknown_stack_object_maybe_initialized:
         [Option<SubfunctionUnknownStackObjectType>; SUMMARY_ARG_SLOTS],
+    map_value_map_fd_requirements: Vec<SubfunctionMapValueMapFdRequirement>,
     ringbuf_record_release_args: u8,
     ringbuf_dynptr_deltas: [Option<i8>; SUMMARY_ARG_SLOTS],
     kfunc_ref_release_args: [Option<KfuncRefKind>; SUMMARY_ARG_SLOTS],
@@ -507,6 +524,7 @@ fn summarize_function(
                 Some(UnknownStackObjectDeltaState::zero())
             }),
             unknown_stack_object_maybe_initialized: std::array::from_fn(|_| None),
+            map_value_map_fd_requirements: Vec::new(),
             ringbuf_record_release_args: 0,
             ringbuf_dynptr_deltas: [Some(0); SUMMARY_ARG_SLOTS],
             kfunc_ref_release_args: [None; SUMMARY_ARG_SLOTS],
@@ -532,6 +550,9 @@ fn summarize_function(
     > = None;
     let mut returned_unknown_stack_object_maybe_initialized: Option<
         [Option<SubfunctionUnknownStackObjectType>; SUMMARY_ARG_SLOTS],
+    > = None;
+    let mut returned_map_value_map_fd_requirements: Option<
+        Vec<SubfunctionMapValueMapFdRequirement>,
     > = None;
     let mut changes_packet_data = false;
     let mut returned_record_releases: Option<u8> = None;
@@ -662,6 +683,17 @@ fn summarize_function(
                             state.unknown_stack_object_maybe_initialized.clone(),
                         ),
                     });
+                returned_map_value_map_fd_requirements =
+                    Some(match returned_map_value_map_fd_requirements.take() {
+                        None => state.map_value_map_fd_requirements.clone(),
+                        Some(mut existing) => {
+                            extend_unique_requirements(
+                                &mut existing,
+                                &state.map_value_map_fd_requirements,
+                            );
+                            existing
+                        }
+                    });
                 returned_record_releases = Some(match returned_record_releases {
                     None => state.ringbuf_record_release_args,
                     Some(existing) => existing & state.ringbuf_record_release_args,
@@ -705,6 +737,7 @@ fn summarize_function(
         returned_unknown_stack_object_required.unwrap_or_else(|| std::array::from_fn(|_| None)),
         finalize_unknown_stack_object_delta_args(returned_unknown_stack_object_deltas),
         unknown_stack_object_maybe_initialized,
+        returned_map_value_map_fd_requirements.unwrap_or_default(),
         changes_packet_data,
         returned_record_releases.unwrap_or(0),
         finalize_delta_args(returned_ringbuf_dynptr_deltas),
@@ -833,6 +866,14 @@ fn merge_alias_states(existing: &mut SummaryState, incoming: &SummaryState) -> b
         existing.unknown_stack_object_maybe_initialized = unknown_stack_object_maybe_initialized;
         changed = true;
     }
+    let old_len = existing.map_value_map_fd_requirements.len();
+    extend_unique_requirements(
+        &mut existing.map_value_map_fd_requirements,
+        &incoming.map_value_map_fd_requirements,
+    );
+    if existing.map_value_map_fd_requirements.len() != old_len {
+        changed = true;
+    }
     let record_releases =
         existing.ringbuf_record_release_args & incoming.ringbuf_record_release_args;
     if existing.ringbuf_record_release_args != record_releases {
@@ -860,6 +901,17 @@ fn merge_alias_states(existing: &mut SummaryState, incoming: &SummaryState) -> b
 
 fn merge_delta(existing: Option<i8>, incoming: Option<i8>) -> Option<i8> {
     if existing == incoming { existing } else { None }
+}
+
+fn extend_unique_requirements(
+    requirements: &mut Vec<SubfunctionMapValueMapFdRequirement>,
+    incoming: &[SubfunctionMapValueMapFdRequirement],
+) {
+    for requirement in incoming {
+        if !requirements.contains(requirement) {
+            requirements.push(requirement.clone());
+        }
+    }
 }
 
 fn merge_delta_args(
@@ -1092,6 +1144,7 @@ fn apply_alias_inst(
             set_kfunc_ref_source(&mut state.kfunc_ref_sources, *dst, kfunc_ref_source);
             apply_subfunction_critical_delta(&summary, args, state);
             apply_subfunction_release_summary(&summary, args, state);
+            apply_subfunction_map_value_map_fd_requirements(&summary, args, state);
             InstEffects {
                 changes_packet_data: summary.changes_packet_data(),
             }
@@ -1107,8 +1160,9 @@ fn apply_alias_inst(
             set_kfunc_ref_source(&mut state.kfunc_ref_sources, *dst, None);
             InstEffects::default()
         }
-        MirInst::CallHelper { dst, helper, .. } => {
+        MirInst::CallHelper { dst, helper, args } => {
             set_alias(&mut state.aliases, *dst, AliasSource::Unknown);
+            apply_helper_map_value_map_fd_requirement(*helper, args, state, param_stack_aliases);
             apply_helper_release_summary(inst, state, param_stack_aliases);
             let kfunc_ref_source = BpfHelper::from_u32(*helper)
                 .and_then(helper_acquire_ref_kind)
@@ -1134,6 +1188,7 @@ fn apply_alias_inst(
             dst, kfunc, args, ..
         } => {
             set_alias(&mut state.aliases, *dst, AliasSource::Unknown);
+            apply_kfunc_map_value_map_fd_requirement(kfunc, args, state);
             apply_kfunc_release_summary(kfunc, args, state);
             apply_kfunc_critical_delta(kfunc, args, state);
             apply_kfunc_dynptr_summary(kfunc, args, state);
@@ -1383,6 +1438,92 @@ fn apply_kfunc_unknown_stack_object_summary(kfunc: &str, args: &[VReg], state: &
                 1,
             );
         }
+    }
+}
+
+fn apply_helper_map_value_map_fd_requirement(
+    helper: u32,
+    args: &[MirValue],
+    state: &mut SummaryState,
+    param_stack_aliases: &HashMap<super::mir::StackSlotId, usize>,
+) {
+    let Some(BpfHelper::TimerInit) = BpfHelper::from_u32(helper) else {
+        return;
+    };
+    let (Some(map_value), Some(map_fd)) = (args.first(), args.get(1)) else {
+        return;
+    };
+    let map_value = alias_for_mir_value(map_value, &state.aliases, param_stack_aliases);
+    let map_fd = alias_for_mir_value(map_fd, &state.aliases, param_stack_aliases);
+    record_map_value_map_fd_requirement_for_aliases(
+        state,
+        map_value,
+        map_fd,
+        "helper 'bpf_timer_init'",
+    );
+}
+
+fn apply_kfunc_map_value_map_fd_requirement(kfunc: &str, args: &[VReg], state: &mut SummaryState) {
+    if kfunc != "bpf_wq_init" {
+        return;
+    }
+    let (Some(map_value), Some(map_fd)) = (args.first(), args.get(1)) else {
+        return;
+    };
+    let map_value = get_alias(&state.aliases, *map_value);
+    let map_fd = get_alias(&state.aliases, *map_fd);
+    record_map_value_map_fd_requirement_for_aliases(
+        state,
+        map_value,
+        map_fd,
+        "kfunc 'bpf_wq_init'",
+    );
+}
+
+fn apply_subfunction_map_value_map_fd_requirements(
+    summary: &SubfunctionSummary,
+    args: &[VReg],
+    state: &mut SummaryState,
+) {
+    for requirement in summary.map_value_map_fd_requirements() {
+        let (Some(map_value), Some(map_fd)) = (
+            args.get(requirement.map_value_arg_idx),
+            args.get(requirement.map_fd_arg_idx),
+        ) else {
+            continue;
+        };
+        let map_value = get_alias(&state.aliases, *map_value);
+        let map_fd = get_alias(&state.aliases, *map_fd);
+        record_map_value_map_fd_requirement_for_aliases(
+            state,
+            map_value,
+            map_fd,
+            &requirement.call,
+        );
+    }
+}
+
+fn record_map_value_map_fd_requirement_for_aliases(
+    state: &mut SummaryState,
+    map_value: AliasSource,
+    map_fd: AliasSource,
+    call: &str,
+) {
+    let (AliasSource::Param(map_value_arg_idx), AliasSource::Param(map_fd_arg_idx)) =
+        (map_value, map_fd)
+    else {
+        return;
+    };
+    if map_value_arg_idx >= SUMMARY_ARG_SLOTS || map_fd_arg_idx >= SUMMARY_ARG_SLOTS {
+        return;
+    }
+    let requirement = SubfunctionMapValueMapFdRequirement {
+        map_value_arg_idx,
+        map_fd_arg_idx,
+        call: call.to_string(),
+    };
+    if !state.map_value_map_fd_requirements.contains(&requirement) {
+        state.map_value_map_fd_requirements.push(requirement);
     }
 }
 
