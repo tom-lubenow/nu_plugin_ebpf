@@ -8349,7 +8349,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "xdp-devmap-secondary-context"
@@ -12142,7 +12142,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "xdp-record-spread-data-meta-write"
@@ -12159,7 +12159,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "xdp-user-function-record-data-meta-write"
@@ -12177,7 +12177,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "tc-egress-rejects-context-socket-write"
