@@ -15198,6 +15198,136 @@ const FIXTURES = [
         error_contains: "helper copy_from_user src expects pointer in [User]"
     }
     {
+        name: "source-helper-probe-read-accepts-kernel-src"
+        category: "helper-state"
+        tags: [helper probe-read accept source metadata]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let dst = "01234567"'
+            '  helper-call "bpf_probe_read" $dst 8 $ctx.current_task'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "source-helper-probe-read-str-accepts-kprobe-context"
+        category: "helper-state"
+        tags: [helper probe-read string accept source metadata]
+        target: "kprobe:__x64_sys_getpid"
+        program: [
+            '{|ctx|'
+            '  let dst = "01234567"'
+            '  helper-call "bpf_probe_read_str" $dst 8 $ctx'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "source-helper-probe-read-kernel-accepts-kernel-src"
+        category: "helper-state"
+        tags: [helper probe-read kernel accept source metadata]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let dst = "01234567"'
+            '  helper-call "bpf_probe_read_kernel" $dst 8 $ctx.current_task'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "source-helper-probe-read-kernel-str-accepts-kernel-src"
+        category: "helper-state"
+        tags: [helper probe-read kernel string accept source metadata]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let dst = "01234567"'
+            '  helper-call "bpf_probe_read_kernel_str" $dst 8 $ctx.current_task'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "source-helper-probe-read-user-accepts-user-src"
+        category: "helper-state"
+        tags: [helper probe-read user accept source metadata]
+        target: "uprobe:/bin/true:main"
+        program: [
+            '{|ctx|'
+            '  let ptr = $ctx.arg0'
+            '  if $ptr {'
+            '    let dst = "01234567"'
+            '    helper-call "bpf_probe_read_user" $dst 8 $ptr'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "source-helper-probe-read-user-str-accepts-user-src"
+        category: "helper-state"
+        tags: [helper probe-read user string accept source metadata]
+        target: "uprobe:/bin/true:main"
+        program: [
+            '{|ctx|'
+            '  let ptr = $ctx.arg0'
+            '  if $ptr {'
+            '    let dst = "01234567"'
+            '    helper-call "bpf_probe_read_user_str" $dst 8 $ptr'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "source-helper-probe-read-user-rejects-stack-src"
+        category: "helper-state"
+        tags: [helper probe-read user reject source metadata]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let dst = "01234567"'
+            '  let src = "abcdefgh"'
+            '  helper-call "bpf_probe_read_user" $dst 8 $src'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper probe_read src expects pointer in [User]"
+    }
+    {
+        name: "source-helper-probe-read-rejects-xdp"
+        category: "helper-state"
+        tags: [helper probe-read program-policy reject source metadata]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  let dst = "01234567"'
+            '  helper-call "bpf_probe_read" $dst 8 $ctx'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_probe_read' is only valid"
+    }
+    {
         name: "source-helper-probe-write-user-accepts-user-dst"
         category: "helper-state"
         tags: [helper probe-write-user hazardous accept]
