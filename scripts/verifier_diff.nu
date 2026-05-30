@@ -4796,6 +4796,21 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         feature_keys: ["ctx:pid" "helper:bpf_get_current_pid_tgid"]
     }
     {
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  def read_pid [event] {'
+            '    $event.pid | count'
+            '    0'
+            '  }'
+            '  let seen = (read_pid $ctx)'
+            '  $seen | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:pid" "helper:bpf_get_current_pid_tgid"]
+    }
+    {
         target: "kretprobe:ksys_read"
         program: [
             '{|ctx|'
@@ -24304,6 +24319,25 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-user-function-parenthesized-context-arg"
+        category: "language-core"
+        tags: [user-function context accept source metadata]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  def read_pid [c] {'
+            '    $c.pid | count'
+            '    0'
+            '  }'
+            '  let seen = (read_pid $ctx)'
+            '  $seen | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-user-function-nested-context-arg"
         category: "language-core"
         tags: [user-function nested context accept]
@@ -28604,33 +28638,24 @@ def user-function-context-field-kernel-features [source: string target context_n
             continue
         }
 
-        let tokens = (
-            $trimmed
-            | split row " "
-            | each {|part| $part | str trim }
-            | where {|part| $part != "" }
-        )
-        if ($tokens | length) < 2 {
-            continue
-        }
-
-        let callee = (normalize-map-name-token ($tokens | get 0))
-        let arg = ($tokens | get 1)
-        for access in ($accesses | where {|access| $access.name == $callee }) {
-            let root = (context-root-from-value-token $arg $context_names $bound_aliases)
-            if $root == null {
-                continue
+        for access in $accesses {
+            for raw_tail in (command-invocation-tails $trimmed $access.name) {
+                let arg = (normalize-context-path-token $raw_tail)
+                let root = (context-root-from-value-token $arg $context_names $bound_aliases)
+                if $root == null {
+                    continue
+                }
+                let raw_access = if $root == "" {
+                    $access.raw_access
+                } else {
+                    $"($root).($access.raw_access)"
+                }
+                $features = (
+                    append-missing-kernel-features
+                        $features
+                        (context-access-kernel-features $raw_access $target)
+                )
             }
-            let raw_access = if $root == "" {
-                $access.raw_access
-            } else {
-                $"($root).($access.raw_access)"
-            }
-            $features = (
-                append-missing-kernel-features
-                    $features
-                    (context-access-kernel-features $raw_access $target)
-            )
         }
     }
 
