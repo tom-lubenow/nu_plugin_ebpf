@@ -692,6 +692,27 @@ pub(super) fn infer_unknown_stack_object_init_arg_from_named_out_fallback(
 pub fn kfunc_unknown_stack_object_lifecycle(
     kfunc: &str,
 ) -> Option<KfuncUnknownStackObjectLifecycle> {
+    #[cfg(test)]
+    match kfunc {
+        "__test_unknown_stack_object_init" => {
+            return Some(KfuncUnknownStackObjectLifecycle {
+                type_name: "bpf_test_obj".to_string(),
+                type_id: Some(0xbeef),
+                op: KfuncUnknownStackObjectLifecycleOp::Init,
+                arg_idx: 0,
+            });
+        }
+        "__test_unknown_stack_object_destroy" => {
+            return Some(KfuncUnknownStackObjectLifecycle {
+                type_name: "bpf_test_obj".to_string(),
+                type_id: Some(0xbeef),
+                op: KfuncUnknownStackObjectLifecycleOp::Destroy,
+                arg_idx: 0,
+            });
+        }
+        _ => {}
+    }
+
     let args = unknown_stack_object_args(kfunc);
     let kernel_btf = KernelBtf::get();
     let const_args: BTreeSet<usize> = args
@@ -726,6 +747,29 @@ pub fn kfunc_unknown_stack_object_lifecycle(
 }
 
 pub fn kfunc_unknown_stack_object_copy(kfunc: &str) -> Vec<KfuncUnknownStackObjectCopy> {
+    #[cfg(test)]
+    match kfunc {
+        "__test_unknown_stack_object_copy" => {
+            return vec![KfuncUnknownStackObjectCopy {
+                type_name: "bpf_test_obj".to_string(),
+                type_id: Some(0xbeef),
+                src_arg_idx: 0,
+                dst_arg_idx: 1,
+                move_semantics: false,
+            }];
+        }
+        "__test_unknown_stack_object_move" => {
+            return vec![KfuncUnknownStackObjectCopy {
+                type_name: "bpf_test_obj".to_string(),
+                type_id: Some(0xbeef),
+                src_arg_idx: 0,
+                dst_arg_idx: 1,
+                move_semantics: true,
+            }];
+        }
+        _ => {}
+    }
+
     if KfuncSignature::for_name(kfunc).is_some() {
         return Vec::new();
     }

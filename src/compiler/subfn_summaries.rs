@@ -2,9 +2,11 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use super::instruction::{
     BpfHelper, HelperDynptrArgRole, KfuncIterFamily, KfuncIterLifecycleOp, KfuncRefKind,
-    KfuncUnknownDynptrArgRole, helper_acquire_ref_kind, helper_release_ref_kind,
-    kfunc_acquire_ref_kind, kfunc_iter_lifecycle, kfunc_release_ref_arg_index,
-    kfunc_release_ref_kind, kfunc_unknown_dynptr_args, kfunc_unknown_dynptr_copy,
+    KfuncUnknownDynptrArgRole, KfuncUnknownStackObjectLifecycleOp, helper_acquire_ref_kind,
+    helper_release_ref_kind, kfunc_acquire_ref_kind, kfunc_iter_lifecycle,
+    kfunc_release_ref_arg_index, kfunc_release_ref_kind, kfunc_unknown_dynptr_args,
+    kfunc_unknown_dynptr_copy, kfunc_unknown_stack_object_copy,
+    kfunc_unknown_stack_object_lifecycle,
 };
 use super::mir::{BlockId, MirFunction, MirInst, MirValue, SubfunctionId, VReg};
 
@@ -90,7 +92,77 @@ impl IterDeltaState {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SubfunctionUnknownStackObjectType {
+    pub(crate) type_name: String,
+    pub(crate) type_id: Option<u32>,
+}
+
+impl SubfunctionUnknownStackObjectType {
+    fn new(type_name: impl Into<String>, type_id: Option<u32>) -> Self {
+        Self {
+            type_name: type_name.into(),
+            type_id,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SubfunctionUnknownStackObjectDelta {
+    pub(crate) object_type: SubfunctionUnknownStackObjectType,
+    pub(crate) delta: i8,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct UnknownStackObjectDeltaState {
+    object_type: Option<SubfunctionUnknownStackObjectType>,
+    delta: i8,
+}
+
+impl UnknownStackObjectDeltaState {
+    fn zero() -> Self {
+        Self {
+            object_type: None,
+            delta: 0,
+        }
+    }
+
+    fn add(self, object_type: SubfunctionUnknownStackObjectType, delta: i8) -> Option<Self> {
+        let next_delta = self.delta.checked_add(delta)?;
+        if next_delta == 0 {
+            return Some(Self::zero());
+        }
+        match self.object_type {
+            None => Some(Self {
+                object_type: Some(object_type),
+                delta: next_delta,
+            }),
+            Some(existing_type) if existing_type == object_type => Some(Self {
+                object_type: Some(object_type),
+                delta: next_delta,
+            }),
+            Some(_) => None,
+        }
+    }
+
+    fn to_summary(&self) -> Option<SubfunctionUnknownStackObjectDelta> {
+        if self.delta == 0 {
+            return None;
+        }
+        self.object_type
+            .clone()
+            .map(|object_type| SubfunctionUnknownStackObjectDelta {
+                object_type,
+                delta: self.delta,
+            })
+    }
+
+    fn maybe_initialized_type(&self) -> Option<SubfunctionUnknownStackObjectType> {
+        self.object_type.clone()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SubfunctionSummary {
     return_summary: SubfunctionReturnSummary,
     ringbuf_record_return: bool,
@@ -102,13 +174,17 @@ pub(crate) struct SubfunctionSummary {
     dynptr_required_args: u8,
     dynptr_deltas: [i8; SUMMARY_ARG_SLOTS],
     dynptr_maybe_initialized_args: u8,
+    unknown_stack_object_required: [Option<SubfunctionUnknownStackObjectType>; SUMMARY_ARG_SLOTS],
+    unknown_stack_object_deltas: [Option<SubfunctionUnknownStackObjectDelta>; SUMMARY_ARG_SLOTS],
+    unknown_stack_object_maybe_initialized:
+        [Option<SubfunctionUnknownStackObjectType>; SUMMARY_ARG_SLOTS],
     ringbuf_record_release_args: u8,
     ringbuf_dynptr_deltas: [i8; SUMMARY_ARG_SLOTS],
     kfunc_ref_release_args: [Option<KfuncRefKind>; SUMMARY_ARG_SLOTS],
 }
 
 impl SubfunctionSummary {
-    pub(crate) const fn unknown() -> Self {
+    pub(crate) fn unknown() -> Self {
         Self {
             return_summary: SubfunctionReturnSummary::Unknown,
             ringbuf_record_return: false,
@@ -120,13 +196,16 @@ impl SubfunctionSummary {
             dynptr_required_args: 0,
             dynptr_deltas: [0; SUMMARY_ARG_SLOTS],
             dynptr_maybe_initialized_args: 0,
+            unknown_stack_object_required: std::array::from_fn(|_| None),
+            unknown_stack_object_deltas: std::array::from_fn(|_| None),
+            unknown_stack_object_maybe_initialized: std::array::from_fn(|_| None),
             ringbuf_record_release_args: 0,
             ringbuf_dynptr_deltas: [0; SUMMARY_ARG_SLOTS],
             kfunc_ref_release_args: [None; SUMMARY_ARG_SLOTS],
         }
     }
 
-    pub(crate) const fn from_return_summary(return_summary: SubfunctionReturnSummary) -> Self {
+    pub(crate) fn from_return_summary(return_summary: SubfunctionReturnSummary) -> Self {
         Self {
             return_summary,
             ringbuf_record_return: false,
@@ -138,37 +217,40 @@ impl SubfunctionSummary {
             dynptr_required_args: 0,
             dynptr_deltas: [0; SUMMARY_ARG_SLOTS],
             dynptr_maybe_initialized_args: 0,
+            unknown_stack_object_required: std::array::from_fn(|_| None),
+            unknown_stack_object_deltas: std::array::from_fn(|_| None),
+            unknown_stack_object_maybe_initialized: std::array::from_fn(|_| None),
             ringbuf_record_release_args: 0,
             ringbuf_dynptr_deltas: [0; SUMMARY_ARG_SLOTS],
             kfunc_ref_release_args: [None; SUMMARY_ARG_SLOTS],
         }
     }
 
-    pub(crate) const fn return_summary(self) -> SubfunctionReturnSummary {
+    pub(crate) const fn return_summary(&self) -> SubfunctionReturnSummary {
         self.return_summary
     }
 
-    pub(crate) const fn return_arg(self) -> Option<usize> {
+    pub(crate) const fn return_arg(&self) -> Option<usize> {
         self.return_summary.return_arg()
     }
 
-    pub(crate) const fn returns_ringbuf_record(self) -> bool {
+    pub(crate) const fn returns_ringbuf_record(&self) -> bool {
         self.ringbuf_record_return
     }
 
-    pub(crate) const fn kfunc_ref_return_kind(self) -> Option<KfuncRefKind> {
+    pub(crate) const fn kfunc_ref_return_kind(&self) -> Option<KfuncRefKind> {
         self.kfunc_ref_return_kind
     }
 
-    pub(crate) const fn rcu_read_lock_delta(self) -> i8 {
+    pub(crate) const fn rcu_read_lock_delta(&self) -> i8 {
         self.rcu_read_lock_delta
     }
 
-    pub(crate) const fn preempt_disable_delta(self) -> i8 {
+    pub(crate) const fn preempt_disable_delta(&self) -> i8 {
         self.preempt_disable_delta
     }
 
-    pub(crate) const fn local_irq_delta_arg(self, idx: usize) -> i8 {
+    pub(crate) const fn local_irq_delta_arg(&self, idx: usize) -> i8 {
         if idx < SUMMARY_ARG_SLOTS {
             self.local_irq_deltas[idx]
         } else {
@@ -176,7 +258,7 @@ impl SubfunctionSummary {
         }
     }
 
-    pub(crate) const fn iter_delta_arg(self, idx: usize) -> Option<SubfunctionIterDelta> {
+    pub(crate) const fn iter_delta_arg(&self, idx: usize) -> Option<SubfunctionIterDelta> {
         if idx < SUMMARY_ARG_SLOTS {
             self.iter_deltas[idx]
         } else {
@@ -184,11 +266,11 @@ impl SubfunctionSummary {
         }
     }
 
-    pub(crate) const fn requires_initialized_dynptr_arg(self, idx: usize) -> bool {
+    pub(crate) const fn requires_initialized_dynptr_arg(&self, idx: usize) -> bool {
         idx < 8 && (self.dynptr_required_args & (1 << idx)) != 0
     }
 
-    pub(crate) const fn dynptr_delta_arg(self, idx: usize) -> i8 {
+    pub(crate) const fn dynptr_delta_arg(&self, idx: usize) -> i8 {
         if idx < SUMMARY_ARG_SLOTS {
             self.dynptr_deltas[idx]
         } else {
@@ -196,19 +278,46 @@ impl SubfunctionSummary {
         }
     }
 
-    pub(crate) const fn maybe_initializes_dynptr_arg(self, idx: usize) -> bool {
+    pub(crate) const fn maybe_initializes_dynptr_arg(&self, idx: usize) -> bool {
         idx < 8 && (self.dynptr_maybe_initialized_args & (1 << idx)) != 0
     }
 
-    pub(crate) const fn changes_packet_data(self) -> bool {
+    pub(crate) fn unknown_stack_object_required_arg(
+        &self,
+        idx: usize,
+    ) -> Option<&SubfunctionUnknownStackObjectType> {
+        self.unknown_stack_object_required
+            .get(idx)
+            .and_then(Option::as_ref)
+    }
+
+    pub(crate) fn unknown_stack_object_delta_arg(
+        &self,
+        idx: usize,
+    ) -> Option<&SubfunctionUnknownStackObjectDelta> {
+        self.unknown_stack_object_deltas
+            .get(idx)
+            .and_then(Option::as_ref)
+    }
+
+    pub(crate) fn unknown_stack_object_maybe_initialized_arg(
+        &self,
+        idx: usize,
+    ) -> Option<&SubfunctionUnknownStackObjectType> {
+        self.unknown_stack_object_maybe_initialized
+            .get(idx)
+            .and_then(Option::as_ref)
+    }
+
+    pub(crate) const fn changes_packet_data(&self) -> bool {
         self.return_summary.changes_packet_data()
     }
 
-    pub(crate) const fn releases_ringbuf_record_arg(self, idx: usize) -> bool {
+    pub(crate) const fn releases_ringbuf_record_arg(&self, idx: usize) -> bool {
         idx < 8 && (self.ringbuf_record_release_args & (1 << idx)) != 0
     }
 
-    pub(crate) const fn ringbuf_dynptr_delta_arg(self, idx: usize) -> i8 {
+    pub(crate) const fn ringbuf_dynptr_delta_arg(&self, idx: usize) -> i8 {
         if idx < SUMMARY_ARG_SLOTS {
             self.ringbuf_dynptr_deltas[idx]
         } else {
@@ -216,11 +325,11 @@ impl SubfunctionSummary {
         }
     }
 
-    pub(crate) const fn releases_ringbuf_dynptr_arg(self, idx: usize) -> bool {
+    pub(crate) const fn releases_ringbuf_dynptr_arg(&self, idx: usize) -> bool {
         self.ringbuf_dynptr_delta_arg(idx) < 0
     }
 
-    pub(crate) const fn kfunc_ref_release_arg_kind(self, idx: usize) -> Option<KfuncRefKind> {
+    pub(crate) const fn kfunc_ref_release_arg_kind(&self, idx: usize) -> Option<KfuncRefKind> {
         if idx < SUMMARY_ARG_SLOTS {
             self.kfunc_ref_release_args[idx]
         } else {
@@ -228,7 +337,7 @@ impl SubfunctionSummary {
         }
     }
 
-    const fn from_parts(
+    fn from_parts(
         return_arg: Option<usize>,
         ringbuf_record_return: bool,
         kfunc_ref_return_kind: Option<KfuncRefKind>,
@@ -239,6 +348,12 @@ impl SubfunctionSummary {
         dynptr_required_args: u8,
         dynptr_deltas: [i8; SUMMARY_ARG_SLOTS],
         dynptr_maybe_initialized_args: u8,
+        unknown_stack_object_required: [Option<SubfunctionUnknownStackObjectType>;
+            SUMMARY_ARG_SLOTS],
+        unknown_stack_object_deltas: [Option<SubfunctionUnknownStackObjectDelta>;
+            SUMMARY_ARG_SLOTS],
+        unknown_stack_object_maybe_initialized: [Option<SubfunctionUnknownStackObjectType>;
+            SUMMARY_ARG_SLOTS],
         changes_packet_data: bool,
         ringbuf_record_release_args: u8,
         ringbuf_dynptr_deltas: [i8; SUMMARY_ARG_SLOTS],
@@ -255,6 +370,9 @@ impl SubfunctionSummary {
             dynptr_required_args,
             dynptr_deltas,
             dynptr_maybe_initialized_args,
+            unknown_stack_object_required,
+            unknown_stack_object_deltas,
+            unknown_stack_object_maybe_initialized,
             ringbuf_record_release_args,
             ringbuf_dynptr_deltas,
             kfunc_ref_release_args,
@@ -292,6 +410,10 @@ struct SummaryState {
     dynptr_required_args: u8,
     dynptr_deltas: [Option<i8>; SUMMARY_ARG_SLOTS],
     dynptr_maybe_initialized_args: u8,
+    unknown_stack_object_required: [Option<SubfunctionUnknownStackObjectType>; SUMMARY_ARG_SLOTS],
+    unknown_stack_object_deltas: [Option<UnknownStackObjectDeltaState>; SUMMARY_ARG_SLOTS],
+    unknown_stack_object_maybe_initialized:
+        [Option<SubfunctionUnknownStackObjectType>; SUMMARY_ARG_SLOTS],
     ringbuf_record_release_args: u8,
     ringbuf_dynptr_deltas: [Option<i8>; SUMMARY_ARG_SLOTS],
     kfunc_ref_release_args: [Option<KfuncRefKind>; SUMMARY_ARG_SLOTS],
@@ -332,7 +454,7 @@ fn infer_summary_for_subfunction(
     visiting: &mut HashSet<SubfunctionId>,
 ) -> SubfunctionSummary {
     if let Some(summary) = summaries.get(&subfn) {
-        return *summary;
+        return summary.clone();
     }
 
     if !visiting.insert(subfn) {
@@ -344,7 +466,7 @@ fn infer_summary_for_subfunction(
         .map(|func| summarize_function(func, subfunctions, summaries, visiting))
         .unwrap_or_else(SubfunctionSummary::unknown);
     visiting.remove(&subfn);
-    summaries.insert(subfn, summary);
+    summaries.insert(subfn, summary.clone());
     summary
 }
 
@@ -380,6 +502,11 @@ fn summarize_function(
             dynptr_required_args: 0,
             dynptr_deltas: [Some(0); SUMMARY_ARG_SLOTS],
             dynptr_maybe_initialized_args: 0,
+            unknown_stack_object_required: std::array::from_fn(|_| None),
+            unknown_stack_object_deltas: std::array::from_fn(|_| {
+                Some(UnknownStackObjectDeltaState::zero())
+            }),
+            unknown_stack_object_maybe_initialized: std::array::from_fn(|_| None),
             ringbuf_record_release_args: 0,
             ringbuf_dynptr_deltas: [Some(0); SUMMARY_ARG_SLOTS],
             kfunc_ref_release_args: [None; SUMMARY_ARG_SLOTS],
@@ -397,6 +524,15 @@ fn summarize_function(
     let mut returned_dynptr_required: Option<u8> = None;
     let mut returned_dynptr_deltas: Option<[Option<i8>; SUMMARY_ARG_SLOTS]> = None;
     let mut returned_dynptr_maybe_initialized: Option<u8> = None;
+    let mut returned_unknown_stack_object_required: Option<
+        [Option<SubfunctionUnknownStackObjectType>; SUMMARY_ARG_SLOTS],
+    > = None;
+    let mut returned_unknown_stack_object_deltas: Option<
+        [Option<UnknownStackObjectDeltaState>; SUMMARY_ARG_SLOTS],
+    > = None;
+    let mut returned_unknown_stack_object_maybe_initialized: Option<
+        [Option<SubfunctionUnknownStackObjectType>; SUMMARY_ARG_SLOTS],
+    > = None;
     let mut changes_packet_data = false;
     let mut returned_record_releases: Option<u8> = None;
     let mut returned_ringbuf_dynptr_deltas: Option<[Option<i8>; SUMMARY_ARG_SLOTS]> = None;
@@ -494,6 +630,38 @@ fn summarize_function(
                     None => state.dynptr_maybe_initialized_args,
                     Some(existing) => existing | state.dynptr_maybe_initialized_args,
                 });
+                returned_unknown_stack_object_required =
+                    Some(match returned_unknown_stack_object_required {
+                        None => state.unknown_stack_object_required.clone(),
+                        Some(existing) => merge_unknown_stack_object_required_args(
+                            existing,
+                            state.unknown_stack_object_required.clone(),
+                        ),
+                    });
+                returned_unknown_stack_object_deltas =
+                    Some(match returned_unknown_stack_object_deltas {
+                        None => state.unknown_stack_object_deltas.clone(),
+                        Some(existing) => {
+                            let mut maybe = returned_unknown_stack_object_maybe_initialized
+                                .clone()
+                                .unwrap_or_else(|| std::array::from_fn(|_| None));
+                            let merged = merge_unknown_stack_object_delta_args(
+                                existing,
+                                state.unknown_stack_object_deltas.clone(),
+                                &mut maybe,
+                            );
+                            returned_unknown_stack_object_maybe_initialized = Some(maybe);
+                            merged
+                        }
+                    });
+                returned_unknown_stack_object_maybe_initialized =
+                    Some(match returned_unknown_stack_object_maybe_initialized {
+                        None => state.unknown_stack_object_maybe_initialized.clone(),
+                        Some(existing) => merge_unknown_stack_object_required_args(
+                            existing,
+                            state.unknown_stack_object_maybe_initialized.clone(),
+                        ),
+                    });
                 returned_record_releases = Some(match returned_record_releases {
                     None => state.ringbuf_record_release_args,
                     Some(existing) => existing & state.ringbuf_record_release_args,
@@ -520,6 +688,8 @@ fn summarize_function(
 
     let dynptr_maybe_initialized_args = returned_dynptr_maybe_initialized.unwrap_or(0)
         | inconsistent_delta_args(returned_dynptr_deltas);
+    let unknown_stack_object_maybe_initialized = returned_unknown_stack_object_maybe_initialized
+        .unwrap_or_else(|| std::array::from_fn(|_| None));
 
     SubfunctionSummary::from_parts(
         return_alias.flatten(),
@@ -532,6 +702,9 @@ fn summarize_function(
         returned_dynptr_required.unwrap_or(0),
         finalize_delta_args(returned_dynptr_deltas),
         dynptr_maybe_initialized_args,
+        returned_unknown_stack_object_required.unwrap_or_else(|| std::array::from_fn(|_| None)),
+        finalize_unknown_stack_object_delta_args(returned_unknown_stack_object_deltas),
+        unknown_stack_object_maybe_initialized,
         changes_packet_data,
         returned_record_releases.unwrap_or(0),
         finalize_delta_args(returned_ringbuf_dynptr_deltas),
@@ -635,6 +808,31 @@ fn merge_alias_states(existing: &mut SummaryState, incoming: &SummaryState) -> b
         existing.dynptr_maybe_initialized_args = dynptr_maybe_initialized_args;
         changed = true;
     }
+    let unknown_stack_object_required = merge_unknown_stack_object_required_args(
+        existing.unknown_stack_object_required.clone(),
+        incoming.unknown_stack_object_required.clone(),
+    );
+    if existing.unknown_stack_object_required != unknown_stack_object_required {
+        existing.unknown_stack_object_required = unknown_stack_object_required;
+        changed = true;
+    }
+    let mut unknown_stack_object_maybe_initialized = merge_unknown_stack_object_required_args(
+        existing.unknown_stack_object_maybe_initialized.clone(),
+        incoming.unknown_stack_object_maybe_initialized.clone(),
+    );
+    let unknown_stack_object_deltas = merge_unknown_stack_object_delta_args(
+        existing.unknown_stack_object_deltas.clone(),
+        incoming.unknown_stack_object_deltas.clone(),
+        &mut unknown_stack_object_maybe_initialized,
+    );
+    if existing.unknown_stack_object_deltas != unknown_stack_object_deltas {
+        existing.unknown_stack_object_deltas = unknown_stack_object_deltas;
+        changed = true;
+    }
+    if existing.unknown_stack_object_maybe_initialized != unknown_stack_object_maybe_initialized {
+        existing.unknown_stack_object_maybe_initialized = unknown_stack_object_maybe_initialized;
+        changed = true;
+    }
     let record_releases =
         existing.ringbuf_record_release_args & incoming.ringbuf_record_release_args;
     if existing.ringbuf_record_release_args != record_releases {
@@ -727,6 +925,64 @@ fn finalize_iter_delta_args(
         finalized[idx] = returned[idx].and_then(IterDeltaState::to_summary);
     }
     finalized
+}
+
+fn merge_unknown_stack_object_required_args(
+    existing: [Option<SubfunctionUnknownStackObjectType>; SUMMARY_ARG_SLOTS],
+    incoming: [Option<SubfunctionUnknownStackObjectType>; SUMMARY_ARG_SLOTS],
+) -> [Option<SubfunctionUnknownStackObjectType>; SUMMARY_ARG_SLOTS] {
+    std::array::from_fn(|idx| {
+        merge_unknown_stack_object_type_option(existing[idx].clone(), incoming[idx].clone())
+    })
+}
+
+fn merge_unknown_stack_object_type_option(
+    existing: Option<SubfunctionUnknownStackObjectType>,
+    incoming: Option<SubfunctionUnknownStackObjectType>,
+) -> Option<SubfunctionUnknownStackObjectType> {
+    match (existing, incoming) {
+        (Some(lhs), Some(rhs)) if lhs == rhs => Some(lhs),
+        (Some(lhs), None) => Some(lhs),
+        (None, Some(rhs)) => Some(rhs),
+        (Some(_), Some(_)) | (None, None) => None,
+    }
+}
+
+fn merge_unknown_stack_object_delta_args(
+    existing: [Option<UnknownStackObjectDeltaState>; SUMMARY_ARG_SLOTS],
+    incoming: [Option<UnknownStackObjectDeltaState>; SUMMARY_ARG_SLOTS],
+    maybe_initialized: &mut [Option<SubfunctionUnknownStackObjectType>; SUMMARY_ARG_SLOTS],
+) -> [Option<UnknownStackObjectDeltaState>; SUMMARY_ARG_SLOTS] {
+    std::array::from_fn(|idx| {
+        if existing[idx] == incoming[idx] {
+            existing[idx].clone()
+        } else {
+            let maybe_type = existing[idx]
+                .as_ref()
+                .and_then(UnknownStackObjectDeltaState::maybe_initialized_type)
+                .or_else(|| {
+                    incoming[idx]
+                        .as_ref()
+                        .and_then(UnknownStackObjectDeltaState::maybe_initialized_type)
+                });
+            maybe_initialized[idx] =
+                merge_unknown_stack_object_type_option(maybe_initialized[idx].clone(), maybe_type);
+            None
+        }
+    })
+}
+
+fn finalize_unknown_stack_object_delta_args(
+    returned: Option<[Option<UnknownStackObjectDeltaState>; SUMMARY_ARG_SLOTS]>,
+) -> [Option<SubfunctionUnknownStackObjectDelta>; SUMMARY_ARG_SLOTS] {
+    let Some(returned) = returned else {
+        return std::array::from_fn(|_| None);
+    };
+    std::array::from_fn(|idx| {
+        returned[idx]
+            .as_ref()
+            .and_then(UnknownStackObjectDeltaState::to_summary)
+    })
 }
 
 fn merge_kfunc_release_args(
@@ -834,8 +1090,8 @@ fn apply_alias_inst(
                     .map(|kind| KfuncRefSource { id: *dst, kind }),
             };
             set_kfunc_ref_source(&mut state.kfunc_ref_sources, *dst, kfunc_ref_source);
-            apply_subfunction_critical_delta(summary, args, state);
-            apply_subfunction_release_summary(summary, args, state);
+            apply_subfunction_critical_delta(&summary, args, state);
+            apply_subfunction_release_summary(&summary, args, state);
             InstEffects {
                 changes_packet_data: summary.changes_packet_data(),
             }
@@ -881,6 +1137,7 @@ fn apply_alias_inst(
             apply_kfunc_release_summary(kfunc, args, state);
             apply_kfunc_critical_delta(kfunc, args, state);
             apply_kfunc_dynptr_summary(kfunc, args, state);
+            apply_kfunc_unknown_stack_object_summary(kfunc, args, state);
             let kfunc_ref_source =
                 kfunc_acquire_ref_kind(kfunc).map(|kind| KfuncRefSource { id: *dst, kind });
             set_kfunc_ref_source(&mut state.kfunc_ref_sources, *dst, kfunc_ref_source);
@@ -933,7 +1190,7 @@ fn apply_alias_inst(
 }
 
 fn apply_subfunction_critical_delta(
-    summary: SubfunctionSummary,
+    summary: &SubfunctionSummary,
     args: &[VReg],
     state: &mut SummaryState,
 ) {
@@ -1064,6 +1321,71 @@ fn apply_kfunc_dynptr_summary(kfunc: &str, args: &[VReg], state: &mut SummarySta
     }
 }
 
+fn apply_kfunc_unknown_stack_object_summary(kfunc: &str, args: &[VReg], state: &mut SummaryState) {
+    let copies = kfunc_unknown_stack_object_copy(kfunc);
+    if copies.is_empty()
+        && let Some(lifecycle) = kfunc_unknown_stack_object_lifecycle(kfunc)
+        && let Some(arg) = args.get(lifecycle.arg_idx)
+        && let AliasSource::Param(param_idx) = get_alias(&state.aliases, *arg)
+    {
+        let object_type =
+            SubfunctionUnknownStackObjectType::new(lifecycle.type_name, lifecycle.type_id);
+        match lifecycle.op {
+            KfuncUnknownStackObjectLifecycleOp::Init => {
+                add_unknown_stack_object_delta_arg(
+                    &mut state.unknown_stack_object_deltas,
+                    param_idx,
+                    object_type,
+                    1,
+                );
+            }
+            KfuncUnknownStackObjectLifecycleOp::Destroy => {
+                set_unknown_stack_object_required_arg(
+                    &mut state.unknown_stack_object_required,
+                    param_idx,
+                    object_type.clone(),
+                );
+                add_unknown_stack_object_delta_arg(
+                    &mut state.unknown_stack_object_deltas,
+                    param_idx,
+                    object_type,
+                    -1,
+                );
+            }
+        }
+    }
+    for copy in copies {
+        let object_type = SubfunctionUnknownStackObjectType::new(copy.type_name, copy.type_id);
+        if let Some(src) = args.get(copy.src_arg_idx)
+            && let AliasSource::Param(param_idx) = get_alias(&state.aliases, *src)
+        {
+            set_unknown_stack_object_required_arg(
+                &mut state.unknown_stack_object_required,
+                param_idx,
+                object_type.clone(),
+            );
+            if copy.move_semantics {
+                add_unknown_stack_object_delta_arg(
+                    &mut state.unknown_stack_object_deltas,
+                    param_idx,
+                    object_type.clone(),
+                    -1,
+                );
+            }
+        }
+        if let Some(dst) = args.get(copy.dst_arg_idx)
+            && let AliasSource::Param(param_idx) = get_alias(&state.aliases, *dst)
+        {
+            add_unknown_stack_object_delta_arg(
+                &mut state.unknown_stack_object_deltas,
+                param_idx,
+                object_type,
+                1,
+            );
+        }
+    }
+}
+
 fn add_iter_delta_arg(
     slots: &mut [Option<IterDeltaState>; SUMMARY_ARG_SLOTS],
     idx: usize,
@@ -1075,8 +1397,29 @@ fn add_iter_delta_arg(
     }
 }
 
+fn add_unknown_stack_object_delta_arg(
+    slots: &mut [Option<UnknownStackObjectDeltaState>; SUMMARY_ARG_SLOTS],
+    idx: usize,
+    object_type: SubfunctionUnknownStackObjectType,
+    delta: i8,
+) {
+    if let Some(slot) = slots.get_mut(idx) {
+        *slot = slot.take().and_then(|state| state.add(object_type, delta));
+    }
+}
+
+fn set_unknown_stack_object_required_arg(
+    args: &mut [Option<SubfunctionUnknownStackObjectType>; SUMMARY_ARG_SLOTS],
+    idx: usize,
+    object_type: SubfunctionUnknownStackObjectType,
+) {
+    if idx < SUMMARY_ARG_SLOTS {
+        args[idx] = merge_unknown_stack_object_type_option(args[idx].take(), Some(object_type));
+    }
+}
+
 fn apply_subfunction_release_summary(
-    summary: SubfunctionSummary,
+    summary: &SubfunctionSummary,
     args: &[VReg],
     state: &mut SummaryState,
 ) {
@@ -1103,6 +1446,28 @@ fn apply_subfunction_release_summary(
         }
         if summary.maybe_initializes_dynptr_arg(idx) {
             set_mask_bit(&mut state.dynptr_maybe_initialized_args, param_idx);
+        }
+        if let Some(object_type) = summary.unknown_stack_object_required_arg(idx) {
+            set_unknown_stack_object_required_arg(
+                &mut state.unknown_stack_object_required,
+                param_idx,
+                object_type.clone(),
+            );
+        }
+        if let Some(delta) = summary.unknown_stack_object_delta_arg(idx) {
+            add_unknown_stack_object_delta_arg(
+                &mut state.unknown_stack_object_deltas,
+                param_idx,
+                delta.object_type.clone(),
+                delta.delta,
+            );
+        }
+        if let Some(object_type) = summary.unknown_stack_object_maybe_initialized_arg(idx) {
+            set_unknown_stack_object_required_arg(
+                &mut state.unknown_stack_object_maybe_initialized,
+                param_idx,
+                object_type.clone(),
+            );
         }
         if summary.releases_ringbuf_record_arg(idx) {
             set_mask_bit(&mut state.ringbuf_record_release_args, param_idx);
@@ -1550,7 +1915,7 @@ mod tests {
         let summaries = infer_subfunction_summaries(&[subfn]);
         let summary = summaries
             .get(&SubfunctionId(0))
-            .copied()
+            .cloned()
             .expect("expected summary");
         assert!(summary.releases_ringbuf_record_arg(0));
         assert!(!summary.releases_ringbuf_record_arg(1));
@@ -1585,7 +1950,7 @@ mod tests {
         let summaries = infer_subfunction_summaries(&[subfn]);
         let summary = summaries
             .get(&SubfunctionId(0))
-            .copied()
+            .cloned()
             .expect("expected summary");
         assert!(!summary.releases_ringbuf_record_arg(0));
     }
@@ -1617,7 +1982,7 @@ mod tests {
         let summaries = infer_subfunction_summaries(&[subfn]);
         let summary = summaries
             .get(&SubfunctionId(0))
-            .copied()
+            .cloned()
             .expect("expected summary");
         assert!(summary.returns_ringbuf_record());
     }
@@ -1658,7 +2023,7 @@ mod tests {
         let summaries = infer_subfunction_summaries(&[subfn]);
         let summary = summaries
             .get(&SubfunctionId(0))
-            .copied()
+            .cloned()
             .expect("expected summary");
         assert!(!summary.returns_ringbuf_record());
     }
@@ -1700,7 +2065,7 @@ mod tests {
         let summaries = infer_subfunction_summaries(&[callee, caller]);
         let summary = summaries
             .get(&SubfunctionId(1))
-            .copied()
+            .cloned()
             .expect("expected summary");
         assert!(summary.releases_ringbuf_dynptr_arg(0));
         assert!(!summary.releases_ringbuf_dynptr_arg(1));
@@ -1733,7 +2098,7 @@ mod tests {
         let summaries = infer_subfunction_summaries(&[subfn]);
         let summary = summaries
             .get(&SubfunctionId(0))
-            .copied()
+            .cloned()
             .expect("expected summary");
         assert_eq!(summary.ringbuf_dynptr_delta_arg(0), 1);
         assert!(!summary.releases_ringbuf_dynptr_arg(0));
@@ -1775,7 +2140,7 @@ mod tests {
         let summaries = infer_subfunction_summaries(&[subfn]);
         let summary = summaries
             .get(&SubfunctionId(0))
-            .copied()
+            .cloned()
             .expect("expected summary");
         assert_eq!(summary.ringbuf_dynptr_delta_arg(0), 0);
         assert!(!summary.releases_ringbuf_dynptr_arg(0));
@@ -1803,7 +2168,7 @@ mod tests {
         let summaries = infer_subfunction_summaries(&[subfn]);
         let summary = summaries
             .get(&SubfunctionId(0))
-            .copied()
+            .cloned()
             .expect("expected summary");
         assert!(summary.requires_initialized_dynptr_arg(0));
         assert_eq!(summary.dynptr_delta_arg(0), 0);
@@ -1831,7 +2196,7 @@ mod tests {
         let summaries = infer_subfunction_summaries(&[subfn]);
         let summary = summaries
             .get(&SubfunctionId(0))
-            .copied()
+            .cloned()
             .expect("expected summary");
         assert!(!summary.requires_initialized_dynptr_arg(2));
         assert_eq!(summary.dynptr_delta_arg(2), 1);
@@ -1865,7 +2230,7 @@ mod tests {
         let summaries = infer_subfunction_summaries(&[subfn]);
         let summary = summaries
             .get(&SubfunctionId(0))
-            .copied()
+            .cloned()
             .expect("expected summary");
         assert_eq!(summary.dynptr_delta_arg(2), 0);
         assert!(summary.maybe_initializes_dynptr_arg(2));
@@ -1893,12 +2258,134 @@ mod tests {
         let summaries = infer_subfunction_summaries(&[subfn]);
         let summary = summaries
             .get(&SubfunctionId(0))
-            .copied()
+            .cloned()
             .expect("expected summary");
         assert!(summary.requires_initialized_dynptr_arg(0));
         assert_eq!(summary.dynptr_delta_arg(0), 0);
         assert!(!summary.requires_initialized_dynptr_arg(1));
         assert_eq!(summary.dynptr_delta_arg(1), 1);
+    }
+
+    #[test]
+    fn test_infer_summary_tracks_unknown_stack_object_lifecycle() {
+        let mut init = MirFunction::new();
+        let init_entry = init.alloc_block();
+        init.entry = init_entry;
+        init.param_count = 1;
+        init.vreg_count = 1;
+        let init_ret = init.alloc_vreg();
+        init.block_mut(init_entry)
+            .instructions
+            .push(MirInst::CallKfunc {
+                dst: init_ret,
+                kfunc: "__test_unknown_stack_object_init".to_string(),
+                btf_id: None,
+                args: vec![VReg(0)],
+            });
+        init.block_mut(init_entry).terminator = MirInst::Return { val: None };
+
+        let mut destroy = MirFunction::new();
+        let destroy_entry = destroy.alloc_block();
+        destroy.entry = destroy_entry;
+        destroy.param_count = 1;
+        destroy.vreg_count = 1;
+        let destroy_ret = destroy.alloc_vreg();
+        destroy
+            .block_mut(destroy_entry)
+            .instructions
+            .push(MirInst::CallKfunc {
+                dst: destroy_ret,
+                kfunc: "__test_unknown_stack_object_destroy".to_string(),
+                btf_id: None,
+                args: vec![VReg(0)],
+            });
+        destroy.block_mut(destroy_entry).terminator = MirInst::Return { val: None };
+
+        let summaries = infer_subfunction_summaries(&[init, destroy]);
+        let init_delta = summaries
+            .get(&SubfunctionId(0))
+            .expect("expected init summary")
+            .unknown_stack_object_delta_arg(0)
+            .expect("expected init delta");
+        assert_eq!(init_delta.object_type.type_name, "bpf_test_obj");
+        assert_eq!(init_delta.object_type.type_id, Some(0xbeef));
+        assert_eq!(init_delta.delta, 1);
+
+        let destroy_summary = summaries
+            .get(&SubfunctionId(1))
+            .expect("expected destroy summary");
+        let required = destroy_summary
+            .unknown_stack_object_required_arg(0)
+            .expect("expected required object");
+        assert_eq!(required.type_name, "bpf_test_obj");
+        let destroy_delta = destroy_summary
+            .unknown_stack_object_delta_arg(0)
+            .expect("expected destroy delta");
+        assert_eq!(destroy_delta.delta, -1);
+    }
+
+    #[test]
+    fn test_infer_summary_tracks_unknown_stack_object_copy_args() {
+        let mut copy = MirFunction::new();
+        let entry = copy.alloc_block();
+        copy.entry = entry;
+        copy.param_count = 2;
+        copy.vreg_count = 2;
+        let copy_ret = copy.alloc_vreg();
+        copy.block_mut(entry).instructions.push(MirInst::CallKfunc {
+            dst: copy_ret,
+            kfunc: "__test_unknown_stack_object_copy".to_string(),
+            btf_id: None,
+            args: vec![VReg(0), VReg(1)],
+        });
+        copy.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let summaries = infer_subfunction_summaries(&[copy]);
+        let summary = summaries
+            .get(&SubfunctionId(0))
+            .expect("expected copy summary");
+        assert!(summary.unknown_stack_object_required_arg(0).is_some());
+        assert!(summary.unknown_stack_object_required_arg(1).is_none());
+        assert!(summary.unknown_stack_object_delta_arg(0).is_none());
+        let dst_delta = summary
+            .unknown_stack_object_delta_arg(1)
+            .expect("expected dst delta");
+        assert_eq!(dst_delta.object_type.type_name, "bpf_test_obj");
+        assert_eq!(dst_delta.delta, 1);
+    }
+
+    #[test]
+    fn test_infer_summary_tracks_conditional_unknown_stack_object_init_as_maybe() {
+        let mut subfn = MirFunction::new();
+        let entry = subfn.alloc_block();
+        let init = subfn.alloc_block();
+        let done = subfn.alloc_block();
+        subfn.entry = entry;
+        subfn.param_count = 2;
+        subfn.vreg_count = 2;
+        subfn.block_mut(entry).terminator = MirInst::Branch {
+            cond: VReg(1),
+            if_true: init,
+            if_false: done,
+        };
+        let init_ret = subfn.alloc_vreg();
+        subfn.block_mut(init).instructions.push(MirInst::CallKfunc {
+            dst: init_ret,
+            kfunc: "__test_unknown_stack_object_init".to_string(),
+            btf_id: None,
+            args: vec![VReg(0)],
+        });
+        subfn.block_mut(init).terminator = MirInst::Return { val: None };
+        subfn.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let summaries = infer_subfunction_summaries(&[subfn]);
+        let summary = summaries.get(&SubfunctionId(0)).expect("expected summary");
+        assert!(summary.unknown_stack_object_delta_arg(0).is_none());
+        let maybe = summary
+            .unknown_stack_object_maybe_initialized_arg(0)
+            .expect("expected maybe initialized object");
+        assert_eq!(maybe.type_name, "bpf_test_obj");
+        assert_eq!(maybe.type_id, Some(0xbeef));
     }
 
     #[test]
@@ -1923,7 +2410,7 @@ mod tests {
         let summaries = infer_subfunction_summaries(&[subfn]);
         let summary = summaries
             .get(&SubfunctionId(0))
-            .copied()
+            .cloned()
             .expect("expected summary");
         assert_eq!(
             summary.kfunc_ref_release_arg_kind(0),
@@ -1962,7 +2449,7 @@ mod tests {
         let summaries = infer_subfunction_summaries(&[subfn]);
         let summary = summaries
             .get(&SubfunctionId(0))
-            .copied()
+            .cloned()
             .expect("expected summary");
         assert_eq!(summary.kfunc_ref_release_arg_kind(0), None);
     }
@@ -1991,7 +2478,7 @@ mod tests {
         let summaries = infer_subfunction_summaries(&[subfn]);
         let summary = summaries
             .get(&SubfunctionId(0))
-            .copied()
+            .cloned()
             .expect("expected summary");
         assert_eq!(summary.kfunc_ref_return_kind(), Some(KfuncRefKind::Task));
     }
@@ -2028,7 +2515,7 @@ mod tests {
         let summaries = infer_subfunction_summaries(&[subfn]);
         let summary = summaries
             .get(&SubfunctionId(0))
-            .copied()
+            .cloned()
             .expect("expected summary");
         assert_eq!(summary.kfunc_ref_return_kind(), None);
     }
@@ -2067,7 +2554,7 @@ mod tests {
         let summaries = infer_subfunction_summaries(&[subfn]);
         let summary = summaries
             .get(&SubfunctionId(0))
-            .copied()
+            .cloned()
             .expect("expected summary");
         assert_eq!(summary.kfunc_ref_return_kind(), None);
     }
@@ -2108,7 +2595,7 @@ mod tests {
         assert_eq!(
             summaries
                 .get(&SubfunctionId(0))
-                .copied()
+                .cloned()
                 .expect("expected acquire summary")
                 .rcu_read_lock_delta(),
             1
@@ -2116,7 +2603,7 @@ mod tests {
         assert_eq!(
             summaries
                 .get(&SubfunctionId(1))
-                .copied()
+                .cloned()
                 .expect("expected release summary")
                 .rcu_read_lock_delta(),
             -1
@@ -2152,7 +2639,7 @@ mod tests {
         let summaries = infer_subfunction_summaries(&[subfn]);
         let summary = summaries
             .get(&SubfunctionId(0))
-            .copied()
+            .cloned()
             .expect("expected summary");
         assert_eq!(summary.rcu_read_lock_delta(), 0);
     }
@@ -2177,7 +2664,7 @@ mod tests {
         let summaries = infer_subfunction_summaries(&[subfn]);
         let summary = summaries
             .get(&SubfunctionId(0))
-            .copied()
+            .cloned()
             .expect("expected summary");
         assert_eq!(summary.preempt_disable_delta(), 1);
     }
@@ -2221,7 +2708,7 @@ mod tests {
         assert_eq!(
             summaries
                 .get(&SubfunctionId(0))
-                .copied()
+                .cloned()
                 .expect("expected save summary")
                 .local_irq_delta_arg(0),
             1
@@ -2229,7 +2716,7 @@ mod tests {
         assert_eq!(
             summaries
                 .get(&SubfunctionId(1))
-                .copied()
+                .cloned()
                 .expect("expected restore summary")
                 .local_irq_delta_arg(0),
             -1
@@ -2263,7 +2750,7 @@ mod tests {
         let summaries = infer_subfunction_summaries(&[subfn]);
         let summary = summaries
             .get(&SubfunctionId(0))
-            .copied()
+            .cloned()
             .expect("expected summary");
         assert_eq!(summary.local_irq_delta_arg(0), 0);
     }
@@ -2308,7 +2795,7 @@ mod tests {
         let summaries = infer_subfunction_summaries(&[new, destroy]);
         let new_delta = summaries
             .get(&SubfunctionId(0))
-            .copied()
+            .cloned()
             .expect("expected new summary")
             .iter_delta_arg(0)
             .expect("expected iterator delta");
@@ -2316,7 +2803,7 @@ mod tests {
         assert_eq!(new_delta.delta, 1);
         let destroy_delta = summaries
             .get(&SubfunctionId(1))
-            .copied()
+            .cloned()
             .expect("expected destroy summary")
             .iter_delta_arg(0)
             .expect("expected iterator delta");
@@ -2353,7 +2840,7 @@ mod tests {
         let summaries = infer_subfunction_summaries(&[subfn]);
         let summary = summaries
             .get(&SubfunctionId(0))
-            .copied()
+            .cloned()
             .expect("expected summary");
         assert_eq!(summary.iter_delta_arg(0), None);
     }

@@ -3,7 +3,7 @@ use crate::compiler::instruction::{
     kfunc_allowed_while_lock_held, unknown_kfunc_signature_message,
 };
 use crate::compiler::mir::SubfunctionId;
-use crate::compiler::subfn_summaries::SubfunctionSummary;
+use crate::compiler::subfn_summaries::{SubfunctionSummary, SubfunctionUnknownStackObjectType};
 use crate::compiler::{ProbeContext, ProgramTypeInfo};
 
 fn reject_call_if_kernel_lock_held(
@@ -339,7 +339,7 @@ pub(super) fn apply_call_subfn_inst(
     }
     let summary = subfn_summaries
         .get(&subfn)
-        .copied()
+        .cloned()
         .unwrap_or_else(SubfunctionSummary::unknown);
 
     if summary.changes_packet_data() {
@@ -527,6 +527,38 @@ fn apply_subfunction_release_summary(
         if summary.maybe_initializes_dynptr_arg(idx) {
             mark_subfunction_dynptr_arg_maybe_initialized(idx, arg, state, errors);
         }
+        if let Some(object_type) = summary.unknown_stack_object_required_arg(idx) {
+            require_subfunction_unknown_stack_object_arg(idx, arg, object_type, state, errors);
+        }
+        if let Some(delta) = summary.unknown_stack_object_delta_arg(idx) {
+            for _ in 0..delta.delta.max(0) {
+                initialize_subfunction_unknown_stack_object_arg(
+                    idx,
+                    arg,
+                    &delta.object_type,
+                    state,
+                    errors,
+                );
+            }
+            for _ in 0..delta.delta.saturating_neg() {
+                destroy_subfunction_unknown_stack_object_arg(
+                    idx,
+                    arg,
+                    &delta.object_type,
+                    state,
+                    errors,
+                );
+            }
+        }
+        if let Some(object_type) = summary.unknown_stack_object_maybe_initialized_arg(idx) {
+            mark_subfunction_unknown_stack_object_arg_maybe_initialized(
+                idx,
+                arg,
+                object_type,
+                state,
+                errors,
+            );
+        }
         let dynptr_delta = summary.ringbuf_dynptr_delta_arg(idx);
         for _ in 0..dynptr_delta.max(0) {
             acquire_subfunction_ringbuf_dynptr_arg(idx, arg, state, errors);
@@ -664,6 +696,95 @@ fn mark_subfunction_dynptr_arg_maybe_initialized(
         return;
     };
     state.mark_dynptr_slot_maybe_initialized(slot);
+}
+
+fn require_subfunction_unknown_stack_object_arg(
+    idx: usize,
+    arg: VReg,
+    object_type: &SubfunctionUnknownStackObjectType,
+    state: &VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    let Some(slot) = stack_slot_base_from_vreg(arg, state) else {
+        errors.push(VerifierTypeError::new(format!(
+            "subfunction arg{} expects stack slot base pointer",
+            idx
+        )));
+        return;
+    };
+    if !state.has_unknown_stack_object_slot(slot, &object_type.type_name, object_type.type_id) {
+        errors.push(VerifierTypeError::new(format!(
+            "subfunction arg{} requires initialized {} stack object",
+            idx, object_type.type_name
+        )));
+    }
+}
+
+fn initialize_subfunction_unknown_stack_object_arg(
+    idx: usize,
+    arg: VReg,
+    object_type: &SubfunctionUnknownStackObjectType,
+    state: &mut VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    let Some(slot) = stack_slot_base_from_vreg(arg, state) else {
+        errors.push(VerifierTypeError::new(format!(
+            "subfunction arg{} expects stack slot base pointer",
+            idx
+        )));
+        return;
+    };
+    if state.has_live_unknown_stack_object_slot(slot) {
+        errors.push(VerifierTypeError::new(format!(
+            "subfunction arg{} requires uninitialized {} stack object slot",
+            idx, object_type.type_name
+        )));
+        return;
+    }
+    state.initialize_unknown_stack_object_slot(slot, &object_type.type_name, object_type.type_id);
+}
+
+fn destroy_subfunction_unknown_stack_object_arg(
+    idx: usize,
+    arg: VReg,
+    object_type: &SubfunctionUnknownStackObjectType,
+    state: &mut VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    let Some(slot) = stack_slot_base_from_vreg(arg, state) else {
+        errors.push(VerifierTypeError::new(format!(
+            "subfunction arg{} expects stack slot base pointer",
+            idx
+        )));
+        return;
+    };
+    if !state.release_unknown_stack_object_slot(slot, &object_type.type_name, object_type.type_id) {
+        errors.push(VerifierTypeError::new(format!(
+            "subfunction arg{} requires initialized {} stack object",
+            idx, object_type.type_name
+        )));
+    }
+}
+
+fn mark_subfunction_unknown_stack_object_arg_maybe_initialized(
+    idx: usize,
+    arg: VReg,
+    object_type: &SubfunctionUnknownStackObjectType,
+    state: &mut VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    let Some(slot) = stack_slot_base_from_vreg(arg, state) else {
+        errors.push(VerifierTypeError::new(format!(
+            "subfunction arg{} expects stack slot base pointer",
+            idx
+        )));
+        return;
+    };
+    state.mark_unknown_stack_object_slot_maybe_initialized(
+        slot,
+        &object_type.type_name,
+        object_type.type_id,
+    );
 }
 
 fn acquire_subfunction_ringbuf_dynptr_arg(

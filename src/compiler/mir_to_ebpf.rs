@@ -774,14 +774,14 @@ fn verify_mir_program(
             .then(|| {
                 subfn_summaries
                     .get(&SubfunctionId((idx - 1) as u32))
-                    .copied()
+                    .cloned()
             })
             .flatten();
         if let Err(errors) = verifier_types::verify_mir_with_subfunction_summaries_for_probe_context_with_current_summary(
             func,
             &types,
             &subfn_summaries,
-            current_summary,
+            current_summary.clone(),
             probe_ctx,
             type_hints.map(|hints| &hints.generic_map_value_types),
         ) {

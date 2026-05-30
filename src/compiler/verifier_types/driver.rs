@@ -137,6 +137,7 @@ fn verify_mir_with_subfunction_summaries_impl(
         return Err(errors);
     }
 
+    let current_summary = current_summary.as_ref();
     let mut entry_state = VerifierState::new(total_vregs);
     for i in 0..func.param_count {
         let vreg = VReg(i as u32);
@@ -221,6 +222,7 @@ fn verify_mir_with_subfunction_summaries_impl(
     if let Some(summary) = current_summary {
         seed_entry_critical_section_state(&mut entry_state, func, summary);
         seed_entry_iter_state(&mut entry_state, func, summary);
+        seed_entry_unknown_stack_object_state(&mut entry_state, func, summary);
         for i in 0..func.param_count {
             if let Some(slot) = func.param_stack_slots.get(&i).copied() {
                 let ringbuf_seeded = summary.ringbuf_dynptr_delta_arg(i) < 0;
@@ -370,7 +372,11 @@ fn verify_mir_with_subfunction_summaries_impl(
                         slot.0
                     )));
                 }
-                if let Some((slot, type_name)) = state.first_live_unknown_stack_object() {
+                let allowed_unknown_stack_object_slots =
+                    allowed_unknown_stack_object_slots(current_summary, func);
+                if let Some((slot, type_name)) = state.first_live_unknown_stack_object_except_slots(
+                    &allowed_unknown_stack_object_slots,
+                ) {
                     errors.push(VerifierTypeError::new(format!(
                         "unreleased unknown stack object at function exit: {} in stack slot {}",
                         type_name, slot.0
@@ -503,7 +509,7 @@ fn verify_mir_with_subfunction_summaries_impl(
 fn seed_entry_critical_section_state(
     state: &mut VerifierState,
     func: &MirFunction,
-    summary: SubfunctionSummary,
+    summary: &SubfunctionSummary,
 ) {
     for _ in 0..summary.rcu_read_lock_delta().saturating_neg() {
         state.acquire_rcu_read_lock();
@@ -524,7 +530,7 @@ fn seed_entry_critical_section_state(
 fn seed_entry_iter_state(
     state: &mut VerifierState,
     func: &MirFunction,
-    summary: SubfunctionSummary,
+    summary: &SubfunctionSummary,
 ) {
     for idx in 0..func.param_count {
         let Some(delta) = summary.iter_delta_arg(idx) else {
@@ -542,20 +548,53 @@ fn seed_entry_iter_state(
     }
 }
 
-fn allowed_rcu_depth(current_summary: Option<SubfunctionSummary>) -> u32 {
+fn seed_entry_unknown_stack_object_state(
+    state: &mut VerifierState,
+    func: &MirFunction,
+    summary: &SubfunctionSummary,
+) {
+    for idx in 0..func.param_count {
+        let Some(slot) = func.param_stack_slots.get(&idx).copied() else {
+            continue;
+        };
+        if let Some(object_type) = summary.unknown_stack_object_required_arg(idx) {
+            seed_unknown_stack_object_slot(state, slot, object_type);
+        } else if let Some(delta) = summary.unknown_stack_object_delta_arg(idx)
+            && delta.delta < 0
+        {
+            seed_unknown_stack_object_slot(state, slot, &delta.object_type);
+        }
+    }
+}
+
+fn seed_unknown_stack_object_slot(
+    state: &mut VerifierState,
+    slot: StackSlotId,
+    object_type: &crate::compiler::subfn_summaries::SubfunctionUnknownStackObjectType,
+) {
+    if !state.has_unknown_stack_object_slot(slot, &object_type.type_name, object_type.type_id) {
+        state.initialize_unknown_stack_object_slot(
+            slot,
+            &object_type.type_name,
+            object_type.type_id,
+        );
+    }
+}
+
+fn allowed_rcu_depth(current_summary: Option<&SubfunctionSummary>) -> u32 {
     current_summary
         .map(|summary| summary.rcu_read_lock_delta().max(0) as u32)
         .unwrap_or(0)
 }
 
-fn allowed_preempt_depth(current_summary: Option<SubfunctionSummary>) -> u32 {
+fn allowed_preempt_depth(current_summary: Option<&SubfunctionSummary>) -> u32 {
     current_summary
         .map(|summary| summary.preempt_disable_delta().max(0) as u32)
         .unwrap_or(0)
 }
 
 fn allowed_local_irq_slots(
-    current_summary: Option<SubfunctionSummary>,
+    current_summary: Option<&SubfunctionSummary>,
     func: &MirFunction,
 ) -> HashMap<StackSlotId, u32> {
     let mut allowed = HashMap::new();
@@ -576,7 +615,7 @@ fn allowed_local_irq_slots(
 }
 
 fn check_live_iter_families_at_return(
-    current_summary: Option<SubfunctionSummary>,
+    current_summary: Option<&SubfunctionSummary>,
     func: &MirFunction,
     state: &VerifierState,
     errors: &mut Vec<VerifierTypeError>,
@@ -617,7 +656,7 @@ fn iter_exit_label(family: KfuncIterFamily) -> &'static str {
 }
 
 fn allowed_iter_slots(
-    current_summary: Option<SubfunctionSummary>,
+    current_summary: Option<&SubfunctionSummary>,
     func: &MirFunction,
     family: KfuncIterFamily,
 ) -> HashMap<StackSlotId, u32> {
@@ -641,7 +680,7 @@ fn allowed_iter_slots(
 }
 
 fn allowed_ringbuf_dynptr_slots(
-    current_summary: Option<SubfunctionSummary>,
+    current_summary: Option<&SubfunctionSummary>,
     func: &MirFunction,
 ) -> HashMap<StackSlotId, u32> {
     let mut allowed = HashMap::new();
@@ -661,8 +700,38 @@ fn allowed_ringbuf_dynptr_slots(
     allowed
 }
 
+fn allowed_unknown_stack_object_slots(
+    current_summary: Option<&SubfunctionSummary>,
+    func: &MirFunction,
+) -> HashMap<StackSlotId, u32> {
+    let mut allowed = HashMap::new();
+    let Some(summary) = current_summary else {
+        return allowed;
+    };
+    for idx in 0..func.param_count {
+        let mut delta = summary
+            .unknown_stack_object_delta_arg(idx)
+            .map(|delta| delta.delta.max(0) as u32)
+            .unwrap_or(0);
+        if summary
+            .unknown_stack_object_maybe_initialized_arg(idx)
+            .is_some()
+        {
+            delta = delta.saturating_add(1);
+        }
+        if delta == 0 {
+            continue;
+        }
+        if let Some(slot) = func.param_stack_slots.get(&idx).copied() {
+            let entry = allowed.entry(slot).or_insert(0u32);
+            *entry = entry.saturating_add(delta);
+        }
+    }
+    allowed
+}
+
 fn allowed_returned_ringbuf_ref(
-    current_summary: Option<SubfunctionSummary>,
+    current_summary: Option<&SubfunctionSummary>,
     val: Option<&MirValue>,
     state: &VerifierState,
 ) -> Option<VReg> {
@@ -684,7 +753,7 @@ fn allowed_returned_ringbuf_ref(
 }
 
 fn allowed_returned_kfunc_ref(
-    current_summary: Option<SubfunctionSummary>,
+    current_summary: Option<&SubfunctionSummary>,
     val: Option<&MirValue>,
     state: &VerifierState,
 ) -> Option<VReg> {

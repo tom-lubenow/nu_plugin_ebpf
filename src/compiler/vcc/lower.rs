@@ -95,7 +95,7 @@ impl<'a> VccLowerer<'a> {
                 ptr_regs.insert(VccReg(vreg.0), info);
             }
         }
-        if let Some(summary) = current_summary {
+        if let Some(summary) = current_summary.as_ref() {
             for idx in 0..func.param_count {
                 let reg = VccReg(idx as u32);
                 if summary.releases_ringbuf_record_arg(idx) {
@@ -166,7 +166,7 @@ impl<'a> VccLowerer<'a> {
         for (vreg, ty) in self.types {
             seed.insert(VccReg(vreg.0), self.seed_vcc_type(*vreg, ty));
         }
-        if let Some(summary) = self.current_summary {
+        if let Some(summary) = self.current_summary.as_ref() {
             for idx in 0..self.func.param_count {
                 let reg = VccReg(idx as u32);
                 if summary.releases_ringbuf_record_arg(idx) {
@@ -256,7 +256,7 @@ impl<'a> VccLowerer<'a> {
     }
 
     fn lower_entry_subfunction_resource_assumptions(&mut self, out: &mut Vec<VccInst>) {
-        let Some(summary) = self.current_summary else {
+        let Some(summary) = self.current_summary.as_ref() else {
             return;
         };
         for _ in 0..summary.rcu_read_lock_delta().saturating_neg() {
@@ -304,6 +304,25 @@ impl<'a> VccLowerer<'a> {
             }
             if let Some(kind) = summary.kfunc_ref_release_arg_kind(idx) {
                 out.push(VccInst::KfuncAcquire { id: reg, kind });
+            }
+            if let Some(object_type) = summary.unknown_stack_object_required_arg(idx) {
+                out.push(VccInst::UnknownStackObjectInit {
+                    ptr: reg,
+                    type_name: object_type.type_name.clone(),
+                    type_id: object_type.type_id,
+                    kfunc: "subfunction parameter".to_string(),
+                    arg_idx: idx,
+                });
+            } else if let Some(delta) = summary.unknown_stack_object_delta_arg(idx)
+                && delta.delta < 0
+            {
+                out.push(VccInst::UnknownStackObjectInit {
+                    ptr: reg,
+                    type_name: delta.object_type.type_name.clone(),
+                    type_id: delta.object_type.type_id,
+                    kfunc: "subfunction parameter".to_string(),
+                    arg_idx: idx,
+                });
             }
         }
     }

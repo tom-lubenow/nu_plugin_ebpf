@@ -1459,15 +1459,15 @@ impl<'a> VccLowerer<'a> {
                     let summary = self
                         .subfn_summaries
                         .get(subfn)
-                        .copied()
+                        .cloned()
                         .unwrap_or(
                             crate::compiler::subfn_summaries::SubfunctionSummary::unknown(),
                         );
                     if summary.changes_packet_data() {
                         out.push(VccInst::InvalidatePacketPointers);
                     }
-                    self.lower_subfunction_critical_delta(summary, args, out);
-                    self.lower_subfunction_release_summary(summary, args, out);
+                    self.lower_subfunction_critical_delta(&summary, args, out);
+                    self.lower_subfunction_release_summary(&summary, args, out);
                     if let Some(idx) = summary.return_arg()
                         && let Some(arg) = args.get(idx)
                     {
@@ -1797,7 +1797,7 @@ impl<'a> VccLowerer<'a> {
 
     fn lower_subfunction_release_summary(
         &mut self,
-        summary: crate::compiler::subfn_summaries::SubfunctionSummary,
+        summary: &crate::compiler::subfn_summaries::SubfunctionSummary,
         args: &[VReg],
         out: &mut Vec<VccInst>,
     ) {
@@ -1839,6 +1839,44 @@ impl<'a> VccLowerer<'a> {
                     arg_idx: idx,
                 });
             }
+            if let Some(object_type) = summary.unknown_stack_object_required_arg(idx) {
+                out.push(VccInst::UnknownStackObjectRequireInitialized {
+                    ptr: VccReg(arg.0),
+                    type_name: object_type.type_name.clone(),
+                    type_id: object_type.type_id,
+                    kfunc: format!("subfunction arg{}", idx),
+                    arg_idx: idx,
+                });
+            }
+            if let Some(delta) = summary.unknown_stack_object_delta_arg(idx) {
+                for _ in 0..delta.delta.max(0) {
+                    out.push(VccInst::UnknownStackObjectInit {
+                        ptr: VccReg(arg.0),
+                        type_name: delta.object_type.type_name.clone(),
+                        type_id: delta.object_type.type_id,
+                        kfunc: format!("subfunction arg{}", idx),
+                        arg_idx: idx,
+                    });
+                }
+                for _ in 0..delta.delta.saturating_neg() {
+                    out.push(VccInst::UnknownStackObjectDestroy {
+                        ptr: VccReg(arg.0),
+                        type_name: delta.object_type.type_name.clone(),
+                        type_id: delta.object_type.type_id,
+                        kfunc: format!("subfunction arg{}", idx),
+                        arg_idx: idx,
+                    });
+                }
+            }
+            if let Some(object_type) = summary.unknown_stack_object_maybe_initialized_arg(idx) {
+                out.push(VccInst::UnknownStackObjectMarkMaybeInitialized {
+                    ptr: VccReg(arg.0),
+                    type_name: object_type.type_name.clone(),
+                    type_id: object_type.type_id,
+                    kfunc: format!("subfunction arg{}", idx),
+                    arg_idx: idx,
+                });
+            }
             let dynptr_delta = summary.ringbuf_dynptr_delta_arg(idx);
             let ptr = VccReg(arg.0);
             for _ in 0..dynptr_delta.max(0) {
@@ -1873,7 +1911,7 @@ impl<'a> VccLowerer<'a> {
 
     fn lower_subfunction_critical_delta(
         &self,
-        summary: crate::compiler::subfn_summaries::SubfunctionSummary,
+        summary: &crate::compiler::subfn_summaries::SubfunctionSummary,
         args: &[VReg],
         out: &mut Vec<VccInst>,
     ) {

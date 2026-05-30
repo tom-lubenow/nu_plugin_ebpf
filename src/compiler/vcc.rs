@@ -478,7 +478,21 @@ pub enum VccInst {
         kfunc: String,
         arg_idx: usize,
     },
+    UnknownStackObjectRequireInitialized {
+        ptr: VccReg,
+        type_name: String,
+        type_id: Option<u32>,
+        kfunc: String,
+        arg_idx: usize,
+    },
     UnknownStackObjectDestroy {
+        ptr: VccReg,
+        type_name: String,
+        type_id: Option<u32>,
+        kfunc: String,
+        arg_idx: usize,
+    },
+    UnknownStackObjectMarkMaybeInitialized {
         ptr: VccReg,
         type_name: String,
         type_id: Option<u32>,
@@ -761,7 +775,7 @@ fn verify_mir_with_subfunction_summaries_impl(
         types,
         list_max,
         subfn_summaries,
-        current_summary,
+        current_summary.clone(),
         effective_program,
         probe_ctx,
     );

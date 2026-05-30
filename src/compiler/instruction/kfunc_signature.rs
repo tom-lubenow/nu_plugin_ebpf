@@ -7,6 +7,27 @@ impl KfuncSignature {
         const P: KfuncArgKind = KfuncArgKind::Pointer;
         const F: KfuncArgKind = KfuncArgKind::Subprogram;
 
+        #[cfg(test)]
+        match name {
+            "__test_unknown_stack_object_init" | "__test_unknown_stack_object_destroy" => {
+                return Some(Self {
+                    min_args: 1,
+                    max_args: 1,
+                    arg_kinds: [P, S, S, S, S],
+                    ret_kind: KfuncRetKind::Void,
+                });
+            }
+            "__test_unknown_stack_object_copy" | "__test_unknown_stack_object_move" => {
+                return Some(Self {
+                    min_args: 2,
+                    max_args: 2,
+                    arg_kinds: [P, P, S, S, S],
+                    ret_kind: KfuncRetKind::Void,
+                });
+            }
+            _ => {}
+        }
+
         match name {
             "bpf_task_acquire" => Some(Self {
                 min_args: 1,

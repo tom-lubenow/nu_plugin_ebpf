@@ -2012,6 +2012,27 @@ impl VccVerifier {
                 }
                 state.initialize_unknown_stack_object_slot(slot, type_name, *type_id);
             }
+            VccInst::UnknownStackObjectRequireInitialized {
+                ptr,
+                type_name,
+                type_id,
+                kfunc,
+                arg_idx,
+            } => {
+                let op = format!("kfunc '{}' arg{}", kfunc, arg_idx);
+                let Some(slot) = self.stack_slot_from_reg(state, *ptr, &op) else {
+                    return;
+                };
+                if !state.has_unknown_stack_object_slot(slot, type_name, *type_id) {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        format!(
+                            "kfunc '{}' arg{} requires initialized {} stack object",
+                            kfunc, arg_idx, type_name
+                        ),
+                    ));
+                }
+            }
             VccInst::UnknownStackObjectDestroy {
                 ptr,
                 type_name,
@@ -2032,6 +2053,21 @@ impl VccVerifier {
                         ),
                     ));
                 }
+            }
+            VccInst::UnknownStackObjectMarkMaybeInitialized {
+                ptr,
+                type_name,
+                type_id,
+                kfunc,
+                arg_idx,
+            } => {
+                let op = format!("kfunc '{}' arg{}", kfunc, arg_idx);
+                let Some(slot) = self.stack_slot_from_reg(state, *ptr, &op) else {
+                    return;
+                };
+                state.mark_unknown_stack_object_slot_maybe_initialized(
+                    slot, type_name, *type_id,
+                );
             }
             VccInst::UnknownStackObjectCopy {
                 src,
@@ -2431,7 +2467,13 @@ impl VccVerifier {
                         ),
                     ));
                 }
-                if let Some((slot, type_name)) = state.first_live_unknown_stack_object() {
+                let allowed_unknown_stack_object_slots =
+                    self.allowed_unknown_stack_object_slots(state);
+                if let Some((slot, type_name)) = state
+                    .first_live_unknown_stack_object_except_slots(
+                        &allowed_unknown_stack_object_slots,
+                    )
+                {
                     self.errors.push(VccError::new(
                         VccErrorKind::PointerBounds,
                         format!(
@@ -2534,6 +2576,7 @@ impl VccVerifier {
     ) -> Option<VccReg> {
         let expected_kind = self
             .current_summary
+            .as_ref()
             .and_then(|summary| summary.kfunc_ref_return_kind())?;
         let VccValue::Reg(reg) = value? else {
             return None;
@@ -2554,19 +2597,21 @@ impl VccVerifier {
 
     fn allowed_rcu_depth(&self) -> u32 {
         self.current_summary
+            .as_ref()
             .map(|summary| summary.rcu_read_lock_delta().max(0) as u32)
             .unwrap_or(0)
     }
 
     fn allowed_preempt_depth(&self) -> u32 {
         self.current_summary
+            .as_ref()
             .map(|summary| summary.preempt_disable_delta().max(0) as u32)
             .unwrap_or(0)
     }
 
     fn allowed_local_irq_slots(&self, state: &VccState) -> HashMap<StackSlotId, u32> {
         let mut allowed = HashMap::new();
-        let Some(summary) = self.current_summary else {
+        let Some(summary) = self.current_summary.as_ref() else {
             return allowed;
         };
         for idx in 0..5 {
@@ -2613,7 +2658,7 @@ impl VccVerifier {
         family: KfuncIterFamily,
     ) -> HashMap<StackSlotId, u32> {
         let mut allowed = HashMap::new();
-        let Some(summary) = self.current_summary else {
+        let Some(summary) = self.current_summary.as_ref() else {
             return allowed;
         };
         for idx in 0..5 {
@@ -2636,11 +2681,41 @@ impl VccVerifier {
 
     fn allowed_ringbuf_dynptr_slots(&self, state: &VccState) -> HashMap<StackSlotId, u32> {
         let mut allowed = HashMap::new();
-        let Some(summary) = self.current_summary else {
+        let Some(summary) = self.current_summary.as_ref() else {
             return allowed;
         };
         for idx in 0..5 {
             let delta = summary.ringbuf_dynptr_delta_arg(idx).max(0) as u32;
+            if delta == 0 {
+                continue;
+            }
+            let Ok(VccValueType::Ptr(ptr)) = state.reg_type(VccReg(idx as u32)) else {
+                continue;
+            };
+            if let VccAddrSpace::Stack(slot) = ptr.space {
+                let entry = allowed.entry(slot).or_insert(0u32);
+                *entry = entry.saturating_add(delta);
+            }
+        }
+        allowed
+    }
+
+    fn allowed_unknown_stack_object_slots(&self, state: &VccState) -> HashMap<StackSlotId, u32> {
+        let mut allowed = HashMap::new();
+        let Some(summary) = self.current_summary.as_ref() else {
+            return allowed;
+        };
+        for idx in 0..5 {
+            let mut delta = summary
+                .unknown_stack_object_delta_arg(idx)
+                .map(|delta| delta.delta.max(0) as u32)
+                .unwrap_or(0);
+            if summary
+                .unknown_stack_object_maybe_initialized_arg(idx)
+                .is_some()
+            {
+                delta = delta.saturating_add(1);
+            }
             if delta == 0 {
                 continue;
             }
@@ -2662,6 +2737,7 @@ impl VccVerifier {
     ) -> Option<VccReg> {
         if !self
             .current_summary
+            .as_ref()
             .is_some_and(|summary| summary.returns_ringbuf_record())
         {
             return None;

@@ -2195,11 +2195,11 @@ fn test_kfunc_dynptr_subfn_init_size_balanced() {
     let summaries = infer_subfunction_summaries(&[init.clone(), size.clone()]);
     let init_summary = summaries
         .get(&SubfunctionId(0))
-        .copied()
+        .cloned()
         .expect("expected init summary");
     let size_summary = summaries
         .get(&SubfunctionId(1))
-        .copied()
+        .cloned()
         .expect("expected size summary");
     assert_eq!(init_summary.dynptr_delta_arg(0), 1);
     assert!(size_summary.requires_initialized_dynptr_arg(0));
@@ -2318,7 +2318,7 @@ fn test_kfunc_dynptr_subfn_conditional_init_blocks_reinitialize() {
     let summaries = infer_subfunction_summaries(&[init]);
     let init_summary = summaries
         .get(&SubfunctionId(0))
-        .copied()
+        .cloned()
         .expect("expected init summary");
     assert_eq!(init_summary.dynptr_delta_arg(0), 0);
     assert!(init_summary.maybe_initializes_dynptr_arg(0));
@@ -2395,6 +2395,181 @@ fn test_kfunc_dynptr_subfn_conditional_init_blocks_reinitialize() {
         err.iter().any(|e| e
             .message
             .contains("requires uninitialized dynptr stack object slot")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_unknown_stack_object_subfn_lifecycle_composes() {
+    let stack_obj_ty = MirType::Ptr {
+        pointee: Box::new(MirType::Unknown),
+        address_space: AddressSpace::Stack,
+    };
+
+    let mut init = MirFunction::new();
+    let init_entry = init.alloc_block();
+    init.entry = init_entry;
+    init.param_count = 1;
+    init.vreg_count = 1;
+    let init_slot = init.alloc_stack_slot(8, 8, StackSlotKind::Local);
+    init.param_stack_slots.insert(0, init_slot);
+    let init_ret = init.alloc_vreg();
+    init.block_mut(init_entry)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: init_ret,
+            kfunc: "__test_unknown_stack_object_init".to_string(),
+            btf_id: None,
+            args: vec![VReg(0)],
+        });
+    init.block_mut(init_entry).terminator = MirInst::Return { val: None };
+
+    let mut destroy = MirFunction::new();
+    let destroy_entry = destroy.alloc_block();
+    destroy.entry = destroy_entry;
+    destroy.param_count = 1;
+    destroy.vreg_count = 1;
+    let destroy_slot = destroy.alloc_stack_slot(8, 8, StackSlotKind::Local);
+    destroy.param_stack_slots.insert(0, destroy_slot);
+    let destroy_ret = destroy.alloc_vreg();
+    destroy
+        .block_mut(destroy_entry)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: destroy_ret,
+            kfunc: "__test_unknown_stack_object_destroy".to_string(),
+            btf_id: None,
+            args: vec![VReg(0)],
+        });
+    destroy.block_mut(destroy_entry).terminator = MirInst::Return { val: None };
+
+    let summaries = infer_subfunction_summaries(&[init.clone(), destroy.clone()]);
+    let init_summary = summaries
+        .get(&SubfunctionId(0))
+        .cloned()
+        .expect("expected init summary");
+    let destroy_summary = summaries
+        .get(&SubfunctionId(1))
+        .cloned()
+        .expect("expected destroy summary");
+
+    let mut init_types = HashMap::new();
+    init_types.insert(VReg(0), stack_obj_ty.clone());
+    init_types.insert(init_ret, MirType::I64);
+    verify_mir_with_subfunction_summaries_for_probe_context_with_current_summary(
+        &init,
+        &init_types,
+        &summaries,
+        Some(init_summary),
+        None,
+        None,
+    )
+    .expect("expected init subfunction to verify");
+
+    let mut destroy_types = HashMap::new();
+    destroy_types.insert(VReg(0), stack_obj_ty.clone());
+    destroy_types.insert(destroy_ret, MirType::I64);
+    verify_mir_with_subfunction_summaries_for_probe_context_with_current_summary(
+        &destroy,
+        &destroy_types,
+        &summaries,
+        Some(destroy_summary),
+        None,
+        None,
+    )
+    .expect("expected destroy subfunction to verify");
+
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    let object = func.alloc_vreg();
+    let init_call_ret = func.alloc_vreg();
+    let destroy_call_ret = func.alloc_vreg();
+    let object_slot = func.alloc_stack_slot(8, 8, StackSlotKind::Local);
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: object,
+        src: MirValue::StackSlot(object_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallSubfn {
+        dst: init_call_ret,
+        subfn: SubfunctionId(0),
+        args: vec![object],
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallSubfn {
+        dst: destroy_call_ret,
+        subfn: SubfunctionId(1),
+        args: vec![object],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(object, stack_obj_ty);
+    types.insert(init_call_ret, MirType::I64);
+    types.insert(destroy_call_ret, MirType::I64);
+    verify_mir_with_subfunction_summaries(&func, &types, &summaries)
+        .expect("expected unknown stack object init/destroy wrappers to compose");
+}
+
+#[test]
+fn test_unknown_stack_object_subfn_init_blocks_reinitialize() {
+    let mut init = MirFunction::new();
+    let init_entry = init.alloc_block();
+    init.entry = init_entry;
+    init.param_count = 1;
+    init.vreg_count = 1;
+    let init_slot = init.alloc_stack_slot(8, 8, StackSlotKind::Local);
+    init.param_stack_slots.insert(0, init_slot);
+    let init_ret = init.alloc_vreg();
+    init.block_mut(init_entry)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: init_ret,
+            kfunc: "__test_unknown_stack_object_init".to_string(),
+            btf_id: None,
+            args: vec![VReg(0)],
+        });
+    init.block_mut(init_entry).terminator = MirInst::Return { val: None };
+
+    let summaries = infer_subfunction_summaries(&[init]);
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    let object = func.alloc_vreg();
+    let first_ret = func.alloc_vreg();
+    let second_ret = func.alloc_vreg();
+    let object_slot = func.alloc_stack_slot(8, 8, StackSlotKind::Local);
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: object,
+        src: MirValue::StackSlot(object_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallSubfn {
+        dst: first_ret,
+        subfn: SubfunctionId(0),
+        args: vec![object],
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallSubfn {
+        dst: second_ret,
+        subfn: SubfunctionId(0),
+        args: vec![object],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let stack_obj_ty = MirType::Ptr {
+        pointee: Box::new(MirType::Unknown),
+        address_space: AddressSpace::Stack,
+    };
+    let mut types = HashMap::new();
+    types.insert(object, stack_obj_ty);
+    types.insert(first_ret, MirType::I64);
+    types.insert(second_ret, MirType::I64);
+
+    let err = verify_mir_with_subfunction_summaries(&func, &types, &summaries)
+        .expect_err("expected unknown stack object reinit error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("requires uninitialized bpf_test_obj stack object slot")),
         "unexpected errors: {:?}",
         err
     );
@@ -7117,11 +7292,11 @@ fn test_kfunc_iter_num_subfn_new_destroy_balanced() {
     let summaries = infer_subfunction_summaries(&[new.clone(), destroy.clone()]);
     let new_summary = summaries
         .get(&SubfunctionId(0))
-        .copied()
+        .cloned()
         .expect("expected iter new summary");
     let destroy_summary = summaries
         .get(&SubfunctionId(1))
-        .copied()
+        .cloned()
         .expect("expected iter destroy summary");
     let iter_ty = MirType::Ptr {
         pointee: Box::new(MirType::Unknown),
@@ -9546,7 +9721,7 @@ fn test_kfunc_task_subfn_acquire_return_releases_caller_reference() {
     let summaries = infer_subfunction_summaries(&[subfn.clone()]);
     let summary = summaries
         .get(&SubfunctionId(0))
-        .copied()
+        .cloned()
         .expect("expected summary");
     verify_mir_with_subfunction_summaries_for_probe_context_with_current_summary(
         &subfn,
@@ -13498,11 +13673,11 @@ fn test_kfunc_rcu_subfn_lock_unlock_balanced() {
     let summaries = infer_subfunction_summaries(&[acquire.clone(), release.clone()]);
     let acquire_summary = summaries
         .get(&SubfunctionId(0))
-        .copied()
+        .cloned()
         .expect("expected acquire summary");
     let release_summary = summaries
         .get(&SubfunctionId(1))
-        .copied()
+        .cloned()
         .expect("expected release summary");
     let mut acquire_types = HashMap::new();
     acquire_types.insert(acquire_ret, MirType::I64);
@@ -14671,11 +14846,11 @@ fn test_kfunc_local_irq_subfn_save_restore_balanced() {
     let summaries = infer_subfunction_summaries(&[save.clone(), restore.clone()]);
     let save_summary = summaries
         .get(&SubfunctionId(0))
-        .copied()
+        .cloned()
         .expect("expected save summary");
     let restore_summary = summaries
         .get(&SubfunctionId(1))
-        .copied()
+        .cloned()
         .expect("expected restore summary");
     let stack_ptr_ty = MirType::Ptr {
         pointee: Box::new(MirType::Unknown),

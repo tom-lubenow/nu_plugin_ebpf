@@ -1822,11 +1822,11 @@ fn test_verify_mir_ringbuf_dynptr_subfn_reserve_submit_balanced() {
     let summaries = infer_subfunction_summaries(&[reserve.clone(), submit.clone()]);
     let reserve_summary = summaries
         .get(&SubfunctionId(0))
-        .copied()
+        .cloned()
         .expect("expected reserve summary");
     let submit_summary = summaries
         .get(&SubfunctionId(1))
-        .copied()
+        .cloned()
         .expect("expected submit summary");
     assert_eq!(reserve_summary.ringbuf_dynptr_delta_arg(0), 1);
     assert!(submit_summary.releases_ringbuf_dynptr_arg(0));
@@ -15618,7 +15618,7 @@ fn test_helper_ringbuf_subfn_reserve_return_releases_caller_reference() {
     let summaries = infer_subfunction_summaries(&[subfn.clone()]);
     let summary = summaries
         .get(&SubfunctionId(0))
-        .copied()
+        .cloned()
         .expect("expected summary");
     verify_mir_with_subfunction_summaries_for_probe_context_with_current_summary(
         &subfn,

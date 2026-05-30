@@ -1248,6 +1248,18 @@ impl VccState {
         );
     }
 
+    fn mark_unknown_stack_object_slot_maybe_initialized(
+        &mut self,
+        slot: StackSlotId,
+        type_name: &str,
+        type_id: Option<u32>,
+    ) {
+        increment_typed_slot_max_depth(
+            &mut self.unknown_stack_object_slots,
+            (slot, unknown_stack_object_type_key(type_name, type_id)),
+        );
+    }
+
     fn has_unknown_stack_object_slot(
         &self,
         slot: StackSlotId,
@@ -1271,10 +1283,29 @@ impl VccState {
         )
     }
 
+    #[cfg(test)]
     fn first_live_unknown_stack_object(&self) -> Option<(StackSlotId, String)> {
         self.unknown_stack_object_slots
             .iter()
             .find(|(_, (_, max_depth))| *max_depth > 0)
+            .map(|((slot, (type_name, _)), _)| (*slot, type_name.clone()))
+    }
+
+    fn first_live_unknown_stack_object_except_slots(
+        &self,
+        allowed_slots: &HashMap<StackSlotId, u32>,
+    ) -> Option<(StackSlotId, String)> {
+        let mut live_by_slot: HashMap<StackSlotId, u32> = HashMap::new();
+        for ((slot, _), (_, max_depth)) in &self.unknown_stack_object_slots {
+            let entry = live_by_slot.entry(*slot).or_insert(0u32);
+            *entry = entry.saturating_add(*max_depth);
+        }
+        let leaked_slot = live_by_slot.into_iter().find_map(|(slot, max_depth)| {
+            (max_depth > allowed_slots.get(&slot).copied().unwrap_or(0)).then_some(slot)
+        })?;
+        self.unknown_stack_object_slots
+            .iter()
+            .find(|((slot, _), (_, max_depth))| *slot == leaked_slot && *max_depth > 0)
             .map(|((slot, (type_name, _)), _)| (*slot, type_name.clone()))
     }
 
@@ -2317,6 +2348,14 @@ fn increment_typed_slot_depth(
 ) {
     let entry = depths.entry(slot).or_insert((0, 0));
     entry.0 = entry.0.saturating_add(1);
+    entry.1 = entry.1.saturating_add(1);
+}
+
+fn increment_typed_slot_max_depth(
+    depths: &mut HashMap<(StackSlotId, UnknownStackObjectTypeKey), (u32, u32)>,
+    slot: (StackSlotId, UnknownStackObjectTypeKey),
+) {
+    let entry = depths.entry(slot).or_insert((0, 0));
     entry.1 = entry.1.saturating_add(1);
 }
 
