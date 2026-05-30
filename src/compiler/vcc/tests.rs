@@ -13,6 +13,7 @@ mod iter_kfuncs;
 mod kfuncs;
 mod map_ops;
 mod records;
+mod ref_kfuncs;
 mod scalar_ranges;
 
 fn verify_ok(func: &VccFunction) {
