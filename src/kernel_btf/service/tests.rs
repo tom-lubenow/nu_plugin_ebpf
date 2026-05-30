@@ -323,6 +323,38 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         TypeInfo::Ptr { is_user: true, .. }
     ));
 
+    let io_uring_setup = TracepointContext::sys_enter("sys_enter_io_uring_setup");
+    assert!(io_uring_setup.has_field("entries"));
+    assert!(io_uring_setup.has_field("params"));
+    assert_eq!(io_uring_setup.minimum_kernel(), Some("5.1"));
+    assert!(
+        io_uring_setup
+            .minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v5.1/fs/io_uring.c"))
+    );
+    assert!(matches!(
+        io_uring_setup
+            .get_field("params")
+            .expect("expected io_uring_setup params")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+
+    let io_uring_enter = TracepointContext::sys_enter("sys_enter_io_uring_enter");
+    assert!(io_uring_enter.has_field("fd"));
+    assert!(io_uring_enter.has_field("to_submit"));
+    assert!(io_uring_enter.has_field("min_complete"));
+    assert!(io_uring_enter.has_field("flags"));
+    assert!(io_uring_enter.has_field("sig"));
+    assert!(io_uring_enter.has_field("sigsz"));
+    assert!(matches!(
+        io_uring_enter
+            .get_field("sig")
+            .expect("expected io_uring_enter sig")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+
     let epoll_ctl = TracepointContext::sys_enter("sys_enter_epoll_ctl");
     assert!(epoll_ctl.has_field("epfd"));
     assert!(epoll_ctl.has_field("op"));
@@ -648,6 +680,11 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
             &["ufd", "flags", "utmr", "otmr"][..],
         ),
         ("sys_enter_timerfd_gettime", &["ufd", "otmr"][..]),
+        ("sys_enter_io_uring_setup", &["entries", "params"][..]),
+        (
+            "sys_enter_io_uring_enter",
+            &["fd", "to_submit", "min_complete", "flags", "sig", "sigsz"][..],
+        ),
         (
             "sys_enter_rt_sigprocmask",
             &["how", "nset", "oset", "sigsetsize"][..],

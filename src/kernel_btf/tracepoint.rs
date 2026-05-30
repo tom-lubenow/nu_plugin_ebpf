@@ -39,6 +39,8 @@ const HRTIMER_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel
 const POSIX_TIMERS_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v4.7/kernel/time/posix-timers.c";
 const TIMERFD_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/timerfd.c";
+const IO_URING_MIN_KERNEL: &str = "5.1";
+const IO_URING_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.1/fs/io_uring.c";
 const SIGNAL_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/signal.c";
 const PIDFD_SEND_SIGNAL_MIN_KERNEL: &str = "5.1";
 const PIDFD_SEND_SIGNAL_SOURCE: &str =
@@ -170,6 +172,8 @@ const WELL_KNOWN_SYS_ENTER_SYSCALLS: &[&str] = &[
     "timerfd_create",
     "timerfd_settime",
     "timerfd_gettime",
+    "io_uring_setup",
+    "io_uring_enter",
     "rt_sigprocmask",
     "rt_sigpending",
     "rt_sigtimedwait",
@@ -496,6 +500,9 @@ impl TracepointContext {
             Some("openat2") => (Some(OPENAT2_MIN_KERNEL), Some(OPENAT2_SOURCE)),
             Some("statx") => (Some(STATX_MIN_KERNEL), Some(STATX_SOURCE)),
             Some("clone3") => (Some(CLONE3_MIN_KERNEL), Some(CLONE3_SOURCE)),
+            Some("io_uring_setup" | "io_uring_enter") => {
+                (Some(IO_URING_MIN_KERNEL), Some(IO_URING_SOURCE))
+            }
             Some("pidfd_send_signal") => (
                 Some(PIDFD_SEND_SIGNAL_MIN_KERNEL),
                 Some(PIDFD_SEND_SIGNAL_SOURCE),
@@ -546,6 +553,7 @@ impl TracepointContext {
             "openat2" => (OPENAT2_MIN_KERNEL, OPENAT2_SOURCE),
             "statx" => (STATX_MIN_KERNEL, STATX_SOURCE),
             "clone3" => (CLONE3_MIN_KERNEL, CLONE3_SOURCE),
+            "io_uring_setup" | "io_uring_enter" => (IO_URING_MIN_KERNEL, IO_URING_SOURCE),
             "pidfd_send_signal" => (PIDFD_SEND_SIGNAL_MIN_KERNEL, PIDFD_SEND_SIGNAL_SOURCE),
             _ => (
                 SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL,
@@ -630,6 +638,7 @@ impl TracepointContext {
             "timerfd_create" | "timerfd_settime" | "timerfd_gettime" => {
                 (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, TIMERFD_SOURCE)
             }
+            "io_uring_setup" | "io_uring_enter" => (IO_URING_MIN_KERNEL, IO_URING_SOURCE),
             "rt_sigprocmask" | "rt_sigpending" | "rt_sigtimedwait" | "kill" | "tgkill"
             | "tkill" | "rt_sigqueueinfo" | "rt_tgsigqueueinfo" | "sigaltstack"
             | "rt_sigaction" | "rt_sigsuspend" => {
@@ -1161,6 +1170,18 @@ impl TracepointContext {
             "timerfd_gettime" => vec![
                 ("ufd", Self::syscall_arg_int(true)),
                 ("otmr", Self::syscall_arg_user_ptr()),
+            ],
+            "io_uring_setup" => vec![
+                ("entries", Self::syscall_arg_int(false)),
+                ("params", Self::syscall_arg_user_ptr()),
+            ],
+            "io_uring_enter" => vec![
+                ("fd", Self::syscall_arg_int(false)),
+                ("to_submit", Self::syscall_arg_int(false)),
+                ("min_complete", Self::syscall_arg_int(false)),
+                ("flags", Self::syscall_arg_int(false)),
+                ("sig", Self::syscall_arg_user_ptr()),
+                ("sigsz", Self::syscall_arg_int(false)),
             ],
             "rt_sigprocmask" => vec![
                 ("how", Self::syscall_arg_int(true)),

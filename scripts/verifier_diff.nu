@@ -2645,6 +2645,20 @@ const TIME_TRACEPOINT_FIELD_SPECS = [
         source: "https://github.com/torvalds/linux/blob/v4.7/fs/timerfd.c"
     }
 ]
+const IO_URING_TRACEPOINT_FIELD_SPECS = [
+    {
+        syscalls: ["io_uring_setup"]
+        fields: ["entries" "params"]
+        min_kernel: "5.1"
+        source: "https://github.com/torvalds/linux/blob/v5.1/fs/io_uring.c"
+    }
+    {
+        syscalls: ["io_uring_enter"]
+        fields: ["fd" "to_submit" "min_complete" "flags" "sig" "sigsz"]
+        min_kernel: "5.1"
+        source: "https://github.com/torvalds/linux/blob/v5.1/fs/io_uring.c"
+    }
+]
 const SIGNAL_TRACEPOINT_FIELD_SPECS = [
     {
         syscalls: ["rt_sigprocmask"]
@@ -8149,6 +8163,40 @@ const FIXTURES = [
             '  let otmr = $ctx.otmr'
             '  if $utmr { 1 | count }'
             '  if $otmr { 1 | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-io-uring-setup-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_io_uring_setup]
+        target: "tracepoint:syscalls/sys_enter_io_uring_setup"
+        program: [
+            '{|ctx|'
+            '  $ctx.entries | count'
+            '  let params = $ctx.params'
+            '  if $params { 1 | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-io-uring-enter-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_io_uring_enter]
+        target: "tracepoint:syscalls/sys_enter_io_uring_enter"
+        program: [
+            '{|ctx|'
+            '  ($ctx.fd + $ctx.to_submit + $ctx.min_complete + $ctx.flags + $ctx.sigsz) | count'
+            '  let sig = $ctx.sig'
+            '  if $sig { 1 | count }'
             '  0'
             '}'
         ]
@@ -29203,6 +29251,8 @@ def syscall-tracepoint-fallback-field-kernel-feature [field: string target] {
         "5.1"
     } else if $syscall == "clone3" {
         "5.3"
+    } else if $syscall in ["io_uring_setup" "io_uring_enter"] {
+        "5.1"
     } else if $syscall == "statx" {
         "4.11"
     } else {
@@ -29214,6 +29264,8 @@ def syscall-tracepoint-fallback-field-kernel-feature [field: string target] {
         "https://github.com/torvalds/linux/blob/v5.1/kernel/signal.c"
     } else if $syscall == "clone3" {
         "https://github.com/torvalds/linux/blob/v5.3/kernel/fork.c"
+    } else if $syscall in ["io_uring_setup" "io_uring_enter"] {
+        "https://github.com/torvalds/linux/blob/v5.1/fs/io_uring.c"
     } else if $syscall == "statx" {
         "https://github.com/torvalds/linux/blob/v4.11/fs/stat.c"
     } else {
@@ -29272,6 +29324,7 @@ def tracepoint-payload-field-kernel-feature [field: string target] {
         | append $FD_TRACEPOINT_FIELD_SPECS
         | append $MM_TRACEPOINT_FIELD_SPECS
         | append $TIME_TRACEPOINT_FIELD_SPECS
+        | append $IO_URING_TRACEPOINT_FIELD_SPECS
         | append $SIGNAL_TRACEPOINT_FIELD_SPECS
         | append $IDENTITY_TRACEPOINT_FIELD_SPECS
         | append $SCHED_TRACEPOINT_FIELD_SPECS
