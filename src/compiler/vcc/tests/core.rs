@@ -1439,6 +1439,76 @@ fn test_unknown_stack_object_copy_does_not_initialize_from_uninitialized_source(
 }
 
 #[test]
+fn test_unknown_stack_object_copy_rejects_source_initialized_on_one_path() {
+    let mut func = VccFunction::new();
+    let entry = func.entry;
+    let init_src = func.alloc_block();
+    let skip = func.alloc_block();
+    let join = func.alloc_block();
+    let cond = func.alloc_reg();
+    let src = func.alloc_reg();
+    let dst = func.alloc_reg();
+
+    func.block_mut(entry).instructions.push(VccInst::StackAddr {
+        dst: src,
+        slot: StackSlotId(0),
+        size: 16,
+    });
+    func.block_mut(entry).instructions.push(VccInst::StackAddr {
+        dst,
+        slot: StackSlotId(1),
+        size: 16,
+    });
+    func.block_mut(entry).instructions.push(VccInst::Assume {
+        dst: cond,
+        ty: VccValueType::Bool,
+        ctx_field_source: None,
+    });
+    func.block_mut(entry).terminator = VccTerminator::Branch {
+        cond: VccValue::Reg(cond),
+        if_true: init_src,
+        if_false: skip,
+    };
+
+    func.block_mut(init_src)
+        .instructions
+        .push(VccInst::UnknownStackObjectInit {
+            ptr: src,
+            type_name: "bpf_wq".to_string(),
+            type_id: None,
+            kfunc: "unknown_wq_new".to_string(),
+            arg_idx: 0,
+        });
+    func.block_mut(init_src).terminator = VccTerminator::Jump { target: join };
+    func.block_mut(skip).terminator = VccTerminator::Jump { target: join };
+
+    func.block_mut(join)
+        .instructions
+        .push(VccInst::UnknownStackObjectCopy {
+            src,
+            dst,
+            type_name: "bpf_wq".to_string(),
+            type_id: None,
+            kfunc: "unknown_wq_copy".to_string(),
+            src_arg_idx: 0,
+            dst_arg_idx: 1,
+            move_semantics: false,
+        });
+    func.block_mut(join).terminator = VccTerminator::Return { value: None };
+
+    let err = VccVerifier::default()
+        .verify_function(&func)
+        .expect_err("expected mixed-path unknown stack-object copy-source verifier error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("kfunc 'unknown_wq_copy' arg0 requires initialized bpf_wq stack object")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_unknown_stack_object_init_requires_release_before_return() {
     let mut func = VccFunction::new();
     let entry = func.entry;
