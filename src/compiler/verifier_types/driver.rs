@@ -713,6 +713,9 @@ fn allowed_unknown_stack_object_slots(
             .unknown_stack_object_delta_arg(idx)
             .map(|delta| delta.delta.max(0) as u32)
             .unwrap_or(0);
+        if summary.unknown_stack_object_required_arg(idx).is_some() {
+            delta = delta.saturating_add(1);
+        }
         if summary
             .unknown_stack_object_maybe_initialized_arg(idx)
             .is_some()
