@@ -12,6 +12,7 @@ history and release notes, not here.
 - Strongest areas: Nushell-to-eBPF lowering, MIR/LIR/codegen pipeline, typed contexts, maps/globals, many program-family surfaces, callback subprogram lowering, and shared type-inference/verifier/VCC checks.
 - Main risks: kernel-version drift, incomplete live attach coverage for newer or riskier program families, and verifier-parity gaps for complex helper/kfunc state.
 - Safety policy: keep host integration tests observational where possible; use dry-run for high-risk families; use isolated VMs for `struct_ops`, scheduler, routing, netfilter, or other behavior-changing live loads.
+- Verifier-diff accept metadata is saturated for locally safe fixtures on the current 6.17 development host; remaining accept skips are dry-run-only map-in-map/syscall/freplace cases, VM-only behavior-changing families, unavailable host resources such as LIRC, or source-verified newer-kernel features such as 6.18 path kfuncs.
 
 ## Near-Term Priority Order
 
@@ -45,6 +46,7 @@ history and release notes, not here.
   - Kernel feature records can express minimum and maximum-exclusive kernel windows; keep verifier fixtures aligned with bounded kfunc compatibility when source-checked kfuncs are renamed or removed.
   - Add fixture coverage for maps, helpers, kfuncs, callbacks, context fields, packet bounds, ref lifetimes, dynptrs, timers, and by-reference stack objects.
   - Keep dangerous fixtures dry-run-only or VM-only; the default host lane must remain auto-skip safe. Fixture lists and matrix output now report the derived default test lane separately from fixture tier so safety policy is visible in compatibility dashboards.
+  - Keep local compiler/VCC rejects local-only unless the harness gains an explicit negative-kernel corpus that can emit intentionally verifier-rejected objects without bypassing compiler safety by accident; today kernel checks require `local: accept` because they load the dry-run object produced by the compiler.
 
 ## Helper, Kfunc, and Callback Semantics
 
@@ -89,7 +91,7 @@ history and release notes, not here.
 
 - [~] Finish resource-backed map semantics.
   - Keep generic map operations, local storage, socket maps, redirect maps, cgroup arrays, bloom filters, ring buffers, user ring buffers, stack traces, prog arrays, and per-cpu maps aligned across lowering, type checks, VCC, and backend map emission.
-  - Continue shrinking dry-run-only local-storage negative coverage by turning safe verifier rejection cases into kernel-reject fixtures where prerequisites are stable.
+  - Keep local-storage negative coverage in local/VCC lanes unless a future negative-kernel corpus can emit intentionally invalid objects from safe source fixtures without weakening normal compiler rejection.
   - Keep extending source-level `map-define` only for real map resource metadata. Key/value layouts, natural fixed-record alignment, `--max-entries`, and verifier-managed `bpf_timer`, `bpf_spin_lock`, `bpf_wq`, `bpf_refcount`, top-level `kptr:TYPE` slots, and top-level graph root schemas (`bpf_list_head:TYPE:FIELD[:record{...}]` / `bpf_rb_root:TYPE:FIELD[:record{...}]`) are modeled; later operations infer a unique prior kind by map name from `map-define` or earlier explicit `--kind` use before falling back to `hash`; `bpf_wq` init, callback registration, and start are modeled through explicit kfunc calls. Dynptrs remain stack-only helper/kfunc state and are rejected in map-value schemas. Do not expose `bpf_list_head`, `bpf_rb_root`, `bpf_list_node`, or `bpf_rb_node` as bare field tokens; roots must carry named object metadata and graph-root operations must be protected by a held `bpf_spin_lock` from the same map lookup root or a repeated same-map/same-key lookup root when provenance is available, while external schemas without internal graph payload metadata remain future work.
   - Finish map-in-map support. Source-level `map-define --kind array-of-maps|hash-of-maps --inner-map INNER` now validates the inner-template contract against a previously declared inner map, emits declared inner and outer object map definitions even without operations, preserves unambiguous outer-to-inner templates across pinned/shared attach peers, emits libbpf-compatible `values` BTF metadata when the inner template is also emitted as a runtime map, models outer `map-get` results as nullable `bpf_map*` pointers, and supports outer `map-contains` plus guarded dynamic inner `map-get $inner_ptr`, `VALUE | map-put $inner_ptr KEY`, `KEY | map-delete $inner_ptr`, and `KEY | map-contains $inner_ptr` operations in dry-run/object generation. Live loading is intentionally rejected before Aya load because Aya 0.13's map creation path does not materialize `inner_map_fd` from BTF `values` metadata; either an upstream Aya path or a narrow libbpf loader path is needed before this can be live.
   - Add arena support only after map-extra, mmap/user-space access, and verifier constraints are modeled.
