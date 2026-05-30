@@ -531,6 +531,7 @@ mod tests {
     use crate::compiler::{
         BpfHelper, ctx_field_backing_helper, ctx_field_for_bpf_sock_projection_member,
     };
+    use crate::kernel_btf::TracepointContext;
     use crate::program_spec::ProgramSpec;
     use std::collections::HashSet;
 
@@ -1018,6 +1019,74 @@ mod tests {
                 !matches!(field, CtxField::TracepointField(_)),
                 "tracepoint-preserved context field name '{name}' resolved to a payload field"
             );
+        }
+    }
+
+    #[test]
+    fn test_well_known_syscall_tracepoint_payload_names_do_not_collide_with_builtins() {
+        let modeled_syscalls = [
+            "sys_enter_read",
+            "sys_enter_write",
+            "sys_enter_close",
+            "sys_enter_openat",
+            "sys_enter_openat2",
+            "sys_enter_execve",
+            "sys_enter_execveat",
+            "sys_enter_exit",
+            "sys_enter_exit_group",
+            "sys_enter_waitid",
+            "sys_enter_wait4",
+            "sys_enter_unshare",
+            "sys_enter_setns",
+            "sys_enter_stat",
+            "sys_enter_lstat",
+            "sys_enter_newstat",
+            "sys_enter_newlstat",
+            "sys_enter_fstat",
+            "sys_enter_newfstat",
+            "sys_enter_newfstatat",
+            "sys_enter_stat64",
+            "sys_enter_lstat64",
+            "sys_enter_fstat64",
+            "sys_enter_fstatat64",
+            "sys_enter_statx",
+            "sys_enter_mkdirat",
+            "sys_enter_unlinkat",
+            "sys_enter_symlinkat",
+            "sys_enter_linkat",
+            "sys_enter_renameat",
+            "sys_enter_renameat2",
+            "sys_enter_socket",
+            "sys_enter_socketpair",
+            "sys_enter_bind",
+            "sys_enter_listen",
+            "sys_enter_accept",
+            "sys_enter_connect",
+            "sys_enter_sendto",
+            "sys_enter_recvfrom",
+            "sys_enter_accept4",
+            "sys_enter_setsockopt",
+            "sys_enter_getsockopt",
+            "sys_enter_shutdown",
+            "sys_enter_sendmsg",
+            "sys_enter_recvmsg",
+            "sys_enter_sendmmsg",
+            "sys_enter_recvmmsg",
+        ];
+
+        for syscall in modeled_syscalls {
+            let ctx = TracepointContext::sys_enter(syscall);
+            for field in &ctx.fields {
+                if matches!(field.name.as_str(), "id" | "args") {
+                    continue;
+                }
+
+                assert!(
+                    !tracepoint_preserves_builtin_ctx_field_name(&field.name),
+                    "{syscall} fallback payload field '{}' is shadowed by tracepoint builtin resolution",
+                    field.name
+                );
+            }
         }
     }
 
