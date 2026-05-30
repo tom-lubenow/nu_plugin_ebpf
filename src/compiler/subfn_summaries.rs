@@ -1,7 +1,12 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use super::instruction::BpfHelper;
+use super::instruction::{
+    BpfHelper, KfuncRefKind, helper_release_ref_kind, kfunc_release_ref_arg_index,
+    kfunc_release_ref_kind,
+};
 use super::mir::{BlockId, MirFunction, MirInst, MirValue, SubfunctionId, VReg};
+
+const SUMMARY_ARG_SLOTS: usize = 8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SubfunctionReturnSummary {
@@ -41,6 +46,7 @@ pub(crate) struct SubfunctionSummary {
     return_summary: SubfunctionReturnSummary,
     ringbuf_record_release_args: u8,
     ringbuf_dynptr_release_args: u8,
+    kfunc_ref_release_args: [Option<KfuncRefKind>; SUMMARY_ARG_SLOTS],
 }
 
 impl SubfunctionSummary {
@@ -49,6 +55,7 @@ impl SubfunctionSummary {
             return_summary: SubfunctionReturnSummary::Unknown,
             ringbuf_record_release_args: 0,
             ringbuf_dynptr_release_args: 0,
+            kfunc_ref_release_args: [None; SUMMARY_ARG_SLOTS],
         }
     }
 
@@ -57,6 +64,7 @@ impl SubfunctionSummary {
             return_summary,
             ringbuf_record_release_args: 0,
             ringbuf_dynptr_release_args: 0,
+            kfunc_ref_release_args: [None; SUMMARY_ARG_SLOTS],
         }
     }
 
@@ -80,16 +88,26 @@ impl SubfunctionSummary {
         idx < 8 && (self.ringbuf_dynptr_release_args & (1 << idx)) != 0
     }
 
+    pub(crate) const fn kfunc_ref_release_arg_kind(self, idx: usize) -> Option<KfuncRefKind> {
+        if idx < SUMMARY_ARG_SLOTS {
+            self.kfunc_ref_release_args[idx]
+        } else {
+            None
+        }
+    }
+
     const fn from_parts(
         return_arg: Option<usize>,
         changes_packet_data: bool,
         ringbuf_record_release_args: u8,
         ringbuf_dynptr_release_args: u8,
+        kfunc_ref_release_args: [Option<KfuncRefKind>; SUMMARY_ARG_SLOTS],
     ) -> Self {
         Self {
             return_summary: SubfunctionReturnSummary::from_parts(return_arg, changes_packet_data),
             ringbuf_record_release_args,
             ringbuf_dynptr_release_args,
+            kfunc_ref_release_args,
         }
     }
 }
@@ -111,6 +129,7 @@ struct SummaryState {
     aliases: Vec<AliasSource>,
     ringbuf_record_release_args: u8,
     ringbuf_dynptr_release_args: u8,
+    kfunc_ref_release_args: [Option<KfuncRefKind>; SUMMARY_ARG_SLOTS],
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -189,6 +208,7 @@ fn summarize_function(
             aliases: entry_state,
             ringbuf_record_release_args: 0,
             ringbuf_dynptr_release_args: 0,
+            kfunc_ref_release_args: [None; SUMMARY_ARG_SLOTS],
         },
     );
     worklist.push_back(func.entry);
@@ -197,6 +217,7 @@ fn summarize_function(
     let mut changes_packet_data = false;
     let mut returned_record_releases: Option<u8> = None;
     let mut returned_dynptr_releases: Option<u8> = None;
+    let mut returned_kfunc_releases: Option<[Option<KfuncRefKind>; SUMMARY_ARG_SLOTS]> = None;
 
     while let Some(block_id) = worklist.pop_front() {
         let Some(state_in) = in_states.get(&block_id).cloned() else {
@@ -257,6 +278,12 @@ fn summarize_function(
                     None => state.ringbuf_dynptr_release_args,
                     Some(existing) => existing & state.ringbuf_dynptr_release_args,
                 });
+                returned_kfunc_releases = Some(match returned_kfunc_releases {
+                    None => state.kfunc_ref_release_args,
+                    Some(existing) => {
+                        merge_kfunc_release_args(existing, state.kfunc_ref_release_args)
+                    }
+                });
             }
             MirInst::TailCall { .. } | MirInst::Placeholder => {}
             _ => {}
@@ -272,6 +299,7 @@ fn summarize_function(
         changes_packet_data,
         returned_record_releases.unwrap_or(0),
         returned_dynptr_releases.unwrap_or(0),
+        returned_kfunc_releases.unwrap_or([None; SUMMARY_ARG_SLOTS]),
     )
 }
 
@@ -322,7 +350,30 @@ fn merge_alias_states(existing: &mut SummaryState, incoming: &SummaryState) -> b
         existing.ringbuf_dynptr_release_args = dynptr_releases;
         changed = true;
     }
+    let kfunc_releases = merge_kfunc_release_args(
+        existing.kfunc_ref_release_args,
+        incoming.kfunc_ref_release_args,
+    );
+    if existing.kfunc_ref_release_args != kfunc_releases {
+        existing.kfunc_ref_release_args = kfunc_releases;
+        changed = true;
+    }
     changed
+}
+
+fn merge_kfunc_release_args(
+    existing: [Option<KfuncRefKind>; SUMMARY_ARG_SLOTS],
+    incoming: [Option<KfuncRefKind>; SUMMARY_ARG_SLOTS],
+) -> [Option<KfuncRefKind>; SUMMARY_ARG_SLOTS] {
+    let mut merged = [None; SUMMARY_ARG_SLOTS];
+    for idx in 0..SUMMARY_ARG_SLOTS {
+        merged[idx] = if existing[idx] == incoming[idx] {
+            existing[idx]
+        } else {
+            None
+        };
+    }
+    merged
 }
 
 fn apply_alias_inst(
@@ -390,11 +441,17 @@ fn apply_alias_inst(
                     .unwrap_or(false),
             }
         }
+        MirInst::CallKfunc {
+            dst, kfunc, args, ..
+        } => {
+            set_alias(&mut state.aliases, *dst, AliasSource::Unknown);
+            apply_kfunc_release_summary(kfunc, args, state);
+            InstEffects::default()
+        }
         MirInst::BinOp { dst, .. }
         | MirInst::UnaryOp { dst, .. }
         | MirInst::LoadMapFd { dst, .. }
         | MirInst::LoadSubprogram { dst, .. }
-        | MirInst::CallKfunc { dst, .. }
         | MirInst::MapLookup { dst, .. }
         | MirInst::MapLookupDynamic { dst, .. }
         | MirInst::LoadCtxField { dst, .. }
@@ -453,6 +510,9 @@ fn apply_subfunction_release_summary(
         if summary.releases_ringbuf_dynptr_arg(idx) {
             set_mask_bit(&mut state.ringbuf_dynptr_release_args, param_idx);
         }
+        if let Some(kind) = summary.kfunc_ref_release_arg_kind(idx) {
+            set_kfunc_release_arg(&mut state.kfunc_ref_release_args, param_idx, kind);
+        }
     }
 }
 
@@ -483,11 +543,40 @@ fn apply_helper_release_summary(
         }
         _ => {}
     }
+    if let Some(kind) = helper_release_ref_kind(helper) {
+        set_kfunc_release_arg(&mut state.kfunc_ref_release_args, param_idx, kind);
+    }
+}
+
+fn apply_kfunc_release_summary(kfunc: &str, args: &[VReg], state: &mut SummaryState) {
+    let Some(kind) = kfunc_release_ref_kind(kfunc) else {
+        return;
+    };
+    let Some(arg_idx) = kfunc_release_ref_arg_index(kfunc) else {
+        return;
+    };
+    let Some(arg) = args.get(arg_idx) else {
+        return;
+    };
+    let AliasSource::Param(param_idx) = get_alias(&state.aliases, *arg) else {
+        return;
+    };
+    set_kfunc_release_arg(&mut state.kfunc_ref_release_args, param_idx, kind);
 }
 
 fn set_mask_bit(mask: &mut u8, idx: usize) {
     if idx < 8 {
         *mask |= 1 << idx;
+    }
+}
+
+fn set_kfunc_release_arg(
+    args: &mut [Option<KfuncRefKind>; SUMMARY_ARG_SLOTS],
+    idx: usize,
+    kind: KfuncRefKind,
+) {
+    if idx < SUMMARY_ARG_SLOTS {
+        args[idx] = Some(kind);
     }
 }
 
@@ -803,5 +892,71 @@ mod tests {
             .expect("expected summary");
         assert!(summary.releases_ringbuf_dynptr_arg(0));
         assert!(!summary.releases_ringbuf_dynptr_arg(1));
+    }
+
+    #[test]
+    fn test_infer_summary_tracks_kfunc_ref_release_arg() {
+        let mut subfn = MirFunction::new();
+        let entry = subfn.alloc_block();
+        subfn.entry = entry;
+        subfn.param_count = 1;
+        subfn.vreg_count = 1;
+        let release_ret = subfn.alloc_vreg();
+        subfn
+            .block_mut(entry)
+            .instructions
+            .push(MirInst::CallKfunc {
+                dst: release_ret,
+                kfunc: "bpf_task_release".to_string(),
+                btf_id: None,
+                args: vec![VReg(0)],
+            });
+        subfn.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let summaries = infer_subfunction_summaries(&[subfn]);
+        let summary = summaries
+            .get(&SubfunctionId(0))
+            .copied()
+            .expect("expected summary");
+        assert_eq!(
+            summary.kfunc_ref_release_arg_kind(0),
+            Some(KfuncRefKind::Task)
+        );
+        assert_eq!(summary.kfunc_ref_release_arg_kind(1), None);
+    }
+
+    #[test]
+    fn test_infer_summary_requires_kfunc_ref_release_on_all_returns() {
+        let mut subfn = MirFunction::new();
+        let entry = subfn.alloc_block();
+        let release = subfn.alloc_block();
+        let done = subfn.alloc_block();
+        subfn.entry = entry;
+        subfn.param_count = 1;
+        subfn.vreg_count = 2;
+        subfn.block_mut(entry).terminator = MirInst::Branch {
+            cond: VReg(1),
+            if_true: release,
+            if_false: done,
+        };
+        let release_ret = subfn.alloc_vreg();
+        subfn
+            .block_mut(release)
+            .instructions
+            .push(MirInst::CallKfunc {
+                dst: release_ret,
+                kfunc: "bpf_task_release".to_string(),
+                btf_id: None,
+                args: vec![VReg(0)],
+            });
+        subfn.block_mut(release).terminator = MirInst::Return { val: None };
+        subfn.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let summaries = infer_subfunction_summaries(&[subfn]);
+        let summary = summaries
+            .get(&SubfunctionId(0))
+            .copied()
+            .expect("expected summary");
+        assert_eq!(summary.kfunc_ref_release_arg_kind(0), None);
     }
 }

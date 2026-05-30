@@ -1793,6 +1793,14 @@ impl<'a> VccLowerer<'a> {
                     arg_idx: idx,
                 });
             }
+            if let Some(kind) = summary.kfunc_ref_release_arg_kind(idx) {
+                out.push(VccInst::KfuncRelease {
+                    call: "subfunction".to_string(),
+                    ptr: VccValue::Reg(VccReg(arg.0)),
+                    kind,
+                    arg_idx: idx,
+                });
+            }
         }
     }
 

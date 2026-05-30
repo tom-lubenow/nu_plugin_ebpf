@@ -187,6 +187,32 @@ fn verify_mir_with_subfunction_summaries_impl(
             };
             entry_state.set_live_ringbuf_ref(vreg, true);
         }
+        if let Some(kind) =
+            current_summary.and_then(|summary| summary.kfunc_ref_release_arg_kind(i))
+        {
+            match &mut ty {
+                VerifierType::Ptr {
+                    space,
+                    nullability,
+                    kfunc_ref,
+                    ..
+                } => {
+                    *space = AddressSpace::Kernel;
+                    *nullability = Nullability::NonNull;
+                    *kfunc_ref = Some(vreg);
+                }
+                _ => {
+                    ty = VerifierType::Ptr {
+                        space: AddressSpace::Kernel,
+                        nullability: Nullability::NonNull,
+                        bounds: None,
+                        ringbuf_ref: None,
+                        kfunc_ref: Some(vreg),
+                    };
+                }
+            }
+            entry_state.set_live_kfunc_ref(vreg, true, Some(kind));
+        }
         entry_state.set(vreg, ty);
     }
     for slot in &func.entry_initialized_dynptr_slots {

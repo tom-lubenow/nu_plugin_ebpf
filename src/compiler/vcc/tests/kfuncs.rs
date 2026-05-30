@@ -1,5 +1,6 @@
 use super::*;
 use crate::compiler::mir::StructField;
+use crate::compiler::subfn_summaries::infer_subfunction_summaries;
 use crate::compiler::{EbpfProgramType, ProbeContext};
 
 fn push_bpf_spin_lock_call(func: &mut MirFunction, block: BlockId, dst: VReg, lock: VReg) {
@@ -8630,6 +8631,84 @@ fn test_verify_mir_kfunc_task_acquire_release_semantics() {
     types.insert(release_ret, MirType::I64);
 
     verify_mir(&func, &types).expect("expected kfunc reference to be released");
+}
+
+#[test]
+fn test_verify_mir_kfunc_task_subfn_release_releases_caller_reference() {
+    let (mut func, entry) = new_mir_function();
+    let release = func.alloc_block();
+    let done = func.alloc_block();
+    func.param_count = 1;
+
+    let task = func.alloc_vreg();
+    let acquired = func.alloc_vreg();
+    let cond = func.alloc_vreg();
+    let call_ret = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: acquired,
+        kfunc: "bpf_task_acquire".to_string(),
+        btf_id: None,
+        args: vec![task],
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: cond,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(acquired),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond,
+        if_true: release,
+        if_false: done,
+    };
+    func.block_mut(release)
+        .instructions
+        .push(MirInst::CallSubfn {
+            dst: call_ret,
+            subfn: crate::compiler::mir::SubfunctionId(0),
+            args: vec![acquired],
+        });
+    func.block_mut(release).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut subfn = MirFunction::new();
+    let sub_entry = subfn.alloc_block();
+    subfn.entry = sub_entry;
+    subfn.param_count = 1;
+    subfn.vreg_count = 1;
+    let release_ret = subfn.alloc_vreg();
+    subfn
+        .block_mut(sub_entry)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: release_ret,
+            kfunc: "bpf_task_release".to_string(),
+            btf_id: None,
+            args: vec![VReg(0)],
+        });
+    subfn.block_mut(sub_entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        task,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(
+        acquired,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(call_ret, MirType::I64);
+    let summaries = infer_subfunction_summaries(&[subfn]);
+
+    verify_mir_with_subfunction_summaries(&func, &types, &summaries)
+        .expect("expected subfunction release to consume caller kfunc reference");
 }
 
 #[test]

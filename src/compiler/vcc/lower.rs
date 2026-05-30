@@ -97,9 +97,10 @@ impl<'a> VccLowerer<'a> {
         }
         if let Some(summary) = current_summary {
             for idx in 0..func.param_count {
+                let reg = VccReg(idx as u32);
                 if summary.releases_ringbuf_record_arg(idx) {
                     ptr_regs.insert(
-                        VccReg(idx as u32),
+                        reg,
                         VccPointerInfo {
                             space: VccAddrSpace::RingBuf,
                             nullability: VccNullability::NonNull,
@@ -111,10 +112,32 @@ impl<'a> VccLowerer<'a> {
                             map_root: None,
                             context_buffer_root: None,
                             context_buffer_end: false,
-                            ringbuf_ref: Some(VccReg(idx as u32)),
+                            ringbuf_ref: Some(reg),
                             kfunc_ref: None,
                         },
                     );
+                }
+                if summary.kfunc_ref_release_arg_kind(idx).is_some() {
+                    let mut info = ptr_regs.get(&reg).copied().unwrap_or(VccPointerInfo {
+                        space: VccAddrSpace::Kernel,
+                        nullability: VccNullability::NonNull,
+                        bounds: None,
+                        packet_root: None,
+                        packet_root_field: None,
+                        packet_ctx_field: None,
+                        packet_end: false,
+                        map_root: None,
+                        context_buffer_root: None,
+                        context_buffer_end: false,
+                        ringbuf_ref: None,
+                        kfunc_ref: Some(reg),
+                    });
+                    if !matches!(info.space, VccAddrSpace::KernelBtf) {
+                        info.space = VccAddrSpace::Kernel;
+                    }
+                    info.nullability = VccNullability::NonNull;
+                    info.kfunc_ref = Some(reg);
+                    ptr_regs.insert(reg, info);
                 }
             }
         }
@@ -145,9 +168,10 @@ impl<'a> VccLowerer<'a> {
         }
         if let Some(summary) = self.current_summary {
             for idx in 0..self.func.param_count {
+                let reg = VccReg(idx as u32);
                 if summary.releases_ringbuf_record_arg(idx) {
                     seed.insert(
-                        VccReg(idx as u32),
+                        reg,
                         VccValueType::Ptr(VccPointerInfo {
                             space: VccAddrSpace::RingBuf,
                             nullability: VccNullability::NonNull,
@@ -159,10 +183,35 @@ impl<'a> VccLowerer<'a> {
                             map_root: None,
                             context_buffer_root: None,
                             context_buffer_end: false,
-                            ringbuf_ref: Some(VccReg(idx as u32)),
+                            ringbuf_ref: Some(reg),
                             kfunc_ref: None,
                         }),
                     );
+                }
+                if summary.kfunc_ref_release_arg_kind(idx).is_some() {
+                    let mut info = match seed.get(&reg).copied() {
+                        Some(VccValueType::Ptr(info)) => info,
+                        _ => VccPointerInfo {
+                            space: VccAddrSpace::Kernel,
+                            nullability: VccNullability::NonNull,
+                            bounds: None,
+                            packet_root: None,
+                            packet_root_field: None,
+                            packet_ctx_field: None,
+                            packet_end: false,
+                            map_root: None,
+                            context_buffer_root: None,
+                            context_buffer_end: false,
+                            ringbuf_ref: None,
+                            kfunc_ref: Some(reg),
+                        },
+                    };
+                    if !matches!(info.space, VccAddrSpace::KernelBtf) {
+                        info.space = VccAddrSpace::Kernel;
+                    }
+                    info.nullability = VccNullability::NonNull;
+                    info.kfunc_ref = Some(reg);
+                    seed.insert(reg, VccValueType::Ptr(info));
                 }
             }
         }
@@ -221,6 +270,9 @@ impl<'a> VccLowerer<'a> {
                     helper: "subfunction parameter".to_string(),
                     arg_idx: idx,
                 });
+            }
+            if let Some(kind) = summary.kfunc_ref_release_arg_kind(idx) {
+                out.push(VccInst::KfuncAcquire { id: reg, kind });
             }
         }
     }

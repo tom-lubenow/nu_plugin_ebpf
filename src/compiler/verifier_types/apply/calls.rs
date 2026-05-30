@@ -378,6 +378,9 @@ fn apply_subfunction_release_summary(
         if summary.releases_ringbuf_dynptr_arg(idx) {
             release_subfunction_ringbuf_dynptr_arg(idx, arg, state, errors);
         }
+        if let Some(kind) = summary.kfunc_ref_release_arg_kind(idx) {
+            release_subfunction_kfunc_ref_arg(idx, arg, kind, state, errors);
+        }
     }
 }
 
@@ -473,5 +476,69 @@ fn stack_slot_base_from_vreg(arg: VReg, state: &VerifierState) -> Option<StackSl
             _ => None,
         },
         _ => None,
+    }
+}
+
+fn release_subfunction_kfunc_ref_arg(
+    idx: usize,
+    arg: VReg,
+    expected_kind: KfuncRefKind,
+    state: &mut VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    if state.is_released_kfunc_ref(arg) {
+        return;
+    }
+    match state.get(arg) {
+        VerifierType::Ptr {
+            space: AddressSpace::Kernel,
+            nullability: Nullability::NonNull,
+            kfunc_ref: Some(ref_id),
+            ..
+        } => {
+            if !state.is_live_kfunc_ref(ref_id) {
+                errors.push(VerifierTypeError::new(format!(
+                    "subfunction arg{} reference already released",
+                    idx
+                )));
+                return;
+            }
+            let actual_kind = state.kfunc_ref_kind(ref_id);
+            if actual_kind == Some(expected_kind) {
+                state.invalidate_kfunc_ref(ref_id);
+            } else {
+                let expected = expected_kind.label();
+                let actual = actual_kind.map(|k| k.label()).unwrap_or("unknown");
+                errors.push(VerifierTypeError::new(format!(
+                    "subfunction arg{} expects acquired {} reference, got {} reference",
+                    idx, expected, actual
+                )));
+            }
+        }
+        VerifierType::Ptr {
+            space: AddressSpace::Kernel,
+            nullability: Nullability::MaybeNull,
+            ..
+        } => errors.push(VerifierTypeError::new(format!(
+            "subfunction arg{} may dereference null pointer v{} (add a null check)",
+            idx, arg.0
+        ))),
+        VerifierType::Ptr {
+            space: AddressSpace::Kernel,
+            ..
+        } => errors.push(VerifierTypeError::new(format!(
+            "subfunction arg{} expects acquired {} reference",
+            idx,
+            expected_kind.label()
+        ))),
+        VerifierType::Ptr { space, .. } => errors.push(VerifierTypeError::new(format!(
+            "subfunction arg{} expects kernel pointer, got {:?}",
+            idx, space
+        ))),
+        _ => errors.push(VerifierTypeError::new(format!(
+            "subfunction arg{} expects acquired {} reference pointer",
+            idx,
+            expected_kind.label()
+        ))),
     }
 }
