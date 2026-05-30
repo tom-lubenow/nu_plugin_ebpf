@@ -5660,8 +5660,20 @@ fn test_type_error_xdp_metadata_kfuncs_reject_copied_packet_arg0() {
 }
 
 fn make_sock_ops_enable_tx_tstamp_type_call(arg0_field: CtxField) -> MirFunction {
+    make_sock_ops_enable_tx_tstamp_type_call_with_arg0_copy(arg0_field, false)
+}
+
+fn make_sock_ops_enable_tx_tstamp_type_call_with_copied_arg0(arg0_field: CtxField) -> MirFunction {
+    make_sock_ops_enable_tx_tstamp_type_call_with_arg0_copy(arg0_field, true)
+}
+
+fn make_sock_ops_enable_tx_tstamp_type_call_with_arg0_copy(
+    arg0_field: CtxField,
+    copy_arg0: bool,
+) -> MirFunction {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();
+    let call_ctx = if copy_arg0 { func.alloc_vreg() } else { ctx };
     let flags = func.alloc_vreg();
     let ret = func.alloc_vreg();
     let block = func.block_mut(BlockId(0));
@@ -5670,6 +5682,12 @@ fn make_sock_ops_enable_tx_tstamp_type_call(arg0_field: CtxField) -> MirFunction
         field: arg0_field,
         slot: None,
     });
+    if copy_arg0 {
+        block.instructions.push(MirInst::Copy {
+            dst: call_ctx,
+            src: MirValue::VReg(ctx),
+        });
+    }
     block.instructions.push(MirInst::Copy {
         dst: flags,
         src: MirValue::Const(0),
@@ -5678,7 +5696,7 @@ fn make_sock_ops_enable_tx_tstamp_type_call(arg0_field: CtxField) -> MirFunction
         dst: ret,
         kfunc: "bpf_sock_ops_enable_tx_tstamp".to_string(),
         btf_id: None,
-        args: vec![ctx, flags],
+        args: vec![call_ctx, flags],
     });
     block.terminator = MirInst::Return { val: None };
     func
@@ -5715,9 +5733,52 @@ fn test_type_error_sock_ops_enable_tx_tstamp_rejects_socket_arg0() {
     );
 }
 
+#[test]
+fn test_infer_sock_ops_enable_tx_tstamp_accepts_copied_raw_context_arg0() {
+    let func = make_sock_ops_enable_tx_tstamp_type_call_with_copied_arg0(CtxField::Context);
+    let mut ti = TypeInference::new(Some(ProbeContext::new(
+        EbpfProgramType::SockOps,
+        "/sys/fs/cgroup",
+    )));
+
+    ti.infer(&func)
+        .expect("expected copied sock_ops raw context to satisfy tx timestamp kfunc arg0");
+}
+
+#[test]
+fn test_type_error_sock_ops_enable_tx_tstamp_rejects_copied_socket_arg0() {
+    let func = make_sock_ops_enable_tx_tstamp_type_call_with_copied_arg0(CtxField::Socket);
+    let mut ti = TypeInference::new(Some(ProbeContext::new(
+        EbpfProgramType::SockOps,
+        "/sys/fs/cgroup",
+    )));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected copied socket pointer to fail tx timestamp kfunc arg0");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("kfunc 'bpf_sock_ops_enable_tx_tstamp' arg0 expects bpf_sock_ops pointer")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
 fn make_sock_addr_set_sun_path_type_call(arg0_field: CtxField) -> MirFunction {
+    make_sock_addr_set_sun_path_type_call_with_arg0_copy(arg0_field, false)
+}
+
+fn make_sock_addr_set_sun_path_type_call_with_copied_arg0(arg0_field: CtxField) -> MirFunction {
+    make_sock_addr_set_sun_path_type_call_with_arg0_copy(arg0_field, true)
+}
+
+fn make_sock_addr_set_sun_path_type_call_with_arg0_copy(
+    arg0_field: CtxField,
+    copy_arg0: bool,
+) -> MirFunction {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();
+    let call_ctx = if copy_arg0 { func.alloc_vreg() } else { ctx };
     let path = func.alloc_vreg();
     let size = func.alloc_vreg();
     let ret = func.alloc_vreg();
@@ -5728,6 +5789,12 @@ fn make_sock_addr_set_sun_path_type_call(arg0_field: CtxField) -> MirFunction {
         field: arg0_field,
         slot: None,
     });
+    if copy_arg0 {
+        block.instructions.push(MirInst::Copy {
+            dst: call_ctx,
+            src: MirValue::VReg(ctx),
+        });
+    }
     block.instructions.push(MirInst::Copy {
         dst: path,
         src: MirValue::StackSlot(path_slot),
@@ -5740,7 +5807,7 @@ fn make_sock_addr_set_sun_path_type_call(arg0_field: CtxField) -> MirFunction {
         dst: ret,
         kfunc: "bpf_sock_addr_set_sun_path".to_string(),
         btf_id: None,
-        args: vec![ctx, path, size],
+        args: vec![call_ctx, path, size],
     });
     block.terminator = MirInst::Return { val: None };
     func
@@ -5768,6 +5835,37 @@ fn test_type_error_sock_addr_set_sun_path_rejects_socket_arg0() {
     let errs = ti
         .infer(&func)
         .expect_err("expected socket pointer to fail sun_path kfunc arg0");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("kfunc 'bpf_sock_addr_set_sun_path' arg0 expects bpf_sock_addr pointer")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_infer_sock_addr_set_sun_path_accepts_copied_raw_context_arg0() {
+    let func = make_sock_addr_set_sun_path_type_call_with_copied_arg0(CtxField::Context);
+    let mut ti = TypeInference::new(Some(ProbeContext::new(
+        EbpfProgramType::CgroupSockAddr,
+        "/sys/fs/cgroup:connect_unix",
+    )));
+
+    ti.infer(&func)
+        .expect("expected copied cgroup_sock_addr raw context to satisfy sun_path kfunc arg0");
+}
+
+#[test]
+fn test_type_error_sock_addr_set_sun_path_rejects_copied_socket_arg0() {
+    let func = make_sock_addr_set_sun_path_type_call_with_copied_arg0(CtxField::Socket);
+    let mut ti = TypeInference::new(Some(ProbeContext::new(
+        EbpfProgramType::CgroupSockAddr,
+        "/sys/fs/cgroup:connect_unix",
+    )));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected copied socket pointer to fail sun_path kfunc arg0");
     assert!(
         errs.iter().any(|e| e
             .message
