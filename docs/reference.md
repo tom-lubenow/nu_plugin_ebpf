@@ -154,7 +154,7 @@ The closure receives a context parameter with these fields:
 | `local_ip6` | Local IPv6 address as four host-order `u32` words | cgroup_sock (post_bind6), cgroup_sock_addr (bind6, getsockname6, sendmsg6), cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops |
 | `local_port` | Local port in host byte order | cgroup_sock (post_bind4, post_bind6), cgroup_sock_addr (bind4/bind6, getsockname4/getsockname6), cgroup_skb, sk_lookup, sk_msg, sk_skb, sk_skb_parser, sock_ops |
 | `rx_queue_mapping` | Socket receive-queue mapping (`-1` if unset) | cgroup_sock |
-| `sk` / `sock` / `socket` | Typed `bpf_sock *` pointer for socket projection such as `$ctx.sk.family`, `$ctx.sock.family`, or `$ctx.sk.bound_dev_if`; currently exposes `bound_dev_if`, `family`, `type`, `protocol`, `mark`, `priority`, `src_ip4` / `local_ip4`, `src_ip6` / `local_ip6`, `src_port` / `local_port`, `dst_port` / `remote_port` (raw network byte order), `dst_ip4` / `remote_ip4`, `dst_ip6` / `remote_ip6`, `state`, `rx_queue_mapping`, plus `cgroup_id` and `ancestor_cgroup_id.N` (`cgroup_skb` only). On program types where the corresponding helpers are valid, `$ctx.sk.tcp.<field>` exposes null-safe TCP metrics from `struct bpf_tcp_sock`, while `$ctx.sk.full.<field>` and `$ctx.sk.listener.<field>` expose fields from `bpf_sk_fullsock` / `bpf_get_listener_sock`; direct chained fields and bound helper-pointer field reads return `0` when there is no socket or the helper returns null. The helper-returned pointer can also be used for truthiness, for example `let tcp = $ctx.sk.tcp; if $tcp { $tcp.snd_cwnd }` or `let listener = $ctx.sock.listener; if $listener { $listener.family }`. On iterator programs, `sock` / `socket` keep the iterator-root meaning rather than the generic `bpf_sock` context pointer. | socket_filter, tc_action, tc, tcx, netkit, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, sk_lookup, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, sock_ops |
+| `sk` / `sock` / `socket` | Typed `bpf_sock *` pointer for socket projection such as `$ctx.sk.family`, `$ctx.sock.family`, or `$ctx.sk.bound_dev_if`; currently exposes `bound_dev_if`, `family`, `type`, `protocol`, `mark`, `priority`, `src_ip4` / `local_ip4`, `src_ip6` / `local_ip6`, `src_port` / `local_port`, `dst_port` / `remote_port` (raw network byte order), `dst_ip4` / `remote_ip4`, `dst_ip6` / `remote_ip6`, `state`, `rx_queue_mapping`, plus `cgroup_id` and `ancestor_cgroup_id.N` (`cgroup_skb` only). On program types where the corresponding helpers are valid, `$ctx.sk.tcp.<field>` / `$ctx.sock.tcp.<field>` expose null-safe TCP metrics from `struct bpf_tcp_sock`, while `$ctx.sk.full.<field>`, `$ctx.socket.full.<field>`, and `$ctx.sk.listener.<field>` expose fields from `bpf_sk_fullsock` / `bpf_get_listener_sock`; direct chained fields and bound helper-pointer field reads return `0` when there is no socket or the helper returns null. The helper-returned pointer can also be used for truthiness, for example `let tcp = $ctx.sk.tcp; if $tcp { $tcp.snd_cwnd }` or `let listener = $ctx.sock.listener; if $listener { $listener.family }`. On iterator programs, `sock` / `socket` keep the iterator-root meaning rather than the generic `bpf_sock` context pointer. | socket_filter, tc_action, tc, tcx, netkit, cgroup_skb, cgroup_sock, cgroup_sockopt, cgroup_sock_addr, sk_lookup, sk_reuseport, sk_msg, sk_skb, sk_skb_parser, sock_ops |
 | `flow_keys` | Typed `bpf_flow_keys *` pointer for flow-dissector projection and scalar assignment such as `$ctx.flow_keys.nhoff`, `$ctx.flow_keys.ip_proto`, `$ctx.flow_keys.ipv6_dst.3`, or `mut ctx = $ctx; $ctx.flow_keys.ip_proto = 6` | flow_dissector |
 | `nf_state` | Typed `nf_hook_state *` pointer for netfilter projection such as `$ctx.nf_state.hook`, `$ctx.nf_state.pf`, `$ctx.nf_state.in.ifindex`, or `$ctx.nf_state.out.ifindex`; `ctx.state` is also accepted as a netfilter-specific alias | netfilter |
 | `skb` | Typed `sk_buff *` pointer for netfilter projection such as `$ctx.skb.len` | netfilter |
@@ -497,13 +497,13 @@ programs; inc/dec/reset remain helper-call operations because they mutate skb me
 tc_action/TC/TCX/Netkit/`sk_skb` surface when a valid skb hash is needed after packet edits. The
 skb-backed packet contexts
 (`socket_filter`, `tc_action`, `tc`, `tcx`, `netkit`, `cgroup_skb`, `sk_skb`, and `sk_skb_parser`)
-also expose `ctx.sk` for typed `bpf_sock` projection such as
-`$ctx.sk.family`, `$ctx.sk.src_port`, `$ctx.sk.dst_port`, or
-`$ctx.sk.mark`; the `local_ip4` / `local_ip6` / `local_port` and
+also expose `ctx.sk` / `ctx.sock` / `ctx.socket` for typed `bpf_sock`
+projection such as `$ctx.sk.family`, `$ctx.sock.src_port`,
+`$ctx.socket.dst_port`, or `$ctx.sk.mark`; the `local_ip4` / `local_ip6` / `local_port` and
 `remote_ip4` / `remote_ip6` / `remote_port` aliases are accepted for
 the corresponding kernel `src_*` / `dst_*` socket members. `cgroup_skb`
-also exposes `$ctx.sk.cgroup_id` and
-`$ctx.sk.ancestor_cgroup_id.N` through the socket cgroup helpers,
+also exposes `$ctx.sk.cgroup_id`, `$ctx.sock.cgroup_id`, and
+`$ctx.socket.ancestor_cgroup_id.N` through the socket cgroup helpers,
 returning `0` when no socket is present. Common skb metadata includes `ctx.pkt_type`,
 `ctx.queue_mapping`, `ctx.eth_protocol`, `ctx.vlan_present`,
 `ctx.vlan_tci`, `ctx.vlan_proto`, `ctx.cb`, `ctx.napi_id`,
@@ -787,7 +787,8 @@ compatibility floor, the selected helper, any generated field-read helper such
 as `bpf_probe_read_kernel`, and each helper's own floor. Helper-call
 projections such as `task.pt_regs.arg0` and
 parameterized helper projections such as `ancestor_cgroup_id.N`,
-`skb_ancestor_cgroup_id.N`, or `sk.ancestor_cgroup_id.N` use
+`skb_ancestor_cgroup_id.N`, `sk.ancestor_cgroup_id.N`, or
+`socket.ancestor_cgroup_id.N` use
 `source = helper_call` and a null `offset`, because they are not direct
 struct-field byte offsets.
 `context_writes` rows report the assignment kind, whether the write requires a

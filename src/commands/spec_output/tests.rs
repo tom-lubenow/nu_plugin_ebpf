@@ -3,6 +3,7 @@ use crate::compiler::EbpfProgramType;
 use crate::program_spec::{
     ProgramLiveAttachOptInReason, ProgramLiveAttachUnsupportedReason, ProgramSpec,
 };
+use std::collections::HashSet;
 
 const CONTEXT_FIELD_SPEC_SOURCES: &[&str] = &[
     "raw_tracepoint:sys_enter",
@@ -4797,6 +4798,14 @@ fn test_spec_context_projections_include_flow_key_alias_members() {
 fn test_spec_context_projections_include_helper_backed_socket_members() {
     let spec = ProgramSpec::parse("tc:lo:ingress").expect("tc spec should parse");
     let projections = spec_context_projections(&spec);
+    let mut seen_paths = HashSet::new();
+    for projection in &projections {
+        assert!(
+            seen_paths.insert(projection.path.as_str()),
+            "duplicate context projection path {}",
+            projection.path
+        );
+    }
 
     let tcp_snd_cwnd = projection(&projections, "sk.tcp.snd_cwnd");
     assert_eq!(tcp_snd_cwnd.root, "sk.tcp");
@@ -4851,6 +4860,19 @@ fn test_spec_context_projections_include_helper_backed_socket_members() {
     assert_eq!(sk_family.minimum_kernel, Some("5.1"));
     assert_eq!(sk_family.read_helper, Some("bpf_probe_read_kernel"));
     assert_eq!(sk_family.compatibility_minimum_kernel, Some("5.5"));
+
+    let sock_tcp_snd_cwnd = projection(&projections, "sock.tcp.snd_cwnd");
+    assert_eq!(sock_tcp_snd_cwnd.root, "sock.tcp");
+    assert_eq!(sock_tcp_snd_cwnd.source, "helper_return");
+    assert_eq!(sock_tcp_snd_cwnd.helper, Some("bpf_tcp_sock"));
+    assert_eq!(sock_tcp_snd_cwnd.read_helper, Some("bpf_probe_read_kernel"));
+    assert_eq!(sock_tcp_snd_cwnd.offset, tcp_snd_cwnd.offset);
+
+    let socket_full_remote_port = projection(&projections, "socket.full.remote_port");
+    assert_eq!(socket_full_remote_port.root, "socket.full");
+    assert_eq!(socket_full_remote_port.source, "helper_return_alias");
+    assert_eq!(socket_full_remote_port.helper, Some("bpf_sk_fullsock"));
+    assert_eq!(socket_full_remote_port.offset, full_remote_port.offset);
 }
 
 #[test]
@@ -4942,6 +4964,13 @@ fn test_spec_context_projections_include_parameterized_helper_members() {
     assert_eq!(sk_cgroup.ty, "u64");
     assert_eq!(sk_cgroup.offset, None);
 
+    let sock_cgroup = projection(&cgroup_skb_projections, "sock.cgroup_id");
+    assert_eq!(sock_cgroup.root, "sock");
+    assert_eq!(sock_cgroup.helper, Some("bpf_sk_cgroup_id"));
+    assert_eq!(sock_cgroup.helper_minimum_kernel, Some("5.8"));
+    assert_eq!(sock_cgroup.ty, "u64");
+    assert_eq!(sock_cgroup.offset, None);
+
     let sk_ancestor = projection(&cgroup_skb_projections, "sk.ancestor_cgroup_id.N");
     assert_eq!(sk_ancestor.root, "sk");
     assert_eq!(sk_ancestor.name, "ancestor_cgroup_id.N");
@@ -4949,6 +4978,13 @@ fn test_spec_context_projections_include_parameterized_helper_members() {
     assert_eq!(sk_ancestor.helper_minimum_kernel, Some("5.8"));
     assert_eq!(sk_ancestor.ty, "u64");
     assert_eq!(sk_ancestor.offset, None);
+
+    let socket_ancestor = projection(&cgroup_skb_projections, "socket.ancestor_cgroup_id.N");
+    assert_eq!(socket_ancestor.root, "socket");
+    assert_eq!(socket_ancestor.helper, Some("bpf_sk_ancestor_cgroup_id"));
+    assert_eq!(socket_ancestor.helper_minimum_kernel, Some("5.8"));
+    assert_eq!(socket_ancestor.ty, "u64");
+    assert_eq!(socket_ancestor.offset, None);
 
     let tc_ingress = ProgramSpec::parse("tc:lo:ingress").expect("tc ingress spec should parse");
     let tc_ingress_projections = spec_context_projections(&tc_ingress);
@@ -4958,7 +4994,9 @@ fn test_spec_context_projections_include_parameterized_helper_members() {
         ProgramSpec::parse("sk_msg:/sys/fs/bpf/demo_sockmap").expect("sk_msg spec should parse");
     let sk_msg_projections = spec_context_projections(&sk_msg);
     projection_absent(&sk_msg_projections, "sk.cgroup_id");
+    projection_absent(&sk_msg_projections, "sock.cgroup_id");
     projection_absent(&sk_msg_projections, "sk.ancestor_cgroup_id.N");
+    projection_absent(&sk_msg_projections, "socket.ancestor_cgroup_id.N");
 }
 
 #[test]

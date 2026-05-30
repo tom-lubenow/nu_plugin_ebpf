@@ -989,7 +989,7 @@ fn spec_context_projections(spec: &crate::program_spec::ProgramSpec) -> Vec<Spec
         }
 
         if matches!(entry.field, CtxField::Socket) {
-            push_helper_backed_socket_projections(spec, &mut projections);
+            push_helper_backed_socket_projections(spec, root, &mut projections);
         }
     }
 
@@ -1251,25 +1251,36 @@ fn push_parameterized_context_projections(
         spec.helper_call_error(BpfHelper::SkbAncestorCgroupId),
     );
 
-    push_helper_call_projection(
-        projections,
-        "sk",
-        "cgroup_id",
-        "sk.cgroup_id",
-        BpfHelper::SkCgroupId,
-        MirType::U64,
-        spec.helper_call_error(BpfHelper::SkCgroupId),
-    );
+    for entry in spec
+        .program_type()
+        .ctx_field_name_entries()
+        .into_iter()
+        .filter(|entry| entry.field == CtxField::Socket)
+    {
+        if spec.ctx_field_access_error(&entry.field).is_some() {
+            continue;
+        }
 
-    push_helper_call_projection(
-        projections,
-        "sk",
-        "ancestor_cgroup_id.N",
-        "sk.ancestor_cgroup_id.N",
-        BpfHelper::SkAncestorCgroupId,
-        MirType::U64,
-        spec.helper_call_error(BpfHelper::SkAncestorCgroupId),
-    );
+        push_helper_call_projection(
+            projections,
+            entry.name,
+            "cgroup_id",
+            &format!("{}.cgroup_id", entry.name),
+            BpfHelper::SkCgroupId,
+            MirType::U64,
+            spec.helper_call_error(BpfHelper::SkCgroupId),
+        );
+
+        push_helper_call_projection(
+            projections,
+            entry.name,
+            "ancestor_cgroup_id.N",
+            &format!("{}.ancestor_cgroup_id.N", entry.name),
+            BpfHelper::SkAncestorCgroupId,
+            MirType::U64,
+            spec.helper_call_error(BpfHelper::SkAncestorCgroupId),
+        );
+    }
 
     if spec.ctx_field_access_error(&CtxField::Task).is_none()
         && spec.helper_call_error(BpfHelper::TaskPtRegs).is_none()
@@ -1291,20 +1302,21 @@ fn push_parameterized_context_projections(
 #[cfg(target_os = "linux")]
 fn push_helper_backed_socket_projections(
     spec: &crate::program_spec::ProgramSpec,
+    socket_root: &str,
     projections: &mut Vec<SpecContextProjection>,
 ) {
-    for (root, helper, ty) in [
-        ("sk.tcp", BpfHelper::TcpSock, synthetic_bpf_tcp_sock_type()),
-        ("sk.full", BpfHelper::SkFullsock, synthetic_bpf_sock_type()),
+    for (member, helper, ty) in [
+        ("tcp", BpfHelper::TcpSock, synthetic_bpf_tcp_sock_type()),
+        ("full", BpfHelper::SkFullsock, synthetic_bpf_sock_type()),
         (
-            "sk.listener",
+            "listener",
             BpfHelper::GetListenerSock,
             synthetic_bpf_sock_type(),
         ),
     ] {
         push_struct_field_projections(
             projections,
-            root,
+            &format!("{socket_root}.{member}"),
             "helper_return",
             Some(helper),
             Some(BpfHelper::ProbeReadKernel),

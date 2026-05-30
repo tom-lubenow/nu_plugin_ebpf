@@ -10081,31 +10081,41 @@ fn test_compile_socket_helper_ctx_projection_programs() {
             EbpfProgramType::CgroupSockopt,
             "/sys/fs/cgroup:get",
             vec![
-                string_member("sk"),
+                string_member("sock"),
+                string_member("tcp"),
+                string_member("snd_cwnd"),
+            ],
+            "cgroup_sockopt:get ctx.sock.tcp.snd_cwnd count",
+        ),
+        (
+            EbpfProgramType::CgroupSockopt,
+            "/sys/fs/cgroup:get",
+            vec![
+                string_member("socket"),
                 string_member("tcp"),
                 string_member("delivered_ce"),
             ],
-            "cgroup_sockopt:get ctx.sk.tcp.delivered_ce count",
+            "cgroup_sockopt:get ctx.socket.tcp.delivered_ce count",
         ),
         (
             EbpfProgramType::Tc,
             "lo:ingress",
             vec![
-                string_member("sk"),
+                string_member("sock"),
                 string_member("full"),
                 string_member("family"),
             ],
-            "tc ctx.sk.full.family count",
+            "tc ctx.sock.full.family count",
         ),
         (
             EbpfProgramType::CgroupSkb,
             "/sys/fs/cgroup:ingress",
             vec![
-                string_member("sk"),
+                string_member("socket"),
                 string_member("listener"),
                 string_member("family"),
             ],
-            "cgroup_skb ctx.sk.listener.family count",
+            "cgroup_skb ctx.socket.listener.family count",
         ),
     ];
 
@@ -11160,30 +11170,42 @@ fn test_compile_cgroup_skb_ctx_local_port_counter_program() {
 
 #[test]
 fn test_compile_cgroup_skb_ctx_sk_cgroup_id_counter_program() {
-    assert_ctx_path_count_program_compiles(
-        EbpfProgramType::CgroupSkb,
-        "/sys/fs/cgroup:ingress",
-        CellPath {
-            members: vec![string_member("sk"), string_member("cgroup_id")],
-        },
-        "cgroup_skb ctx.sk.cgroup_id count",
-    );
+    for (root, context) in [
+        ("sk", "cgroup_skb ctx.sk.cgroup_id count"),
+        ("sock", "cgroup_skb ctx.sock.cgroup_id count"),
+        ("socket", "cgroup_skb ctx.socket.cgroup_id count"),
+    ] {
+        assert_ctx_path_count_program_compiles(
+            EbpfProgramType::CgroupSkb,
+            "/sys/fs/cgroup:ingress",
+            CellPath {
+                members: vec![string_member(root), string_member("cgroup_id")],
+            },
+            context,
+        );
+    }
 }
 
 #[test]
 fn test_compile_cgroup_skb_ctx_sk_ancestor_cgroup_id_counter_program() {
-    assert_ctx_path_count_program_compiles(
-        EbpfProgramType::CgroupSkb,
-        "/sys/fs/cgroup:egress",
-        CellPath {
-            members: vec![
-                string_member("sk"),
-                string_member("ancestor_cgroup_id"),
-                int_member(0),
-            ],
-        },
-        "cgroup_skb ctx.sk.ancestor_cgroup_id.0 count",
-    );
+    for (root, context) in [
+        ("sk", "cgroup_skb ctx.sk.ancestor_cgroup_id.0 count"),
+        ("sock", "cgroup_skb ctx.sock.ancestor_cgroup_id.0 count"),
+        ("socket", "cgroup_skb ctx.socket.ancestor_cgroup_id.0 count"),
+    ] {
+        assert_ctx_path_count_program_compiles(
+            EbpfProgramType::CgroupSkb,
+            "/sys/fs/cgroup:egress",
+            CellPath {
+                members: vec![
+                    string_member(root),
+                    string_member("ancestor_cgroup_id"),
+                    int_member(0),
+                ],
+            },
+            context,
+        );
+    }
 }
 
 #[test]
