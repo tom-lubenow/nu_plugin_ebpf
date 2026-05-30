@@ -34,6 +34,12 @@ pub(crate) struct PacketHeaderFieldSpec {
     pub big_endian: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct PacketHeaderProtocolView {
+    pub from: PacketHeaderKind,
+    pub to: PacketHeaderKind,
+}
+
 const fn packet_field(
     name: &'static str,
     ty: PacketHeaderFieldType,
@@ -69,6 +75,10 @@ const fn packet_bitfield(
     }
 }
 
+const fn protocol_view(from: PacketHeaderKind, to: PacketHeaderKind) -> PacketHeaderProtocolView {
+    PacketHeaderProtocolView { from, to }
+}
+
 const ALL_PACKET_HEADERS: &[PacketHeaderKind] = &[
     PacketHeaderKind::Ethernet,
     PacketHeaderKind::Ipv4,
@@ -77,6 +87,17 @@ const ALL_PACKET_HEADERS: &[PacketHeaderKind] = &[
     PacketHeaderKind::Icmp,
     PacketHeaderKind::Icmpv6,
     PacketHeaderKind::Tcp,
+];
+
+const PACKET_PROTOCOL_VIEWS: &[PacketHeaderProtocolView] = &[
+    protocol_view(PacketHeaderKind::Ethernet, PacketHeaderKind::Ipv4),
+    protocol_view(PacketHeaderKind::Ethernet, PacketHeaderKind::Ipv6),
+    protocol_view(PacketHeaderKind::Ipv4, PacketHeaderKind::Udp),
+    protocol_view(PacketHeaderKind::Ipv4, PacketHeaderKind::Icmp),
+    protocol_view(PacketHeaderKind::Ipv4, PacketHeaderKind::Tcp),
+    protocol_view(PacketHeaderKind::Ipv6, PacketHeaderKind::Udp),
+    protocol_view(PacketHeaderKind::Ipv6, PacketHeaderKind::Icmpv6),
+    protocol_view(PacketHeaderKind::Ipv6, PacketHeaderKind::Tcp),
 ];
 
 const ETHERNET_FIELDS: &[PacketHeaderFieldSpec] = &[
@@ -247,6 +268,24 @@ impl PacketHeaderKind {
             .find(|field| field.name == name)
     }
 
+    pub(crate) fn protocol_views(self) -> impl Iterator<Item = PacketHeaderProtocolView> {
+        PACKET_PROTOCOL_VIEWS
+            .iter()
+            .copied()
+            .filter(move |view| view.from == self)
+    }
+
+    pub(crate) fn protocol_view_target(self, alias: &str) -> Option<Self> {
+        let target = Self::from_alias(alias)?;
+        self.protocol_views()
+            .any(|view| view.to == target)
+            .then_some(target)
+    }
+
+    pub(crate) fn supports_payload_step(self) -> bool {
+        true
+    }
+
     pub(crate) fn from_type_name(name: &str) -> Option<Self> {
         Self::all()
             .iter()
@@ -271,6 +310,65 @@ impl PacketHeaderKind {
                 .copied()
                 .map(PacketHeaderFieldSpec::struct_field)
                 .collect(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    #[test]
+    fn packet_header_aliases_are_unique_and_resolve() {
+        let mut aliases = HashSet::new();
+        for header in PacketHeaderKind::all() {
+            for alias in header.aliases() {
+                assert!(
+                    aliases.insert(*alias),
+                    "packet header alias {alias:?} should be unique"
+                );
+                assert_eq!(
+                    PacketHeaderKind::from_alias(alias),
+                    Some(*header),
+                    "packet header alias {alias:?} should resolve to {header:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn packet_header_fields_are_unique_within_header() {
+        for header in PacketHeaderKind::all() {
+            let mut fields = HashSet::new();
+            for field in header.fields() {
+                assert!(
+                    fields.insert(field.name),
+                    "packet header {header:?} field {:?} should be unique",
+                    field.name
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn packet_protocol_views_are_unique_and_alias_resolved() {
+        let mut edges = HashSet::new();
+        for header in PacketHeaderKind::all() {
+            for view in header.protocol_views() {
+                assert_eq!(view.from, *header);
+                assert!(
+                    edges.insert((view.from, view.to)),
+                    "packet protocol view {view:?} should be unique"
+                );
+                for alias in view.to.aliases() {
+                    assert_eq!(
+                        view.from.protocol_view_target(alias),
+                        Some(view.to),
+                        "packet protocol view {view:?} should accept target alias {alias:?}"
+                    );
+                }
+            }
         }
     }
 }

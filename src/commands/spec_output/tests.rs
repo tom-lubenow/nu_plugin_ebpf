@@ -1050,6 +1050,27 @@ fn test_spec_record_includes_packet_context_metadata() {
         .expect("ipv4 packet header should be present")
         .as_record()
         .expect("ipv4 packet header should be a record");
+    assert!(
+        ipv4.get("payload_step")
+            .expect("ipv4 packet header payload metadata should be present")
+            .as_bool()
+            .expect("ipv4 packet header payload metadata should be a bool")
+    );
+    let ipv4_protocol_views = ipv4
+        .get("protocol_views")
+        .expect("ipv4 packet protocol views should be present")
+        .as_list()
+        .expect("ipv4 packet protocol views should be a list");
+    assert!(
+        ipv4_protocol_views.iter().any(|view| {
+            view.as_record()
+                .ok()
+                .and_then(|record| record.get("header"))
+                .and_then(|header| header.as_str().ok())
+                .is_some_and(|header| header == "tcp")
+        }),
+        "ipv4 packet header should expose tcp as a protocol-following view"
+    );
     let ipv4_fields = ipv4
         .get("fields")
         .expect("ipv4 packet header fields should be present")
@@ -1153,6 +1174,41 @@ fn test_spec_record_includes_packet_context_metadata() {
             .expect("ipv6 flow_label endian metadata should be present")
             .as_bool()
             .expect("ipv6 flow_label endian metadata should be a bool")
+    );
+
+    let eth = packet_headers
+        .iter()
+        .find(|header| {
+            header
+                .as_record()
+                .ok()
+                .and_then(|record| record.get("header"))
+                .and_then(|header| header.as_str().ok())
+                .is_some_and(|header| header == "eth")
+        })
+        .expect("eth packet header should be present")
+        .as_record()
+        .expect("eth packet header should be a record");
+    let eth_protocol_views = eth
+        .get("protocol_views")
+        .expect("eth packet protocol views should be present")
+        .as_list()
+        .expect("eth packet protocol views should be a list");
+    assert!(
+        eth_protocol_views.iter().any(|view| {
+            let Ok(view) = view.as_record() else {
+                return false;
+            };
+            let header = view.get("header").and_then(|header| header.as_str().ok());
+            let names = view.get("names").and_then(|names| names.as_list().ok());
+            header.is_some_and(|header| header == "ipv6")
+                && names.is_some_and(|names| {
+                    names
+                        .iter()
+                        .any(|name| name.as_str().is_ok_and(|name| name == "ip6hdr"))
+                })
+        }),
+        "eth packet header should expose ipv6 aliases for protocol-following views"
     );
 
     let kprobe = ProgramSpec::parse("kprobe:sys_read").expect("kprobe spec should parse");

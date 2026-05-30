@@ -624,41 +624,12 @@ impl<'a> HirToMirLowering<'a> {
             return None;
         };
 
-        match (name.as_str(), val.as_str()) {
-            ("__packet_eth", "ipv4" | "iphdr") => Some((
-                PacketPayloadStepKind::Ethernet,
-                PacketHeaderKind::Ipv4.mir_type(),
-            )),
-            ("__packet_eth", "ipv6" | "ipv6hdr" | "ip6hdr") => Some((
-                PacketPayloadStepKind::Ethernet,
-                PacketHeaderKind::Ipv6.mir_type(),
-            )),
-            ("__packet_ipv4", "udp" | "udphdr") => Some((
-                PacketPayloadStepKind::Ipv4,
-                PacketHeaderKind::Udp.mir_type(),
-            )),
-            ("__packet_ipv4", "icmp" | "icmphdr") => Some((
-                PacketPayloadStepKind::Ipv4,
-                PacketHeaderKind::Icmp.mir_type(),
-            )),
-            ("__packet_ipv4", "tcp" | "tcphdr") => Some((
-                PacketPayloadStepKind::Ipv4,
-                PacketHeaderKind::Tcp.mir_type(),
-            )),
-            ("__packet_ipv6", "udp" | "udphdr") => Some((
-                PacketPayloadStepKind::Ipv6,
-                PacketHeaderKind::Udp.mir_type(),
-            )),
-            ("__packet_ipv6", "icmpv6" | "icmp6" | "icmpv6hdr" | "icmp6hdr") => Some((
-                PacketPayloadStepKind::Ipv6,
-                PacketHeaderKind::Icmpv6.mir_type(),
-            )),
-            ("__packet_ipv6", "tcp" | "tcphdr") => Some((
-                PacketPayloadStepKind::Ipv6,
-                PacketHeaderKind::Tcp.mir_type(),
-            )),
-            _ => None,
-        }
+        let header = PacketHeaderKind::from_type_name(name)?;
+        let target = header.protocol_view_target(val)?;
+        Some((
+            Self::packet_payload_step_kind_for_header(header),
+            target.mir_type(),
+        ))
     }
 
     pub(in crate::compiler::ir_to_mir) fn packet_payload_step_kind(
@@ -675,22 +646,25 @@ impl<'a> HirToMirLowering<'a> {
         match current_ty {
             MirType::Struct {
                 name: Some(name), ..
-            } => Self::packet_payload_step_kind_for_header(PacketHeaderKind::from_type_name(name)?),
+            } => {
+                let header = PacketHeaderKind::from_type_name(name)?;
+                header
+                    .supports_payload_step()
+                    .then_some(Self::packet_payload_step_kind_for_header(header))
+            }
             _ => None,
         }
     }
 
-    fn packet_payload_step_kind_for_header(
-        header: PacketHeaderKind,
-    ) -> Option<PacketPayloadStepKind> {
+    fn packet_payload_step_kind_for_header(header: PacketHeaderKind) -> PacketPayloadStepKind {
         match header {
-            PacketHeaderKind::Ethernet => Some(PacketPayloadStepKind::Ethernet),
-            PacketHeaderKind::Ipv4 => Some(PacketPayloadStepKind::Ipv4),
-            PacketHeaderKind::Ipv6 => Some(PacketPayloadStepKind::Ipv6),
-            PacketHeaderKind::Icmp => Some(PacketPayloadStepKind::Icmp),
-            PacketHeaderKind::Icmpv6 => Some(PacketPayloadStepKind::Icmpv6),
-            PacketHeaderKind::Udp => Some(PacketPayloadStepKind::Udp),
-            PacketHeaderKind::Tcp => Some(PacketPayloadStepKind::Tcp),
+            PacketHeaderKind::Ethernet => PacketPayloadStepKind::Ethernet,
+            PacketHeaderKind::Ipv4 => PacketPayloadStepKind::Ipv4,
+            PacketHeaderKind::Ipv6 => PacketPayloadStepKind::Ipv6,
+            PacketHeaderKind::Icmp => PacketPayloadStepKind::Icmp,
+            PacketHeaderKind::Icmpv6 => PacketPayloadStepKind::Icmpv6,
+            PacketHeaderKind::Udp => PacketPayloadStepKind::Udp,
+            PacketHeaderKind::Tcp => PacketPayloadStepKind::Tcp,
         }
     }
 

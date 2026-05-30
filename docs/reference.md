@@ -254,8 +254,9 @@ context ABI, write-only surface, and backing helper/kfunc floors for that row.
 The component `minimum_kernel`, `backing_helper_minimum_kernel`,
 `helper_minimum_kernel`, and `kfunc_minimum_kernel` fields remain present where
 they apply. Packet-capable program records also expose a `packet_headers` list
-with the packet header view names, aliases, fields, byte offsets, endian
-normalization, and bitfield slices available through `$ctx.data` projections.
+with the packet header view names, aliases, protocol-following views, payload
+step support, fields, byte offsets, endian normalization, and bitfield slices
+available through `$ctx.data` projections.
 When a feature is unmodeled or kernel-version-specific, the kernel verifier and
 loader remain authoritative.
 
@@ -739,7 +740,7 @@ Read-only closure captures now lower as real constants for supported types (`int
 | Command | Description |
 |---------|-------------|
 | `ebpf attach` | Attach eBPF probe with closure |
-| `ebpf spec` | Inspect parsed target metadata, aliases, parsed attach shape, context family, packet context kind, direct packet-write support, concrete context argument and return-value surfaces when knowable, modeled context fields with type labels, pointer verifier facts, load guards, aggregate/direct/helper compatibility floors, direct/array/nested context load-shape metadata, backing helpers with compatibility keys and inherited helper kernel floors where applicable, and nested direct/helper-backed projections, tracepoint payload fields with tracefs/fallback provenance, writable context surfaces with direct context-field keys plus backing helper/kfunc compatibility keys and version metadata where applicable, argument/return access mode, return aliases, capabilities, supported first-class intrinsic commands with helper floors, intrinsic context-field requirements, and map-kind floors for kind-sensitive redirect variants, section naming/target usage, struct_ops value/callback metadata, sleepable/BTF-callable metadata, kernel-target validation, live-attach/default-safety support, derived external-alpha status, and compatibility requirements; pass `--list` for all modeled program families |
+| `ebpf spec` | Inspect parsed target metadata, aliases, parsed attach shape, context family, packet context kind, packet header fields/protocol views, direct packet-write support, concrete context argument and return-value surfaces when knowable, modeled context fields with type labels, pointer verifier facts, load guards, aggregate/direct/helper compatibility floors, direct/array/nested context load-shape metadata, backing helpers with compatibility keys and inherited helper kernel floors where applicable, and nested direct/helper-backed projections, tracepoint payload fields with tracefs/fallback provenance, writable context surfaces with direct context-field keys plus backing helper/kfunc compatibility keys and version metadata where applicable, argument/return access mode, return aliases, capabilities, supported first-class intrinsic commands with helper floors, intrinsic context-field requirements, and map-kind floors for kind-sensitive redirect variants, section naming/target usage, struct_ops value/callback metadata, sleepable/BTF-callable metadata, kernel-target validation, live-attach/default-safety support, derived external-alpha status, and compatibility requirements; pass `--list` for all modeled program families |
 | `ebpf detach` | Detach a probe by ID |
 | `ebpf list` | List active probes |
 | `ebpf counters` | Read counter map |

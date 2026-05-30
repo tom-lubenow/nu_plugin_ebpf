@@ -446,6 +446,23 @@ fn packet_header_field_records(header: PacketHeaderKind, span: Span) -> Vec<Valu
 }
 
 #[cfg(target_os = "linux")]
+fn packet_header_protocol_view_records(header: PacketHeaderKind, span: Span) -> Vec<Value> {
+    header
+        .protocol_views()
+        .map(|view| {
+            Value::record(
+                record! {
+                    "header" => Value::string(view.to.key(), span),
+                    "type_name" => Value::string(view.to.type_name(), span),
+                    "names" => Value::list(string_list(view.to.aliases(), span), span),
+                },
+                span,
+            )
+        })
+        .collect()
+}
+
+#[cfg(target_os = "linux")]
 fn packet_header_records(spec: &crate::program_spec::ProgramSpec, span: Span) -> Vec<Value> {
     if spec.packet_context_kind().is_none() {
         return Vec::new();
@@ -460,6 +477,8 @@ fn packet_header_records(spec: &crate::program_spec::ProgramSpec, span: Span) ->
                     "header" => Value::string(header.key(), span),
                     "type_name" => Value::string(header.type_name(), span),
                     "names" => Value::list(string_list(header.aliases(), span), span),
+                    "payload_step" => Value::bool(header.supports_payload_step(), span),
+                    "protocol_views" => Value::list(packet_header_protocol_view_records(header, span), span),
                     "fields" => Value::list(packet_header_field_records(header, span), span),
                 },
                 span,
