@@ -993,6 +993,77 @@ fn test_dynptr_copy_rejects_initialized_destination() {
 }
 
 #[test]
+fn test_dynptr_copy_rejects_destination_initialized_on_one_path() {
+    let mut func = VccFunction::new();
+    let entry = func.entry;
+    let init_dst = func.alloc_block();
+    let skip = func.alloc_block();
+    let join = func.alloc_block();
+    let cond = func.alloc_reg();
+    let src = func.alloc_reg();
+    let dst = func.alloc_reg();
+
+    func.block_mut(entry).instructions.push(VccInst::StackAddr {
+        dst: src,
+        slot: StackSlotId(0),
+        size: 16,
+    });
+    func.block_mut(entry).instructions.push(VccInst::StackAddr {
+        dst,
+        slot: StackSlotId(1),
+        size: 16,
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(VccInst::DynptrMarkInitialized {
+            ptr: src,
+            kfunc: "unknown_dynptr_init".to_string(),
+            arg_idx: 0,
+        });
+    func.block_mut(entry).instructions.push(VccInst::Assume {
+        dst: cond,
+        ty: VccValueType::Bool,
+        ctx_field_source: None,
+    });
+    func.block_mut(entry).terminator = VccTerminator::Branch {
+        cond: VccValue::Reg(cond),
+        if_true: init_dst,
+        if_false: skip,
+    };
+
+    func.block_mut(init_dst)
+        .instructions
+        .push(VccInst::DynptrMarkInitialized {
+            ptr: dst,
+            kfunc: "unknown_dynptr_init".to_string(),
+            arg_idx: 1,
+        });
+    func.block_mut(init_dst).terminator = VccTerminator::Jump { target: join };
+    func.block_mut(skip).terminator = VccTerminator::Jump { target: join };
+
+    func.block_mut(join).instructions.push(VccInst::DynptrCopy {
+        src,
+        dst,
+        kfunc: "unknown_dynptr_copy".to_string(),
+        src_arg_idx: 0,
+        dst_arg_idx: 1,
+        move_semantics: false,
+    });
+    func.block_mut(join).terminator = VccTerminator::Return { value: None };
+
+    let err = VccVerifier::default()
+        .verify_function(&func)
+        .expect_err("expected mixed-path dynptr copy destination reinit verifier error");
+    assert!(
+        err.iter().any(|e| e.message.contains(
+            "kfunc 'unknown_dynptr_copy' arg1 requires uninitialized dynptr stack object slot",
+        )),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_dynptr_initialized_slots_join_requires_all_paths() {
     let slot = StackSlotId(7);
     let mut initialized = VccState::with_seed(HashMap::new());

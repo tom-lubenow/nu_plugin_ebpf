@@ -11794,6 +11794,30 @@ const FIXTURES = [
         error_contains: "kfunc 'bpf_dynptr_clone' arg1 requires uninitialized dynptr stack object slot"
     }
     {
+        name: "dynptr-kfunc-clone-rejects-destination-initialized-on-one-path"
+        category: "helper-state"
+        tags: [kfunc dynptr branch reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let src = "0123456789abcdef"'
+            '  let dst = "fedcba9876543210"'
+            '  helper-call "bpf_ringbuf_reserve_dynptr" events 8 0 $src'
+            '  let selector = (helper-call "bpf_get_prandom_u32")'
+            '  if $selector == 0 {'
+            '    helper-call "bpf_ringbuf_reserve_dynptr" events 8 0 $dst'
+            '  }'
+            '  kfunc-call "bpf_dynptr_clone" $src $dst'
+            '  helper-call "bpf_ringbuf_discard_dynptr" $src 0'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'bpf_dynptr_clone' arg1 requires uninitialized dynptr stack object slot"
+    }
+    {
         name: "dynptr-kfunc-clone-submit-through-clone-balanced"
         category: "helper-state"
         tags: [kfunc dynptr accept]
