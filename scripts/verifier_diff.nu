@@ -13571,7 +13571,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "flow-dissector-bound-flow-key-context"
@@ -13588,7 +13588,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "flow-dissector-flow-key-write-context"
@@ -13606,7 +13606,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "flow-dissector-bound-flow-key-write-context"
@@ -13623,7 +13623,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "flow-dissector-record-flow-key-write-context"
@@ -13639,7 +13639,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "flow-dissector-record-spread-flow-key-write-context"
@@ -13656,7 +13656,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "flow-dissector-user-function-record-flow-key-write-context"
@@ -13674,7 +13674,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "flow-dissector-rejects-flow-key-root-write"
@@ -13723,7 +13723,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "flow-dissector-rejects-packet-data-write"
