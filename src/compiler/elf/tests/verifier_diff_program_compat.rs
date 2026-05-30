@@ -761,6 +761,93 @@ $checks
     Some(records)
 }
 
+fn verifier_diff_nu_target_feature_keys(targets: &[String]) -> Option<Vec<BTreeSet<String>>> {
+    let target_rows = targets
+        .iter()
+        .map(|target| format!("    {target:?}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let script = format!(
+        r#"source scripts/verifier_diff.nu
+let targets = [
+{target_rows}
+]
+$targets
+| enumerate
+| each {{|row|
+    {{
+        index: $row.index
+        keys: (
+            target-kernel-features $row.item
+            | each {{|feature| $feature.key }}
+            | sort
+        )
+    }}
+}}
+| to json"#
+    );
+
+    let output = match Command::new("nu")
+        .arg("-c")
+        .arg(script)
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .output()
+    {
+        Ok(output) => output,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            eprintln!(
+                "skipping verifier_diff.nu target-kernel-features coverage: nu binary was not found"
+            );
+            return None;
+        }
+        Err(err) => panic!("failed to run nu for verifier_diff.nu target-kernel-features: {err}"),
+    };
+    assert!(
+        output.status.success(),
+        "verifier_diff.nu target-kernel-features failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let actual: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .expect("verifier_diff.nu target-kernel-features should emit JSON");
+    let actual = actual
+        .as_array()
+        .expect("verifier_diff.nu target-kernel-features output should be a JSON list");
+    assert_eq!(
+        actual.len(),
+        targets.len(),
+        "verifier_diff.nu target-kernel-features should return one result per target"
+    );
+
+    let mut keys_by_target = vec![BTreeSet::new(); targets.len()];
+    for value in actual {
+        let index = value
+            .get("index")
+            .and_then(serde_json::Value::as_u64)
+            .expect("verifier_diff.nu target-kernel-features result should include index")
+            as usize;
+        assert!(
+            index < targets.len(),
+            "verifier_diff.nu target-kernel-features index should refer to a checked target"
+        );
+        let keys = value
+            .get("keys")
+            .and_then(serde_json::Value::as_array)
+            .expect("verifier_diff.nu target-kernel-features result should include keys");
+        keys_by_target[index] = keys
+            .iter()
+            .map(|key| {
+                key.as_str()
+                    .expect("verifier_diff.nu target feature keys should be strings")
+                    .to_string()
+            })
+            .collect();
+    }
+
+    Some(keys_by_target)
+}
+
 #[test]
 fn test_verifier_diff_map_value_feature_metadata_matches_rust() {
     let verifier_diff = include_str!("../../../../scripts/verifier_diff.nu");
@@ -1178,6 +1265,39 @@ fn test_verifier_diff_tracepoint_payload_scanner_matches_rust_fallback_fields() 
         "scripts/verifier_diff.nu tracepoint payload scanner drifted from Rust metadata: {}",
         mismatches.join(", ")
     );
+}
+
+#[test]
+fn test_verifier_diff_target_kernel_features_cover_representative_rust_program_specs() {
+    let mut checks = Vec::new();
+
+    for program_type in EbpfProgramType::supported_program_types() {
+        let target = ProgramSpec::representative_target_for_program_type(*program_type);
+        let spec = ProgramSpec::from_program_type_target(*program_type, target)
+            .unwrap_or_else(|err| panic!("{program_type:?} representative target failed: {err}"));
+        let expected_keys = spec
+            .compatibility_requirements()
+            .iter()
+            .filter_map(|requirement| program_compatibility_verifier_feature_key(*requirement))
+            .map(str::to_string)
+            .collect::<BTreeSet<_>>();
+        checks.push((spec.to_string(), expected_keys));
+    }
+
+    let targets = checks
+        .iter()
+        .map(|(target, _)| target.clone())
+        .collect::<Vec<_>>();
+    let Some(actual) = verifier_diff_nu_target_feature_keys(&targets) else {
+        return;
+    };
+
+    for ((target, expected_keys), actual_keys) in checks.iter().zip(actual.iter()) {
+        assert_eq!(
+            actual_keys, expected_keys,
+            "scripts/verifier_diff.nu target-kernel-features drifted from ProgramSpec for {target}"
+        );
+    }
 }
 
 #[test]
