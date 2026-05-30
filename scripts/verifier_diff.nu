@@ -10540,6 +10540,27 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "ringbuf-reserve-user-function-submit-balanced"
+        category: "helper-state"
+        tags: [ringbuf ref-lifetime user-function]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  def submit [rec] {'
+            '    helper-call "bpf_ringbuf_submit" $rec 0'
+            '    0'
+            '  }'
+            '  let rec = (helper-call "bpf_ringbuf_reserve" events 8 0)'
+            '  if $rec {'
+            '    submit $rec'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "ringbuf-reserve-discard-balanced"
         category: "helper-state"
         tags: [ringbuf ref-lifetime]
@@ -10724,6 +10745,26 @@ const FIXTURES = [
             '  let d = "0123456789abcdef"'
             '  helper-call "bpf_ringbuf_reserve_dynptr" events 8 0 $d'
             '  helper-call "bpf_ringbuf_submit_dynptr" $d 0'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "ringbuf-dynptr-user-function-submit-balanced"
+        category: "helper-state"
+        tags: [ringbuf dynptr ref-lifetime user-function]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  def submit [d] {'
+            '    helper-call "bpf_ringbuf_submit_dynptr" $d 0'
+            '    0'
+            '  }'
+            '  let d = "0123456789abcdef"'
+            '  helper-call "bpf_ringbuf_reserve_dynptr" events 8 0 $d'
+            '  submit $d'
             '  0'
             '}'
         ]

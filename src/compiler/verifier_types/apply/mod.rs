@@ -1,5 +1,6 @@
 use super::*;
 use crate::compiler::mir::SubfunctionId;
+use crate::compiler::subfn_summaries::SubfunctionSummary;
 use crate::compiler::{ProbeContext, ProgramTypeInfo};
 
 mod access;
@@ -26,7 +27,7 @@ pub(super) fn apply_inst(
     inst: &MirInst,
     types: &HashMap<VReg, MirType>,
     slot_sizes: &HashMap<StackSlotId, i64>,
-    subfn_summaries: &HashMap<SubfunctionId, SubfunctionReturnSummary>,
+    subfn_summaries: &HashMap<SubfunctionId, SubfunctionSummary>,
     program: Option<&ProgramTypeInfo>,
     probe_ctx: Option<&ProbeContext>,
     state: &mut VerifierState,

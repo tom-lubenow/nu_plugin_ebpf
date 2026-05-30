@@ -199,6 +199,18 @@ impl<'a> HirToMirLowering<'a> {
             if stack_object.initialize_dynptr {
                 self.func.entry_initialized_dynptr_slots.insert(slot);
             }
+        } else if let Some(MirType::Ptr {
+            pointee,
+            address_space: crate::compiler::mir::AddressSpace::Stack,
+        }) = seed.type_hint.as_ref()
+        {
+            let size = align_to_eight(pointee.size()).max(8);
+            let slot = self.func.alloc_stack_slot(size, 8, StackSlotKind::Local);
+            self.record_stack_slot_type(slot, pointee.as_ref().clone());
+            self.func.param_stack_slots.insert(param_idx, slot);
+            if pointee.is_bpf_dynptr_struct() {
+                self.func.entry_initialized_dynptr_slots.insert(slot);
+            }
         }
 
         if seed.metadata.is_some() || seed.trusted_btf {

@@ -1,7 +1,7 @@
 use super::*;
 use crate::compiler::mir::StructField;
 use crate::compiler::subfn_summaries::{
-    SubfunctionReturnSummary, infer_subfunction_return_summaries,
+    SubfunctionReturnSummary, SubfunctionSummary, infer_subfunction_summaries,
 };
 use crate::compiler::{EbpfProgramType, MapRef, ProbeContext, ProgramCapability, ProgramTypeInfo};
 
@@ -12600,7 +12600,7 @@ fn test_verify_mir_for_probe_context_packet_mutating_subfn_invalidates_prior_pac
             ],
         });
     subfn.block_mut(sub_entry).terminator = MirInst::Return { val: None };
-    let summaries = infer_subfunction_return_summaries(&[subfn]);
+    let summaries = infer_subfunction_summaries(&[subfn]);
 
     let probe_ctx = ProbeContext::new(EbpfProgramType::SkMsg, "/sys/fs/bpf/demo_sockmap");
     let err = verify_mir_with_subfunction_summaries_for_probe_context(
@@ -12689,7 +12689,7 @@ fn test_verify_mir_subfn_return_arg_summary_preserves_null_checked_pointer() {
 
     let summaries = HashMap::from([(
         crate::compiler::mir::SubfunctionId(0),
-        SubfunctionReturnSummary::ReturnsArg(0),
+        SubfunctionSummary::from(SubfunctionReturnSummary::ReturnsArg(0)),
     )]);
     verify_mir_with_subfunction_summaries(&func, &types, &summaries)
         .expect("expected null-checked arg-returning subfunction to preserve pointer safety");
@@ -15368,6 +15368,74 @@ fn test_helper_ringbuf_reserve_submit_releases_reference() {
     let mut types = HashMap::new();
     types.insert(submit_ret, MirType::I64);
     verify_mir(&func, &types).expect("expected ringbuf reference to be released");
+}
+
+#[test]
+fn test_helper_ringbuf_subfn_submit_releases_caller_reference() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let submit = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let record = func.alloc_vreg();
+    let cond = func.alloc_vreg();
+    let call_ret = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: record,
+            helper: BpfHelper::RingbufReserve as u32,
+            args: vec![
+                MirValue::StackSlot(map_slot),
+                MirValue::Const(8),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: cond,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(record),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond,
+        if_true: submit,
+        if_false: done,
+    };
+    func.block_mut(submit)
+        .instructions
+        .push(MirInst::CallSubfn {
+            dst: call_ret,
+            subfn: crate::compiler::mir::SubfunctionId(0),
+            args: vec![record],
+        });
+    func.block_mut(submit).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut subfn = MirFunction::new();
+    let sub_entry = subfn.alloc_block();
+    subfn.entry = sub_entry;
+    subfn.param_count = 1;
+    subfn.vreg_count = 1;
+    let submit_ret = subfn.alloc_vreg();
+    subfn
+        .block_mut(sub_entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: submit_ret,
+            helper: BpfHelper::RingbufSubmit as u32,
+            args: vec![MirValue::VReg(VReg(0)), MirValue::Const(0)],
+        });
+    subfn.block_mut(sub_entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(call_ret, MirType::I64);
+    let summaries = infer_subfunction_summaries(&[subfn]);
+    verify_mir_with_subfunction_summaries(&func, &types, &summaries)
+        .expect("expected subfunction submit to release caller ringbuf reference");
 }
 
 #[test]

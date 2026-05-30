@@ -619,7 +619,7 @@ pub struct VccVerifier {
 include!("vcc/verifier.rs");
 include!("vcc/state.rs");
 pub fn verify_mir(func: &MirFunction, types: &HashMap<VReg, MirType>) -> Result<(), Vec<VccError>> {
-    verify_mir_with_subfunction_summaries_impl(func, types, &HashMap::new(), None, None, None)
+    verify_mir_with_subfunction_summaries_impl(func, types, &HashMap::new(), None, None, None, None)
 }
 
 pub fn verify_mir_for_program(
@@ -631,6 +631,7 @@ pub fn verify_mir_for_program(
         func,
         types,
         &HashMap::new(),
+        None,
         Some(program),
         None,
         None,
@@ -647,6 +648,7 @@ pub(crate) fn verify_mir_for_probe_context(
         func,
         types,
         &HashMap::new(),
+        None,
         Some(probe_ctx.program_info()),
         Some(probe_ctx),
         None,
@@ -657,21 +659,34 @@ pub(crate) fn verify_mir_for_probe_context(
 pub(crate) fn verify_mir_with_subfunction_summaries(
     func: &MirFunction,
     types: &HashMap<VReg, MirType>,
-    subfn_summaries: &HashMap<
-        SubfunctionId,
-        crate::compiler::subfn_summaries::SubfunctionReturnSummary,
-    >,
+    subfn_summaries: &HashMap<SubfunctionId, crate::compiler::subfn_summaries::SubfunctionSummary>,
 ) -> Result<(), Vec<VccError>> {
-    verify_mir_with_subfunction_summaries_impl(func, types, subfn_summaries, None, None, None)
+    verify_mir_with_subfunction_summaries_impl(func, types, subfn_summaries, None, None, None, None)
 }
 
+#[allow(dead_code)]
 pub(crate) fn verify_mir_with_subfunction_summaries_for_probe_context(
     func: &MirFunction,
     types: &HashMap<VReg, MirType>,
-    subfn_summaries: &HashMap<
-        SubfunctionId,
-        crate::compiler::subfn_summaries::SubfunctionReturnSummary,
-    >,
+    subfn_summaries: &HashMap<SubfunctionId, crate::compiler::subfn_summaries::SubfunctionSummary>,
+    probe_ctx: Option<&ProbeContext>,
+    generic_map_value_types: Option<&HashMap<MapRef, MirType>>,
+) -> Result<(), Vec<VccError>> {
+    verify_mir_with_subfunction_summaries_for_probe_context_with_current_summary(
+        func,
+        types,
+        subfn_summaries,
+        None,
+        probe_ctx,
+        generic_map_value_types,
+    )
+}
+
+pub(crate) fn verify_mir_with_subfunction_summaries_for_probe_context_with_current_summary(
+    func: &MirFunction,
+    types: &HashMap<VReg, MirType>,
+    subfn_summaries: &HashMap<SubfunctionId, crate::compiler::subfn_summaries::SubfunctionSummary>,
+    current_summary: Option<crate::compiler::subfn_summaries::SubfunctionSummary>,
     probe_ctx: Option<&ProbeContext>,
     generic_map_value_types: Option<&HashMap<MapRef, MirType>>,
 ) -> Result<(), Vec<VccError>> {
@@ -679,6 +694,7 @@ pub(crate) fn verify_mir_with_subfunction_summaries_for_probe_context(
         func,
         types,
         subfn_summaries,
+        current_summary,
         probe_ctx.map(|ctx| ctx.program_info()),
         probe_ctx,
         generic_map_value_types,
@@ -688,10 +704,8 @@ pub(crate) fn verify_mir_with_subfunction_summaries_for_probe_context(
 fn verify_mir_with_subfunction_summaries_impl(
     func: &MirFunction,
     types: &HashMap<VReg, MirType>,
-    subfn_summaries: &HashMap<
-        SubfunctionId,
-        crate::compiler::subfn_summaries::SubfunctionReturnSummary,
-    >,
+    subfn_summaries: &HashMap<SubfunctionId, crate::compiler::subfn_summaries::SubfunctionSummary>,
+    current_summary: Option<crate::compiler::subfn_summaries::SubfunctionSummary>,
     program: Option<&ProgramTypeInfo>,
     probe_ctx: Option<&ProbeContext>,
     generic_map_value_types: Option<&HashMap<MapRef, MirType>>,
@@ -736,6 +750,7 @@ fn verify_mir_with_subfunction_summaries_impl(
         types,
         list_max,
         subfn_summaries,
+        current_summary,
         effective_program,
         probe_ctx,
     );

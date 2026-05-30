@@ -3,6 +3,7 @@ use crate::compiler::instruction::{
     kfunc_allowed_while_lock_held, unknown_kfunc_signature_message,
 };
 use crate::compiler::mir::SubfunctionId;
+use crate::compiler::subfn_summaries::SubfunctionSummary;
 use crate::compiler::{ProbeContext, ProgramTypeInfo};
 
 fn reject_call_if_kernel_lock_held(
@@ -324,7 +325,7 @@ pub(super) fn apply_call_subfn_inst(
     args: &[VReg],
     types: &HashMap<VReg, MirType>,
     slot_sizes: &HashMap<StackSlotId, i64>,
-    subfn_summaries: &HashMap<SubfunctionId, SubfunctionReturnSummary>,
+    subfn_summaries: &HashMap<SubfunctionId, SubfunctionSummary>,
     state: &mut VerifierState,
     errors: &mut Vec<VerifierTypeError>,
 ) {
@@ -339,11 +340,13 @@ pub(super) fn apply_call_subfn_inst(
     let summary = subfn_summaries
         .get(&subfn)
         .copied()
-        .unwrap_or(SubfunctionReturnSummary::Unknown);
+        .unwrap_or_else(SubfunctionSummary::unknown);
 
     if summary.changes_packet_data() {
         state.invalidate_packet_pointers();
     }
+
+    apply_subfunction_release_summary(&summary, args, state, errors);
 
     if let Some(idx) = summary.return_arg()
         && let Some(arg) = args.get(idx)
@@ -357,4 +360,118 @@ pub(super) fn apply_call_subfn_inst(
         .map(verifier_type_from_mir)
         .unwrap_or(VerifierType::Scalar);
     state.set_with_range(dst, ty, ValueRange::Unknown);
+}
+
+fn apply_subfunction_release_summary(
+    summary: &SubfunctionSummary,
+    args: &[VReg],
+    state: &mut VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    for idx in 0..5 {
+        let Some(arg) = args.get(idx).copied() else {
+            continue;
+        };
+        if summary.releases_ringbuf_record_arg(idx) {
+            release_subfunction_ringbuf_record_arg(idx, arg, state, errors);
+        }
+        if summary.releases_ringbuf_dynptr_arg(idx) {
+            release_subfunction_ringbuf_dynptr_arg(idx, arg, state, errors);
+        }
+    }
+}
+
+fn release_subfunction_ringbuf_record_arg(
+    idx: usize,
+    arg: VReg,
+    state: &mut VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    if state.is_released_ringbuf_record(arg) {
+        return;
+    }
+    match state.get(arg) {
+        VerifierType::Ptr {
+            space: AddressSpace::Map,
+            nullability: Nullability::NonNull,
+            ringbuf_ref: Some(ref_id),
+            ..
+        } => {
+            if state.is_live_ringbuf_ref(ref_id) {
+                state.invalidate_ringbuf_ref(ref_id);
+            } else {
+                errors.push(VerifierTypeError::new(format!(
+                    "subfunction arg{} ringbuf record already released",
+                    idx
+                )));
+            }
+        }
+        VerifierType::Ptr {
+            nullability: Nullability::MaybeNull,
+            ..
+        } => errors.push(VerifierTypeError::new(format!(
+            "subfunction arg{} may dereference null ringbuf record pointer v{} (add a null check)",
+            idx, arg.0
+        ))),
+        VerifierType::Ptr { .. } => errors.push(VerifierTypeError::new(format!(
+            "subfunction arg{} expects ringbuf record pointer",
+            idx
+        ))),
+        _ => errors.push(VerifierTypeError::new(format!(
+            "subfunction arg{} expects ringbuf record pointer",
+            idx
+        ))),
+    }
+}
+
+fn release_subfunction_ringbuf_dynptr_arg(
+    idx: usize,
+    arg: VReg,
+    state: &mut VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    let Some(slot) = stack_slot_base_from_vreg(arg, state) else {
+        errors.push(VerifierTypeError::new(format!(
+            "subfunction arg{} expects stack slot base pointer",
+            idx
+        )));
+        return;
+    };
+    if state.is_released_ringbuf_dynptr_slot(slot) {
+        errors.push(VerifierTypeError::new(format!(
+            "subfunction arg{} ringbuf dynptr reservation already released",
+            idx
+        )));
+        return;
+    }
+    if !state.is_dynptr_slot_initialized(slot) {
+        errors.push(VerifierTypeError::new(format!(
+            "subfunction arg{} requires initialized dynptr stack object",
+            idx
+        )));
+        return;
+    }
+    if !state.has_ringbuf_dynptr_slot(slot) {
+        errors.push(VerifierTypeError::new(format!(
+            "subfunction arg{} requires live ringbuf dynptr reservation",
+            idx
+        )));
+        return;
+    }
+    state.release_ringbuf_dynptr_slot(slot);
+    state.deinitialize_dynptr_slot(slot);
+}
+
+fn stack_slot_base_from_vreg(arg: VReg, state: &VerifierState) -> Option<StackSlotId> {
+    match state.get(arg) {
+        VerifierType::Ptr {
+            space: AddressSpace::Stack,
+            bounds: Some(bounds),
+            ..
+        } => match bounds.origin() {
+            PtrOrigin::Stack(slot) if bounds.min() == 0 && bounds.max() == 0 => Some(slot),
+            _ => None,
+        },
+        _ => None,
+    }
 }

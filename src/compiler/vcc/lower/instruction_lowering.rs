@@ -1461,11 +1461,12 @@ impl<'a> VccLowerer<'a> {
                         .get(subfn)
                         .copied()
                         .unwrap_or(
-                            crate::compiler::subfn_summaries::SubfunctionReturnSummary::Unknown,
+                            crate::compiler::subfn_summaries::SubfunctionSummary::unknown(),
                         );
                     if summary.changes_packet_data() {
                         out.push(VccInst::InvalidatePacketPointers);
                     }
+                    self.lower_subfunction_release_summary(summary, args, out);
                     if let Some(idx) = summary.return_arg()
                         && let Some(arg) = args.get(idx)
                     {
@@ -1762,6 +1763,37 @@ impl<'a> VccLowerer<'a> {
         }
 
         Ok(())
+    }
+
+    fn lower_subfunction_release_summary(
+        &mut self,
+        summary: crate::compiler::subfn_summaries::SubfunctionSummary,
+        args: &[VReg],
+        out: &mut Vec<VccInst>,
+    ) {
+        for idx in 0..5 {
+            let Some(arg) = args.get(idx).copied() else {
+                continue;
+            };
+            if summary.releases_ringbuf_record_arg(idx) {
+                out.push(VccInst::RingbufRelease {
+                    ptr: VccValue::Reg(VccReg(arg.0)),
+                });
+            }
+            if summary.releases_ringbuf_dynptr_arg(idx) {
+                let ptr = VccReg(arg.0);
+                out.push(VccInst::HelperDynptrRequireInitialized {
+                    ptr,
+                    helper: format!("subfunction arg{}", idx),
+                    arg_idx: idx,
+                });
+                out.push(VccInst::HelperRingbufDynptrRelease {
+                    ptr,
+                    helper: format!("subfunction arg{}", idx),
+                    arg_idx: idx,
+                });
+            }
+        }
     }
 
     pub(super) fn lower_terminator(

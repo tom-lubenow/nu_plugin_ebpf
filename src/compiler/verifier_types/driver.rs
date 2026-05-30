@@ -1,5 +1,6 @@
 use super::*;
 use crate::compiler::mir::SubfunctionId;
+use crate::compiler::subfn_summaries::SubfunctionSummary;
 use crate::compiler::type_infer::validate_program_capabilities_for_info;
 use crate::compiler::{ProbeContext, ProgramTypeInfo};
 use std::collections::{HashMap, VecDeque};
@@ -8,7 +9,7 @@ pub fn verify_mir(
     func: &MirFunction,
     types: &HashMap<VReg, MirType>,
 ) -> Result<(), Vec<VerifierTypeError>> {
-    verify_mir_with_subfunction_summaries_impl(func, types, &HashMap::new(), None, None, None)
+    verify_mir_with_subfunction_summaries_impl(func, types, &HashMap::new(), None, None, None, None)
 }
 
 pub fn verify_mir_for_program(
@@ -20,6 +21,7 @@ pub fn verify_mir_for_program(
         func,
         types,
         &HashMap::new(),
+        None,
         Some(program),
         None,
         None,
@@ -36,6 +38,7 @@ pub(crate) fn verify_mir_for_probe_context(
         func,
         types,
         &HashMap::new(),
+        None,
         Some(probe_ctx.program_info()),
         Some(probe_ctx),
         None,
@@ -46,15 +49,34 @@ pub(crate) fn verify_mir_for_probe_context(
 pub(crate) fn verify_mir_with_subfunction_summaries(
     func: &MirFunction,
     types: &HashMap<VReg, MirType>,
-    subfn_summaries: &HashMap<SubfunctionId, SubfunctionReturnSummary>,
+    subfn_summaries: &HashMap<SubfunctionId, SubfunctionSummary>,
 ) -> Result<(), Vec<VerifierTypeError>> {
-    verify_mir_with_subfunction_summaries_impl(func, types, subfn_summaries, None, None, None)
+    verify_mir_with_subfunction_summaries_impl(func, types, subfn_summaries, None, None, None, None)
 }
 
+#[allow(dead_code)]
 pub(crate) fn verify_mir_with_subfunction_summaries_for_probe_context(
     func: &MirFunction,
     types: &HashMap<VReg, MirType>,
-    subfn_summaries: &HashMap<SubfunctionId, SubfunctionReturnSummary>,
+    subfn_summaries: &HashMap<SubfunctionId, SubfunctionSummary>,
+    probe_ctx: Option<&ProbeContext>,
+    generic_map_value_types: Option<&HashMap<MapRef, MirType>>,
+) -> Result<(), Vec<VerifierTypeError>> {
+    verify_mir_with_subfunction_summaries_for_probe_context_with_current_summary(
+        func,
+        types,
+        subfn_summaries,
+        None,
+        probe_ctx,
+        generic_map_value_types,
+    )
+}
+
+pub(crate) fn verify_mir_with_subfunction_summaries_for_probe_context_with_current_summary(
+    func: &MirFunction,
+    types: &HashMap<VReg, MirType>,
+    subfn_summaries: &HashMap<SubfunctionId, SubfunctionSummary>,
+    current_summary: Option<SubfunctionSummary>,
     probe_ctx: Option<&ProbeContext>,
     generic_map_value_types: Option<&HashMap<MapRef, MirType>>,
 ) -> Result<(), Vec<VerifierTypeError>> {
@@ -62,6 +84,7 @@ pub(crate) fn verify_mir_with_subfunction_summaries_for_probe_context(
         func,
         types,
         subfn_summaries,
+        current_summary,
         probe_ctx.map(|ctx| ctx.program_info()),
         probe_ctx,
         generic_map_value_types,
@@ -71,7 +94,8 @@ pub(crate) fn verify_mir_with_subfunction_summaries_for_probe_context(
 fn verify_mir_with_subfunction_summaries_impl(
     func: &MirFunction,
     types: &HashMap<VReg, MirType>,
-    subfn_summaries: &HashMap<SubfunctionId, SubfunctionReturnSummary>,
+    subfn_summaries: &HashMap<SubfunctionId, SubfunctionSummary>,
+    current_summary: Option<SubfunctionSummary>,
     program: Option<&ProgramTypeInfo>,
     probe_ctx: Option<&ProbeContext>,
     generic_map_value_types: Option<&HashMap<MapRef, MirType>>,
@@ -153,10 +177,31 @@ fn verify_mir_with_subfunction_summaries_impl(
         {
             *nullability = Nullability::NonNull;
         }
+        if current_summary.is_some_and(|summary| summary.releases_ringbuf_record_arg(i)) {
+            ty = VerifierType::Ptr {
+                space: AddressSpace::Map,
+                nullability: Nullability::NonNull,
+                bounds: None,
+                ringbuf_ref: Some(vreg),
+                kfunc_ref: None,
+            };
+            entry_state.set_live_ringbuf_ref(vreg, true);
+        }
         entry_state.set(vreg, ty);
     }
     for slot in &func.entry_initialized_dynptr_slots {
         entry_state.initialize_dynptr_slot(*slot);
+    }
+    if let Some(summary) = current_summary {
+        for i in 0..func.param_count {
+            if !summary.releases_ringbuf_dynptr_arg(i) {
+                continue;
+            }
+            if let Some(slot) = func.param_stack_slots.get(&i).copied() {
+                entry_state.initialize_dynptr_slot(slot);
+                entry_state.acquire_ringbuf_dynptr_slot(slot);
+            }
+        }
     }
 
     in_states.insert(func.entry, entry_state);

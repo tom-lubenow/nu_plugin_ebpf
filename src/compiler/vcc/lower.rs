@@ -2,7 +2,8 @@ struct VccLowerer<'a> {
     func: &'a MirFunction,
     types: &'a HashMap<VReg, MirType>,
     subfn_summaries:
-        &'a HashMap<SubfunctionId, crate::compiler::subfn_summaries::SubfunctionReturnSummary>,
+        &'a HashMap<SubfunctionId, crate::compiler::subfn_summaries::SubfunctionSummary>,
+    current_summary: Option<crate::compiler::subfn_summaries::SubfunctionSummary>,
     program: Option<&'a ProgramTypeInfo>,
     probe_ctx: Option<&'a ProbeContext>,
     slot_sizes: HashMap<StackSlotId, usize>,
@@ -75,8 +76,9 @@ impl<'a> VccLowerer<'a> {
         list_max: HashMap<StackSlotId, usize>,
         subfn_summaries: &'a HashMap<
             SubfunctionId,
-            crate::compiler::subfn_summaries::SubfunctionReturnSummary,
+            crate::compiler::subfn_summaries::SubfunctionSummary,
         >,
+        current_summary: Option<crate::compiler::subfn_summaries::SubfunctionSummary>,
         program: Option<&'a ProgramTypeInfo>,
         probe_ctx: Option<&'a ProbeContext>,
     ) -> Self {
@@ -93,10 +95,34 @@ impl<'a> VccLowerer<'a> {
                 ptr_regs.insert(VccReg(vreg.0), info);
             }
         }
+        if let Some(summary) = current_summary {
+            for idx in 0..func.param_count {
+                if summary.releases_ringbuf_record_arg(idx) {
+                    ptr_regs.insert(
+                        VccReg(idx as u32),
+                        VccPointerInfo {
+                            space: VccAddrSpace::RingBuf,
+                            nullability: VccNullability::NonNull,
+                            bounds: None,
+                            packet_root: None,
+                            packet_root_field: None,
+                            packet_ctx_field: None,
+                            packet_end: false,
+                            map_root: None,
+                            context_buffer_root: None,
+                            context_buffer_end: false,
+                            ringbuf_ref: Some(VccReg(idx as u32)),
+                            kfunc_ref: None,
+                        },
+                    );
+                }
+            }
+        }
         Self {
             func,
             types,
             subfn_summaries,
+            current_summary,
             program,
             probe_ctx,
             slot_sizes,
@@ -117,6 +143,29 @@ impl<'a> VccLowerer<'a> {
         for (vreg, ty) in self.types {
             seed.insert(VccReg(vreg.0), self.seed_vcc_type(*vreg, ty));
         }
+        if let Some(summary) = self.current_summary {
+            for idx in 0..self.func.param_count {
+                if summary.releases_ringbuf_record_arg(idx) {
+                    seed.insert(
+                        VccReg(idx as u32),
+                        VccValueType::Ptr(VccPointerInfo {
+                            space: VccAddrSpace::RingBuf,
+                            nullability: VccNullability::NonNull,
+                            bounds: None,
+                            packet_root: None,
+                            packet_root_field: None,
+                            packet_ctx_field: None,
+                            packet_end: false,
+                            map_root: None,
+                            context_buffer_root: None,
+                            context_buffer_end: false,
+                            ringbuf_ref: Some(VccReg(idx as u32)),
+                            kfunc_ref: None,
+                        }),
+                    );
+                }
+            }
+        }
         seed
     }
 
@@ -134,6 +183,9 @@ impl<'a> VccLowerer<'a> {
         for block in &self.func.blocks {
             let mut insts = Vec::new();
             let in_entry = block.id == self.func.entry;
+            if in_entry {
+                self.lower_entry_subfunction_resource_assumptions(&mut insts);
+            }
             for inst in &block.instructions {
                 self.lower_inst(inst, &mut insts, in_entry)?;
             }
@@ -152,6 +204,25 @@ impl<'a> VccLowerer<'a> {
             entry_initialized_dynptr_slots: self.func.entry_initialized_dynptr_slots.clone(),
             reg_count: self.next_temp,
         })
+    }
+
+    fn lower_entry_subfunction_resource_assumptions(&mut self, out: &mut Vec<VccInst>) {
+        let Some(summary) = self.current_summary else {
+            return;
+        };
+        for idx in 0..self.func.param_count {
+            let reg = VccReg(idx as u32);
+            if summary.releases_ringbuf_record_arg(idx) {
+                out.push(VccInst::RingbufAcquire { id: reg });
+            }
+            if summary.releases_ringbuf_dynptr_arg(idx) {
+                out.push(VccInst::HelperRingbufDynptrAcquire {
+                    ptr: reg,
+                    helper: "subfunction parameter".to_string(),
+                    arg_idx: idx,
+                });
+            }
+        }
     }
 
 }

@@ -44,7 +44,7 @@ use crate::compiler::mir::{
 };
 use crate::compiler::mir_to_lir::lower_mir_to_lir_checked;
 use crate::compiler::passes::{ListLowering, MirPass, SsaDestruction};
-use crate::compiler::subfn_summaries::infer_subfunction_return_summaries;
+use crate::compiler::subfn_summaries::infer_subfunction_summaries;
 use crate::compiler::type_hints::recover_optimized_mir_type_hints;
 use crate::compiler::type_infer::{
     TypeError, TypeInference, infer_subfunction_schemes_with_hints, validate_program_capabilities,
@@ -727,7 +727,7 @@ fn verify_mir_program(
             HashMap::new()
         }
     };
-    let subfn_summaries = infer_subfunction_return_summaries(&program.subfunctions);
+    let subfn_summaries = infer_subfunction_summaries(&program.subfunctions);
 
     let mut all_funcs = Vec::with_capacity(1 + program.subfunctions.len());
     all_funcs.push((
@@ -770,10 +770,18 @@ fn verify_mir_program(
                 HashMap::new()
             }
         };
-        if let Err(errors) = verifier_types::verify_mir_with_subfunction_summaries_for_probe_context(
+        let current_summary = (idx > 0)
+            .then(|| {
+                subfn_summaries
+                    .get(&SubfunctionId((idx - 1) as u32))
+                    .copied()
+            })
+            .flatten();
+        if let Err(errors) = verifier_types::verify_mir_with_subfunction_summaries_for_probe_context_with_current_summary(
             func,
             &types,
             &subfn_summaries,
+            current_summary,
             probe_ctx,
             type_hints.map(|hints| &hints.generic_map_value_types),
         ) {
@@ -781,13 +789,16 @@ fn verify_mir_program(
                 return Err(CompileError::VerifierTypeError(err));
             }
         }
-        if let Err(errors) = vcc::verify_mir_with_subfunction_summaries_for_probe_context(
-            func,
-            &types,
-            &subfn_summaries,
-            probe_ctx,
-            type_hints.map(|hints| &hints.generic_map_value_types),
-        ) {
+        if let Err(errors) =
+            vcc::verify_mir_with_subfunction_summaries_for_probe_context_with_current_summary(
+                func,
+                &types,
+                &subfn_summaries,
+                current_summary,
+                probe_ctx,
+                type_hints.map(|hints| &hints.generic_map_value_types),
+            )
+        {
             let message = errors
                 .iter()
                 .map(|err| err.to_string())

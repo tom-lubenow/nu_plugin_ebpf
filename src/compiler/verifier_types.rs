@@ -42,8 +42,6 @@ use super::mir::{
     MirValue, RINGBUF_MAP_NAME, STRING_COUNTER_MAP_NAME, StackSlotId, StringAppendType,
     TIMESTAMP_MAP_NAME, USTACK_MAP_NAME, VReg,
 };
-use super::subfn_summaries::SubfunctionReturnSummary;
-
 mod state;
 use state::*;
 
@@ -63,7 +61,9 @@ pub(crate) use driver::verify_mir_for_probe_context;
 pub use driver::verify_mir_for_program;
 #[allow(unused_imports)]
 pub(crate) use driver::verify_mir_with_subfunction_summaries;
+#[allow(unused_imports)]
 pub(crate) use driver::verify_mir_with_subfunction_summaries_for_probe_context;
+pub(crate) use driver::verify_mir_with_subfunction_summaries_for_probe_context_with_current_summary;
 use map_layout::*;
 use ops::*;
 use ranges::*;

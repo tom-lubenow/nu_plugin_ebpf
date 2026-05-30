@@ -37,14 +37,99 @@ impl SubfunctionReturnSummary {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SubfunctionSummary {
+    return_summary: SubfunctionReturnSummary,
+    ringbuf_record_release_args: u8,
+    ringbuf_dynptr_release_args: u8,
+}
+
+impl SubfunctionSummary {
+    pub(crate) const fn unknown() -> Self {
+        Self {
+            return_summary: SubfunctionReturnSummary::Unknown,
+            ringbuf_record_release_args: 0,
+            ringbuf_dynptr_release_args: 0,
+        }
+    }
+
+    pub(crate) const fn from_return_summary(return_summary: SubfunctionReturnSummary) -> Self {
+        Self {
+            return_summary,
+            ringbuf_record_release_args: 0,
+            ringbuf_dynptr_release_args: 0,
+        }
+    }
+
+    pub(crate) const fn return_summary(self) -> SubfunctionReturnSummary {
+        self.return_summary
+    }
+
+    pub(crate) const fn return_arg(self) -> Option<usize> {
+        self.return_summary.return_arg()
+    }
+
+    pub(crate) const fn changes_packet_data(self) -> bool {
+        self.return_summary.changes_packet_data()
+    }
+
+    pub(crate) const fn releases_ringbuf_record_arg(self, idx: usize) -> bool {
+        idx < 8 && (self.ringbuf_record_release_args & (1 << idx)) != 0
+    }
+
+    pub(crate) const fn releases_ringbuf_dynptr_arg(self, idx: usize) -> bool {
+        idx < 8 && (self.ringbuf_dynptr_release_args & (1 << idx)) != 0
+    }
+
+    const fn from_parts(
+        return_arg: Option<usize>,
+        changes_packet_data: bool,
+        ringbuf_record_release_args: u8,
+        ringbuf_dynptr_release_args: u8,
+    ) -> Self {
+        Self {
+            return_summary: SubfunctionReturnSummary::from_parts(return_arg, changes_packet_data),
+            ringbuf_record_release_args,
+            ringbuf_dynptr_release_args,
+        }
+    }
+}
+
+impl From<SubfunctionReturnSummary> for SubfunctionSummary {
+    fn from(return_summary: SubfunctionReturnSummary) -> Self {
+        Self::from_return_summary(return_summary)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum AliasSource {
     Unknown,
     Param(usize),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SummaryState {
+    aliases: Vec<AliasSource>,
+    ringbuf_record_release_args: u8,
+    ringbuf_dynptr_release_args: u8,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct InstEffects {
+    changes_packet_data: bool,
+}
+
 pub(crate) fn infer_subfunction_return_summaries(
     subfunctions: &[MirFunction],
 ) -> HashMap<SubfunctionId, SubfunctionReturnSummary> {
+    infer_subfunction_summaries(subfunctions)
+        .into_iter()
+        .map(|(subfn, summary)| (subfn, summary.return_summary()))
+        .collect()
+}
+
+pub(crate) fn infer_subfunction_summaries(
+    subfunctions: &[MirFunction],
+) -> HashMap<SubfunctionId, SubfunctionSummary> {
     let mut summaries = HashMap::new();
     let mut visiting = HashSet::new();
 
@@ -59,21 +144,21 @@ pub(crate) fn infer_subfunction_return_summaries(
 fn infer_summary_for_subfunction(
     subfn: SubfunctionId,
     subfunctions: &[MirFunction],
-    summaries: &mut HashMap<SubfunctionId, SubfunctionReturnSummary>,
+    summaries: &mut HashMap<SubfunctionId, SubfunctionSummary>,
     visiting: &mut HashSet<SubfunctionId>,
-) -> SubfunctionReturnSummary {
+) -> SubfunctionSummary {
     if let Some(summary) = summaries.get(&subfn) {
         return *summary;
     }
 
     if !visiting.insert(subfn) {
-        return SubfunctionReturnSummary::Unknown;
+        return SubfunctionSummary::unknown();
     }
 
     let summary = subfunctions
         .get(subfn.0 as usize)
         .map(|func| summarize_function(func, subfunctions, summaries, visiting))
-        .unwrap_or(SubfunctionReturnSummary::Unknown);
+        .unwrap_or_else(SubfunctionSummary::unknown);
     visiting.remove(&subfn);
     summaries.insert(subfn, summary);
     summary
@@ -82,22 +167,36 @@ fn infer_summary_for_subfunction(
 fn summarize_function(
     func: &MirFunction,
     subfunctions: &[MirFunction],
-    summaries: &mut HashMap<SubfunctionId, SubfunctionReturnSummary>,
+    summaries: &mut HashMap<SubfunctionId, SubfunctionSummary>,
     visiting: &mut HashSet<SubfunctionId>,
-) -> SubfunctionReturnSummary {
+) -> SubfunctionSummary {
     let total_vregs = func.vreg_count.max(func.param_count as u32) as usize;
-    let mut in_states: HashMap<BlockId, Vec<AliasSource>> = HashMap::new();
+    let mut in_states: HashMap<BlockId, SummaryState> = HashMap::new();
     let mut worklist: VecDeque<BlockId> = VecDeque::new();
 
     let mut entry_state = vec![AliasSource::Unknown; total_vregs];
     for idx in 0..func.param_count.min(total_vregs) {
         entry_state[idx] = AliasSource::Param(idx);
     }
-    in_states.insert(func.entry, entry_state);
+    let param_stack_aliases: HashMap<_, _> = func
+        .param_stack_slots
+        .iter()
+        .map(|(param_idx, slot)| (*slot, *param_idx))
+        .collect();
+    in_states.insert(
+        func.entry,
+        SummaryState {
+            aliases: entry_state,
+            ringbuf_record_release_args: 0,
+            ringbuf_dynptr_release_args: 0,
+        },
+    );
     worklist.push_back(func.entry);
 
     let mut return_alias: Option<Option<usize>> = None;
     let mut changes_packet_data = false;
+    let mut returned_record_releases: Option<u8> = None;
+    let mut returned_dynptr_releases: Option<u8> = None;
 
     while let Some(block_id) = worklist.pop_front() {
         let Some(state_in) = in_states.get(&block_id).cloned() else {
@@ -107,14 +206,16 @@ fn summarize_function(
         let mut state = state_in;
 
         for inst in &block.instructions {
-            changes_packet_data |= apply_alias_inst(
+            let effects = apply_alias_inst(
                 inst,
                 &func.global_param_aliases,
+                &param_stack_aliases,
                 &mut state,
                 subfunctions,
                 summaries,
                 visiting,
             );
+            changes_packet_data |= effects.changes_packet_data;
         }
 
         match &block.terminator {
@@ -134,7 +235,7 @@ fn summarize_function(
                 ..
             } => {
                 let mut body_state = state.clone();
-                set_alias(&mut body_state, *counter, AliasSource::Unknown);
+                set_alias(&mut body_state.aliases, *counter, AliasSource::Unknown);
                 propagate_alias_state(*body, &body_state, &mut in_states, &mut worklist);
                 propagate_alias_state(*exit, &state, &mut in_states, &mut worklist);
             }
@@ -142,12 +243,20 @@ fn summarize_function(
                 propagate_alias_state(*header, &state, &mut in_states, &mut worklist);
             }
             MirInst::Return { val } => {
-                let alias = alias_for_value(val.as_ref(), &state);
+                let alias = alias_for_value(val.as_ref(), &state.aliases, &param_stack_aliases);
                 return_alias = match return_alias {
                     None => Some(alias),
                     Some(existing) if existing == alias => Some(existing),
                     Some(_) => Some(None),
                 };
+                returned_record_releases = Some(match returned_record_releases {
+                    None => state.ringbuf_record_release_args,
+                    Some(existing) => existing & state.ringbuf_record_release_args,
+                });
+                returned_dynptr_releases = Some(match returned_dynptr_releases {
+                    None => state.ringbuf_dynptr_release_args,
+                    Some(existing) => existing & state.ringbuf_dynptr_release_args,
+                });
             }
             MirInst::TailCall { .. } | MirInst::Placeholder => {}
             _ => {}
@@ -158,19 +267,24 @@ fn summarize_function(
         }
     }
 
-    SubfunctionReturnSummary::from_parts(return_alias.flatten(), changes_packet_data)
+    SubfunctionSummary::from_parts(
+        return_alias.flatten(),
+        changes_packet_data,
+        returned_record_releases.unwrap_or(0),
+        returned_dynptr_releases.unwrap_or(0),
+    )
 }
 
 fn propagate_alias_state(
     target: BlockId,
-    next_state: &[AliasSource],
-    in_states: &mut HashMap<BlockId, Vec<AliasSource>>,
+    next_state: &SummaryState,
+    in_states: &mut HashMap<BlockId, SummaryState>,
     worklist: &mut VecDeque<BlockId>,
 ) {
     let changed = match in_states.get_mut(&target) {
         Some(existing) => merge_alias_states(existing, next_state),
         None => {
-            in_states.insert(target, next_state.to_vec());
+            in_states.insert(target, next_state.clone());
             true
         }
     };
@@ -180,9 +294,13 @@ fn propagate_alias_state(
     }
 }
 
-fn merge_alias_states(existing: &mut [AliasSource], incoming: &[AliasSource]) -> bool {
+fn merge_alias_states(existing: &mut SummaryState, incoming: &SummaryState) -> bool {
     let mut changed = false;
-    for (dst, src) in existing.iter_mut().zip(incoming.iter().copied()) {
+    for (dst, src) in existing
+        .aliases
+        .iter_mut()
+        .zip(incoming.aliases.iter().copied())
+    {
         let merged = match (*dst, src) {
             (AliasSource::Param(lhs), AliasSource::Param(rhs)) if lhs == rhs => *dst,
             _ => AliasSource::Unknown,
@@ -192,27 +310,41 @@ fn merge_alias_states(existing: &mut [AliasSource], incoming: &[AliasSource]) ->
             changed = true;
         }
     }
+    let record_releases =
+        existing.ringbuf_record_release_args & incoming.ringbuf_record_release_args;
+    if existing.ringbuf_record_release_args != record_releases {
+        existing.ringbuf_record_release_args = record_releases;
+        changed = true;
+    }
+    let dynptr_releases =
+        existing.ringbuf_dynptr_release_args & incoming.ringbuf_dynptr_release_args;
+    if existing.ringbuf_dynptr_release_args != dynptr_releases {
+        existing.ringbuf_dynptr_release_args = dynptr_releases;
+        changed = true;
+    }
     changed
 }
 
 fn apply_alias_inst(
     inst: &MirInst,
     global_param_aliases: &HashMap<String, usize>,
-    state: &mut [AliasSource],
+    param_stack_aliases: &HashMap<super::mir::StackSlotId, usize>,
+    state: &mut SummaryState,
     subfunctions: &[MirFunction],
-    summaries: &mut HashMap<SubfunctionId, SubfunctionReturnSummary>,
+    summaries: &mut HashMap<SubfunctionId, SubfunctionSummary>,
     visiting: &mut HashSet<SubfunctionId>,
-) -> bool {
+) -> InstEffects {
     match inst {
         MirInst::Copy { dst, src } => {
-            set_alias(state, *dst, alias_for_mir_value(src, state));
-            false
+            let alias = alias_for_mir_value(src, &state.aliases, param_stack_aliases);
+            set_alias(&mut state.aliases, *dst, alias);
+            InstEffects::default()
         }
         MirInst::Phi { dst, args } => {
             let mut alias = AliasSource::Unknown;
             let mut first = true;
             for (_, arg) in args {
-                let current = get_alias(state, *arg);
+                let current = get_alias(&state.aliases, *arg);
                 if first {
                     alias = current;
                     first = false;
@@ -221,8 +353,8 @@ fn apply_alias_inst(
                     break;
                 }
             }
-            set_alias(state, *dst, alias);
-            false
+            set_alias(&mut state.aliases, *dst, alias);
+            InstEffects::default()
         }
         MirInst::CallSubfn { dst, subfn, args } => {
             let summary = infer_summary_for_subfunction(*subfn, subfunctions, summaries, visiting);
@@ -230,12 +362,15 @@ fn apply_alias_inst(
                 Some(idx) => args
                     .get(idx)
                     .copied()
-                    .map(|arg| get_alias(state, arg))
+                    .map(|arg| get_alias(&state.aliases, arg))
                     .unwrap_or(AliasSource::Unknown),
                 None => AliasSource::Unknown,
             };
-            set_alias(state, *dst, alias);
-            summary.changes_packet_data()
+            set_alias(&mut state.aliases, *dst, alias);
+            apply_subfunction_release_summary(summary, args, state);
+            InstEffects {
+                changes_packet_data: summary.changes_packet_data(),
+            }
         }
         MirInst::LoadGlobal { dst, symbol, .. } => {
             let alias = global_param_aliases
@@ -243,14 +378,17 @@ fn apply_alias_inst(
                 .copied()
                 .map(AliasSource::Param)
                 .unwrap_or(AliasSource::Unknown);
-            set_alias(state, *dst, alias);
-            false
+            set_alias(&mut state.aliases, *dst, alias);
+            InstEffects::default()
         }
         MirInst::CallHelper { dst, helper, .. } => {
-            set_alias(state, *dst, AliasSource::Unknown);
-            BpfHelper::from_u32(*helper)
-                .map(BpfHelper::changes_packet_data_in_subprogram)
-                .unwrap_or(false)
+            set_alias(&mut state.aliases, *dst, AliasSource::Unknown);
+            apply_helper_release_summary(inst, state, param_stack_aliases);
+            InstEffects {
+                changes_packet_data: BpfHelper::from_u32(*helper)
+                    .map(BpfHelper::changes_packet_data_in_subprogram)
+                    .unwrap_or(false),
+            }
         }
         MirInst::BinOp { dst, .. }
         | MirInst::UnaryOp { dst, .. }
@@ -268,8 +406,8 @@ fn apply_alias_inst(
         | MirInst::LoadSlot { dst, .. }
         | MirInst::StrCmp { dst, .. }
         | MirInst::LoopHeader { counter: dst, .. } => {
-            set_alias(state, *dst, AliasSource::Unknown);
-            false
+            set_alias(&mut state.aliases, *dst, AliasSource::Unknown);
+            InstEffects::default()
         }
         MirInst::Store { .. }
         | MirInst::StoreSlot { .. }
@@ -293,13 +431,73 @@ fn apply_alias_inst(
         | MirInst::ListPush { .. }
         | MirInst::StringAppend { .. }
         | MirInst::IntToString { .. }
-        | MirInst::RecordStore { .. } => false,
+        | MirInst::RecordStore { .. } => InstEffects::default(),
     }
 }
 
-fn alias_for_value(val: Option<&MirValue>, state: &[AliasSource]) -> Option<usize> {
+fn apply_subfunction_release_summary(
+    summary: SubfunctionSummary,
+    args: &[VReg],
+    state: &mut SummaryState,
+) {
+    for idx in 0..5 {
+        let Some(arg) = args.get(idx) else {
+            continue;
+        };
+        let AliasSource::Param(param_idx) = get_alias(&state.aliases, *arg) else {
+            continue;
+        };
+        if summary.releases_ringbuf_record_arg(idx) {
+            set_mask_bit(&mut state.ringbuf_record_release_args, param_idx);
+        }
+        if summary.releases_ringbuf_dynptr_arg(idx) {
+            set_mask_bit(&mut state.ringbuf_dynptr_release_args, param_idx);
+        }
+    }
+}
+
+fn apply_helper_release_summary(
+    inst: &MirInst,
+    state: &mut SummaryState,
+    param_stack_aliases: &HashMap<super::mir::StackSlotId, usize>,
+) {
+    let MirInst::CallHelper { helper, args, .. } = inst else {
+        return;
+    };
+    let Some(helper) = BpfHelper::from_u32(*helper) else {
+        return;
+    };
+    let Some(arg0) = args.first() else {
+        return;
+    };
+    let alias = alias_for_mir_value(arg0, &state.aliases, param_stack_aliases);
+    let AliasSource::Param(param_idx) = alias else {
+        return;
+    };
+    match helper {
+        BpfHelper::RingbufSubmit | BpfHelper::RingbufDiscard => {
+            set_mask_bit(&mut state.ringbuf_record_release_args, param_idx);
+        }
+        BpfHelper::RingbufSubmitDynptr | BpfHelper::RingbufDiscardDynptr => {
+            set_mask_bit(&mut state.ringbuf_dynptr_release_args, param_idx);
+        }
+        _ => {}
+    }
+}
+
+fn set_mask_bit(mask: &mut u8, idx: usize) {
+    if idx < 8 {
+        *mask |= 1 << idx;
+    }
+}
+
+fn alias_for_value(
+    val: Option<&MirValue>,
+    state: &[AliasSource],
+    param_stack_aliases: &HashMap<super::mir::StackSlotId, usize>,
+) -> Option<usize> {
     match val {
-        Some(value) => match alias_for_mir_value(value, state) {
+        Some(value) => match alias_for_mir_value(value, state, param_stack_aliases) {
             AliasSource::Param(idx) => Some(idx),
             AliasSource::Unknown => None,
         },
@@ -307,10 +505,19 @@ fn alias_for_value(val: Option<&MirValue>, state: &[AliasSource]) -> Option<usiz
     }
 }
 
-fn alias_for_mir_value(value: &MirValue, state: &[AliasSource]) -> AliasSource {
+fn alias_for_mir_value(
+    value: &MirValue,
+    state: &[AliasSource],
+    param_stack_aliases: &HashMap<super::mir::StackSlotId, usize>,
+) -> AliasSource {
     match value {
         MirValue::VReg(vreg) => get_alias(state, *vreg),
-        MirValue::Const(_) | MirValue::StackSlot(_) => AliasSource::Unknown,
+        MirValue::StackSlot(slot) => param_stack_aliases
+            .get(slot)
+            .copied()
+            .map(AliasSource::Param)
+            .unwrap_or(AliasSource::Unknown),
+        MirValue::Const(_) => AliasSource::Unknown,
     }
 }
 
@@ -492,5 +699,109 @@ mod tests {
             summaries.get(&SubfunctionId(1)),
             Some(&SubfunctionReturnSummary::ReturnsArgChangesPacketData(0))
         );
+    }
+
+    #[test]
+    fn test_infer_summary_tracks_ringbuf_record_release_arg() {
+        let mut subfn = MirFunction::new();
+        let entry = subfn.alloc_block();
+        subfn.entry = entry;
+        subfn.param_count = 1;
+        subfn.vreg_count = 1;
+        let submit_ret = subfn.alloc_vreg();
+        subfn
+            .block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: submit_ret,
+                helper: BpfHelper::RingbufSubmit as u32,
+                args: vec![MirValue::VReg(VReg(0)), MirValue::Const(0)],
+            });
+        subfn.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let summaries = infer_subfunction_summaries(&[subfn]);
+        let summary = summaries
+            .get(&SubfunctionId(0))
+            .copied()
+            .expect("expected summary");
+        assert!(summary.releases_ringbuf_record_arg(0));
+        assert!(!summary.releases_ringbuf_record_arg(1));
+    }
+
+    #[test]
+    fn test_infer_summary_requires_ringbuf_record_release_on_all_returns() {
+        let mut subfn = MirFunction::new();
+        let entry = subfn.alloc_block();
+        let release = subfn.alloc_block();
+        let done = subfn.alloc_block();
+        subfn.entry = entry;
+        subfn.param_count = 1;
+        subfn.vreg_count = 2;
+        subfn.block_mut(entry).terminator = MirInst::Branch {
+            cond: VReg(1),
+            if_true: release,
+            if_false: done,
+        };
+        let submit_ret = subfn.alloc_vreg();
+        subfn
+            .block_mut(release)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: submit_ret,
+                helper: BpfHelper::RingbufSubmit as u32,
+                args: vec![MirValue::VReg(VReg(0)), MirValue::Const(0)],
+            });
+        subfn.block_mut(release).terminator = MirInst::Return { val: None };
+        subfn.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let summaries = infer_subfunction_summaries(&[subfn]);
+        let summary = summaries
+            .get(&SubfunctionId(0))
+            .copied()
+            .expect("expected summary");
+        assert!(!summary.releases_ringbuf_record_arg(0));
+    }
+
+    #[test]
+    fn test_infer_summary_propagates_nested_ringbuf_dynptr_release_arg() {
+        let mut callee = MirFunction::new();
+        let callee_entry = callee.alloc_block();
+        callee.entry = callee_entry;
+        callee.param_count = 1;
+        callee.vreg_count = 1;
+        let submit_ret = callee.alloc_vreg();
+        callee
+            .block_mut(callee_entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: submit_ret,
+                helper: BpfHelper::RingbufSubmitDynptr as u32,
+                args: vec![MirValue::VReg(VReg(0)), MirValue::Const(0)],
+            });
+        callee.block_mut(callee_entry).terminator = MirInst::Return { val: None };
+
+        let mut caller = MirFunction::new();
+        let caller_entry = caller.alloc_block();
+        caller.entry = caller_entry;
+        caller.param_count = 1;
+        caller.vreg_count = 1;
+        let call_ret = caller.alloc_vreg();
+        caller
+            .block_mut(caller_entry)
+            .instructions
+            .push(MirInst::CallSubfn {
+                dst: call_ret,
+                subfn: SubfunctionId(0),
+                args: vec![VReg(0)],
+            });
+        caller.block_mut(caller_entry).terminator = MirInst::Return { val: None };
+
+        let summaries = infer_subfunction_summaries(&[callee, caller]);
+        let summary = summaries
+            .get(&SubfunctionId(1))
+            .copied()
+            .expect("expected summary");
+        assert!(summary.releases_ringbuf_dynptr_arg(0));
+        assert!(!summary.releases_ringbuf_dynptr_arg(1));
     }
 }
