@@ -2132,6 +2132,44 @@ const PATH_TRACEPOINT_FIELD_SPECS = [
         source: "https://github.com/torvalds/linux/blob/v4.7/fs/namei.c"
     }
 ]
+const PROCESS_TRACEPOINT_FIELD_SPECS = [
+    {
+        syscalls: ["execveat"]
+        fields: ["fd" "filename" "argv" "envp" "flags"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/exec.c"
+    }
+    {
+        syscalls: ["exit" "exit_group"]
+        fields: ["error_code"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/exit.c"
+    }
+    {
+        syscalls: ["waitid"]
+        fields: ["which" "upid" "infop" "options" "ru"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/exit.c"
+    }
+    {
+        syscalls: ["wait4"]
+        fields: ["upid" "stat_addr" "options" "ru"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/exit.c"
+    }
+    {
+        syscalls: ["unshare"]
+        fields: ["unshare_flags"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/fork.c"
+    }
+    {
+        syscalls: ["setns"]
+        fields: ["fd" "nstype"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/nsproxy.c"
+    }
+]
 const TRACEPOINT_FIELD_KERNEL_FEATURES = [
     { target: "tracepoint:syscalls/sys_enter_read" field: "fd" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_READ_FD }
     { target: "tracepoint:syscalls/sys_enter_read" field: "buf" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_READ_BUF }
@@ -6683,6 +6721,61 @@ const FIXTURES = [
             '  let newname = $ctx.newname'
             '  if $newname { $newname | read-str --max-len 64 | count }'
             '  ($ctx.olddfd + $ctx.newdfd + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-execveat-context"
+        category: "tracing"
+        tags: [tracepoint context]
+        requires: [tracefs kernel-btf]
+        target: "tracepoint:syscalls/sys_enter_execveat"
+        program: [
+            '{|ctx|'
+            '  let filename = $ctx.filename'
+            '  if $filename { $filename | read-str --max-len 64 | count }'
+            '  let argv = $ctx.argv'
+            '  if $argv { 1 | count }'
+            '  let envp = $ctx.envp'
+            '  if $envp { 1 | count }'
+            '  ($ctx.fd + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-wait4-context"
+        category: "tracing"
+        tags: [tracepoint context]
+        requires: [tracefs kernel-btf]
+        target: "tracepoint:syscalls/sys_enter_wait4"
+        program: [
+            '{|ctx|'
+            '  let stat_addr = $ctx.stat_addr'
+            '  if $stat_addr { 1 | count }'
+            '  let ru = $ctx.ru'
+            '  if $ru { 1 | count }'
+            '  ($ctx.upid + $ctx.options) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-setns-context"
+        category: "tracing"
+        tags: [tracepoint context]
+        requires: [tracefs kernel-btf]
+        target: "tracepoint:syscalls/sys_enter_setns"
+        program: [
+            '{|ctx|'
+            '  ($ctx.fd + $ctx.nstype) | count'
             '  0'
             '}'
         ]
@@ -25294,6 +25387,30 @@ def path-tracepoint-field-kernel-feature [field: string target] {
     }
 }
 
+def process-tracepoint-field-kernel-feature [field: string target] {
+    let target_text = ($target | default "")
+    if not ($target_text | str starts-with "tracepoint:syscalls/sys_enter_") {
+        return null
+    }
+
+    let syscall = ($target_text | str replace "tracepoint:syscalls/sys_enter_" "")
+    let matches = ($PROCESS_TRACEPOINT_FIELD_SPECS | where {|entry| $syscall in $entry.syscalls })
+    if ($matches | is-empty) {
+        return null
+    }
+
+    let spec = ($matches | first)
+    if $field not-in $spec.fields {
+        return null
+    }
+
+    {
+        key: $"tracepoint:syscalls/sys_enter_($syscall):field:($field)"
+        min_kernel: $spec.min_kernel
+        source: $spec.source
+    }
+}
+
 def tracepoint-payload-field-kernel-feature [field: string target] {
     let target_text = ($target | default "")
     if not ($target_text | str starts-with "tracepoint:") {
@@ -25316,6 +25433,11 @@ def tracepoint-payload-field-kernel-feature [field: string target] {
     let path_feature = (path-tracepoint-field-kernel-feature $field $target)
     if $path_feature != null {
         return $path_feature
+    }
+
+    let process_feature = (process-tracepoint-field-kernel-feature $field $target)
+    if $process_feature != null {
+        return $process_feature
     }
 
     let matches = (

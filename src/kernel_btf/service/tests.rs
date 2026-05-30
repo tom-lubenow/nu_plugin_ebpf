@@ -235,6 +235,33 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
     assert!(execve.has_field("argv"));
     assert!(execve.has_field("envp"));
 
+    let execveat = TracepointContext::sys_enter("sys_enter_execveat");
+    assert!(execveat.has_field("fd"));
+    assert!(execveat.has_field("filename"));
+    assert!(execveat.has_field("argv"));
+    assert!(execveat.has_field("envp"));
+    assert!(execveat.has_field("flags"));
+    assert!(matches!(
+        execveat
+            .get_field("filename")
+            .expect("expected execveat filename")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+
+    let wait4 = TracepointContext::sys_enter("sys_enter_wait4");
+    assert!(wait4.has_field("upid"));
+    assert!(wait4.has_field("stat_addr"));
+    assert!(wait4.has_field("options"));
+    assert!(wait4.has_field("ru"));
+    assert!(matches!(
+        wait4
+            .get_field("stat_addr")
+            .expect("expected wait4 stat_addr")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+
     let newfstatat = TracepointContext::sys_enter("sys_enter_newfstatat");
     assert!(newfstatat.has_field("dfd"));
     assert!(newfstatat.has_field("filename"));
@@ -351,6 +378,14 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
             "sys_enter_recvmmsg",
             &["fd", "mmsg", "vlen", "flags", "timeout"][..],
         ),
+        ("sys_enter_exit", &["error_code"][..]),
+        ("sys_enter_exit_group", &["error_code"][..]),
+        (
+            "sys_enter_waitid",
+            &["which", "upid", "infop", "options", "ru"][..],
+        ),
+        ("sys_enter_unshare", &["unshare_flags"][..]),
+        ("sys_enter_setns", &["fd", "nstype"][..]),
         ("sys_enter_stat", &["filename", "statbuf"][..]),
         ("sys_enter_newstat", &["filename", "statbuf"][..]),
         ("sys_enter_fstat", &["fd", "statbuf"][..]),

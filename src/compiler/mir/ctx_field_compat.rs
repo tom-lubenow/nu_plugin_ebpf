@@ -104,6 +104,10 @@ const LINUX_READ_WRITE_C_V4_7_SOURCE: &str =
 const LINUX_OPEN_C_V4_7_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/open.c";
 const LINUX_OPEN_C_V5_6_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.6/fs/open.c";
 const LINUX_EXEC_C_V4_7_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/exec.c";
+const LINUX_EXIT_C_V4_7_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/exit.c";
+const LINUX_FORK_C_V4_7_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/fork.c";
+const LINUX_NSPROXY_C_V4_7_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v4.7/kernel/nsproxy.c";
 const LINUX_STAT_C_V4_7_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/stat.c";
 const LINUX_STAT_C_V4_11_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.11/fs/stat.c";
 const LINUX_NAMEI_C_V4_7_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/namei.c";
@@ -638,6 +642,20 @@ fn tracepoint_field_kernel_floor(
             ("5.6", LINUX_OPEN_C_V5_6_SOURCE)
         }
         ("sys_enter_execve", "filename" | "argv" | "envp") => ("4.7", LINUX_EXEC_C_V4_7_SOURCE),
+        ("sys_enter_execveat", "fd" | "filename" | "argv" | "envp" | "flags") => {
+            ("4.7", LINUX_EXEC_C_V4_7_SOURCE)
+        }
+        ("sys_enter_exit" | "sys_enter_exit_group", "error_code") => {
+            ("4.7", LINUX_EXIT_C_V4_7_SOURCE)
+        }
+        ("sys_enter_waitid", "which" | "upid" | "infop" | "options" | "ru") => {
+            ("4.7", LINUX_EXIT_C_V4_7_SOURCE)
+        }
+        ("sys_enter_wait4", "upid" | "stat_addr" | "options" | "ru") => {
+            ("4.7", LINUX_EXIT_C_V4_7_SOURCE)
+        }
+        ("sys_enter_unshare", "unshare_flags") => ("4.7", LINUX_FORK_C_V4_7_SOURCE),
+        ("sys_enter_setns", "fd" | "nstype") => ("4.7", LINUX_NSPROXY_C_V4_7_SOURCE),
         (
             "sys_enter_stat" | "sys_enter_lstat" | "sys_enter_newstat" | "sys_enter_newlstat"
             | "sys_enter_stat64" | "sys_enter_lstat64",

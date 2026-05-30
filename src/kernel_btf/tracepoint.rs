@@ -282,6 +282,34 @@ impl TracepointContext {
                 ("argv", Self::syscall_arg_user_ptr()),
                 ("envp", Self::syscall_arg_user_ptr()),
             ],
+            "execveat" => vec![
+                ("fd", Self::syscall_arg_int(true)),
+                ("filename", Self::syscall_arg_user_ptr()),
+                ("argv", Self::syscall_arg_user_ptr()),
+                ("envp", Self::syscall_arg_user_ptr()),
+                ("flags", Self::syscall_arg_int(true)),
+            ],
+            "exit" | "exit_group" => {
+                vec![("error_code", Self::syscall_arg_int(true))]
+            }
+            "waitid" => vec![
+                ("which", Self::syscall_arg_int(true)),
+                ("upid", Self::syscall_arg_int(true)),
+                ("infop", Self::syscall_arg_user_ptr()),
+                ("options", Self::syscall_arg_int(true)),
+                ("ru", Self::syscall_arg_user_ptr()),
+            ],
+            "wait4" => vec![
+                ("upid", Self::syscall_arg_int(true)),
+                ("stat_addr", Self::syscall_arg_user_ptr()),
+                ("options", Self::syscall_arg_int(true)),
+                ("ru", Self::syscall_arg_user_ptr()),
+            ],
+            "unshare" => vec![("unshare_flags", Self::syscall_arg_int(false))],
+            "setns" => vec![
+                ("fd", Self::syscall_arg_int(true)),
+                ("nstype", Self::syscall_arg_int(true)),
+            ],
             "stat" | "lstat" | "newstat" | "newlstat" | "stat64" | "lstat64" => vec![
                 ("filename", Self::syscall_arg_user_ptr()),
                 ("statbuf", Self::syscall_arg_user_ptr()),
