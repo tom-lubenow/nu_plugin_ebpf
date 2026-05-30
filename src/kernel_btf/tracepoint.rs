@@ -27,6 +27,12 @@ const STAT_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/stat.c
 const STATX_MIN_KERNEL: &str = "4.11";
 const STATX_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.11/fs/stat.c";
 const NAMEI_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/namei.c";
+const MOUNT_API_MIN_KERNEL: &str = "5.2";
+const MOUNT_API_NAMESPACE_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.2/fs/namespace.c";
+const MOUNT_API_FSOPEN_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.2/fs/fsopen.c";
+const MOUNT_SETATTR_MIN_KERNEL: &str = "5.12";
+const MOUNT_SETATTR_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.12/fs/namespace.c";
 const SOCKET_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/net/socket.c";
 const X86_MMAP_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v4.7/arch/x86/kernel/sys_x86_64.c";
@@ -138,6 +144,13 @@ const WELL_KNOWN_SYS_ENTER_SYSCALLS: &[&str] = &[
     "rename",
     "renameat",
     "renameat2",
+    "open_tree",
+    "move_mount",
+    "fsopen",
+    "fsconfig",
+    "fsmount",
+    "fspick",
+    "mount_setattr",
     "socket",
     "socketpair",
     "bind",
@@ -524,6 +537,13 @@ impl TracepointContext {
             Some("openat2") => (Some(OPENAT2_MIN_KERNEL), Some(OPENAT2_SOURCE)),
             Some("faccessat2") => (Some(FACCESSAT2_MIN_KERNEL), Some(FACCESSAT2_SOURCE)),
             Some("close_range") => (Some(CLOSE_RANGE_MIN_KERNEL), Some(CLOSE_RANGE_SOURCE)),
+            Some("open_tree" | "move_mount" | "fsmount") => {
+                (Some(MOUNT_API_MIN_KERNEL), Some(MOUNT_API_NAMESPACE_SOURCE))
+            }
+            Some("fsopen" | "fsconfig" | "fspick") => {
+                (Some(MOUNT_API_MIN_KERNEL), Some(MOUNT_API_FSOPEN_SOURCE))
+            }
+            Some("mount_setattr") => (Some(MOUNT_SETATTR_MIN_KERNEL), Some(MOUNT_SETATTR_SOURCE)),
             Some("statx") => (Some(STATX_MIN_KERNEL), Some(STATX_SOURCE)),
             Some("clone3") => (Some(CLONE3_MIN_KERNEL), Some(CLONE3_SOURCE)),
             Some("io_uring_setup" | "io_uring_enter" | "io_uring_register") => {
@@ -590,6 +610,11 @@ impl TracepointContext {
             "openat2" => (OPENAT2_MIN_KERNEL, OPENAT2_SOURCE),
             "faccessat2" => (FACCESSAT2_MIN_KERNEL, FACCESSAT2_SOURCE),
             "close_range" => (CLOSE_RANGE_MIN_KERNEL, CLOSE_RANGE_SOURCE),
+            "open_tree" | "move_mount" | "fsmount" => {
+                (MOUNT_API_MIN_KERNEL, MOUNT_API_NAMESPACE_SOURCE)
+            }
+            "fsopen" | "fsconfig" | "fspick" => (MOUNT_API_MIN_KERNEL, MOUNT_API_FSOPEN_SOURCE),
+            "mount_setattr" => (MOUNT_SETATTR_MIN_KERNEL, MOUNT_SETATTR_SOURCE),
             "statx" => (STATX_MIN_KERNEL, STATX_SOURCE),
             "clone3" => (CLONE3_MIN_KERNEL, CLONE3_SOURCE),
             "io_uring_setup" | "io_uring_enter" | "io_uring_register" => {
@@ -656,6 +681,11 @@ impl TracepointContext {
             | "symlink" | "symlinkat" | "link" | "linkat" | "rename" | "renameat" | "renameat2" => {
                 (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, NAMEI_SOURCE)
             }
+            "open_tree" | "move_mount" | "fsmount" => {
+                (MOUNT_API_MIN_KERNEL, MOUNT_API_NAMESPACE_SOURCE)
+            }
+            "fsopen" | "fsconfig" | "fspick" => (MOUNT_API_MIN_KERNEL, MOUNT_API_FSOPEN_SOURCE),
+            "mount_setattr" => (MOUNT_SETATTR_MIN_KERNEL, MOUNT_SETATTR_SOURCE),
             "socket" | "socketpair" | "bind" | "listen" | "accept" | "connect" | "sendto"
             | "recvfrom" | "accept4" | "setsockopt" | "getsockopt" | "shutdown" | "sendmsg"
             | "recvmsg" | "sendmmsg" | "recvmmsg" => {
@@ -1018,6 +1048,46 @@ impl TracepointContext {
                 ("newdfd", Self::syscall_arg_int(true)),
                 ("newname", Self::syscall_arg_user_ptr()),
                 ("flags", Self::syscall_arg_int(false)),
+            ],
+            "open_tree" => vec![
+                ("dfd", Self::syscall_arg_int(true)),
+                ("filename", Self::syscall_arg_user_ptr()),
+                ("flags", Self::syscall_arg_int(false)),
+            ],
+            "move_mount" => vec![
+                ("from_dfd", Self::syscall_arg_int(true)),
+                ("from_pathname", Self::syscall_arg_user_ptr()),
+                ("to_dfd", Self::syscall_arg_int(true)),
+                ("to_pathname", Self::syscall_arg_user_ptr()),
+                ("flags", Self::syscall_arg_int(false)),
+            ],
+            "fsopen" => vec![
+                ("_fs_name", Self::syscall_arg_user_ptr()),
+                ("flags", Self::syscall_arg_int(false)),
+            ],
+            "fsconfig" => vec![
+                ("fd", Self::syscall_arg_int(true)),
+                ("cmd", Self::syscall_arg_int(false)),
+                ("_key", Self::syscall_arg_user_ptr()),
+                ("_value", Self::syscall_arg_user_ptr()),
+                ("aux", Self::syscall_arg_int(true)),
+            ],
+            "fsmount" => vec![
+                ("fs_fd", Self::syscall_arg_int(true)),
+                ("flags", Self::syscall_arg_int(false)),
+                ("attr_flags", Self::syscall_arg_int(false)),
+            ],
+            "fspick" => vec![
+                ("dfd", Self::syscall_arg_int(true)),
+                ("path", Self::syscall_arg_user_ptr()),
+                ("flags", Self::syscall_arg_int(false)),
+            ],
+            "mount_setattr" => vec![
+                ("dfd", Self::syscall_arg_int(true)),
+                ("path", Self::syscall_arg_user_ptr()),
+                ("flags", Self::syscall_arg_int(false)),
+                ("uattr", Self::syscall_arg_user_ptr()),
+                ("usize", Self::syscall_arg_int(false)),
             ],
             "socket" => vec![
                 ("family", Self::syscall_arg_int(false)),

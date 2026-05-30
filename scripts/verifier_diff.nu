@@ -2354,6 +2354,48 @@ const PATH_TRACEPOINT_FIELD_SPECS = [
         min_kernel: "4.7"
         source: "https://github.com/torvalds/linux/blob/v4.7/fs/namei.c"
     }
+    {
+        syscalls: ["open_tree"]
+        fields: ["dfd" "filename" "flags"]
+        min_kernel: "5.2"
+        source: "https://github.com/torvalds/linux/blob/v5.2/fs/namespace.c"
+    }
+    {
+        syscalls: ["move_mount"]
+        fields: ["from_dfd" "from_pathname" "to_dfd" "to_pathname" "flags"]
+        min_kernel: "5.2"
+        source: "https://github.com/torvalds/linux/blob/v5.2/fs/namespace.c"
+    }
+    {
+        syscalls: ["fsopen"]
+        fields: ["_fs_name" "flags"]
+        min_kernel: "5.2"
+        source: "https://github.com/torvalds/linux/blob/v5.2/fs/fsopen.c"
+    }
+    {
+        syscalls: ["fsconfig"]
+        fields: ["fd" "cmd" "_key" "_value" "aux"]
+        min_kernel: "5.2"
+        source: "https://github.com/torvalds/linux/blob/v5.2/fs/fsopen.c"
+    }
+    {
+        syscalls: ["fsmount"]
+        fields: ["fs_fd" "flags" "attr_flags"]
+        min_kernel: "5.2"
+        source: "https://github.com/torvalds/linux/blob/v5.2/fs/namespace.c"
+    }
+    {
+        syscalls: ["fspick"]
+        fields: ["dfd" "path" "flags"]
+        min_kernel: "5.2"
+        source: "https://github.com/torvalds/linux/blob/v5.2/fs/fsopen.c"
+    }
+    {
+        syscalls: ["mount_setattr"]
+        fields: ["dfd" "path" "flags" "uattr" "usize"]
+        min_kernel: "5.12"
+        source: "https://github.com/torvalds/linux/blob/v5.12/fs/namespace.c"
+    }
 ]
 const PROCESS_TRACEPOINT_FIELD_SPECS = [
     {
@@ -7974,6 +8016,129 @@ const FIXTURES = [
             '  let newname = $ctx.newname'
             '  if $newname { $newname | read-str --max-len 64 | count }'
             '  ($ctx.olddfd + $ctx.newdfd + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-open-tree-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_open_tree]
+        target: "tracepoint:syscalls/sys_enter_open_tree"
+        program: [
+            '{|ctx|'
+            '  let filename = $ctx.filename'
+            '  if $filename { $filename | read-str --max-len 64 | count }'
+            '  ($ctx.dfd + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-move-mount-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_move_mount]
+        target: "tracepoint:syscalls/sys_enter_move_mount"
+        program: [
+            '{|ctx|'
+            '  let from_pathname = $ctx.from_pathname'
+            '  let to_pathname = $ctx.to_pathname'
+            '  if $from_pathname { $from_pathname | read-str --max-len 64 | count }'
+            '  if $to_pathname { $to_pathname | read-str --max-len 64 | count }'
+            '  ($ctx.from_dfd + $ctx.to_dfd + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-fsopen-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_fsopen]
+        target: "tracepoint:syscalls/sys_enter_fsopen"
+        program: [
+            '{|ctx|'
+            '  let fs_name = $ctx._fs_name'
+            '  if $fs_name { $fs_name | read-str --max-len 64 | count }'
+            '  $ctx.flags | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-fsconfig-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_fsconfig]
+        target: "tracepoint:syscalls/sys_enter_fsconfig"
+        program: [
+            '{|ctx|'
+            '  let key = $ctx._key'
+            '  let value = $ctx._value'
+            '  if $key { $key | read-str --max-len 64 | count }'
+            '  if $value { 1 | count }'
+            '  ($ctx.fd + $ctx.cmd + $ctx.aux) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-fsmount-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_fsmount]
+        target: "tracepoint:syscalls/sys_enter_fsmount"
+        program: [
+            '{|ctx|'
+            '  ($ctx.fs_fd + $ctx.flags + $ctx.attr_flags) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-fspick-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_fspick]
+        target: "tracepoint:syscalls/sys_enter_fspick"
+        program: [
+            '{|ctx|'
+            '  let path = $ctx.path'
+            '  if $path { $path | read-str --max-len 64 | count }'
+            '  ($ctx.dfd + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-mount-setattr-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_mount_setattr]
+        target: "tracepoint:syscalls/sys_enter_mount_setattr"
+        program: [
+            '{|ctx|'
+            '  let path = $ctx.path'
+            '  let uattr = $ctx.uattr'
+            '  if $path { $path | read-str --max-len 64 | count }'
+            '  if $uattr { 1 | count }'
+            '  ($ctx.dfd + $ctx.flags + $ctx.usize) | count'
             '  0'
             '}'
         ]
@@ -29446,6 +29611,10 @@ def syscall-tracepoint-fallback-field-kernel-feature [field: string target] {
         "5.8"
     } else if $syscall == "close_range" {
         "5.9"
+    } else if $syscall in ["open_tree" "move_mount" "fsmount" "fsopen" "fsconfig" "fspick"] {
+        "5.2"
+    } else if $syscall == "mount_setattr" {
+        "5.12"
     } else if $syscall == "pidfd_send_signal" {
         "5.1"
     } else if $syscall == "pidfd_open" {
@@ -29473,6 +29642,12 @@ def syscall-tracepoint-fallback-field-kernel-feature [field: string target] {
         "https://github.com/torvalds/linux/blob/v5.8/fs/open.c"
     } else if $syscall == "close_range" {
         "https://github.com/torvalds/linux/blob/v5.9/fs/open.c"
+    } else if $syscall in ["open_tree" "move_mount" "fsmount"] {
+        "https://github.com/torvalds/linux/blob/v5.2/fs/namespace.c"
+    } else if $syscall in ["fsopen" "fsconfig" "fspick"] {
+        "https://github.com/torvalds/linux/blob/v5.2/fs/fsopen.c"
+    } else if $syscall == "mount_setattr" {
+        "https://github.com/torvalds/linux/blob/v5.12/fs/namespace.c"
     } else if $syscall == "pidfd_send_signal" {
         "https://github.com/torvalds/linux/blob/v5.1/kernel/signal.c"
     } else if $syscall == "pidfd_open" {

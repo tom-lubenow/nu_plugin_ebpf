@@ -450,6 +450,64 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         TypeInfo::Ptr { is_user: true, .. }
     ));
 
+    let open_tree = TracepointContext::sys_enter("sys_enter_open_tree");
+    assert!(open_tree.has_field("dfd"));
+    assert!(open_tree.has_field("filename"));
+    assert!(open_tree.has_field("flags"));
+    assert_eq!(open_tree.minimum_kernel(), Some("5.2"));
+    assert!(
+        open_tree
+            .minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v5.2/fs/namespace.c"))
+    );
+    assert!(matches!(
+        open_tree
+            .get_field("filename")
+            .expect("expected open_tree filename")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+
+    let fsconfig = TracepointContext::sys_enter("sys_enter_fsconfig");
+    assert!(fsconfig.has_field("fd"));
+    assert!(fsconfig.has_field("cmd"));
+    assert!(fsconfig.has_field("_key"));
+    assert!(fsconfig.has_field("_value"));
+    assert!(fsconfig.has_field("aux"));
+    assert_eq!(fsconfig.minimum_kernel(), Some("5.2"));
+    assert!(
+        fsconfig
+            .minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v5.2/fs/fsopen.c"))
+    );
+    assert!(matches!(
+        fsconfig
+            .get_field("_value")
+            .expect("expected fsconfig _value")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+
+    let mount_setattr = TracepointContext::sys_enter("sys_enter_mount_setattr");
+    assert!(mount_setattr.has_field("dfd"));
+    assert!(mount_setattr.has_field("path"));
+    assert!(mount_setattr.has_field("flags"));
+    assert!(mount_setattr.has_field("uattr"));
+    assert!(mount_setattr.has_field("usize"));
+    assert_eq!(mount_setattr.minimum_kernel(), Some("5.12"));
+    assert!(
+        mount_setattr
+            .minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v5.12/fs/namespace.c"))
+    );
+    assert_eq!(
+        mount_setattr
+            .get_field("usize")
+            .expect("expected mount_setattr usize")
+            .offset,
+        48
+    );
+
     let memfd_create = TracepointContext::sys_enter("sys_enter_memfd_create");
     assert!(memfd_create.has_field("uname"));
     assert!(memfd_create.has_field("flags"));
@@ -786,6 +844,28 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         (
             "sys_enter_renameat2",
             &["olddfd", "oldname", "newdfd", "newname", "flags"][..],
+        ),
+        ("sys_enter_open_tree", &["dfd", "filename", "flags"][..]),
+        (
+            "sys_enter_move_mount",
+            &[
+                "from_dfd",
+                "from_pathname",
+                "to_dfd",
+                "to_pathname",
+                "flags",
+            ][..],
+        ),
+        ("sys_enter_fsopen", &["_fs_name", "flags"][..]),
+        (
+            "sys_enter_fsconfig",
+            &["fd", "cmd", "_key", "_value", "aux"][..],
+        ),
+        ("sys_enter_fsmount", &["fs_fd", "flags", "attr_flags"][..]),
+        ("sys_enter_fspick", &["dfd", "path", "flags"][..]),
+        (
+            "sys_enter_mount_setattr",
+            &["dfd", "path", "flags", "uattr", "usize"][..],
         ),
         (
             "sys_enter_process_madvise",
