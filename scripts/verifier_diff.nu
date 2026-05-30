@@ -24580,7 +24580,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "adjust-packet-xdp-meta-subfn-rejects-stale-data"
@@ -24622,7 +24622,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "adjust-packet-xdp-tail"
@@ -24651,7 +24651,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "adjust-packet-lwt-in-pull"
@@ -24719,7 +24719,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "redirect-tc-action-neigh"
@@ -24732,7 +24732,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "redirect-tc-egress-rejects-peer"
@@ -24974,7 +24974,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "assign-socket-tc-action-rejects-flags"
@@ -25100,7 +25100,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "map-put-sock-ops-sockmap"
@@ -25114,7 +25114,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "map-put-sock-ops-sockhash"
@@ -25128,7 +25128,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "adjust-packet-sk-skb-pull"
@@ -25168,7 +25168,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "redirect-socket-sk-reuseport-sockarray"
@@ -25181,7 +25181,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "adjust-packet-sk-skb-parser-pull"
@@ -25208,7 +25208,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
 ]
 
