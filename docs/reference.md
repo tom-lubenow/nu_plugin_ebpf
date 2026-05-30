@@ -221,7 +221,10 @@ metadata for risky but implemented families such as unclassified struct_ops,
 sched_ext, hid_bpf_ops, and Qdisc_ops. `live_attach_default_test_lane` combines
 feature compatibility with current loader policy, so unsupported live targets
 report `dry-run` even when their kernel feature lane would otherwise be
-host-gated or VM-only. Kernel-BTF-backed target families also
+host-gated or VM-only. `external_alpha_status` compresses those live-loader
+and test-lane facts into the consumption labels used by external-alpha docs:
+`live-supported`, `host-gated`, `dry-run-only`, `vm-only`, or
+`unsafe-opt-in`. Kernel-BTF-backed target families also
 expose `kernel_target_validation` and
 `kernel_target_validation_help`, so tooling can present target-signature,
 tracepoint, or LSM-hook guidance before attach. Source-verified requirements
