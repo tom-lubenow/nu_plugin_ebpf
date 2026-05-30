@@ -2756,6 +2756,30 @@ const MM_TRACEPOINT_FIELD_SPECS = [
 ]
 const TIME_TRACEPOINT_FIELD_SPECS = [
     {
+        syscalls: ["utime"]
+        fields: ["filename" "times"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/utimes.c"
+    }
+    {
+        syscalls: ["utimes"]
+        fields: ["filename" "utimes"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/utimes.c"
+    }
+    {
+        syscalls: ["futimesat"]
+        fields: ["dfd" "filename" "utimes"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/utimes.c"
+    }
+    {
+        syscalls: ["utimensat"]
+        fields: ["dfd" "filename" "utimes" "flags"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/utimes.c"
+    }
+    {
         syscalls: ["time"]
         fields: ["tloc"]
         min_kernel: "4.7"
@@ -5903,6 +5927,25 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         ]
     }
     {
+        target: "tracepoint:syscalls/sys_enter_utimensat"
+        program: [
+            '{|ctx|'
+            '  let filename = $ctx.filename'
+            '  let utimes = $ctx.utimes'
+            '  if $filename { 1 | count }'
+            '  if $utimes { 1 | count }'
+            '  ($ctx.dfd + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_utimensat:field:filename"
+            "tracepoint:syscalls/sys_enter_utimensat:field:utimes"
+            "tracepoint:syscalls/sys_enter_utimensat:field:dfd"
+            "tracepoint:syscalls/sys_enter_utimensat:field:flags"
+        ]
+    }
+    {
         target: "tracepoint:syscalls/sys_enter_fchownat"
         program: [
             '{|ctx|'
@@ -9007,6 +9050,25 @@ const FIXTURES = [
             '  let tz = $ctx.tz'
             '  if $tv { 1 | count }'
             '  if $tz { 1 | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-utimensat-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_utimensat]
+        target: "tracepoint:syscalls/sys_enter_utimensat"
+        program: [
+            '{|ctx|'
+            '  let filename = $ctx.filename'
+            '  let utimes = $ctx.utimes'
+            '  if $filename { $filename | read-str --max-len 64 | count }'
+            '  if $utimes { 1 | count }'
+            '  ($ctx.dfd + $ctx.flags) | count'
             '  0'
             '}'
         ]

@@ -56,6 +56,7 @@ const PROCESS_MADVISE_MIN_KERNEL: &str = "5.10";
 const PROCESS_MADVISE_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.10/mm/madvise.c";
 const PROCESS_MRELEASE_MIN_KERNEL: &str = "5.15";
 const PROCESS_MRELEASE_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.15/mm/oom_kill.c";
+const UTIMES_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/utimes.c";
 const TIME_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/time/time.c";
 const ITIMER_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/time/itimer.c";
 const HRTIMER_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/time/hrtimer.c";
@@ -226,6 +227,10 @@ const WELL_KNOWN_SYS_ENTER_SYSCALLS: &[&str] = &[
     "msync",
     "memfd_create",
     "memfd_secret",
+    "utime",
+    "utimes",
+    "futimesat",
+    "utimensat",
     "time",
     "gettimeofday",
     "settimeofday",
@@ -776,6 +781,9 @@ impl TracepointContext {
             "msync" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, MM_MSYNC_SOURCE),
             "memfd_create" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, MEMFD_CREATE_SOURCE),
             "memfd_secret" => (MEMFD_SECRET_MIN_KERNEL, MEMFD_SECRET_SOURCE),
+            "utime" | "utimes" | "futimesat" | "utimensat" => {
+                (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, UTIMES_SOURCE)
+            }
             "time" | "gettimeofday" | "settimeofday" | "adjtimex" => {
                 (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, TIME_SOURCE)
             }
@@ -1454,6 +1462,25 @@ impl TracepointContext {
                 ("flags", Self::syscall_arg_int(false)),
             ],
             "memfd_secret" => vec![("flags", Self::syscall_arg_int(false))],
+            "utime" => vec![
+                ("filename", Self::syscall_arg_user_ptr()),
+                ("times", Self::syscall_arg_user_ptr()),
+            ],
+            "utimes" => vec![
+                ("filename", Self::syscall_arg_user_ptr()),
+                ("utimes", Self::syscall_arg_user_ptr()),
+            ],
+            "futimesat" => vec![
+                ("dfd", Self::syscall_arg_int(true)),
+                ("filename", Self::syscall_arg_user_ptr()),
+                ("utimes", Self::syscall_arg_user_ptr()),
+            ],
+            "utimensat" => vec![
+                ("dfd", Self::syscall_arg_int(true)),
+                ("filename", Self::syscall_arg_user_ptr()),
+                ("utimes", Self::syscall_arg_user_ptr()),
+                ("flags", Self::syscall_arg_int(true)),
+            ],
             "time" => vec![("tloc", Self::syscall_arg_user_ptr())],
             "gettimeofday" | "settimeofday" => vec![
                 ("tv", Self::syscall_arg_user_ptr()),

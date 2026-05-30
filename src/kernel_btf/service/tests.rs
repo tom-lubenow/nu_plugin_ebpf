@@ -976,6 +976,26 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         TypeInfo::Ptr { is_user: true, .. }
     ));
 
+    let utimensat = TracepointContext::sys_enter("sys_enter_utimensat");
+    assert!(utimensat.has_field("dfd"));
+    assert!(utimensat.has_field("filename"));
+    assert!(utimensat.has_field("utimes"));
+    assert!(utimensat.has_field("flags"));
+    assert!(matches!(
+        utimensat
+            .get_field("filename")
+            .expect("expected utimensat filename")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+    let (_, utimensat_source) = TracepointContext::syscall_fallback_field_minimum_kernel(
+        "syscalls",
+        "sys_enter_utimensat",
+        "utimes",
+    )
+    .expect("expected utimensat source metadata");
+    assert!(utimensat_source.contains("/v4.7/fs/utimes.c"));
+
     let futex = TracepointContext::sys_enter("sys_enter_futex");
     assert!(futex.has_field("uaddr"));
     assert!(futex.has_field("op"));
@@ -1182,6 +1202,13 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         ("sys_enter_process_mrelease", &["pidfd", "flags"][..]),
         ("sys_enter_memfd_create", &["uname", "flags"][..]),
         ("sys_enter_memfd_secret", &["flags"][..]),
+        ("sys_enter_utime", &["filename", "times"][..]),
+        ("sys_enter_utimes", &["filename", "utimes"][..]),
+        ("sys_enter_futimesat", &["dfd", "filename", "utimes"][..]),
+        (
+            "sys_enter_utimensat",
+            &["dfd", "filename", "utimes", "flags"][..],
+        ),
         ("sys_enter_time", &["tloc"][..]),
         ("sys_enter_gettimeofday", &["tv", "tz"][..]),
         ("sys_enter_settimeofday", &["tv", "tz"][..]),

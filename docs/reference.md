@@ -941,8 +941,9 @@ Memory-management fallbacks expose aliases for common entry tracepoints such as
 `sys_enter_mmap`, `sys_enter_mprotect`, `sys_enter_mremap`, `sys_enter_mincore`,
 and `sys_enter_msync`.
 Time and timer fallbacks expose aliases for common entry tracepoints such as
-`sys_enter_gettimeofday`, `sys_enter_clock_gettime`, `sys_enter_timer_create`,
-and `sys_enter_timerfd_settime`.
+`sys_enter_utime`, `sys_enter_utimes`, `sys_enter_futimesat`,
+`sys_enter_utimensat`, `sys_enter_gettimeofday`, `sys_enter_clock_gettime`,
+`sys_enter_timer_create`, and `sys_enter_timerfd_settime`.
 Signal fallbacks expose aliases for common entry tracepoints such as
 `sys_enter_kill`, `sys_enter_tgkill`, `sys_enter_rt_sigaction`,
 `sys_enter_rt_sigtimedwait`, and `sys_enter_pidfd_send_signal`.
