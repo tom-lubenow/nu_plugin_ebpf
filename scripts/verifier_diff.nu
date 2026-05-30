@@ -14915,7 +14915,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "sock-ops-store-hdr-opt-rejects-stale-data"
@@ -14955,7 +14955,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "sock-ops-packet-metadata-requires-op-guard"
