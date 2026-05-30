@@ -464,6 +464,35 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         TypeInfo::Ptr { is_user: true, .. }
     ));
 
+    let futex = TracepointContext::sys_enter("sys_enter_futex");
+    assert!(futex.has_field("uaddr"));
+    assert!(futex.has_field("op"));
+    assert!(futex.has_field("val"));
+    assert!(futex.has_field("utime"));
+    assert!(futex.has_field("uaddr2"));
+    assert!(futex.has_field("val3"));
+    assert!(matches!(
+        futex
+            .get_field("uaddr")
+            .expect("expected futex uaddr")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+    assert!(matches!(
+        futex
+            .get_field("utime")
+            .expect("expected futex utime")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+    let (_, futex_source) = TracepointContext::syscall_fallback_field_minimum_kernel(
+        "syscalls",
+        "sys_enter_futex",
+        "uaddr",
+    )
+    .expect("expected futex uaddr source metadata");
+    assert!(futex_source.contains("/v4.7/kernel/futex.c"));
+
     for (name, fields) in [
         ("sys_enter_open", &["filename", "flags", "mode"][..]),
         ("sys_enter_creat", &["pathname", "mode"][..]),
@@ -654,6 +683,10 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         ("sys_enter_sched_get_priority_max", &["policy"][..]),
         ("sys_enter_sched_get_priority_min", &["policy"][..]),
         ("sys_enter_sched_rr_get_interval", &["interval"][..]),
+        (
+            "sys_enter_futex",
+            &["uaddr", "op", "val", "utime", "uaddr2", "val3"][..],
+        ),
         ("sys_enter_msgget", &["key", "msgflg"][..]),
         ("sys_enter_msgctl", &["msqid", "cmd", "buf"][..]),
         (

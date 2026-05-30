@@ -1180,6 +1180,7 @@ mod tests {
             "sys_enter_sched_get_priority_max",
             "sys_enter_sched_get_priority_min",
             "sys_enter_sched_rr_get_interval",
+            "sys_enter_futex",
             "sys_enter_msgget",
             "sys_enter_msgctl",
             "sys_enter_msgsnd",

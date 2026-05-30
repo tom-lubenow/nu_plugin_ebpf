@@ -2867,6 +2867,14 @@ const SCHED_TRACEPOINT_FIELD_SPECS = [
         source: "https://github.com/torvalds/linux/blob/v4.7/kernel/sched/core.c"
     }
 ]
+const FUTEX_TRACEPOINT_FIELD_SPECS = [
+    {
+        syscalls: ["futex"]
+        fields: ["uaddr" "op" "val" "utime" "uaddr2" "val3"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/futex.c"
+    }
+]
 const IPC_TRACEPOINT_FIELD_SPECS = [
     {
         syscalls: ["msgget"]
@@ -8459,6 +8467,27 @@ const FIXTURES = [
             '  $ctx.shmflg | count'
             '  let shmaddr = $ctx.shmaddr'
             '  if $shmaddr { 1 | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-futex-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_futex]
+        target: "tracepoint:syscalls/sys_enter_futex"
+        program: [
+            '{|ctx|'
+            '  let uaddr = $ctx.uaddr'
+            '  let utime = $ctx.utime'
+            '  let uaddr2 = $ctx.uaddr2'
+            '  if $uaddr { 1 | count }'
+            '  if $utime { 1 | count }'
+            '  if $uaddr2 { 1 | count }'
+            '  ($ctx.op + $ctx.val + $ctx.val3) | count'
             '  0'
             '}'
         ]
@@ -29219,6 +29248,7 @@ def tracepoint-payload-field-kernel-feature [field: string target] {
         | append $SIGNAL_TRACEPOINT_FIELD_SPECS
         | append $IDENTITY_TRACEPOINT_FIELD_SPECS
         | append $SCHED_TRACEPOINT_FIELD_SPECS
+        | append $FUTEX_TRACEPOINT_FIELD_SPECS
         | append $IPC_TRACEPOINT_FIELD_SPECS
     )
     let source_backed_feature = (

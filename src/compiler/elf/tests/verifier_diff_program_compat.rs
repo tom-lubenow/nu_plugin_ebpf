@@ -1219,6 +1219,8 @@ fn test_verifier_diff_tracepoint_payload_scanner_matches_rust_fallback_fields() 
             "tracepoint:syscalls/sys_enter_sched_rr_get_interval",
             "interval",
         ),
+        ("tracepoint:syscalls/sys_enter_futex", "uaddr"),
+        ("tracepoint:syscalls/sys_enter_futex", "val3"),
         ("tracepoint:syscalls/sys_enter_nice", "increment"),
         ("tracepoint:syscalls/sys_enter_msgctl", "buf"),
         ("tracepoint:syscalls/sys_enter_msgrcv", "msgtyp"),
