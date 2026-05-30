@@ -31,6 +31,12 @@ const MM_MADVISE_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/mm/
 const MM_MLOCK_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/mm/mlock.c";
 const MM_MINCORE_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/mm/mincore.c";
 const MM_MSYNC_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/mm/msync.c";
+const TIME_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/time/time.c";
+const ITIMER_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/time/itimer.c";
+const HRTIMER_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/time/hrtimer.c";
+const POSIX_TIMERS_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v4.7/kernel/time/posix-timers.c";
+const TIMERFD_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/timerfd.c";
 
 /// Source used to construct a tracepoint context layout.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -354,6 +360,19 @@ impl TracepointContext {
             }
             "mincore" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, MM_MINCORE_SOURCE),
             "msync" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, MM_MSYNC_SOURCE),
+            "time" | "gettimeofday" | "settimeofday" | "adjtimex" => {
+                (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, TIME_SOURCE)
+            }
+            "getitimer" | "setitimer" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, ITIMER_SOURCE),
+            "nanosleep" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, HRTIMER_SOURCE),
+            "timer_create" | "timer_gettime" | "timer_getoverrun" | "timer_settime"
+            | "timer_delete" | "clock_settime" | "clock_gettime" | "clock_adjtime"
+            | "clock_getres" | "clock_nanosleep" => {
+                (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, POSIX_TIMERS_SOURCE)
+            }
+            "timerfd_create" | "timerfd_settime" | "timerfd_gettime" => {
+                (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, TIMERFD_SOURCE)
+            }
             _ => return None,
         })
     }
@@ -689,6 +708,71 @@ impl TracepointContext {
                 ("start", Self::syscall_arg_int(false)),
                 ("len", Self::syscall_arg_int(false)),
                 ("flags", Self::syscall_arg_int(true)),
+            ],
+            "time" => vec![("tloc", Self::syscall_arg_user_ptr())],
+            "gettimeofday" | "settimeofday" => vec![
+                ("tv", Self::syscall_arg_user_ptr()),
+                ("tz", Self::syscall_arg_user_ptr()),
+            ],
+            "adjtimex" => vec![("txc_p", Self::syscall_arg_user_ptr())],
+            "getitimer" => vec![
+                ("which", Self::syscall_arg_int(true)),
+                ("value", Self::syscall_arg_user_ptr()),
+            ],
+            "setitimer" => vec![
+                ("which", Self::syscall_arg_int(true)),
+                ("value", Self::syscall_arg_user_ptr()),
+                ("ovalue", Self::syscall_arg_user_ptr()),
+            ],
+            "nanosleep" => vec![
+                ("rqtp", Self::syscall_arg_user_ptr()),
+                ("rmtp", Self::syscall_arg_user_ptr()),
+            ],
+            "timer_create" => vec![
+                ("which_clock", Self::syscall_arg_int(true)),
+                ("timer_event_spec", Self::syscall_arg_user_ptr()),
+                ("created_timer_id", Self::syscall_arg_user_ptr()),
+            ],
+            "timer_gettime" => vec![
+                ("timer_id", Self::syscall_arg_int(true)),
+                ("setting", Self::syscall_arg_user_ptr()),
+            ],
+            "timer_getoverrun" | "timer_delete" => {
+                vec![("timer_id", Self::syscall_arg_int(true))]
+            }
+            "timer_settime" => vec![
+                ("timer_id", Self::syscall_arg_int(true)),
+                ("flags", Self::syscall_arg_int(true)),
+                ("new_setting", Self::syscall_arg_user_ptr()),
+                ("old_setting", Self::syscall_arg_user_ptr()),
+            ],
+            "clock_settime" | "clock_gettime" | "clock_getres" => vec![
+                ("which_clock", Self::syscall_arg_int(true)),
+                ("tp", Self::syscall_arg_user_ptr()),
+            ],
+            "clock_adjtime" => vec![
+                ("which_clock", Self::syscall_arg_int(true)),
+                ("utx", Self::syscall_arg_user_ptr()),
+            ],
+            "clock_nanosleep" => vec![
+                ("which_clock", Self::syscall_arg_int(true)),
+                ("flags", Self::syscall_arg_int(true)),
+                ("rqtp", Self::syscall_arg_user_ptr()),
+                ("rmtp", Self::syscall_arg_user_ptr()),
+            ],
+            "timerfd_create" => vec![
+                ("clockid", Self::syscall_arg_int(true)),
+                ("flags", Self::syscall_arg_int(true)),
+            ],
+            "timerfd_settime" => vec![
+                ("ufd", Self::syscall_arg_int(true)),
+                ("flags", Self::syscall_arg_int(true)),
+                ("utmr", Self::syscall_arg_user_ptr()),
+                ("otmr", Self::syscall_arg_user_ptr()),
+            ],
+            "timerfd_gettime" => vec![
+                ("ufd", Self::syscall_arg_int(true)),
+                ("otmr", Self::syscall_arg_user_ptr()),
             ],
             _ => return Vec::new(),
         };

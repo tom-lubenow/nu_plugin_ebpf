@@ -1093,6 +1093,15 @@ fn test_verifier_diff_tracepoint_payload_scanner_matches_rust_fallback_fields() 
         ("tracepoint:syscalls/sys_enter_mlockall", "flags"),
         ("tracepoint:syscalls/sys_enter_mincore", "vec"),
         ("tracepoint:syscalls/sys_enter_msync", "flags"),
+        ("tracepoint:syscalls/sys_enter_gettimeofday", "tz"),
+        ("tracepoint:syscalls/sys_enter_setitimer", "ovalue"),
+        (
+            "tracepoint:syscalls/sys_enter_timer_create",
+            "created_timer_id",
+        ),
+        ("tracepoint:syscalls/sys_enter_clock_gettime", "tp"),
+        ("tracepoint:syscalls/sys_enter_clock_nanosleep", "rmtp"),
+        ("tracepoint:syscalls/sys_enter_timerfd_settime", "otmr"),
     ]
     .into_iter()
     .map(|(target, field)| (target.to_string(), field.to_string()))

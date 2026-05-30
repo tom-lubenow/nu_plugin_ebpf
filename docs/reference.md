@@ -905,6 +905,9 @@ and event fallbacks expose aliases for common entry tracepoints such as
 Memory-management fallbacks expose aliases for common entry tracepoints such as
 `sys_enter_mmap`, `sys_enter_mprotect`, `sys_enter_mremap`, `sys_enter_mincore`,
 and `sys_enter_msync`.
+Time and timer fallbacks expose aliases for common entry tracepoints such as
+`sys_enter_gettimeofday`, `sys_enter_clock_gettime`, `sys_enter_timer_create`,
+and `sys_enter_timerfd_settime`.
 syscall-entry pointer fields are modeled as userspace pointers, so
 `ctx.filename | read-str --max-len 64` is the preferred form. The generic
 fallback `($ctx.args | get 1)` is only a raw numeric ABI value and is not enough

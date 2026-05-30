@@ -442,6 +442,38 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
             "sys_enter_renameat2",
             &["olddfd", "oldname", "newdfd", "newname", "flags"][..],
         ),
+        ("sys_enter_time", &["tloc"][..]),
+        ("sys_enter_gettimeofday", &["tv", "tz"][..]),
+        ("sys_enter_settimeofday", &["tv", "tz"][..]),
+        ("sys_enter_adjtimex", &["txc_p"][..]),
+        ("sys_enter_getitimer", &["which", "value"][..]),
+        ("sys_enter_setitimer", &["which", "value", "ovalue"][..]),
+        ("sys_enter_nanosleep", &["rqtp", "rmtp"][..]),
+        (
+            "sys_enter_timer_create",
+            &["which_clock", "timer_event_spec", "created_timer_id"][..],
+        ),
+        ("sys_enter_timer_gettime", &["timer_id", "setting"][..]),
+        ("sys_enter_timer_getoverrun", &["timer_id"][..]),
+        (
+            "sys_enter_timer_settime",
+            &["timer_id", "flags", "new_setting", "old_setting"][..],
+        ),
+        ("sys_enter_timer_delete", &["timer_id"][..]),
+        ("sys_enter_clock_settime", &["which_clock", "tp"][..]),
+        ("sys_enter_clock_gettime", &["which_clock", "tp"][..]),
+        ("sys_enter_clock_adjtime", &["which_clock", "utx"][..]),
+        ("sys_enter_clock_getres", &["which_clock", "tp"][..]),
+        (
+            "sys_enter_clock_nanosleep",
+            &["which_clock", "flags", "rqtp", "rmtp"][..],
+        ),
+        ("sys_enter_timerfd_create", &["clockid", "flags"][..]),
+        (
+            "sys_enter_timerfd_settime",
+            &["ufd", "flags", "utmr", "otmr"][..],
+        ),
+        ("sys_enter_timerfd_gettime", &["ufd", "otmr"][..]),
     ] {
         let ctx = TracepointContext::sys_enter(name);
         for field in fields {

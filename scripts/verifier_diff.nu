@@ -2410,6 +2410,104 @@ const MM_TRACEPOINT_FIELD_SPECS = [
         source: "https://github.com/torvalds/linux/blob/v4.7/mm/msync.c"
     }
 ]
+const TIME_TRACEPOINT_FIELD_SPECS = [
+    {
+        syscalls: ["time"]
+        fields: ["tloc"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/time/time.c"
+    }
+    {
+        syscalls: ["gettimeofday" "settimeofday"]
+        fields: ["tv" "tz"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/time/time.c"
+    }
+    {
+        syscalls: ["adjtimex"]
+        fields: ["txc_p"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/time/time.c"
+    }
+    {
+        syscalls: ["getitimer"]
+        fields: ["which" "value"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/time/itimer.c"
+    }
+    {
+        syscalls: ["setitimer"]
+        fields: ["which" "value" "ovalue"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/time/itimer.c"
+    }
+    {
+        syscalls: ["nanosleep"]
+        fields: ["rqtp" "rmtp"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/time/hrtimer.c"
+    }
+    {
+        syscalls: ["timer_create"]
+        fields: ["which_clock" "timer_event_spec" "created_timer_id"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/time/posix-timers.c"
+    }
+    {
+        syscalls: ["timer_gettime"]
+        fields: ["timer_id" "setting"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/time/posix-timers.c"
+    }
+    {
+        syscalls: ["timer_getoverrun" "timer_delete"]
+        fields: ["timer_id"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/time/posix-timers.c"
+    }
+    {
+        syscalls: ["timer_settime"]
+        fields: ["timer_id" "flags" "new_setting" "old_setting"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/time/posix-timers.c"
+    }
+    {
+        syscalls: ["clock_settime" "clock_gettime" "clock_getres"]
+        fields: ["which_clock" "tp"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/time/posix-timers.c"
+    }
+    {
+        syscalls: ["clock_adjtime"]
+        fields: ["which_clock" "utx"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/time/posix-timers.c"
+    }
+    {
+        syscalls: ["clock_nanosleep"]
+        fields: ["which_clock" "flags" "rqtp" "rmtp"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/time/posix-timers.c"
+    }
+    {
+        syscalls: ["timerfd_create"]
+        fields: ["clockid" "flags"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/timerfd.c"
+    }
+    {
+        syscalls: ["timerfd_settime"]
+        fields: ["ufd" "flags" "utmr" "otmr"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/timerfd.c"
+    }
+    {
+        syscalls: ["timerfd_gettime"]
+        fields: ["ufd" "otmr"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/timerfd.c"
+    }
+]
 const TRACEPOINT_FIELD_KERNEL_FEATURES = [
     { target: "tracepoint:syscalls/sys_enter_read" field: "fd" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_READ_FD }
     { target: "tracepoint:syscalls/sys_enter_read" field: "buf" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_READ_BUF }
@@ -7146,6 +7244,79 @@ const FIXTURES = [
             '  let vec = $ctx.vec'
             '  if $vec { 1 | count }'
             '  ($ctx.start + $ctx.len) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-gettimeofday-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf]
+        target: "tracepoint:syscalls/sys_enter_gettimeofday"
+        program: [
+            '{|ctx|'
+            '  let tv = $ctx.tv'
+            '  let tz = $ctx.tz'
+            '  if $tv { 1 | count }'
+            '  if $tz { 1 | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-clock-gettime-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf]
+        target: "tracepoint:syscalls/sys_enter_clock_gettime"
+        program: [
+            '{|ctx|'
+            '  $ctx.which_clock | count'
+            '  let tp = $ctx.tp'
+            '  if $tp { 1 | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-timer-create-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf]
+        target: "tracepoint:syscalls/sys_enter_timer_create"
+        program: [
+            '{|ctx|'
+            '  $ctx.which_clock | count'
+            '  let event = $ctx.timer_event_spec'
+            '  let created = $ctx.created_timer_id'
+            '  if $event { 1 | count }'
+            '  if $created { 1 | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-timerfd-settime-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf]
+        target: "tracepoint:syscalls/sys_enter_timerfd_settime"
+        program: [
+            '{|ctx|'
+            '  ($ctx.ufd + $ctx.flags) | count'
+            '  let utmr = $ctx.utmr'
+            '  let otmr = $ctx.otmr'
+            '  if $utmr { 1 | count }'
+            '  if $otmr { 1 | count }'
             '  0'
             '}'
         ]
@@ -25752,6 +25923,7 @@ def tracepoint-payload-field-kernel-feature [field: string target] {
         | append $PROCESS_TRACEPOINT_FIELD_SPECS
         | append $FD_TRACEPOINT_FIELD_SPECS
         | append $MM_TRACEPOINT_FIELD_SPECS
+        | append $TIME_TRACEPOINT_FIELD_SPECS
     )
     let source_backed_feature = (
         source-backed-sys-enter-tracepoint-field-kernel-feature $field $target $source_backed_syscall_specs
