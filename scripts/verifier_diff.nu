@@ -18026,6 +18026,58 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "tc-skb-set-tunnel-key-helper"
+        category: "helper-state"
+        tags: [tc helper tunnel accept source metadata]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  map-define tunnel_key --kind array --value-type bytes:16 --max-entries 1'
+            '  let key = (0 | map-get tunnel_key --kind array)'
+            '  if $key { helper-call "bpf_skb_set_tunnel_key" $ctx $key 16 0 }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tc-skb-set-tunnel-key-rejects-invalid-flags"
+        category: "helper-state"
+        tags: [tc helper tunnel flags reject source metadata]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  map-define tunnel_key --kind array --value-type bytes:16 --max-entries 1'
+            '  let key = (0 | map-get tunnel_key --kind array)'
+            '  if $key { helper-call "bpf_skb_set_tunnel_key" $ctx $key 16 32 }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_skb_set_tunnel_key' requires arg3 flags"
+    }
+    {
+        name: "tc-skb-set-tunnel-opt-helper"
+        category: "helper-state"
+        tags: [tc helper tunnel accept source metadata]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  map-define tunnel_opt --kind array --value-type bytes:16 --max-entries 1'
+            '  let opt = (0 | map-get tunnel_opt --kind array)'
+            '  if $opt { helper-call "bpf_skb_set_tunnel_opt" $ctx $opt 16 }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "tc-skb-set-tunnel-opt-rejects-small-buffer"
         category: "helper-state"
         tags: [tc helper tunnel bounds reject source metadata]
@@ -18042,6 +18094,41 @@ const FIXTURES = [
         local: "reject"
         kernel: "skip"
         error_contains: "helper skb_tunnel buffer requires 16 bytes"
+    }
+    {
+        name: "tc-skb-load-bytes-relative-helper"
+        category: "helper-state"
+        tags: [tc helper skb-load-bytes accept source metadata]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  map-define rel_bytes --kind array --value-type bytes:8 --max-entries 1'
+            '  let dst = (0 | map-get rel_bytes --kind array)'
+            '  if $dst { helper-call "bpf_skb_load_bytes_relative" $ctx 0 $dst 8 0 }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tc-skb-load-bytes-relative-rejects-invalid-start"
+        category: "helper-state"
+        tags: [tc helper skb-load-bytes flags reject source metadata]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  map-define rel_bytes --kind array --value-type bytes:8 --max-entries 1'
+            '  let dst = (0 | map-get rel_bytes --kind array)'
+            '  if $dst { helper-call "bpf_skb_load_bytes_relative" $ctx 0 $dst 8 2 }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_skb_load_bytes_relative' requires arg4 start_header"
     }
     {
         name: "helper-get-stack-rejects-task-ctx-arg"
