@@ -82,8 +82,13 @@ const X86_SIGNAL_SOURCE: &str =
 const X86_SHSTK_MIN_KERNEL: &str = "6.6";
 const X86_SHSTK_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.6/arch/x86/kernel/shstk.c";
+const X86_URETPROBE_MIN_KERNEL: &str = "6.14";
+const X86_URETPROBE_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v6.14/arch/x86/kernel/uprobes.c";
 const X86_MMAP_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v4.7/arch/x86/kernel/sys_x86_64.c";
+const FILE_ATTR_MIN_KERNEL: &str = "6.17";
+const FILE_ATTR_SOURCE: &str = "https://github.com/torvalds/linux/blob/v6.17/fs/file_attr.c";
 const MM_MMAP_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/mm/mmap.c";
 const MM_MPROTECT_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/mm/mprotect.c";
 const PKEY_MIN_KERNEL: &str = "4.9";
@@ -99,6 +104,10 @@ const MEMFD_SECRET_MIN_KERNEL: &str = "5.14";
 const MEMFD_SECRET_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.14/mm/secretmem.c";
 const FADVISE_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/mm/fadvise.c";
 const READAHEAD_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/mm/readahead.c";
+const CACHESTAT_MIN_KERNEL: &str = "6.5";
+const CACHESTAT_SOURCE: &str = "https://github.com/torvalds/linux/blob/v6.5/mm/filemap.c";
+const MSEAL_MIN_KERNEL: &str = "6.10";
+const MSEAL_SOURCE: &str = "https://github.com/torvalds/linux/blob/v6.10/mm/mseal.c";
 const PROCESS_MADVISE_MIN_KERNEL: &str = "5.10";
 const PROCESS_MADVISE_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.10/mm/madvise.c";
 const PROCESS_VM_SOURCE: &str =
@@ -148,6 +157,7 @@ const RSEQ_MIN_KERNEL: &str = "4.18";
 const RSEQ_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.18/kernel/rseq.c";
 const BPF_SYSCALL_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/bpf/syscall.c";
 const PERF_EVENT_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/events/core.c";
+const KCMP_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/kcmp.c";
 const PTRACE_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/ptrace.c";
 const SECCOMP_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/seccomp.c";
 const USERFAULTFD_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/userfaultfd.c";
@@ -538,6 +548,12 @@ const WELL_KNOWN_SYS_ENTER_SYSCALLS: &[&str] = &[
     "modify_ldt",
     "rt_sigreturn",
     "map_shadow_stack",
+    "uretprobe",
+    "kcmp",
+    "cachestat",
+    "mseal",
+    "file_getattr",
+    "file_setattr",
 ];
 const TRACEPOINT_PRESERVED_FALLBACK_FIELD_NAMES: &[&str] = &[
     "pid",
@@ -910,6 +926,16 @@ impl TracepointContext {
                 Some(X86_SIGNAL_SOURCE),
             ),
             Some("map_shadow_stack") => (Some(X86_SHSTK_MIN_KERNEL), Some(X86_SHSTK_SOURCE)),
+            Some("uretprobe") => (Some(X86_URETPROBE_MIN_KERNEL), Some(X86_URETPROBE_SOURCE)),
+            Some("kcmp") => (
+                Some(SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL),
+                Some(KCMP_SOURCE),
+            ),
+            Some("cachestat") => (Some(CACHESTAT_MIN_KERNEL), Some(CACHESTAT_SOURCE)),
+            Some("mseal") => (Some(MSEAL_MIN_KERNEL), Some(MSEAL_SOURCE)),
+            Some("file_getattr" | "file_setattr") => {
+                (Some(FILE_ATTR_MIN_KERNEL), Some(FILE_ATTR_SOURCE))
+            }
             _ => (
                 Some(SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL),
                 Some(SYSCALL_TRACEPOINT_FALLBACK_SOURCE),
@@ -1015,6 +1041,11 @@ impl TracepointContext {
             "modify_ldt" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, X86_LDT_SOURCE),
             "rt_sigreturn" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, X86_SIGNAL_SOURCE),
             "map_shadow_stack" => (X86_SHSTK_MIN_KERNEL, X86_SHSTK_SOURCE),
+            "uretprobe" => (X86_URETPROBE_MIN_KERNEL, X86_URETPROBE_SOURCE),
+            "kcmp" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, KCMP_SOURCE),
+            "cachestat" => (CACHESTAT_MIN_KERNEL, CACHESTAT_SOURCE),
+            "mseal" => (MSEAL_MIN_KERNEL, MSEAL_SOURCE),
+            "file_getattr" | "file_setattr" => (FILE_ATTR_MIN_KERNEL, FILE_ATTR_SOURCE),
             _ => (
                 SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL,
                 SYSCALL_TRACEPOINT_FALLBACK_SOURCE,
@@ -1266,6 +1297,10 @@ impl TracepointContext {
             "ioperm" | "iopl" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, X86_IOPORT_SOURCE),
             "modify_ldt" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, X86_LDT_SOURCE),
             "map_shadow_stack" => (X86_SHSTK_MIN_KERNEL, X86_SHSTK_SOURCE),
+            "kcmp" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, KCMP_SOURCE),
+            "cachestat" => (CACHESTAT_MIN_KERNEL, CACHESTAT_SOURCE),
+            "mseal" => (MSEAL_MIN_KERNEL, MSEAL_SOURCE),
+            "file_getattr" | "file_setattr" => (FILE_ATTR_MIN_KERNEL, FILE_ATTR_SOURCE),
             _ => return None,
         })
     }
@@ -1499,6 +1534,13 @@ impl TracepointContext {
                 ("handle", Self::syscall_arg_user_ptr()),
                 ("flags", Self::syscall_arg_int(true)),
             ],
+            "file_getattr" | "file_setattr" => vec![
+                ("dfd", Self::syscall_arg_int(true)),
+                ("filename", Self::syscall_arg_user_ptr()),
+                ("ufattr", Self::syscall_arg_user_ptr()),
+                ("usize", Self::syscall_arg_int(false)),
+                ("at_flags", Self::syscall_arg_int(false)),
+            ],
             "execve" => vec![
                 ("filename", Self::syscall_arg_user_ptr()),
                 ("argv", Self::syscall_arg_user_ptr()),
@@ -1607,6 +1649,12 @@ impl TracepointContext {
                 ("fd", Self::syscall_arg_int(true)),
                 ("offset", Self::syscall_arg_int(true)),
                 ("nbytes", Self::syscall_arg_int(true)),
+                ("flags", Self::syscall_arg_int(false)),
+            ],
+            "cachestat" => vec![
+                ("fd", Self::syscall_arg_int(false)),
+                ("cstat_range", Self::syscall_arg_user_ptr()),
+                ("cstat", Self::syscall_arg_user_ptr()),
                 ("flags", Self::syscall_arg_int(false)),
             ],
             "fcntl" => vec![
@@ -2183,6 +2231,11 @@ impl TracepointContext {
                 ("len", Self::syscall_arg_int(false)),
                 ("flags", Self::syscall_arg_int(true)),
             ],
+            "mseal" => vec![
+                ("start", Self::syscall_arg_int(false)),
+                ("len", Self::syscall_arg_int(false)),
+                ("flags", Self::syscall_arg_int(false)),
+            ],
             "swapon" => vec![
                 ("specialfile", Self::syscall_arg_user_ptr()),
                 ("swap_flags", Self::syscall_arg_int(true)),
@@ -2571,6 +2624,13 @@ impl TracepointContext {
                 ("sig", Self::syscall_arg_int(false)),
             ],
             "set_tid_address" => vec![("tidptr", Self::syscall_arg_user_ptr())],
+            "kcmp" => vec![
+                ("pid1", Self::syscall_arg_int(true)),
+                ("pid2", Self::syscall_arg_int(true)),
+                ("type", Self::syscall_arg_int(true)),
+                ("idx1", Self::syscall_arg_int(false)),
+                ("idx2", Self::syscall_arg_int(false)),
+            ],
             "getpid" | "gettid" | "getppid" | "getuid" | "geteuid" | "getgid" | "getegid"
             | "getpgrp" | "setsid" | "vhangup" => vec![],
             "bpf" => vec![
@@ -2803,6 +2863,7 @@ impl TracepointContext {
                 ("size", Self::syscall_arg_int(false)),
                 ("flags", Self::syscall_arg_int(false)),
             ],
+            "uretprobe" => vec![],
             _ => return Vec::new(),
         };
 

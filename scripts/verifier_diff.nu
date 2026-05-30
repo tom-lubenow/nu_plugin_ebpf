@@ -2226,6 +2226,12 @@ const FILE_DATA_TRACEPOINT_FIELD_SPECS = [
         min_kernel: "4.7"
         source: "https://github.com/torvalds/linux/blob/v4.7/fs/splice.c"
     }
+    {
+        syscalls: ["cachestat"]
+        fields: ["fd" "cstat_range" "cstat" "flags"]
+        min_kernel: "6.5"
+        source: "https://github.com/torvalds/linux/blob/v6.5/mm/filemap.c"
+    }
 ]
 
 const SOCKET_TRACEPOINT_FIELD_SPECS = [
@@ -2416,6 +2422,12 @@ const PATH_TRACEPOINT_FIELD_SPECS = [
         fields: ["dfd" "filename" "flags" "mask" "buffer"]
         min_kernel: "4.11"
         source: "https://github.com/torvalds/linux/blob/v4.11/fs/stat.c"
+    }
+    {
+        syscalls: ["file_getattr" "file_setattr"]
+        fields: ["dfd" "filename" "ufattr" "usize" "at_flags"]
+        min_kernel: "6.17"
+        source: "https://github.com/torvalds/linux/blob/v6.17/fs/file_attr.c"
     }
     {
         syscalls: ["mknod"]
@@ -2745,6 +2757,12 @@ const PROCESS_TRACEPOINT_FIELD_SPECS = [
         min_kernel: "4.7"
         source: "https://github.com/torvalds/linux/blob/v4.7/kernel/fork.c"
     }
+    {
+        syscalls: ["kcmp"]
+        fields: ["pid1" "pid2" "type" "idx1" "idx2"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/kcmp.c"
+    }
 ]
 const FD_TRACEPOINT_FIELD_SPECS = [
     {
@@ -3054,6 +3072,12 @@ const MM_TRACEPOINT_FIELD_SPECS = [
         fields: ["start" "len" "flags"]
         min_kernel: "4.7"
         source: "https://github.com/torvalds/linux/blob/v4.7/mm/msync.c"
+    }
+    {
+        syscalls: ["mseal"]
+        fields: ["start" "len" "flags"]
+        min_kernel: "6.10"
+        source: "https://github.com/torvalds/linux/blob/v6.10/mm/mseal.c"
     }
     {
         syscalls: ["munlockall"]
@@ -11948,6 +11972,108 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  ($ctx.addr + $ctx.size + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-kcmp-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_kcmp]
+        target: "tracepoint:syscalls/sys_enter_kcmp"
+        program: [
+            '{|ctx|'
+            '  ($ctx.pid1 + $ctx.pid2 + $ctx.type + $ctx.idx1 + $ctx.idx2) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-cachestat-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_cachestat]
+        target: "tracepoint:syscalls/sys_enter_cachestat"
+        program: [
+            '{|ctx|'
+            '  let cstat_range = $ctx.cstat_range'
+            '  let cstat = $ctx.cstat'
+            '  if $cstat_range { 1 | count }'
+            '  if $cstat { 1 | count }'
+            '  ($ctx.fd + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-mseal-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_mseal]
+        target: "tracepoint:syscalls/sys_enter_mseal"
+        program: [
+            '{|ctx|'
+            '  ($ctx.start + $ctx.len + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-file-getattr-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_file_getattr]
+        target: "tracepoint:syscalls/sys_enter_file_getattr"
+        program: [
+            '{|ctx|'
+            '  let filename = $ctx.filename'
+            '  let ufattr = $ctx.ufattr'
+            '  if $filename { $filename | read-str --max-len 64 | count }'
+            '  if $ufattr { 1 | count }'
+            '  ($ctx.dfd + $ctx.usize + $ctx.at_flags) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-file-setattr-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_file_setattr]
+        target: "tracepoint:syscalls/sys_enter_file_setattr"
+        program: [
+            '{|ctx|'
+            '  let filename = $ctx.filename'
+            '  let ufattr = $ctx.ufattr'
+            '  if $filename { $filename | read-str --max-len 64 | count }'
+            '  if $ufattr { 1 | count }'
+            '  ($ctx.dfd + $ctx.usize + $ctx.at_flags) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-uretprobe-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_uretprobe]
+        target: "tracepoint:syscalls/sys_enter_uretprobe"
+        program: [
+            '{|ctx|'
+            '  $ctx.id | count'
             '  0'
             '}'
         ]
@@ -33334,6 +33460,14 @@ def syscall-tracepoint-fallback-field-kernel-feature [field: string target] {
         "5.0"
     } else if $syscall == "map_shadow_stack" {
         "6.6"
+    } else if $syscall == "uretprobe" {
+        "6.14"
+    } else if $syscall == "cachestat" {
+        "6.5"
+    } else if $syscall == "mseal" {
+        "6.10"
+    } else if $syscall in ["file_getattr" "file_setattr"] {
+        "6.17"
     } else if $syscall == "clone3" {
         "5.3"
     } else if $syscall in ["pkey_mprotect" "pkey_alloc" "pkey_free"] {
@@ -33411,6 +33545,16 @@ def syscall-tracepoint-fallback-field-kernel-feature [field: string target] {
         "https://github.com/torvalds/linux/blob/v4.7/arch/x86/kernel/signal.c"
     } else if $syscall == "map_shadow_stack" {
         "https://github.com/torvalds/linux/blob/v6.6/arch/x86/kernel/shstk.c"
+    } else if $syscall == "uretprobe" {
+        "https://github.com/torvalds/linux/blob/v6.14/arch/x86/kernel/uprobes.c"
+    } else if $syscall == "kcmp" {
+        "https://github.com/torvalds/linux/blob/v4.7/kernel/kcmp.c"
+    } else if $syscall == "cachestat" {
+        "https://github.com/torvalds/linux/blob/v6.5/mm/filemap.c"
+    } else if $syscall == "mseal" {
+        "https://github.com/torvalds/linux/blob/v6.10/mm/mseal.c"
+    } else if $syscall in ["file_getattr" "file_setattr"] {
+        "https://github.com/torvalds/linux/blob/v6.17/fs/file_attr.c"
     } else if $syscall == "clone3" {
         "https://github.com/torvalds/linux/blob/v5.3/kernel/fork.c"
     } else if $syscall in ["fork" "vfork" "clone" "set_tid_address"] {

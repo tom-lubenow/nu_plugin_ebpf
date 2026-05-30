@@ -924,7 +924,8 @@ open, permission, ownership, and pathname operation aliases such as
 `sys_enter_chdir`, `sys_enter_getcwd`, `sys_enter_readlinkat`,
 `sys_enter_statfs`, `sys_enter_getdents64`, `sys_enter_name_to_handle_at`,
 `sys_enter_mknod`, `sys_enter_link`, `sys_enter_linkat`, `sys_enter_rename`,
-`sys_enter_renameat2`, and Linux 6.6+ `sys_enter_fchmodat2`.
+`sys_enter_renameat2`, Linux 6.6+ `sys_enter_fchmodat2`, and Linux 6.17+
+`sys_enter_file_getattr` / `sys_enter_file_setattr`.
 Extended-attribute fallbacks expose aliases for
 `sys_enter_setxattr`, `sys_enter_fsetxattr`, `sys_enter_getxattr`,
 `sys_enter_fgetxattr`, `sys_enter_listxattr`, `sys_enter_flistxattr`,
@@ -955,14 +956,15 @@ File data-movement fallbacks expose aliases for common entry tracepoints such
 as `sys_enter_pread64`, `sys_enter_pwrite64`, `sys_enter_readv`,
 `sys_enter_writev`, `sys_enter_preadv2`, `sys_enter_sendfile`,
 `sys_enter_copy_file_range`, `sys_enter_splice`, `sys_enter_tee`, and
-`sys_enter_vmsplice`.
+`sys_enter_vmsplice`, plus Linux 6.5+ `sys_enter_cachestat`.
 Memory-management fallbacks expose aliases for common entry tracepoints such as
 `sys_enter_mmap`, `sys_enter_mprotect`, `sys_enter_mremap`, `sys_enter_mincore`,
 `sys_enter_msync`, NUMA memory-policy calls such as `sys_enter_mbind` and
 `sys_enter_move_pages`, process-memory calls such as `sys_enter_process_vm_readv`,
 Linux 4.9+ pkey calls such as `sys_enter_pkey_mprotect`, and Linux 5.17+
-`sys_enter_set_mempolicy_home_node`; swap calls such as `sys_enter_swapon`
-and `sys_enter_swapoff` are source-backed as well.
+`sys_enter_set_mempolicy_home_node`, plus Linux 6.10+ `sys_enter_mseal`;
+swap calls such as `sys_enter_swapon` and `sys_enter_swapoff` are
+source-backed as well.
 Time and timer fallbacks expose aliases for common entry tracepoints such as
 `sys_enter_utime`, `sys_enter_utimes`, `sys_enter_futimesat`,
 `sys_enter_utimensat`, `sys_enter_gettimeofday`, `sys_enter_clock_gettime`,
@@ -982,8 +984,8 @@ entry tracepoints such as `sys_enter_setresuid`, `sys_enter_getresgid`,
 `sys_enter_times`, `sys_enter_newuname`, and `sys_enter_sysinfo`, and
 process-state calls such as `sys_enter_prlimit64`, `sys_enter_membarrier`,
 Linux 4.18+ `sys_enter_rseq`, `sys_enter_set_tid_address`,
-`sys_enter_personality`, `sys_enter_syslog`, and zero-argument identity calls
-such as `sys_enter_getpid`.
+`sys_enter_kcmp`, `sys_enter_personality`, `sys_enter_syslog`, and
+zero-argument identity calls such as `sys_enter_getpid`.
 Instrumentation and security-control fallbacks expose aliases for
 `sys_enter_bpf`, `sys_enter_perf_event_open`, `sys_enter_ptrace`,
 `sys_enter_seccomp`, `sys_enter_userfaultfd`, and Linux 6.8+ LSM syscalls such
@@ -1008,7 +1010,8 @@ POSIX message-queue fallbacks expose aliases for entry tracepoints such as
 x86-specific syscall fallbacks expose source-known aliases for entry
 tracepoints such as Linux 5.0+ `sys_enter_arch_prctl`, legacy
 `sys_enter_ioperm`, `sys_enter_iopl`, `sys_enter_modify_ldt`,
-`sys_enter_rt_sigreturn`, and Linux 6.6+ `sys_enter_map_shadow_stack`.
+`sys_enter_rt_sigreturn`, Linux 6.6+ `sys_enter_map_shadow_stack`, and
+Linux 6.14+ `sys_enter_uretprobe`.
 When a syscall argument name collides with a preserved tracepoint builtin or
 reserved context path such as `pid`, `tgid`, or `arg`, the fallback exposes the
 non-conflicting arguments and the raw payload remains available through

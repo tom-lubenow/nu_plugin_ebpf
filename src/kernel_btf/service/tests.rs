@@ -1674,6 +1674,80 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
     .expect("expected map_shadow_stack flags source metadata");
     assert!(shstk_source.contains("/v6.6/arch/x86/kernel/shstk.c"));
 
+    let kcmp = TracepointContext::sys_enter("sys_enter_kcmp");
+    assert!(kcmp.has_field("pid1"));
+    assert!(kcmp.has_field("pid2"));
+    assert!(kcmp.has_field("type"));
+    assert!(kcmp.has_field("idx1"));
+    assert!(kcmp.has_field("idx2"));
+    let (_, kcmp_source) = TracepointContext::syscall_fallback_field_minimum_kernel(
+        "syscalls",
+        "sys_enter_kcmp",
+        "idx2",
+    )
+    .expect("expected kcmp idx2 source metadata");
+    assert!(kcmp_source.contains("/v4.7/kernel/kcmp.c"));
+
+    let cachestat = TracepointContext::sys_enter("sys_enter_cachestat");
+    assert!(cachestat.has_field("fd"));
+    assert!(cachestat.has_field("cstat_range"));
+    assert!(cachestat.has_field("cstat"));
+    assert!(cachestat.has_field("flags"));
+    assert_eq!(cachestat.minimum_kernel(), Some("6.5"));
+    assert!(
+        cachestat
+            .minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v6.5/mm/filemap.c"))
+    );
+    assert!(matches!(
+        cachestat
+            .get_field("cstat")
+            .expect("expected cachestat cstat")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+
+    let mseal = TracepointContext::sys_enter("sys_enter_mseal");
+    assert!(mseal.has_field("start"));
+    assert!(mseal.has_field("len"));
+    assert!(mseal.has_field("flags"));
+    assert_eq!(mseal.minimum_kernel(), Some("6.10"));
+    assert!(
+        mseal
+            .minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v6.10/mm/mseal.c"))
+    );
+
+    let file_getattr = TracepointContext::sys_enter("sys_enter_file_getattr");
+    assert!(file_getattr.has_field("dfd"));
+    assert!(file_getattr.has_field("filename"));
+    assert!(file_getattr.has_field("ufattr"));
+    assert!(file_getattr.has_field("usize"));
+    assert!(file_getattr.has_field("at_flags"));
+    assert_eq!(file_getattr.minimum_kernel(), Some("6.17"));
+    assert!(
+        file_getattr
+            .minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v6.17/fs/file_attr.c"))
+    );
+    assert!(matches!(
+        file_getattr
+            .get_field("filename")
+            .expect("expected file_getattr filename")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+
+    let uretprobe = TracepointContext::sys_enter("sys_enter_uretprobe");
+    assert!(uretprobe.has_field("id"));
+    assert!(uretprobe.has_field("args"));
+    assert_eq!(uretprobe.minimum_kernel(), Some("6.14"));
+    assert!(
+        uretprobe
+            .minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v6.14/arch/x86/kernel/uprobes.c"))
+    );
+
     for (name, fields) in [
         ("sys_enter_open", &["filename", "flags", "mode"][..]),
         ("sys_enter_creat", &["pathname", "mode"][..]),
@@ -1830,6 +1904,10 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
             "sys_enter_sync_file_range",
             &["fd", "offset", "nbytes", "flags"][..],
         ),
+        (
+            "sys_enter_cachestat",
+            &["fd", "cstat_range", "cstat", "flags"][..],
+        ),
         ("sys_enter_fcntl", &["fd", "cmd"][..]),
         ("sys_enter_flock", &["fd", "cmd"][..]),
         ("sys_enter_ioctl", &["fd", "cmd"][..]),
@@ -1853,6 +1931,14 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         (
             "sys_enter_open_by_handle_at",
             &["mountdirfd", "handle", "flags"][..],
+        ),
+        (
+            "sys_enter_file_getattr",
+            &["dfd", "filename", "ufattr", "usize", "at_flags"][..],
+        ),
+        (
+            "sys_enter_file_setattr",
+            &["dfd", "filename", "ufattr", "usize", "at_flags"][..],
         ),
         ("sys_enter_stat", &["filename", "statbuf"][..]),
         ("sys_enter_newstat", &["filename", "statbuf"][..]),
@@ -2019,6 +2105,7 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         ("sys_enter_swapon", &["specialfile", "swap_flags"][..]),
         ("sys_enter_swapoff", &["specialfile"][..]),
         ("sys_enter_munlockall", &[][..]),
+        ("sys_enter_mseal", &["start", "len", "flags"][..]),
         ("sys_enter_memfd_create", &["uname", "flags"][..]),
         ("sys_enter_memfd_secret", &["flags"][..]),
         ("sys_enter_utime", &["filename", "times"][..]),
@@ -2175,6 +2262,10 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         ("sys_enter_sysfs", &["option"][..]),
         ("sys_enter_rseq", &["rseq", "rseq_len", "flags", "sig"][..]),
         ("sys_enter_set_tid_address", &["tidptr"][..]),
+        (
+            "sys_enter_kcmp",
+            &["pid1", "pid2", "type", "idx1", "idx2"][..],
+        ),
         ("sys_enter_getpid", &[][..]),
         ("sys_enter_gettid", &[][..]),
         ("sys_enter_getppid", &[][..]),
@@ -2281,6 +2372,7 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         ("sys_enter_modify_ldt", &["func", "ptr", "bytecount"][..]),
         ("sys_enter_rt_sigreturn", &[][..]),
         ("sys_enter_map_shadow_stack", &["addr", "size", "flags"][..]),
+        ("sys_enter_uretprobe", &[][..]),
     ] {
         let ctx = TracepointContext::sys_enter(name);
         for field in fields {
