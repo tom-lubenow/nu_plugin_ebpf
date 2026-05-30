@@ -63,6 +63,10 @@ const MOUNT_API_NAMESPACE_SOURCE: &str =
 const MOUNT_API_FSOPEN_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.2/fs/fsopen.c";
 const MOUNT_SETATTR_MIN_KERNEL: &str = "5.12";
 const MOUNT_SETATTR_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.12/fs/namespace.c";
+const MOUNT_QUERY_MIN_KERNEL: &str = "6.8";
+const MOUNT_QUERY_SOURCE: &str = "https://github.com/torvalds/linux/blob/v6.8/fs/namespace.c";
+const OPEN_TREE_ATTR_MIN_KERNEL: &str = "6.15";
+const OPEN_TREE_ATTR_SOURCE: &str = "https://github.com/torvalds/linux/blob/v6.15/fs/namespace.c";
 const QUOTA_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/quota/quota.c";
 const QUOTACTL_FD_MIN_KERNEL: &str = "5.14";
 const QUOTACTL_FD_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.14/fs/quota/quota.c";
@@ -302,6 +306,9 @@ const WELL_KNOWN_SYS_ENTER_SYSCALLS: &[&str] = &[
     "fsmount",
     "fspick",
     "mount_setattr",
+    "statmount",
+    "listmount",
+    "open_tree_attr",
     "mount",
     "umount",
     "pivot_root",
@@ -783,6 +790,12 @@ impl TracepointContext {
                 (Some(MOUNT_API_MIN_KERNEL), Some(MOUNT_API_FSOPEN_SOURCE))
             }
             Some("mount_setattr") => (Some(MOUNT_SETATTR_MIN_KERNEL), Some(MOUNT_SETATTR_SOURCE)),
+            Some("statmount" | "listmount") => {
+                (Some(MOUNT_QUERY_MIN_KERNEL), Some(MOUNT_QUERY_SOURCE))
+            }
+            Some("open_tree_attr") => {
+                (Some(OPEN_TREE_ATTR_MIN_KERNEL), Some(OPEN_TREE_ATTR_SOURCE))
+            }
             Some("mount" | "umount" | "pivot_root") => (
                 Some(SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL),
                 Some(MOUNT_LEGACY_NAMESPACE_SOURCE),
@@ -919,6 +932,8 @@ impl TracepointContext {
             }
             "fsopen" | "fsconfig" | "fspick" => (MOUNT_API_MIN_KERNEL, MOUNT_API_FSOPEN_SOURCE),
             "mount_setattr" => (MOUNT_SETATTR_MIN_KERNEL, MOUNT_SETATTR_SOURCE),
+            "statmount" | "listmount" => (MOUNT_QUERY_MIN_KERNEL, MOUNT_QUERY_SOURCE),
+            "open_tree_attr" => (OPEN_TREE_ATTR_MIN_KERNEL, OPEN_TREE_ATTR_SOURCE),
             "mount" | "umount" | "pivot_root" => (
                 SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL,
                 MOUNT_LEGACY_NAMESPACE_SOURCE,
@@ -1073,6 +1088,8 @@ impl TracepointContext {
             }
             "fsopen" | "fsconfig" | "fspick" => (MOUNT_API_MIN_KERNEL, MOUNT_API_FSOPEN_SOURCE),
             "mount_setattr" => (MOUNT_SETATTR_MIN_KERNEL, MOUNT_SETATTR_SOURCE),
+            "statmount" | "listmount" => (MOUNT_QUERY_MIN_KERNEL, MOUNT_QUERY_SOURCE),
+            "open_tree_attr" => (OPEN_TREE_ATTR_MIN_KERNEL, OPEN_TREE_ATTR_SOURCE),
             "mount" | "umount" | "pivot_root" => (
                 SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL,
                 MOUNT_LEGACY_NAMESPACE_SOURCE,
@@ -1842,6 +1859,25 @@ impl TracepointContext {
             "mount_setattr" => vec![
                 ("dfd", Self::syscall_arg_int(true)),
                 ("path", Self::syscall_arg_user_ptr()),
+                ("flags", Self::syscall_arg_int(false)),
+                ("uattr", Self::syscall_arg_user_ptr()),
+                ("usize", Self::syscall_arg_int(false)),
+            ],
+            "statmount" => vec![
+                ("req", Self::syscall_arg_user_ptr()),
+                ("buf", Self::syscall_arg_user_ptr()),
+                ("bufsize", Self::syscall_arg_int(false)),
+                ("flags", Self::syscall_arg_int(false)),
+            ],
+            "listmount" => vec![
+                ("req", Self::syscall_arg_user_ptr()),
+                ("mnt_ids", Self::syscall_arg_user_ptr()),
+                ("nr_mnt_ids", Self::syscall_arg_int(false)),
+                ("flags", Self::syscall_arg_int(false)),
+            ],
+            "open_tree_attr" => vec![
+                ("dfd", Self::syscall_arg_int(true)),
+                ("filename", Self::syscall_arg_user_ptr()),
                 ("flags", Self::syscall_arg_int(false)),
                 ("uattr", Self::syscall_arg_user_ptr()),
                 ("usize", Self::syscall_arg_int(false)),

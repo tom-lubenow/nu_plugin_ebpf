@@ -2592,6 +2592,24 @@ const PATH_TRACEPOINT_FIELD_SPECS = [
         source: "https://github.com/torvalds/linux/blob/v5.12/fs/namespace.c"
     }
     {
+        syscalls: ["statmount"]
+        fields: ["req" "buf" "bufsize" "flags"]
+        min_kernel: "6.8"
+        source: "https://github.com/torvalds/linux/blob/v6.8/fs/namespace.c"
+    }
+    {
+        syscalls: ["listmount"]
+        fields: ["req" "mnt_ids" "nr_mnt_ids" "flags"]
+        min_kernel: "6.8"
+        source: "https://github.com/torvalds/linux/blob/v6.8/fs/namespace.c"
+    }
+    {
+        syscalls: ["open_tree_attr"]
+        fields: ["dfd" "filename" "flags" "uattr" "usize"]
+        min_kernel: "6.15"
+        source: "https://github.com/torvalds/linux/blob/v6.15/fs/namespace.c"
+    }
+    {
         syscalls: ["mount"]
         fields: ["dev_name" "dir_name" "type" "flags" "data"]
         min_kernel: "4.7"
@@ -10500,6 +10518,63 @@ const FIXTURES = [
             '  let path = $ctx.path'
             '  let uattr = $ctx.uattr'
             '  if $path { $path | read-str --max-len 64 | count }'
+            '  if $uattr { 1 | count }'
+            '  ($ctx.dfd + $ctx.flags + $ctx.usize) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-statmount-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_statmount]
+        target: "tracepoint:syscalls/sys_enter_statmount"
+        program: [
+            '{|ctx|'
+            '  let req = $ctx.req'
+            '  let buf = $ctx.buf'
+            '  if $req { 1 | count }'
+            '  if $buf { 1 | count }'
+            '  ($ctx.bufsize + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-listmount-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_listmount]
+        target: "tracepoint:syscalls/sys_enter_listmount"
+        program: [
+            '{|ctx|'
+            '  let req = $ctx.req'
+            '  let mnt_ids = $ctx.mnt_ids'
+            '  if $req { 1 | count }'
+            '  if $mnt_ids { 1 | count }'
+            '  ($ctx.nr_mnt_ids + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-open-tree-attr-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_open_tree_attr]
+        target: "tracepoint:syscalls/sys_enter_open_tree_attr"
+        program: [
+            '{|ctx|'
+            '  let filename = $ctx.filename'
+            '  let uattr = $ctx.uattr'
+            '  if $filename { $filename | read-str --max-len 64 | count }'
             '  if $uattr { 1 | count }'
             '  ($ctx.dfd + $ctx.flags + $ctx.usize) | count'
             '  0'
@@ -33109,6 +33184,10 @@ def syscall-tracepoint-fallback-field-kernel-feature [field: string target] {
         "5.2"
     } else if $syscall == "mount_setattr" {
         "5.12"
+    } else if $syscall in ["statmount" "listmount"] {
+        "6.8"
+    } else if $syscall == "open_tree_attr" {
+        "6.15"
     } else if $syscall == "quotactl_fd" {
         "5.14"
     } else if $syscall == "pidfd_send_signal" {
@@ -33166,6 +33245,10 @@ def syscall-tracepoint-fallback-field-kernel-feature [field: string target] {
         "https://github.com/torvalds/linux/blob/v5.2/fs/fsopen.c"
     } else if $syscall == "mount_setattr" {
         "https://github.com/torvalds/linux/blob/v5.12/fs/namespace.c"
+    } else if $syscall in ["statmount" "listmount"] {
+        "https://github.com/torvalds/linux/blob/v6.8/fs/namespace.c"
+    } else if $syscall == "open_tree_attr" {
+        "https://github.com/torvalds/linux/blob/v6.15/fs/namespace.c"
     } else if $syscall in ["mount" "umount" "pivot_root"] {
         "https://github.com/torvalds/linux/blob/v4.7/fs/namespace.c"
     } else if $syscall == "quotactl" {

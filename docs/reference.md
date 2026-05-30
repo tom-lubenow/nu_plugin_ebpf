@@ -931,6 +931,11 @@ Extended-attribute fallbacks expose aliases for
 `sys_enter_removexattr`, `sys_enter_fremovexattr`, and Linux 6.13+
 `sys_enter_setxattrat` / `sys_enter_getxattrat` / `sys_enter_listxattrat` /
 `sys_enter_removexattrat`.
+Mount API fallbacks include Linux 5.2+ `sys_enter_open_tree`,
+`sys_enter_move_mount`, `sys_enter_fsopen`, `sys_enter_fsconfig`,
+`sys_enter_fsmount`, `sys_enter_fspick`, Linux 5.12+ `sys_enter_mount_setattr`,
+Linux 6.8+ `sys_enter_statmount` / `sys_enter_listmount`, and Linux 6.15+
+`sys_enter_open_tree_attr`.
 Legacy filesystem administration fallbacks expose source-known aliases for
 `sys_enter_mount`, `sys_enter_umount`, `sys_enter_pivot_root`,
 `sys_enter_quotactl`, Linux 5.14+ `sys_enter_quotactl_fd`, and

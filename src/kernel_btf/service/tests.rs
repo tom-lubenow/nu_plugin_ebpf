@@ -1032,6 +1032,45 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         48
     );
 
+    let statmount = TracepointContext::sys_enter("sys_enter_statmount");
+    assert!(statmount.has_field("req"));
+    assert!(statmount.has_field("buf"));
+    assert!(statmount.has_field("bufsize"));
+    assert!(statmount.has_field("flags"));
+    assert_eq!(statmount.minimum_kernel(), Some("6.8"));
+    assert!(
+        statmount
+            .minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v6.8/fs/namespace.c"))
+    );
+    assert!(matches!(
+        statmount
+            .get_field("req")
+            .expect("expected statmount req")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+
+    let open_tree_attr = TracepointContext::sys_enter("sys_enter_open_tree_attr");
+    assert!(open_tree_attr.has_field("dfd"));
+    assert!(open_tree_attr.has_field("filename"));
+    assert!(open_tree_attr.has_field("flags"));
+    assert!(open_tree_attr.has_field("uattr"));
+    assert!(open_tree_attr.has_field("usize"));
+    assert_eq!(open_tree_attr.minimum_kernel(), Some("6.15"));
+    assert!(
+        open_tree_attr
+            .minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v6.15/fs/namespace.c"))
+    );
+    let (_, open_tree_attr_source) = TracepointContext::syscall_fallback_field_minimum_kernel(
+        "syscalls",
+        "sys_enter_open_tree_attr",
+        "uattr",
+    )
+    .expect("expected open_tree_attr uattr source metadata");
+    assert!(open_tree_attr_source.contains("/v6.15/fs/namespace.c"));
+
     let mount = TracepointContext::sys_enter("sys_enter_mount");
     assert!(mount.has_field("dev_name"));
     assert!(mount.has_field("dir_name"));
@@ -1861,6 +1900,18 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         (
             "sys_enter_mount_setattr",
             &["dfd", "path", "flags", "uattr", "usize"][..],
+        ),
+        (
+            "sys_enter_statmount",
+            &["req", "buf", "bufsize", "flags"][..],
+        ),
+        (
+            "sys_enter_listmount",
+            &["req", "mnt_ids", "nr_mnt_ids", "flags"][..],
+        ),
+        (
+            "sys_enter_open_tree_attr",
+            &["dfd", "filename", "flags", "uattr", "usize"][..],
         ),
         (
             "sys_enter_mount",
