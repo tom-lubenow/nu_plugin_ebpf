@@ -17914,6 +17914,54 @@ const FIXTURES = [
         error_contains: "kfunc-call 'bpf_wq_init' requires arg1 map 'other_items'"
     }
     {
+        name: "bpf-wq-init-accepts-phi-joined-same-map-value-source"
+        category: "helper-state"
+        tags: [bpf_wq kfunc-call phi accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define work_items --kind hash --key-type u32 --value-type "record{work:bpf_wq,cookie:u64}" --max-entries 1'
+            '  let selector = (helper-call "bpf_get_prandom_u32")'
+            '  let base_key = $ctx.pid'
+            '  let left_key = $base_key'
+            '  let right_key = $base_key'
+            '  let first = ($left_key | map-get work_items --kind hash)'
+            '  let second = ($right_key | map-get work_items --kind hash)'
+            '  let entry = (if $selector == 0 { $first } else { $second })'
+            '  if $entry {'
+            '    kfunc-call "bpf_wq_init" $entry.work work_items 0'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "bpf-wq-init-rejects-phi-joined-mismatched-map-value-source"
+        category: "helper-state"
+        tags: [bpf_wq kfunc-call phi reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define work_items --kind hash --key-type u32 --value-type "record{work:bpf_wq,cookie:u64}" --max-entries 1'
+            '  map-define other_work_items --kind hash --key-type u32 --value-type "record{work:bpf_wq,cookie:u64}" --max-entries 1'
+            '  let selector = (helper-call "bpf_get_prandom_u32")'
+            '  let base_key = $ctx.pid'
+            '  let first = ($base_key | map-get work_items --kind hash)'
+            '  let second = ($base_key | map-get other_work_items --kind hash)'
+            '  let entry = (if $selector == 0 { $first } else { $second })'
+            '  if $entry {'
+            '    kfunc-call "bpf_wq_init" $entry.work work_items 0'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc-call 'bpf_wq_init' requires arg1 map 'work_items'"
+    }
+    {
         name: "bpf-wq-start-rejects-nonzero-flags"
         category: "helper-state"
         tags: [bpf_wq kfunc-call flags reject]
