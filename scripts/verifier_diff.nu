@@ -12079,6 +12079,61 @@ const FIXTURES = [
         error_contains: "helper copy_from_user src expects pointer in [User]"
     }
     {
+        name: "source-helper-probe-write-user-accepts-user-dst"
+        category: "helper-state"
+        tags: [helper probe-write-user hazardous accept]
+        default_test_lane: "dry-run"
+        target: "uprobe:/bin/true:main"
+        program: [
+            '{|ctx|'
+            '  let dst = $ctx.arg0'
+            '  if $dst {'
+            '    let src = "wxyz"'
+            '    helper-call "bpf_probe_write_user" $dst $src 4'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-helper-probe-write-user-rejects-stack-dst"
+        category: "helper-state"
+        tags: [helper probe-write-user hazardous reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let dst = "0000"'
+            '  let src = "wxyz"'
+            '  helper-call "bpf_probe_write_user" $dst $src 4'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper probe_write_user dst expects pointer in [User]"
+    }
+    {
+        name: "source-helper-probe-write-user-rejects-zero-size"
+        category: "helper-state"
+        tags: [helper probe-write-user hazardous reject]
+        target: "uprobe:/bin/true:main"
+        program: [
+            '{|ctx|'
+            '  let dst = $ctx.arg0'
+            '  if $dst {'
+            '    let src = "wxyz"'
+            '    helper-call "bpf_probe_write_user" $dst $src 0'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 36 arg2 must be > 0"
+    }
+    {
         name: "dynptr-kfunc-copy-from-user-initializes-dynptr"
         category: "helper-state"
         tags: [kfunc dynptr accept]
