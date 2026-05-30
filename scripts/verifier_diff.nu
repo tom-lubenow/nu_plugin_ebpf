@@ -9312,6 +9312,7 @@ const FIXTURES = [
         name: "map-define-map-in-map-operation-accepts"
         category: "maps"
         tags: [maps map-define map-in-map accept]
+        default_test_lane: "dry-run"
         target: "raw_tracepoint:sys_enter"
         program: [
             '{|ctx|'
@@ -9329,6 +9330,7 @@ const FIXTURES = [
         name: "map-define-map-in-map-inferred-operation-accepts"
         category: "maps"
         tags: [maps map-define map-in-map kind-inference accept]
+        default_test_lane: "dry-run"
         target: "raw_tracepoint:sys_enter"
         program: [
             '{|ctx|'
@@ -9346,6 +9348,7 @@ const FIXTURES = [
         name: "map-define-map-in-map-dynamic-inner-lookup-accepts"
         category: "maps"
         tags: [maps map-define map-in-map dynamic-lookup accept]
+        default_test_lane: "dry-run"
         target: "raw_tracepoint:sys_enter"
         program: [
             '{|ctx|'
@@ -9366,6 +9369,7 @@ const FIXTURES = [
         name: "map-define-map-in-map-dynamic-inner-update-delete-accepts"
         category: "maps"
         tags: [maps map-define map-in-map dynamic-update dynamic-delete accept]
+        default_test_lane: "dry-run"
         target: "raw_tracepoint:sys_enter"
         program: [
             '{|ctx|'
@@ -9390,6 +9394,7 @@ const FIXTURES = [
         name: "map-define-hash-of-maps-operation-accepts"
         category: "maps"
         tags: [maps map-define map-in-map accept]
+        default_test_lane: "dry-run"
         target: "raw_tracepoint:sys_enter"
         program: [
             '{|ctx|'
@@ -9407,6 +9412,7 @@ const FIXTURES = [
         name: "map-define-hash-of-maps-inferred-operation-accepts"
         category: "maps"
         tags: [maps map-define map-in-map kind-inference accept]
+        default_test_lane: "dry-run"
         target: "raw_tracepoint:sys_enter"
         program: [
             '{|ctx|'
