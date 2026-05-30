@@ -397,10 +397,28 @@ fn kfunc_compatibility_requirements_for_section(
 fn kfunc_compatibility_requirements_for_programs(
     programs: &[EbpfProgramSection],
 ) -> Vec<KfuncCompatibilityRequirement> {
-    let mut requirements = Vec::new();
+    let mut requirements_by_key = HashMap::<String, KfuncCompatibilityRequirement>::new();
     for program in programs {
-        requirements.extend(kfunc_compatibility_requirements_for_section(program));
+        for requirement in kfunc_compatibility_requirements_for_section(program) {
+            let key = requirement.key();
+            match requirements_by_key.get_mut(&key) {
+                Some(existing)
+                    if KfuncCompatibilityRequirement::kernel_version_at_least(
+                        requirement.minimum_kernel(),
+                        existing.minimum_kernel(),
+                    ) =>
+                {
+                    *existing = requirement;
+                }
+                Some(_) => {}
+                None => {
+                    requirements_by_key.insert(key, requirement);
+                }
+            }
+        }
     }
+
+    let mut requirements = requirements_by_key.into_values().collect::<Vec<_>>();
     requirements.sort_by_key(|requirement| requirement.key());
     requirements
 }

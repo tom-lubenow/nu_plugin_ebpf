@@ -11559,6 +11559,10 @@ fn test_ebpf_program_reports_program_specific_kfunc_compatibility_requirements()
         extra_data_symbols: Vec::new(),
         programs: vec![tc.into_program_section(), tracing.into_program_section()],
     };
+    let object_requirements = object.kfunc_compatibility_requirements();
+    assert_eq!(object_requirements.len(), 1);
+    assert_eq!(object_requirements[0].key(), "kfunc:bpf_dynptr_from_skb");
+    assert_eq!(object_requirements[0].minimum_kernel(), "6.12");
     assert_eq!(object.kfunc_compatibility_minimum_kernel(), Some("6.12"));
     assert_eq!(object.compatibility_minimum_kernel(), Some("6.12"));
 }
