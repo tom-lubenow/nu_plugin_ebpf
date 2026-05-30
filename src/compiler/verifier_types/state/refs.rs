@@ -15,6 +15,7 @@ impl VerifierState {
         self.released_ringbuf_dynptr_slots.remove(&slot);
         self.ringbuf_dynptr_alias_roots.remove(&slot);
         self.dynptr_initialized_slots.insert(slot);
+        self.maybe_initialized_dynptr_slots.insert(slot);
     }
 
     pub(in crate::compiler::verifier_types) fn is_dynptr_slot_initialized(
@@ -24,11 +25,19 @@ impl VerifierState {
         self.dynptr_initialized_slots.contains(&slot)
     }
 
+    pub(in crate::compiler::verifier_types) fn is_dynptr_slot_maybe_initialized(
+        &self,
+        slot: StackSlotId,
+    ) -> bool {
+        self.maybe_initialized_dynptr_slots.contains(&slot)
+    }
+
     pub(in crate::compiler::verifier_types) fn deinitialize_dynptr_slot(
         &mut self,
         slot: StackSlotId,
     ) {
         self.dynptr_initialized_slots.remove(&slot);
+        self.maybe_initialized_dynptr_slots.remove(&slot);
     }
 
     pub(in crate::compiler::verifier_types) fn acquire_ringbuf_dynptr_slot(
@@ -52,6 +61,7 @@ impl VerifierState {
             for member in self.ringbuf_dynptr_alias_members(root) {
                 self.released_ringbuf_dynptr_slots.insert(member);
                 self.dynptr_initialized_slots.remove(&member);
+                self.maybe_initialized_dynptr_slots.remove(&member);
                 self.ringbuf_dynptr_alias_roots.remove(&member);
             }
         }

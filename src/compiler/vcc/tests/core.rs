@@ -750,6 +750,63 @@ fn test_dynptr_mark_initialized_rejects_reinit_of_live_slot() {
 }
 
 #[test]
+fn test_dynptr_mark_initialized_rejects_reinit_after_mixed_join() {
+    let mut func = VccFunction::new();
+    let entry = func.entry;
+    let init = func.alloc_block();
+    let skip = func.alloc_block();
+    let join = func.alloc_block();
+    let cond = func.alloc_reg();
+    let ptr = func.alloc_reg();
+
+    func.block_mut(entry).instructions.push(VccInst::StackAddr {
+        dst: ptr,
+        slot: StackSlotId(0),
+        size: 16,
+    });
+    func.block_mut(entry).instructions.push(VccInst::Assume {
+        dst: cond,
+        ty: VccValueType::Bool,
+        ctx_field_source: None,
+    });
+    func.block_mut(entry).terminator = VccTerminator::Branch {
+        cond: VccValue::Reg(cond),
+        if_true: init,
+        if_false: skip,
+    };
+
+    func.block_mut(init)
+        .instructions
+        .push(VccInst::DynptrMarkInitialized {
+            ptr,
+            kfunc: "unknown_dynptr_init".to_string(),
+            arg_idx: 0,
+        });
+    func.block_mut(init).terminator = VccTerminator::Jump { target: join };
+    func.block_mut(skip).terminator = VccTerminator::Jump { target: join };
+
+    func.block_mut(join)
+        .instructions
+        .push(VccInst::DynptrMarkInitialized {
+            ptr,
+            kfunc: "unknown_dynptr_init".to_string(),
+            arg_idx: 0,
+        });
+    func.block_mut(join).terminator = VccTerminator::Return { value: None };
+
+    let err = VccVerifier::default()
+        .verify_function(&func)
+        .expect_err("expected mixed-path dynptr reinit verifier error");
+    assert!(
+        err.iter().any(|e| e.message.contains(
+            "kfunc 'unknown_dynptr_init' arg0 requires uninitialized dynptr stack object slot",
+        )),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_dynptr_move_transfers_initialized_state() {
     let mut func = VccFunction::new();
     let entry = func.entry;
@@ -947,11 +1004,19 @@ fn test_dynptr_initialized_slots_join_requires_all_paths() {
         !merged.is_dynptr_slot_initialized(slot),
         "dynptr slot initialization should require all incoming paths"
     );
+    assert!(
+        merged.is_dynptr_slot_maybe_initialized(slot),
+        "dynptr slot reinitialization should reject if any incoming path initializes"
+    );
 
     let merged_initialized = initialized.merge_with(&initialized);
     assert!(
         merged_initialized.is_dynptr_slot_initialized(slot),
         "dynptr slot initialization should be preserved when all paths initialize"
+    );
+    assert!(
+        merged_initialized.is_dynptr_slot_maybe_initialized(slot),
+        "dynptr maybe-initialized state should be preserved when all paths initialize"
     );
 }
 

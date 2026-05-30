@@ -994,7 +994,7 @@ pub(in crate::compiler::verifier_types) fn apply_kfunc_semantics(
                     {
                         continue;
                     }
-                    if state.is_dynptr_slot_initialized(slot) {
+                    if state.is_dynptr_slot_maybe_initialized(slot) {
                         errors.push(VerifierTypeError::new(format!(
                             "kfunc '{}' arg{} requires uninitialized dynptr stack object slot",
                             kfunc, dynptr_arg.arg_idx
@@ -1018,7 +1018,7 @@ pub(in crate::compiler::verifier_types) fn apply_kfunc_semantics(
                         "kfunc '{}' arg{} must reference distinct stack slot from arg{}",
                         kfunc, copy.dst_arg_idx, copy.src_arg_idx
                     )));
-                } else if state.is_dynptr_slot_initialized(dst_slot) {
+                } else if state.is_dynptr_slot_maybe_initialized(dst_slot) {
                     errors.push(VerifierTypeError::new(format!(
                         "kfunc '{}' arg{} requires uninitialized dynptr stack object slot",
                         kfunc, copy.dst_arg_idx

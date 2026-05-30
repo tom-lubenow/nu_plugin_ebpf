@@ -10705,6 +10705,30 @@ const FIXTURES = [
         error_contains: "helper 'bpf_dynptr_data' arg0 requires initialized dynptr stack object"
     }
     {
+        name: "dynptr-from-mem-rejects-reinit-after-one-branch-initialization"
+        category: "helper-state"
+        tags: [dynptr phi reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  "abcdefgh" | map-put dynptr_reinit_join_buffers 0 --kind array'
+            '  let entry = (0 | map-get dynptr_reinit_join_buffers --kind array)'
+            '  if $entry {'
+            '    let d = "0123456789abcdef"'
+            '    let selector = (helper-call "bpf_get_prandom_u32")'
+            '    if $selector == 0 {'
+            '      helper-call "bpf_dynptr_from_mem" $entry 8 0 $d'
+            '    }'
+            '    helper-call "bpf_dynptr_from_mem" $entry 8 0 $d'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_dynptr_from_mem' arg3 requires uninitialized dynptr stack object slot"
+    }
+    {
         name: "dynptr-read-write-initialized-from-mem"
         category: "helper-state"
         tags: [dynptr accept]

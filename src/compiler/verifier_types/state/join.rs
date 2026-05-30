@@ -59,6 +59,7 @@ impl VerifierState {
             && self.res_spin_lock_irqsave_slots == other.res_spin_lock_irqsave_slots
             && self.res_spin_lock_stack == other.res_spin_lock_stack
             && self.dynptr_initialized_slots == other.dynptr_initialized_slots
+            && self.maybe_initialized_dynptr_slots == other.maybe_initialized_dynptr_slots
             && self.ringbuf_dynptr_slots == other.ringbuf_dynptr_slots
             && self.ringbuf_dynptr_alias_roots == other.ringbuf_dynptr_alias_roots
             && self.released_ringbuf_dynptr_slots == other.released_ringbuf_dynptr_slots
@@ -212,6 +213,11 @@ impl VerifierState {
             .intersection(&other.dynptr_initialized_slots)
             .copied()
             .collect();
+        let maybe_initialized_dynptr_slots = self
+            .maybe_initialized_dynptr_slots
+            .union(&other.maybe_initialized_dynptr_slots)
+            .copied()
+            .collect();
         let unknown_stack_object_slots = join_typed_slot_depths(
             &self.unknown_stack_object_slots,
             &other.unknown_stack_object_slots,
@@ -358,6 +364,7 @@ impl VerifierState {
                         .max(other.res_spin_lock_irqsave_max_depth),
             ),
             dynptr_initialized_slots,
+            maybe_initialized_dynptr_slots,
             ringbuf_dynptr_slots,
             ringbuf_dynptr_alias_roots,
             released_ringbuf_dynptr_slots,

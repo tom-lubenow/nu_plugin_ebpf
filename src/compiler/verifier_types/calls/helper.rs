@@ -794,7 +794,7 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
                 }
             }
             HelperDynptrArgRole::Out => {
-                if state.is_dynptr_slot_initialized(slot) {
+                if state.is_dynptr_slot_maybe_initialized(slot) {
                     errors.push(VerifierTypeError::new(format!(
                         "helper '{}' arg{} requires uninitialized dynptr stack object slot",
                         helper.name(),
@@ -805,7 +805,7 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
                 state.initialize_dynptr_slot(slot);
             }
             HelperDynptrArgRole::RingbufReservationOut => {
-                if state.is_dynptr_slot_initialized(slot)
+                if state.is_dynptr_slot_maybe_initialized(slot)
                     || state.has_live_ringbuf_dynptr_slot(slot)
                 {
                     errors.push(VerifierTypeError::new(format!(

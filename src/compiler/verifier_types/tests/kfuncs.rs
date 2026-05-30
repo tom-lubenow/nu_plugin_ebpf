@@ -641,11 +641,19 @@ fn test_dynptr_initialized_slots_join_requires_all_paths() {
         !merged.is_dynptr_slot_initialized(slot),
         "dynptr slot initialization should require all incoming paths"
     );
+    assert!(
+        merged.is_dynptr_slot_maybe_initialized(slot),
+        "dynptr slot reinitialization should reject if any incoming path initializes"
+    );
 
     let merged_initialized = initialized.join(&initialized);
     assert!(
         merged_initialized.is_dynptr_slot_initialized(slot),
         "dynptr slot initialization should be preserved when all paths initialize"
+    );
+    assert!(
+        merged_initialized.is_dynptr_slot_maybe_initialized(slot),
+        "dynptr maybe-initialized state should be preserved when all paths initialize"
     );
 }
 

@@ -1712,7 +1712,7 @@ impl VccVerifier {
                 let Some(slot) = self.stack_slot_from_reg(state, *ptr, &op) else {
                     return;
                 };
-                if state.is_dynptr_slot_initialized(slot) {
+                if state.is_dynptr_slot_maybe_initialized(slot) {
                     self.errors.push(VccError::new(
                         VccErrorKind::PointerBounds,
                         format!(
@@ -1752,7 +1752,7 @@ impl VccVerifier {
                 let Some(slot) = self.stack_slot_from_reg(state, *ptr, &op) else {
                     return;
                 };
-                if state.is_dynptr_slot_initialized(slot) {
+                if state.is_dynptr_slot_maybe_initialized(slot) {
                     self.errors.push(VccError::new(
                         VccErrorKind::PointerBounds,
                         format!(
@@ -1802,7 +1802,7 @@ impl VccVerifier {
                 let Some(slot) = self.stack_slot_from_reg(state, *ptr, &op) else {
                     return;
                 };
-                if state.is_dynptr_slot_initialized(slot)
+                if state.is_dynptr_slot_maybe_initialized(slot)
                     || state.has_live_ringbuf_dynptr_slot(slot)
                 {
                     self.errors.push(VccError::new(
@@ -1885,7 +1885,7 @@ impl VccVerifier {
                     ));
                     return;
                 }
-                if state.is_dynptr_slot_initialized(dst_slot) {
+                if state.is_dynptr_slot_maybe_initialized(dst_slot) {
                     self.errors.push(VccError::new(
                         VccErrorKind::PointerBounds,
                         format!(

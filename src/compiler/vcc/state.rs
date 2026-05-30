@@ -91,6 +91,7 @@ struct VccState {
     res_spin_lock_irqsave_slots: HashMap<StackSlotId, (u32, u32)>,
     res_spin_lock_stack: Option<Vec<ResSpinLockFrame>>,
     dynptr_initialized_slots: HashSet<StackSlotId>,
+    maybe_initialized_dynptr_slots: HashSet<StackSlotId>,
     ringbuf_dynptr_slots: HashMap<StackSlotId, (u32, u32)>,
     ringbuf_dynptr_alias_roots: HashMap<StackSlotId, StackSlotId>,
     released_ringbuf_dynptr_slots: HashSet<StackSlotId>,
@@ -185,6 +186,7 @@ impl VccState {
             res_spin_lock_irqsave_slots: HashMap::new(),
             res_spin_lock_stack: Some(Vec::new()),
             dynptr_initialized_slots: HashSet::new(),
+            maybe_initialized_dynptr_slots: HashSet::new(),
             ringbuf_dynptr_slots: HashMap::new(),
             ringbuf_dynptr_alias_roots: HashMap::new(),
             released_ringbuf_dynptr_slots: HashSet::new(),
@@ -1048,14 +1050,20 @@ impl VccState {
         self.released_ringbuf_dynptr_slots.remove(&slot);
         self.ringbuf_dynptr_alias_roots.remove(&slot);
         self.dynptr_initialized_slots.insert(slot);
+        self.maybe_initialized_dynptr_slots.insert(slot);
     }
 
     fn is_dynptr_slot_initialized(&self, slot: StackSlotId) -> bool {
         self.dynptr_initialized_slots.contains(&slot)
     }
 
+    fn is_dynptr_slot_maybe_initialized(&self, slot: StackSlotId) -> bool {
+        self.maybe_initialized_dynptr_slots.contains(&slot)
+    }
+
     fn deinitialize_dynptr_slot(&mut self, slot: StackSlotId) {
         self.dynptr_initialized_slots.remove(&slot);
+        self.maybe_initialized_dynptr_slots.remove(&slot);
     }
 
     fn acquire_ringbuf_dynptr_slot(&mut self, slot: StackSlotId) {
@@ -1073,6 +1081,7 @@ impl VccState {
             for member in self.ringbuf_dynptr_alias_members(root) {
                 self.released_ringbuf_dynptr_slots.insert(member);
                 self.dynptr_initialized_slots.remove(&member);
+                self.maybe_initialized_dynptr_slots.remove(&member);
                 self.ringbuf_dynptr_alias_roots.remove(&member);
             }
         }
@@ -1459,6 +1468,11 @@ impl VccState {
             .intersection(&other.dynptr_initialized_slots)
             .copied()
             .collect();
+        let maybe_initialized_dynptr_slots = self
+            .maybe_initialized_dynptr_slots
+            .union(&other.maybe_initialized_dynptr_slots)
+            .copied()
+            .collect();
         let unknown_stack_object_slots = merge_typed_slot_depths(
             &self.unknown_stack_object_slots,
             &other.unknown_stack_object_slots,
@@ -1601,6 +1615,7 @@ impl VccState {
                         .max(other.res_spin_lock_irqsave_max_depth),
             ),
             dynptr_initialized_slots,
+            maybe_initialized_dynptr_slots,
             ringbuf_dynptr_slots,
             ringbuf_dynptr_alias_roots,
             released_ringbuf_dynptr_slots,
@@ -1690,6 +1705,7 @@ impl VccState {
             res_spin_lock_irqsave_slots: self.res_spin_lock_irqsave_slots.clone(),
             res_spin_lock_stack: self.res_spin_lock_stack.clone(),
             dynptr_initialized_slots: self.dynptr_initialized_slots.clone(),
+            maybe_initialized_dynptr_slots: self.maybe_initialized_dynptr_slots.clone(),
             ringbuf_dynptr_slots: self.ringbuf_dynptr_slots.clone(),
             ringbuf_dynptr_alias_roots: self.ringbuf_dynptr_alias_roots.clone(),
             released_ringbuf_dynptr_slots: self.released_ringbuf_dynptr_slots.clone(),
