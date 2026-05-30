@@ -987,7 +987,9 @@ as `sys_enter_add_key`, `sys_enter_request_key`, and `sys_enter_keyctl`.
 Scheduler fallbacks expose source-known aliases for common entry tracepoints
 such as `sys_enter_sched_setscheduler`, `sys_enter_sched_setaffinity`,
 `sys_enter_sched_getattr`, `sys_enter_sched_rr_get_interval`, and
-`sys_enter_nice`.
+`sys_enter_nice`. Futex fallbacks include the legacy `sys_enter_futex` surface,
+Linux 5.16+ `sys_enter_futex_waitv`, and Linux 6.7+ `sys_enter_futex_wake`,
+`sys_enter_futex_wait`, and `sys_enter_futex_requeue`.
 System V IPC fallbacks expose source-known aliases for common message queue,
 semaphore, and shared-memory entry tracepoints such as `sys_enter_msgctl`,
 `sys_enter_msgrcv`, `sys_enter_semctl`, `sys_enter_semtimedop`,

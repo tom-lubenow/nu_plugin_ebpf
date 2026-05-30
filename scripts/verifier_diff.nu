@@ -3694,6 +3694,30 @@ const FUTEX_TRACEPOINT_FIELD_SPECS = [
         source: "https://github.com/torvalds/linux/blob/v4.7/kernel/futex.c"
     }
     {
+        syscalls: ["futex_waitv"]
+        fields: ["waiters" "nr_futexes" "flags" "timeout" "clockid"]
+        min_kernel: "5.16"
+        source: "https://github.com/torvalds/linux/blob/v5.16/kernel/futex/syscalls.c"
+    }
+    {
+        syscalls: ["futex_wake"]
+        fields: ["uaddr" "mask" "nr" "flags"]
+        min_kernel: "6.7"
+        source: "https://github.com/torvalds/linux/blob/v6.7/kernel/futex/syscalls.c"
+    }
+    {
+        syscalls: ["futex_wait"]
+        fields: ["uaddr" "val" "mask" "flags" "timeout" "clockid"]
+        min_kernel: "6.7"
+        source: "https://github.com/torvalds/linux/blob/v6.7/kernel/futex/syscalls.c"
+    }
+    {
+        syscalls: ["futex_requeue"]
+        fields: ["waiters" "flags" "nr_wake" "nr_requeue"]
+        min_kernel: "6.7"
+        source: "https://github.com/torvalds/linux/blob/v6.7/kernel/futex/syscalls.c"
+    }
+    {
         syscalls: ["set_robust_list"]
         fields: ["head" "len"]
         min_kernel: "4.7"
@@ -11578,6 +11602,78 @@ const FIXTURES = [
             '  if $utime { 1 | count }'
             '  if $uaddr2 { 1 | count }'
             '  ($ctx.op + $ctx.val + $ctx.val3) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-futex-waitv-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_futex_waitv]
+        target: "tracepoint:syscalls/sys_enter_futex_waitv"
+        program: [
+            '{|ctx|'
+            '  let waiters = $ctx.waiters'
+            '  let timeout = $ctx.timeout'
+            '  if $waiters { 1 | count }'
+            '  if $timeout { 1 | count }'
+            '  ($ctx.nr_futexes + $ctx.flags + $ctx.clockid) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-futex-wake-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_futex_wake]
+        target: "tracepoint:syscalls/sys_enter_futex_wake"
+        program: [
+            '{|ctx|'
+            '  let uaddr = $ctx.uaddr'
+            '  if $uaddr { 1 | count }'
+            '  ($ctx.mask + $ctx.nr + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-futex-wait-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_futex_wait]
+        target: "tracepoint:syscalls/sys_enter_futex_wait"
+        program: [
+            '{|ctx|'
+            '  let uaddr = $ctx.uaddr'
+            '  let timeout = $ctx.timeout'
+            '  if $uaddr { 1 | count }'
+            '  if $timeout { 1 | count }'
+            '  ($ctx.val + $ctx.mask + $ctx.flags + $ctx.clockid) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-futex-requeue-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_futex_requeue]
+        target: "tracepoint:syscalls/sys_enter_futex_requeue"
+        program: [
+            '{|ctx|'
+            '  let waiters = $ctx.waiters'
+            '  if $waiters { 1 | count }'
+            '  ($ctx.flags + $ctx.nr_wake + $ctx.nr_requeue) | count'
             '  0'
             '}'
         ]
@@ -32950,6 +33046,10 @@ def syscall-tracepoint-fallback-field-kernel-feature [field: string target] {
         "5.13"
     } else if $syscall in ["setxattrat" "getxattrat" "listxattrat" "removexattrat"] {
         "6.13"
+    } else if $syscall == "futex_waitv" {
+        "5.16"
+    } else if $syscall in ["futex_wake" "futex_wait" "futex_requeue"] {
+        "6.7"
     } else if $syscall == "clone3" {
         "5.3"
     } else if $syscall in ["pkey_mprotect" "pkey_alloc" "pkey_free"] {
@@ -33007,6 +33107,10 @@ def syscall-tracepoint-fallback-field-kernel-feature [field: string target] {
         "https://github.com/torvalds/linux/blob/v5.13/security/landlock/syscalls.c"
     } else if $syscall in ["setxattrat" "getxattrat" "listxattrat" "removexattrat"] {
         "https://github.com/torvalds/linux/blob/v6.13/fs/xattr.c"
+    } else if $syscall == "futex_waitv" {
+        "https://github.com/torvalds/linux/blob/v5.16/kernel/futex/syscalls.c"
+    } else if $syscall in ["futex_wake" "futex_wait" "futex_requeue"] {
+        "https://github.com/torvalds/linux/blob/v6.7/kernel/futex/syscalls.c"
     } else if $syscall == "clone3" {
         "https://github.com/torvalds/linux/blob/v5.3/kernel/fork.c"
     } else if $syscall in ["fork" "vfork" "clone" "set_tid_address"] {

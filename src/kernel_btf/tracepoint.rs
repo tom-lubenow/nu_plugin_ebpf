@@ -137,6 +137,11 @@ const GROUPS_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/
 const CAPABILITY_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/capability.c";
 const SCHED_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/sched/core.c";
 const FUTEX_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/futex.c";
+const FUTEX_WAITV_MIN_KERNEL: &str = "5.16";
+const FUTEX_WAITV_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.16/kernel/futex/syscalls.c";
+const FUTEX2_MIN_KERNEL: &str = "6.7";
+const FUTEX2_SOURCE: &str = "https://github.com/torvalds/linux/blob/v6.7/kernel/futex/syscalls.c";
 const POSIX_MQUEUE_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/ipc/mqueue.c";
 const IPC_MSG_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/ipc/msg.c";
 const IPC_SEM_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/ipc/sem.c";
@@ -479,6 +484,10 @@ const WELL_KNOWN_SYS_ENTER_SYSCALLS: &[&str] = &[
     "sched_get_priority_min",
     "sched_rr_get_interval",
     "futex",
+    "futex_waitv",
+    "futex_wake",
+    "futex_wait",
+    "futex_requeue",
     "set_robust_list",
     "get_robust_list",
     "mq_open",
@@ -844,6 +853,10 @@ impl TracepointContext {
             Some("setxattrat" | "getxattrat" | "listxattrat" | "removexattrat") => {
                 (Some(XATTRAT_MIN_KERNEL), Some(XATTRAT_SOURCE))
             }
+            Some("futex_waitv") => (Some(FUTEX_WAITV_MIN_KERNEL), Some(FUTEX_WAITV_SOURCE)),
+            Some("futex_wake" | "futex_wait" | "futex_requeue") => {
+                (Some(FUTEX2_MIN_KERNEL), Some(FUTEX2_SOURCE))
+            }
             _ => (
                 Some(SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL),
                 Some(SYSCALL_TRACEPOINT_FALLBACK_SOURCE),
@@ -937,6 +950,8 @@ impl TracepointContext {
             "setxattrat" | "getxattrat" | "listxattrat" | "removexattrat" => {
                 (XATTRAT_MIN_KERNEL, XATTRAT_SOURCE)
             }
+            "futex_waitv" => (FUTEX_WAITV_MIN_KERNEL, FUTEX_WAITV_SOURCE),
+            "futex_wake" | "futex_wait" | "futex_requeue" => (FUTEX2_MIN_KERNEL, FUTEX2_SOURCE),
             _ => (
                 SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL,
                 SYSCALL_TRACEPOINT_FALLBACK_SOURCE,
@@ -1166,6 +1181,8 @@ impl TracepointContext {
             "futex" | "set_robust_list" | "get_robust_list" => {
                 (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, FUTEX_SOURCE)
             }
+            "futex_waitv" => (FUTEX_WAITV_MIN_KERNEL, FUTEX_WAITV_SOURCE),
+            "futex_wake" | "futex_wait" | "futex_requeue" => (FUTEX2_MIN_KERNEL, FUTEX2_SOURCE),
             "mq_open" | "mq_unlink" | "mq_timedsend" | "mq_timedreceive" | "mq_notify"
             | "mq_getsetattr" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, POSIX_MQUEUE_SOURCE),
             "msgget" | "msgctl" | "msgsnd" | "msgrcv" => {
@@ -2530,6 +2547,33 @@ impl TracepointContext {
                 ("utime", Self::syscall_arg_user_ptr()),
                 ("uaddr2", Self::syscall_arg_user_ptr()),
                 ("val3", Self::syscall_arg_int(false)),
+            ],
+            "futex_waitv" => vec![
+                ("waiters", Self::syscall_arg_user_ptr()),
+                ("nr_futexes", Self::syscall_arg_int(false)),
+                ("flags", Self::syscall_arg_int(false)),
+                ("timeout", Self::syscall_arg_user_ptr()),
+                ("clockid", Self::syscall_arg_int(true)),
+            ],
+            "futex_wake" => vec![
+                ("uaddr", Self::syscall_arg_user_ptr()),
+                ("mask", Self::syscall_arg_int(false)),
+                ("nr", Self::syscall_arg_int(true)),
+                ("flags", Self::syscall_arg_int(false)),
+            ],
+            "futex_wait" => vec![
+                ("uaddr", Self::syscall_arg_user_ptr()),
+                ("val", Self::syscall_arg_int(false)),
+                ("mask", Self::syscall_arg_int(false)),
+                ("flags", Self::syscall_arg_int(false)),
+                ("timeout", Self::syscall_arg_user_ptr()),
+                ("clockid", Self::syscall_arg_int(true)),
+            ],
+            "futex_requeue" => vec![
+                ("waiters", Self::syscall_arg_user_ptr()),
+                ("flags", Self::syscall_arg_int(false)),
+                ("nr_wake", Self::syscall_arg_int(true)),
+                ("nr_requeue", Self::syscall_arg_int(true)),
             ],
             "set_robust_list" => vec![
                 ("head", Self::syscall_arg_user_ptr()),

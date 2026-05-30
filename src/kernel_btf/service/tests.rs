@@ -1528,6 +1528,47 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
     .expect("expected futex uaddr source metadata");
     assert!(futex_source.contains("/v4.7/kernel/futex.c"));
 
+    let futex_waitv = TracepointContext::sys_enter("sys_enter_futex_waitv");
+    assert!(futex_waitv.has_field("waiters"));
+    assert!(futex_waitv.has_field("nr_futexes"));
+    assert!(futex_waitv.has_field("flags"));
+    assert!(futex_waitv.has_field("timeout"));
+    assert!(futex_waitv.has_field("clockid"));
+    assert_eq!(futex_waitv.minimum_kernel(), Some("5.16"));
+    assert!(
+        futex_waitv
+            .minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v5.16/kernel/futex/syscalls.c"))
+    );
+    assert!(matches!(
+        futex_waitv
+            .get_field("waiters")
+            .expect("expected futex_waitv waiters")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+
+    let futex_wait = TracepointContext::sys_enter("sys_enter_futex_wait");
+    assert!(futex_wait.has_field("uaddr"));
+    assert!(futex_wait.has_field("val"));
+    assert!(futex_wait.has_field("mask"));
+    assert!(futex_wait.has_field("flags"));
+    assert!(futex_wait.has_field("timeout"));
+    assert!(futex_wait.has_field("clockid"));
+    assert_eq!(futex_wait.minimum_kernel(), Some("6.7"));
+    assert!(
+        futex_wait
+            .minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v6.7/kernel/futex/syscalls.c"))
+    );
+    let (_, futex_wait_source) = TracepointContext::syscall_fallback_field_minimum_kernel(
+        "syscalls",
+        "sys_enter_futex_wait",
+        "timeout",
+    )
+    .expect("expected futex_wait timeout source metadata");
+    assert!(futex_wait_source.contains("/v6.7/kernel/futex/syscalls.c"));
+
     for (name, fields) in [
         ("sys_enter_open", &["filename", "flags", "mode"][..]),
         ("sys_enter_creat", &["pathname", "mode"][..]),
@@ -2044,6 +2085,22 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         (
             "sys_enter_futex",
             &["uaddr", "op", "val", "utime", "uaddr2", "val3"][..],
+        ),
+        (
+            "sys_enter_futex_waitv",
+            &["waiters", "nr_futexes", "flags", "timeout", "clockid"][..],
+        ),
+        (
+            "sys_enter_futex_wake",
+            &["uaddr", "mask", "nr", "flags"][..],
+        ),
+        (
+            "sys_enter_futex_wait",
+            &["uaddr", "val", "mask", "flags", "timeout", "clockid"][..],
+        ),
+        (
+            "sys_enter_futex_requeue",
+            &["waiters", "flags", "nr_wake", "nr_requeue"][..],
         ),
         ("sys_enter_set_robust_list", &["head", "len"][..]),
         ("sys_enter_get_robust_list", &["head_ptr", "len_ptr"][..]),
