@@ -14389,7 +14389,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "cgroup-sockopt-bound-parenthesized-tcp-socket-projection"
@@ -14405,7 +14405,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "cgroup-sockopt-bound-tcp-helper-pointer"
@@ -14423,7 +14423,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "cgroup-sockopt-record-bound-tcp-helper-pointer"
@@ -14442,7 +14442,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "tc-bound-full-helper-pointer"
