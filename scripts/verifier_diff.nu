@@ -7014,6 +7014,39 @@ const PROGRAM_KFUNC_KERNEL_FEATURE_EXPECTATIONS = [
     }
 ]
 
+const PROGRAM_KFUNC_KERNEL_FEATURE_DETAIL_EXPECTATIONS = [
+    {
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let d = "0123456789abcdef"'
+            '  kfunc-call "bpf_dynptr_from_skb" $ctx 0 $d'
+            '  0'
+            '}'
+        ]
+        feature: {
+            key: "kfunc:bpf_dynptr_from_skb"
+            min_kernel: "6.4"
+            source: "https://github.com/torvalds/linux/blob/v6.4/net/core/filter.c"
+        }
+    }
+    {
+        target: "fentry:tcp_v4_rcv"
+        program: [
+            '{|ctx|'
+            '  let d = "0123456789abcdef"'
+            '  kfunc-call "bpf_dynptr_from_skb" $ctx.arg0 0 $d'
+            '  0'
+            '}'
+        ]
+        feature: {
+            key: "kfunc:bpf_dynptr_from_skb"
+            min_kernel: "6.12"
+            source: "https://github.com/torvalds/linux/blob/v6.12/net/core/filter.c"
+        }
+    }
+]
+
 const PROGRAM_CALLBACK_BTF_KERNEL_FEATURE_EXPECTATIONS = [
     {
         program: [
@@ -32127,6 +32160,32 @@ def validate-program-kfunc-kernel-feature-expectations [] {
     }
 }
 
+def validate-program-kfunc-kernel-feature-detail-expectations [] {
+    for expectation in $PROGRAM_KFUNC_KERNEL_FEATURE_DETAIL_EXPECTATIONS {
+        let target = $expectation.target
+        let program = ($expectation.program | str join "\n")
+        let expected = $expectation.feature
+        let expected_key = $expected.key
+        let matches = (
+            program-kfunc-kernel-features $program $target
+            | where {|feature| $feature.key == $expected_key }
+        )
+
+        if ($matches | is-empty) {
+            fail $"program-kfunc-kernel-features for ($target) missing expected metadata for ($expected_key)"
+        }
+
+        let actual = ($matches | first)
+        for key in [key min_kernel source max_kernel_exclusive] {
+            let expected_value = ($expected | get -o $key)
+            let actual_value = ($actual | get -o $key)
+            if $expected_value != $actual_value {
+                fail $"program-kfunc-kernel-features for ($target) ($expected_key) drifted: ($key) expected=($expected_value) actual=($actual_value)"
+            }
+        }
+    }
+}
+
 def validate-program-callback-btf-kernel-feature-expectations [] {
     for expectation in $PROGRAM_CALLBACK_BTF_KERNEL_FEATURE_EXPECTATIONS {
         let program = ($expectation.program | str join "\n")
@@ -32153,6 +32212,7 @@ def validate-fixture-metadata [fixtures] {
     validate-program-surface-kernel-feature-expectations
     validate-program-helper-kernel-feature-expectations
     validate-program-kfunc-kernel-feature-expectations
+    validate-program-kfunc-kernel-feature-detail-expectations
     validate-program-callback-btf-kernel-feature-expectations
 
     let names = ($fixtures | each {|fixture| $fixture.name })
