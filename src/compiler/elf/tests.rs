@@ -1552,6 +1552,35 @@ fn test_probe_context_xdp_uses_typed_program_spec() {
 }
 
 #[test]
+fn test_probe_context_new_covers_representative_program_specs() {
+    for program_type in EbpfProgramType::supported_program_types() {
+        let target = ProgramSpec::representative_target_for_program_type(*program_type);
+        let expected = ProgramSpec::from_program_type_target(*program_type, target)
+            .unwrap_or_else(|err| panic!("{program_type:?} representative target failed: {err}"));
+        let ctx = ProbeContext::new(*program_type, target);
+
+        assert_eq!(
+            ctx.program_type(),
+            *program_type,
+            "{} ProbeContext::new should preserve the representative program type",
+            program_type.canonical_prefix()
+        );
+        assert_eq!(
+            ctx.target(),
+            target,
+            "{} ProbeContext::new should preserve the representative attach target",
+            program_type.canonical_prefix()
+        );
+        assert_eq!(
+            ctx.parsed_program_spec(),
+            Some(&expected),
+            "{} ProbeContext::new should cache the representative typed program spec",
+            program_type.canonical_prefix()
+        );
+    }
+}
+
+#[test]
 fn test_probe_context_from_program_spec_uses_structured_target() {
     let spec = ProgramSpec::from_program_type_target(EbpfProgramType::Xdp, "lo")
         .expect("xdp program spec should parse");
