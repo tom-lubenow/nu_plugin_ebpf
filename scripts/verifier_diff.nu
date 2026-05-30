@@ -37257,6 +37257,75 @@ def kernel-preflight [] {
     { available: (($reasons | length) == 0), reasons: $reasons }
 }
 
+def host-sys-enter-syscalls [] {
+    let events_dir = "/sys/kernel/tracing/events/syscalls"
+    if not ($events_dir | path exists) {
+        fail $"($events_dir) does not exist; mount tracefs before checking host syscall tracepoint coverage"
+    }
+    if (($events_dir | path type) != "dir") {
+        fail $"($events_dir) is not a directory"
+    }
+
+    ls $events_dir
+    | where type == dir
+    | get name
+    | each {|path| $path | path basename }
+    | where {|name| $name | str starts-with "sys_enter_" }
+    | each {|name| $name | str replace "sys_enter_" "" }
+    | sort
+    | uniq
+}
+
+def modeled-sys-enter-syscalls [] {
+    let tracepoint_rs = ([$REPO_ROOT "src" "kernel_btf" "tracepoint.rs"] | path join)
+    mut in_list = false
+    mut names = []
+
+    for line in (open $tracepoint_rs | lines) {
+        let trimmed = ($line | str trim)
+        if $trimmed == "const WELL_KNOWN_SYS_ENTER_SYSCALLS: &[&str] = &[" {
+            $in_list = true
+            continue
+        }
+        if $in_list and $trimmed == "];" {
+            break
+        }
+        if not $in_list {
+            continue
+        }
+
+        let parsed = ($trimmed | parse --regex '^"(?P<name>[^"]+)",?$')
+        if ($parsed | is-empty) {
+            continue
+        }
+
+        $names = ($names | append ($parsed | first | get name))
+    }
+
+    if ($names | is-empty) {
+        fail $"could not parse WELL_KNOWN_SYS_ENTER_SYSCALLS from ($tracepoint_rs)"
+    }
+
+    $names | sort | uniq
+}
+
+def check-host-syscall-tracepoint-coverage [] {
+    let host = (host-sys-enter-syscalls)
+    let modeled = (modeled-sys-enter-syscalls)
+    let missing = ($host | where {|name| $name not-in $modeled })
+    let extra = ($modeled | where {|name| $name not-in $host })
+
+    if not ($missing | is-empty) {
+        print "missing modeled sys_enter fallbacks for host tracepoints:"
+        for name in $missing {
+            print $"  ($name)"
+        }
+        fail $"($missing | length) host sys_enter tracepoint fallback gaps"
+    }
+
+    print $"ok: 0 host sys_enter tracepoint gaps; (($host | length)) host syscalls, (($modeled | length)) modeled fallbacks, (($extra | length)) modeled fallbacks not present on this host"
+}
+
 def host-feature-available [feature: string] {
     if $feature == "loopback-interface" {
         "/sys/class/net/lo" | path exists
@@ -37452,6 +37521,7 @@ def default-main-options [] {
     {
         help: false
         validate: false
+        check_host_syscall_tracepoints: false
         list: false
         matrix: false
         json: false
@@ -37482,6 +37552,7 @@ def print-main-help [] {
         "Flags:"
         "  -h, --help: Display this help message"
         "  --validate: Validate fixture metadata and exit without resolving or running the plugin."
+        "  --check-host-syscall-tracepoints: Compare this host's sys_enter tracepoints with modeled fallback coverage and exit."
         "  --list: List verifier fixtures and exit."
         "  --matrix: Print verifier fixture counts by tier and category, then exit."
         "  --json: Emit JSON for --list or --matrix."
@@ -37634,17 +37705,17 @@ def parse-main-args [args] {
             }
             $options = ($options | upsert help true)
             $i = ($i + 1)
-        } else if $arg in ["--validate" "--list" "--matrix" "--json" "--kernel" "--no-kernel" "--smoke" "--fast" "--full"] {
+        } else if $arg in ["--validate" "--check-host-syscall-tracepoints" "--list" "--matrix" "--json" "--kernel" "--no-kernel" "--smoke" "--fast" "--full"] {
             if $has_value {
                 fail $"($arg) does not take a value"
             }
 
-            let key = ($arg | str substring 2.. | str replace "-" "_")
+            let key = ($arg | str substring 2.. | str replace --all "-" "_")
             $options = ($options | upsert $key true)
             $i = ($i + 1)
         } else if $arg in ["--compat-kernel" "--category" "--tag" "--tier" "--exclude-tier" "--test-lane" "--local-status" "--kernel-status"] {
             let value = if $has_value { $parsed.value } else { require-flag-value $args $i $arg }
-            let key = ($arg | str substring 2.. | str replace "-" "_")
+            let key = ($arg | str substring 2.. | str replace --all "-" "_")
             $options = ($options | upsert $key (string-flag-value $value))
             $i = if $has_value { ($i + 1) } else { ($i + 2) }
         } else if $arg == "--fixture" {
@@ -37683,6 +37754,7 @@ def --wrapped main [...args] {
 
 def verifier-diff-main [options] {
     let validate = $options.validate
+    let check_host_syscall_tracepoints = $options.check_host_syscall_tracepoints
     let list = $options.list
     let matrix = $options.matrix
     let json = $options.json
@@ -37711,6 +37783,9 @@ def verifier-diff-main [options] {
     }
     if $validate and ($list or $matrix) {
         fail "--validate cannot be combined with --list or --matrix"
+    }
+    if $check_host_syscall_tracepoints and ($validate or $list or $matrix) {
+        fail "--check-host-syscall-tracepoints cannot be combined with --validate, --list, or --matrix"
     }
     if $json and not ($list or $matrix) {
         fail "--json is only supported with --list or --matrix"
@@ -37746,6 +37821,25 @@ def verifier-diff-main [options] {
         fail "--fixture and --fixtures are mutually exclusive"
     }
 
+    if $check_host_syscall_tracepoints and (
+        $kernel
+        or $no_kernel
+        or $smoke
+        or $fast
+        or $full
+        or $fixture != null
+        or $fixtures != null
+        or $category != null
+        or $tag != null
+        or $tier != null
+        or $exclude_tier != null
+        or $test_lane != null
+        or $local_status != null
+        or $kernel_status != null
+    ) {
+        fail "--check-host-syscall-tracepoints is a standalone host coverage audit and cannot be combined with fixture selection or run-mode flags"
+    }
+
     if $validate and (
         $kernel
         or $no_kernel
@@ -37768,6 +37862,11 @@ def verifier-diff-main [options] {
     if $validate {
         let _validated_fixtures = (validate-fixture-metadata $FIXTURES)
         print $"ok: (($FIXTURES | length)) verifier fixtures metadata-valid"
+        return
+    }
+
+    if $check_host_syscall_tracepoints {
+        check-host-syscall-tracepoint-coverage
         return
     }
 
