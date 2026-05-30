@@ -14752,7 +14752,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "sock-ops-cb-flags-helper-backed-write"
@@ -14768,7 +14768,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "sock-ops-metrics-context"
@@ -14785,7 +14785,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "sock-ops-rejects-replylong-write-without-index"
@@ -14866,7 +14866,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "sock-ops-bound-socket-parenthesized-projection-context"
@@ -14882,7 +14882,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "sock-ops-enable-tx-tstamp-kfunc"
@@ -14991,7 +14991,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "sock-ops-packet-data-requires-op-guard"
@@ -15026,7 +15026,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "sk-reuseport-select-context"
