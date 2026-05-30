@@ -16737,7 +16737,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "bpf-wq-init-requires-null-checked-map-lookup"
@@ -16840,7 +16840,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "bpf-wq-kfunc-set-callback-allows-prefix-params"
@@ -16860,7 +16860,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "bpf-wq-kfunc-set-callback-rejects-extra-declared-param"
