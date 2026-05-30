@@ -286,6 +286,20 @@ impl KfuncIterFamily {
             Self::KmemCache => "bpf_iter_kmem_cache_new",
         }
     }
+
+    pub const fn stack_object_type_name(self) -> &'static str {
+        match self {
+            Self::TaskVma => "bpf_iter_task_vma",
+            Self::Task => "bpf_iter_task",
+            Self::ScxDsq => "bpf_iter_scx_dsq",
+            Self::Num => "bpf_iter_num",
+            Self::Bits => "bpf_iter_bits",
+            Self::Css => "bpf_iter_css",
+            Self::CssTask => "bpf_iter_css_task",
+            Self::Dmabuf => "bpf_iter_dmabuf",
+            Self::KmemCache => "bpf_iter_kmem_cache",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

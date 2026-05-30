@@ -83,6 +83,14 @@ fn test_iter_family_from_stack_object_type_name() {
         iter_family_from_stack_object_type_name("bpf_iter_kmem_cache"),
         Some(KfuncIterFamily::KmemCache)
     );
+    assert_eq!(
+        KfuncIterFamily::TaskVma.stack_object_type_name(),
+        "bpf_iter_task_vma"
+    );
+    assert_eq!(
+        KfuncIterFamily::KmemCache.stack_object_type_name(),
+        "bpf_iter_kmem_cache"
+    );
     assert_eq!(iter_family_from_stack_object_type_name("bpf_dynptr"), None);
 }
 

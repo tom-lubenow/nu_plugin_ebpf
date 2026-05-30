@@ -3,95 +3,175 @@ use crate::compiler::instruction::{
     scalar_range_contains_only_allowed_values, scalar_range_contains_only_bitmask,
 };
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum IterLifecycleFailure {
+    LiveSlot,
+    MissingMatchingConstructor,
+}
+
+fn iter_lifecycle_result(
+    valid: bool,
+    failure: IterLifecycleFailure,
+) -> Result<(), IterLifecycleFailure> {
+    if valid { Ok(()) } else { Err(failure) }
+}
+
+fn iter_lifecycle_error_message(
+    kfunc: &str,
+    family: KfuncIterFamily,
+    failure: IterLifecycleFailure,
+) -> String {
+    match failure {
+        IterLifecycleFailure::LiveSlot => format!(
+            "kfunc '{}' requires uninitialized {} stack object slot",
+            kfunc,
+            family.stack_object_type_name()
+        ),
+        IterLifecycleFailure::MissingMatchingConstructor => format!(
+            "kfunc '{}' requires a matching {}",
+            kfunc,
+            family.constructor_kfunc()
+        ),
+    }
+}
+
 impl VccVerifier {
     fn apply_iter_lifecycle_op(
         state: &mut VccState,
         family: KfuncIterFamily,
         op: KfuncIterLifecycleOp,
         slot: StackSlotId,
-    ) -> bool {
+    ) -> Result<(), IterLifecycleFailure> {
         match (family, op) {
-            (KfuncIterFamily::TaskVma, KfuncIterLifecycleOp::New) => {
-                state.acquire_iter_task_vma_slot(slot);
-                true
-            }
+            (KfuncIterFamily::TaskVma, KfuncIterLifecycleOp::New) => iter_lifecycle_result(
+                state.acquire_iter_task_vma_slot(slot),
+                IterLifecycleFailure::LiveSlot,
+            ),
             (KfuncIterFamily::TaskVma, KfuncIterLifecycleOp::Next) => {
-                state.use_iter_task_vma_slot(slot)
+                iter_lifecycle_result(
+                    state.use_iter_task_vma_slot(slot),
+                    IterLifecycleFailure::MissingMatchingConstructor,
+                )
             }
             (KfuncIterFamily::TaskVma, KfuncIterLifecycleOp::Destroy) => {
-                state.release_iter_task_vma_slot(slot)
+                iter_lifecycle_result(
+                    state.release_iter_task_vma_slot(slot),
+                    IterLifecycleFailure::MissingMatchingConstructor,
+                )
             }
-            (KfuncIterFamily::Task, KfuncIterLifecycleOp::New) => {
-                state.acquire_iter_task_slot(slot);
-                true
-            }
-            (KfuncIterFamily::Task, KfuncIterLifecycleOp::Next) => state.use_iter_task_slot(slot),
-            (KfuncIterFamily::Task, KfuncIterLifecycleOp::Destroy) => {
-                state.release_iter_task_slot(slot)
-            }
-            (KfuncIterFamily::ScxDsq, KfuncIterLifecycleOp::New) => {
-                state.acquire_iter_scx_dsq_slot(slot);
-                true
-            }
+            (KfuncIterFamily::Task, KfuncIterLifecycleOp::New) => iter_lifecycle_result(
+                state.acquire_iter_task_slot(slot),
+                IterLifecycleFailure::LiveSlot,
+            ),
+            (KfuncIterFamily::Task, KfuncIterLifecycleOp::Next) => iter_lifecycle_result(
+                state.use_iter_task_slot(slot),
+                IterLifecycleFailure::MissingMatchingConstructor,
+            ),
+            (KfuncIterFamily::Task, KfuncIterLifecycleOp::Destroy) => iter_lifecycle_result(
+                state.release_iter_task_slot(slot),
+                IterLifecycleFailure::MissingMatchingConstructor,
+            ),
+            (KfuncIterFamily::ScxDsq, KfuncIterLifecycleOp::New) => iter_lifecycle_result(
+                state.acquire_iter_scx_dsq_slot(slot),
+                IterLifecycleFailure::LiveSlot,
+            ),
             (KfuncIterFamily::ScxDsq, KfuncIterLifecycleOp::Next) => {
-                state.use_iter_scx_dsq_slot(slot)
+                iter_lifecycle_result(
+                    state.use_iter_scx_dsq_slot(slot),
+                    IterLifecycleFailure::MissingMatchingConstructor,
+                )
             }
             (KfuncIterFamily::ScxDsq, KfuncIterLifecycleOp::Destroy) => {
-                state.release_iter_scx_dsq_slot(slot)
+                iter_lifecycle_result(
+                    state.release_iter_scx_dsq_slot(slot),
+                    IterLifecycleFailure::MissingMatchingConstructor,
+                )
             }
-            (KfuncIterFamily::Num, KfuncIterLifecycleOp::New) => {
-                state.acquire_iter_num_slot(slot);
-                true
-            }
-            (KfuncIterFamily::Num, KfuncIterLifecycleOp::Next) => state.use_iter_num_slot(slot),
-            (KfuncIterFamily::Num, KfuncIterLifecycleOp::Destroy) => {
-                state.release_iter_num_slot(slot)
-            }
-            (KfuncIterFamily::Bits, KfuncIterLifecycleOp::New) => {
-                state.acquire_iter_bits_slot(slot);
-                true
-            }
-            (KfuncIterFamily::Bits, KfuncIterLifecycleOp::Next) => state.use_iter_bits_slot(slot),
+            (KfuncIterFamily::Num, KfuncIterLifecycleOp::New) => iter_lifecycle_result(
+                state.acquire_iter_num_slot(slot),
+                IterLifecycleFailure::LiveSlot,
+            ),
+            (KfuncIterFamily::Num, KfuncIterLifecycleOp::Next) => iter_lifecycle_result(
+                state.use_iter_num_slot(slot),
+                IterLifecycleFailure::MissingMatchingConstructor,
+            ),
+            (KfuncIterFamily::Num, KfuncIterLifecycleOp::Destroy) => iter_lifecycle_result(
+                state.release_iter_num_slot(slot),
+                IterLifecycleFailure::MissingMatchingConstructor,
+            ),
+            (KfuncIterFamily::Bits, KfuncIterLifecycleOp::New) => iter_lifecycle_result(
+                state.acquire_iter_bits_slot(slot),
+                IterLifecycleFailure::LiveSlot,
+            ),
+            (KfuncIterFamily::Bits, KfuncIterLifecycleOp::Next) => iter_lifecycle_result(
+                state.use_iter_bits_slot(slot),
+                IterLifecycleFailure::MissingMatchingConstructor,
+            ),
             (KfuncIterFamily::Bits, KfuncIterLifecycleOp::Destroy) => {
-                state.release_iter_bits_slot(slot)
+                iter_lifecycle_result(
+                    state.release_iter_bits_slot(slot),
+                    IterLifecycleFailure::MissingMatchingConstructor,
+                )
             }
-            (KfuncIterFamily::Css, KfuncIterLifecycleOp::New) => {
-                state.acquire_iter_css_slot(slot);
-                true
-            }
-            (KfuncIterFamily::Css, KfuncIterLifecycleOp::Next) => state.use_iter_css_slot(slot),
-            (KfuncIterFamily::Css, KfuncIterLifecycleOp::Destroy) => {
-                state.release_iter_css_slot(slot)
-            }
-            (KfuncIterFamily::CssTask, KfuncIterLifecycleOp::New) => {
-                state.acquire_iter_css_task_slot(slot);
-                true
-            }
+            (KfuncIterFamily::Css, KfuncIterLifecycleOp::New) => iter_lifecycle_result(
+                state.acquire_iter_css_slot(slot),
+                IterLifecycleFailure::LiveSlot,
+            ),
+            (KfuncIterFamily::Css, KfuncIterLifecycleOp::Next) => iter_lifecycle_result(
+                state.use_iter_css_slot(slot),
+                IterLifecycleFailure::MissingMatchingConstructor,
+            ),
+            (KfuncIterFamily::Css, KfuncIterLifecycleOp::Destroy) => iter_lifecycle_result(
+                state.release_iter_css_slot(slot),
+                IterLifecycleFailure::MissingMatchingConstructor,
+            ),
+            (KfuncIterFamily::CssTask, KfuncIterLifecycleOp::New) => iter_lifecycle_result(
+                state.acquire_iter_css_task_slot(slot),
+                IterLifecycleFailure::LiveSlot,
+            ),
             (KfuncIterFamily::CssTask, KfuncIterLifecycleOp::Next) => {
-                state.use_iter_css_task_slot(slot)
+                iter_lifecycle_result(
+                    state.use_iter_css_task_slot(slot),
+                    IterLifecycleFailure::MissingMatchingConstructor,
+                )
             }
             (KfuncIterFamily::CssTask, KfuncIterLifecycleOp::Destroy) => {
-                state.release_iter_css_task_slot(slot)
+                iter_lifecycle_result(
+                    state.release_iter_css_task_slot(slot),
+                    IterLifecycleFailure::MissingMatchingConstructor,
+                )
             }
-            (KfuncIterFamily::Dmabuf, KfuncIterLifecycleOp::New) => {
-                state.acquire_iter_dmabuf_slot(slot);
-                true
-            }
+            (KfuncIterFamily::Dmabuf, KfuncIterLifecycleOp::New) => iter_lifecycle_result(
+                state.acquire_iter_dmabuf_slot(slot),
+                IterLifecycleFailure::LiveSlot,
+            ),
             (KfuncIterFamily::Dmabuf, KfuncIterLifecycleOp::Next) => {
-                state.use_iter_dmabuf_slot(slot)
+                iter_lifecycle_result(
+                    state.use_iter_dmabuf_slot(slot),
+                    IterLifecycleFailure::MissingMatchingConstructor,
+                )
             }
             (KfuncIterFamily::Dmabuf, KfuncIterLifecycleOp::Destroy) => {
-                state.release_iter_dmabuf_slot(slot)
+                iter_lifecycle_result(
+                    state.release_iter_dmabuf_slot(slot),
+                    IterLifecycleFailure::MissingMatchingConstructor,
+                )
             }
-            (KfuncIterFamily::KmemCache, KfuncIterLifecycleOp::New) => {
-                state.acquire_iter_kmem_cache_slot(slot);
-                true
-            }
+            (KfuncIterFamily::KmemCache, KfuncIterLifecycleOp::New) => iter_lifecycle_result(
+                state.acquire_iter_kmem_cache_slot(slot),
+                IterLifecycleFailure::LiveSlot,
+            ),
             (KfuncIterFamily::KmemCache, KfuncIterLifecycleOp::Next) => {
-                state.use_iter_kmem_cache_slot(slot)
+                iter_lifecycle_result(
+                    state.use_iter_kmem_cache_slot(slot),
+                    IterLifecycleFailure::MissingMatchingConstructor,
+                )
             }
             (KfuncIterFamily::KmemCache, KfuncIterLifecycleOp::Destroy) => {
-                state.release_iter_kmem_cache_slot(slot)
+                iter_lifecycle_result(
+                    state.release_iter_kmem_cache_slot(slot),
+                    IterLifecycleFailure::MissingMatchingConstructor,
+                )
             }
         }
     }
@@ -1616,14 +1696,10 @@ impl VccVerifier {
                 let Some(slot) = self.stack_slot_from_reg(state, *iter, &op_label) else {
                     return;
                 };
-                if !Self::apply_iter_lifecycle_op(state, *family, *op, slot) {
+                if let Err(failure) = Self::apply_iter_lifecycle_op(state, *family, *op, slot) {
                     self.errors.push(VccError::new(
                         VccErrorKind::PointerBounds,
-                        format!(
-                            "kfunc '{}' requires a matching {}",
-                            kfunc,
-                            family.constructor_kfunc()
-                        ),
+                        iter_lifecycle_error_message(kfunc, *family, failure),
                     ));
                 }
             }

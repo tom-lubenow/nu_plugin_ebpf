@@ -6283,6 +6283,81 @@ fn test_verify_mir_kfunc_iter_num_lifecycle_balanced() {
 }
 
 #[test]
+fn test_verify_mir_kfunc_iter_num_new_rejects_reinit_live_slot() {
+    let (mut func, entry) = new_mir_function();
+    func.param_count = 1;
+
+    let iter = func.alloc_vreg();
+    let start = func.alloc_vreg();
+    let mid = func.alloc_vreg();
+    let end = func.alloc_vreg();
+    let first_new_ret = func.alloc_vreg();
+    let second_new_ret = func.alloc_vreg();
+    let destroy_ret = func.alloc_vreg();
+    let slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: iter,
+        src: MirValue::StackSlot(slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: start,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: mid,
+        src: MirValue::Const(4),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: end,
+        src: MirValue::Const(8),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: first_new_ret,
+        kfunc: "bpf_iter_num_new".to_string(),
+        btf_id: None,
+        args: vec![iter, start, mid],
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: second_new_ret,
+        kfunc: "bpf_iter_num_new".to_string(),
+        btf_id: None,
+        args: vec![iter, mid, end],
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: destroy_ret,
+        kfunc: "bpf_iter_num_destroy".to_string(),
+        btf_id: None,
+        args: vec![iter],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        iter,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(start, MirType::I64);
+    types.insert(mid, MirType::I64);
+    types.insert(end, MirType::I64);
+    types.insert(first_new_ret, MirType::I64);
+    types.insert(second_new_ret, MirType::I64);
+    types.insert(destroy_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected iter_num_new reinit error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("requires uninitialized bpf_iter_num stack object slot")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_kfunc_iter_num_next_requires_matching_new_slot() {
     let (mut func, entry) = new_mir_function();
     func.param_count = 1;

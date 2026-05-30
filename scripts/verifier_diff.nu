@@ -17778,6 +17778,43 @@ const FIXTURES = [
         error_contains: "kfunc 'bpf_iter_num_destroy' requires a matching bpf_iter_num_new"
     }
     {
+        name: "source-kfunc-iter-num-rejects-reinit-live-slot"
+        category: "helper-state"
+        tags: [kfunc iter ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let iter = "0123456789abcdef"'
+            '  kfunc-call "bpf_iter_num_new" $iter 0 4'
+            '  kfunc-call "bpf_iter_num_new" $iter 4 8'
+            '  kfunc-call "bpf_iter_num_destroy" $iter'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "requires uninitialized bpf_iter_num stack object slot"
+    }
+    {
+        name: "source-kfunc-iter-num-rejects-wrong-family-destroy"
+        category: "helper-state"
+        tags: [kfunc iter ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let iter = "0123456789abcdef"'
+            '  kfunc-call "bpf_iter_num_new" $iter 0 4'
+            '  kfunc-call "bpf_iter_bits_destroy" $iter'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'bpf_iter_bits_destroy' requires a matching bpf_iter_bits_new"
+    }
+    {
         name: "source-kfunc-iter-num-rejects-conditional-destroy-leak"
         category: "helper-state"
         tags: [kfunc iter ref-lifetime branch source reject]

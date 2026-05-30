@@ -410,10 +410,13 @@ impl VerifierState {
     pub(in crate::compiler::verifier_types) fn acquire_iter_task_vma_slot(
         &mut self,
         slot: StackSlotId,
-    ) {
-        self.iter_task_vma_min_depth = self.iter_task_vma_min_depth.saturating_add(1);
-        self.iter_task_vma_max_depth = self.iter_task_vma_max_depth.saturating_add(1);
-        increment_slot_depth(&mut self.iter_task_vma_slots, slot);
+    ) -> bool {
+        acquire_slot_depth(
+            &mut self.iter_task_vma_slots,
+            &mut self.iter_task_vma_min_depth,
+            &mut self.iter_task_vma_max_depth,
+            slot,
+        )
     }
 
     pub(in crate::compiler::verifier_types) fn use_iter_task_vma_slot(
@@ -447,10 +450,13 @@ impl VerifierState {
     pub(in crate::compiler::verifier_types) fn acquire_iter_task_slot(
         &mut self,
         slot: StackSlotId,
-    ) {
-        self.iter_task_min_depth = self.iter_task_min_depth.saturating_add(1);
-        self.iter_task_max_depth = self.iter_task_max_depth.saturating_add(1);
-        increment_slot_depth(&mut self.iter_task_slots, slot);
+    ) -> bool {
+        acquire_slot_depth(
+            &mut self.iter_task_slots,
+            &mut self.iter_task_min_depth,
+            &mut self.iter_task_max_depth,
+            slot,
+        )
     }
 
     pub(in crate::compiler::verifier_types) fn use_iter_task_slot(
@@ -484,10 +490,13 @@ impl VerifierState {
     pub(in crate::compiler::verifier_types) fn acquire_iter_scx_dsq_slot(
         &mut self,
         slot: StackSlotId,
-    ) {
-        self.iter_scx_dsq_min_depth = self.iter_scx_dsq_min_depth.saturating_add(1);
-        self.iter_scx_dsq_max_depth = self.iter_scx_dsq_max_depth.saturating_add(1);
-        increment_slot_depth(&mut self.iter_scx_dsq_slots, slot);
+    ) -> bool {
+        acquire_slot_depth(
+            &mut self.iter_scx_dsq_slots,
+            &mut self.iter_scx_dsq_min_depth,
+            &mut self.iter_scx_dsq_max_depth,
+            slot,
+        )
     }
 
     pub(in crate::compiler::verifier_types) fn use_iter_scx_dsq_slot(
@@ -518,10 +527,16 @@ impl VerifierState {
         self.iter_scx_dsq_max_depth > 0
     }
 
-    pub(in crate::compiler::verifier_types) fn acquire_iter_num_slot(&mut self, slot: StackSlotId) {
-        self.iter_num_min_depth = self.iter_num_min_depth.saturating_add(1);
-        self.iter_num_max_depth = self.iter_num_max_depth.saturating_add(1);
-        increment_slot_depth(&mut self.iter_num_slots, slot);
+    pub(in crate::compiler::verifier_types) fn acquire_iter_num_slot(
+        &mut self,
+        slot: StackSlotId,
+    ) -> bool {
+        acquire_slot_depth(
+            &mut self.iter_num_slots,
+            &mut self.iter_num_min_depth,
+            &mut self.iter_num_max_depth,
+            slot,
+        )
     }
 
     pub(in crate::compiler::verifier_types) fn use_iter_num_slot(&self, slot: StackSlotId) -> bool {
@@ -552,10 +567,13 @@ impl VerifierState {
     pub(in crate::compiler::verifier_types) fn acquire_iter_bits_slot(
         &mut self,
         slot: StackSlotId,
-    ) {
-        self.iter_bits_min_depth = self.iter_bits_min_depth.saturating_add(1);
-        self.iter_bits_max_depth = self.iter_bits_max_depth.saturating_add(1);
-        increment_slot_depth(&mut self.iter_bits_slots, slot);
+    ) -> bool {
+        acquire_slot_depth(
+            &mut self.iter_bits_slots,
+            &mut self.iter_bits_min_depth,
+            &mut self.iter_bits_max_depth,
+            slot,
+        )
     }
 
     pub(in crate::compiler::verifier_types) fn use_iter_bits_slot(
@@ -586,10 +604,16 @@ impl VerifierState {
         self.iter_bits_max_depth > 0
     }
 
-    pub(in crate::compiler::verifier_types) fn acquire_iter_css_slot(&mut self, slot: StackSlotId) {
-        self.iter_css_min_depth = self.iter_css_min_depth.saturating_add(1);
-        self.iter_css_max_depth = self.iter_css_max_depth.saturating_add(1);
-        increment_slot_depth(&mut self.iter_css_slots, slot);
+    pub(in crate::compiler::verifier_types) fn acquire_iter_css_slot(
+        &mut self,
+        slot: StackSlotId,
+    ) -> bool {
+        acquire_slot_depth(
+            &mut self.iter_css_slots,
+            &mut self.iter_css_min_depth,
+            &mut self.iter_css_max_depth,
+            slot,
+        )
     }
 
     pub(in crate::compiler::verifier_types) fn use_iter_css_slot(&self, slot: StackSlotId) -> bool {
@@ -620,10 +644,13 @@ impl VerifierState {
     pub(in crate::compiler::verifier_types) fn acquire_iter_css_task_slot(
         &mut self,
         slot: StackSlotId,
-    ) {
-        self.iter_css_task_min_depth = self.iter_css_task_min_depth.saturating_add(1);
-        self.iter_css_task_max_depth = self.iter_css_task_max_depth.saturating_add(1);
-        increment_slot_depth(&mut self.iter_css_task_slots, slot);
+    ) -> bool {
+        acquire_slot_depth(
+            &mut self.iter_css_task_slots,
+            &mut self.iter_css_task_min_depth,
+            &mut self.iter_css_task_max_depth,
+            slot,
+        )
     }
 
     pub(in crate::compiler::verifier_types) fn use_iter_css_task_slot(
@@ -657,10 +684,13 @@ impl VerifierState {
     pub(in crate::compiler::verifier_types) fn acquire_iter_dmabuf_slot(
         &mut self,
         slot: StackSlotId,
-    ) {
-        self.iter_dmabuf_min_depth = self.iter_dmabuf_min_depth.saturating_add(1);
-        self.iter_dmabuf_max_depth = self.iter_dmabuf_max_depth.saturating_add(1);
-        increment_slot_depth(&mut self.iter_dmabuf_slots, slot);
+    ) -> bool {
+        acquire_slot_depth(
+            &mut self.iter_dmabuf_slots,
+            &mut self.iter_dmabuf_min_depth,
+            &mut self.iter_dmabuf_max_depth,
+            slot,
+        )
     }
 
     pub(in crate::compiler::verifier_types) fn use_iter_dmabuf_slot(
@@ -694,10 +724,13 @@ impl VerifierState {
     pub(in crate::compiler::verifier_types) fn acquire_iter_kmem_cache_slot(
         &mut self,
         slot: StackSlotId,
-    ) {
-        self.iter_kmem_cache_min_depth = self.iter_kmem_cache_min_depth.saturating_add(1);
-        self.iter_kmem_cache_max_depth = self.iter_kmem_cache_max_depth.saturating_add(1);
-        increment_slot_depth(&mut self.iter_kmem_cache_slots, slot);
+    ) -> bool {
+        acquire_slot_depth(
+            &mut self.iter_kmem_cache_slots,
+            &mut self.iter_kmem_cache_min_depth,
+            &mut self.iter_kmem_cache_max_depth,
+            slot,
+        )
     }
 
     pub(in crate::compiler::verifier_types) fn use_iter_kmem_cache_slot(
@@ -973,6 +1006,24 @@ fn increment_slot_depth(depths: &mut HashMap<StackSlotId, (u32, u32)>, slot: Sta
     let entry = depths.entry(slot).or_insert((0, 0));
     entry.0 = entry.0.saturating_add(1);
     entry.1 = entry.1.saturating_add(1);
+}
+
+fn acquire_slot_depth(
+    depths: &mut HashMap<StackSlotId, (u32, u32)>,
+    min_depth: &mut u32,
+    max_depth: &mut u32,
+    slot: StackSlotId,
+) -> bool {
+    if depths
+        .get(&slot)
+        .is_some_and(|(_, max_depth)| *max_depth > 0)
+    {
+        return false;
+    }
+    *min_depth = (*min_depth).saturating_add(1);
+    *max_depth = (*max_depth).saturating_add(1);
+    increment_slot_depth(depths, slot);
+    true
 }
 
 fn decrement_slot_depth(depths: &mut HashMap<StackSlotId, (u32, u32)>, slot: StackSlotId) -> bool {
