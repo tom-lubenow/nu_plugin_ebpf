@@ -15040,7 +15040,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "sk-reuseport-select-packet-context"
@@ -15054,7 +15054,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "sk-reuseport-select-rich-context"
@@ -15069,7 +15069,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "sk-reuseport-migrate-context"
@@ -15083,7 +15083,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "sk-reuseport-migrating-socket-alias-context"
@@ -15100,7 +15100,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "sk-reuseport-select-migrating-sk-nullable-context"
@@ -15116,7 +15116,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "sk-reuseport-rejects-migrating-sk-on-packet-context"
@@ -15194,7 +15194,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "sk-lookup-tuple-cookie-context"
@@ -15210,7 +15210,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "sk-lookup-bound-socket-projection-context"
@@ -15226,7 +15226,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "sk-lookup-rejects-socket-cookie-context"
