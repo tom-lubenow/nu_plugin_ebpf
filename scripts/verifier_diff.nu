@@ -2324,6 +2324,92 @@ const FD_TRACEPOINT_FIELD_SPECS = [
         source: "https://github.com/torvalds/linux/blob/v4.7/fs/eventpoll.c"
     }
 ]
+const MM_TRACEPOINT_FIELD_SPECS = [
+    {
+        syscalls: ["brk"]
+        fields: ["brk"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/mm/mmap.c"
+    }
+    {
+        syscalls: ["mmap"]
+        fields: ["addr" "len" "prot" "flags" "fd" "off"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/arch/x86/kernel/sys_x86_64.c"
+    }
+    {
+        syscalls: ["mmap_pgoff"]
+        fields: ["addr" "len" "prot" "flags" "fd" "pgoff"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/mm/mmap.c"
+    }
+    {
+        syscalls: ["old_mmap"]
+        fields: ["arg"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/mm/mmap.c"
+    }
+    {
+        syscalls: ["munmap"]
+        fields: ["addr" "len"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/mm/mmap.c"
+    }
+    {
+        syscalls: ["remap_file_pages"]
+        fields: ["start" "size" "prot" "pgoff" "flags"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/mm/mmap.c"
+    }
+    {
+        syscalls: ["mprotect"]
+        fields: ["start" "len" "prot"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/mm/mprotect.c"
+    }
+    {
+        syscalls: ["mremap"]
+        fields: ["addr" "old_len" "new_len" "flags" "new_addr"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/mm/mremap.c"
+    }
+    {
+        syscalls: ["madvise"]
+        fields: ["start" "len_in" "behavior"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/mm/madvise.c"
+    }
+    {
+        syscalls: ["mlock" "munlock"]
+        fields: ["start" "len"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/mm/mlock.c"
+    }
+    {
+        syscalls: ["mlock2"]
+        fields: ["start" "len" "flags"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/mm/mlock.c"
+    }
+    {
+        syscalls: ["mlockall"]
+        fields: ["flags"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/mm/mlock.c"
+    }
+    {
+        syscalls: ["mincore"]
+        fields: ["start" "len" "vec"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/mm/mincore.c"
+    }
+    {
+        syscalls: ["msync"]
+        fields: ["start" "len" "flags"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/mm/msync.c"
+    }
+]
 const TRACEPOINT_FIELD_KERNEL_FEATURES = [
     { target: "tracepoint:syscalls/sys_enter_read" field: "fd" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_READ_FD }
     { target: "tracepoint:syscalls/sys_enter_read" field: "buf" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_READ_BUF }
@@ -6998,6 +7084,68 @@ const FIXTURES = [
             '  let sigmask = $ctx.sigmask'
             '  if $sigmask { 1 | count }'
             '  ($ctx.epfd + $ctx.maxevents + $ctx.timeout + $ctx.sigsetsize) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-mmap-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf]
+        target: "tracepoint:syscalls/sys_enter_mmap"
+        program: [
+            '{|ctx|'
+            '  ($ctx.addr + $ctx.len + $ctx.prot + $ctx.flags + $ctx.fd + $ctx.off) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-mprotect-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf]
+        target: "tracepoint:syscalls/sys_enter_mprotect"
+        program: [
+            '{|ctx|'
+            '  ($ctx.start + $ctx.len + $ctx.prot) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-mremap-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf]
+        target: "tracepoint:syscalls/sys_enter_mremap"
+        program: [
+            '{|ctx|'
+            '  ($ctx.addr + $ctx.old_len + $ctx.new_len + $ctx.flags + $ctx.new_addr) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-mincore-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf]
+        target: "tracepoint:syscalls/sys_enter_mincore"
+        program: [
+            '{|ctx|'
+            '  let vec = $ctx.vec'
+            '  if $vec { 1 | count }'
+            '  ($ctx.start + $ctx.len) | count'
             '  0'
             '}'
         ]
@@ -25603,6 +25751,7 @@ def tracepoint-payload-field-kernel-feature [field: string target] {
         | append $PATH_TRACEPOINT_FIELD_SPECS
         | append $PROCESS_TRACEPOINT_FIELD_SPECS
         | append $FD_TRACEPOINT_FIELD_SPECS
+        | append $MM_TRACEPOINT_FIELD_SPECS
     )
     let source_backed_feature = (
         source-backed-sys-enter-tracepoint-field-kernel-feature $field $target $source_backed_syscall_specs

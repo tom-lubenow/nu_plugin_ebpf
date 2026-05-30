@@ -22,6 +22,15 @@ const STATX_MIN_KERNEL: &str = "4.11";
 const STATX_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.11/fs/stat.c";
 const NAMEI_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/namei.c";
 const SOCKET_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/net/socket.c";
+const X86_MMAP_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v4.7/arch/x86/kernel/sys_x86_64.c";
+const MM_MMAP_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/mm/mmap.c";
+const MM_MPROTECT_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/mm/mprotect.c";
+const MM_MREMAP_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/mm/mremap.c";
+const MM_MADVISE_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/mm/madvise.c";
+const MM_MLOCK_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/mm/mlock.c";
+const MM_MINCORE_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/mm/mincore.c";
+const MM_MSYNC_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/mm/msync.c";
 
 /// Source used to construct a tracepoint context layout.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -333,6 +342,18 @@ impl TracepointContext {
             | "recvmsg" | "sendmmsg" | "recvmmsg" => {
                 (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, SOCKET_SOURCE)
             }
+            "mmap" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, X86_MMAP_SOURCE),
+            "brk" | "mmap_pgoff" | "old_mmap" | "munmap" | "remap_file_pages" => {
+                (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, MM_MMAP_SOURCE)
+            }
+            "mprotect" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, MM_MPROTECT_SOURCE),
+            "mremap" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, MM_MREMAP_SOURCE),
+            "madvise" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, MM_MADVISE_SOURCE),
+            "mlock" | "mlock2" | "munlock" | "mlockall" => {
+                (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, MM_MLOCK_SOURCE)
+            }
+            "mincore" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, MM_MINCORE_SOURCE),
+            "msync" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, MM_MSYNC_SOURCE),
             _ => return None,
         })
     }
@@ -602,6 +623,72 @@ impl TracepointContext {
                 ("vlen", Self::syscall_arg_int(false)),
                 ("flags", Self::syscall_arg_int(false)),
                 ("timeout", Self::syscall_arg_user_ptr()),
+            ],
+            "brk" => vec![("brk", Self::syscall_arg_int(false))],
+            "mmap" => vec![
+                ("addr", Self::syscall_arg_int(false)),
+                ("len", Self::syscall_arg_int(false)),
+                ("prot", Self::syscall_arg_int(false)),
+                ("flags", Self::syscall_arg_int(false)),
+                ("fd", Self::syscall_arg_int(false)),
+                ("off", Self::syscall_arg_int(false)),
+            ],
+            "mmap_pgoff" => vec![
+                ("addr", Self::syscall_arg_int(false)),
+                ("len", Self::syscall_arg_int(false)),
+                ("prot", Self::syscall_arg_int(false)),
+                ("flags", Self::syscall_arg_int(false)),
+                ("fd", Self::syscall_arg_int(false)),
+                ("pgoff", Self::syscall_arg_int(false)),
+            ],
+            "old_mmap" => vec![("arg", Self::syscall_arg_user_ptr())],
+            "munmap" => vec![
+                ("addr", Self::syscall_arg_int(false)),
+                ("len", Self::syscall_arg_int(false)),
+            ],
+            "remap_file_pages" => vec![
+                ("start", Self::syscall_arg_int(false)),
+                ("size", Self::syscall_arg_int(false)),
+                ("prot", Self::syscall_arg_int(false)),
+                ("pgoff", Self::syscall_arg_int(false)),
+                ("flags", Self::syscall_arg_int(false)),
+            ],
+            "mprotect" => vec![
+                ("start", Self::syscall_arg_int(false)),
+                ("len", Self::syscall_arg_int(false)),
+                ("prot", Self::syscall_arg_int(false)),
+            ],
+            "mremap" => vec![
+                ("addr", Self::syscall_arg_int(false)),
+                ("old_len", Self::syscall_arg_int(false)),
+                ("new_len", Self::syscall_arg_int(false)),
+                ("flags", Self::syscall_arg_int(false)),
+                ("new_addr", Self::syscall_arg_int(false)),
+            ],
+            "madvise" => vec![
+                ("start", Self::syscall_arg_int(false)),
+                ("len_in", Self::syscall_arg_int(false)),
+                ("behavior", Self::syscall_arg_int(true)),
+            ],
+            "mlock" | "munlock" => vec![
+                ("start", Self::syscall_arg_int(false)),
+                ("len", Self::syscall_arg_int(false)),
+            ],
+            "mlock2" => vec![
+                ("start", Self::syscall_arg_int(false)),
+                ("len", Self::syscall_arg_int(false)),
+                ("flags", Self::syscall_arg_int(true)),
+            ],
+            "mlockall" => vec![("flags", Self::syscall_arg_int(true))],
+            "mincore" => vec![
+                ("start", Self::syscall_arg_int(false)),
+                ("len", Self::syscall_arg_int(false)),
+                ("vec", Self::syscall_arg_user_ptr()),
+            ],
+            "msync" => vec![
+                ("start", Self::syscall_arg_int(false)),
+                ("len", Self::syscall_arg_int(false)),
+                ("flags", Self::syscall_arg_int(true)),
             ],
             _ => return Vec::new(),
         };

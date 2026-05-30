@@ -1079,6 +1079,20 @@ fn test_verifier_diff_tracepoint_payload_scanner_matches_rust_fallback_fields() 
         ("tracepoint:syscalls/sys_enter_epoll_ctl", "event"),
         ("tracepoint:syscalls/sys_enter_epoll_wait", "events"),
         ("tracepoint:syscalls/sys_enter_epoll_pwait", "sigmask"),
+        ("tracepoint:syscalls/sys_enter_brk", "brk"),
+        ("tracepoint:syscalls/sys_enter_mmap", "off"),
+        ("tracepoint:syscalls/sys_enter_mmap_pgoff", "pgoff"),
+        ("tracepoint:syscalls/sys_enter_old_mmap", "arg"),
+        ("tracepoint:syscalls/sys_enter_munmap", "addr"),
+        ("tracepoint:syscalls/sys_enter_remap_file_pages", "pgoff"),
+        ("tracepoint:syscalls/sys_enter_mprotect", "prot"),
+        ("tracepoint:syscalls/sys_enter_mremap", "new_addr"),
+        ("tracepoint:syscalls/sys_enter_madvise", "len_in"),
+        ("tracepoint:syscalls/sys_enter_mlock2", "flags"),
+        ("tracepoint:syscalls/sys_enter_munlock", "len"),
+        ("tracepoint:syscalls/sys_enter_mlockall", "flags"),
+        ("tracepoint:syscalls/sys_enter_mincore", "vec"),
+        ("tracepoint:syscalls/sys_enter_msync", "flags"),
     ]
     .into_iter()
     .map(|(target, field)| (target.to_string(), field.to_string()))
