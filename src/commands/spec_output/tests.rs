@@ -1227,6 +1227,63 @@ fn test_spec_record_includes_packet_context_metadata() {
             .expect("ipv6 flow_label endian metadata should be a bool")
     );
 
+    let icmp = packet_headers
+        .iter()
+        .find(|header| {
+            header
+                .as_record()
+                .ok()
+                .and_then(|record| record.get("header"))
+                .and_then(|header| header.as_str().ok())
+                .is_some_and(|header| header == "icmp")
+        })
+        .expect("icmp packet header should be present")
+        .as_record()
+        .expect("icmp packet header should be a record");
+    let icmp_fields = icmp
+        .get("fields")
+        .expect("icmp packet header fields should be present")
+        .as_list()
+        .expect("icmp packet header fields should be a list");
+    let echo_id = icmp_fields
+        .iter()
+        .find(|field| {
+            field
+                .as_record()
+                .ok()
+                .and_then(|record| record.get("name"))
+                .and_then(|name| name.as_str().ok())
+                .is_some_and(|name| name == "echo_id")
+        })
+        .expect("icmp echo_id field should be present")
+        .as_record()
+        .expect("icmp echo_id field should be a record");
+    assert_eq!(
+        echo_id
+            .get("offset")
+            .expect("icmp echo_id offset should be present")
+            .as_int()
+            .expect("icmp echo_id offset should be an int"),
+        4
+    );
+    assert!(
+        echo_id
+            .get("packet_big_endian")
+            .expect("icmp echo_id endian metadata should be present")
+            .as_bool()
+            .expect("icmp echo_id endian metadata should be a bool")
+    );
+    assert!(
+        echo_id
+            .get("names")
+            .expect("icmp echo_id names should be present")
+            .as_list()
+            .expect("icmp echo_id names should be a list")
+            .iter()
+            .any(|name| name.as_str().is_ok_and(|name| name == "identifier")),
+        "icmp echo_id should expose identifier alias"
+    );
+
     let eth = packet_headers
         .iter()
         .find(|header| {

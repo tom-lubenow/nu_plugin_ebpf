@@ -8421,6 +8421,23 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "xdp-packet-icmp-echo-fields"
+        category: "packet"
+        tags: [xdp packet header icmp source metadata]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  let icmp4 = ($ctx.data.eth.ipv4.icmp.rest_of_header + $ctx.data.eth.ipv4.icmp.echo_id + $ctx.data.eth.ipv4.icmp.echo_sequence)'
+            '  let icmp6 = ($ctx.data.eth.ipv6.icmpv6.rest + $ctx.data.eth.ipv6.icmpv6.identifier + $ctx.data.eth.ipv6.icmpv6.sequence)'
+            '  ($icmp4 + $icmp6) | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "xdp-frags-driver-context"
         category: "context-surface"
         tags: [xdp context frags]

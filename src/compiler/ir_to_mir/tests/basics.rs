@@ -2387,6 +2387,52 @@ fn test_lower_xdp_eth_ipv4_icmp_payload_projection_adds_fixed_icmp_payload_step(
 }
 
 #[test]
+fn test_lower_xdp_eth_ipv4_icmp_echo_sequence_projection_uses_be16_load() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![
+            string_member("data"),
+            string_member("eth"),
+            string_member("ipv4"),
+            string_member("icmp"),
+            string_member("echo_sequence"),
+        ],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("xdp eth ipv4 icmp echo_sequence projection should lower");
+
+    let instructions: Vec<_> = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect();
+    assert!(instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::Load {
+            ty: MirType::U16,
+            ..
+        }
+    )));
+    assert!(instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::BinOp {
+            op: BinOpKind::Shl,
+            ..
+        }
+    )));
+}
+
+#[test]
 fn test_lower_xdp_eth_ipv4_tcp_seq_projection_reuses_dynamic_payload_steps() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![

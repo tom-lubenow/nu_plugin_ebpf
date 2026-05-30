@@ -288,6 +288,27 @@ const ICMP_FIELDS: &[PacketHeaderFieldSpec] = &[
     packet_field("type", PacketHeaderFieldType::U8, 0, false),
     packet_field("code", PacketHeaderFieldType::U8, 1, false),
     packet_field_with_aliases("checksum", &["check"], PacketHeaderFieldType::U16, 2, true),
+    packet_field_with_aliases(
+        "rest_of_header",
+        &["rest"],
+        PacketHeaderFieldType::U32,
+        4,
+        true,
+    ),
+    packet_field_with_aliases(
+        "echo_id",
+        &["identifier", "id"],
+        PacketHeaderFieldType::U16,
+        4,
+        true,
+    ),
+    packet_field_with_aliases(
+        "echo_sequence",
+        &["sequence", "seq"],
+        PacketHeaderFieldType::U16,
+        6,
+        true,
+    ),
     packet_field("body", PacketHeaderFieldType::Bytes(4), 4, false),
 ];
 
@@ -295,6 +316,27 @@ const ICMPV6_FIELDS: &[PacketHeaderFieldSpec] = &[
     packet_field("type", PacketHeaderFieldType::U8, 0, false),
     packet_field("code", PacketHeaderFieldType::U8, 1, false),
     packet_field_with_aliases("checksum", &["check"], PacketHeaderFieldType::U16, 2, true),
+    packet_field_with_aliases(
+        "rest_of_header",
+        &["rest"],
+        PacketHeaderFieldType::U32,
+        4,
+        true,
+    ),
+    packet_field_with_aliases(
+        "echo_id",
+        &["identifier", "id"],
+        PacketHeaderFieldType::U16,
+        4,
+        true,
+    ),
+    packet_field_with_aliases(
+        "echo_sequence",
+        &["sequence", "seq"],
+        PacketHeaderFieldType::U16,
+        6,
+        true,
+    ),
     packet_field("body", PacketHeaderFieldType::Bytes(4), 4, false),
 ];
 
