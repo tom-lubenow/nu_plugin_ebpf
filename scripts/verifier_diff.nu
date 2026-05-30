@@ -11508,6 +11508,23 @@ const FIXTURES = [
         error_contains: "kfunc 'bpf_dynptr_from_xdp' arg2 requires uninitialized dynptr stack object slot"
     }
     {
+        name: "dynptr-kfunc-from-xdp-rejects-packet-arg"
+        category: "helper-state"
+        tags: [kfunc dynptr xdp source reject]
+        requires: [kernel-btf]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  let d = "0123456789abcdef"'
+            '  kfunc-call "bpf_dynptr_from_xdp" $ctx.data 0 $d'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'bpf_dynptr_from_xdp' arg0 expects xdp_md pointer"
+    }
+    {
         name: "dynptr-kfunc-from-xdp-rejects-nonzero-flags"
         category: "helper-state"
         tags: [kfunc dynptr xdp flags reject]

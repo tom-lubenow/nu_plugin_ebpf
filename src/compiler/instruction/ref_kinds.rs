@@ -1164,7 +1164,8 @@ pub fn kfunc_pointer_arg_requires_kernel(kfunc: &str, arg_idx: usize) -> bool {
 pub fn kfunc_pointer_arg_requires_raw_context(kfunc: &str, arg_idx: usize) -> Option<&'static str> {
     if matches!(
         (kfunc, arg_idx),
-        ("bpf_xdp_get_xfrm_state", 0)
+        ("bpf_dynptr_from_xdp", 0)
+            | ("bpf_xdp_get_xfrm_state", 0)
             | ("bpf_xdp_metadata_rx_hash", 0)
             | ("bpf_xdp_metadata_rx_timestamp", 0)
             | ("bpf_xdp_metadata_rx_vlan_tag", 0)

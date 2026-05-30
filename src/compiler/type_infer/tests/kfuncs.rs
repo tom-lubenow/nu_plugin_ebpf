@@ -1832,6 +1832,14 @@ fn test_type_error_kfunc_copy_from_user_task_dynptr_requires_kernel_task_arg() {
 }
 
 fn make_packet_dynptr_kfunc_type_call(kfunc: &str, flags_value: i64) -> MirFunction {
+    make_packet_dynptr_kfunc_type_call_with_arg0(kfunc, flags_value, CtxField::Context)
+}
+
+fn make_packet_dynptr_kfunc_type_call_with_arg0(
+    kfunc: &str,
+    flags_value: i64,
+    arg0_field: CtxField,
+) -> MirFunction {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();
     let flags = func.alloc_vreg();
@@ -1841,7 +1849,7 @@ fn make_packet_dynptr_kfunc_type_call(kfunc: &str, flags_value: i64) -> MirFunct
     let block = func.block_mut(BlockId(0));
     block.instructions.push(MirInst::LoadCtxField {
         dst: ctx,
-        field: CtxField::Context,
+        field: arg0_field,
         slot: None,
     });
     block.instructions.push(MirInst::Copy {
@@ -1891,6 +1899,23 @@ fn test_type_error_dynptr_from_xdp_rejects_non_xdp_program() {
         errs.iter().any(|e| e
             .message
             .contains("kfunc 'bpf_dynptr_from_xdp' is only valid in xdp programs")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_type_error_dynptr_from_xdp_rejects_packet_pointer_arg0() {
+    let func =
+        make_packet_dynptr_kfunc_type_call_with_arg0("bpf_dynptr_from_xdp", 0, CtxField::Data);
+    let mut ti = TypeInference::new(Some(ProbeContext::new(EbpfProgramType::Xdp, "lo")));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_dynptr_from_xdp to reject packet arg0");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("kfunc 'bpf_dynptr_from_xdp' arg0 expects xdp_md pointer")),
         "unexpected errors: {:?}",
         errs
     );
