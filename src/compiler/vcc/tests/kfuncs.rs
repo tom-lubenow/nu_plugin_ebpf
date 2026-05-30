@@ -2055,9 +2055,27 @@ fn make_packet_dynptr_kfunc_vcc_function_with_arg0(
     arg0_field: CtxField,
     arg0_type: MirType,
 ) -> (MirFunction, HashMap<VReg, MirType>) {
+    make_packet_dynptr_kfunc_vcc_function_with_arg0_copy(kfunc, arg0_field, arg0_type, false)
+}
+
+fn make_packet_dynptr_kfunc_vcc_function_with_copied_arg0(
+    kfunc: &str,
+    arg0_field: CtxField,
+    arg0_type: MirType,
+) -> (MirFunction, HashMap<VReg, MirType>) {
+    make_packet_dynptr_kfunc_vcc_function_with_arg0_copy(kfunc, arg0_field, arg0_type, true)
+}
+
+fn make_packet_dynptr_kfunc_vcc_function_with_arg0_copy(
+    kfunc: &str,
+    arg0_field: CtxField,
+    arg0_type: MirType,
+    copy_arg0: bool,
+) -> (MirFunction, HashMap<VReg, MirType>) {
     let (mut func, entry) = new_mir_function();
 
     let ctx = func.alloc_vreg();
+    let call_ctx = if copy_arg0 { func.alloc_vreg() } else { ctx };
     let flags = func.alloc_vreg();
     let dptr = func.alloc_vreg();
     let ret = func.alloc_vreg();
@@ -2070,6 +2088,12 @@ fn make_packet_dynptr_kfunc_vcc_function_with_arg0(
             field: arg0_field,
             slot: None,
         });
+    if copy_arg0 {
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: call_ctx,
+            src: MirValue::VReg(ctx),
+        });
+    }
     func.block_mut(entry).instructions.push(MirInst::Copy {
         dst: flags,
         src: MirValue::Const(0),
@@ -2082,12 +2106,15 @@ fn make_packet_dynptr_kfunc_vcc_function_with_arg0(
         dst: ret,
         kfunc: kfunc.to_string(),
         btf_id: None,
-        args: vec![ctx, flags, dptr],
+        args: vec![call_ctx, flags, dptr],
     });
     func.block_mut(entry).terminator = MirInst::Return { val: None };
 
     let mut types = HashMap::new();
-    types.insert(ctx, arg0_type);
+    types.insert(ctx, arg0_type.clone());
+    if copy_arg0 {
+        types.insert(call_ctx, arg0_type);
+    }
     types.insert(flags, MirType::I64);
     types.insert(
         dptr,
@@ -2125,6 +2152,45 @@ fn test_verify_mir_dynptr_from_xdp_rejects_packet_pointer_arg0() {
 }
 
 #[test]
+fn test_verify_mir_dynptr_from_xdp_accepts_copied_raw_context_arg0() {
+    let (func, types) = make_packet_dynptr_kfunc_vcc_function_with_copied_arg0(
+        "bpf_dynptr_from_xdp",
+        CtxField::Context,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected copied raw xdp context to satisfy dynptr_from_xdp arg0");
+}
+
+#[test]
+fn test_verify_mir_dynptr_from_xdp_rejects_copied_packet_pointer_arg0() {
+    let (func, types) = make_packet_dynptr_kfunc_vcc_function_with_copied_arg0(
+        "bpf_dynptr_from_xdp",
+        CtxField::Data,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Packet,
+        },
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected copied packet pointer to fail dynptr_from_xdp arg0");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("kfunc 'bpf_dynptr_from_xdp' arg0 expects xdp_md pointer")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_dynptr_from_skb_rejects_packet_pointer_arg0() {
     let (func, types) = make_packet_dynptr_kfunc_vcc_function_with_arg0(
         "bpf_dynptr_from_skb",
@@ -2138,6 +2204,45 @@ fn test_verify_mir_dynptr_from_skb_rejects_packet_pointer_arg0() {
 
     let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
         .expect_err("expected packet pointer to fail dynptr_from_skb arg0");
+    assert!(
+        err.iter().any(|e| e.message.contains(
+            "kfunc 'bpf_dynptr_from_skb' arg0 expects __sk_buff context or sk_buff pointer"
+        )),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_dynptr_from_skb_accepts_copied_tc_raw_context_arg0() {
+    let (func, types) = make_packet_dynptr_kfunc_vcc_function_with_copied_arg0(
+        "bpf_dynptr_from_skb",
+        CtxField::Context,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected copied tc raw context to satisfy dynptr_from_skb arg0");
+}
+
+#[test]
+fn test_verify_mir_dynptr_from_skb_rejects_copied_packet_pointer_arg0() {
+    let (func, types) = make_packet_dynptr_kfunc_vcc_function_with_copied_arg0(
+        "bpf_dynptr_from_skb",
+        CtxField::Data,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Packet,
+        },
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected copied packet pointer to fail dynptr_from_skb arg0");
     assert!(
         err.iter().any(|e| e.message.contains(
             "kfunc 'bpf_dynptr_from_skb' arg0 expects __sk_buff context or sk_buff pointer"

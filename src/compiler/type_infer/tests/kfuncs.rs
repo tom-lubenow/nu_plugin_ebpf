@@ -1840,8 +1840,26 @@ fn make_packet_dynptr_kfunc_type_call_with_arg0(
     flags_value: i64,
     arg0_field: CtxField,
 ) -> MirFunction {
+    make_packet_dynptr_kfunc_type_call_with_arg0_copy(kfunc, flags_value, arg0_field, false)
+}
+
+fn make_packet_dynptr_kfunc_type_call_with_copied_arg0(
+    kfunc: &str,
+    flags_value: i64,
+    arg0_field: CtxField,
+) -> MirFunction {
+    make_packet_dynptr_kfunc_type_call_with_arg0_copy(kfunc, flags_value, arg0_field, true)
+}
+
+fn make_packet_dynptr_kfunc_type_call_with_arg0_copy(
+    kfunc: &str,
+    flags_value: i64,
+    arg0_field: CtxField,
+    copy_arg0: bool,
+) -> MirFunction {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();
+    let call_ctx = if copy_arg0 { func.alloc_vreg() } else { ctx };
     let flags = func.alloc_vreg();
     let dptr = func.alloc_vreg();
     let ret = func.alloc_vreg();
@@ -1852,6 +1870,12 @@ fn make_packet_dynptr_kfunc_type_call_with_arg0(
         field: arg0_field,
         slot: None,
     });
+    if copy_arg0 {
+        block.instructions.push(MirInst::Copy {
+            dst: call_ctx,
+            src: MirValue::VReg(ctx),
+        });
+    }
     block.instructions.push(MirInst::Copy {
         dst: flags,
         src: MirValue::Const(flags_value),
@@ -1864,7 +1888,7 @@ fn make_packet_dynptr_kfunc_type_call_with_arg0(
         dst: ret,
         kfunc: kfunc.to_string(),
         btf_id: None,
-        args: vec![ctx, flags, dptr],
+        args: vec![call_ctx, flags, dptr],
     });
     block.terminator = MirInst::Return { val: None };
     func
@@ -1922,6 +1946,39 @@ fn test_type_error_dynptr_from_xdp_rejects_packet_pointer_arg0() {
 }
 
 #[test]
+fn test_infer_dynptr_from_xdp_accepts_copied_raw_context_arg0() {
+    let func = make_packet_dynptr_kfunc_type_call_with_copied_arg0(
+        "bpf_dynptr_from_xdp",
+        0,
+        CtxField::Context,
+    );
+    let mut ti = TypeInference::new(Some(ProbeContext::new(EbpfProgramType::Xdp, "lo")));
+
+    ti.infer(&func)
+        .expect("expected copied raw xdp context to satisfy dynptr_from_xdp arg0");
+}
+
+#[test]
+fn test_type_error_dynptr_from_xdp_rejects_copied_packet_pointer_arg0() {
+    let func = make_packet_dynptr_kfunc_type_call_with_copied_arg0(
+        "bpf_dynptr_from_xdp",
+        0,
+        CtxField::Data,
+    );
+    let mut ti = TypeInference::new(Some(ProbeContext::new(EbpfProgramType::Xdp, "lo")));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected copied packet pointer to fail dynptr_from_xdp arg0");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("kfunc 'bpf_dynptr_from_xdp' arg0 expects xdp_md pointer")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
 fn test_type_error_dynptr_from_skb_rejects_packet_pointer_arg0() {
     let func =
         make_packet_dynptr_kfunc_type_call_with_arg0("bpf_dynptr_from_skb", 0, CtxField::Data);
@@ -1929,6 +1986,39 @@ fn test_type_error_dynptr_from_skb_rejects_packet_pointer_arg0() {
     let errs = ti
         .infer(&func)
         .expect_err("expected bpf_dynptr_from_skb to reject packet arg0");
+    assert!(
+        errs.iter().any(|e| e.message.contains(
+            "kfunc 'bpf_dynptr_from_skb' arg0 expects __sk_buff context or sk_buff pointer"
+        )),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_infer_dynptr_from_skb_accepts_copied_tc_raw_context_arg0() {
+    let func = make_packet_dynptr_kfunc_type_call_with_copied_arg0(
+        "bpf_dynptr_from_skb",
+        0,
+        CtxField::Context,
+    );
+    let mut ti = TypeInference::new(Some(ProbeContext::new(EbpfProgramType::Tc, "lo:ingress")));
+
+    ti.infer(&func)
+        .expect("expected copied tc raw context to satisfy dynptr_from_skb arg0");
+}
+
+#[test]
+fn test_type_error_dynptr_from_skb_rejects_copied_packet_pointer_arg0() {
+    let func = make_packet_dynptr_kfunc_type_call_with_copied_arg0(
+        "bpf_dynptr_from_skb",
+        0,
+        CtxField::Data,
+    );
+    let mut ti = TypeInference::new(Some(ProbeContext::new(EbpfProgramType::Tc, "lo:ingress")));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected copied packet pointer to fail dynptr_from_skb arg0");
     assert!(
         errs.iter().any(|e| e.message.contains(
             "kfunc 'bpf_dynptr_from_skb' arg0 expects __sk_buff context or sk_buff pointer"
