@@ -9294,6 +9294,39 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "global-define-type-array-record-nested-string-field"
+        category: "globals"
+        tags: [globals records arrays string global-define accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  [{name: "aa"} {name: "bb"}] | global-define --type "array{record{name:string:15}:2}" entries'
+            '  let entries = (global-get entries)'
+            '  $entries.1.name | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "global-define-type-array-record-nested-string-upsert"
+        category: "globals"
+        tags: [globals records arrays string upsert global-define accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  [{name: "aa"} {name: "bb"}] | global-define --type "array{record{name:string:15}:2}" entries'
+            '  mut entries = (global-get entries)'
+            '  $entries.1.name = "cc"'
+            '  $entries.1.name | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "global-define-type-array-record-spread-initializer"
         category: "globals"
         tags: [globals records arrays list-spread global-define accept]
