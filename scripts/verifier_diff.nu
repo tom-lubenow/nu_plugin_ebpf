@@ -18025,7 +18025,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "source-kfunc-xdp-metadata-rx-hash"
@@ -18043,7 +18043,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "source-kfunc-xdp-metadata-rx-vlan-tag"
@@ -18061,7 +18061,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "source-kfunc-xdp-metadata-rejects-non-xdp"
@@ -18142,7 +18142,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "source-kfunc-xdp-xfrm-state-rejects-small-opts-buffer"
