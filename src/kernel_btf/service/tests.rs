@@ -689,6 +689,38 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
             .is_some_and(|source| source.contains("/v4.18/kernel/rseq.c"))
     );
 
+    let init_module = TracepointContext::sys_enter("sys_enter_init_module");
+    assert!(init_module.has_field("umod"));
+    assert!(init_module.has_field("len"));
+    assert!(init_module.has_field("uargs"));
+    let (_, module_source) = TracepointContext::syscall_fallback_field_minimum_kernel(
+        "syscalls",
+        "sys_enter_init_module",
+        "umod",
+    )
+    .expect("expected init_module source metadata");
+    assert!(module_source.contains("/v4.7/kernel/module.c"));
+
+    let kexec_file_load = TracepointContext::sys_enter("sys_enter_kexec_file_load");
+    assert!(kexec_file_load.has_field("kernel_fd"));
+    assert!(kexec_file_load.has_field("initrd_fd"));
+    assert!(kexec_file_load.has_field("cmdline_len"));
+    assert!(kexec_file_load.has_field("cmdline_ptr"));
+    assert!(kexec_file_load.has_field("flags"));
+    let (_, kexec_source) = TracepointContext::syscall_fallback_field_minimum_kernel(
+        "syscalls",
+        "sys_enter_kexec_file_load",
+        "cmdline_ptr",
+    )
+    .expect("expected kexec_file_load source metadata");
+    assert!(kexec_source.contains("/v4.7/kernel/kexec_file.c"));
+
+    let reboot = TracepointContext::sys_enter("sys_enter_reboot");
+    assert!(reboot.has_field("magic1"));
+    assert!(reboot.has_field("magic2"));
+    assert!(reboot.has_field("cmd"));
+    assert!(!reboot.has_field("arg"));
+
     let add_key = TracepointContext::sys_enter("sys_enter_add_key");
     assert!(add_key.has_field("_type"));
     assert!(add_key.has_field("_description"));
@@ -1628,6 +1660,25 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
             "sys_enter_mount_setattr",
             &["dfd", "path", "flags", "uattr", "usize"][..],
         ),
+        ("sys_enter_init_module", &["umod", "len", "uargs"][..]),
+        ("sys_enter_finit_module", &["fd", "uargs", "flags"][..]),
+        ("sys_enter_delete_module", &["name_user", "flags"][..]),
+        (
+            "sys_enter_kexec_load",
+            &["entry", "nr_segments", "segments", "flags"][..],
+        ),
+        (
+            "sys_enter_kexec_file_load",
+            &[
+                "kernel_fd",
+                "initrd_fd",
+                "cmdline_len",
+                "cmdline_ptr",
+                "flags",
+            ][..],
+        ),
+        ("sys_enter_reboot", &["magic1", "magic2", "cmd"][..]),
+        ("sys_enter_acct", &["name"][..]),
         (
             "sys_enter_process_vm_readv",
             &["lvec", "liovcnt", "rvec", "riovcnt", "flags"][..],
@@ -1668,6 +1719,8 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         ),
         ("sys_enter_pkey_alloc", &["flags", "init_val"][..]),
         ("sys_enter_pkey_free", &["pkey"][..]),
+        ("sys_enter_swapon", &["specialfile", "swap_flags"][..]),
+        ("sys_enter_swapoff", &["specialfile"][..]),
         ("sys_enter_memfd_create", &["uname", "flags"][..]),
         ("sys_enter_memfd_secret", &["flags"][..]),
         ("sys_enter_utime", &["filename", "times"][..]),

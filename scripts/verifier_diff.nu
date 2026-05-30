@@ -2636,6 +2636,48 @@ const PROCESS_TRACEPOINT_FIELD_SPECS = [
         source: "https://github.com/torvalds/linux/blob/v4.7/kernel/nsproxy.c"
     }
     {
+        syscalls: ["init_module"]
+        fields: ["umod" "len" "uargs"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/module.c"
+    }
+    {
+        syscalls: ["finit_module"]
+        fields: ["fd" "uargs" "flags"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/module.c"
+    }
+    {
+        syscalls: ["delete_module"]
+        fields: ["name_user" "flags"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/module.c"
+    }
+    {
+        syscalls: ["kexec_load"]
+        fields: ["entry" "nr_segments" "segments" "flags"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/kexec.c"
+    }
+    {
+        syscalls: ["kexec_file_load"]
+        fields: ["kernel_fd" "initrd_fd" "cmdline_len" "cmdline_ptr" "flags"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/kexec_file.c"
+    }
+    {
+        syscalls: ["reboot"]
+        fields: ["magic1" "magic2" "cmd"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/reboot.c"
+    }
+    {
+        syscalls: ["acct"]
+        fields: ["name"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/acct.c"
+    }
+    {
         syscalls: ["set_tid_address"]
         fields: ["tidptr"]
         min_kernel: "4.7"
@@ -2950,6 +2992,18 @@ const MM_TRACEPOINT_FIELD_SPECS = [
         fields: ["start" "len" "flags"]
         min_kernel: "4.7"
         source: "https://github.com/torvalds/linux/blob/v4.7/mm/msync.c"
+    }
+    {
+        syscalls: ["swapon"]
+        fields: ["specialfile" "swap_flags"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/mm/swapfile.c"
+    }
+    {
+        syscalls: ["swapoff"]
+        fields: ["specialfile"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/mm/swapfile.c"
     }
     {
         syscalls: ["memfd_create"]
@@ -7283,6 +7337,57 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         ]
     }
     {
+        target: "tracepoint:syscalls/sys_enter_init_module"
+        program: [
+            '{|ctx|'
+            '  let umod = $ctx.umod'
+            '  let uargs = $ctx.uargs'
+            '  if $umod { 1 | count }'
+            '  if $uargs { 1 | count }'
+            '  $ctx.len | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_init_module:field:umod"
+            "tracepoint:syscalls/sys_enter_init_module:field:uargs"
+            "tracepoint:syscalls/sys_enter_init_module:field:len"
+        ]
+    }
+    {
+        target: "tracepoint:syscalls/sys_enter_kexec_file_load"
+        program: [
+            '{|ctx|'
+            '  let cmdline = $ctx.cmdline_ptr'
+            '  if $cmdline { 1 | count }'
+            '  ($ctx.kernel_fd + $ctx.initrd_fd + $ctx.cmdline_len + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_kexec_file_load:field:cmdline_ptr"
+            "tracepoint:syscalls/sys_enter_kexec_file_load:field:kernel_fd"
+            "tracepoint:syscalls/sys_enter_kexec_file_load:field:initrd_fd"
+            "tracepoint:syscalls/sys_enter_kexec_file_load:field:cmdline_len"
+            "tracepoint:syscalls/sys_enter_kexec_file_load:field:flags"
+        ]
+    }
+    {
+        target: "tracepoint:syscalls/sys_enter_swapon"
+        program: [
+            '{|ctx|'
+            '  let specialfile = $ctx.specialfile'
+            '  if $specialfile { 1 | count }'
+            '  $ctx.swap_flags | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_swapon:field:specialfile"
+            "tracepoint:syscalls/sys_enter_swapon:field:swap_flags"
+        ]
+    }
+    {
         target: "tracepoint:syscalls/sys_enter_openat"
         program: [
             '{|ctx|'
@@ -9782,6 +9887,59 @@ const FIXTURES = [
             '  let user_rseq = $ctx.rseq'
             '  if $user_rseq { 1 | count }'
             '  ($ctx.rseq_len + $ctx.flags + $ctx.sig) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-init-module-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_init_module]
+        target: "tracepoint:syscalls/sys_enter_init_module"
+        program: [
+            '{|ctx|'
+            '  let umod = $ctx.umod'
+            '  let uargs = $ctx.uargs'
+            '  if $umod { 1 | count }'
+            '  if $uargs { 1 | count }'
+            '  $ctx.len | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-kexec-file-load-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_kexec_file_load]
+        target: "tracepoint:syscalls/sys_enter_kexec_file_load"
+        program: [
+            '{|ctx|'
+            '  let cmdline = $ctx.cmdline_ptr'
+            '  if $cmdline { 1 | count }'
+            '  ($ctx.kernel_fd + $ctx.initrd_fd + $ctx.cmdline_len + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-swapon-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_swapon]
+        target: "tracepoint:syscalls/sys_enter_swapon"
+        program: [
+            '{|ctx|'
+            '  let specialfile = $ctx.specialfile'
+            '  if $specialfile { 1 | count }'
+            '  $ctx.swap_flags | count'
             '  0'
             '}'
         ]

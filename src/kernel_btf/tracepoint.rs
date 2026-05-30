@@ -22,6 +22,11 @@ const FORK_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/fo
 const CLONE3_MIN_KERNEL: &str = "5.3";
 const CLONE3_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.3/kernel/fork.c";
 const NSPROXY_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/nsproxy.c";
+const MODULE_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/module.c";
+const KEXEC_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/kexec.c";
+const KEXEC_FILE_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/kexec_file.c";
+const REBOOT_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/reboot.c";
+const ACCT_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/acct.c";
 const FILE_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/file.c";
 const FCNTL_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/fcntl.c";
 const LOCKS_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/locks.c";
@@ -66,6 +71,7 @@ const MM_MADVISE_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/mm/
 const MM_MLOCK_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/mm/mlock.c";
 const MM_MINCORE_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/mm/mincore.c";
 const MM_MSYNC_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/mm/msync.c";
+const SWAPFILE_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/mm/swapfile.c";
 const MEMFD_CREATE_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/mm/shmem.c";
 const MEMFD_SECRET_MIN_KERNEL: &str = "5.14";
 const MEMFD_SECRET_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.14/mm/secretmem.c";
@@ -180,6 +186,13 @@ const WELL_KNOWN_SYS_ENTER_SYSCALLS: &[&str] = &[
     "unshare",
     "clone3",
     "setns",
+    "init_module",
+    "finit_module",
+    "delete_module",
+    "kexec_load",
+    "kexec_file_load",
+    "reboot",
+    "acct",
     "lseek",
     "fadvise64",
     "readahead",
@@ -304,6 +317,8 @@ const WELL_KNOWN_SYS_ENTER_SYSCALLS: &[&str] = &[
     "migrate_pages",
     "move_pages",
     "set_mempolicy_home_node",
+    "swapon",
+    "swapoff",
     "mlock",
     "mlock2",
     "munlock",
@@ -868,6 +883,13 @@ impl TracepointContext {
             "unshare" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, FORK_SOURCE),
             "clone3" => (CLONE3_MIN_KERNEL, CLONE3_SOURCE),
             "setns" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, NSPROXY_SOURCE),
+            "init_module" | "finit_module" | "delete_module" => {
+                (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, MODULE_SOURCE)
+            }
+            "kexec_load" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, KEXEC_SOURCE),
+            "kexec_file_load" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, KEXEC_FILE_SOURCE),
+            "reboot" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, REBOOT_SOURCE),
+            "acct" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, ACCT_SOURCE),
             "lseek" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, READ_WRITE_SOURCE),
             "fadvise64" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, FADVISE_SOURCE),
             "readahead" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, READAHEAD_SOURCE),
@@ -943,6 +965,7 @@ impl TracepointContext {
             }
             "mincore" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, MM_MINCORE_SOURCE),
             "msync" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, MM_MSYNC_SOURCE),
+            "swapon" | "swapoff" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, SWAPFILE_SOURCE),
             "memfd_create" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, MEMFD_CREATE_SOURCE),
             "memfd_secret" => (MEMFD_SECRET_MIN_KERNEL, MEMFD_SECRET_SOURCE),
             "mbind" | "set_mempolicy" | "get_mempolicy" | "migrate_pages" => {
@@ -1302,6 +1325,40 @@ impl TracepointContext {
                 ("fd", Self::syscall_arg_int(true)),
                 ("nstype", Self::syscall_arg_int(true)),
             ],
+            "init_module" => vec![
+                ("umod", Self::syscall_arg_user_ptr()),
+                ("len", Self::syscall_arg_int(false)),
+                ("uargs", Self::syscall_arg_user_ptr()),
+            ],
+            "finit_module" => vec![
+                ("fd", Self::syscall_arg_int(true)),
+                ("uargs", Self::syscall_arg_user_ptr()),
+                ("flags", Self::syscall_arg_int(true)),
+            ],
+            "delete_module" => vec![
+                ("name_user", Self::syscall_arg_user_ptr()),
+                ("flags", Self::syscall_arg_int(false)),
+            ],
+            "kexec_load" => vec![
+                ("entry", Self::syscall_arg_int(false)),
+                ("nr_segments", Self::syscall_arg_int(false)),
+                ("segments", Self::syscall_arg_user_ptr()),
+                ("flags", Self::syscall_arg_int(false)),
+            ],
+            "kexec_file_load" => vec![
+                ("kernel_fd", Self::syscall_arg_int(true)),
+                ("initrd_fd", Self::syscall_arg_int(true)),
+                ("cmdline_len", Self::syscall_arg_int(false)),
+                ("cmdline_ptr", Self::syscall_arg_user_ptr()),
+                ("flags", Self::syscall_arg_int(false)),
+            ],
+            "reboot" => vec![
+                ("magic1", Self::syscall_arg_int(true)),
+                ("magic2", Self::syscall_arg_int(true)),
+                ("cmd", Self::syscall_arg_int(false)),
+                ("arg", Self::syscall_arg_user_ptr()),
+            ],
+            "acct" => vec![("name", Self::syscall_arg_user_ptr())],
             "lseek" => vec![
                 ("fd", Self::syscall_arg_int(false)),
                 ("offset", Self::syscall_arg_int(true)),
@@ -1856,6 +1913,11 @@ impl TracepointContext {
                 ("len", Self::syscall_arg_int(false)),
                 ("flags", Self::syscall_arg_int(true)),
             ],
+            "swapon" => vec![
+                ("specialfile", Self::syscall_arg_user_ptr()),
+                ("swap_flags", Self::syscall_arg_int(true)),
+            ],
+            "swapoff" => vec![("specialfile", Self::syscall_arg_user_ptr())],
             "memfd_create" => vec![
                 ("uname", Self::syscall_arg_user_ptr()),
                 ("flags", Self::syscall_arg_int(false)),

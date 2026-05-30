@@ -932,7 +932,9 @@ Extended-attribute fallbacks expose aliases for
 `sys_enter_setxattrat` / `sys_enter_getxattrat` / `sys_enter_listxattrat` /
 `sys_enter_removexattrat`. Process
 control fallbacks expose stable aliases for entry tracepoints such as
-`sys_enter_execveat`, `sys_enter_wait4`, and `sys_enter_setns`. File-descriptor
+`sys_enter_execveat`, `sys_enter_wait4`, `sys_enter_setns`, module and kexec
+calls such as `sys_enter_init_module` and `sys_enter_kexec_file_load`,
+`sys_enter_reboot`, and `sys_enter_acct`. File-descriptor
 and event fallbacks expose aliases for common entry tracepoints such as
 `sys_enter_lseek`, `sys_enter_fallocate`, `sys_enter_sync_file_range`,
 `sys_enter_fcntl`, `sys_enter_ioctl`, `sys_enter_dup3`, `sys_enter_pipe2`,
@@ -949,7 +951,8 @@ Memory-management fallbacks expose aliases for common entry tracepoints such as
 `sys_enter_msync`, NUMA memory-policy calls such as `sys_enter_mbind` and
 `sys_enter_move_pages`, process-memory calls such as `sys_enter_process_vm_readv`,
 Linux 4.9+ pkey calls such as `sys_enter_pkey_mprotect`, and Linux 5.17+
-`sys_enter_set_mempolicy_home_node`.
+`sys_enter_set_mempolicy_home_node`; swap calls such as `sys_enter_swapon`
+and `sys_enter_swapoff` are source-backed as well.
 Time and timer fallbacks expose aliases for common entry tracepoints such as
 `sys_enter_utime`, `sys_enter_utimes`, `sys_enter_futimesat`,
 `sys_enter_utimensat`, `sys_enter_gettimeofday`, `sys_enter_clock_gettime`,
