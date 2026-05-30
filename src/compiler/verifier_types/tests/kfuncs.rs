@@ -16106,6 +16106,108 @@ fn test_sock_ops_enable_tx_tstamp_rejects_copied_socket_arg0() {
     );
 }
 
+fn make_sock_addr_set_sun_path_verify_function_with_copied_arg0(
+    arg0_field: CtxField,
+) -> (MirFunction, HashMap<VReg, MirType>) {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let ctx = func.alloc_vreg();
+    let ctx_alias = func.alloc_vreg();
+    let path = func.alloc_vreg();
+    let size = func.alloc_vreg();
+    let ret = func.alloc_vreg();
+    let path_slot = func.alloc_stack_slot(32, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: arg0_field,
+            slot: None,
+        });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: ctx_alias,
+        src: MirValue::VReg(ctx),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: path,
+        src: MirValue::StackSlot(path_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: size,
+        src: MirValue::Const(17),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: ret,
+        kfunc: "bpf_sock_addr_set_sun_path".to_string(),
+        btf_id: None,
+        args: vec![ctx_alias, path, size],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(
+        ctx_alias,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(
+        path,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(size, MirType::I64);
+    types.insert(ret, MirType::I64);
+
+    (func, types)
+}
+
+#[test]
+fn test_sock_addr_set_sun_path_accepts_copied_raw_context_arg0() {
+    let (func, types) =
+        make_sock_addr_set_sun_path_verify_function_with_copied_arg0(CtxField::Context);
+    let probe_ctx = ProbeContext::new(
+        EbpfProgramType::CgroupSockAddr,
+        "/sys/fs/cgroup:connect_unix",
+    );
+
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected copied raw cgroup_sock_addr context to satisfy sun_path kfunc arg0");
+}
+
+#[test]
+fn test_sock_addr_set_sun_path_rejects_copied_socket_arg0() {
+    let (func, types) =
+        make_sock_addr_set_sun_path_verify_function_with_copied_arg0(CtxField::Socket);
+    let probe_ctx = ProbeContext::new(
+        EbpfProgramType::CgroupSockAddr,
+        "/sys/fs/cgroup:connect_unix",
+    );
+
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected copied socket pointer to fail sun_path kfunc arg0");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("kfunc 'bpf_sock_addr_set_sun_path' arg0 expects bpf_sock_addr pointer")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
 fn make_xdp_get_xfrm_state_verify_function(
     opts_size: i64,
     buffer_size: usize,

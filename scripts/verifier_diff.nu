@@ -14149,6 +14149,39 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "source-kfunc-sock-addr-set-sun-path-accepts-raw-context"
+        category: "kfunc"
+        tags: [cgroup-sock-addr kfunc unix source accept]
+        requires: [cgroup-v2 kernel-btf]
+        target: "cgroup_sock_addr:/sys/fs/cgroup:connect_unix"
+        program: [
+            '{|ctx|'
+            '  let path = "/tmp/nu-ebpf.sock"'
+            '  kfunc-call "bpf_sock_addr_set_sun_path" $ctx $path 17'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-kfunc-sock-addr-set-sun-path-rejects-socket-arg"
+        category: "kfunc"
+        tags: [cgroup-sock-addr kfunc unix source reject]
+        requires: [cgroup-v2 kernel-btf]
+        target: "cgroup_sock_addr:/sys/fs/cgroup:connect_unix"
+        program: [
+            '{|ctx|'
+            '  let path = "/tmp/nu-ebpf.sock"'
+            '  kfunc-call "bpf_sock_addr_set_sun_path" $ctx.sk $path 17'
+            '  "allow"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'bpf_sock_addr_set_sun_path' arg0 expects bpf_sock_addr pointer"
+    }
+    {
         name: "source-helper-bind-cgroup-sock-addr-connect4"
         category: "helper-state"
         tags: [helper-call cgroup-sock-addr socket-option source accept]

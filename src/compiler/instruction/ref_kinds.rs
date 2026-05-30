@@ -1172,6 +1172,7 @@ pub fn kfunc_pointer_arg_requires_raw_context(kfunc: &str, arg_idx: usize) -> Op
         Some("xdp_md")
     } else {
         match (kfunc, arg_idx) {
+            ("bpf_sock_addr_set_sun_path", 0) => Some("bpf_sock_addr"),
             ("bpf_sock_ops_enable_tx_tstamp", 0) => Some("bpf_sock_ops"),
             _ => None,
         }

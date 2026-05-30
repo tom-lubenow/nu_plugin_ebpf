@@ -6535,6 +6535,14 @@ fn test_kfunc_pointer_arg_requires_raw_context_mappings() {
         assert_eq!(kfunc_pointer_arg_requires_raw_context(kfunc, 1), None);
     }
     assert_eq!(
+        kfunc_pointer_arg_requires_raw_context("bpf_sock_addr_set_sun_path", 0),
+        Some("bpf_sock_addr")
+    );
+    assert_eq!(
+        kfunc_pointer_arg_requires_raw_context("bpf_sock_addr_set_sun_path", 1),
+        None
+    );
+    assert_eq!(
         kfunc_pointer_arg_requires_raw_context("bpf_sock_ops_enable_tx_tstamp", 0),
         Some("bpf_sock_ops")
     );

@@ -5579,6 +5579,68 @@ fn test_type_error_sock_ops_enable_tx_tstamp_rejects_socket_arg0() {
     );
 }
 
+fn make_sock_addr_set_sun_path_type_call(arg0_field: CtxField) -> MirFunction {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let path = func.alloc_vreg();
+    let size = func.alloc_vreg();
+    let ret = func.alloc_vreg();
+    let path_slot = func.alloc_stack_slot(32, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: arg0_field,
+        slot: None,
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: path,
+        src: MirValue::StackSlot(path_slot),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: size,
+        src: MirValue::Const(17),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: ret,
+        kfunc: "bpf_sock_addr_set_sun_path".to_string(),
+        btf_id: None,
+        args: vec![ctx, path, size],
+    });
+    block.terminator = MirInst::Return { val: None };
+    func
+}
+
+#[test]
+fn test_infer_sock_addr_set_sun_path_accepts_raw_context_arg0() {
+    let func = make_sock_addr_set_sun_path_type_call(CtxField::Context);
+    let mut ti = TypeInference::new(Some(ProbeContext::new(
+        EbpfProgramType::CgroupSockAddr,
+        "/sys/fs/cgroup:connect_unix",
+    )));
+
+    ti.infer(&func)
+        .expect("expected cgroup_sock_addr raw context to satisfy sun_path kfunc arg0");
+}
+
+#[test]
+fn test_type_error_sock_addr_set_sun_path_rejects_socket_arg0() {
+    let func = make_sock_addr_set_sun_path_type_call(CtxField::Socket);
+    let mut ti = TypeInference::new(Some(ProbeContext::new(
+        EbpfProgramType::CgroupSockAddr,
+        "/sys/fs/cgroup:connect_unix",
+    )));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected socket pointer to fail sun_path kfunc arg0");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("kfunc 'bpf_sock_addr_set_sun_path' arg0 expects bpf_sock_addr pointer")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
 fn make_xdp_get_xfrm_state_type_call(size: i64, buffer_size: usize) -> (MirFunction, VReg) {
     make_xdp_get_xfrm_state_type_call_with_arg0(CtxField::Context, size, buffer_size)
 }
