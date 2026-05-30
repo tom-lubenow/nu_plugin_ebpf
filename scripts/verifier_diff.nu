@@ -19762,7 +19762,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "source-kfunc-task-acquire-project-release"
@@ -19781,7 +19781,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "source-kfunc-task-acquire-rejects-leak"
