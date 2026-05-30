@@ -11991,6 +11991,94 @@ const FIXTURES = [
         error_contains: "helper 'bpf_dynptr_data' arg0 ringbuf dynptr reservation already released"
     }
     {
+        name: "source-helper-copy-from-user-accepts-user-src"
+        category: "helper-state"
+        tags: [helper copy-user accept]
+        target: "uprobe:/bin/true:main"
+        program: [
+            '{|ctx|'
+            '  let ptr = $ctx.arg0'
+            '  if $ptr {'
+            '    let dst = "0123456789abcdef"'
+            '    helper-call "bpf_copy_from_user" $dst 8 $ptr'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "source-helper-copy-from-user-task-accepts-current-task"
+        category: "helper-state"
+        tags: [helper copy-user accept]
+        target: "uprobe:/bin/true:main"
+        program: [
+            '{|ctx|'
+            '  let ptr = $ctx.arg0'
+            '  if $ptr {'
+            '    let dst = "0123456789abcdef"'
+            '    helper-call "bpf_copy_from_user_task" $dst 8 $ptr $ctx.current_task 0'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "source-helper-copy-from-user-accepts-zero-size-null-dst"
+        category: "helper-state"
+        tags: [helper copy-user zero-size accept]
+        target: "uprobe:/bin/true:main"
+        program: [
+            '{|ctx|'
+            '  let ptr = $ctx.arg0'
+            '  if $ptr {'
+            '    helper-call "bpf_copy_from_user" 0 0 $ptr'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "source-helper-copy-from-user-rejects-null-dst-nonzero-size"
+        category: "helper-state"
+        tags: [helper copy-user zero-size reject]
+        target: "uprobe:/bin/true:main"
+        program: [
+            '{|ctx|'
+            '  let ptr = $ctx.arg0'
+            '  if $ptr {'
+            '    helper-call "bpf_copy_from_user" 0 8 $ptr'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 148 arg0 requires arg1 = 0 when arg0 is null"
+    }
+    {
+        name: "source-helper-copy-from-user-rejects-stack-src"
+        category: "helper-state"
+        tags: [helper copy-user reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let dst = "0123456789abcdef"'
+            '  let src = "abcdefgh"'
+            '  helper-call "bpf_copy_from_user" $dst 8 $src'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper copy_from_user src expects pointer in [User]"
+    }
+    {
         name: "dynptr-kfunc-copy-from-user-initializes-dynptr"
         category: "helper-state"
         tags: [kfunc dynptr accept]

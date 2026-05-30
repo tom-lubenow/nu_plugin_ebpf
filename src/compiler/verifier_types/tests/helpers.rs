@@ -10268,6 +10268,90 @@ fn make_copy_from_user_verify_call(
     (func, types)
 }
 
+fn make_copy_from_user_null_dst_verify_call(
+    size: i64,
+    with_task: bool,
+    flags: i64,
+) -> (MirFunction, HashMap<VReg, MirType>) {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let call_block = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let src = func.alloc_vreg();
+    let src_non_null = func.alloc_vreg();
+    let ret = func.alloc_vreg();
+    let task = with_task.then(|| func.alloc_vreg());
+
+    if let Some(task) = task {
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: task,
+                helper: BpfHelper::GetCurrentTaskBtf as u32,
+                args: vec![],
+            });
+    }
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: src_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(src),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: src_non_null,
+        if_true: call_block,
+        if_false: done,
+    };
+
+    let args = if let Some(task) = task {
+        vec![
+            MirValue::Const(0),
+            MirValue::Const(size),
+            MirValue::VReg(src),
+            MirValue::VReg(task),
+            MirValue::Const(flags),
+        ]
+    } else {
+        vec![
+            MirValue::Const(0),
+            MirValue::Const(size),
+            MirValue::VReg(src),
+        ]
+    };
+    func.block_mut(call_block)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: ret,
+            helper: if with_task {
+                BpfHelper::CopyFromUserTask as u32
+            } else {
+                BpfHelper::CopyFromUser as u32
+            },
+            args,
+        });
+    func.block_mut(call_block).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        src,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::User,
+        },
+    );
+    types.insert(src_non_null, MirType::Bool);
+    if let Some(task) = task {
+        types.insert(task, MirType::named_kernel_struct_ptr("task_struct"));
+    }
+    types.insert(ret, MirType::I64);
+
+    (func, types)
+}
+
 fn make_probe_write_user_verify_call(
     size: i64,
     src_size: usize,
@@ -10369,6 +10453,18 @@ fn test_verify_mir_helper_copy_from_user_task_accepts_task_arg() {
 }
 
 #[test]
+fn test_verify_mir_helper_copy_from_user_accepts_zero_size_null_dst() {
+    let (func, types) = make_copy_from_user_null_dst_verify_call(0, false, 0);
+    verify_mir(&func, &types).expect("expected bpf_copy_from_user null dst with zero size");
+}
+
+#[test]
+fn test_verify_mir_helper_copy_from_user_task_accepts_zero_size_null_dst() {
+    let (func, types) = make_copy_from_user_null_dst_verify_call(0, true, 0);
+    verify_mir(&func, &types).expect("expected bpf_copy_from_user_task null dst with zero size");
+}
+
+#[test]
 fn test_verify_mir_helper_probe_write_user_accepts_user_dst() {
     let (func, types) = make_probe_write_user_verify_call(16, 16);
     verify_mir(&func, &types).expect("expected bpf_probe_write_user helper to verify");
@@ -10388,6 +10484,33 @@ fn test_verify_mir_helper_copy_from_user_rejects_small_buffer() {
         err.iter().any(|e| e
             .message
             .contains("helper copy_from_user dst out of bounds")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_helper_copy_from_user_rejects_null_dst_with_nonzero_size() {
+    let (func, types) = make_copy_from_user_null_dst_verify_call(8, false, 0);
+    let err = verify_mir(&func, &types).expect_err("expected copy_from_user null dst size error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper 148 arg0 requires arg1 = 0 when arg0 is null")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_helper_copy_from_user_task_rejects_null_dst_with_nonzero_size() {
+    let (func, types) = make_copy_from_user_null_dst_verify_call(8, true, 0);
+    let err =
+        verify_mir(&func, &types).expect_err("expected copy_from_user_task null dst size error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper 191 arg0 requires arg1 = 0 when arg0 is null")),
         "unexpected errors: {:?}",
         err
     );
