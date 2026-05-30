@@ -433,6 +433,16 @@ pub enum VccInst {
         kfunc: String,
         arg_idx: usize,
     },
+    DynptrDeinitialize {
+        ptr: VccReg,
+        kfunc: String,
+        arg_idx: usize,
+    },
+    DynptrMarkMaybeInitialized {
+        ptr: VccReg,
+        kfunc: String,
+        arg_idx: usize,
+    },
     HelperDynptrMarkInitialized {
         ptr: VccReg,
         helper: String,

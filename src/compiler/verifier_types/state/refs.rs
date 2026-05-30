@@ -40,6 +40,16 @@ impl VerifierState {
         self.maybe_initialized_dynptr_slots.remove(&slot);
     }
 
+    pub(in crate::compiler::verifier_types) fn mark_dynptr_slot_maybe_initialized(
+        &mut self,
+        slot: StackSlotId,
+    ) {
+        self.released_ringbuf_dynptr_slots.remove(&slot);
+        self.ringbuf_dynptr_alias_roots.remove(&slot);
+        self.dynptr_initialized_slots.remove(&slot);
+        self.maybe_initialized_dynptr_slots.insert(slot);
+    }
+
     pub(in crate::compiler::verifier_types) fn acquire_ringbuf_dynptr_slot(
         &mut self,
         slot: StackSlotId,

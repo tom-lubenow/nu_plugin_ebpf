@@ -1,9 +1,10 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use super::instruction::{
-    BpfHelper, KfuncIterFamily, KfuncIterLifecycleOp, KfuncRefKind, helper_acquire_ref_kind,
-    helper_release_ref_kind, kfunc_acquire_ref_kind, kfunc_iter_lifecycle,
-    kfunc_release_ref_arg_index, kfunc_release_ref_kind,
+    BpfHelper, HelperDynptrArgRole, KfuncIterFamily, KfuncIterLifecycleOp, KfuncRefKind,
+    KfuncUnknownDynptrArgRole, helper_acquire_ref_kind, helper_release_ref_kind,
+    kfunc_acquire_ref_kind, kfunc_iter_lifecycle, kfunc_release_ref_arg_index,
+    kfunc_release_ref_kind, kfunc_unknown_dynptr_args, kfunc_unknown_dynptr_copy,
 };
 use super::mir::{BlockId, MirFunction, MirInst, MirValue, SubfunctionId, VReg};
 
@@ -98,6 +99,9 @@ pub(crate) struct SubfunctionSummary {
     preempt_disable_delta: i8,
     local_irq_deltas: [i8; SUMMARY_ARG_SLOTS],
     iter_deltas: [Option<SubfunctionIterDelta>; SUMMARY_ARG_SLOTS],
+    dynptr_required_args: u8,
+    dynptr_deltas: [i8; SUMMARY_ARG_SLOTS],
+    dynptr_maybe_initialized_args: u8,
     ringbuf_record_release_args: u8,
     ringbuf_dynptr_deltas: [i8; SUMMARY_ARG_SLOTS],
     kfunc_ref_release_args: [Option<KfuncRefKind>; SUMMARY_ARG_SLOTS],
@@ -113,6 +117,9 @@ impl SubfunctionSummary {
             preempt_disable_delta: 0,
             local_irq_deltas: [0; SUMMARY_ARG_SLOTS],
             iter_deltas: [None; SUMMARY_ARG_SLOTS],
+            dynptr_required_args: 0,
+            dynptr_deltas: [0; SUMMARY_ARG_SLOTS],
+            dynptr_maybe_initialized_args: 0,
             ringbuf_record_release_args: 0,
             ringbuf_dynptr_deltas: [0; SUMMARY_ARG_SLOTS],
             kfunc_ref_release_args: [None; SUMMARY_ARG_SLOTS],
@@ -128,6 +135,9 @@ impl SubfunctionSummary {
             preempt_disable_delta: 0,
             local_irq_deltas: [0; SUMMARY_ARG_SLOTS],
             iter_deltas: [None; SUMMARY_ARG_SLOTS],
+            dynptr_required_args: 0,
+            dynptr_deltas: [0; SUMMARY_ARG_SLOTS],
+            dynptr_maybe_initialized_args: 0,
             ringbuf_record_release_args: 0,
             ringbuf_dynptr_deltas: [0; SUMMARY_ARG_SLOTS],
             kfunc_ref_release_args: [None; SUMMARY_ARG_SLOTS],
@@ -174,6 +184,22 @@ impl SubfunctionSummary {
         }
     }
 
+    pub(crate) const fn requires_initialized_dynptr_arg(self, idx: usize) -> bool {
+        idx < 8 && (self.dynptr_required_args & (1 << idx)) != 0
+    }
+
+    pub(crate) const fn dynptr_delta_arg(self, idx: usize) -> i8 {
+        if idx < SUMMARY_ARG_SLOTS {
+            self.dynptr_deltas[idx]
+        } else {
+            0
+        }
+    }
+
+    pub(crate) const fn maybe_initializes_dynptr_arg(self, idx: usize) -> bool {
+        idx < 8 && (self.dynptr_maybe_initialized_args & (1 << idx)) != 0
+    }
+
     pub(crate) const fn changes_packet_data(self) -> bool {
         self.return_summary.changes_packet_data()
     }
@@ -210,6 +236,9 @@ impl SubfunctionSummary {
         preempt_disable_delta: i8,
         local_irq_deltas: [i8; SUMMARY_ARG_SLOTS],
         iter_deltas: [Option<SubfunctionIterDelta>; SUMMARY_ARG_SLOTS],
+        dynptr_required_args: u8,
+        dynptr_deltas: [i8; SUMMARY_ARG_SLOTS],
+        dynptr_maybe_initialized_args: u8,
         changes_packet_data: bool,
         ringbuf_record_release_args: u8,
         ringbuf_dynptr_deltas: [i8; SUMMARY_ARG_SLOTS],
@@ -223,6 +252,9 @@ impl SubfunctionSummary {
             preempt_disable_delta,
             local_irq_deltas,
             iter_deltas,
+            dynptr_required_args,
+            dynptr_deltas,
+            dynptr_maybe_initialized_args,
             ringbuf_record_release_args,
             ringbuf_dynptr_deltas,
             kfunc_ref_release_args,
@@ -257,6 +289,9 @@ struct SummaryState {
     preempt_disable_delta: Option<i8>,
     local_irq_deltas: [Option<i8>; SUMMARY_ARG_SLOTS],
     iter_deltas: [Option<IterDeltaState>; SUMMARY_ARG_SLOTS],
+    dynptr_required_args: u8,
+    dynptr_deltas: [Option<i8>; SUMMARY_ARG_SLOTS],
+    dynptr_maybe_initialized_args: u8,
     ringbuf_record_release_args: u8,
     ringbuf_dynptr_deltas: [Option<i8>; SUMMARY_ARG_SLOTS],
     kfunc_ref_release_args: [Option<KfuncRefKind>; SUMMARY_ARG_SLOTS],
@@ -342,6 +377,9 @@ fn summarize_function(
             preempt_disable_delta: Some(0),
             local_irq_deltas: [Some(0); SUMMARY_ARG_SLOTS],
             iter_deltas: [Some(IterDeltaState::ZERO); SUMMARY_ARG_SLOTS],
+            dynptr_required_args: 0,
+            dynptr_deltas: [Some(0); SUMMARY_ARG_SLOTS],
+            dynptr_maybe_initialized_args: 0,
             ringbuf_record_release_args: 0,
             ringbuf_dynptr_deltas: [Some(0); SUMMARY_ARG_SLOTS],
             kfunc_ref_release_args: [None; SUMMARY_ARG_SLOTS],
@@ -356,9 +394,12 @@ fn summarize_function(
     let mut returned_preempt_delta: Option<Option<i8>> = None;
     let mut returned_local_irq_deltas: Option<[Option<i8>; SUMMARY_ARG_SLOTS]> = None;
     let mut returned_iter_deltas: Option<[Option<IterDeltaState>; SUMMARY_ARG_SLOTS]> = None;
+    let mut returned_dynptr_required: Option<u8> = None;
+    let mut returned_dynptr_deltas: Option<[Option<i8>; SUMMARY_ARG_SLOTS]> = None;
+    let mut returned_dynptr_maybe_initialized: Option<u8> = None;
     let mut changes_packet_data = false;
     let mut returned_record_releases: Option<u8> = None;
-    let mut returned_dynptr_deltas: Option<[Option<i8>; SUMMARY_ARG_SLOTS]> = None;
+    let mut returned_ringbuf_dynptr_deltas: Option<[Option<i8>; SUMMARY_ARG_SLOTS]> = None;
     let mut returned_kfunc_releases: Option<[Option<KfuncRefKind>; SUMMARY_ARG_SLOTS]> = None;
 
     while let Some(block_id) = worklist.pop_front() {
@@ -441,11 +482,23 @@ fn summarize_function(
                     None => state.iter_deltas,
                     Some(existing) => merge_iter_delta_args(existing, state.iter_deltas),
                 });
+                returned_dynptr_required = Some(match returned_dynptr_required {
+                    None => state.dynptr_required_args,
+                    Some(existing) => existing | state.dynptr_required_args,
+                });
+                returned_dynptr_deltas = Some(match returned_dynptr_deltas {
+                    None => state.dynptr_deltas,
+                    Some(existing) => merge_delta_args(existing, state.dynptr_deltas),
+                });
+                returned_dynptr_maybe_initialized = Some(match returned_dynptr_maybe_initialized {
+                    None => state.dynptr_maybe_initialized_args,
+                    Some(existing) => existing | state.dynptr_maybe_initialized_args,
+                });
                 returned_record_releases = Some(match returned_record_releases {
                     None => state.ringbuf_record_release_args,
                     Some(existing) => existing & state.ringbuf_record_release_args,
                 });
-                returned_dynptr_deltas = Some(match returned_dynptr_deltas {
+                returned_ringbuf_dynptr_deltas = Some(match returned_ringbuf_dynptr_deltas {
                     None => state.ringbuf_dynptr_deltas,
                     Some(existing) => merge_delta_args(existing, state.ringbuf_dynptr_deltas),
                 });
@@ -465,6 +518,9 @@ fn summarize_function(
         }
     }
 
+    let dynptr_maybe_initialized_args = returned_dynptr_maybe_initialized.unwrap_or(0)
+        | inconsistent_delta_args(returned_dynptr_deltas);
+
     SubfunctionSummary::from_parts(
         return_alias.flatten(),
         returned_ringbuf_record.unwrap_or(false),
@@ -473,9 +529,12 @@ fn summarize_function(
         returned_preempt_delta.flatten().unwrap_or(0),
         finalize_delta_args(returned_local_irq_deltas),
         finalize_iter_delta_args(returned_iter_deltas),
+        returned_dynptr_required.unwrap_or(0),
+        finalize_delta_args(returned_dynptr_deltas),
+        dynptr_maybe_initialized_args,
         changes_packet_data,
         returned_record_releases.unwrap_or(0),
-        finalize_delta_args(returned_dynptr_deltas),
+        finalize_delta_args(returned_ringbuf_dynptr_deltas),
         returned_kfunc_releases.unwrap_or([None; SUMMARY_ARG_SLOTS]),
     )
 }
@@ -560,6 +619,22 @@ fn merge_alias_states(existing: &mut SummaryState, incoming: &SummaryState) -> b
         existing.iter_deltas = iter_deltas;
         changed = true;
     }
+    let dynptr_required_args = existing.dynptr_required_args | incoming.dynptr_required_args;
+    if existing.dynptr_required_args != dynptr_required_args {
+        existing.dynptr_required_args = dynptr_required_args;
+        changed = true;
+    }
+    let dynptr_deltas = merge_delta_args(existing.dynptr_deltas, incoming.dynptr_deltas);
+    if existing.dynptr_deltas != dynptr_deltas {
+        existing.dynptr_deltas = dynptr_deltas;
+        changed = true;
+    }
+    let dynptr_maybe_initialized_args =
+        existing.dynptr_maybe_initialized_args | incoming.dynptr_maybe_initialized_args;
+    if existing.dynptr_maybe_initialized_args != dynptr_maybe_initialized_args {
+        existing.dynptr_maybe_initialized_args = dynptr_maybe_initialized_args;
+        changed = true;
+    }
     let record_releases =
         existing.ringbuf_record_release_args & incoming.ringbuf_record_release_args;
     if existing.ringbuf_record_release_args != record_releases {
@@ -611,6 +686,19 @@ fn finalize_delta_args(
         finalized[idx] = returned[idx].unwrap_or(0);
     }
     finalized
+}
+
+fn inconsistent_delta_args(returned: Option<[Option<i8>; SUMMARY_ARG_SLOTS]>) -> u8 {
+    let Some(returned) = returned else {
+        return 0;
+    };
+    let mut args = 0;
+    for (idx, delta) in returned.iter().enumerate() {
+        if delta.is_none() {
+            set_mask_bit(&mut args, idx);
+        }
+    }
+    args
 }
 
 fn merge_iter_delta_args(
@@ -792,6 +880,7 @@ fn apply_alias_inst(
             set_alias(&mut state.aliases, *dst, AliasSource::Unknown);
             apply_kfunc_release_summary(kfunc, args, state);
             apply_kfunc_critical_delta(kfunc, args, state);
+            apply_kfunc_dynptr_summary(kfunc, args, state);
             let kfunc_ref_source =
                 kfunc_acquire_ref_kind(kfunc).map(|kind| KfuncRefSource { id: *dst, kind });
             set_kfunc_ref_source(&mut state.kfunc_ref_sources, *dst, kfunc_ref_source);
@@ -933,6 +1022,48 @@ fn apply_kfunc_iter_delta(kfunc: &str, args: &[VReg], state: &mut SummaryState) 
     add_iter_delta_arg(&mut state.iter_deltas, param_idx, lifecycle.family, delta);
 }
 
+fn apply_kfunc_dynptr_summary(kfunc: &str, args: &[VReg], state: &mut SummaryState) {
+    let copies = kfunc_unknown_dynptr_copy(kfunc);
+    let dynptr_args = kfunc_unknown_dynptr_args(kfunc);
+    for dynptr_arg in &dynptr_args {
+        let Some(arg) = args.get(dynptr_arg.arg_idx) else {
+            continue;
+        };
+        let AliasSource::Param(param_idx) = get_alias(&state.aliases, *arg) else {
+            continue;
+        };
+        match dynptr_arg.role {
+            KfuncUnknownDynptrArgRole::In => {
+                set_mask_bit(&mut state.dynptr_required_args, param_idx);
+            }
+            KfuncUnknownDynptrArgRole::Out => {
+                if copies
+                    .iter()
+                    .any(|copy| copy.dst_arg_idx == dynptr_arg.arg_idx)
+                {
+                    continue;
+                }
+                add_delta_arg(&mut state.dynptr_deltas, param_idx, 1);
+            }
+        }
+    }
+    for copy in copies {
+        if let Some(src) = args.get(copy.src_arg_idx)
+            && let AliasSource::Param(param_idx) = get_alias(&state.aliases, *src)
+        {
+            set_mask_bit(&mut state.dynptr_required_args, param_idx);
+            if copy.move_semantics {
+                add_delta_arg(&mut state.dynptr_deltas, param_idx, -1);
+            }
+        }
+        if let Some(dst) = args.get(copy.dst_arg_idx)
+            && let AliasSource::Param(param_idx) = get_alias(&state.aliases, *dst)
+        {
+            add_delta_arg(&mut state.dynptr_deltas, param_idx, 1);
+        }
+    }
+}
+
 fn add_iter_delta_arg(
     slots: &mut [Option<IterDeltaState>; SUMMARY_ARG_SLOTS],
     idx: usize,
@@ -963,12 +1094,26 @@ fn apply_subfunction_release_summary(
         let AliasSource::Param(param_idx) = get_alias(&state.aliases, *arg) else {
             continue;
         };
+        if summary.requires_initialized_dynptr_arg(idx) {
+            set_mask_bit(&mut state.dynptr_required_args, param_idx);
+        }
+        let dynptr_delta = summary.dynptr_delta_arg(idx);
+        if dynptr_delta != 0 {
+            add_delta_arg(&mut state.dynptr_deltas, param_idx, dynptr_delta);
+        }
+        if summary.maybe_initializes_dynptr_arg(idx) {
+            set_mask_bit(&mut state.dynptr_maybe_initialized_args, param_idx);
+        }
         if summary.releases_ringbuf_record_arg(idx) {
             set_mask_bit(&mut state.ringbuf_record_release_args, param_idx);
         }
-        let dynptr_delta = summary.ringbuf_dynptr_delta_arg(idx);
-        if dynptr_delta != 0 {
-            add_delta_arg(&mut state.ringbuf_dynptr_deltas, param_idx, dynptr_delta);
+        let ringbuf_dynptr_delta = summary.ringbuf_dynptr_delta_arg(idx);
+        if ringbuf_dynptr_delta != 0 {
+            add_delta_arg(
+                &mut state.ringbuf_dynptr_deltas,
+                param_idx,
+                ringbuf_dynptr_delta,
+            );
         }
         if let Some(kind) = summary.kfunc_ref_release_arg_kind(idx) {
             set_kfunc_release_arg(&mut state.kfunc_ref_release_args, param_idx, kind);
@@ -1010,6 +1155,21 @@ fn apply_helper_release_summary(
             }
         }
         _ => {}
+    }
+    for (arg_idx, _) in args.iter().enumerate() {
+        let Some(role) = helper.dynptr_arg_role(arg_idx) else {
+            continue;
+        };
+        let Some(param_idx) = helper_arg_param_alias(args, arg_idx, state, param_stack_aliases)
+        else {
+            continue;
+        };
+        match role {
+            HelperDynptrArgRole::In => set_mask_bit(&mut state.dynptr_required_args, param_idx),
+            HelperDynptrArgRole::Out => add_delta_arg(&mut state.dynptr_deltas, param_idx, 1),
+            HelperDynptrArgRole::RingbufReservationOut
+            | HelperDynptrArgRole::RingbufReservationRelease => {}
+        }
     }
     if let Some(kind) = helper_release_ref_kind(helper) {
         let Some(arg0) = args.first() else {
@@ -1619,6 +1779,126 @@ mod tests {
             .expect("expected summary");
         assert_eq!(summary.ringbuf_dynptr_delta_arg(0), 0);
         assert!(!summary.releases_ringbuf_dynptr_arg(0));
+    }
+
+    #[test]
+    fn test_infer_summary_tracks_dynptr_required_arg() {
+        let mut subfn = MirFunction::new();
+        let entry = subfn.alloc_block();
+        subfn.entry = entry;
+        subfn.param_count = 1;
+        subfn.vreg_count = 1;
+        let size_ret = subfn.alloc_vreg();
+        subfn
+            .block_mut(entry)
+            .instructions
+            .push(MirInst::CallKfunc {
+                dst: size_ret,
+                kfunc: "bpf_dynptr_size".to_string(),
+                btf_id: None,
+                args: vec![VReg(0)],
+            });
+        subfn.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let summaries = infer_subfunction_summaries(&[subfn]);
+        let summary = summaries
+            .get(&SubfunctionId(0))
+            .copied()
+            .expect("expected summary");
+        assert!(summary.requires_initialized_dynptr_arg(0));
+        assert_eq!(summary.dynptr_delta_arg(0), 0);
+    }
+
+    #[test]
+    fn test_infer_summary_tracks_dynptr_init_arg() {
+        let mut subfn = MirFunction::new();
+        let entry = subfn.alloc_block();
+        subfn.entry = entry;
+        subfn.param_count = 3;
+        subfn.vreg_count = 3;
+        let init_ret = subfn.alloc_vreg();
+        subfn
+            .block_mut(entry)
+            .instructions
+            .push(MirInst::CallKfunc {
+                dst: init_ret,
+                kfunc: "bpf_dynptr_from_skb".to_string(),
+                btf_id: None,
+                args: vec![VReg(0), VReg(1), VReg(2)],
+            });
+        subfn.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let summaries = infer_subfunction_summaries(&[subfn]);
+        let summary = summaries
+            .get(&SubfunctionId(0))
+            .copied()
+            .expect("expected summary");
+        assert!(!summary.requires_initialized_dynptr_arg(2));
+        assert_eq!(summary.dynptr_delta_arg(2), 1);
+        assert!(!summary.maybe_initializes_dynptr_arg(2));
+    }
+
+    #[test]
+    fn test_infer_summary_tracks_conditional_dynptr_init_arg_as_maybe() {
+        let mut subfn = MirFunction::new();
+        let entry = subfn.alloc_block();
+        let init = subfn.alloc_block();
+        let done = subfn.alloc_block();
+        subfn.entry = entry;
+        subfn.param_count = 4;
+        subfn.vreg_count = 4;
+        let init_ret = subfn.alloc_vreg();
+        subfn.block_mut(entry).terminator = MirInst::Branch {
+            cond: VReg(3),
+            if_true: init,
+            if_false: done,
+        };
+        subfn.block_mut(init).instructions.push(MirInst::CallKfunc {
+            dst: init_ret,
+            kfunc: "bpf_dynptr_from_skb".to_string(),
+            btf_id: None,
+            args: vec![VReg(0), VReg(1), VReg(2)],
+        });
+        subfn.block_mut(init).terminator = MirInst::Return { val: None };
+        subfn.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let summaries = infer_subfunction_summaries(&[subfn]);
+        let summary = summaries
+            .get(&SubfunctionId(0))
+            .copied()
+            .expect("expected summary");
+        assert_eq!(summary.dynptr_delta_arg(2), 0);
+        assert!(summary.maybe_initializes_dynptr_arg(2));
+    }
+
+    #[test]
+    fn test_infer_summary_tracks_dynptr_copy_args() {
+        let mut subfn = MirFunction::new();
+        let entry = subfn.alloc_block();
+        subfn.entry = entry;
+        subfn.param_count = 2;
+        subfn.vreg_count = 2;
+        let clone_ret = subfn.alloc_vreg();
+        subfn
+            .block_mut(entry)
+            .instructions
+            .push(MirInst::CallKfunc {
+                dst: clone_ret,
+                kfunc: "bpf_dynptr_clone".to_string(),
+                btf_id: None,
+                args: vec![VReg(0), VReg(1)],
+            });
+        subfn.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let summaries = infer_subfunction_summaries(&[subfn]);
+        let summary = summaries
+            .get(&SubfunctionId(0))
+            .copied()
+            .expect("expected summary");
+        assert!(summary.requires_initialized_dynptr_arg(0));
+        assert_eq!(summary.dynptr_delta_arg(0), 0);
+        assert!(!summary.requires_initialized_dynptr_arg(1));
+        assert_eq!(summary.dynptr_delta_arg(1), 1);
     }
 
     #[test]

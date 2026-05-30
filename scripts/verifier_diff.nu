@@ -11777,6 +11777,32 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "dynptr-kfunc-from-skb-user-function-out-param"
+        category: "helper-state"
+        tags: [kfunc dynptr skb tc accept user-function]
+        requires: [kernel-btf]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  def init [raw_ctx d] {'
+            '    kfunc-call "bpf_dynptr_from_skb" $raw_ctx 0 $d'
+            '    0'
+            '  }'
+            '  def size [d] {'
+            '    let size = (kfunc-call "bpf_dynptr_size" $d)'
+            '    $size | count'
+            '    0'
+            '  }'
+            '  let d = "0123456789abcdef"'
+            '  init $ctx $d'
+            '  size $d'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "dynptr-kfunc-from-skb-accepts-netfilter-skb-pointer"
         category: "helper-state"
         tags: [kfunc dynptr skb netfilter accept]

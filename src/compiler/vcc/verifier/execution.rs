@@ -1789,6 +1789,38 @@ impl VccVerifier {
                     ));
                 }
             }
+            VccInst::DynptrDeinitialize {
+                ptr,
+                kfunc,
+                arg_idx,
+            } => {
+                let op = format!("kfunc '{}' arg{}", kfunc, arg_idx);
+                let Some(slot) = self.stack_slot_from_reg(state, *ptr, &op) else {
+                    return;
+                };
+                if !state.is_dynptr_slot_initialized(slot) {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        format!(
+                            "kfunc '{}' arg{} requires initialized dynptr stack object",
+                            kfunc, arg_idx
+                        ),
+                    ));
+                    return;
+                }
+                state.deinitialize_dynptr_slot(slot);
+            }
+            VccInst::DynptrMarkMaybeInitialized {
+                ptr,
+                kfunc,
+                arg_idx,
+            } => {
+                let op = format!("kfunc '{}' arg{}", kfunc, arg_idx);
+                let Some(slot) = self.stack_slot_from_reg(state, *ptr, &op) else {
+                    return;
+                };
+                state.mark_dynptr_slot_maybe_initialized(slot);
+            }
             VccInst::HelperDynptrMarkInitialized {
                 ptr,
                 helper,

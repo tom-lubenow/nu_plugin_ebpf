@@ -514,6 +514,19 @@ fn apply_subfunction_release_summary(
         if summary.releases_ringbuf_record_arg(idx) {
             release_subfunction_ringbuf_record_arg(idx, arg, state, errors);
         }
+        if summary.requires_initialized_dynptr_arg(idx) {
+            require_subfunction_dynptr_arg(idx, arg, state, errors);
+        }
+        let dynptr_delta = summary.dynptr_delta_arg(idx);
+        for _ in 0..dynptr_delta.max(0) {
+            initialize_subfunction_dynptr_arg(idx, arg, state, errors);
+        }
+        for _ in 0..dynptr_delta.saturating_neg() {
+            deinitialize_subfunction_dynptr_arg(idx, arg, state, errors);
+        }
+        if summary.maybe_initializes_dynptr_arg(idx) {
+            mark_subfunction_dynptr_arg_maybe_initialized(idx, arg, state, errors);
+        }
         let dynptr_delta = summary.ringbuf_dynptr_delta_arg(idx);
         for _ in 0..dynptr_delta.max(0) {
             acquire_subfunction_ringbuf_dynptr_arg(idx, arg, state, errors);
@@ -568,6 +581,89 @@ fn release_subfunction_ringbuf_record_arg(
             idx
         ))),
     }
+}
+
+fn require_subfunction_dynptr_arg(
+    idx: usize,
+    arg: VReg,
+    state: &VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    let Some(slot) = stack_slot_base_from_vreg(arg, state) else {
+        errors.push(VerifierTypeError::new(format!(
+            "subfunction arg{} expects stack slot base pointer",
+            idx
+        )));
+        return;
+    };
+    if !state.is_dynptr_slot_initialized(slot) {
+        errors.push(VerifierTypeError::new(format!(
+            "subfunction arg{} requires initialized dynptr stack object",
+            idx
+        )));
+    }
+}
+
+fn initialize_subfunction_dynptr_arg(
+    idx: usize,
+    arg: VReg,
+    state: &mut VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    let Some(slot) = stack_slot_base_from_vreg(arg, state) else {
+        errors.push(VerifierTypeError::new(format!(
+            "subfunction arg{} expects stack slot base pointer",
+            idx
+        )));
+        return;
+    };
+    if state.is_dynptr_slot_maybe_initialized(slot) {
+        errors.push(VerifierTypeError::new(format!(
+            "subfunction arg{} requires uninitialized dynptr stack object slot",
+            idx
+        )));
+        return;
+    }
+    state.initialize_dynptr_slot(slot);
+}
+
+fn deinitialize_subfunction_dynptr_arg(
+    idx: usize,
+    arg: VReg,
+    state: &mut VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    let Some(slot) = stack_slot_base_from_vreg(arg, state) else {
+        errors.push(VerifierTypeError::new(format!(
+            "subfunction arg{} expects stack slot base pointer",
+            idx
+        )));
+        return;
+    };
+    if !state.is_dynptr_slot_initialized(slot) {
+        errors.push(VerifierTypeError::new(format!(
+            "subfunction arg{} requires initialized dynptr stack object",
+            idx
+        )));
+        return;
+    }
+    state.deinitialize_dynptr_slot(slot);
+}
+
+fn mark_subfunction_dynptr_arg_maybe_initialized(
+    idx: usize,
+    arg: VReg,
+    state: &mut VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    let Some(slot) = stack_slot_base_from_vreg(arg, state) else {
+        errors.push(VerifierTypeError::new(format!(
+            "subfunction arg{} expects stack slot base pointer",
+            idx
+        )));
+        return;
+    };
+    state.mark_dynptr_slot_maybe_initialized(slot);
 }
 
 fn acquire_subfunction_ringbuf_dynptr_arg(

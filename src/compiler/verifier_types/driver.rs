@@ -223,6 +223,13 @@ fn verify_mir_with_subfunction_summaries_impl(
         seed_entry_iter_state(&mut entry_state, func, summary);
         for i in 0..func.param_count {
             if let Some(slot) = func.param_stack_slots.get(&i).copied() {
+                let ringbuf_seeded = summary.ringbuf_dynptr_delta_arg(i) < 0;
+                if !ringbuf_seeded
+                    && (summary.requires_initialized_dynptr_arg(i)
+                        || summary.dynptr_delta_arg(i) < 0)
+                {
+                    entry_state.initialize_dynptr_slot(slot);
+                }
                 for _ in 0..summary.ringbuf_dynptr_delta_arg(i).saturating_neg() {
                     entry_state.initialize_dynptr_slot(slot);
                     entry_state.acquire_ringbuf_dynptr_slot(slot);

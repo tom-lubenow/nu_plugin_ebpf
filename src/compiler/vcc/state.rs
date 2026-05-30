@@ -1127,6 +1127,13 @@ impl VccState {
         self.maybe_initialized_dynptr_slots.remove(&slot);
     }
 
+    fn mark_dynptr_slot_maybe_initialized(&mut self, slot: StackSlotId) {
+        self.released_ringbuf_dynptr_slots.remove(&slot);
+        self.ringbuf_dynptr_alias_roots.remove(&slot);
+        self.dynptr_initialized_slots.remove(&slot);
+        self.maybe_initialized_dynptr_slots.insert(slot);
+    }
+
     fn acquire_ringbuf_dynptr_slot(&mut self, slot: StackSlotId) {
         self.released_ringbuf_dynptr_slots.remove(&slot);
         self.ringbuf_dynptr_alias_roots.insert(slot, slot);

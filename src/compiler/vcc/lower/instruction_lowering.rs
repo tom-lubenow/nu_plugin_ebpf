@@ -1810,6 +1810,35 @@ impl<'a> VccLowerer<'a> {
                     ptr: VccValue::Reg(VccReg(arg.0)),
                 });
             }
+            if summary.requires_initialized_dynptr_arg(idx) {
+                out.push(VccInst::DynptrRequireInitialized {
+                    ptr: VccReg(arg.0),
+                    kfunc: format!("subfunction arg{}", idx),
+                    arg_idx: idx,
+                });
+            }
+            let dynptr_delta = summary.dynptr_delta_arg(idx);
+            for _ in 0..dynptr_delta.max(0) {
+                out.push(VccInst::DynptrMarkInitialized {
+                    ptr: VccReg(arg.0),
+                    kfunc: format!("subfunction arg{}", idx),
+                    arg_idx: idx,
+                });
+            }
+            for _ in 0..dynptr_delta.saturating_neg() {
+                out.push(VccInst::DynptrDeinitialize {
+                    ptr: VccReg(arg.0),
+                    kfunc: format!("subfunction arg{}", idx),
+                    arg_idx: idx,
+                });
+            }
+            if summary.maybe_initializes_dynptr_arg(idx) {
+                out.push(VccInst::DynptrMarkMaybeInitialized {
+                    ptr: VccReg(arg.0),
+                    kfunc: format!("subfunction arg{}", idx),
+                    arg_idx: idx,
+                });
+            }
             let dynptr_delta = summary.ringbuf_dynptr_delta_arg(idx);
             let ptr = VccReg(arg.0);
             for _ in 0..dynptr_delta.max(0) {

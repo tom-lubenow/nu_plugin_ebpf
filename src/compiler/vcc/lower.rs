@@ -282,6 +282,16 @@ impl<'a> VccLowerer<'a> {
                     });
                 }
             }
+            let ringbuf_dynptr_seeded = summary.ringbuf_dynptr_delta_arg(idx) < 0;
+            if !ringbuf_dynptr_seeded
+                && (summary.requires_initialized_dynptr_arg(idx) || summary.dynptr_delta_arg(idx) < 0)
+            {
+                out.push(VccInst::DynptrMarkInitialized {
+                    ptr: reg,
+                    kfunc: "subfunction parameter".to_string(),
+                    arg_idx: idx,
+                });
+            }
             if summary.releases_ringbuf_record_arg(idx) {
                 out.push(VccInst::RingbufAcquire { id: reg });
             }
