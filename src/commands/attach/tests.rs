@@ -10125,6 +10125,40 @@ fn test_compile_socket_helper_ctx_projection_programs() {
 }
 
 #[test]
+fn test_compile_cgroup_socket_root_alias_projection_programs() {
+    let cases = [
+        (
+            EbpfProgramType::CgroupSock,
+            "/sys/fs/cgroup:sock_create",
+            vec![string_member("sock"), string_member("family")],
+            "cgroup_sock ctx.sock.family count",
+        ),
+        (
+            EbpfProgramType::CgroupSock,
+            "/sys/fs/cgroup:post_bind4",
+            vec![string_member("socket"), string_member("local_port")],
+            "cgroup_sock ctx.socket.local_port count",
+        ),
+        (
+            EbpfProgramType::CgroupSockopt,
+            "/sys/fs/cgroup:get",
+            vec![string_member("socket"), string_member("family")],
+            "cgroup_sockopt:get ctx.socket.family count",
+        ),
+        (
+            EbpfProgramType::CgroupSockAddr,
+            "/sys/fs/cgroup:connect4",
+            vec![string_member("sock"), string_member("family")],
+            "cgroup_sock_addr ctx.sock.family count",
+        ),
+    ];
+
+    for (program_type, target, members, context) in cases {
+        assert_ctx_path_count_program_compiles(program_type, target, CellPath { members }, context);
+    }
+}
+
+#[test]
 fn test_compile_bound_socket_helper_ctx_projection_program() {
     let hir = make_bound_ctx_path_projection_call_program(
         CellPath {

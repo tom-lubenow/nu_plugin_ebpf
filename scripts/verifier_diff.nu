@@ -4700,9 +4700,12 @@ const TARGET_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
     { target: "cgroup_device:/sys/fs/cgroup" field: "major" feature: $KERNEL_FEATURE_CTX_DEVICE_MAJOR }
     { target: "cgroup_sysctl:/sys/fs/cgroup" field: "write" feature: $KERNEL_FEATURE_CTX_SYSCTL_WRITE }
     { target: "cgroup_sockopt:/sys/fs/cgroup:get" field: "optval" feature: $KERNEL_FEATURE_CTX_SOCKOPT_OPTVAL }
+    { target: "cgroup_sockopt:/sys/fs/cgroup:get" field: "socket" feature: $KERNEL_FEATURE_CTX_CGROUP_SOCKOPT_SK }
     { target: "cgroup_sock:/sys/fs/cgroup:sock_create" field: "state" feature: $KERNEL_FEATURE_CTX_CGROUP_SOCK_STATE }
+    { target: "cgroup_sock:/sys/fs/cgroup:sock_create" field: "sock" feature: $KERNEL_FEATURE_CTX_CGROUP_SOCK_SK }
     { target: "sk_lookup:/proc/self/ns/net" field: "cookie" feature: $KERNEL_FEATURE_CTX_SK_LOOKUP_COOKIE }
     { target: "cgroup_sock_addr:/sys/fs/cgroup:connect4" field: "user_ip4" feature: $KERNEL_FEATURE_CTX_CGROUP_SOCK_ADDR_USER_IP4 }
+    { target: "cgroup_sock_addr:/sys/fs/cgroup:connect4" field: "sock" feature: $KERNEL_FEATURE_CTX_CGROUP_SOCK_ADDR_SK }
     { target: "iter:task_vma" field: "task" feature: $KERNEL_FEATURE_CTX_ITER_TASK_VMA_TASK }
     { target: "iter:bpf_map_elem" field: "map" feature: $KERNEL_FEATURE_CTX_ITER_MAP_ELEM_MAP }
     { target: "iter:sockmap" field: "sk" feature: $KERNEL_FEATURE_CTX_ITER_SOCKMAP_SOCK }
@@ -5088,6 +5091,17 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
             '{|ctx|'
             '  let sk = $ctx.sk'
             '  $sk.tcp.snd_cwnd | count'
+            '  "allow"'
+            '}'
+        ]
+        feature_keys: ["ctx:sk" "helper:bpf_tcp_sock" "helper:bpf_probe_read_kernel"]
+    }
+    {
+        target: "cgroup_sockopt:/sys/fs/cgroup:get"
+        program: [
+            '{|ctx|'
+            '  let tcp = $ctx.socket.tcp'
+            '  if $tcp { $tcp.snd_cwnd | count }'
             '  "allow"'
             '}'
         ]
@@ -5825,6 +5839,16 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         feature_keys: ["ctx:local_ip6" "ctx:local_port" "ctx:remote_port" "ctx:sk" "helper:bpf_probe_read_kernel"]
     }
     {
+        target: "cgroup_sock:/sys/fs/cgroup:post_bind4"
+        program: [
+            '{|ctx|'
+            '  ($ctx.sock.local_port + $ctx.socket.remote_port) | count'
+            '  "allow"'
+            '}'
+        ]
+        feature_keys: ["ctx:local_port" "ctx:remote_port" "ctx:sk" "helper:bpf_probe_read_kernel"]
+    }
+    {
         target: "cgroup_sock_addr:/sys/fs/cgroup:connect4"
         program: [
             '{|ctx|'
@@ -5833,6 +5857,16 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
             '}'
         ]
         feature_keys: ["ctx:family" "ctx:remote_ip4" "ctx:remote_port" "ctx:sk" "ctx:user_ip4" "ctx:user_port" "helper:bpf_probe_read_kernel"]
+    }
+    {
+        target: "cgroup_sock_addr:/sys/fs/cgroup:connect4"
+        program: [
+            '{|ctx|'
+            '  ($ctx.sock.family + $ctx.socket.remote_port) | count'
+            '  "allow"'
+            '}'
+        ]
+        feature_keys: ["ctx:family" "ctx:remote_port" "ctx:sk" "helper:bpf_probe_read_kernel"]
     }
     {
         target: "cgroup_sockopt:/sys/fs/cgroup:get"
@@ -13237,6 +13271,21 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "cgroup-sock-socket-root-alias-context"
+        category: "context-surface"
+        tags: [cgroup-sock context socket alias source metadata]
+        requires: [cgroup-v2]
+        target: "cgroup_sock:/sys/fs/cgroup:post_bind4"
+        program: [
+            '{|ctx|'
+            '  ($ctx.sock.local_port + $ctx.socket.remote_port) | count'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "cgroup-sock-rejects-post-bind-mark-write"
         category: "context-policy"
         tags: [cgroup-sock reject writable]
@@ -13429,6 +13478,21 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  ($ctx.user_ip4 + $ctx.user_port + $ctx.remote_ip4 + $ctx.remote_port + $ctx.sk.family) | count'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "cgroup-sock-addr-socket-root-alias-context"
+        category: "context-surface"
+        tags: [cgroup-sock-addr context socket alias source metadata]
+        requires: [cgroup-v2]
+        target: "cgroup_sock_addr:/sys/fs/cgroup:connect4"
+        program: [
+            '{|ctx|'
+            '  ($ctx.sock.family + $ctx.socket.remote_port) | count'
             '  "allow"'
             '}'
         ]
@@ -14558,6 +14622,24 @@ const FIXTURES = [
             '{|ctx|'
             '  let sk = ($ctx.sk)'
             '  $sk.tcp.snd_cwnd | count'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "cgroup-sockopt-socket-helper-root-alias-context"
+        category: "context-surface"
+        tags: [cgroup-sockopt context socket alias source metadata]
+        requires: [cgroup-v2]
+        target: "cgroup_sockopt:/sys/fs/cgroup:get"
+        program: [
+            '{|ctx|'
+            '  let tcp = $ctx.socket.tcp'
+            '  if $tcp {'
+            '    $tcp.snd_cwnd | count'
+            '  }'
             '  "allow"'
             '}'
         ]
@@ -26492,7 +26574,7 @@ def target-context-field-alias-kernel-feature [field: string target] {
         }
     }
     if ($target_text | str starts-with "cgroup_sockopt:") {
-        if $field == "sk" {
+        if $field in ["sk" "sock" "socket"] {
             return { matched: true, feature: $KERNEL_FEATURE_CTX_CGROUP_SOCKOPT_SK }
         }
         if $field == "level" {
@@ -26515,7 +26597,7 @@ def target-context-field-alias-kernel-feature [field: string target] {
         }
     }
     if ($target_text | str starts-with "cgroup_sock:") {
-        if $field == "sk" {
+        if $field in ["sk" "sock" "socket"] {
             return { matched: true, feature: $KERNEL_FEATURE_CTX_CGROUP_SOCK_SK }
         }
         if $field == "bound_dev_if" {
@@ -26597,7 +26679,7 @@ def target-context-field-alias-kernel-feature [field: string target] {
         }
     }
     if ($target_text | str starts-with "cgroup_sock_addr:") {
-        if $field == "sk" {
+        if $field in ["sk" "sock" "socket"] {
             return { matched: true, feature: $KERNEL_FEATURE_CTX_CGROUP_SOCK_ADDR_SK }
         }
         if $field == "family" {

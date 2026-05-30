@@ -1590,29 +1590,32 @@ fn test_lower_cgroup_sock_ctx_family_field() {
 
 #[test]
 fn test_lower_cgroup_sock_ctx_socket_family_field() {
-    let hir = make_ctx_path_program(CellPath {
-        members: vec![string_member("sk"), string_member("family")],
-    });
-    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:sock_create");
+    for root in ["sk", "sock", "socket"] {
+        let hir = make_ctx_path_program(CellPath {
+            members: vec![string_member(root), string_member("family")],
+        });
+        let probe_ctx =
+            ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:sock_create");
 
-    let result = lower_hir_to_mir_with_hints(
-        &hir,
-        Some(&probe_ctx),
-        &HashMap::new(),
-        None,
-        &HashMap::new(),
-        &HashMap::new(),
-    )
-    .expect("cgroup_sock ctx.sk.family should lower");
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            Some(&probe_ctx),
+            &HashMap::new(),
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("cgroup_sock ctx.{root}.family should lower: {err}"));
 
-    let block = result.program.main.block(result.program.main.entry);
-    assert!(block.instructions.iter().any(|inst| matches!(
-        inst,
-        MirInst::LoadCtxField {
-            field: CtxField::Socket,
-            ..
-        }
-    )));
+        let block = result.program.main.block(result.program.main.entry);
+        assert!(block.instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::LoadCtxField {
+                field: CtxField::Socket,
+                ..
+            }
+        )));
+    }
 }
 
 #[test]
@@ -2460,56 +2463,61 @@ fn test_lower_cgroup_sockopt_action_alias_return_to_const() {
 
 #[test]
 fn test_lower_cgroup_sockopt_ctx_socket_family_field() {
-    let hir = make_ctx_path_program(CellPath {
-        members: vec![string_member("sk"), string_member("family")],
-    });
-    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get");
+    for root in ["sk", "sock", "socket"] {
+        let hir = make_ctx_path_program(CellPath {
+            members: vec![string_member(root), string_member("family")],
+        });
+        let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get");
 
-    let result = lower_hir_to_mir_with_hints(
-        &hir,
-        Some(&probe_ctx),
-        &HashMap::new(),
-        None,
-        &HashMap::new(),
-        &HashMap::new(),
-    )
-    .expect("cgroup_sockopt ctx.sk.family should lower");
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            Some(&probe_ctx),
+            &HashMap::new(),
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("cgroup_sockopt ctx.{root}.family should lower: {err}"));
 
-    let block = result.program.main.block(result.program.main.entry);
-    assert!(block.instructions.iter().any(|inst| matches!(
-        inst,
-        MirInst::LoadCtxField {
-            field: CtxField::Socket,
-            ..
-        }
-    )));
+        let block = result.program.main.block(result.program.main.entry);
+        assert!(block.instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::LoadCtxField {
+                field: CtxField::Socket,
+                ..
+            }
+        )));
+    }
 }
 
 #[test]
 fn test_lower_cgroup_sock_addr_ctx_socket_family_field() {
-    let hir = make_ctx_path_program(CellPath {
-        members: vec![string_member("sk"), string_member("family")],
-    });
-    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:connect4");
+    for root in ["sk", "sock", "socket"] {
+        let hir = make_ctx_path_program(CellPath {
+            members: vec![string_member(root), string_member("family")],
+        });
+        let probe_ctx =
+            ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:connect4");
 
-    let result = lower_hir_to_mir_with_hints(
-        &hir,
-        Some(&probe_ctx),
-        &HashMap::new(),
-        None,
-        &HashMap::new(),
-        &HashMap::new(),
-    )
-    .expect("cgroup_sock_addr ctx.sk.family should lower");
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            Some(&probe_ctx),
+            &HashMap::new(),
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("cgroup_sock_addr ctx.{root}.family should lower: {err}"));
 
-    let block = result.program.main.block(result.program.main.entry);
-    assert!(block.instructions.iter().any(|inst| matches!(
-        inst,
-        MirInst::LoadCtxField {
-            field: CtxField::Socket,
-            ..
-        }
-    )));
+        let block = result.program.main.block(result.program.main.entry);
+        assert!(block.instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::LoadCtxField {
+                field: CtxField::Socket,
+                ..
+            }
+        )));
+    }
 }
 
 #[test]
