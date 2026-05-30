@@ -17079,7 +17079,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "timer-start-requires-null-checked-map-lookup"
@@ -17191,7 +17191,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "timer-init-rejects-phi-joined-mismatched-map-value-source"
@@ -17236,7 +17236,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "timer-callback-allows-prefix-params"
@@ -17257,7 +17257,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "timer-callback-map-btf-field"
