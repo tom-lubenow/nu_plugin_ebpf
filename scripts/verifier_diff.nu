@@ -10827,7 +10827,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "source-kfunc-copy-from-user-str-rejects-stack-src"
@@ -10864,7 +10864,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "source-kfunc-copy-from-user-task-str-rejects-stack-task"
@@ -17285,7 +17285,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "timer-callback-rejects-extra-declared-param"
