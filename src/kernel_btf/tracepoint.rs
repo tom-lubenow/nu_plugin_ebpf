@@ -123,6 +123,9 @@ const PIDFD_GETFD_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.6/ke
 const LANDLOCK_MIN_KERNEL: &str = "5.13";
 const LANDLOCK_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.13/security/landlock/syscalls.c";
+const LSM_SYSCALL_MIN_KERNEL: &str = "6.8";
+const LSM_SYSCALL_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v6.8/security/lsm_syscalls.c";
 const KERNEL_SYS_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/sys.c";
 const MEMBARRIER_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/membarrier.c";
 const PRINTK_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/printk/printk.c";
@@ -413,6 +416,9 @@ const WELL_KNOWN_SYS_ENTER_SYSCALLS: &[&str] = &[
     "landlock_create_ruleset",
     "landlock_add_rule",
     "landlock_restrict_self",
+    "lsm_get_self_attr",
+    "lsm_set_self_attr",
+    "lsm_list_modules",
     "setpriority",
     "getpriority",
     "setregid",
@@ -850,6 +856,9 @@ impl TracepointContext {
             Some("landlock_create_ruleset" | "landlock_add_rule" | "landlock_restrict_self") => {
                 (Some(LANDLOCK_MIN_KERNEL), Some(LANDLOCK_SOURCE))
             }
+            Some("lsm_get_self_attr" | "lsm_set_self_attr" | "lsm_list_modules") => {
+                (Some(LSM_SYSCALL_MIN_KERNEL), Some(LSM_SYSCALL_SOURCE))
+            }
             Some("setxattrat" | "getxattrat" | "listxattrat" | "removexattrat") => {
                 (Some(XATTRAT_MIN_KERNEL), Some(XATTRAT_SOURCE))
             }
@@ -946,6 +955,9 @@ impl TracepointContext {
             "pidfd_getfd" => (PIDFD_GETFD_MIN_KERNEL, PIDFD_GETFD_SOURCE),
             "landlock_create_ruleset" | "landlock_add_rule" | "landlock_restrict_self" => {
                 (LANDLOCK_MIN_KERNEL, LANDLOCK_SOURCE)
+            }
+            "lsm_get_self_attr" | "lsm_set_self_attr" | "lsm_list_modules" => {
+                (LSM_SYSCALL_MIN_KERNEL, LSM_SYSCALL_SOURCE)
             }
             "setxattrat" | "getxattrat" | "listxattrat" | "removexattrat" => {
                 (XATTRAT_MIN_KERNEL, XATTRAT_SOURCE)
@@ -1141,6 +1153,9 @@ impl TracepointContext {
             "pidfd_getfd" => (PIDFD_GETFD_MIN_KERNEL, PIDFD_GETFD_SOURCE),
             "landlock_create_ruleset" | "landlock_add_rule" | "landlock_restrict_self" => {
                 (LANDLOCK_MIN_KERNEL, LANDLOCK_SOURCE)
+            }
+            "lsm_get_self_attr" | "lsm_set_self_attr" | "lsm_list_modules" => {
+                (LSM_SYSCALL_MIN_KERNEL, LSM_SYSCALL_SOURCE)
             }
             "setpriority" | "getpriority" | "setregid" | "setgid" | "setreuid" | "setuid"
             | "setresuid" | "getresuid" | "setresgid" | "getresgid" | "setfsuid" | "setfsgid"
@@ -2354,6 +2369,23 @@ impl TracepointContext {
             ],
             "landlock_restrict_self" => vec![
                 ("ruleset_fd", Self::syscall_arg_int(true)),
+                ("flags", Self::syscall_arg_int(false)),
+            ],
+            "lsm_get_self_attr" => vec![
+                ("attr", Self::syscall_arg_int(false)),
+                ("ctx", Self::syscall_arg_user_ptr()),
+                ("size", Self::syscall_arg_user_ptr()),
+                ("flags", Self::syscall_arg_int(false)),
+            ],
+            "lsm_set_self_attr" => vec![
+                ("attr", Self::syscall_arg_int(false)),
+                ("ctx", Self::syscall_arg_user_ptr()),
+                ("size", Self::syscall_arg_int(false)),
+                ("flags", Self::syscall_arg_int(false)),
+            ],
+            "lsm_list_modules" => vec![
+                ("ids", Self::syscall_arg_user_ptr()),
+                ("size", Self::syscall_arg_user_ptr()),
                 ("flags", Self::syscall_arg_int(false)),
             ],
             "setpriority" => vec![

@@ -1228,6 +1228,37 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         TypeInfo::Ptr { is_user: true, .. }
     ));
 
+    let lsm_get_self_attr = TracepointContext::sys_enter("sys_enter_lsm_get_self_attr");
+    assert!(lsm_get_self_attr.has_field("attr"));
+    assert!(lsm_get_self_attr.has_field("ctx"));
+    assert!(lsm_get_self_attr.has_field("size"));
+    assert!(lsm_get_self_attr.has_field("flags"));
+    assert_eq!(lsm_get_self_attr.minimum_kernel(), Some("6.8"));
+    assert!(
+        lsm_get_self_attr
+            .minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v6.8/security/lsm_syscalls.c"))
+    );
+    assert!(matches!(
+        lsm_get_self_attr
+            .get_field("ctx")
+            .expect("expected lsm_get_self_attr ctx")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+
+    let lsm_list_modules = TracepointContext::sys_enter("sys_enter_lsm_list_modules");
+    assert!(lsm_list_modules.has_field("ids"));
+    assert!(lsm_list_modules.has_field("size"));
+    assert!(lsm_list_modules.has_field("flags"));
+    let (_, lsm_source) = TracepointContext::syscall_fallback_field_minimum_kernel(
+        "syscalls",
+        "sys_enter_lsm_list_modules",
+        "size",
+    )
+    .expect("expected lsm_list_modules size source metadata");
+    assert!(lsm_source.contains("/v6.8/security/lsm_syscalls.c"));
+
     let old_mmap = TracepointContext::sys_enter("sys_enter_old_mmap");
     assert!(old_mmap.has_field("id"));
     assert!(old_mmap.has_field("args"));
@@ -2017,6 +2048,15 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
             "sys_enter_landlock_restrict_self",
             &["ruleset_fd", "flags"][..],
         ),
+        (
+            "sys_enter_lsm_get_self_attr",
+            &["attr", "ctx", "size", "flags"][..],
+        ),
+        (
+            "sys_enter_lsm_set_self_attr",
+            &["attr", "ctx", "size", "flags"][..],
+        ),
+        ("sys_enter_lsm_list_modules", &["ids", "size", "flags"][..]),
         ("sys_enter_setpriority", &["which", "who", "niceval"][..]),
         ("sys_enter_getpriority", &["which", "who"][..]),
         ("sys_enter_setregid", &["rgid", "egid"][..]),

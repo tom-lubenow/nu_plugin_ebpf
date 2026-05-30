@@ -3436,6 +3436,26 @@ const LANDLOCK_TRACEPOINT_FIELD_SPECS = [
         source: "https://github.com/torvalds/linux/blob/v5.13/security/landlock/syscalls.c"
     }
 ]
+const LSM_SYSCALL_TRACEPOINT_FIELD_SPECS = [
+    {
+        syscalls: ["lsm_get_self_attr"]
+        fields: ["attr" "ctx" "size" "flags"]
+        min_kernel: "6.8"
+        source: "https://github.com/torvalds/linux/blob/v6.8/security/lsm_syscalls.c"
+    }
+    {
+        syscalls: ["lsm_set_self_attr"]
+        fields: ["attr" "ctx" "size" "flags"]
+        min_kernel: "6.8"
+        source: "https://github.com/torvalds/linux/blob/v6.8/security/lsm_syscalls.c"
+    }
+    {
+        syscalls: ["lsm_list_modules"]
+        fields: ["ids" "size" "flags"]
+        min_kernel: "6.8"
+        source: "https://github.com/torvalds/linux/blob/v6.8/security/lsm_syscalls.c"
+    }
+]
 const IDENTITY_TRACEPOINT_FIELD_SPECS = [
     {
         syscalls: ["setpriority"]
@@ -11312,6 +11332,61 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  ($ctx.ruleset_fd + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-lsm-get-self-attr-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_lsm_get_self_attr]
+        target: "tracepoint:syscalls/sys_enter_lsm_get_self_attr"
+        program: [
+            '{|ctx|'
+            '  let lsm_ctx = $ctx.ctx'
+            '  let size = $ctx.size'
+            '  if $lsm_ctx { 1 | count }'
+            '  if $size { 1 | count }'
+            '  ($ctx.attr + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-lsm-set-self-attr-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_lsm_set_self_attr]
+        target: "tracepoint:syscalls/sys_enter_lsm_set_self_attr"
+        program: [
+            '{|ctx|'
+            '  let lsm_ctx = $ctx.ctx'
+            '  if $lsm_ctx { 1 | count }'
+            '  ($ctx.attr + $ctx.size + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-lsm-list-modules-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_lsm_list_modules]
+        target: "tracepoint:syscalls/sys_enter_lsm_list_modules"
+        program: [
+            '{|ctx|'
+            '  let ids = $ctx.ids'
+            '  let size = $ctx.size'
+            '  if $ids { 1 | count }'
+            '  if $size { 1 | count }'
+            '  $ctx.flags | count'
             '  0'
             '}'
         ]
@@ -33044,6 +33119,8 @@ def syscall-tracepoint-fallback-field-kernel-feature [field: string target] {
         "5.6"
     } else if $syscall in ["landlock_create_ruleset" "landlock_add_rule" "landlock_restrict_self"] {
         "5.13"
+    } else if $syscall in ["lsm_get_self_attr" "lsm_set_self_attr" "lsm_list_modules"] {
+        "6.8"
     } else if $syscall in ["setxattrat" "getxattrat" "listxattrat" "removexattrat"] {
         "6.13"
     } else if $syscall == "futex_waitv" {
@@ -33105,6 +33182,8 @@ def syscall-tracepoint-fallback-field-kernel-feature [field: string target] {
         "https://github.com/torvalds/linux/blob/v5.6/kernel/pid.c"
     } else if $syscall in ["landlock_create_ruleset" "landlock_add_rule" "landlock_restrict_self"] {
         "https://github.com/torvalds/linux/blob/v5.13/security/landlock/syscalls.c"
+    } else if $syscall in ["lsm_get_self_attr" "lsm_set_self_attr" "lsm_list_modules"] {
+        "https://github.com/torvalds/linux/blob/v6.8/security/lsm_syscalls.c"
     } else if $syscall in ["setxattrat" "getxattrat" "listxattrat" "removexattrat"] {
         "https://github.com/torvalds/linux/blob/v6.13/fs/xattr.c"
     } else if $syscall == "futex_waitv" {
@@ -33209,6 +33288,7 @@ def tracepoint-payload-field-kernel-feature [field: string target] {
         | append $KEY_TRACEPOINT_FIELD_SPECS
         | append $SIGNAL_TRACEPOINT_FIELD_SPECS
         | append $LANDLOCK_TRACEPOINT_FIELD_SPECS
+        | append $LSM_SYSCALL_TRACEPOINT_FIELD_SPECS
         | append $IDENTITY_TRACEPOINT_FIELD_SPECS
         | append $SCHED_TRACEPOINT_FIELD_SPECS
         | append $FUTEX_TRACEPOINT_FIELD_SPECS

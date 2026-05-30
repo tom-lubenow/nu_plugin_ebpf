@@ -981,7 +981,9 @@ Linux 4.18+ `sys_enter_rseq`, `sys_enter_set_tid_address`,
 such as `sys_enter_getpid`.
 Instrumentation and security-control fallbacks expose aliases for
 `sys_enter_bpf`, `sys_enter_perf_event_open`, `sys_enter_ptrace`,
-`sys_enter_seccomp`, and `sys_enter_userfaultfd`.
+`sys_enter_seccomp`, `sys_enter_userfaultfd`, and Linux 6.8+ LSM syscalls such
+as `sys_enter_lsm_get_self_attr`, `sys_enter_lsm_set_self_attr`, and
+`sys_enter_lsm_list_modules`.
 Key-management fallbacks expose source-known aliases for entry tracepoints such
 as `sys_enter_add_key`, `sys_enter_request_key`, and `sys_enter_keyctl`.
 Scheduler fallbacks expose source-known aliases for common entry tracepoints
