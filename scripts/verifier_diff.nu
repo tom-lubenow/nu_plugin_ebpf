@@ -17475,6 +17475,83 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "tc-skb-change-type-helper"
+        category: "helper-state"
+        tags: [tc helper skb-metadata accept source metadata]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_skb_change_type" $ctx 0'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tc-skb-ecn-set-ce-helper"
+        category: "helper-state"
+        tags: [tc helper skb-metadata accept source metadata]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_skb_ecn_set_ce" $ctx'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tc-skb-set-tstamp-helper"
+        category: "helper-state"
+        tags: [tc helper skb-metadata timestamp accept source metadata]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_skb_set_tstamp" $ctx 123 1'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tc-skb-set-tstamp-rejects-invalid-type"
+        category: "helper-state"
+        tags: [tc helper skb-metadata timestamp flags reject source metadata]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_skb_set_tstamp" $ctx 123 2'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_skb_set_tstamp' requires arg2"
+    }
+    {
+        name: "tc-skb-set-tstamp-rejects-unspec-nonzero-tstamp"
+        category: "helper-state"
+        tags: [tc helper skb-metadata timestamp flags reject source metadata]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_skb_set_tstamp" $ctx 123 0'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_skb_set_tstamp' requires arg1 = 0 when arg2 is 0"
+    }
+    {
         name: "tc-skb-store-bytes-rejects-stale-data"
         category: "helper-state"
         tags: [tc helper packet-bounds reject]
