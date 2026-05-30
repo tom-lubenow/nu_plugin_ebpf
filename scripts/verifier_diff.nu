@@ -17315,6 +17315,70 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "tc-skb-vlan-push-helper"
+        category: "helper-state"
+        tags: [tc helper vlan accept source metadata]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_skb_vlan_push" $ctx 33024 1'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tc-skb-vlan-pop-helper"
+        category: "helper-state"
+        tags: [tc helper vlan accept source metadata]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_skb_vlan_pop" $ctx'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tc-skb-vlan-push-rejects-stale-data"
+        category: "helper-state"
+        tags: [tc helper vlan packet-bounds reject source metadata]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let data = $ctx.data'
+            '  helper-call "bpf_skb_vlan_push" $ctx 33024 1'
+            '  ($data | get 0) | count'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "stale packet pointer"
+    }
+    {
+        name: "tc-skb-vlan-push-allows-reloaded-data"
+        category: "helper-state"
+        tags: [tc helper vlan packet-bounds accept source metadata]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_skb_vlan_push" $ctx 33024 1'
+            '  ($ctx.data | get 0) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "tc-skb-store-bytes-rejects-stale-data"
         category: "helper-state"
         tags: [tc helper packet-bounds reject]
