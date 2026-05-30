@@ -6958,6 +6958,22 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "kprobe-multi-task-pt-regs-context"
+        category: "context-surface"
+        tags: [kprobe-multi context task pt-regs helper-backed source metadata]
+        requires: [kernel-btf]
+        target: "kprobe.multi:vfs_*"
+        program: [
+            '{|ctx|'
+            '  let task = $ctx.task'
+            '  ($task.pt_regs.arg0 + $ctx.func_ip) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "kretprobe-multi-context"
         category: "tracing"
         tags: [kretprobe-multi context]
@@ -6965,6 +6981,22 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  ($ctx.retval + $ctx.func_ip + $ctx.attach_cookie) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "kretprobe-multi-task-pt-regs-context"
+        category: "context-surface"
+        tags: [kretprobe-multi context task pt-regs helper-backed source metadata]
+        requires: [kernel-btf]
+        target: "kretprobe.multi:vfs_*"
+        program: [
+            '{|ctx|'
+            '  let task = $ctx.task'
+            '  ($task.pt_regs.retval + $ctx.retval + $ctx.func_ip) | count'
             '  0'
             '}'
         ]
@@ -7113,6 +7145,22 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  ($ctx.retval + $ctx.pid) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "kretsyscall-task-pt-regs-context"
+        category: "context-surface"
+        tags: [kretsyscall context task pt-regs helper-backed source metadata]
+        requires: [kernel-btf]
+        target: "kretsyscall:nanosleep"
+        program: [
+            '{|ctx|'
+            '  let task = $ctx.task'
+            '  ($task.pt_regs.retval + $ctx.retval + $ctx.func_ip) | count'
             '  0'
             '}'
         ]
