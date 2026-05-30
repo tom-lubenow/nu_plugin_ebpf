@@ -11881,6 +11881,24 @@ fn test_compile_xdp_ctx_ethertype_store_program() {
 }
 
 #[test]
+fn test_compile_xdp_ctx_packet_header_alias_store_program() {
+    assert_ctx_path_store_program_compiles(
+        EbpfProgramType::Xdp,
+        "lo",
+        CellPath {
+            members: vec![
+                string_member("data"),
+                string_member("eth"),
+                string_member("h_proto"),
+            ],
+        },
+        HirLiteral::Int(0x86dd),
+        HirLiteral::Int(2),
+        "xdp ctx.data.eth.h_proto store",
+    );
+}
+
+#[test]
 fn test_compile_xdp_ctx_eth_ipv6_udp_dst_store_program() {
     assert_ctx_path_store_program_compiles(
         EbpfProgramType::Xdp,

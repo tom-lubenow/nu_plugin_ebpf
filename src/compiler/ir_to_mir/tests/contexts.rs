@@ -7616,6 +7616,55 @@ fn test_lower_xdp_ctx_ethertype_assignment_adds_be_guarded_packet_store() {
 }
 
 #[test]
+fn test_lower_xdp_ctx_packet_header_field_alias_assignment_canonicalizes() {
+    let hir = make_ctx_upsert_program(
+        CellPath {
+            members: vec![
+                string_member("data"),
+                string_member("eth"),
+                string_member("h_proto"),
+            ],
+        },
+        HirLiteral::Int(0x86dd),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("xdp ctx.data.eth.h_proto assignment should lower");
+
+    let blocks = &result.program.main.blocks;
+    assert!(
+        blocks
+            .iter()
+            .any(|block| block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::LoadCtxField {
+                    field: CtxField::DataEnd,
+                    ..
+                }
+            )))
+    );
+    assert!(
+        blocks
+            .iter()
+            .any(|block| block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::Store {
+                    ty: MirType::U16,
+                    ..
+                }
+            )))
+    );
+}
+
+#[test]
 fn test_lower_xdp_ctx_eth_ipv6_udp_dst_assignment_uses_dynamic_header_steps() {
     let hir = make_ctx_upsert_program(
         CellPath {

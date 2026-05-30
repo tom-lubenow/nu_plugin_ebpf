@@ -12149,6 +12149,22 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "tc-packet-header-alias-write"
+        category: "context-surface"
+        tags: [tc context packet writable packet-header alias source metadata]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.data.eth.h_proto = 0x86dd'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "tc-phi-joined-packet-data-read"
         category: "context-surface"
         tags: [tc context packet phi accept]
