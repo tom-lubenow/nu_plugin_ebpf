@@ -2277,6 +2277,96 @@ fn test_kfunc_dynptr_subfn_init_size_balanced() {
 }
 
 #[test]
+fn test_kfunc_dynptr_subfn_clone_initializes_destination_stack_slot() {
+    let mut clone = MirFunction::new();
+    let clone_entry = clone.alloc_block();
+    clone.entry = clone_entry;
+    clone.param_count = 2;
+    clone.vreg_count = 2;
+    let clone_src_slot = clone.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let clone_dst_slot = clone.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    clone.param_stack_slots.insert(0, clone_src_slot);
+    clone.param_stack_slots.insert(1, clone_dst_slot);
+    let clone_ret = clone.alloc_vreg();
+    clone
+        .block_mut(clone_entry)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: clone_ret,
+            kfunc: "bpf_dynptr_clone".to_string(),
+            btf_id: None,
+            args: vec![VReg(0), VReg(1)],
+        });
+    clone.block_mut(clone_entry).terminator = MirInst::Return { val: None };
+
+    let summaries = infer_subfunction_summaries(&[clone.clone()]);
+    let clone_summary = summaries
+        .get(&SubfunctionId(0))
+        .cloned()
+        .expect("expected clone summary");
+    assert!(clone_summary.requires_initialized_dynptr_arg(0));
+    assert_eq!(clone_summary.dynptr_delta_arg(0), 0);
+    assert_eq!(clone_summary.dynptr_delta_arg(1), 1);
+
+    let dynptr_ty = MirType::Ptr {
+        pointee: Box::new(MirType::opaque_named_struct("bpf_dynptr")),
+        address_space: AddressSpace::Stack,
+    };
+    let mut clone_types = HashMap::new();
+    clone_types.insert(VReg(0), dynptr_ty.clone());
+    clone_types.insert(VReg(1), dynptr_ty.clone());
+    clone_types.insert(clone_ret, MirType::I64);
+    verify_mir_with_subfunction_summaries_for_probe_context_with_current_summary(
+        &clone,
+        &clone_types,
+        &summaries,
+        Some(clone_summary),
+        None,
+        None,
+    )
+    .expect("expected dynptr clone wrapper to verify");
+
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    let src = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let subfn_ret = func.alloc_vreg();
+    let size_ret = func.alloc_vreg();
+    let src_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let dst_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    func.entry_initialized_dynptr_slots.insert(src_slot);
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: src,
+        src: MirValue::StackSlot(src_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst,
+        src: MirValue::StackSlot(dst_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallSubfn {
+        dst: subfn_ret,
+        subfn: SubfunctionId(0),
+        args: vec![src, dst],
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: size_ret,
+        kfunc: "bpf_dynptr_size".to_string(),
+        btf_id: None,
+        args: vec![dst],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(src, dynptr_ty.clone());
+    types.insert(dst, dynptr_ty);
+    types.insert(subfn_ret, MirType::I64);
+    types.insert(size_ret, MirType::I64);
+    verify_mir_with_subfunction_summaries(&func, &types, &summaries)
+        .expect("expected dynptr clone wrapper to initialize caller destination");
+}
+
+#[test]
 fn test_kfunc_dynptr_subfn_conditional_init_blocks_reinitialize() {
     let mut init = MirFunction::new();
     let entry = init.alloc_block();
