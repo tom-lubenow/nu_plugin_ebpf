@@ -1,6 +1,12 @@
 use super::*;
 use crate::compiler::mir::BlockId;
 
+enum MapLookupPhiSource {
+    None,
+    Known(MapRef, VccReg),
+    Ambiguous,
+}
+
 impl<'a> VccLowerer<'a> {
     fn ctx_field_key(field: &CtxField) -> String {
         match field {
@@ -114,23 +120,27 @@ impl<'a> VccLowerer<'a> {
         source
     }
 
-    fn map_lookup_source_for_phi(&self, args: &[(BlockId, VReg)]) -> Option<(MapRef, VccReg)> {
+    fn map_lookup_source_for_phi(&self, args: &[(BlockId, VReg)]) -> MapLookupPhiSource {
         let mut source = None;
         for (_, vreg) in args {
-            let candidate = self.map_lookup_regs.get(&VccReg(vreg.0)).cloned()?;
+            let Some(candidate) = self.map_lookup_regs.get(&VccReg(vreg.0)).cloned() else {
+                return MapLookupPhiSource::None;
+            };
             match &source {
                 Some((existing_map, existing_key))
                     if *existing_map != candidate.0
                         || self.scalar_alias_root_for_reg(*existing_key)
                             != self.scalar_alias_root_for_reg(candidate.1) =>
                 {
-                    return None;
+                    return MapLookupPhiSource::Ambiguous;
                 }
                 Some(_) => {}
                 None => source = Some(candidate),
             }
         }
         source
+            .map(|(map, key)| MapLookupPhiSource::Known(map, key))
+            .unwrap_or(MapLookupPhiSource::None)
     }
 
     fn scalar_alias_root_for_reg(&self, reg: VccReg) -> VccReg {
@@ -447,15 +457,24 @@ impl<'a> VccLowerer<'a> {
                 } else {
                     self.scalar_alias_regs.remove(&VccReg(dst.0));
                 }
-                if let Some((map, key)) = map_lookup_source {
-                    out.push(VccInst::MapLookupSource {
-                        root: VccReg(dst.0),
-                        map: map.clone(),
-                        key,
-                    });
-                    self.map_lookup_regs.insert(VccReg(dst.0), (map, key));
-                } else {
-                    self.map_lookup_regs.remove(&VccReg(dst.0));
+                match map_lookup_source {
+                    MapLookupPhiSource::None => {
+                        self.map_lookup_regs.remove(&VccReg(dst.0));
+                    }
+                    MapLookupPhiSource::Known(map, key) => {
+                        out.push(VccInst::MapLookupSource {
+                            root: VccReg(dst.0),
+                            map: map.clone(),
+                            key,
+                        });
+                        self.map_lookup_regs.insert(VccReg(dst.0), (map, key));
+                    }
+                    MapLookupPhiSource::Ambiguous => {
+                        out.push(VccInst::AmbiguousMapLookupSource {
+                            root: VccReg(dst.0),
+                        });
+                        self.map_lookup_regs.remove(&VccReg(dst.0));
+                    }
                 }
                 if let Some(map) = map_fd_source {
                     out.push(VccInst::MapFdSource {

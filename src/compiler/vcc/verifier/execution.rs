@@ -239,6 +239,14 @@ impl VccVerifier {
                         VccValue::Reg(src_reg) => state.map_fd_source(*src_reg).cloned(),
                         _ => None,
                     };
+                    let src_map_lookup_source = match src {
+                        VccValue::Reg(src_reg) => state.map_value_source(*src_reg).cloned(),
+                        _ => None,
+                    };
+                    let src_map_lookup_ambiguous = match src {
+                        VccValue::Reg(src_reg) => state.map_value_source_is_ambiguous(*src_reg),
+                        _ => false,
+                    };
                     let src_released_kfunc_ref = matches!(src, VccValue::Reg(src_reg) if state.is_released_kfunc_ref(*src_reg));
                     let src_scalar_alias = match src {
                         VccValue::Reg(src_reg)
@@ -259,6 +267,11 @@ impl VccVerifier {
                     state.set_ctx_field_source(*dst, src_ctx_field);
                     if let Some(map) = src_map_fd {
                         state.set_map_fd_source(*dst, map);
+                    }
+                    if src_map_lookup_ambiguous {
+                        state.set_ambiguous_map_lookup_source(*dst);
+                    } else if let Some(source) = src_map_lookup_source {
+                        state.set_map_lookup_source(*dst, source.map, source.key);
                     }
                     if let Some(refinement) = copied_refinement {
                         state.set_cond_refinement(*dst, refinement);
@@ -289,6 +302,9 @@ impl VccVerifier {
             VccInst::MapLookupSource { root, map, key } => {
                 state.set_map_lookup_source(*root, map.clone(), *key);
             }
+            VccInst::AmbiguousMapLookupSource { root } => {
+                state.set_ambiguous_map_lookup_source(*root);
+            }
             VccInst::MapFdSource { map_fd, map } => {
                 state.set_map_fd_source(*map_fd, map.clone());
             }
@@ -299,10 +315,20 @@ impl VccVerifier {
                 map_fd_arg_idx,
                 call,
             } => {
-                let (Some(map_value_source), Some(map_fd_source)) = (
-                    state.map_value_source(*map_value),
-                    state.map_fd_source(*map_fd),
-                ) else {
+                let Some(map_fd_source) = state.map_fd_source(*map_fd) else {
+                    return;
+                };
+                if state.map_value_source_is_ambiguous(*map_value) {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        format!(
+                            "{} arg{} map value may come from multiple maps and cannot be matched to arg{} map '{}'",
+                            call, map_value_arg_idx, map_fd_arg_idx, map_fd_source.name
+                        ),
+                    ));
+                    return;
+                }
+                let Some(map_value_source) = state.map_value_source(*map_value) else {
                     return;
                 };
                 if map_value_source.map != *map_fd_source {
@@ -1403,8 +1429,14 @@ impl VccVerifier {
                 if let Some(Some(map)) = merged_map_fd {
                     state.set_map_fd_source(*dst, map);
                 }
-                if let Some(source) = merged_map_value_source {
-                    state.set_map_lookup_source(*dst, source.map, source.key);
+                match merged_map_value_source {
+                    PhiMapValueSource::None => {}
+                    PhiMapValueSource::Known(source) => {
+                        state.set_map_lookup_source(*dst, source.map, source.key);
+                    }
+                    PhiMapValueSource::Ambiguous => {
+                        state.set_ambiguous_map_lookup_source(*dst);
+                    }
                 }
                 if let Some(Some(source)) = merged_ctx_field {
                     state.set_ctx_field_source(*dst, Some(source));
@@ -2499,10 +2531,15 @@ impl VccVerifier {
     fn map_value_source_for_phi(
         args: &[(VccBlockId, VccReg)],
         state: &VccState,
-    ) -> Option<VccMapLookupSource> {
+    ) -> PhiMapValueSource {
         let mut source: Option<VccMapLookupSource> = None;
         for (_, reg) in args {
-            let next = state.map_value_source(*reg).cloned()?;
+            if state.map_value_source_is_ambiguous(*reg) {
+                return PhiMapValueSource::Ambiguous;
+            }
+            let Some(next) = state.map_value_source(*reg).cloned() else {
+                return PhiMapValueSource::None;
+            };
             source = Some(match source {
                 None => next,
                 Some(existing)
@@ -2511,11 +2548,19 @@ impl VccVerifier {
                 {
                     existing
                 }
-                _ => return None,
+                _ => return PhiMapValueSource::Ambiguous,
             });
         }
         source
+            .map(PhiMapValueSource::Known)
+            .unwrap_or(PhiMapValueSource::None)
     }
+}
+
+enum PhiMapValueSource {
+    None,
+    Known(VccMapLookupSource),
+    Ambiguous,
 }
 
 fn typed_null_copy_type(ty: VccValueType) -> Option<VccValueType> {

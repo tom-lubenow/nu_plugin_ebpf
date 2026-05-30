@@ -255,6 +255,9 @@ pub enum VccInst {
         map: MapRef,
         key: VccReg,
     },
+    AmbiguousMapLookupSource {
+        root: VccReg,
+    },
     MapFdSource {
         map_fd: VccReg,
         map: MapRef,

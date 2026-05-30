@@ -13,6 +13,7 @@ mod helpers;
 mod iter_kfuncs;
 mod kfuncs;
 mod map_ops;
+mod map_value_objects;
 mod records;
 mod ref_kfuncs;
 mod scalar_ranges;
