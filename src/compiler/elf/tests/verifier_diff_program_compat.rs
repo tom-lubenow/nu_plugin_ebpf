@@ -1042,6 +1042,10 @@ fn test_verifier_diff_tracepoint_payload_scanner_matches_rust_fallback_fields() 
         ("tracepoint:syscalls/sys_exit_openat", "ret"),
         ("tracepoint:syscalls/sys_exit_openat2", "id"),
         ("tracepoint:syscalls/sys_exit_openat2", "ret"),
+        ("tracepoint:syscalls/sys_enter_connect", "uservaddr"),
+        ("tracepoint:syscalls/sys_enter_sendto", "addr_len"),
+        ("tracepoint:syscalls/sys_enter_recvfrom", "addr_len"),
+        ("tracepoint:syscalls/sys_enter_accept4", "upeer_addrlen"),
     ]
     .into_iter()
     .map(|(target, field)| (target.to_string(), field.to_string()))

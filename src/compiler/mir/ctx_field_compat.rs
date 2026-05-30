@@ -104,6 +104,7 @@ const LINUX_READ_WRITE_C_V4_7_SOURCE: &str =
 const LINUX_OPEN_C_V4_7_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/open.c";
 const LINUX_OPEN_C_V5_6_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.6/fs/open.c";
 const LINUX_EXEC_C_V4_7_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/exec.c";
+const LINUX_SOCKET_C_V4_7_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/net/socket.c";
 const LINUX_SYSCALLS_H_V4_7_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v4.7/include/trace/events/syscalls.h";
 
@@ -634,6 +635,18 @@ fn tracepoint_field_kernel_floor(
             ("5.6", LINUX_OPEN_C_V5_6_SOURCE)
         }
         ("sys_enter_execve", "filename" | "argv" | "envp") => ("4.7", LINUX_EXEC_C_V4_7_SOURCE),
+        ("sys_enter_connect", "fd" | "uservaddr" | "addrlen") => {
+            ("4.7", LINUX_SOCKET_C_V4_7_SOURCE)
+        }
+        ("sys_enter_sendto", "fd" | "buff" | "len" | "flags" | "addr" | "addr_len") => {
+            ("4.7", LINUX_SOCKET_C_V4_7_SOURCE)
+        }
+        ("sys_enter_recvfrom", "fd" | "ubuf" | "size" | "flags" | "addr" | "addr_len") => {
+            ("4.7", LINUX_SOCKET_C_V4_7_SOURCE)
+        }
+        ("sys_enter_accept4", "fd" | "upeer_sockaddr" | "upeer_addrlen" | "flags") => {
+            ("4.7", LINUX_SOCKET_C_V4_7_SOURCE)
+        }
         _ => return None,
     })
 }

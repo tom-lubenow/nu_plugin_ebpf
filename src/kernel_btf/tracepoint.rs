@@ -279,6 +279,33 @@ impl TracepointContext {
                 ("argv", Self::syscall_arg_user_ptr()),
                 ("envp", Self::syscall_arg_user_ptr()),
             ],
+            "connect" => vec![
+                ("fd", Self::syscall_arg_int(false)),
+                ("uservaddr", Self::syscall_arg_user_ptr()),
+                ("addrlen", Self::syscall_arg_int(false)),
+            ],
+            "sendto" => vec![
+                ("fd", Self::syscall_arg_int(false)),
+                ("buff", Self::syscall_arg_user_ptr()),
+                ("len", Self::syscall_arg_int(false)),
+                ("flags", Self::syscall_arg_int(false)),
+                ("addr", Self::syscall_arg_user_ptr()),
+                ("addr_len", Self::syscall_arg_int(false)),
+            ],
+            "recvfrom" => vec![
+                ("fd", Self::syscall_arg_int(false)),
+                ("ubuf", Self::syscall_arg_user_ptr()),
+                ("size", Self::syscall_arg_int(false)),
+                ("flags", Self::syscall_arg_int(false)),
+                ("addr", Self::syscall_arg_user_ptr()),
+                ("addr_len", Self::syscall_arg_user_ptr()),
+            ],
+            "accept4" => vec![
+                ("fd", Self::syscall_arg_int(false)),
+                ("upeer_sockaddr", Self::syscall_arg_user_ptr()),
+                ("upeer_addrlen", Self::syscall_arg_user_ptr()),
+                ("flags", Self::syscall_arg_int(false)),
+            ],
             _ => return Vec::new(),
         };
 

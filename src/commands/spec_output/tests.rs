@@ -4656,6 +4656,32 @@ fn test_spec_tracepoint_openat2_uses_kernel_argument_names() {
 }
 
 #[test]
+fn test_spec_tracepoint_fallback_fields_use_field_specific_kernel_metadata() {
+    let spec = ProgramSpec::parse("tracepoint:syscalls/sys_enter_connect")
+        .expect("tracepoint spec should parse");
+    let fields = spec_tracepoint_fields_from_context(
+        &spec,
+        crate::kernel_btf::TracepointContext::sys_enter("sys_enter_connect"),
+    );
+    let uservaddr =
+        tracepoint_field(&fields, "uservaddr").expect("connect fallback should expose uservaddr");
+    assert_eq!(uservaddr.source, "well-known-syscall-fallback");
+    assert_eq!(uservaddr.minimum_kernel, Some("4.7"));
+    assert!(
+        uservaddr
+            .minimum_kernel_source
+            .is_some_and(|source| source.contains("/v4.7/net/socket.c"))
+    );
+
+    let args = tracepoint_field(&fields, "args").expect("connect fallback should expose args");
+    assert_eq!(args.minimum_kernel, Some("4.7"));
+    assert!(
+        args.minimum_kernel_source
+            .is_some_and(|source| source.contains("/v4.7/include/trace/events/syscalls.h"))
+    );
+}
+
+#[test]
 fn test_tracepoint_field_records_include_fallback_kernel_metadata() {
     let records = tracepoint_field_records(
         vec![SpecTracepointField {

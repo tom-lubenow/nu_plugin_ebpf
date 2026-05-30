@@ -14,7 +14,9 @@ use crate::compiler::{
     SockOpsCallbackGuard, bpf_sock_projection_member_aliases, ctx_field_backing_helper,
     ctx_field_for_bpf_sock_projection_member, synthetic_bpf_sock_type, synthetic_bpf_tcp_sock_type,
 };
-use crate::kernel_btf::{TrampolineValueKind, TypeInfo};
+use crate::kernel_btf::{
+    TracepointContext, TracepointContextSource, TrampolineValueKind, TypeInfo,
+};
 use crate::program_spec::ProgramAttachShape;
 
 #[cfg(target_os = "linux")]
@@ -1299,38 +1301,60 @@ fn spec_tracepoint_fields(
 
     let ctx = ProbeContext::from_program_spec(spec.clone());
     match ctx.tracepoint_context() {
-        Ok(Some(tracepoint)) => {
-            let source = tracepoint.source.label();
-            let minimum_kernel = tracepoint.minimum_kernel();
-            let minimum_kernel_source = tracepoint.minimum_kernel_source();
-            let source_path = tracepoint.source_path.clone();
-            let context_struct = tracepoint.struct_name.clone();
-            let context_size = tracepoint.size;
-            (
-                tracepoint
-                    .fields
-                    .into_iter()
-                    .map(|field| SpecTracepointField {
-                        name: field.name,
-                        ty: type_info_label(&field.type_info),
-                        offset: field.offset,
-                        size: field.size,
-                        bit_offset: field.bitfield.map(|bitfield| bitfield.bit_offset),
-                        bit_size: field.bitfield.map(|bitfield| bitfield.bit_size),
-                        source,
-                        source_path: source_path.clone(),
-                        context_struct: context_struct.clone(),
-                        context_size,
-                        minimum_kernel,
-                        minimum_kernel_source,
-                    })
-                    .collect(),
-                None,
-            )
-        }
+        Ok(Some(tracepoint)) => (spec_tracepoint_fields_from_context(spec, tracepoint), None),
         Ok(None) => (Vec::new(), None),
         Err(err) => (Vec::new(), Some(err)),
     }
+}
+
+#[cfg(target_os = "linux")]
+fn spec_tracepoint_fields_from_context(
+    spec: &crate::program_spec::ProgramSpec,
+    tracepoint: TracepointContext,
+) -> Vec<SpecTracepointField> {
+    let source = tracepoint.source.label();
+    let field_compatibility_metadata =
+        tracepoint.source == TracepointContextSource::WellKnownSyscallFallback;
+    let minimum_kernel = tracepoint.minimum_kernel();
+    let minimum_kernel_source = tracepoint.minimum_kernel_source();
+    let source_path = tracepoint.source_path.clone();
+    let context_struct = tracepoint.struct_name.clone();
+    let context_size = tracepoint.size;
+
+    tracepoint
+        .fields
+        .into_iter()
+        .map(|field| {
+            let compatibility_requirement = field_compatibility_metadata
+                .then(|| {
+                    ContextFieldCompatibilityRequirement::for_field_on_program_spec(
+                        &CtxField::TracepointField(field.name.clone()),
+                        spec,
+                    )
+                })
+                .flatten();
+            SpecTracepointField {
+                name: field.name,
+                ty: type_info_label(&field.type_info),
+                offset: field.offset,
+                size: field.size,
+                bit_offset: field.bitfield.map(|bitfield| bitfield.bit_offset),
+                bit_size: field.bitfield.map(|bitfield| bitfield.bit_size),
+                source,
+                source_path: source_path.clone(),
+                context_struct: context_struct.clone(),
+                context_size,
+                minimum_kernel: compatibility_requirement
+                    .as_ref()
+                    .map(ContextFieldCompatibilityRequirement::minimum_kernel)
+                    .or(minimum_kernel),
+                minimum_kernel_source: compatibility_requirement
+                    .as_ref()
+                    .map(ContextFieldCompatibilityRequirement::minimum_kernel_source)
+                    .or(minimum_kernel_source),
+            }
+        })
+        .collect()
 }
 
 #[cfg(target_os = "linux")]

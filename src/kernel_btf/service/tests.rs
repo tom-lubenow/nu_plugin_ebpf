@@ -235,6 +235,61 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
     assert!(execve.has_field("argv"));
     assert!(execve.has_field("envp"));
 
+    let connect = TracepointContext::sys_enter("sys_enter_connect");
+    assert!(connect.has_field("fd"));
+    assert!(connect.has_field("uservaddr"));
+    assert!(connect.has_field("addrlen"));
+    assert!(matches!(
+        connect
+            .get_field("uservaddr")
+            .expect("expected connect uservaddr")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+
+    let sendto = TracepointContext::sys_enter("sys_enter_sendto");
+    assert!(sendto.has_field("fd"));
+    assert!(sendto.has_field("buff"));
+    assert!(sendto.has_field("len"));
+    assert!(sendto.has_field("flags"));
+    assert!(sendto.has_field("addr"));
+    assert!(sendto.has_field("addr_len"));
+    assert!(matches!(
+        sendto
+            .get_field("addr")
+            .expect("expected sendto addr")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+
+    let recvfrom = TracepointContext::sys_enter("sys_enter_recvfrom");
+    assert!(recvfrom.has_field("fd"));
+    assert!(recvfrom.has_field("ubuf"));
+    assert!(recvfrom.has_field("size"));
+    assert!(recvfrom.has_field("flags"));
+    assert!(recvfrom.has_field("addr"));
+    assert!(recvfrom.has_field("addr_len"));
+    assert!(matches!(
+        recvfrom
+            .get_field("addr_len")
+            .expect("expected recvfrom addr_len")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+
+    let accept4 = TracepointContext::sys_enter("sys_enter_accept4");
+    assert!(accept4.has_field("fd"));
+    assert!(accept4.has_field("upeer_sockaddr"));
+    assert!(accept4.has_field("upeer_addrlen"));
+    assert!(accept4.has_field("flags"));
+    assert!(matches!(
+        accept4
+            .get_field("upeer_sockaddr")
+            .expect("expected accept4 upeer_sockaddr")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+
     let unknown = TracepointContext::sys_enter("sys_enter_unknown");
     assert!(unknown.has_field("id"));
     assert!(unknown.has_field("args"));
