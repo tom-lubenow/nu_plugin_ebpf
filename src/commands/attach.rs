@@ -279,7 +279,9 @@ Context parameter syntax (recommended):
     ARP exposes the fixed Ethernet/IPv4 fields `hardware_type`,
     `protocol_type`, `hardware_len`, `protocol_len`, `opcode`,
     `sender_mac`, `sender_ip`, `target_mac`, and `target_ip`.
-    IPv4 exposes derived `version`, `ihl`, `dscp`, and `ecn` fields;
+    IPv4 exposes derived `version`, `ihl`, `dscp`, `ecn`, `flags`,
+    `reserved_flag`, `dont_fragment`, `more_fragments`, and
+    `fragment_offset` fields;
     IPv6 exposes derived `version`, `traffic_class`, and `flow_label`
     fields; TCP exposes derived `data_offset`, `reserved`, `flags`, and
     per-flag `ns`, `cwr`, `ece`, `urg`, `ack`, `psh`, `rst`, `syn`, and

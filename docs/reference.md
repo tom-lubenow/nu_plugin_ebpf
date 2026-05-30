@@ -362,8 +362,9 @@ explicit `.payload`, so forms like `$ctx.data.eth.ipv4.tcp.seq` and
 IPv4 headers, and the bounded common IPv6 extension-header chain
 automatically. ARP exposes fixed Ethernet/IPv4 fields such as
 `hardware_type`, `protocol_type`, `opcode`, `sender_mac`, `sender_ip`,
-`target_mac`, and `target_ip`. IPv4 exposes derived `version`, `ihl`, `dscp`, and `ecn`
-fields; IPv6 exposes derived `version`, `traffic_class`, and
+`target_mac`, and `target_ip`. IPv4 exposes derived `version`, `ihl`, `dscp`,
+`ecn`, `flags`, `reserved_flag`, `dont_fragment`, `more_fragments`, and
+`fragment_offset` fields; IPv6 exposes derived `version`, `traffic_class`, and
 `flow_label` fields; TCP exposes derived `data_offset`, `reserved`,
 `flags`, and per-flag `ns`, `cwr`, `ece`, `urg`, `ack`, `psh`, `rst`,
 `syn`, and `fin` fields. Those header views also support `payload` stepping:

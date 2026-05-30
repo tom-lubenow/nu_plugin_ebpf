@@ -1128,6 +1128,34 @@ fn test_spec_record_includes_packet_context_metadata() {
             .as_bool()
             .expect("ipv4 version endian metadata should be a bool")
     );
+    let fragment_offset = ipv4_fields
+        .iter()
+        .find(|field| {
+            field
+                .as_record()
+                .ok()
+                .and_then(|record| record.get("name"))
+                .and_then(|name| name.as_str().ok())
+                .is_some_and(|name| name == "fragment_offset")
+        })
+        .expect("ipv4 fragment_offset field should be present")
+        .as_record()
+        .expect("ipv4 fragment_offset field should be a record");
+    assert_eq!(
+        fragment_offset
+            .get("bit_size")
+            .expect("ipv4 fragment_offset bit size should be present")
+            .as_int()
+            .expect("ipv4 fragment_offset bit size should be an int"),
+        13
+    );
+    assert!(
+        fragment_offset
+            .get("packet_big_endian")
+            .expect("ipv4 fragment_offset endian metadata should be present")
+            .as_bool()
+            .expect("ipv4 fragment_offset endian metadata should be a bool")
+    );
 
     let ipv6 = packet_headers
         .iter()

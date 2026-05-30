@@ -2006,6 +2006,60 @@ fn test_lower_xdp_eth_ipv4_version_projection_extracts_packet_bitfield() {
 }
 
 #[test]
+fn test_lower_xdp_eth_ipv4_fragment_offset_projection_normalizes_packet_bitfield() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![
+            string_member("data"),
+            string_member("eth"),
+            string_member("ipv4"),
+            string_member("fragment_offset"),
+        ],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("xdp eth ipv4 fragment_offset projection should lower");
+
+    let instructions: Vec<_> = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect();
+    assert!(instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::Load {
+            ty: MirType::U16,
+            ..
+        }
+    )));
+    assert!(instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::BinOp {
+            op: BinOpKind::And,
+            rhs: MirValue::Const(0x1fff),
+            ..
+        }
+    )));
+    assert!(instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::BinOp {
+            op: BinOpKind::Shl,
+            rhs: MirValue::Const(8),
+            ..
+        }
+    )));
+}
+
+#[test]
 fn test_lower_xdp_eth_ipv6_flow_label_projection_normalizes_packet_bitfield() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![
