@@ -22189,7 +22189,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "perf-event-read-rejects-invalid-flags"
