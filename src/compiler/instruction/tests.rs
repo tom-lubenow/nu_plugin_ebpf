@@ -6978,6 +6978,57 @@ fn test_helper_scalar_constraints_are_consistent_with_signatures() {
     }
 }
 
+fn assert_kfunc_scalar_constraint_arg(
+    kfunc: &str,
+    signature: &KfuncSignature,
+    arg_idx: usize,
+    constraint_kind: &str,
+) {
+    assert!(
+        arg_idx < signature.max_args,
+        "{kfunc} {constraint_kind} constraint references out-of-range arg{arg_idx}"
+    );
+    assert_eq!(
+        signature.arg_kind(arg_idx),
+        KfuncArgKind::Scalar,
+        "{kfunc} {constraint_kind} constraint references non-scalar arg{arg_idx}"
+    );
+}
+
+fn assert_kfunc_zero_constraint_arg(kfunc: &str, signature: &KfuncSignature, arg_idx: usize) {
+    assert!(
+        arg_idx < signature.max_args,
+        "{kfunc} zero constraint references out-of-range arg{arg_idx}"
+    );
+    let arg_kind = signature.arg_kind(arg_idx);
+    assert!(
+        matches!(arg_kind, KfuncArgKind::Scalar)
+            || (matches!(arg_kind, KfuncArgKind::Pointer)
+                && kfunc_pointer_arg_allows_const_zero(kfunc, arg_idx)),
+        "{kfunc} zero constraint references arg{arg_idx} without scalar ABI or nullable pointer metadata"
+    );
+}
+
+#[test]
+fn test_kfunc_scalar_constraints_are_consistent_with_signatures() {
+    for name in quoted_kfunc_names(include_str!("kfunc_signature.rs")) {
+        let signature = KfuncSignature::for_name(name)
+            .unwrap_or_else(|| panic!("expected modeled kfunc signature for {name}"));
+
+        for arg_idx in 0..signature.arg_kinds.len() {
+            if kfunc_scalar_arg_requires_known_const(name, arg_idx) {
+                assert_kfunc_scalar_constraint_arg(name, &signature, arg_idx, "known-const");
+            }
+            if kfunc_scalar_arg_requires_positive(name, arg_idx) {
+                assert_kfunc_scalar_constraint_arg(name, &signature, arg_idx, "positive");
+            }
+            if kfunc_scalar_arg_requires_zero(name, arg_idx) {
+                assert_kfunc_zero_constraint_arg(name, &signature, arg_idx);
+            }
+        }
+    }
+}
+
 #[test]
 fn test_kfunc_semantics_are_consistent_with_signatures() {
     for name in quoted_kfunc_names(include_str!("kfunc_signature.rs")) {
