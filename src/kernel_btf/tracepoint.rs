@@ -5,10 +5,19 @@ use super::types::{FieldInfo, TypeInfo};
 const SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL: &str = "4.7";
 const SYSCALL_TRACEPOINT_FALLBACK_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v4.7/include/trace/events/syscalls.h";
+const READ_WRITE_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/read_write.c";
+const OPEN_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/open.c";
 const OPENAT2_MIN_KERNEL: &str = "5.6";
 const OPENAT2_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.6/fs/open.c";
+const EXEC_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/exec.c";
+const EXIT_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/exit.c";
+const FORK_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/fork.c";
+const NSPROXY_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/nsproxy.c";
+const STAT_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/stat.c";
 const STATX_MIN_KERNEL: &str = "4.11";
 const STATX_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.11/fs/stat.c";
+const NAMEI_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/namei.c";
+const SOCKET_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/net/socket.c";
 
 /// Source used to construct a tracepoint context layout.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -228,6 +237,94 @@ impl TracepointContext {
                 Some(SYSCALL_TRACEPOINT_FALLBACK_SOURCE),
             ),
         }
+    }
+
+    /// Source-backed compatibility floor for well-known syscall fallback fields.
+    pub fn syscall_fallback_field_minimum_kernel(
+        category: &str,
+        name: &str,
+        field: &str,
+    ) -> Option<(&'static str, &'static str)> {
+        if category != "syscalls" {
+            return None;
+        }
+
+        if let Some(floor) = Self::syscall_fallback_common_field_minimum_kernel(name, field) {
+            return Some(floor);
+        }
+
+        Self::sys_enter_named_field_minimum_kernel(name, field)
+    }
+
+    fn syscall_fallback_common_field_minimum_kernel(
+        name: &str,
+        field: &str,
+    ) -> Option<(&'static str, &'static str)> {
+        let syscall = if name.starts_with("sys_enter_") {
+            if !matches!(field, "id" | "args") {
+                return None;
+            }
+            name.strip_prefix("sys_enter_")
+        } else if name.starts_with("sys_exit_") {
+            if !matches!(field, "id" | "ret") {
+                return None;
+            }
+            name.strip_prefix("sys_exit_")
+        } else {
+            return None;
+        }?;
+
+        Some(match syscall {
+            "openat2" => (OPENAT2_MIN_KERNEL, OPENAT2_SOURCE),
+            "statx" => (STATX_MIN_KERNEL, STATX_SOURCE),
+            _ => (
+                SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL,
+                SYSCALL_TRACEPOINT_FALLBACK_SOURCE,
+            ),
+        })
+    }
+
+    fn sys_enter_named_field_minimum_kernel(
+        name: &str,
+        field: &str,
+    ) -> Option<(&'static str, &'static str)> {
+        let syscall = name.strip_prefix("sys_enter_")?;
+        if !Self::well_known_sys_enter_arg_fields(name)
+            .iter()
+            .any(|arg_field| arg_field.name == field)
+        {
+            return None;
+        }
+
+        Some(match syscall {
+            "read" | "write" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, READ_WRITE_SOURCE),
+            "close" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, OPEN_SOURCE),
+            "openat" => (
+                SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL,
+                SYSCALL_TRACEPOINT_FALLBACK_SOURCE,
+            ),
+            "openat2" => (OPENAT2_MIN_KERNEL, OPENAT2_SOURCE),
+            "execve" | "execveat" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, EXEC_SOURCE),
+            "exit" | "exit_group" | "waitid" | "wait4" => {
+                (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, EXIT_SOURCE)
+            }
+            "unshare" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, FORK_SOURCE),
+            "setns" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, NSPROXY_SOURCE),
+            "stat" | "lstat" | "newstat" | "newlstat" | "stat64" | "lstat64" | "fstat"
+            | "newfstat" | "fstat64" | "newfstatat" | "fstatat64" => {
+                (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, STAT_SOURCE)
+            }
+            "statx" => (STATX_MIN_KERNEL, STATX_SOURCE),
+            "mkdirat" | "unlinkat" | "symlinkat" | "linkat" | "renameat" | "renameat2" => {
+                (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, NAMEI_SOURCE)
+            }
+            "socket" | "socketpair" | "bind" | "listen" | "accept" | "connect" | "sendto"
+            | "recvfrom" | "accept4" | "setsockopt" | "getsockopt" | "shutdown" | "sendmsg"
+            | "recvmsg" | "sendmmsg" | "recvmmsg" => {
+                (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, SOCKET_SOURCE)
+            }
+            _ => return None,
+        })
     }
 
     fn sys_enter_arg_field(index: usize, name: &str, type_info: TypeInfo) -> Option<FieldInfo> {

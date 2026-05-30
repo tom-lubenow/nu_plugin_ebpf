@@ -2,6 +2,7 @@ use std::cmp::Ordering;
 use std::fmt;
 
 use crate::compiler::{EbpfProgramType, ctx_field_backing_helper};
+use crate::kernel_btf::TracepointContext;
 use crate::program_spec::{IterTargetKind, ProgramSpec};
 
 use super::CtxField;
@@ -99,22 +100,6 @@ const LINUX_KMEM_CACHE_ITER_V6_13_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.13/kernel/bpf/kmem_cache_iter.c";
 const LINUX_DMABUF_ITER_V6_16_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.16/kernel/bpf/dmabuf_iter.c";
-const LINUX_READ_WRITE_C_V4_7_SOURCE: &str =
-    "https://github.com/torvalds/linux/blob/v4.7/fs/read_write.c";
-const LINUX_OPEN_C_V4_7_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/open.c";
-const LINUX_OPEN_C_V5_6_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.6/fs/open.c";
-const LINUX_EXEC_C_V4_7_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/exec.c";
-const LINUX_EXIT_C_V4_7_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/exit.c";
-const LINUX_FORK_C_V4_7_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/fork.c";
-const LINUX_NSPROXY_C_V4_7_SOURCE: &str =
-    "https://github.com/torvalds/linux/blob/v4.7/kernel/nsproxy.c";
-const LINUX_STAT_C_V4_7_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/stat.c";
-const LINUX_STAT_C_V4_11_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.11/fs/stat.c";
-const LINUX_NAMEI_C_V4_7_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/namei.c";
-const LINUX_SOCKET_C_V4_7_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/net/socket.c";
-const LINUX_SYSCALLS_H_V4_7_SOURCE: &str =
-    "https://github.com/torvalds/linux/blob/v4.7/include/trace/events/syscalls.h";
-
 /// Source-backed kernel compatibility metadata for a source-level context field.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ContextFieldCompatibilityRequirement {
@@ -623,132 +608,7 @@ fn tracepoint_field_kernel_floor(
     name: &str,
     field: &str,
 ) -> Option<(&'static str, &'static str)> {
-    if category != "syscalls" {
-        return None;
-    }
-
-    if let Some(floor) = syscall_tracepoint_fallback_field_kernel_floor(name, field) {
-        return Some(floor);
-    }
-
-    Some(match (name, field) {
-        ("sys_enter_read", "fd" | "buf" | "count") => ("4.7", LINUX_READ_WRITE_C_V4_7_SOURCE),
-        ("sys_enter_write", "fd" | "buf" | "count") => ("4.7", LINUX_READ_WRITE_C_V4_7_SOURCE),
-        ("sys_enter_close", "fd") => ("4.7", LINUX_OPEN_C_V4_7_SOURCE),
-        ("sys_enter_openat", "dfd" | "filename" | "flags" | "mode") => {
-            ("4.7", LINUX_SYSCALLS_H_V4_7_SOURCE)
-        }
-        ("sys_enter_openat2", "dfd" | "filename" | "how" | "usize") => {
-            ("5.6", LINUX_OPEN_C_V5_6_SOURCE)
-        }
-        ("sys_enter_execve", "filename" | "argv" | "envp") => ("4.7", LINUX_EXEC_C_V4_7_SOURCE),
-        ("sys_enter_execveat", "fd" | "filename" | "argv" | "envp" | "flags") => {
-            ("4.7", LINUX_EXEC_C_V4_7_SOURCE)
-        }
-        ("sys_enter_exit" | "sys_enter_exit_group", "error_code") => {
-            ("4.7", LINUX_EXIT_C_V4_7_SOURCE)
-        }
-        ("sys_enter_waitid", "which" | "upid" | "infop" | "options" | "ru") => {
-            ("4.7", LINUX_EXIT_C_V4_7_SOURCE)
-        }
-        ("sys_enter_wait4", "upid" | "stat_addr" | "options" | "ru") => {
-            ("4.7", LINUX_EXIT_C_V4_7_SOURCE)
-        }
-        ("sys_enter_unshare", "unshare_flags") => ("4.7", LINUX_FORK_C_V4_7_SOURCE),
-        ("sys_enter_setns", "fd" | "nstype") => ("4.7", LINUX_NSPROXY_C_V4_7_SOURCE),
-        (
-            "sys_enter_stat" | "sys_enter_lstat" | "sys_enter_newstat" | "sys_enter_newlstat"
-            | "sys_enter_stat64" | "sys_enter_lstat64",
-            "filename" | "statbuf",
-        ) => ("4.7", LINUX_STAT_C_V4_7_SOURCE),
-        ("sys_enter_fstat" | "sys_enter_newfstat" | "sys_enter_fstat64", "fd" | "statbuf") => {
-            ("4.7", LINUX_STAT_C_V4_7_SOURCE)
-        }
-        (
-            "sys_enter_newfstatat" | "sys_enter_fstatat64",
-            "dfd" | "filename" | "statbuf" | "flag",
-        ) => ("4.7", LINUX_STAT_C_V4_7_SOURCE),
-        ("sys_enter_statx", "dfd" | "filename" | "flags" | "mask" | "buffer") => {
-            ("4.11", LINUX_STAT_C_V4_11_SOURCE)
-        }
-        ("sys_enter_mkdirat", "dfd" | "pathname" | "mode") => ("4.7", LINUX_NAMEI_C_V4_7_SOURCE),
-        ("sys_enter_unlinkat", "dfd" | "pathname" | "flag") => ("4.7", LINUX_NAMEI_C_V4_7_SOURCE),
-        ("sys_enter_symlinkat", "oldname" | "newdfd" | "newname") => {
-            ("4.7", LINUX_NAMEI_C_V4_7_SOURCE)
-        }
-        ("sys_enter_linkat", "olddfd" | "oldname" | "newdfd" | "newname" | "flags") => {
-            ("4.7", LINUX_NAMEI_C_V4_7_SOURCE)
-        }
-        ("sys_enter_renameat", "olddfd" | "oldname" | "newdfd" | "newname") => {
-            ("4.7", LINUX_NAMEI_C_V4_7_SOURCE)
-        }
-        ("sys_enter_renameat2", "olddfd" | "oldname" | "newdfd" | "newname" | "flags") => {
-            ("4.7", LINUX_NAMEI_C_V4_7_SOURCE)
-        }
-        ("sys_enter_socket", "family" | "type" | "protocol") => ("4.7", LINUX_SOCKET_C_V4_7_SOURCE),
-        ("sys_enter_socketpair", "family" | "type" | "protocol" | "usockvec") => {
-            ("4.7", LINUX_SOCKET_C_V4_7_SOURCE)
-        }
-        ("sys_enter_bind", "fd" | "umyaddr" | "addrlen") => ("4.7", LINUX_SOCKET_C_V4_7_SOURCE),
-        ("sys_enter_listen", "fd" | "backlog") => ("4.7", LINUX_SOCKET_C_V4_7_SOURCE),
-        ("sys_enter_accept", "fd" | "upeer_sockaddr" | "upeer_addrlen") => {
-            ("4.7", LINUX_SOCKET_C_V4_7_SOURCE)
-        }
-        ("sys_enter_connect", "fd" | "uservaddr" | "addrlen") => {
-            ("4.7", LINUX_SOCKET_C_V4_7_SOURCE)
-        }
-        ("sys_enter_sendto", "fd" | "buff" | "len" | "flags" | "addr" | "addr_len") => {
-            ("4.7", LINUX_SOCKET_C_V4_7_SOURCE)
-        }
-        ("sys_enter_recvfrom", "fd" | "ubuf" | "size" | "flags" | "addr" | "addr_len") => {
-            ("4.7", LINUX_SOCKET_C_V4_7_SOURCE)
-        }
-        ("sys_enter_accept4", "fd" | "upeer_sockaddr" | "upeer_addrlen" | "flags") => {
-            ("4.7", LINUX_SOCKET_C_V4_7_SOURCE)
-        }
-        ("sys_enter_setsockopt", "fd" | "level" | "optname" | "optval" | "optlen") => {
-            ("4.7", LINUX_SOCKET_C_V4_7_SOURCE)
-        }
-        ("sys_enter_getsockopt", "fd" | "level" | "optname" | "optval" | "optlen") => {
-            ("4.7", LINUX_SOCKET_C_V4_7_SOURCE)
-        }
-        ("sys_enter_shutdown", "fd" | "how") => ("4.7", LINUX_SOCKET_C_V4_7_SOURCE),
-        ("sys_enter_sendmsg" | "sys_enter_recvmsg", "fd" | "msg" | "flags") => {
-            ("4.7", LINUX_SOCKET_C_V4_7_SOURCE)
-        }
-        ("sys_enter_sendmmsg", "fd" | "mmsg" | "vlen" | "flags") => {
-            ("4.7", LINUX_SOCKET_C_V4_7_SOURCE)
-        }
-        ("sys_enter_recvmmsg", "fd" | "mmsg" | "vlen" | "flags" | "timeout") => {
-            ("4.7", LINUX_SOCKET_C_V4_7_SOURCE)
-        }
-        _ => return None,
-    })
-}
-
-fn syscall_tracepoint_fallback_field_kernel_floor(
-    name: &str,
-    field: &str,
-) -> Option<(&'static str, &'static str)> {
-    let syscall = if name.starts_with("sys_enter_") {
-        if !matches!(field, "id" | "args") {
-            return None;
-        }
-        name.strip_prefix("sys_enter_")
-    } else if name.starts_with("sys_exit_") {
-        if !matches!(field, "id" | "ret") {
-            return None;
-        }
-        name.strip_prefix("sys_exit_")
-    } else {
-        return None;
-    }?;
-
-    Some(match syscall {
-        "openat2" => ("5.6", LINUX_OPEN_C_V5_6_SOURCE),
-        "statx" => ("4.11", LINUX_STAT_C_V4_11_SOURCE),
-        _ => ("4.7", LINUX_SYSCALLS_H_V4_7_SOURCE),
-    })
+    TracepointContext::syscall_fallback_field_minimum_kernel(category, name, field)
 }
 
 fn context_field_kernel_floor(
