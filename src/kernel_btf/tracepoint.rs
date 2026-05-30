@@ -17,6 +17,7 @@ const FCHMODAT2_SOURCE: &str = "https://github.com/torvalds/linux/blob/v6.6/fs/o
 const CLOSE_RANGE_MIN_KERNEL: &str = "5.9";
 const CLOSE_RANGE_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.9/fs/open.c";
 const EXEC_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/exec.c";
+const EXEC_DOMAIN_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/exec_domain.c";
 const EXIT_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/exit.c";
 const FORK_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/fork.c";
 const CLONE3_MIN_KERNEL: &str = "5.3";
@@ -44,6 +45,7 @@ const SELECT_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/sele
 const SYNC_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/sync.c";
 const STAT_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/stat.c";
 const STATFS_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/statfs.c";
+const FILESYSTEMS_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/filesystems.c";
 const READDIR_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/readdir.c";
 const FHANDLE_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/fhandle.c";
 const DCACHE_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/dcache.c";
@@ -90,6 +92,7 @@ const SET_MEMPOLICY_HOME_NODE_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.17/mm/mempolicy.c";
 const UTIMES_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/utimes.c";
 const TIME_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/time/time.c";
+const TIME_TIMER_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/time/timer.c";
 const ITIMER_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/time/itimer.c";
 const HRTIMER_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/time/hrtimer.c";
 const POSIX_TIMERS_SOURCE: &str =
@@ -117,6 +120,7 @@ const LANDLOCK_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.13/security/landlock/syscalls.c";
 const KERNEL_SYS_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/sys.c";
 const MEMBARRIER_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/membarrier.c";
+const PRINTK_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/printk/printk.c";
 const RSEQ_MIN_KERNEL: &str = "4.18";
 const RSEQ_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.18/kernel/rseq.c";
 const BPF_SYSCALL_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/bpf/syscall.c";
@@ -189,6 +193,9 @@ const WELL_KNOWN_SYS_ENTER_SYSCALLS: &[&str] = &[
     "waitid",
     "wait4",
     "unshare",
+    "fork",
+    "vfork",
+    "clone",
     "clone3",
     "setns",
     "init_module",
@@ -324,6 +331,7 @@ const WELL_KNOWN_SYS_ENTER_SYSCALLS: &[&str] = &[
     "set_mempolicy_home_node",
     "swapon",
     "swapoff",
+    "munlockall",
     "mlock",
     "mlock2",
     "munlock",
@@ -411,6 +419,7 @@ const WELL_KNOWN_SYS_ENTER_SYSCALLS: &[&str] = &[
     "setrlimit",
     "getrusage",
     "prlimit64",
+    "personality",
     "umask",
     "prctl",
     "getcpu",
@@ -419,6 +428,8 @@ const WELL_KNOWN_SYS_ENTER_SYSCALLS: &[&str] = &[
     "newuname",
     "sysinfo",
     "membarrier",
+    "syslog",
+    "sysfs",
     "rseq",
     "set_tid_address",
     "bpf",
@@ -431,6 +442,19 @@ const WELL_KNOWN_SYS_ENTER_SYSCALLS: &[&str] = &[
     "capget",
     "capset",
     "nice",
+    "getpid",
+    "gettid",
+    "getppid",
+    "getuid",
+    "geteuid",
+    "getgid",
+    "getegid",
+    "getpgrp",
+    "setsid",
+    "vhangup",
+    "alarm",
+    "pause",
+    "restart_syscall",
     "sched_setscheduler",
     "sched_setparam",
     "sched_setattr",
@@ -734,7 +758,27 @@ impl TracepointContext {
             }
             Some("mount_setattr") => (Some(MOUNT_SETATTR_MIN_KERNEL), Some(MOUNT_SETATTR_SOURCE)),
             Some("statx") => (Some(STATX_MIN_KERNEL), Some(STATX_SOURCE)),
+            Some("fork" | "vfork" | "clone" | "set_tid_address") => (
+                Some(SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL),
+                Some(FORK_SOURCE),
+            ),
             Some("clone3") => (Some(CLONE3_MIN_KERNEL), Some(CLONE3_SOURCE)),
+            Some("personality") => (
+                Some(SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL),
+                Some(EXEC_DOMAIN_SOURCE),
+            ),
+            Some("vhangup") => (
+                Some(SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL),
+                Some(OPEN_SOURCE),
+            ),
+            Some("alarm") => (
+                Some(SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL),
+                Some(TIME_TIMER_SOURCE),
+            ),
+            Some("pause" | "restart_syscall") => (
+                Some(SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL),
+                Some(SIGNAL_SOURCE),
+            ),
             Some("pkey_mprotect" | "pkey_alloc" | "pkey_free") => {
                 (Some(PKEY_MIN_KERNEL), Some(PKEY_SOURCE))
             }
@@ -756,6 +800,14 @@ impl TracepointContext {
                 Some(SET_MEMPOLICY_HOME_NODE_SOURCE),
             ),
             Some("rseq") => (Some(RSEQ_MIN_KERNEL), Some(RSEQ_SOURCE)),
+            Some("syslog") => (
+                Some(SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL),
+                Some(PRINTK_SOURCE),
+            ),
+            Some("sysfs") => (
+                Some(SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL),
+                Some(FILESYSTEMS_SOURCE),
+            ),
             Some("pidfd_send_signal") => (
                 Some(PIDFD_SEND_SIGNAL_MIN_KERNEL),
                 Some(PIDFD_SEND_SIGNAL_SOURCE),
@@ -822,7 +874,14 @@ impl TracepointContext {
             "fsopen" | "fsconfig" | "fspick" => (MOUNT_API_MIN_KERNEL, MOUNT_API_FSOPEN_SOURCE),
             "mount_setattr" => (MOUNT_SETATTR_MIN_KERNEL, MOUNT_SETATTR_SOURCE),
             "statx" => (STATX_MIN_KERNEL, STATX_SOURCE),
+            "fork" | "vfork" | "clone" | "set_tid_address" => {
+                (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, FORK_SOURCE)
+            }
             "clone3" => (CLONE3_MIN_KERNEL, CLONE3_SOURCE),
+            "personality" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, EXEC_DOMAIN_SOURCE),
+            "vhangup" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, OPEN_SOURCE),
+            "alarm" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, TIME_TIMER_SOURCE),
+            "pause" | "restart_syscall" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, SIGNAL_SOURCE),
             "pkey_mprotect" | "pkey_alloc" | "pkey_free" => (PKEY_MIN_KERNEL, PKEY_SOURCE),
             "io_uring_setup" | "io_uring_enter" | "io_uring_register" => {
                 (IO_URING_MIN_KERNEL, IO_URING_SOURCE)
@@ -836,6 +895,8 @@ impl TracepointContext {
                 SET_MEMPOLICY_HOME_NODE_SOURCE,
             ),
             "rseq" => (RSEQ_MIN_KERNEL, RSEQ_SOURCE),
+            "syslog" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, PRINTK_SOURCE),
+            "sysfs" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, FILESYSTEMS_SOURCE),
             "pidfd_send_signal" => (PIDFD_SEND_SIGNAL_MIN_KERNEL, PIDFD_SEND_SIGNAL_SOURCE),
             "pidfd_open" => (PIDFD_OPEN_MIN_KERNEL, PIDFD_OPEN_SOURCE),
             "pidfd_getfd" => (PIDFD_GETFD_MIN_KERNEL, PIDFD_GETFD_SOURCE),
@@ -890,7 +951,9 @@ impl TracepointContext {
             "exit" | "exit_group" | "waitid" | "wait4" => {
                 (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, EXIT_SOURCE)
             }
-            "unshare" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, FORK_SOURCE),
+            "unshare" | "fork" | "vfork" | "clone" => {
+                (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, FORK_SOURCE)
+            }
             "clone3" => (CLONE3_MIN_KERNEL, CLONE3_SOURCE),
             "setns" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, NSPROXY_SOURCE),
             "init_module" | "finit_module" | "delete_module" => {
@@ -970,7 +1033,7 @@ impl TracepointContext {
             }
             "process_madvise" => (PROCESS_MADVISE_MIN_KERNEL, PROCESS_MADVISE_SOURCE),
             "process_mrelease" => (PROCESS_MRELEASE_MIN_KERNEL, PROCESS_MRELEASE_SOURCE),
-            "mlock" | "mlock2" | "munlock" | "mlockall" => {
+            "mlock" | "mlock2" | "munlock" | "mlockall" | "munlockall" => {
                 (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, MM_MLOCK_SOURCE)
             }
             "mincore" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, MM_MINCORE_SOURCE),
@@ -992,6 +1055,7 @@ impl TracepointContext {
             "time" | "gettimeofday" | "settimeofday" | "adjtimex" => {
                 (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, TIME_SOURCE)
             }
+            "alarm" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, TIME_TIMER_SOURCE),
             "getitimer" | "setitimer" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, ITIMER_SOURCE),
             "nanosleep" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, HRTIMER_SOURCE),
             "timer_create" | "timer_gettime" | "timer_getoverrun" | "timer_settime"
@@ -1015,7 +1079,7 @@ impl TracepointContext {
             }
             "rt_sigprocmask" | "rt_sigpending" | "rt_sigtimedwait" | "kill" | "tgkill"
             | "tkill" | "rt_sigqueueinfo" | "rt_tgsigqueueinfo" | "sigaltstack"
-            | "rt_sigaction" | "rt_sigsuspend" => {
+            | "rt_sigaction" | "rt_sigsuspend" | "pause" | "restart_syscall" => {
                 (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, SIGNAL_SOURCE)
             }
             "signalfd" | "signalfd4" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, SIGNALFD_SOURCE),
@@ -1027,12 +1091,17 @@ impl TracepointContext {
             }
             "setpriority" | "getpriority" | "setregid" | "setgid" | "setreuid" | "setuid"
             | "setresuid" | "getresuid" | "setresgid" | "getresgid" | "setfsuid" | "setfsgid"
-            | "setpgid" | "getpgid" | "getsid" | "sethostname" | "gethostname"
-            | "setdomainname" | "getrlimit" | "setrlimit" | "getrusage" | "prlimit64" | "umask"
-            | "prctl" | "getcpu" | "times" | "newuname" | "sysinfo" => {
+            | "setpgid" | "getpgid" | "getsid" | "setsid" | "getpid" | "gettid" | "getppid"
+            | "getuid" | "geteuid" | "getgid" | "getegid" | "getpgrp" | "sethostname"
+            | "gethostname" | "setdomainname" | "getrlimit" | "setrlimit" | "getrusage"
+            | "prlimit64" | "umask" | "prctl" | "getcpu" | "times" | "newuname" | "sysinfo" => {
                 (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, KERNEL_SYS_SOURCE)
             }
+            "personality" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, EXEC_DOMAIN_SOURCE),
+            "vhangup" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, OPEN_SOURCE),
             "membarrier" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, MEMBARRIER_SOURCE),
+            "syslog" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, PRINTK_SOURCE),
+            "sysfs" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, FILESYSTEMS_SOURCE),
             "rseq" => (RSEQ_MIN_KERNEL, RSEQ_SOURCE),
             "set_tid_address" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, FORK_SOURCE),
             "bpf" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, BPF_SYSCALL_SOURCE),
@@ -1332,6 +1401,14 @@ impl TracepointContext {
                 ("ru", Self::syscall_arg_user_ptr()),
             ],
             "unshare" => vec![("unshare_flags", Self::syscall_arg_int(false))],
+            "fork" | "vfork" => vec![],
+            "clone" => vec![
+                ("clone_flags", Self::syscall_arg_int(false)),
+                ("newsp", Self::syscall_arg_int(false)),
+                ("parent_tidptr", Self::syscall_arg_user_ptr()),
+                ("child_tidptr", Self::syscall_arg_user_ptr()),
+                ("tls", Self::syscall_arg_int(false)),
+            ],
             "clone3" => vec![
                 ("uargs", Self::syscall_arg_user_ptr()),
                 ("size", Self::syscall_arg_int(false)),
@@ -1918,6 +1995,7 @@ impl TracepointContext {
                 ("flags", Self::syscall_arg_int(true)),
             ],
             "mlockall" => vec![("flags", Self::syscall_arg_int(true))],
+            "munlockall" => vec![],
             "mincore" => vec![
                 ("start", Self::syscall_arg_int(false)),
                 ("len", Self::syscall_arg_int(false)),
@@ -1963,6 +2041,7 @@ impl TracepointContext {
                 ("tz", Self::syscall_arg_user_ptr()),
             ],
             "adjtimex" => vec![("txc_p", Self::syscall_arg_user_ptr())],
+            "alarm" => vec![("seconds", Self::syscall_arg_int(false))],
             "getitimer" => vec![
                 ("which", Self::syscall_arg_int(true)),
                 ("value", Self::syscall_arg_user_ptr()),
@@ -2149,6 +2228,7 @@ impl TracepointContext {
                 ("unewset", Self::syscall_arg_user_ptr()),
                 ("sigsetsize", Self::syscall_arg_int(false)),
             ],
+            "pause" | "restart_syscall" => vec![],
             "signalfd" => vec![
                 ("ufd", Self::syscall_arg_int(true)),
                 ("user_mask", Self::syscall_arg_user_ptr()),
@@ -2254,6 +2334,7 @@ impl TracepointContext {
                 ("new_rlim", Self::syscall_arg_user_ptr()),
                 ("old_rlim", Self::syscall_arg_user_ptr()),
             ],
+            "personality" => vec![("personality", Self::syscall_arg_int(false))],
             "umask" => vec![("mask", Self::syscall_arg_int(false))],
             "prctl" => vec![
                 ("option", Self::syscall_arg_int(true)),
@@ -2279,6 +2360,16 @@ impl TracepointContext {
                 ("cmd", Self::syscall_arg_int(true)),
                 ("flags", Self::syscall_arg_int(true)),
             ],
+            "syslog" => vec![
+                ("type", Self::syscall_arg_int(true)),
+                ("buf", Self::syscall_arg_user_ptr()),
+                ("len", Self::syscall_arg_int(true)),
+            ],
+            "sysfs" => vec![
+                ("option", Self::syscall_arg_int(true)),
+                ("arg1", Self::syscall_arg_int(false)),
+                ("arg2", Self::syscall_arg_int(false)),
+            ],
             "rseq" => vec![
                 ("rseq", Self::syscall_arg_user_ptr()),
                 ("rseq_len", Self::syscall_arg_int(false)),
@@ -2286,6 +2377,8 @@ impl TracepointContext {
                 ("sig", Self::syscall_arg_int(false)),
             ],
             "set_tid_address" => vec![("tidptr", Self::syscall_arg_user_ptr())],
+            "getpid" | "gettid" | "getppid" | "getuid" | "geteuid" | "getgid" | "getegid"
+            | "getpgrp" | "setsid" | "vhangup" => vec![],
             "bpf" => vec![
                 ("cmd", Self::syscall_arg_int(true)),
                 ("uattr", Self::syscall_arg_user_ptr()),

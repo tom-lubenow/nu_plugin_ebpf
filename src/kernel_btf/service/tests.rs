@@ -509,6 +509,20 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         TypeInfo::Ptr { is_user: true, .. }
     ));
 
+    let clone = TracepointContext::sys_enter("sys_enter_clone");
+    assert!(clone.has_field("clone_flags"));
+    assert!(clone.has_field("newsp"));
+    assert!(clone.has_field("parent_tidptr"));
+    assert!(clone.has_field("child_tidptr"));
+    assert!(clone.has_field("tls"));
+    let (_, clone_source) = TracepointContext::syscall_fallback_field_minimum_kernel(
+        "syscalls",
+        "sys_enter_clone",
+        "parent_tidptr",
+    )
+    .expect("expected clone source metadata");
+    assert!(clone_source.contains("/v4.7/kernel/fork.c"));
+
     let io_uring_setup = TracepointContext::sys_enter("sys_enter_io_uring_setup");
     assert!(io_uring_setup.has_field("entries"));
     assert!(io_uring_setup.has_field("params"));
@@ -746,6 +760,23 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
             .offset,
         40
     );
+
+    let syslog = TracepointContext::sys_enter("sys_enter_syslog");
+    assert!(syslog.has_field("type"));
+    assert!(syslog.has_field("buf"));
+    assert!(syslog.has_field("len"));
+    let (_, syslog_source) = TracepointContext::syscall_fallback_field_minimum_kernel(
+        "syscalls",
+        "sys_enter_syslog",
+        "buf",
+    )
+    .expect("expected syslog source metadata");
+    assert!(syslog_source.contains("/v4.7/kernel/printk/printk.c"));
+
+    let sysfs = TracepointContext::sys_enter("sys_enter_sysfs");
+    assert!(sysfs.has_field("option"));
+    assert!(!sysfs.has_field("arg1"));
+    assert!(!sysfs.has_field("arg2"));
 
     let add_key = TracepointContext::sys_enter("sys_enter_add_key");
     assert!(add_key.has_field("_type"));
@@ -1505,6 +1536,18 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
             &["which", "upid", "infop", "options", "ru"][..],
         ),
         ("sys_enter_unshare", &["unshare_flags"][..]),
+        ("sys_enter_fork", &[][..]),
+        ("sys_enter_vfork", &[][..]),
+        (
+            "sys_enter_clone",
+            &[
+                "clone_flags",
+                "newsp",
+                "parent_tidptr",
+                "child_tidptr",
+                "tls",
+            ][..],
+        ),
         ("sys_enter_clone3", &["uargs", "size"][..]),
         ("sys_enter_setns", &["fd", "nstype"][..]),
         ("sys_enter_dup", &["fildes"][..]),
@@ -1747,6 +1790,7 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         ("sys_enter_pkey_free", &["pkey"][..]),
         ("sys_enter_swapon", &["specialfile", "swap_flags"][..]),
         ("sys_enter_swapoff", &["specialfile"][..]),
+        ("sys_enter_munlockall", &[][..]),
         ("sys_enter_memfd_create", &["uname", "flags"][..]),
         ("sys_enter_memfd_secret", &["flags"][..]),
         ("sys_enter_utime", &["filename", "times"][..]),
@@ -1760,6 +1804,7 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         ("sys_enter_gettimeofday", &["tv", "tz"][..]),
         ("sys_enter_settimeofday", &["tv", "tz"][..]),
         ("sys_enter_adjtimex", &["txc_p"][..]),
+        ("sys_enter_alarm", &["seconds"][..]),
         ("sys_enter_getitimer", &["which", "value"][..]),
         ("sys_enter_setitimer", &["which", "value", "ovalue"][..]),
         ("sys_enter_nanosleep", &["rqtp", "rmtp"][..]),
@@ -1840,6 +1885,8 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
             &["sig", "act", "oact", "sigsetsize"][..],
         ),
         ("sys_enter_rt_sigsuspend", &["unewset", "sigsetsize"][..]),
+        ("sys_enter_pause", &[][..]),
+        ("sys_enter_restart_syscall", &[][..]),
         ("sys_enter_signalfd", &["ufd", "user_mask", "sizemask"][..]),
         (
             "sys_enter_signalfd4",
@@ -1878,6 +1925,7 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
             "sys_enter_prlimit64",
             &["resource", "new_rlim", "old_rlim"][..],
         ),
+        ("sys_enter_personality", &["personality"][..]),
         ("sys_enter_umask", &["mask"][..]),
         ("sys_enter_prctl", &["option"][..]),
         ("sys_enter_getcpu", &["cpup", "nodep", "unused"][..]),
@@ -1886,8 +1934,20 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         ("sys_enter_newuname", &["name"][..]),
         ("sys_enter_sysinfo", &["info"][..]),
         ("sys_enter_membarrier", &["cmd", "flags"][..]),
+        ("sys_enter_syslog", &["type", "buf", "len"][..]),
+        ("sys_enter_sysfs", &["option"][..]),
         ("sys_enter_rseq", &["rseq", "rseq_len", "flags", "sig"][..]),
         ("sys_enter_set_tid_address", &["tidptr"][..]),
+        ("sys_enter_getpid", &[][..]),
+        ("sys_enter_gettid", &[][..]),
+        ("sys_enter_getppid", &[][..]),
+        ("sys_enter_getuid", &[][..]),
+        ("sys_enter_geteuid", &[][..]),
+        ("sys_enter_getgid", &[][..]),
+        ("sys_enter_getegid", &[][..]),
+        ("sys_enter_getpgrp", &[][..]),
+        ("sys_enter_setsid", &[][..]),
+        ("sys_enter_vhangup", &[][..]),
         ("sys_enter_bpf", &["cmd", "uattr", "size"][..]),
         (
             "sys_enter_perf_event_open",

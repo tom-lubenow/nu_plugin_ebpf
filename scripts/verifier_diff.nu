@@ -2624,6 +2624,12 @@ const PROCESS_TRACEPOINT_FIELD_SPECS = [
         source: "https://github.com/torvalds/linux/blob/v4.7/kernel/fork.c"
     }
     {
+        syscalls: ["clone"]
+        fields: ["clone_flags" "newsp" "parent_tidptr" "child_tidptr" "tls"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/fork.c"
+    }
+    {
         syscalls: ["clone3"]
         fields: ["uargs" "size"]
         min_kernel: "5.3"
@@ -2994,6 +3000,12 @@ const MM_TRACEPOINT_FIELD_SPECS = [
         source: "https://github.com/torvalds/linux/blob/v4.7/mm/msync.c"
     }
     {
+        syscalls: ["munlockall"]
+        fields: []
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/mm/mlock.c"
+    }
+    {
         syscalls: ["swapon"]
         fields: ["specialfile" "swap_flags"]
         min_kernel: "4.7"
@@ -3096,6 +3108,12 @@ const TIME_TRACEPOINT_FIELD_SPECS = [
         fields: ["txc_p"]
         min_kernel: "4.7"
         source: "https://github.com/torvalds/linux/blob/v4.7/kernel/time/time.c"
+    }
+    {
+        syscalls: ["alarm"]
+        fields: ["seconds"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/time/timer.c"
     }
     {
         syscalls: ["getitimer"]
@@ -3502,10 +3520,28 @@ const IDENTITY_TRACEPOINT_FIELD_SPECS = [
         source: "https://github.com/torvalds/linux/blob/v4.7/kernel/sys.c"
     }
     {
+        syscalls: ["personality"]
+        fields: ["personality"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/exec_domain.c"
+    }
+    {
         syscalls: ["membarrier"]
         fields: ["cmd" "flags"]
         min_kernel: "4.7"
         source: "https://github.com/torvalds/linux/blob/v4.7/kernel/membarrier.c"
+    }
+    {
+        syscalls: ["syslog"]
+        fields: ["type" "buf" "len"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/printk/printk.c"
+    }
+    {
+        syscalls: ["sysfs"]
+        fields: ["option"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/filesystems.c"
     }
     {
         syscalls: ["rseq"]
@@ -7466,6 +7502,54 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         ]
     }
     {
+        target: "tracepoint:syscalls/sys_enter_clone"
+        program: [
+            '{|ctx|'
+            '  let parent_tidptr = $ctx.parent_tidptr'
+            '  let child_tidptr = $ctx.child_tidptr'
+            '  if $parent_tidptr { 1 | count }'
+            '  if $child_tidptr { 1 | count }'
+            '  ($ctx.clone_flags + $ctx.newsp + $ctx.tls) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_clone:field:parent_tidptr"
+            "tracepoint:syscalls/sys_enter_clone:field:child_tidptr"
+            "tracepoint:syscalls/sys_enter_clone:field:clone_flags"
+            "tracepoint:syscalls/sys_enter_clone:field:newsp"
+            "tracepoint:syscalls/sys_enter_clone:field:tls"
+        ]
+    }
+    {
+        target: "tracepoint:syscalls/sys_enter_syslog"
+        program: [
+            '{|ctx|'
+            '  let buf = $ctx.buf'
+            '  if $buf { 1 | count }'
+            '  ($ctx.type + $ctx.len) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_syslog:field:buf"
+            "tracepoint:syscalls/sys_enter_syslog:field:type"
+            "tracepoint:syscalls/sys_enter_syslog:field:len"
+        ]
+    }
+    {
+        target: "tracepoint:syscalls/sys_enter_personality"
+        program: [
+            '{|ctx|'
+            '  $ctx.personality | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_personality:field:personality"
+        ]
+    }
+    {
         target: "tracepoint:syscalls/sys_enter_openat"
         program: [
             '{|ctx|'
@@ -10069,6 +10153,57 @@ const FIXTURES = [
             '  let uargs = $ctx.uargs'
             '  if $uargs { 1 | count }'
             '  ($ctx.op + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-clone-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_clone]
+        target: "tracepoint:syscalls/sys_enter_clone"
+        program: [
+            '{|ctx|'
+            '  let parent_tidptr = $ctx.parent_tidptr'
+            '  let child_tidptr = $ctx.child_tidptr'
+            '  if $parent_tidptr { 1 | count }'
+            '  if $child_tidptr { 1 | count }'
+            '  ($ctx.clone_flags + $ctx.newsp + $ctx.tls) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-syslog-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_syslog]
+        target: "tracepoint:syscalls/sys_enter_syslog"
+        program: [
+            '{|ctx|'
+            '  let buf = $ctx.buf'
+            '  if $buf { 1 | count }'
+            '  ($ctx.type + $ctx.len) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-personality-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_personality]
+        target: "tracepoint:syscalls/sys_enter_personality"
+        program: [
+            '{|ctx|'
+            '  $ctx.personality | count'
             '  0'
             '}'
         ]
@@ -32715,6 +32850,20 @@ def syscall-tracepoint-fallback-field-kernel-feature [field: string target] {
         "https://github.com/torvalds/linux/blob/v6.13/fs/xattr.c"
     } else if $syscall == "clone3" {
         "https://github.com/torvalds/linux/blob/v5.3/kernel/fork.c"
+    } else if $syscall in ["fork" "vfork" "clone" "set_tid_address"] {
+        "https://github.com/torvalds/linux/blob/v4.7/kernel/fork.c"
+    } else if $syscall == "personality" {
+        "https://github.com/torvalds/linux/blob/v4.7/kernel/exec_domain.c"
+    } else if $syscall == "vhangup" {
+        "https://github.com/torvalds/linux/blob/v4.7/fs/open.c"
+    } else if $syscall == "alarm" {
+        "https://github.com/torvalds/linux/blob/v4.7/kernel/time/timer.c"
+    } else if $syscall in ["pause" "restart_syscall"] {
+        "https://github.com/torvalds/linux/blob/v4.7/kernel/signal.c"
+    } else if $syscall == "syslog" {
+        "https://github.com/torvalds/linux/blob/v4.7/kernel/printk/printk.c"
+    } else if $syscall == "sysfs" {
+        "https://github.com/torvalds/linux/blob/v4.7/fs/filesystems.c"
     } else if $syscall in ["pkey_mprotect" "pkey_alloc" "pkey_free"] {
         "https://github.com/torvalds/linux/blob/v4.9/mm/mprotect.c"
     } else if $syscall in ["io_uring_setup" "io_uring_enter" "io_uring_register"] {

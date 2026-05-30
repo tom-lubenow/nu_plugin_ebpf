@@ -934,7 +934,8 @@ Extended-attribute fallbacks expose aliases for
 control fallbacks expose stable aliases for entry tracepoints such as
 `sys_enter_execveat`, `sys_enter_wait4`, `sys_enter_setns`, module and kexec
 calls such as `sys_enter_init_module` and `sys_enter_kexec_file_load`,
-`sys_enter_reboot`, and `sys_enter_acct`. File-descriptor
+`sys_enter_reboot`, `sys_enter_acct`, and process creation calls such as
+`sys_enter_clone`, `sys_enter_fork`, and `sys_enter_vfork`. File-descriptor
 and event fallbacks expose aliases for common entry tracepoints such as
 `sys_enter_lseek`, `sys_enter_fallocate`, `sys_enter_sync_file_range`,
 `sys_enter_fcntl`, `sys_enter_ioctl`, `sys_enter_dup3`, `sys_enter_pipe2`,
@@ -956,7 +957,7 @@ and `sys_enter_swapoff` are source-backed as well.
 Time and timer fallbacks expose aliases for common entry tracepoints such as
 `sys_enter_utime`, `sys_enter_utimes`, `sys_enter_futimesat`,
 `sys_enter_utimensat`, `sys_enter_gettimeofday`, `sys_enter_clock_gettime`,
-`sys_enter_timer_create`, and `sys_enter_timerfd_settime`.
+`sys_enter_timer_create`, `sys_enter_timerfd_settime`, and `sys_enter_alarm`.
 AIO and io-priority fallbacks expose aliases for entry tracepoints such as
 `sys_enter_io_setup`, `sys_enter_io_submit`, `sys_enter_io_getevents`,
 Linux 4.18+ `sys_enter_io_pgetevents`, `sys_enter_ioprio_set`, and
@@ -971,7 +972,9 @@ entry tracepoints such as `sys_enter_setresuid`, `sys_enter_getresgid`,
 `sys_enter_getcpu`, plus query-style system calls such as `sys_enter_getrandom`,
 `sys_enter_times`, `sys_enter_newuname`, and `sys_enter_sysinfo`, and
 process-state calls such as `sys_enter_prlimit64`, `sys_enter_membarrier`,
-Linux 4.18+ `sys_enter_rseq`, and `sys_enter_set_tid_address`.
+Linux 4.18+ `sys_enter_rseq`, `sys_enter_set_tid_address`,
+`sys_enter_personality`, `sys_enter_syslog`, and zero-argument identity calls
+such as `sys_enter_getpid`.
 Instrumentation and security-control fallbacks expose aliases for
 `sys_enter_bpf`, `sys_enter_perf_event_open`, `sys_enter_ptrace`,
 `sys_enter_seccomp`, and `sys_enter_userfaultfd`.
