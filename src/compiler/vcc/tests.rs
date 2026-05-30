@@ -7,6 +7,7 @@ use std::collections::HashMap;
 
 mod context;
 mod core;
+mod critical_sections;
 mod dynptr_kfuncs;
 mod helpers;
 mod iter_kfuncs;
