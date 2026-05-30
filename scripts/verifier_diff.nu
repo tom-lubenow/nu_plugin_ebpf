@@ -11677,6 +11677,47 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "dynptr-kfunc-from-skb-accepts-netfilter-copied-skb-pointer"
+        category: "helper-state"
+        tags: [kfunc dynptr skb netfilter accept context-alias]
+        requires: [kernel-btf]
+        target: "netfilter:ipv4:pre_routing"
+        program: [
+            '{|ctx|'
+            '  let skb = $ctx.skb'
+            '  let d = "0123456789abcdef"'
+            '  kfunc-call "bpf_dynptr_from_skb" $skb 0 $d'
+            '  let size = (kfunc-call "bpf_dynptr_size" $d)'
+            '  $size | count'
+            '  1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "dynptr-kfunc-from-skb-accepts-netfilter-user-function-skb-pointer"
+        category: "helper-state"
+        tags: [kfunc dynptr skb netfilter accept user-function]
+        requires: [kernel-btf]
+        target: "netfilter:ipv4:pre_routing"
+        program: [
+            '{|ctx|'
+            '  def init [skb] {'
+            '    let d = "0123456789abcdef"'
+            '    kfunc-call "bpf_dynptr_from_skb" $skb 0 $d'
+            '    let size = (kfunc-call "bpf_dynptr_size" $d)'
+            '    $size | count'
+            '    0'
+            '  }'
+            '  init $ctx.skb'
+            '  1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "dynptr-kfunc-from-skb-accepts-tracing-skb-argument"
         category: "helper-state"
         tags: [kfunc dynptr skb tracing accept]
@@ -11688,6 +11729,47 @@ const FIXTURES = [
             '  kfunc-call "bpf_dynptr_from_skb" $ctx.arg0 0 $d'
             '  let size = (kfunc-call "bpf_dynptr_size" $d)'
             '  $size | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "dynptr-kfunc-from-skb-accepts-tracing-copied-skb-argument"
+        category: "helper-state"
+        tags: [kfunc dynptr skb tracing accept context-alias]
+        requires: [kernel-btf]
+        target: "fentry:tcp_v4_rcv"
+        program: [
+            '{|ctx|'
+            '  let skb = $ctx.arg0'
+            '  let d = "0123456789abcdef"'
+            '  kfunc-call "bpf_dynptr_from_skb" $skb 0 $d'
+            '  let size = (kfunc-call "bpf_dynptr_size" $d)'
+            '  $size | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "dynptr-kfunc-from-skb-accepts-tracing-user-function-skb-argument"
+        category: "helper-state"
+        tags: [kfunc dynptr skb tracing accept user-function]
+        requires: [kernel-btf]
+        target: "fentry:tcp_v4_rcv"
+        program: [
+            '{|ctx|'
+            '  def init [skb] {'
+            '    let d = "0123456789abcdef"'
+            '    kfunc-call "bpf_dynptr_from_skb" $skb 0 $d'
+            '    let size = (kfunc-call "bpf_dynptr_size" $d)'
+            '    $size | count'
+            '    0'
+            '  }'
+            '  init $ctx.arg0'
             '  0'
             '}'
         ]
