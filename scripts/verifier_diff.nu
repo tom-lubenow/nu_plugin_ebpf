@@ -12578,7 +12578,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "xdp-store-bytes-preserves-packet-data"
@@ -12596,7 +12596,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "xdp-store-bytes-rejects-small-source-buffer"
@@ -19870,7 +19870,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "source-helper-sk-lookup-udp-release"
@@ -19889,7 +19889,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "source-helper-sk-lookup-rejects-leak"
@@ -21922,7 +21922,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "spin-lock-rejects-unreleased"
