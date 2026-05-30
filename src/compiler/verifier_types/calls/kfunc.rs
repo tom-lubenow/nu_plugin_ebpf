@@ -960,7 +960,12 @@ pub(in crate::compiler::verifier_types) fn apply_kfunc_semantics(
                         "kfunc '{}' arg{} requires uninitialized dynptr stack object slot",
                         kfunc, copy.dst_arg_idx
                     )));
-                } else if state.is_dynptr_slot_initialized(src_slot) {
+                } else if !state.is_dynptr_slot_initialized(src_slot) {
+                    errors.push(VerifierTypeError::new(format!(
+                        "kfunc '{}' arg{} requires initialized dynptr stack object",
+                        kfunc, copy.src_arg_idx
+                    )));
+                } else {
                     if copy.move_semantics {
                         state.deinitialize_dynptr_slot(src_slot);
                     }

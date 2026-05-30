@@ -840,7 +840,7 @@ fn test_dynptr_move_invalidates_source() {
 }
 
 #[test]
-fn test_dynptr_copy_does_not_initialize_from_uninitialized_source() {
+fn test_dynptr_copy_rejects_uninitialized_source() {
     let mut func = VccFunction::new();
     let entry = func.entry;
     let src = func.alloc_reg();
@@ -866,15 +866,19 @@ fn test_dynptr_copy_does_not_initialize_from_uninitialized_source() {
             dst_arg_idx: 1,
             move_semantics: false,
         });
-    func.block_mut(entry)
-        .instructions
-        .push(VccInst::DynptrRequireInitialized {
-            ptr: dst,
-            kfunc: "unknown_dynptr_use".to_string(),
-            arg_idx: 0,
-        });
 
-    verify_err(&func, VccErrorKind::PointerBounds);
+    let err = VccVerifier::default()
+        .verify_function(&func)
+        .expect_err("expected dynptr copy source initialization error");
+    assert!(
+        err.iter().any(|e| {
+            e.message.contains(
+                "kfunc 'unknown_dynptr_copy' arg0 requires initialized dynptr stack object",
+            )
+        }),
+        "unexpected error messages: {:?}",
+        err
+    );
 }
 
 #[test]

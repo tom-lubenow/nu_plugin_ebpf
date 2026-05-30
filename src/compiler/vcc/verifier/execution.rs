@@ -1819,13 +1819,21 @@ impl VccVerifier {
                     ));
                     return;
                 }
-                if state.is_dynptr_slot_initialized(src_slot) {
-                    if *move_semantics {
-                        state.deinitialize_dynptr_slot(src_slot);
-                    }
-                    state.initialize_dynptr_slot(dst_slot);
-                    state.copy_ringbuf_dynptr_slot(src_slot, dst_slot, *move_semantics);
+                if !state.is_dynptr_slot_initialized(src_slot) {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::PointerBounds,
+                        format!(
+                            "kfunc '{}' arg{} requires initialized dynptr stack object",
+                            kfunc, src_arg_idx
+                        ),
+                    ));
+                    return;
                 }
+                if *move_semantics {
+                    state.deinitialize_dynptr_slot(src_slot);
+                }
+                state.initialize_dynptr_slot(dst_slot);
+                state.copy_ringbuf_dynptr_slot(src_slot, dst_slot, *move_semantics);
             }
             VccInst::UnknownStackObjectInit {
                 ptr,
