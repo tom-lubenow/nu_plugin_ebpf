@@ -45,6 +45,9 @@ const KERNEL_SYS_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/ker
 const GROUPS_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/groups.c";
 const CAPABILITY_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/capability.c";
 const SCHED_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/sched/core.c";
+const IPC_MSG_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/ipc/msg.c";
+const IPC_SEM_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/ipc/sem.c";
+const IPC_SHM_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/ipc/shm.c";
 const TRACEPOINT_PRESERVED_FALLBACK_FIELD_NAMES: &[&str] = &[
     "pid",
     "tid",
@@ -451,6 +454,15 @@ impl TracepointContext {
             | "sched_get_priority_max"
             | "sched_get_priority_min"
             | "sched_rr_get_interval" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, SCHED_SOURCE),
+            "msgget" | "msgctl" | "msgsnd" | "msgrcv" => {
+                (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, IPC_MSG_SOURCE)
+            }
+            "semget" | "semctl" | "semtimedop" | "semop" => {
+                (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, IPC_SEM_SOURCE)
+            }
+            "shmget" | "shmctl" | "shmat" | "shmdt" => {
+                (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, IPC_SHM_SOURCE)
+            }
             _ => return None,
         })
     }
@@ -1041,6 +1053,66 @@ impl TracepointContext {
                 ("pid", Self::syscall_arg_int(true)),
                 ("interval", Self::syscall_arg_user_ptr()),
             ],
+            "msgget" => vec![
+                ("key", Self::syscall_arg_int(true)),
+                ("msgflg", Self::syscall_arg_int(true)),
+            ],
+            "msgctl" => vec![
+                ("msqid", Self::syscall_arg_int(true)),
+                ("cmd", Self::syscall_arg_int(true)),
+                ("buf", Self::syscall_arg_user_ptr()),
+            ],
+            "msgsnd" => vec![
+                ("msqid", Self::syscall_arg_int(true)),
+                ("msgp", Self::syscall_arg_user_ptr()),
+                ("msgsz", Self::syscall_arg_int(false)),
+                ("msgflg", Self::syscall_arg_int(true)),
+            ],
+            "msgrcv" => vec![
+                ("msqid", Self::syscall_arg_int(true)),
+                ("msgp", Self::syscall_arg_user_ptr()),
+                ("msgsz", Self::syscall_arg_int(false)),
+                ("msgtyp", Self::syscall_arg_int(true)),
+                ("msgflg", Self::syscall_arg_int(true)),
+            ],
+            "semget" => vec![
+                ("key", Self::syscall_arg_int(true)),
+                ("nsems", Self::syscall_arg_int(true)),
+                ("semflg", Self::syscall_arg_int(true)),
+            ],
+            "semctl" => vec![
+                ("semid", Self::syscall_arg_int(true)),
+                ("semnum", Self::syscall_arg_int(true)),
+                ("cmd", Self::syscall_arg_int(true)),
+                ("arg", Self::syscall_arg_int(false)),
+            ],
+            "semtimedop" => vec![
+                ("semid", Self::syscall_arg_int(true)),
+                ("tsops", Self::syscall_arg_user_ptr()),
+                ("nsops", Self::syscall_arg_int(false)),
+                ("timeout", Self::syscall_arg_user_ptr()),
+            ],
+            "semop" => vec![
+                ("semid", Self::syscall_arg_int(true)),
+                ("tsops", Self::syscall_arg_user_ptr()),
+                ("nsops", Self::syscall_arg_int(false)),
+            ],
+            "shmget" => vec![
+                ("key", Self::syscall_arg_int(true)),
+                ("size", Self::syscall_arg_int(false)),
+                ("shmflg", Self::syscall_arg_int(true)),
+            ],
+            "shmctl" => vec![
+                ("shmid", Self::syscall_arg_int(true)),
+                ("cmd", Self::syscall_arg_int(true)),
+                ("buf", Self::syscall_arg_user_ptr()),
+            ],
+            "shmat" => vec![
+                ("shmid", Self::syscall_arg_int(true)),
+                ("shmaddr", Self::syscall_arg_user_ptr()),
+                ("shmflg", Self::syscall_arg_int(true)),
+            ],
+            "shmdt" => vec![("shmaddr", Self::syscall_arg_user_ptr())],
             _ => return Vec::new(),
         };
 

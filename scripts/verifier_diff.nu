@@ -2730,6 +2730,80 @@ const SCHED_TRACEPOINT_FIELD_SPECS = [
         source: "https://github.com/torvalds/linux/blob/v4.7/kernel/sched/core.c"
     }
 ]
+const IPC_TRACEPOINT_FIELD_SPECS = [
+    {
+        syscalls: ["msgget"]
+        fields: ["key" "msgflg"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/ipc/msg.c"
+    }
+    {
+        syscalls: ["msgctl"]
+        fields: ["msqid" "cmd" "buf"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/ipc/msg.c"
+    }
+    {
+        syscalls: ["msgsnd"]
+        fields: ["msqid" "msgp" "msgsz" "msgflg"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/ipc/msg.c"
+    }
+    {
+        syscalls: ["msgrcv"]
+        fields: ["msqid" "msgp" "msgsz" "msgtyp" "msgflg"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/ipc/msg.c"
+    }
+    {
+        syscalls: ["semget"]
+        fields: ["key" "nsems" "semflg"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/ipc/sem.c"
+    }
+    {
+        syscalls: ["semctl"]
+        fields: ["semid" "semnum" "cmd"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/ipc/sem.c"
+    }
+    {
+        syscalls: ["semtimedop"]
+        fields: ["semid" "tsops" "nsops" "timeout"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/ipc/sem.c"
+    }
+    {
+        syscalls: ["semop"]
+        fields: ["semid" "tsops" "nsops"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/ipc/sem.c"
+    }
+    {
+        syscalls: ["shmget"]
+        fields: ["key" "size" "shmflg"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/ipc/shm.c"
+    }
+    {
+        syscalls: ["shmctl"]
+        fields: ["shmid" "cmd" "buf"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/ipc/shm.c"
+    }
+    {
+        syscalls: ["shmat"]
+        fields: ["shmid" "shmaddr" "shmflg"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/ipc/shm.c"
+    }
+    {
+        syscalls: ["shmdt"]
+        fields: ["shmaddr"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/ipc/shm.c"
+    }
+]
 const TRACEPOINT_FIELD_KERNEL_FEATURES = [
     { target: "tracepoint:syscalls/sys_enter_read" field: "fd" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_READ_FD }
     { target: "tracepoint:syscalls/sys_enter_read" field: "buf" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_READ_BUF }
@@ -7778,6 +7852,108 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  $ctx.increment | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-msgctl-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_msgctl]
+        target: "tracepoint:syscalls/sys_enter_msgctl"
+        program: [
+            '{|ctx|'
+            '  $ctx.cmd | count'
+            '  let buf = $ctx.buf'
+            '  if $buf { 1 | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-msgrcv-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_msgrcv]
+        target: "tracepoint:syscalls/sys_enter_msgrcv"
+        program: [
+            '{|ctx|'
+            '  ($ctx.msgsz + $ctx.msgtyp + $ctx.msgflg) | count'
+            '  let msgp = $ctx.msgp'
+            '  if $msgp { 1 | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-semctl-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_semctl]
+        target: "tracepoint:syscalls/sys_enter_semctl"
+        program: [
+            '{|ctx|'
+            '  ($ctx.semid + $ctx.semnum + $ctx.cmd) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-semtimedop-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_semtimedop]
+        target: "tracepoint:syscalls/sys_enter_semtimedop"
+        program: [
+            '{|ctx|'
+            '  $ctx.nsops | count'
+            '  let tsops = $ctx.tsops'
+            '  let timeout = $ctx.timeout'
+            '  if $tsops { 1 | count }'
+            '  if $timeout { 1 | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-shmctl-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_shmctl]
+        target: "tracepoint:syscalls/sys_enter_shmctl"
+        program: [
+            '{|ctx|'
+            '  $ctx.cmd | count'
+            '  let buf = $ctx.buf'
+            '  if $buf { 1 | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-shmat-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_shmat]
+        target: "tracepoint:syscalls/sys_enter_shmat"
+        program: [
+            '{|ctx|'
+            '  $ctx.shmflg | count'
+            '  let shmaddr = $ctx.shmaddr'
+            '  if $shmaddr { 1 | count }'
             '  0'
             '}'
         ]
@@ -26392,6 +26568,7 @@ def tracepoint-payload-field-kernel-feature [field: string target] {
         | append $SIGNAL_TRACEPOINT_FIELD_SPECS
         | append $IDENTITY_TRACEPOINT_FIELD_SPECS
         | append $SCHED_TRACEPOINT_FIELD_SPECS
+        | append $IPC_TRACEPOINT_FIELD_SPECS
     )
     let source_backed_feature = (
         source-backed-sys-enter-tracepoint-field-kernel-feature $field $target $source_backed_syscall_specs

@@ -1172,6 +1172,18 @@ mod tests {
             "sys_enter_sched_get_priority_max",
             "sys_enter_sched_get_priority_min",
             "sys_enter_sched_rr_get_interval",
+            "sys_enter_msgget",
+            "sys_enter_msgctl",
+            "sys_enter_msgsnd",
+            "sys_enter_msgrcv",
+            "sys_enter_semget",
+            "sys_enter_semctl",
+            "sys_enter_semtimedop",
+            "sys_enter_semop",
+            "sys_enter_shmget",
+            "sys_enter_shmctl",
+            "sys_enter_shmat",
+            "sys_enter_shmdt",
         ];
 
         for syscall in modeled_syscalls {

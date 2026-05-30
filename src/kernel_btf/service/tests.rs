@@ -584,6 +584,27 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         ("sys_enter_sched_get_priority_max", &["policy"][..]),
         ("sys_enter_sched_get_priority_min", &["policy"][..]),
         ("sys_enter_sched_rr_get_interval", &["interval"][..]),
+        ("sys_enter_msgget", &["key", "msgflg"][..]),
+        ("sys_enter_msgctl", &["msqid", "cmd", "buf"][..]),
+        (
+            "sys_enter_msgsnd",
+            &["msqid", "msgp", "msgsz", "msgflg"][..],
+        ),
+        (
+            "sys_enter_msgrcv",
+            &["msqid", "msgp", "msgsz", "msgtyp", "msgflg"][..],
+        ),
+        ("sys_enter_semget", &["key", "nsems", "semflg"][..]),
+        ("sys_enter_semctl", &["semid", "semnum", "cmd"][..]),
+        (
+            "sys_enter_semtimedop",
+            &["semid", "tsops", "nsops", "timeout"][..],
+        ),
+        ("sys_enter_semop", &["semid", "tsops", "nsops"][..]),
+        ("sys_enter_shmget", &["key", "size", "shmflg"][..]),
+        ("sys_enter_shmctl", &["shmid", "cmd", "buf"][..]),
+        ("sys_enter_shmat", &["shmid", "shmaddr", "shmflg"][..]),
+        ("sys_enter_shmdt", &["shmaddr"][..]),
     ] {
         let ctx = TracepointContext::sys_enter(name);
         for field in fields {
@@ -699,6 +720,45 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         24
     );
     assert!(!sched_getattr.has_field("pid"));
+
+    let semctl = TracepointContext::sys_enter("sys_enter_semctl");
+    assert!(!semctl.has_field("arg"));
+    assert_eq!(
+        semctl.get_field("cmd").expect("expected semctl cmd").offset,
+        32
+    );
+    let (_, semctl_source) = TracepointContext::syscall_fallback_field_minimum_kernel(
+        "syscalls",
+        "sys_enter_semctl",
+        "cmd",
+    )
+    .expect("expected semctl cmd source metadata");
+    assert!(semctl_source.contains("/v4.7/ipc/sem.c"));
+
+    let msgrcv = TracepointContext::sys_enter("sys_enter_msgrcv");
+    assert_eq!(
+        msgrcv
+            .get_field("msgtyp")
+            .expect("expected msgrcv msgtyp")
+            .offset,
+        40
+    );
+    assert!(matches!(
+        msgrcv
+            .get_field("msgp")
+            .expect("expected msgrcv msgp")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+
+    let shmat = TracepointContext::sys_enter("sys_enter_shmat");
+    assert!(matches!(
+        shmat
+            .get_field("shmaddr")
+            .expect("expected shmat shmaddr")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
 
     let unknown = TracepointContext::sys_enter("sys_enter_unknown");
     assert!(unknown.has_field("id"));

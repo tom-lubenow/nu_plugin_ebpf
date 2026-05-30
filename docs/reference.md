@@ -919,6 +919,10 @@ Scheduler fallbacks expose source-known aliases for common entry tracepoints
 such as `sys_enter_sched_setscheduler`, `sys_enter_sched_setaffinity`,
 `sys_enter_sched_getattr`, `sys_enter_sched_rr_get_interval`, and
 `sys_enter_nice`.
+System V IPC fallbacks expose source-known aliases for common message queue,
+semaphore, and shared-memory entry tracepoints such as `sys_enter_msgctl`,
+`sys_enter_msgrcv`, `sys_enter_semctl`, `sys_enter_semtimedop`,
+`sys_enter_shmctl`, and `sys_enter_shmat`.
 When a syscall argument name collides with a preserved tracepoint builtin or
 reserved context path such as `pid`, `tgid`, or `arg`, the fallback exposes the
 non-conflicting arguments and the raw payload remains available through

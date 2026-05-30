@@ -1128,6 +1128,12 @@ fn test_verifier_diff_tracepoint_payload_scanner_matches_rust_fallback_fields() 
             "interval",
         ),
         ("tracepoint:syscalls/sys_enter_nice", "increment"),
+        ("tracepoint:syscalls/sys_enter_msgctl", "buf"),
+        ("tracepoint:syscalls/sys_enter_msgrcv", "msgtyp"),
+        ("tracepoint:syscalls/sys_enter_semctl", "cmd"),
+        ("tracepoint:syscalls/sys_enter_semtimedop", "timeout"),
+        ("tracepoint:syscalls/sys_enter_shmctl", "buf"),
+        ("tracepoint:syscalls/sys_enter_shmat", "shmaddr"),
     ]
     .into_iter()
     .map(|(target, field)| (target.to_string(), field.to_string()))
