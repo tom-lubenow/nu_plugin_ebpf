@@ -580,6 +580,49 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         TypeInfo::Ptr { is_user: true, .. }
     ));
 
+    let setxattr = TracepointContext::sys_enter("sys_enter_setxattr");
+    assert!(setxattr.has_field("pathname"));
+    assert!(setxattr.has_field("name"));
+    assert!(setxattr.has_field("value"));
+    assert!(setxattr.has_field("size"));
+    assert!(setxattr.has_field("flags"));
+    let (_, setxattr_source) = TracepointContext::syscall_fallback_field_minimum_kernel(
+        "syscalls",
+        "sys_enter_setxattr",
+        "value",
+    )
+    .expect("expected setxattr value source metadata");
+    assert!(setxattr_source.contains("/v4.7/fs/xattr.c"));
+    assert!(matches!(
+        setxattr
+            .get_field("value")
+            .expect("expected setxattr value")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+
+    let fgetxattr = TracepointContext::sys_enter("sys_enter_fgetxattr");
+    assert!(fgetxattr.has_field("fd"));
+    assert!(fgetxattr.has_field("name"));
+    assert!(fgetxattr.has_field("value"));
+    assert!(fgetxattr.has_field("size"));
+
+    let listxattr = TracepointContext::sys_enter("sys_enter_listxattr");
+    assert!(listxattr.has_field("pathname"));
+    assert!(listxattr.has_field("list"));
+    assert!(listxattr.has_field("size"));
+
+    let fremovexattr = TracepointContext::sys_enter("sys_enter_fremovexattr");
+    assert!(fremovexattr.has_field("fd"));
+    assert!(fremovexattr.has_field("name"));
+    assert!(matches!(
+        fremovexattr
+            .get_field("name")
+            .expect("expected fremovexattr name")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+
     let open_tree = TracepointContext::sys_enter("sys_enter_open_tree");
     assert!(open_tree.has_field("dfd"));
     assert!(open_tree.has_field("filename"));
@@ -1006,6 +1049,23 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
             "sys_enter_renameat2",
             &["olddfd", "oldname", "newdfd", "newname", "flags"][..],
         ),
+        (
+            "sys_enter_setxattr",
+            &["pathname", "name", "value", "size", "flags"][..],
+        ),
+        (
+            "sys_enter_fsetxattr",
+            &["fd", "name", "value", "size", "flags"][..],
+        ),
+        (
+            "sys_enter_getxattr",
+            &["pathname", "name", "value", "size"][..],
+        ),
+        ("sys_enter_fgetxattr", &["fd", "name", "value", "size"][..]),
+        ("sys_enter_listxattr", &["pathname", "list", "size"][..]),
+        ("sys_enter_flistxattr", &["fd", "list", "size"][..]),
+        ("sys_enter_removexattr", &["pathname", "name"][..]),
+        ("sys_enter_fremovexattr", &["fd", "name"][..]),
         ("sys_enter_open_tree", &["dfd", "filename", "flags"][..]),
         (
             "sys_enter_move_mount",

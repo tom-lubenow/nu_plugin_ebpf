@@ -28,6 +28,7 @@ const STAT_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/stat.c
 const STATX_MIN_KERNEL: &str = "4.11";
 const STATX_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.11/fs/stat.c";
 const NAMEI_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/namei.c";
+const XATTR_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/xattr.c";
 const MOUNT_API_MIN_KERNEL: &str = "5.2";
 const MOUNT_API_NAMESPACE_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.2/fs/namespace.c";
@@ -162,6 +163,18 @@ const WELL_KNOWN_SYS_ENTER_SYSCALLS: &[&str] = &[
     "rename",
     "renameat",
     "renameat2",
+    "setxattr",
+    "lsetxattr",
+    "fsetxattr",
+    "getxattr",
+    "lgetxattr",
+    "fgetxattr",
+    "listxattr",
+    "llistxattr",
+    "flistxattr",
+    "removexattr",
+    "lremovexattr",
+    "fremovexattr",
     "open_tree",
     "move_mount",
     "fsopen",
@@ -713,6 +726,9 @@ impl TracepointContext {
             | "symlink" | "symlinkat" | "link" | "linkat" | "rename" | "renameat" | "renameat2" => {
                 (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, NAMEI_SOURCE)
             }
+            "setxattr" | "lsetxattr" | "fsetxattr" | "getxattr" | "lgetxattr" | "fgetxattr"
+            | "listxattr" | "llistxattr" | "flistxattr" | "removexattr" | "lremovexattr"
+            | "fremovexattr" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, XATTR_SOURCE),
             "open_tree" | "move_mount" | "fsmount" => {
                 (MOUNT_API_MIN_KERNEL, MOUNT_API_NAMESPACE_SOURCE)
             }
@@ -1135,6 +1151,50 @@ impl TracepointContext {
                 ("newdfd", Self::syscall_arg_int(true)),
                 ("newname", Self::syscall_arg_user_ptr()),
                 ("flags", Self::syscall_arg_int(false)),
+            ],
+            "setxattr" | "lsetxattr" => vec![
+                ("pathname", Self::syscall_arg_user_ptr()),
+                ("name", Self::syscall_arg_user_ptr()),
+                ("value", Self::syscall_arg_user_ptr()),
+                ("size", Self::syscall_arg_int(false)),
+                ("flags", Self::syscall_arg_int(true)),
+            ],
+            "fsetxattr" => vec![
+                ("fd", Self::syscall_arg_int(true)),
+                ("name", Self::syscall_arg_user_ptr()),
+                ("value", Self::syscall_arg_user_ptr()),
+                ("size", Self::syscall_arg_int(false)),
+                ("flags", Self::syscall_arg_int(true)),
+            ],
+            "getxattr" | "lgetxattr" => vec![
+                ("pathname", Self::syscall_arg_user_ptr()),
+                ("name", Self::syscall_arg_user_ptr()),
+                ("value", Self::syscall_arg_user_ptr()),
+                ("size", Self::syscall_arg_int(false)),
+            ],
+            "fgetxattr" => vec![
+                ("fd", Self::syscall_arg_int(true)),
+                ("name", Self::syscall_arg_user_ptr()),
+                ("value", Self::syscall_arg_user_ptr()),
+                ("size", Self::syscall_arg_int(false)),
+            ],
+            "listxattr" | "llistxattr" => vec![
+                ("pathname", Self::syscall_arg_user_ptr()),
+                ("list", Self::syscall_arg_user_ptr()),
+                ("size", Self::syscall_arg_int(false)),
+            ],
+            "flistxattr" => vec![
+                ("fd", Self::syscall_arg_int(true)),
+                ("list", Self::syscall_arg_user_ptr()),
+                ("size", Self::syscall_arg_int(false)),
+            ],
+            "removexattr" | "lremovexattr" => vec![
+                ("pathname", Self::syscall_arg_user_ptr()),
+                ("name", Self::syscall_arg_user_ptr()),
+            ],
+            "fremovexattr" => vec![
+                ("fd", Self::syscall_arg_int(true)),
+                ("name", Self::syscall_arg_user_ptr()),
             ],
             "open_tree" => vec![
                 ("dfd", Self::syscall_arg_int(true)),

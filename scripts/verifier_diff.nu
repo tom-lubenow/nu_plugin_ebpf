@@ -2412,6 +2412,54 @@ const PATH_TRACEPOINT_FIELD_SPECS = [
         source: "https://github.com/torvalds/linux/blob/v4.7/fs/namei.c"
     }
     {
+        syscalls: ["setxattr" "lsetxattr"]
+        fields: ["pathname" "name" "value" "size" "flags"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/xattr.c"
+    }
+    {
+        syscalls: ["fsetxattr"]
+        fields: ["fd" "name" "value" "size" "flags"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/xattr.c"
+    }
+    {
+        syscalls: ["getxattr" "lgetxattr"]
+        fields: ["pathname" "name" "value" "size"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/xattr.c"
+    }
+    {
+        syscalls: ["fgetxattr"]
+        fields: ["fd" "name" "value" "size"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/xattr.c"
+    }
+    {
+        syscalls: ["listxattr" "llistxattr"]
+        fields: ["pathname" "list" "size"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/xattr.c"
+    }
+    {
+        syscalls: ["flistxattr"]
+        fields: ["fd" "list" "size"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/xattr.c"
+    }
+    {
+        syscalls: ["removexattr" "lremovexattr"]
+        fields: ["pathname" "name"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/xattr.c"
+    }
+    {
+        syscalls: ["fremovexattr"]
+        fields: ["fd" "name"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/xattr.c"
+    }
+    {
         syscalls: ["open_tree"]
         fields: ["dfd" "filename" "flags"]
         min_kernel: "5.2"
@@ -5974,6 +6022,65 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         ]
     }
     {
+        target: "tracepoint:syscalls/sys_enter_setxattr"
+        program: [
+            '{|ctx|'
+            '  let pathname = $ctx.pathname'
+            '  if $pathname { 1 | count }'
+            '  let name = $ctx.name'
+            '  if $name { 1 | count }'
+            '  let value = $ctx.value'
+            '  if $value { 1 | count }'
+            '  ($ctx.size + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_setxattr:field:pathname"
+            "tracepoint:syscalls/sys_enter_setxattr:field:name"
+            "tracepoint:syscalls/sys_enter_setxattr:field:value"
+            "tracepoint:syscalls/sys_enter_setxattr:field:size"
+            "tracepoint:syscalls/sys_enter_setxattr:field:flags"
+        ]
+    }
+    {
+        target: "tracepoint:syscalls/sys_enter_fgetxattr"
+        program: [
+            '{|ctx|'
+            '  let name = $ctx.name'
+            '  if $name { 1 | count }'
+            '  let value = $ctx.value'
+            '  if $value { 1 | count }'
+            '  ($ctx.fd + $ctx.size) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_fgetxattr:field:name"
+            "tracepoint:syscalls/sys_enter_fgetxattr:field:value"
+            "tracepoint:syscalls/sys_enter_fgetxattr:field:fd"
+            "tracepoint:syscalls/sys_enter_fgetxattr:field:size"
+        ]
+    }
+    {
+        target: "tracepoint:syscalls/sys_enter_listxattr"
+        program: [
+            '{|ctx|'
+            '  let pathname = $ctx.pathname'
+            '  if $pathname { 1 | count }'
+            '  let list = $ctx.list'
+            '  if $list { 1 | count }'
+            '  $ctx.size | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_listxattr:field:pathname"
+            "tracepoint:syscalls/sys_enter_listxattr:field:list"
+            "tracepoint:syscalls/sys_enter_listxattr:field:size"
+        ]
+    }
+    {
         target: "tracepoint:syscalls/sys_enter_close"
         program: [
             '{|ctx|'
@@ -7938,6 +8045,65 @@ const FIXTURES = [
             '  let off_out = $ctx.off_out'
             '  if $off_out { 1 | count }'
             '  ($ctx.fd_in + $ctx.fd_out + $ctx.len + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-setxattr-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_setxattr]
+        target: "tracepoint:syscalls/sys_enter_setxattr"
+        program: [
+            '{|ctx|'
+            '  let pathname = $ctx.pathname'
+            '  if $pathname { 1 | count }'
+            '  let name = $ctx.name'
+            '  if $name { 1 | count }'
+            '  let value = $ctx.value'
+            '  if $value { 1 | count }'
+            '  ($ctx.size + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-fgetxattr-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_fgetxattr]
+        target: "tracepoint:syscalls/sys_enter_fgetxattr"
+        program: [
+            '{|ctx|'
+            '  let name = $ctx.name'
+            '  if $name { 1 | count }'
+            '  let value = $ctx.value'
+            '  if $value { 1 | count }'
+            '  ($ctx.fd + $ctx.size) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-listxattr-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_listxattr]
+        target: "tracepoint:syscalls/sys_enter_listxattr"
+        program: [
+            '{|ctx|'
+            '  let pathname = $ctx.pathname'
+            '  if $pathname { 1 | count }'
+            '  let list = $ctx.list'
+            '  if $list { 1 | count }'
+            '  $ctx.size | count'
             '  0'
             '}'
         ]
