@@ -946,7 +946,8 @@ as `sys_enter_pread64`, `sys_enter_pwrite64`, `sys_enter_readv`,
 `sys_enter_vmsplice`.
 Memory-management fallbacks expose aliases for common entry tracepoints such as
 `sys_enter_mmap`, `sys_enter_mprotect`, `sys_enter_mremap`, `sys_enter_mincore`,
-and `sys_enter_msync`.
+`sys_enter_msync`, NUMA memory-policy calls such as `sys_enter_mbind` and
+`sys_enter_move_pages`, and Linux 5.17+ `sys_enter_set_mempolicy_home_node`.
 Time and timer fallbacks expose aliases for common entry tracepoints such as
 `sys_enter_utime`, `sys_enter_utimes`, `sys_enter_futimesat`,
 `sys_enter_utimensat`, `sys_enter_gettimeofday`, `sys_enter_clock_gettime`,

@@ -73,6 +73,11 @@ const PROCESS_MADVISE_MIN_KERNEL: &str = "5.10";
 const PROCESS_MADVISE_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.10/mm/madvise.c";
 const PROCESS_MRELEASE_MIN_KERNEL: &str = "5.15";
 const PROCESS_MRELEASE_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.15/mm/oom_kill.c";
+const MEMPOLICY_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/mm/mempolicy.c";
+const MIGRATE_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/mm/migrate.c";
+const SET_MEMPOLICY_HOME_NODE_MIN_KERNEL: &str = "5.17";
+const SET_MEMPOLICY_HOME_NODE_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.17/mm/mempolicy.c";
 const UTIMES_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/utimes.c";
 const TIME_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/time/time.c";
 const ITIMER_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/time/itimer.c";
@@ -280,6 +285,12 @@ const WELL_KNOWN_SYS_ENTER_SYSCALLS: &[&str] = &[
     "madvise",
     "process_madvise",
     "process_mrelease",
+    "mbind",
+    "set_mempolicy",
+    "get_mempolicy",
+    "migrate_pages",
+    "move_pages",
+    "set_mempolicy_home_node",
     "mlock",
     "mlock2",
     "munlock",
@@ -687,6 +698,10 @@ impl TracepointContext {
                 Some(PROCESS_MRELEASE_MIN_KERNEL),
                 Some(PROCESS_MRELEASE_SOURCE),
             ),
+            Some("set_mempolicy_home_node") => (
+                Some(SET_MEMPOLICY_HOME_NODE_MIN_KERNEL),
+                Some(SET_MEMPOLICY_HOME_NODE_SOURCE),
+            ),
             Some("pidfd_send_signal") => (
                 Some(PIDFD_SEND_SIGNAL_MIN_KERNEL),
                 Some(PIDFD_SEND_SIGNAL_SOURCE),
@@ -761,6 +776,10 @@ impl TracepointContext {
             "memfd_secret" => (MEMFD_SECRET_MIN_KERNEL, MEMFD_SECRET_SOURCE),
             "process_madvise" => (PROCESS_MADVISE_MIN_KERNEL, PROCESS_MADVISE_SOURCE),
             "process_mrelease" => (PROCESS_MRELEASE_MIN_KERNEL, PROCESS_MRELEASE_SOURCE),
+            "set_mempolicy_home_node" => (
+                SET_MEMPOLICY_HOME_NODE_MIN_KERNEL,
+                SET_MEMPOLICY_HOME_NODE_SOURCE,
+            ),
             "pidfd_send_signal" => (PIDFD_SEND_SIGNAL_MIN_KERNEL, PIDFD_SEND_SIGNAL_SOURCE),
             "pidfd_open" => (PIDFD_OPEN_MIN_KERNEL, PIDFD_OPEN_SOURCE),
             "pidfd_getfd" => (PIDFD_GETFD_MIN_KERNEL, PIDFD_GETFD_SOURCE),
@@ -891,6 +910,14 @@ impl TracepointContext {
             "msync" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, MM_MSYNC_SOURCE),
             "memfd_create" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, MEMFD_CREATE_SOURCE),
             "memfd_secret" => (MEMFD_SECRET_MIN_KERNEL, MEMFD_SECRET_SOURCE),
+            "mbind" | "set_mempolicy" | "get_mempolicy" | "migrate_pages" => {
+                (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, MEMPOLICY_SOURCE)
+            }
+            "move_pages" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, MIGRATE_SOURCE),
+            "set_mempolicy_home_node" => (
+                SET_MEMPOLICY_HOME_NODE_MIN_KERNEL,
+                SET_MEMPOLICY_HOME_NODE_SOURCE,
+            ),
             "utime" | "utimes" | "futimesat" | "utimensat" => {
                 (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, UTIMES_SOURCE)
             }
@@ -1706,6 +1733,46 @@ impl TracepointContext {
             ],
             "process_mrelease" => vec![
                 ("pidfd", Self::syscall_arg_int(true)),
+                ("flags", Self::syscall_arg_int(false)),
+            ],
+            "mbind" => vec![
+                ("start", Self::syscall_arg_int(false)),
+                ("len", Self::syscall_arg_int(false)),
+                ("mode", Self::syscall_arg_int(false)),
+                ("nmask", Self::syscall_arg_user_ptr()),
+                ("maxnode", Self::syscall_arg_int(false)),
+                ("flags", Self::syscall_arg_int(false)),
+            ],
+            "set_mempolicy" => vec![
+                ("mode", Self::syscall_arg_int(true)),
+                ("nmask", Self::syscall_arg_user_ptr()),
+                ("maxnode", Self::syscall_arg_int(false)),
+            ],
+            "get_mempolicy" => vec![
+                ("policy", Self::syscall_arg_user_ptr()),
+                ("nmask", Self::syscall_arg_user_ptr()),
+                ("maxnode", Self::syscall_arg_int(false)),
+                ("addr", Self::syscall_arg_int(false)),
+                ("flags", Self::syscall_arg_int(false)),
+            ],
+            "migrate_pages" => vec![
+                ("pid", Self::syscall_arg_int(true)),
+                ("maxnode", Self::syscall_arg_int(false)),
+                ("old_nodes", Self::syscall_arg_user_ptr()),
+                ("new_nodes", Self::syscall_arg_user_ptr()),
+            ],
+            "move_pages" => vec![
+                ("pid", Self::syscall_arg_int(true)),
+                ("nr_pages", Self::syscall_arg_int(false)),
+                ("pages", Self::syscall_arg_user_ptr()),
+                ("nodes", Self::syscall_arg_user_ptr()),
+                ("status", Self::syscall_arg_user_ptr()),
+                ("flags", Self::syscall_arg_int(true)),
+            ],
+            "set_mempolicy_home_node" => vec![
+                ("start", Self::syscall_arg_int(false)),
+                ("len", Self::syscall_arg_int(false)),
+                ("home_node", Self::syscall_arg_int(false)),
                 ("flags", Self::syscall_arg_int(false)),
             ],
             "mlock" | "munlock" => vec![

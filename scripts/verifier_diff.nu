@@ -2933,6 +2933,42 @@ const MM_TRACEPOINT_FIELD_SPECS = [
         min_kernel: "5.14"
         source: "https://github.com/torvalds/linux/blob/v5.14/mm/secretmem.c"
     }
+    {
+        syscalls: ["mbind"]
+        fields: ["start" "len" "mode" "nmask" "maxnode" "flags"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/mm/mempolicy.c"
+    }
+    {
+        syscalls: ["set_mempolicy"]
+        fields: ["mode" "nmask" "maxnode"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/mm/mempolicy.c"
+    }
+    {
+        syscalls: ["get_mempolicy"]
+        fields: ["policy" "nmask" "maxnode" "addr" "flags"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/mm/mempolicy.c"
+    }
+    {
+        syscalls: ["migrate_pages"]
+        fields: ["maxnode" "old_nodes" "new_nodes"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/mm/mempolicy.c"
+    }
+    {
+        syscalls: ["move_pages"]
+        fields: ["nr_pages" "pages" "nodes" "status" "flags"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/mm/migrate.c"
+    }
+    {
+        syscalls: ["set_mempolicy_home_node"]
+        fields: ["start" "len" "home_node" "flags"]
+        min_kernel: "5.17"
+        source: "https://github.com/torvalds/linux/blob/v5.17/mm/mempolicy.c"
+    }
 ]
 const TIME_TRACEPOINT_FIELD_SPECS = [
     {
@@ -6948,6 +6984,62 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         ]
     }
     {
+        target: "tracepoint:syscalls/sys_enter_mbind"
+        program: [
+            '{|ctx|'
+            '  let nmask = $ctx.nmask'
+            '  if $nmask { 1 | count }'
+            '  ($ctx.start + $ctx.len + $ctx.mode + $ctx.maxnode + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_mbind:field:nmask"
+            "tracepoint:syscalls/sys_enter_mbind:field:start"
+            "tracepoint:syscalls/sys_enter_mbind:field:len"
+            "tracepoint:syscalls/sys_enter_mbind:field:mode"
+            "tracepoint:syscalls/sys_enter_mbind:field:maxnode"
+            "tracepoint:syscalls/sys_enter_mbind:field:flags"
+        ]
+    }
+    {
+        target: "tracepoint:syscalls/sys_enter_move_pages"
+        program: [
+            '{|ctx|'
+            '  let pages = $ctx.pages'
+            '  let nodes = $ctx.nodes'
+            '  let status = $ctx.status'
+            '  if $pages { 1 | count }'
+            '  if $nodes { 1 | count }'
+            '  if $status { 1 | count }'
+            '  ($ctx.nr_pages + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_move_pages:field:pages"
+            "tracepoint:syscalls/sys_enter_move_pages:field:nodes"
+            "tracepoint:syscalls/sys_enter_move_pages:field:status"
+            "tracepoint:syscalls/sys_enter_move_pages:field:nr_pages"
+            "tracepoint:syscalls/sys_enter_move_pages:field:flags"
+        ]
+    }
+    {
+        target: "tracepoint:syscalls/sys_enter_set_mempolicy_home_node"
+        program: [
+            '{|ctx|'
+            '  ($ctx.start + $ctx.len + $ctx.home_node + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_set_mempolicy_home_node:field:start"
+            "tracepoint:syscalls/sys_enter_set_mempolicy_home_node:field:len"
+            "tracepoint:syscalls/sys_enter_set_mempolicy_home_node:field:home_node"
+            "tracepoint:syscalls/sys_enter_set_mempolicy_home_node:field:flags"
+        ]
+    }
+    {
         target: "tracepoint:syscalls/sys_enter_openat"
         program: [
             '{|ctx|'
@@ -9247,6 +9339,59 @@ const FIXTURES = [
             '  if $description { 1 | count }'
             '  if $payload { 1 | count }'
             '  ($ctx.plen + $ctx.ringid) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-mbind-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_mbind]
+        target: "tracepoint:syscalls/sys_enter_mbind"
+        program: [
+            '{|ctx|'
+            '  let nmask = $ctx.nmask'
+            '  if $nmask { 1 | count }'
+            '  ($ctx.start + $ctx.len + $ctx.mode + $ctx.maxnode + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-move-pages-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_move_pages]
+        target: "tracepoint:syscalls/sys_enter_move_pages"
+        program: [
+            '{|ctx|'
+            '  let pages = $ctx.pages'
+            '  let nodes = $ctx.nodes'
+            '  let status = $ctx.status'
+            '  if $pages { 1 | count }'
+            '  if $nodes { 1 | count }'
+            '  if $status { 1 | count }'
+            '  ($ctx.nr_pages + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-set-mempolicy-home-node-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_set_mempolicy_home_node]
+        target: "tracepoint:syscalls/sys_enter_set_mempolicy_home_node"
+        program: [
+            '{|ctx|'
+            '  ($ctx.start + $ctx.len + $ctx.home_node + $ctx.flags) | count'
             '  0'
             '}'
         ]
@@ -31854,6 +31999,8 @@ def syscall-tracepoint-fallback-field-kernel-feature [field: string target] {
         "5.10"
     } else if $syscall == "process_mrelease" {
         "5.15"
+    } else if $syscall == "set_mempolicy_home_node" {
+        "5.17"
     } else if $syscall == "statx" {
         "4.11"
     } else {
@@ -31897,6 +32044,8 @@ def syscall-tracepoint-fallback-field-kernel-feature [field: string target] {
         "https://github.com/torvalds/linux/blob/v5.10/mm/madvise.c"
     } else if $syscall == "process_mrelease" {
         "https://github.com/torvalds/linux/blob/v5.15/mm/oom_kill.c"
+    } else if $syscall == "set_mempolicy_home_node" {
+        "https://github.com/torvalds/linux/blob/v5.17/mm/mempolicy.c"
     } else if $syscall == "statx" {
         "https://github.com/torvalds/linux/blob/v4.11/fs/stat.c"
     } else {

@@ -588,6 +588,62 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
     .expect("expected io_pgetevents source metadata");
     assert!(io_pgetevents_source.contains("/v4.18/fs/aio.c"));
 
+    let mbind = TracepointContext::sys_enter("sys_enter_mbind");
+    assert!(mbind.has_field("start"));
+    assert!(mbind.has_field("len"));
+    assert!(mbind.has_field("mode"));
+    assert!(mbind.has_field("nmask"));
+    assert!(mbind.has_field("maxnode"));
+    assert!(mbind.has_field("flags"));
+    assert!(matches!(
+        mbind
+            .get_field("nmask")
+            .expect("expected mbind nmask")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+    let (_, mbind_source) = TracepointContext::syscall_fallback_field_minimum_kernel(
+        "syscalls",
+        "sys_enter_mbind",
+        "nmask",
+    )
+    .expect("expected mbind source metadata");
+    assert!(mbind_source.contains("/v4.7/mm/mempolicy.c"));
+
+    let move_pages = TracepointContext::sys_enter("sys_enter_move_pages");
+    assert!(!move_pages.has_field("pid"));
+    assert!(move_pages.has_field("nr_pages"));
+    assert!(move_pages.has_field("pages"));
+    assert!(move_pages.has_field("nodes"));
+    assert!(move_pages.has_field("status"));
+    assert!(move_pages.has_field("flags"));
+    assert_eq!(
+        move_pages
+            .get_field("nr_pages")
+            .expect("expected move_pages nr_pages")
+            .offset,
+        24
+    );
+    let (_, move_pages_source) = TracepointContext::syscall_fallback_field_minimum_kernel(
+        "syscalls",
+        "sys_enter_move_pages",
+        "pages",
+    )
+    .expect("expected move_pages source metadata");
+    assert!(move_pages_source.contains("/v4.7/mm/migrate.c"));
+
+    let set_mempolicy_home_node = TracepointContext::sys_enter("sys_enter_set_mempolicy_home_node");
+    assert!(set_mempolicy_home_node.has_field("start"));
+    assert!(set_mempolicy_home_node.has_field("len"));
+    assert!(set_mempolicy_home_node.has_field("home_node"));
+    assert!(set_mempolicy_home_node.has_field("flags"));
+    assert_eq!(set_mempolicy_home_node.minimum_kernel(), Some("5.17"));
+    assert!(
+        set_mempolicy_home_node
+            .minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v5.17/mm/mempolicy.c"))
+    );
+
     let add_key = TracepointContext::sys_enter("sys_enter_add_key");
     assert!(add_key.has_field("_type"));
     assert!(add_key.has_field("_description"));
@@ -1498,6 +1554,27 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
             &["pidfd", "vec", "vlen", "behavior", "flags"][..],
         ),
         ("sys_enter_process_mrelease", &["pidfd", "flags"][..]),
+        (
+            "sys_enter_mbind",
+            &["start", "len", "mode", "nmask", "maxnode", "flags"][..],
+        ),
+        ("sys_enter_set_mempolicy", &["mode", "nmask", "maxnode"][..]),
+        (
+            "sys_enter_get_mempolicy",
+            &["policy", "nmask", "maxnode", "addr", "flags"][..],
+        ),
+        (
+            "sys_enter_migrate_pages",
+            &["maxnode", "old_nodes", "new_nodes"][..],
+        ),
+        (
+            "sys_enter_move_pages",
+            &["nr_pages", "pages", "nodes", "status", "flags"][..],
+        ),
+        (
+            "sys_enter_set_mempolicy_home_node",
+            &["start", "len", "home_node", "flags"][..],
+        ),
         ("sys_enter_memfd_create", &["uname", "flags"][..]),
         ("sys_enter_memfd_secret", &["flags"][..]),
         ("sys_enter_utime", &["filename", "times"][..]),
