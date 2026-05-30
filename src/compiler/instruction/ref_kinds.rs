@@ -198,7 +198,11 @@ fn kfunc_btf_arg_pointee_mismatch(
 
     let expected = kfunc_btf_arg_struct_pointee_name(kfunc, arg_idx)?;
     let actual = mir_struct_name(pointee)?;
-    if kfunc_arg_accepts_btf_pointee_alias(kfunc, arg_idx, &expected, actual) {
+    if kfunc_arg_accepts_btf_pointee_alias(kfunc, arg_idx, &expected, actual)
+        || (kfunc_arg_requires_skb_context_or_pointer(kfunc, arg_idx)
+            && kfunc_arg_accepts_skb_pointee_name(&expected)
+            && kfunc_arg_accepts_skb_pointee_name(actual))
+    {
         return None;
     }
     (actual != expected).then_some(expected)
@@ -214,6 +218,17 @@ fn kfunc_allows_exact_btf_pointee_check(kfunc: &str) -> bool {
             | "bpf_xdp_metadata_rx_vlan_tag"
             | "bpf_xdp_get_xfrm_state"
             | "bpf_xdp_xfrm_state_release"
+    )
+}
+
+pub fn kfunc_arg_requires_skb_context_or_pointer(kfunc: &str, arg_idx: usize) -> bool {
+    matches!((kfunc, arg_idx), ("bpf_dynptr_from_skb", 0))
+}
+
+pub fn kfunc_arg_accepts_skb_pointee_name(name: &str) -> bool {
+    matches!(
+        name.strip_prefix("struct ").unwrap_or(name),
+        "__sk_buff" | "sk_buff"
     )
 }
 

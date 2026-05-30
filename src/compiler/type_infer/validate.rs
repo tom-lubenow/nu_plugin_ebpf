@@ -1088,6 +1088,26 @@ impl<'a> TypeInference<'a> {
                                         "kfunc '{}' arg{} expects {} pointer, got {:?}",
                                         kfunc, idx, expected, pointee
                                     )));
+                                } else if Self::kfunc_arg_requires_skb_context_or_pointer(
+                                    kfunc, idx,
+                                ) && !direct_ctx_field_sources.get(arg).is_some_and(
+                                    |field| {
+                                        ProbeContext::resolve_ctx_field_is_raw_context_pointer(
+                                            self.probe_ctx.as_ref(),
+                                            field,
+                                        )
+                                    },
+                                ) && !(address_space == AddressSpace::Kernel
+                                    && matches!(
+                                        pointee.as_ref(),
+                                        MirType::Struct { name: Some(name), .. }
+                                            if Self::kfunc_arg_accepts_skb_pointee_name(name)
+                                    ))
+                                {
+                                    errors.push(TypeError::new(format!(
+                                        "kfunc '{}' arg{} expects __sk_buff context or sk_buff pointer",
+                                        kfunc, idx
+                                    )));
                                 }
                             }
                             _ => {

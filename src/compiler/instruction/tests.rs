@@ -5694,6 +5694,25 @@ fn test_kfunc_arg_pointee_mismatch_allows_skb_dynptr_skb_projection_aliases() {
 }
 
 #[test]
+fn test_kfunc_dynptr_from_skb_arg0_requires_skb_context_or_pointer() {
+    assert!(kfunc_arg_requires_skb_context_or_pointer(
+        "bpf_dynptr_from_skb",
+        0
+    ));
+    assert!(!kfunc_arg_requires_skb_context_or_pointer(
+        "bpf_dynptr_from_skb",
+        1
+    ));
+    assert!(!kfunc_arg_requires_skb_context_or_pointer(
+        "bpf_dynptr_from_xdp",
+        0
+    ));
+    assert!(kfunc_arg_accepts_skb_pointee_name("__sk_buff"));
+    assert!(kfunc_arg_accepts_skb_pointee_name("struct sk_buff"));
+    assert!(!kfunc_arg_accepts_skb_pointee_name("bpf_sock"));
+}
+
+#[test]
 fn test_kfunc_signature_for_name_or_kernel_btf_missing_symbol() {
     assert!(
         KfuncSignature::for_name_or_kernel_btf("__nu_plugin_ebpf_missing_kfunc_for_test__")

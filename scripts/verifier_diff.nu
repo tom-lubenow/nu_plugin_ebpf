@@ -11613,6 +11613,23 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "dynptr-kfunc-from-skb-rejects-packet-arg"
+        category: "helper-state"
+        tags: [kfunc dynptr skb tc source reject]
+        requires: [kernel-btf]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let d = "0123456789abcdef"'
+            '  kfunc-call "bpf_dynptr_from_skb" $ctx.data 0 $d'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'bpf_dynptr_from_skb' arg0 expects __sk_buff context or sk_buff pointer"
+    }
+    {
         name: "dynptr-kfunc-from-skb-rejects-reinitialize"
         category: "helper-state"
         tags: [kfunc dynptr skb tc reject]

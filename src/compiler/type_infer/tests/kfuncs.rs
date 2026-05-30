@@ -1922,6 +1922,23 @@ fn test_type_error_dynptr_from_xdp_rejects_packet_pointer_arg0() {
 }
 
 #[test]
+fn test_type_error_dynptr_from_skb_rejects_packet_pointer_arg0() {
+    let func =
+        make_packet_dynptr_kfunc_type_call_with_arg0("bpf_dynptr_from_skb", 0, CtxField::Data);
+    let mut ti = TypeInference::new(Some(ProbeContext::new(EbpfProgramType::Tc, "lo:ingress")));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_dynptr_from_skb to reject packet arg0");
+    assert!(
+        errs.iter().any(|e| e.message.contains(
+            "kfunc 'bpf_dynptr_from_skb' arg0 expects __sk_buff context or sk_buff pointer"
+        )),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
 fn test_type_error_dynptr_from_skb_rejects_non_skb_program() {
     let func = make_packet_dynptr_kfunc_type_call("bpf_dynptr_from_skb", 0);
     let mut ti = TypeInference::new(Some(ProbeContext::new(

@@ -27,6 +27,8 @@ use super::hindley_milner::{
 use super::instruction::{
     BpfHelper, HelperArgKind, HelperRetKind, HelperSignature, KfuncArgKind, KfuncRetKind,
     KfuncSignature, KfuncUnknownDynptrCopy, KfuncUnknownStackObjectCopy, helper_acquire_ref_kind,
+    kfunc_arg_accepts_skb_pointee_name as kfunc_arg_accepts_skb_pointee_name_shared,
+    kfunc_arg_requires_skb_context_or_pointer as kfunc_arg_requires_skb_context_or_pointer_shared,
     kfunc_pointer_arg_allows_const_zero as kfunc_pointer_arg_allows_const_zero_shared,
     kfunc_pointer_arg_fixed_size as kfunc_pointer_arg_fixed_size_shared,
     kfunc_pointer_arg_min_access_size as kfunc_pointer_arg_min_access_size_shared,

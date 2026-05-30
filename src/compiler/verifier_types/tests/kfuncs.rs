@@ -2174,7 +2174,8 @@ fn test_dynptr_from_xdp_rejects_non_xdp_program() {
     );
 }
 
-fn make_dynptr_from_xdp_verify_function_with_arg0(
+fn make_packet_dynptr_kfunc_verify_function_with_arg0(
+    kfunc: &str,
     arg0_field: CtxField,
     arg0_type: MirType,
 ) -> (MirFunction, HashMap<VReg, MirType>) {
@@ -2205,7 +2206,7 @@ fn make_dynptr_from_xdp_verify_function_with_arg0(
     });
     func.block_mut(entry).instructions.push(MirInst::CallKfunc {
         dst: ret,
-        kfunc: "bpf_dynptr_from_xdp".to_string(),
+        kfunc: kfunc.to_string(),
         btf_id: None,
         args: vec![ctx, flags, dptr],
     });
@@ -2228,7 +2229,8 @@ fn make_dynptr_from_xdp_verify_function_with_arg0(
 
 #[test]
 fn test_dynptr_from_xdp_rejects_packet_pointer_arg0() {
-    let (func, types) = make_dynptr_from_xdp_verify_function_with_arg0(
+    let (func, types) = make_packet_dynptr_kfunc_verify_function_with_arg0(
+        "bpf_dynptr_from_xdp",
         CtxField::Data,
         MirType::Ptr {
             pointee: Box::new(MirType::U8),
@@ -2243,6 +2245,29 @@ fn test_dynptr_from_xdp_rejects_packet_pointer_arg0() {
         err.iter().any(|e| e
             .message
             .contains("kfunc 'bpf_dynptr_from_xdp' arg0 expects xdp_md pointer")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_dynptr_from_skb_rejects_packet_pointer_arg0() {
+    let (func, types) = make_packet_dynptr_kfunc_verify_function_with_arg0(
+        "bpf_dynptr_from_skb",
+        CtxField::Data,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Packet,
+        },
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected packet pointer to fail dynptr_from_skb arg0");
+    assert!(
+        err.iter().any(|e| e.message.contains(
+            "kfunc 'bpf_dynptr_from_skb' arg0 expects __sk_buff context or sk_buff pointer"
+        )),
         "unexpected errors: {:?}",
         err
     );

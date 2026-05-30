@@ -81,6 +81,14 @@ impl<'a> TypeInference<'a> {
         kfunc_pointer_arg_requires_raw_context_shared(kfunc, arg_idx)
     }
 
+    pub(super) fn kfunc_arg_requires_skb_context_or_pointer(kfunc: &str, arg_idx: usize) -> bool {
+        kfunc_arg_requires_skb_context_or_pointer_shared(kfunc, arg_idx)
+    }
+
+    pub(super) fn kfunc_arg_accepts_skb_pointee_name(name: &str) -> bool {
+        kfunc_arg_accepts_skb_pointee_name_shared(name)
+    }
+
     pub(super) fn kfunc_pointer_arg_requires_user(kfunc: &str, arg_idx: usize) -> bool {
         kfunc_pointer_arg_requires_user_shared(kfunc, arg_idx)
     }

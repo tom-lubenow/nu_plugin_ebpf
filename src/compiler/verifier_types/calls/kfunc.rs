@@ -133,13 +133,31 @@ pub(in crate::compiler::verifier_types) fn check_kfunc_arg(
                             kfunc, arg_idx, space
                         )));
                     }
-                    if let Some(MirType::Ptr { pointee, .. }) = types.get(&arg)
-                        && let Some(expected) = kfunc_arg_pointee_mismatch(kfunc, arg_idx, pointee)
+                    if let Some(MirType::Ptr {
+                        pointee,
+                        address_space,
+                    }) = types.get(&arg)
                     {
-                        errors.push(VerifierTypeError::new(format!(
-                            "kfunc '{}' arg{} expects {} pointer, got {:?}",
-                            kfunc, arg_idx, expected, pointee
-                        )));
+                        if let Some(expected) = kfunc_arg_pointee_mismatch(kfunc, arg_idx, pointee)
+                        {
+                            errors.push(VerifierTypeError::new(format!(
+                                "kfunc '{}' arg{} expects {} pointer, got {:?}",
+                                kfunc, arg_idx, expected, pointee
+                            )));
+                        } else if kfunc_arg_requires_skb_context_or_pointer(kfunc, arg_idx)
+                            && state.ctx_field_source(arg) != Some(&CtxField::Context)
+                            && !(*address_space == AddressSpace::Kernel
+                                && matches!(
+                                    pointee.as_ref(),
+                                    MirType::Struct { name: Some(name), .. }
+                                        if kfunc_arg_accepts_skb_pointee_name(name)
+                                ))
+                        {
+                            errors.push(VerifierTypeError::new(format!(
+                                "kfunc '{}' arg{} expects __sk_buff context or sk_buff pointer",
+                                kfunc, arg_idx
+                            )));
+                        }
                     }
                     if let Some(expected_kind) = kfunc_pointer_arg_expected_ref_kind(kfunc, arg_idx)
                     {

@@ -1,7 +1,8 @@
 use super::*;
 use crate::compiler::elf::GetSocketCookieArgPolicy;
 use crate::compiler::instruction::{
-    KfuncRefKind, kfunc_arg_pointee_mismatch, scalar_range_contains_only_bitmask,
+    KfuncRefKind, kfunc_arg_accepts_skb_pointee_name, kfunc_arg_pointee_mismatch,
+    kfunc_arg_requires_skb_context_or_pointer, scalar_range_contains_only_bitmask,
     unknown_kfunc_signature_message,
 };
 
@@ -198,18 +199,47 @@ impl<'a> VccLowerer<'a> {
         arg_idx: usize,
         arg: VReg,
     ) -> Result<(), VccError> {
-        let Some(MirType::Ptr { pointee, .. }) = self.types.get(&arg) else {
+        let Some(MirType::Ptr {
+            pointee,
+            address_space,
+        }) = self.types.get(&arg)
+        else {
             return Ok(());
         };
-        let Some(expected) = kfunc_arg_pointee_mismatch(kfunc, arg_idx, pointee) else {
+        if let Some(expected) = kfunc_arg_pointee_mismatch(kfunc, arg_idx, pointee) {
+            return Err(VccError::new(
+                VccErrorKind::PointerBounds,
+                format!(
+                    "kfunc '{}' arg{} expects {} pointer, got {:?}",
+                    kfunc, arg_idx, expected, pointee
+                ),
+            ));
+        }
+        if !kfunc_arg_requires_skb_context_or_pointer(kfunc, arg_idx) {
             return Ok(());
-        };
+        }
+        if self
+            .direct_ctx_field_regs
+            .get(&VccReg(arg.0))
+            .is_some_and(|field| self.ctx_field_is_raw_context_pointer(field))
+        {
+            return Ok(());
+        }
+        if *address_space == AddressSpace::Kernel
+            && matches!(
+                pointee.as_ref(),
+                MirType::Struct { name: Some(name), .. }
+                    if kfunc_arg_accepts_skb_pointee_name(name)
+            )
+        {
+            return Ok(());
+        }
 
         Err(VccError::new(
             VccErrorKind::PointerBounds,
             format!(
-                "kfunc '{}' arg{} expects {} pointer, got {:?}",
-                kfunc, arg_idx, expected, pointee
+                "kfunc '{}' arg{} expects __sk_buff context or sk_buff pointer",
+                kfunc, arg_idx
             ),
         ))
     }
