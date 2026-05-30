@@ -20511,6 +20511,27 @@ const FIXTURES = [
         error_contains: "unreleased kfunc reference at function exit"
     }
     {
+        name: "source-helper-sk-release-rejects-partial-lookup-release"
+        category: "helper-state"
+        tags: [helper-call socket ref-lifetime phi source reject]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  let tuple = "0123456789abcdef"'
+            '  let selector = (helper-call "bpf_get_prandom_u32")'
+            '  let sk = (if $selector == 0 { helper-call "bpf_sk_lookup_tcp" $ctx $tuple 16 0 0 } else { 0 })'
+            '  if $sk {'
+            '    helper-call "bpf_sk_release" $sk'
+            '  }'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "unreleased kfunc reference at function exit"
+    }
+    {
         name: "source-helper-sk-release-rejects-unchecked-null"
         category: "helper-state"
         tags: [helper-call socket ref-lifetime source reject nullability]
