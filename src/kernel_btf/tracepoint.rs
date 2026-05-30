@@ -695,7 +695,10 @@ impl TracepointContext {
                 ("fd", Self::syscall_arg_int(false)),
                 ("pgoff", Self::syscall_arg_int(false)),
             ],
-            "old_mmap" => vec![("arg", Self::syscall_arg_user_ptr())],
+            // The legacy syscall names its single parameter "arg", but
+            // ctx.arg is reserved for BTF named-argument projections. Keep it
+            // reachable through ctx.args instead of exposing an unusable alias.
+            "old_mmap" => vec![],
             "munmap" => vec![
                 ("addr", Self::syscall_arg_int(false)),
                 ("len", Self::syscall_arg_int(false)),

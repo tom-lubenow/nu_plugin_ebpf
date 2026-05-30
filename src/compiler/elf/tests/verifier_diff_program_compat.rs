@@ -1082,7 +1082,6 @@ fn test_verifier_diff_tracepoint_payload_scanner_matches_rust_fallback_fields() 
         ("tracepoint:syscalls/sys_enter_brk", "brk"),
         ("tracepoint:syscalls/sys_enter_mmap", "off"),
         ("tracepoint:syscalls/sys_enter_mmap_pgoff", "pgoff"),
-        ("tracepoint:syscalls/sys_enter_old_mmap", "arg"),
         ("tracepoint:syscalls/sys_enter_munmap", "addr"),
         ("tracepoint:syscalls/sys_enter_remap_file_pages", "pgoff"),
         ("tracepoint:syscalls/sys_enter_mprotect", "prot"),

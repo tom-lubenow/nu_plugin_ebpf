@@ -327,6 +327,14 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         TypeInfo::Ptr { is_user: true, .. }
     ));
 
+    let old_mmap = TracepointContext::sys_enter("sys_enter_old_mmap");
+    assert!(old_mmap.has_field("id"));
+    assert!(old_mmap.has_field("args"));
+    assert!(
+        !old_mmap.has_field("arg"),
+        "sys_enter_old_mmap's kernel argument name collides with ctx.arg.<name>"
+    );
+
     let connect = TracepointContext::sys_enter("sys_enter_connect");
     assert!(connect.has_field("fd"));
     assert!(connect.has_field("uservaddr"));

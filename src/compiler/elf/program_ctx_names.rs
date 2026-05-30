@@ -1087,6 +1087,7 @@ mod tests {
             "sys_enter_brk",
             "sys_enter_mmap",
             "sys_enter_mmap_pgoff",
+            "sys_enter_old_mmap",
             "sys_enter_munmap",
             "sys_enter_remap_file_pages",
             "sys_enter_mprotect",

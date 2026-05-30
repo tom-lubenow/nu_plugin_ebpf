@@ -2344,12 +2344,6 @@ const MM_TRACEPOINT_FIELD_SPECS = [
         source: "https://github.com/torvalds/linux/blob/v4.7/mm/mmap.c"
     }
     {
-        syscalls: ["old_mmap"]
-        fields: ["arg"]
-        min_kernel: "4.7"
-        source: "https://github.com/torvalds/linux/blob/v4.7/mm/mmap.c"
-    }
-    {
         syscalls: ["munmap"]
         fields: ["addr" "len"]
         min_kernel: "4.7"
