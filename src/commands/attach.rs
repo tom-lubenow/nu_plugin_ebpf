@@ -275,8 +275,13 @@ Context parameter syntax (recommended):
     fixed 8-byte ICMP header, and `tcp.payload` uses the runtime data
     offset. Nested protocol-following views like `eth.ipv4.tcp.seq` and
     `eth.ipv6.udp.src` reuse those same runtime steps automatically.
-    IPv4/TCP options, ICMP subtype-specific body decoding, and uncommon
-    IPv6 extension headers are still not modeled.
+    IPv4 exposes derived `version`, `ihl`, `dscp`, and `ecn` fields;
+    IPv6 exposes derived `version`, `traffic_class`, and `flow_label`
+    fields; TCP exposes derived `data_offset`, `reserved`, `flags`, and
+    per-flag `ns`, `cwr`, `ece`, `urg`, `ack`, `psh`, `rst`, `syn`, and
+    `fin` fields. Deeper TCP option parsing, ICMP subtype-specific body
+    decoding, and ESP/non-front-decodable IPv6 extension headers are
+    still not modeled.
     Writable skb metadata is attach-sensitive. On `socket_filter`,
     fixed `ctx.cb.N` is writable. On `lwt_*`, `ctx.mark`,
     `ctx.priority`, and fixed `ctx.cb.N` are writable. On `tc_action`, `tc`, `tcx`, and `netkit`, `ctx.mark`,

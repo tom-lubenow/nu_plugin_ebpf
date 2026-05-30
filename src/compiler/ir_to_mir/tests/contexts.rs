@@ -7685,6 +7685,37 @@ fn test_lower_xdp_ctx_eth_ipv6_udp_dst_assignment_uses_dynamic_header_steps() {
 }
 
 #[test]
+fn test_lower_xdp_ctx_packet_bitfield_assignment_is_rejected() {
+    let hir = make_ctx_upsert_program(
+        CellPath {
+            members: vec![
+                string_member("data"),
+                string_member("eth"),
+                string_member("ipv4"),
+                string_member("ihl"),
+            ],
+        },
+        HirLiteral::Int(5),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("xdp ctx.data.eth.ipv4.ihl assignment should reject bitfield stores");
+
+    assert!(
+        matches!(err, CompileError::UnsupportedInstruction(ref msg) if msg.contains("does not support packet bitfield stores")),
+        "unexpected error: {err:?}"
+    );
+}
+
+#[test]
 fn test_lower_xdp_ctx_data_meta_byte_assignment_uses_data_guard() {
     let hir = make_ctx_upsert_program(
         CellPath {

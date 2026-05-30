@@ -8369,6 +8369,24 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "xdp-packet-derived-header-fields"
+        category: "packet"
+        tags: [xdp packet header bitfield source metadata]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  let ip4 = ($ctx.data.eth.ipv4.version + $ctx.data.eth.ipv4.ihl + $ctx.data.eth.ipv4.dscp + $ctx.data.eth.ipv4.ecn)'
+            '  let ip6 = ($ctx.data.eth.ipv6.version + $ctx.data.eth.ipv6.traffic_class + $ctx.data.eth.ipv6.flow_label)'
+            '  let tcp = ($ctx.data.eth.ipv4.tcp.data_offset + $ctx.data.eth.ipv4.tcp.flags + $ctx.data.eth.ipv4.tcp.syn)'
+            '  ($ip4 + $ip6 + $tcp) | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "xdp-frags-driver-context"
         category: "context-surface"
         tags: [xdp context frags]

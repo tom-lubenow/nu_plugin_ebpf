@@ -593,6 +593,25 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
+    fn packet_struct_bitfield(
+        name: &str,
+        ty: MirType,
+        offset: usize,
+        bit_offset: u32,
+        bit_size: u32,
+    ) -> crate::compiler::mir::StructField {
+        crate::compiler::mir::StructField {
+            name: name.to_string(),
+            ty,
+            offset,
+            synthetic: false,
+            bitfield: Some(BitfieldInfo {
+                bit_offset,
+                bit_size,
+            }),
+        }
+    }
+
     fn packet_bytes(len: usize) -> MirType {
         MirType::Array {
             elem: Box::new(MirType::U8),
@@ -618,7 +637,11 @@ impl<'a> HirToMirLowering<'a> {
             kernel_btf_type_id: None,
             fields: vec![
                 Self::packet_struct_field("version_ihl", MirType::U8, 0),
+                Self::packet_struct_bitfield("ihl", MirType::U8, 0, 0, 4),
+                Self::packet_struct_bitfield("version", MirType::U8, 0, 4, 4),
                 Self::packet_struct_field("dscp_ecn", MirType::U8, 1),
+                Self::packet_struct_bitfield("ecn", MirType::U8, 1, 0, 2),
+                Self::packet_struct_bitfield("dscp", MirType::U8, 1, 2, 6),
                 Self::packet_struct_field("total_len", MirType::U16, 2),
                 Self::packet_struct_field("identification", MirType::U16, 4),
                 Self::packet_struct_field("flags_fragment_offset", MirType::U16, 6),
@@ -637,6 +660,9 @@ impl<'a> HirToMirLowering<'a> {
             kernel_btf_type_id: None,
             fields: vec![
                 Self::packet_struct_field("version_tc_flow_label", MirType::U32, 0),
+                Self::packet_struct_bitfield("flow_label", MirType::U32, 0, 0, 20),
+                Self::packet_struct_bitfield("traffic_class", MirType::U32, 0, 20, 8),
+                Self::packet_struct_bitfield("version", MirType::U32, 0, 28, 4),
                 Self::packet_struct_field("payload_len", MirType::U16, 4),
                 Self::packet_struct_field("next_header", MirType::U8, 6),
                 Self::packet_struct_field("hop_limit", MirType::U8, 7),
@@ -695,6 +721,18 @@ impl<'a> HirToMirLowering<'a> {
                 Self::packet_struct_field("seq", MirType::U32, 4),
                 Self::packet_struct_field("ack_seq", MirType::U32, 8),
                 Self::packet_struct_field("data_offset_flags", MirType::U16, 12),
+                Self::packet_struct_bitfield("ns", MirType::U8, 12, 0, 1),
+                Self::packet_struct_bitfield("reserved", MirType::U8, 12, 1, 3),
+                Self::packet_struct_bitfield("data_offset", MirType::U8, 12, 4, 4),
+                Self::packet_struct_field("flags", MirType::U8, 13),
+                Self::packet_struct_bitfield("fin", MirType::U8, 13, 0, 1),
+                Self::packet_struct_bitfield("syn", MirType::U8, 13, 1, 1),
+                Self::packet_struct_bitfield("rst", MirType::U8, 13, 2, 1),
+                Self::packet_struct_bitfield("psh", MirType::U8, 13, 3, 1),
+                Self::packet_struct_bitfield("ack", MirType::U8, 13, 4, 1),
+                Self::packet_struct_bitfield("urg", MirType::U8, 13, 5, 1),
+                Self::packet_struct_bitfield("ece", MirType::U8, 13, 6, 1),
+                Self::packet_struct_bitfield("cwr", MirType::U8, 13, 7, 1),
                 Self::packet_struct_field("window", MirType::U16, 14),
                 Self::packet_struct_field("checksum", MirType::U16, 16),
                 Self::packet_struct_field("urg_ptr", MirType::U16, 18),
@@ -854,7 +892,14 @@ impl<'a> HirToMirLowering<'a> {
                 "__packet_ipv4",
                 "total_len" | "identification" | "flags_fragment_offset" | "checksum",
             ) => true,
-            ("__packet_ipv6", "version_tc_flow_label" | "payload_len") => true,
+            (
+                "__packet_ipv6",
+                "version_tc_flow_label"
+                | "version"
+                | "traffic_class"
+                | "flow_label"
+                | "payload_len",
+            ) => true,
             ("__packet_icmp", "checksum") => true,
             ("__packet_icmpv6", "checksum") => true,
             ("__packet_udp", "src" | "dst" | "len" | "checksum") => true,

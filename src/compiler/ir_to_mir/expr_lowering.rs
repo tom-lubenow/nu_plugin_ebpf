@@ -1541,13 +1541,6 @@ impl<'a> HirToMirLowering<'a> {
                             }
                         }
                         AddressSpace::Packet => {
-                            if bitfield.is_some() {
-                                return Err(CompileError::UnsupportedInstruction(format!(
-                                    "xdp packet path '{}' does not support bitfield extraction",
-                                    path_desc
-                                )));
-                            }
-
                             let packet_ptr_vreg = if field_offset == 0 {
                                 *base_vreg
                             } else {
@@ -1580,15 +1573,33 @@ impl<'a> HirToMirLowering<'a> {
                                 },
                                 dst_vreg,
                             );
+                            let loaded_vreg = if bitfield.is_some() {
+                                let storage_vreg = self.func.alloc_vreg();
+                                self.vreg_type_hints.insert(storage_vreg, next_ty.clone());
+                                storage_vreg
+                            } else {
+                                dst_vreg
+                            };
                             self.emit_packet_guarded_load(
-                                dst_vreg,
+                                loaded_vreg,
                                 packet_ptr_vreg,
                                 &next_ty,
                                 Self::packet_guard_end_field(root_ctx_field),
                                 path_desc,
                             )?;
                             if packet_big_endian {
-                                self.emit_packet_big_endian_scalar_normalize(dst_vreg, &next_ty)?;
+                                self.emit_packet_big_endian_scalar_normalize(
+                                    loaded_vreg,
+                                    &next_ty,
+                                )?;
+                            }
+                            if let Some(bitfield) = bitfield {
+                                self.emit_bitfield_extract(
+                                    dst_vreg,
+                                    loaded_vreg,
+                                    &next_ty,
+                                    bitfield,
+                                )?;
                             }
                         }
                     }

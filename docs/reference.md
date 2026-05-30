@@ -355,7 +355,11 @@ protocol-following views reuse the same runtime packet stepping as
 explicit `.payload`, so forms like `$ctx.data.eth.ipv4.tcp.seq` and
 `$ctx.data.eth.ipv6.udp.src` also skip stacked VLAN tags, runtime-sized
 IPv4 headers, and the bounded common IPv6 extension-header chain
-automatically. Those header views also support `payload` stepping:
+automatically. IPv4 exposes derived `version`, `ihl`, `dscp`, and `ecn`
+fields; IPv6 exposes derived `version`, `traffic_class`, and
+`flow_label` fields; TCP exposes derived `data_offset`, `reserved`,
+`flags`, and per-flag `ns`, `cwr`, `ece`, `urg`, `ack`, `psh`, `rst`,
+`syn`, and `fin` fields. Those header views also support `payload` stepping:
 `$ctx.data.eth.payload` skips Ethernet and up to two stacked VLAN tags
 when present, `$ctx.data.eth.payload.ipv4.payload` skips a runtime-sized
 IPv4 header using the IHL nibble, `$ctx.data.eth.payload.ipv6.payload`
@@ -542,11 +546,10 @@ and `socket_filter:tcp6:[::1]:31337`, which create and keep open a
 bound socket while attached. `socket_filter` return values are
 snapshot lengths: return `0` to drop the packet or a positive value to
 keep it, and aliases like `"pass"` / `"keep"` expand to
-`ctx.packet_len`. Variable header lengths, VLAN options parsing,
-deeper TCP option parsing, ICMP subtype-specific body decoding,
-uncommon IPv6 extension headers, and named packet-program action
-helpers are still not modeled, but compile-time action aliases are
-available in return position. XDP closures can return strings like
+`ctx.packet_len`. Deeper TCP option parsing, ICMP subtype-specific body
+decoding, ESP/non-front-decodable IPv6 extension headers, and named
+packet-program action helpers are still not modeled, but compile-time
+action aliases are available in return position. XDP closures can return strings like
 `"pass"` / `"drop"`, TC / tc_action closures can return strings like `"ok"` /
 `"shot"`, and TCX/Netkit closures can return strings like `"next"` / `"pass"` /
 `"ok"` / `"drop"` / `"redirect"`. Raw numeric return codes still work. `redirect IFINDEX` is

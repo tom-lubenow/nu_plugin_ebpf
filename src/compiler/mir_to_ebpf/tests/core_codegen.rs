@@ -5479,6 +5479,63 @@ fn test_compile_xdp_eth_ipv4_tcp_seq_projection() {
 }
 
 #[test]
+fn test_compile_xdp_packet_header_bitfield_projections() {
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    for (label, members) in [
+        (
+            "eth ipv4 version",
+            vec![
+                string_member("data"),
+                string_member("eth"),
+                string_member("ipv4"),
+                string_member("version"),
+            ],
+        ),
+        (
+            "eth ipv6 flow label",
+            vec![
+                string_member("data"),
+                string_member("eth"),
+                string_member("ipv6"),
+                string_member("flow_label"),
+            ],
+        ),
+        (
+            "eth ipv4 tcp syn",
+            vec![
+                string_member("data"),
+                string_member("eth"),
+                string_member("ipv4"),
+                string_member("tcp"),
+                string_member("syn"),
+            ],
+        ),
+    ] {
+        let hir = make_ctx_path_program(CellPath { members });
+        let lowering = lower_hir_to_mir_with_hints(
+            &hir,
+            Some(&probe_ctx),
+            &HashMap::new(),
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("{label} packet bitfield projection should lower: {err:?}"));
+
+        let result = compile_mir_to_ebpf_with_hints(
+            &lowering.program,
+            Some(&probe_ctx),
+            Some(&lowering.type_hints),
+        )
+        .unwrap_or_else(|err| panic!("{label} packet bitfield projection should compile: {err:?}"));
+        assert!(
+            !result.bytecode.is_empty(),
+            "{label} should produce bytecode"
+        );
+    }
+}
+
+#[test]
 fn test_compile_xdp_eth_payload_ipv6_next_header_projection() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![

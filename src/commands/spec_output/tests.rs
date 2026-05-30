@@ -720,8 +720,13 @@ fn test_spec_context_fields_label_helper_backed_scalar_fields() {
     assert_eq!(retval.semantic_type.as_deref(), Some("u64"));
     assert_eq!(retval.runtime_type.as_deref(), Some("u64"));
     assert_eq!(retval.backing_helper, None);
-    assert_eq!(retval.minimum_kernel, None);
-    assert_eq!(retval.compatibility_minimum_kernel, None);
+    assert_eq!(retval.minimum_kernel, Some("4.1"));
+    assert_eq!(retval.compatibility_minimum_kernel, Some("4.1"));
+    assert!(
+        retval
+            .minimum_kernel_source
+            .is_some_and(|source| source.contains("/v4.1/include/uapi/linux/bpf.h"))
+    );
 
     let kstack = field(&fields, "kstack");
     assert_eq!(kstack.semantic_type.as_deref(), Some("i64"));
