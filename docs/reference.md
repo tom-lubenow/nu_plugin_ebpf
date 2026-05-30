@@ -930,7 +930,11 @@ Extended-attribute fallbacks expose aliases for
 `sys_enter_fgetxattr`, `sys_enter_listxattr`, `sys_enter_flistxattr`,
 `sys_enter_removexattr`, `sys_enter_fremovexattr`, and Linux 6.13+
 `sys_enter_setxattrat` / `sys_enter_getxattrat` / `sys_enter_listxattrat` /
-`sys_enter_removexattrat`. Process
+`sys_enter_removexattrat`.
+Legacy filesystem administration fallbacks expose source-known aliases for
+`sys_enter_mount`, `sys_enter_umount`, `sys_enter_pivot_root`,
+`sys_enter_quotactl`, Linux 5.14+ `sys_enter_quotactl_fd`, and
+`sys_enter_ustat`. Process
 control fallbacks expose stable aliases for entry tracepoints such as
 `sys_enter_execveat`, `sys_enter_wait4`, `sys_enter_setns`, module and kexec
 calls such as `sys_enter_init_module` and `sys_enter_kexec_file_load`,

@@ -56,11 +56,16 @@ const XATTR_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/xattr
 const XATTRAT_MIN_KERNEL: &str = "6.13";
 const XATTRAT_SOURCE: &str = "https://github.com/torvalds/linux/blob/v6.13/fs/xattr.c";
 const MOUNT_API_MIN_KERNEL: &str = "5.2";
+const MOUNT_LEGACY_NAMESPACE_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v4.7/fs/namespace.c";
 const MOUNT_API_NAMESPACE_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.2/fs/namespace.c";
 const MOUNT_API_FSOPEN_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.2/fs/fsopen.c";
 const MOUNT_SETATTR_MIN_KERNEL: &str = "5.12";
 const MOUNT_SETATTR_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.12/fs/namespace.c";
+const QUOTA_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/quota/quota.c";
+const QUOTACTL_FD_MIN_KERNEL: &str = "5.14";
+const QUOTACTL_FD_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.14/fs/quota/quota.c";
 const SOCKET_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/net/socket.c";
 const X86_MMAP_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v4.7/arch/x86/kernel/sys_x86_64.c";
@@ -289,6 +294,12 @@ const WELL_KNOWN_SYS_ENTER_SYSCALLS: &[&str] = &[
     "fsmount",
     "fspick",
     "mount_setattr",
+    "mount",
+    "umount",
+    "pivot_root",
+    "quotactl",
+    "quotactl_fd",
+    "ustat",
     "socket",
     "socketpair",
     "bind",
@@ -757,6 +768,19 @@ impl TracepointContext {
                 (Some(MOUNT_API_MIN_KERNEL), Some(MOUNT_API_FSOPEN_SOURCE))
             }
             Some("mount_setattr") => (Some(MOUNT_SETATTR_MIN_KERNEL), Some(MOUNT_SETATTR_SOURCE)),
+            Some("mount" | "umount" | "pivot_root") => (
+                Some(SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL),
+                Some(MOUNT_LEGACY_NAMESPACE_SOURCE),
+            ),
+            Some("quotactl") => (
+                Some(SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL),
+                Some(QUOTA_SOURCE),
+            ),
+            Some("quotactl_fd") => (Some(QUOTACTL_FD_MIN_KERNEL), Some(QUOTACTL_FD_SOURCE)),
+            Some("ustat") => (
+                Some(SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL),
+                Some(STATFS_SOURCE),
+            ),
             Some("statx") => (Some(STATX_MIN_KERNEL), Some(STATX_SOURCE)),
             Some("fork" | "vfork" | "clone" | "set_tid_address") => (
                 Some(SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL),
@@ -873,6 +897,13 @@ impl TracepointContext {
             }
             "fsopen" | "fsconfig" | "fspick" => (MOUNT_API_MIN_KERNEL, MOUNT_API_FSOPEN_SOURCE),
             "mount_setattr" => (MOUNT_SETATTR_MIN_KERNEL, MOUNT_SETATTR_SOURCE),
+            "mount" | "umount" | "pivot_root" => (
+                SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL,
+                MOUNT_LEGACY_NAMESPACE_SOURCE,
+            ),
+            "quotactl" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, QUOTA_SOURCE),
+            "quotactl_fd" => (QUOTACTL_FD_MIN_KERNEL, QUOTACTL_FD_SOURCE),
+            "ustat" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, STATFS_SOURCE),
             "statx" => (STATX_MIN_KERNEL, STATX_SOURCE),
             "fork" | "vfork" | "clone" | "set_tid_address" => {
                 (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, FORK_SOURCE)
@@ -1015,6 +1046,13 @@ impl TracepointContext {
             }
             "fsopen" | "fsconfig" | "fspick" => (MOUNT_API_MIN_KERNEL, MOUNT_API_FSOPEN_SOURCE),
             "mount_setattr" => (MOUNT_SETATTR_MIN_KERNEL, MOUNT_SETATTR_SOURCE),
+            "mount" | "umount" | "pivot_root" => (
+                SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL,
+                MOUNT_LEGACY_NAMESPACE_SOURCE,
+            ),
+            "quotactl" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, QUOTA_SOURCE),
+            "quotactl_fd" => (QUOTACTL_FD_MIN_KERNEL, QUOTACTL_FD_SOURCE),
+            "ustat" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, STATFS_SOURCE),
             "socket" | "socketpair" | "bind" | "listen" | "accept" | "connect" | "sendto"
             | "recvfrom" | "accept4" | "setsockopt" | "getsockopt" | "getsockname"
             | "getpeername" | "shutdown" | "sendmsg" | "recvmsg" | "sendmmsg" | "recvmmsg" => {
@@ -1775,6 +1813,37 @@ impl TracepointContext {
                 ("flags", Self::syscall_arg_int(false)),
                 ("uattr", Self::syscall_arg_user_ptr()),
                 ("usize", Self::syscall_arg_int(false)),
+            ],
+            "mount" => vec![
+                ("dev_name", Self::syscall_arg_user_ptr()),
+                ("dir_name", Self::syscall_arg_user_ptr()),
+                ("type", Self::syscall_arg_user_ptr()),
+                ("flags", Self::syscall_arg_int(false)),
+                ("data", Self::syscall_arg_user_ptr()),
+            ],
+            "umount" => vec![
+                ("name", Self::syscall_arg_user_ptr()),
+                ("flags", Self::syscall_arg_int(true)),
+            ],
+            "pivot_root" => vec![
+                ("new_root", Self::syscall_arg_user_ptr()),
+                ("put_old", Self::syscall_arg_user_ptr()),
+            ],
+            "quotactl" => vec![
+                ("cmd", Self::syscall_arg_int(false)),
+                ("special", Self::syscall_arg_user_ptr()),
+                ("id", Self::syscall_arg_int(false)),
+                ("addr", Self::syscall_arg_user_ptr()),
+            ],
+            "quotactl_fd" => vec![
+                ("fd", Self::syscall_arg_int(false)),
+                ("cmd", Self::syscall_arg_int(false)),
+                ("id", Self::syscall_arg_int(false)),
+                ("addr", Self::syscall_arg_user_ptr()),
+            ],
+            "ustat" => vec![
+                ("dev", Self::syscall_arg_int(false)),
+                ("ubuf", Self::syscall_arg_user_ptr()),
             ],
             "socket" => vec![
                 ("family", Self::syscall_arg_int(false)),

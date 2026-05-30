@@ -1032,6 +1032,67 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         48
     );
 
+    let mount = TracepointContext::sys_enter("sys_enter_mount");
+    assert!(mount.has_field("dev_name"));
+    assert!(mount.has_field("dir_name"));
+    assert!(mount.has_field("type"));
+    assert!(mount.has_field("flags"));
+    assert!(mount.has_field("data"));
+    assert_eq!(mount.minimum_kernel(), Some("4.7"));
+    assert!(
+        mount
+            .minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v4.7/fs/namespace.c"))
+    );
+    assert!(matches!(
+        mount
+            .get_field("dir_name")
+            .expect("expected mount dir_name")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+
+    let pivot_root = TracepointContext::sys_enter("sys_enter_pivot_root");
+    assert!(pivot_root.has_field("new_root"));
+    assert!(pivot_root.has_field("put_old"));
+    assert!(matches!(
+        pivot_root
+            .get_field("put_old")
+            .expect("expected pivot_root put_old")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+
+    let quotactl_fd = TracepointContext::sys_enter("sys_enter_quotactl_fd");
+    assert!(quotactl_fd.has_field("fd"));
+    assert!(quotactl_fd.has_field("cmd"));
+    assert!(quotactl_fd.has_field("id"));
+    assert!(quotactl_fd.has_field("addr"));
+    assert_eq!(quotactl_fd.minimum_kernel(), Some("5.14"));
+    assert!(
+        quotactl_fd
+            .minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v5.14/fs/quota/quota.c"))
+    );
+    let (_, quotactl_fd_source) = TracepointContext::syscall_fallback_field_minimum_kernel(
+        "syscalls",
+        "sys_enter_quotactl_fd",
+        "addr",
+    )
+    .expect("expected quotactl_fd addr source metadata");
+    assert!(quotactl_fd_source.contains("/v5.14/fs/quota/quota.c"));
+
+    let ustat = TracepointContext::sys_enter("sys_enter_ustat");
+    assert!(ustat.has_field("dev"));
+    assert!(ustat.has_field("ubuf"));
+    assert!(matches!(
+        ustat
+            .get_field("ubuf")
+            .expect("expected ustat ubuf")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+
     let memfd_create = TracepointContext::sys_enter("sys_enter_memfd_create");
     assert!(memfd_create.has_field("uname"));
     assert!(memfd_create.has_field("flags"));
@@ -1729,6 +1790,15 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
             "sys_enter_mount_setattr",
             &["dfd", "path", "flags", "uattr", "usize"][..],
         ),
+        (
+            "sys_enter_mount",
+            &["dev_name", "dir_name", "type", "flags", "data"][..],
+        ),
+        ("sys_enter_umount", &["name", "flags"][..]),
+        ("sys_enter_pivot_root", &["new_root", "put_old"][..]),
+        ("sys_enter_quotactl", &["cmd", "special", "id", "addr"][..]),
+        ("sys_enter_quotactl_fd", &["fd", "cmd", "id", "addr"][..]),
+        ("sys_enter_ustat", &["dev", "ubuf"][..]),
         ("sys_enter_init_module", &["umod", "len", "uargs"][..]),
         ("sys_enter_finit_module", &["fd", "uargs", "flags"][..]),
         ("sys_enter_delete_module", &["name_user", "flags"][..]),

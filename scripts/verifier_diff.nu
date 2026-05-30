@@ -2591,6 +2591,44 @@ const PATH_TRACEPOINT_FIELD_SPECS = [
         min_kernel: "5.12"
         source: "https://github.com/torvalds/linux/blob/v5.12/fs/namespace.c"
     }
+    {
+        syscalls: ["mount"]
+        fields: ["dev_name" "dir_name" "type" "flags" "data"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/namespace.c"
+    }
+    {
+        syscalls: ["umount"]
+        fields: ["name" "flags"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/namespace.c"
+    }
+    {
+        syscalls: ["pivot_root"]
+        fields: ["new_root" "put_old"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/namespace.c"
+    }
+    {
+        syscalls: ["ustat"]
+        fields: ["dev" "ubuf"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/statfs.c"
+    }
+]
+const QUOTA_TRACEPOINT_FIELD_SPECS = [
+    {
+        syscalls: ["quotactl"]
+        fields: ["cmd" "special" "id" "addr"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/quota/quota.c"
+    }
+    {
+        syscalls: ["quotactl_fd"]
+        fields: ["fd" "cmd" "id" "addr"]
+        min_kernel: "5.14"
+        source: "https://github.com/torvalds/linux/blob/v5.14/fs/quota/quota.c"
+    }
 ]
 const PROCESS_TRACEPOINT_FIELD_SPECS = [
     {
@@ -10420,6 +10458,117 @@ const FIXTURES = [
             '  if $path { $path | read-str --max-len 64 | count }'
             '  if $uattr { 1 | count }'
             '  ($ctx.dfd + $ctx.flags + $ctx.usize) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-mount-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_mount]
+        target: "tracepoint:syscalls/sys_enter_mount"
+        program: [
+            '{|ctx|'
+            '  let dev_name = $ctx.dev_name'
+            '  let dir_name = $ctx.dir_name'
+            '  let fstype = $ctx.type'
+            '  let data = $ctx.data'
+            '  if $dev_name { $dev_name | read-str --max-len 64 | count }'
+            '  if $dir_name { $dir_name | read-str --max-len 64 | count }'
+            '  if $fstype { $fstype | read-str --max-len 64 | count }'
+            '  if $data { 1 | count }'
+            '  $ctx.flags | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-umount-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_umount]
+        target: "tracepoint:syscalls/sys_enter_umount"
+        program: [
+            '{|ctx|'
+            '  let name = $ctx.name'
+            '  if $name { $name | read-str --max-len 64 | count }'
+            '  $ctx.flags | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-pivot-root-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_pivot_root]
+        target: "tracepoint:syscalls/sys_enter_pivot_root"
+        program: [
+            '{|ctx|'
+            '  let new_root = $ctx.new_root'
+            '  let put_old = $ctx.put_old'
+            '  if $new_root { $new_root | read-str --max-len 64 | count }'
+            '  if $put_old { $put_old | read-str --max-len 64 | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-quotactl-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_quotactl]
+        target: "tracepoint:syscalls/sys_enter_quotactl"
+        program: [
+            '{|ctx|'
+            '  let special = $ctx.special'
+            '  let addr = $ctx.addr'
+            '  if $special { $special | read-str --max-len 64 | count }'
+            '  if $addr { 1 | count }'
+            '  ($ctx.cmd + $ctx.id) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-quotactl-fd-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_quotactl_fd]
+        target: "tracepoint:syscalls/sys_enter_quotactl_fd"
+        program: [
+            '{|ctx|'
+            '  let addr = $ctx.addr'
+            '  if $addr { 1 | count }'
+            '  ($ctx.fd + $ctx.cmd + $ctx.id) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-ustat-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_ustat]
+        target: "tracepoint:syscalls/sys_enter_ustat"
+        program: [
+            '{|ctx|'
+            '  let ubuf = $ctx.ubuf'
+            '  if $ubuf { 1 | count }'
+            '  $ctx.dev | count'
             '  0'
             '}'
         ]
@@ -32789,6 +32938,8 @@ def syscall-tracepoint-fallback-field-kernel-feature [field: string target] {
         "5.2"
     } else if $syscall == "mount_setattr" {
         "5.12"
+    } else if $syscall == "quotactl_fd" {
+        "5.14"
     } else if $syscall == "pidfd_send_signal" {
         "5.1"
     } else if $syscall == "pidfd_open" {
@@ -32838,6 +32989,14 @@ def syscall-tracepoint-fallback-field-kernel-feature [field: string target] {
         "https://github.com/torvalds/linux/blob/v5.2/fs/fsopen.c"
     } else if $syscall == "mount_setattr" {
         "https://github.com/torvalds/linux/blob/v5.12/fs/namespace.c"
+    } else if $syscall in ["mount" "umount" "pivot_root"] {
+        "https://github.com/torvalds/linux/blob/v4.7/fs/namespace.c"
+    } else if $syscall == "quotactl" {
+        "https://github.com/torvalds/linux/blob/v4.7/fs/quota/quota.c"
+    } else if $syscall == "quotactl_fd" {
+        "https://github.com/torvalds/linux/blob/v5.14/fs/quota/quota.c"
+    } else if $syscall == "ustat" {
+        "https://github.com/torvalds/linux/blob/v4.7/fs/statfs.c"
     } else if $syscall == "pidfd_send_signal" {
         "https://github.com/torvalds/linux/blob/v5.1/kernel/signal.c"
     } else if $syscall == "pidfd_open" {
@@ -32935,6 +33094,7 @@ def tracepoint-payload-field-kernel-feature [field: string target] {
         | append $FILE_DATA_TRACEPOINT_FIELD_SPECS
         | append $SOCKET_TRACEPOINT_FIELD_SPECS
         | append $PATH_TRACEPOINT_FIELD_SPECS
+        | append $QUOTA_TRACEPOINT_FIELD_SPECS
         | append $PROCESS_TRACEPOINT_FIELD_SPECS
         | append $FD_TRACEPOINT_FIELD_SPECS
         | append $MM_TRACEPOINT_FIELD_SPECS
