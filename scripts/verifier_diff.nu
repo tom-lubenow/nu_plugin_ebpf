@@ -14551,6 +14551,107 @@ const FIXTURES = [
         error_contains: "helper 'bpf_get_stack' arg0 expects raw context pointer"
     }
     {
+        name: "source-helper-get-stack-accepts-map-buffer"
+        category: "helper-state"
+        tags: [helper stack-copy accept source metadata]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define get_stack_buf --kind array --value-type bytes:24 --max-entries 1'
+            '  let buf = (0 | map-get get_stack_buf)'
+            '  if $buf { helper-call "bpf_get_stack" $ctx $buf 24 0 }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "source-helper-get-stack-accepts-zero-size-buffer"
+        category: "helper-state"
+        tags: [helper stack-copy zero-size accept source metadata]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define get_stack_zero_buf --kind array --value-type bytes:24 --max-entries 1'
+            '  let buf = (0 | map-get get_stack_zero_buf)'
+            '  if $buf { helper-call "bpf_get_stack" $ctx $buf 0 2559 }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "source-helper-get-stack-rejects-small-buffer"
+        category: "helper-state"
+        tags: [helper stack-copy bounds reject source metadata]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define get_stack_small_buf --kind array --value-type bytes:8 --max-entries 1'
+            '  let buf = (0 | map-get get_stack_small_buf)'
+            '  if $buf { helper-call "bpf_get_stack" $ctx $buf 64 0 }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper get_stack buf requires 64 bytes"
+    }
+    {
+        name: "source-helper-get-stack-rejects-negative-size"
+        category: "helper-state"
+        tags: [helper stack-copy size reject source metadata]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define get_stack_negative_buf --kind array --value-type bytes:24 --max-entries 1'
+            '  let buf = (0 | map-get get_stack_negative_buf)'
+            '  let size = (0 - 1)'
+            '  if $buf { helper-call "bpf_get_stack" $ctx $buf $size 0 }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 67 arg2 must be >= 0"
+    }
+    {
+        name: "source-helper-get-stack-rejects-invalid-flags"
+        category: "helper-state"
+        tags: [helper stack-copy flags reject source metadata]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define get_stack_flag_buf --kind array --value-type bytes:24 --max-entries 1'
+            '  let buf = (0 | map-get get_stack_flag_buf)'
+            '  if $buf { helper-call "bpf_get_stack" $ctx $buf 24 512 }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "stack-copy helpers require flags"
+    }
+    {
+        name: "source-helper-get-stack-rejects-xdp"
+        category: "helper-state"
+        tags: [helper stack-copy program-policy reject source metadata]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  map-define get_stack_xdp_buf --kind array --value-type bytes:24 --max-entries 1'
+            '  let buf = (0 | map-get get_stack_xdp_buf)'
+            '  if $buf { helper-call "bpf_get_stack" $ctx $buf 24 0 }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_get_stack' is only valid"
+    }
+    {
         name: "helper-packet-output-accepts-skb-argument"
         category: "helper-state"
         tags: [helper packet-output skb tracing accept source metadata]
