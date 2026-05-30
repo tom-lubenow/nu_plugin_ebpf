@@ -314,6 +314,16 @@ impl VerifierState {
             .any(std::convert::identity)
     }
 
+    pub(in crate::compiler::verifier_types) fn has_live_kfunc_refs_except(
+        &self,
+        allowed: Option<VReg>,
+    ) -> bool {
+        self.live_kfunc_refs
+            .iter()
+            .enumerate()
+            .any(|(idx, live)| *live && Some(VReg(idx as u32)) != allowed)
+    }
+
     pub(in crate::compiler::verifier_types) fn is_live_kfunc_ref(&self, id: VReg) -> bool {
         self.live_kfunc_refs
             .get(id.0 as usize)

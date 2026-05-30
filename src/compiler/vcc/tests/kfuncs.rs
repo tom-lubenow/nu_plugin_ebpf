@@ -8712,6 +8712,116 @@ fn test_verify_mir_kfunc_task_subfn_release_releases_caller_reference() {
 }
 
 #[test]
+fn test_verify_mir_kfunc_task_subfn_acquire_return_releases_caller_reference() {
+    let (mut func, entry) = new_mir_function();
+    let release = func.alloc_block();
+    let done = func.alloc_block();
+    func.param_count = 1;
+
+    let task = func.alloc_vreg();
+    let acquired = func.alloc_vreg();
+    let cond = func.alloc_vreg();
+    let release_ret = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::CallSubfn {
+        dst: acquired,
+        subfn: SubfunctionId(0),
+        args: vec![task],
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: cond,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(acquired),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond,
+        if_true: release,
+        if_false: done,
+    };
+    func.block_mut(release)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: release_ret,
+            kfunc: "bpf_task_release".to_string(),
+            btf_id: None,
+            args: vec![acquired],
+        });
+    func.block_mut(release).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut subfn = MirFunction::new();
+    let sub_entry = subfn.alloc_block();
+    subfn.entry = sub_entry;
+    subfn.param_count = 1;
+    subfn.vreg_count = 1;
+    let sub_acquired = subfn.alloc_vreg();
+    subfn
+        .block_mut(sub_entry)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: sub_acquired,
+            kfunc: "bpf_task_acquire".to_string(),
+            btf_id: None,
+            args: vec![VReg(0)],
+        });
+    subfn.block_mut(sub_entry).terminator = MirInst::Return {
+        val: Some(MirValue::VReg(sub_acquired)),
+    };
+
+    let mut types = HashMap::new();
+    types.insert(
+        task,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(
+        acquired,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(release_ret, MirType::I64);
+
+    let mut sub_types = HashMap::new();
+    sub_types.insert(
+        VReg(0),
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    sub_types.insert(
+        sub_acquired,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+
+    let summaries = infer_subfunction_summaries(&[subfn.clone()]);
+    let summary = summaries
+        .get(&SubfunctionId(0))
+        .copied()
+        .expect("expected summary");
+    verify_mir_with_subfunction_summaries_for_probe_context_with_current_summary(
+        &subfn,
+        &sub_types,
+        &summaries,
+        Some(summary),
+        None,
+        None,
+    )
+    .expect("expected subfunction to return acquired reference");
+
+    verify_mir_with_subfunction_summaries(&func, &types, &summaries)
+        .expect("expected caller to release subfunction-acquired kfunc reference");
+}
+
+#[test]
 fn test_verify_mir_kfunc_task_acquire_return_allows_trusted_btf_load() {
     let (mut func, entry) = new_mir_function();
     let release = func.alloc_block();

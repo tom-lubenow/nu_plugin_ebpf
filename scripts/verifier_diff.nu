@@ -21630,6 +21630,27 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "source-kfunc-task-user-function-acquire-release"
+        category: "helper-state"
+        tags: [kfunc ref-lifetime source accept user-function]
+        requires: [kernel-btf]
+        target: "tp_btf:sys_enter"
+        program: [
+            '{|ctx|'
+            '  def acquire_task [task] {'
+            '    kfunc-call "bpf_task_acquire" $task'
+            '  }'
+            '  let task = (acquire_task $ctx.task)'
+            '  if $task {'
+            '    $task | kfunc-call "bpf_task_release"'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "source-kfunc-task-acquire-project-release"
         category: "helper-state"
         tags: [kfunc ref-lifetime source metadata accept]

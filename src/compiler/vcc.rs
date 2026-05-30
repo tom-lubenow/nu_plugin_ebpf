@@ -614,6 +614,7 @@ impl std::fmt::Display for VccError {
 #[derive(Debug, Default)]
 pub struct VccVerifier {
     errors: Vec<VccError>,
+    current_summary: Option<crate::compiler::subfn_summaries::SubfunctionSummary>,
 }
 
 include!("vcc/verifier.rs");
@@ -759,7 +760,11 @@ fn verify_mir_with_subfunction_summaries_impl(
         Err(err) => return Err(vec![err]),
     };
     let seed = lowerer.seed_types();
-    VccVerifier::default().verify_function_with_seed(&vcc_func, seed)
+    VccVerifier {
+        current_summary,
+        ..Default::default()
+    }
+    .verify_function_with_seed(&vcc_func, seed)
 }
 
 include!("vcc/lower.rs");

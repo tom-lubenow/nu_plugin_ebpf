@@ -2327,7 +2327,8 @@ impl VccVerifier {
                         "unreleased ringbuf record reference at function exit",
                     ));
                 }
-                if state.has_live_kfunc_refs() {
+                let returned_kfunc_ref = self.allowed_returned_kfunc_ref(*value, state);
+                if state.has_live_kfunc_refs_except(returned_kfunc_ref) {
                     self.errors.push(VccError::new(
                         VccErrorKind::PointerBounds,
                         "unreleased kfunc reference at function exit",
@@ -2526,6 +2527,31 @@ impl VccVerifier {
             });
         }
         root
+    }
+
+    fn allowed_returned_kfunc_ref(
+        &self,
+        value: Option<VccValue>,
+        state: &VccState,
+    ) -> Option<VccReg> {
+        let expected_kind = self
+            .current_summary
+            .and_then(|summary| summary.kfunc_ref_return_kind())?;
+        let VccValue::Reg(reg) = value? else {
+            return None;
+        };
+        let VccValueType::Ptr(info) = state.reg_type(reg).ok()? else {
+            return None;
+        };
+        if !matches!(info.space, VccAddrSpace::Kernel | VccAddrSpace::KernelBtf) {
+            return None;
+        }
+        let ref_id = info.kfunc_ref?;
+        if state.is_live_kfunc_ref(ref_id) && state.kfunc_ref_kind(ref_id) == Some(expected_kind) {
+            Some(ref_id)
+        } else {
+            None
+        }
     }
 
     fn map_value_source_for_phi(

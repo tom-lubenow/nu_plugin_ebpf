@@ -305,13 +305,15 @@ fn verify_mir_with_subfunction_summaries_impl(
             MirInst::LoopBack { header, .. } => {
                 propagate_state(*header, &state, &mut in_states, &mut worklist);
             }
-            MirInst::Return { .. } => {
+            MirInst::Return { val } => {
                 if state.has_live_ringbuf_refs() {
                     errors.push(VerifierTypeError::new(
                         "unreleased ringbuf record reference at function exit",
                     ));
                 }
-                if state.has_live_kfunc_refs() {
+                let returned_kfunc_ref =
+                    allowed_returned_kfunc_ref(current_summary, val.as_ref(), &state);
+                if state.has_live_kfunc_refs_except(returned_kfunc_ref) {
                     errors.push(VerifierTypeError::new(
                         "unreleased kfunc reference at function exit",
                     ));
@@ -524,6 +526,30 @@ fn verify_mir_with_subfunction_summaries_impl(
         Ok(())
     } else {
         Err(errors)
+    }
+}
+
+fn allowed_returned_kfunc_ref(
+    current_summary: Option<SubfunctionSummary>,
+    val: Option<&MirValue>,
+    state: &VerifierState,
+) -> Option<VReg> {
+    let expected_kind = current_summary.and_then(|summary| summary.kfunc_ref_return_kind())?;
+    let Some(MirValue::VReg(vreg)) = val else {
+        return None;
+    };
+    let VerifierType::Ptr {
+        space: AddressSpace::Kernel,
+        kfunc_ref: Some(ref_id),
+        ..
+    } = state.get(*vreg)
+    else {
+        return None;
+    };
+    if state.is_live_kfunc_ref(ref_id) && state.kfunc_ref_kind(ref_id) == Some(expected_kind) {
+        Some(ref_id)
+    } else {
+        None
     }
 }
 

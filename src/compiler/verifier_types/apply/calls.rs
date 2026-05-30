@@ -355,6 +355,31 @@ pub(super) fn apply_call_subfn_inst(
         return;
     }
 
+    if let Some(kind) = summary.kfunc_ref_return_kind() {
+        state.set_live_kfunc_ref(dst, true, Some(kind));
+        let trusted_btf_return = matches!(
+            types.get(&dst),
+            Some(MirType::Ptr {
+                pointee,
+                address_space: AddressSpace::Kernel,
+            }) if !matches!(pointee.as_ref(), MirType::Unknown)
+        );
+        state.set_with_range(
+            dst,
+            VerifierType::Ptr {
+                space: AddressSpace::Kernel,
+                nullability: Nullability::MaybeNull,
+                bounds: trusted_btf_return.then(|| {
+                    PtrBounds::new(PtrOrigin::KernelBtf(dst), 0, 0, UNKNOWN_KERNEL_BTF_LIMIT)
+                }),
+                ringbuf_ref: None,
+                kfunc_ref: Some(dst),
+            },
+            ValueRange::Unknown,
+        );
+        return;
+    }
+
     let ty = types
         .get(&dst)
         .map(verifier_type_from_mir)

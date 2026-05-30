@@ -277,4 +277,39 @@ impl<'a> VccLowerer<'a> {
         }
     }
 
+    pub(super) fn subfunction_kfunc_ref_return_type(&self, dst: VReg) -> VccValueType {
+        let inferred = self.types.get(&dst).map(vcc_type_from_mir);
+        let inferred_trusted_btf = matches!(
+            self.types.get(&dst),
+            Some(MirType::Ptr {
+                pointee,
+                address_space: AddressSpace::Kernel,
+            }) if !matches!(pointee.as_ref(), MirType::Unknown)
+        );
+        match inferred {
+            Some(VccValueType::Ptr(mut info)) => {
+                info.nullability = VccNullability::MaybeNull;
+                if inferred_trusted_btf && info.space == VccAddrSpace::Kernel {
+                    info.space = VccAddrSpace::KernelBtf;
+                }
+                info.kfunc_ref = Some(VccReg(dst.0));
+                VccValueType::Ptr(info)
+            }
+            _ => VccValueType::Ptr(VccPointerInfo {
+                space: VccAddrSpace::Kernel,
+                nullability: VccNullability::MaybeNull,
+                bounds: None,
+                packet_root: None,
+                packet_root_field: None,
+                packet_ctx_field: None,
+                packet_end: false,
+                map_root: None,
+                context_buffer_root: None,
+                context_buffer_end: false,
+                ringbuf_ref: None,
+                kfunc_ref: Some(VccReg(dst.0)),
+            }),
+        }
+    }
+
 }

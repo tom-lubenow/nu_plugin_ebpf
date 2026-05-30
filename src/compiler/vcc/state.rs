@@ -495,8 +495,10 @@ impl VccState {
         self.live_kfunc_refs.contains_key(&id)
     }
 
-    fn has_live_kfunc_refs(&self) -> bool {
-        !self.live_kfunc_refs.is_empty()
+    fn has_live_kfunc_refs_except(&self, allowed: Option<VccReg>) -> bool {
+        self.live_kfunc_refs
+            .keys()
+            .any(|id| Some(*id) != allowed)
     }
 
     fn acquire_rcu_read_lock(&mut self) {

@@ -1476,6 +1476,22 @@ impl<'a> VccLowerer<'a> {
                         });
                         return Ok(());
                     }
+                    if let Some(kind) = summary.kfunc_ref_return_kind() {
+                        let ty = self.subfunction_kfunc_ref_return_type(*dst);
+                        out.push(VccInst::Assume {
+                            dst: VccReg(dst.0),
+                            ty,
+                            ctx_field_source: None,
+                        });
+                        if let VccValueType::Ptr(info) = ty {
+                            self.ptr_regs.insert(VccReg(dst.0), info);
+                        }
+                        out.push(VccInst::KfuncAcquire {
+                            id: VccReg(dst.0),
+                            kind,
+                        });
+                        return Ok(());
+                    }
                 }
                 let ty = self
                     .types
