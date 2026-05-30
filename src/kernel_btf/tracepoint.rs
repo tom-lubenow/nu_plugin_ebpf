@@ -12,6 +12,8 @@ const OPENAT2_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.6/fs/ope
 const EXEC_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/exec.c";
 const EXIT_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/exit.c";
 const FORK_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/fork.c";
+const CLONE3_MIN_KERNEL: &str = "5.3";
+const CLONE3_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.3/kernel/fork.c";
 const NSPROXY_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/nsproxy.c";
 const FILE_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/file.c";
 const PIPE_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/pipe.c";
@@ -77,6 +79,7 @@ const WELL_KNOWN_SYS_ENTER_SYSCALLS: &[&str] = &[
     "waitid",
     "wait4",
     "unshare",
+    "clone3",
     "setns",
     "dup",
     "dup2",
@@ -492,6 +495,7 @@ impl TracepointContext {
         match syscall {
             Some("openat2") => (Some(OPENAT2_MIN_KERNEL), Some(OPENAT2_SOURCE)),
             Some("statx") => (Some(STATX_MIN_KERNEL), Some(STATX_SOURCE)),
+            Some("clone3") => (Some(CLONE3_MIN_KERNEL), Some(CLONE3_SOURCE)),
             Some("pidfd_send_signal") => (
                 Some(PIDFD_SEND_SIGNAL_MIN_KERNEL),
                 Some(PIDFD_SEND_SIGNAL_SOURCE),
@@ -541,6 +545,7 @@ impl TracepointContext {
         Some(match syscall {
             "openat2" => (OPENAT2_MIN_KERNEL, OPENAT2_SOURCE),
             "statx" => (STATX_MIN_KERNEL, STATX_SOURCE),
+            "clone3" => (CLONE3_MIN_KERNEL, CLONE3_SOURCE),
             "pidfd_send_signal" => (PIDFD_SEND_SIGNAL_MIN_KERNEL, PIDFD_SEND_SIGNAL_SOURCE),
             _ => (
                 SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL,
@@ -578,6 +583,7 @@ impl TracepointContext {
                 (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, EXIT_SOURCE)
             }
             "unshare" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, FORK_SOURCE),
+            "clone3" => (CLONE3_MIN_KERNEL, CLONE3_SOURCE),
             "setns" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, NSPROXY_SOURCE),
             "dup" | "dup2" | "dup3" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, FILE_SOURCE),
             "pipe" | "pipe2" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, PIPE_SOURCE),
@@ -811,6 +817,10 @@ impl TracepointContext {
                 ("ru", Self::syscall_arg_user_ptr()),
             ],
             "unshare" => vec![("unshare_flags", Self::syscall_arg_int(false))],
+            "clone3" => vec![
+                ("uargs", Self::syscall_arg_user_ptr()),
+                ("size", Self::syscall_arg_int(false)),
+            ],
             "setns" => vec![
                 ("fd", Self::syscall_arg_int(true)),
                 ("nstype", Self::syscall_arg_int(true)),

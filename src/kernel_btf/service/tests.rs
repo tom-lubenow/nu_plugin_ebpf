@@ -306,6 +306,23 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         TypeInfo::Ptr { is_user: true, .. }
     ));
 
+    let clone3 = TracepointContext::sys_enter("sys_enter_clone3");
+    assert!(clone3.has_field("uargs"));
+    assert!(clone3.has_field("size"));
+    assert_eq!(clone3.minimum_kernel(), Some("5.3"));
+    assert!(
+        clone3
+            .minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v5.3/kernel/fork.c"))
+    );
+    assert!(matches!(
+        clone3
+            .get_field("uargs")
+            .expect("expected clone3 uargs")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+
     let epoll_ctl = TracepointContext::sys_enter("sys_enter_epoll_ctl");
     assert!(epoll_ctl.has_field("epfd"));
     assert!(epoll_ctl.has_field("op"));
@@ -546,6 +563,7 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
             &["which", "upid", "infop", "options", "ru"][..],
         ),
         ("sys_enter_unshare", &["unshare_flags"][..]),
+        ("sys_enter_clone3", &["uargs", "size"][..]),
         ("sys_enter_setns", &["fd", "nstype"][..]),
         ("sys_enter_dup", &["fildes"][..]),
         ("sys_enter_dup2", &["oldfd", "newfd"][..]),

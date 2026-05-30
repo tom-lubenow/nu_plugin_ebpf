@@ -2381,6 +2381,12 @@ const PROCESS_TRACEPOINT_FIELD_SPECS = [
         source: "https://github.com/torvalds/linux/blob/v4.7/kernel/fork.c"
     }
     {
+        syscalls: ["clone3"]
+        fields: ["uargs" "size"]
+        min_kernel: "5.3"
+        source: "https://github.com/torvalds/linux/blob/v5.3/kernel/fork.c"
+    }
+    {
         syscalls: ["setns"]
         fields: ["fd" "nstype"]
         min_kernel: "4.7"
@@ -7923,6 +7929,23 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  ($ctx.fd + $ctx.nstype) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-clone3-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_clone3]
+        target: "tracepoint:syscalls/sys_enter_clone3"
+        program: [
+            '{|ctx|'
+            '  let uargs = $ctx.uargs'
+            '  if $uargs { 1 | count }'
+            '  $ctx.size | count'
             '  0'
             '}'
         ]
@@ -29178,6 +29201,8 @@ def syscall-tracepoint-fallback-field-kernel-feature [field: string target] {
         "5.6"
     } else if $syscall == "pidfd_send_signal" {
         "5.1"
+    } else if $syscall == "clone3" {
+        "5.3"
     } else if $syscall == "statx" {
         "4.11"
     } else {
@@ -29187,6 +29212,8 @@ def syscall-tracepoint-fallback-field-kernel-feature [field: string target] {
         "https://github.com/torvalds/linux/blob/v5.6/fs/open.c"
     } else if $syscall == "pidfd_send_signal" {
         "https://github.com/torvalds/linux/blob/v5.1/kernel/signal.c"
+    } else if $syscall == "clone3" {
+        "https://github.com/torvalds/linux/blob/v5.3/kernel/fork.c"
     } else if $syscall == "statx" {
         "https://github.com/torvalds/linux/blob/v4.11/fs/stat.c"
     } else {
