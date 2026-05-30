@@ -21245,6 +21245,71 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "sock-ops-sock-map-update-helper"
+        category: "helper-state"
+        tags: [sock-ops helper-call sockmap accept source metadata]
+        requires: [cgroup-v2]
+        target: "sock_ops:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  let key = "abcd"'
+            '  helper-call "bpf_sock_map_update" $ctx peers $key 0'
+            '  1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "sock-ops-sock-hash-update-helper"
+        category: "helper-state"
+        tags: [sock-ops helper-call sockhash accept source metadata]
+        requires: [cgroup-v2]
+        target: "sock_ops:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  let key = "abcd"'
+            '  helper-call "bpf_sock_hash_update" $ctx hash_peers $key 0'
+            '  1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "sock-ops-sock-map-update-rejects-invalid-flags"
+        category: "helper-state"
+        tags: [sock-ops helper-call sockmap flags reject source metadata]
+        requires: [cgroup-v2]
+        target: "sock_ops:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  let key = "abcd"'
+            '  helper-call "bpf_sock_map_update" $ctx peers $key 4'
+            '  1'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "socket map update helpers require arg3 flags"
+    }
+    {
+        name: "sock-ops-sock-map-update-rejects-non-sock-ops"
+        category: "helper-state"
+        tags: [sock-ops helper-call sockmap program-policy reject source metadata]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let key = "abcd"'
+            '  helper-call "bpf_sock_map_update" $ctx peers $key 0'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_sock_map_update' is only valid in sock_ops programs"
+    }
+    {
         name: "sock-ops-store-hdr-opt-rejects-stale-data"
         category: "helper-state"
         tags: [sock-ops helper-call hdr-opt packet-bounds reject]
