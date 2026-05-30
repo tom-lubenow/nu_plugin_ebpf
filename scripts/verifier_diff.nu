@@ -23270,6 +23270,56 @@ const FIXTURES = [
         error_contains: "helper d_path path expects pointer in [Kernel]"
     }
     {
+        name: "source-helper-d-path-accepts-zero-size-null-buffer"
+        category: "helper-state"
+        tags: [helper-call file path source zero-size accept]
+        requires: [kernel-btf]
+        target: "lsm:file_open"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_d_path" $ctx.arg0.f_path 0 0'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "source-helper-d-path-rejects-small-buffer"
+        category: "helper-state"
+        tags: [helper-call file path source bounds reject]
+        requires: [kernel-btf]
+        target: "lsm:file_open"
+        program: [
+            '{|ctx|'
+            '  let buf = "01234567"'
+            '  helper-call "bpf_d_path" $ctx.arg0.f_path $buf 64'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper d_path buf"
+    }
+    {
+        name: "source-helper-d-path-rejects-negative-size"
+        category: "helper-state"
+        tags: [helper-call file path source size reject]
+        requires: [kernel-btf]
+        target: "lsm:file_open"
+        program: [
+            '{|ctx|'
+            '  let buf = "0123456789abcdef"'
+            '  let size = (0 - 1)'
+            '  helper-call "bpf_d_path" $ctx.arg0.f_path $buf $size'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 147 arg2 must be >= 0"
+    }
+    {
         name: "source-helper-d-path-pipeline-requires-explicit-path"
         category: "helper-state"
         tags: [helper-call file path source reject pipeline diagnostic]
