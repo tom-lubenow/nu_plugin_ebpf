@@ -306,7 +306,9 @@ fn verify_mir_with_subfunction_summaries_impl(
                 propagate_state(*header, &state, &mut in_states, &mut worklist);
             }
             MirInst::Return { val } => {
-                if state.has_live_ringbuf_refs() {
+                let returned_ringbuf_ref =
+                    allowed_returned_ringbuf_ref(current_summary, val.as_ref(), &state);
+                if state.has_live_ringbuf_refs_except(returned_ringbuf_ref) {
                     errors.push(VerifierTypeError::new(
                         "unreleased ringbuf record reference at function exit",
                     ));
@@ -527,6 +529,28 @@ fn verify_mir_with_subfunction_summaries_impl(
     } else {
         Err(errors)
     }
+}
+
+fn allowed_returned_ringbuf_ref(
+    current_summary: Option<SubfunctionSummary>,
+    val: Option<&MirValue>,
+    state: &VerifierState,
+) -> Option<VReg> {
+    if !current_summary.is_some_and(|summary| summary.returns_ringbuf_record()) {
+        return None;
+    }
+    let Some(MirValue::VReg(vreg)) = val else {
+        return None;
+    };
+    let VerifierType::Ptr {
+        space: AddressSpace::Map,
+        ringbuf_ref: Some(ref_id),
+        ..
+    } = state.get(*vreg)
+    else {
+        return None;
+    };
+    state.is_live_ringbuf_ref(ref_id).then_some(ref_id)
 }
 
 fn allowed_returned_kfunc_ref(

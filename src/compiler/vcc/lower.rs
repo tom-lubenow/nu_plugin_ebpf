@@ -312,4 +312,21 @@ impl<'a> VccLowerer<'a> {
         }
     }
 
+    pub(super) fn subfunction_ringbuf_record_return_type(&self, dst: VReg) -> VccValueType {
+        VccValueType::Ptr(VccPointerInfo {
+            space: VccAddrSpace::RingBuf,
+            nullability: VccNullability::MaybeNull,
+            bounds: None,
+            packet_root: None,
+            packet_root_field: None,
+            packet_ctx_field: None,
+            packet_end: false,
+            map_root: None,
+            context_buffer_root: None,
+            context_buffer_end: false,
+            ringbuf_ref: Some(VccReg(dst.0)),
+            kfunc_ref: None,
+        })
+    }
+
 }

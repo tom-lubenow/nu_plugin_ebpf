@@ -484,11 +484,10 @@ impl VccState {
         self.live_ringbuf_refs.get(&id).copied().unwrap_or(false)
     }
 
-    fn has_live_ringbuf_refs(&self) -> bool {
+    fn has_live_ringbuf_refs_except(&self, allowed: Option<VccReg>) -> bool {
         self.live_ringbuf_refs
-            .values()
-            .copied()
-            .any(std::convert::identity)
+            .iter()
+            .any(|(id, live)| *live && Some(*id) != allowed)
     }
 
     fn is_live_kfunc_ref(&self, id: VccReg) -> bool {

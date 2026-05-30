@@ -355,6 +355,22 @@ pub(super) fn apply_call_subfn_inst(
         return;
     }
 
+    if summary.returns_ringbuf_record() {
+        state.set_live_ringbuf_ref(dst, true);
+        state.set_with_range(
+            dst,
+            VerifierType::Ptr {
+                space: AddressSpace::Map,
+                nullability: Nullability::MaybeNull,
+                bounds: None,
+                ringbuf_ref: Some(dst),
+                kfunc_ref: None,
+            },
+            ValueRange::Unknown,
+        );
+        return;
+    }
+
     if let Some(kind) = summary.kfunc_ref_return_kind() {
         state.set_live_kfunc_ref(dst, true, Some(kind));
         let trusted_btf_return = matches!(

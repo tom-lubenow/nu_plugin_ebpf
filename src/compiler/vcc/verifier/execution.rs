@@ -2321,7 +2321,8 @@ impl VccVerifier {
                         self.errors.push(err);
                     }
                 }
-                if state.has_live_ringbuf_refs() {
+                let returned_ringbuf_ref = self.allowed_returned_ringbuf_ref(*value, state);
+                if state.has_live_ringbuf_refs_except(returned_ringbuf_ref) {
                     self.errors.push(VccError::new(
                         VccErrorKind::PointerBounds,
                         "unreleased ringbuf record reference at function exit",
@@ -2552,6 +2553,30 @@ impl VccVerifier {
         } else {
             None
         }
+    }
+
+    fn allowed_returned_ringbuf_ref(
+        &self,
+        value: Option<VccValue>,
+        state: &VccState,
+    ) -> Option<VccReg> {
+        if !self
+            .current_summary
+            .is_some_and(|summary| summary.returns_ringbuf_record())
+        {
+            return None;
+        }
+        let VccValue::Reg(reg) = value? else {
+            return None;
+        };
+        let VccValueType::Ptr(info) = state.reg_type(reg).ok()? else {
+            return None;
+        };
+        if info.space != VccAddrSpace::RingBuf {
+            return None;
+        }
+        let ref_id = info.ringbuf_ref?;
+        state.is_live_ringbuf_ref(ref_id).then_some(ref_id)
     }
 
     fn map_value_source_for_phi(

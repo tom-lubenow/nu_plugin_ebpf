@@ -10561,6 +10561,26 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "ringbuf-user-function-reserve-submit-balanced"
+        category: "helper-state"
+        tags: [ringbuf ref-lifetime user-function]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  def reserve [] {'
+            '    helper-call "bpf_ringbuf_reserve" events 8 0'
+            '  }'
+            '  let rec = (reserve)'
+            '  if $rec {'
+            '    helper-call "bpf_ringbuf_submit" $rec 0'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "ringbuf-reserve-discard-balanced"
         category: "helper-state"
         tags: [ringbuf ref-lifetime]

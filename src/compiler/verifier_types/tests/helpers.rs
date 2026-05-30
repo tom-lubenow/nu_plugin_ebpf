@@ -15439,6 +15439,85 @@ fn test_helper_ringbuf_subfn_submit_releases_caller_reference() {
 }
 
 #[test]
+fn test_helper_ringbuf_subfn_reserve_return_releases_caller_reference() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let submit = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+
+    let record = func.alloc_vreg();
+    let cond = func.alloc_vreg();
+    let submit_ret = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::CallSubfn {
+        dst: record,
+        subfn: SubfunctionId(0),
+        args: vec![],
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: cond,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(record),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond,
+        if_true: submit,
+        if_false: done,
+    };
+    func.block_mut(submit)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: submit_ret,
+            helper: BpfHelper::RingbufSubmit as u32,
+            args: vec![MirValue::VReg(record), MirValue::Const(0)],
+        });
+    func.block_mut(submit).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut subfn = MirFunction::new();
+    let sub_entry = subfn.alloc_block();
+    subfn.entry = sub_entry;
+    let map_slot = subfn.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let reserved = subfn.alloc_vreg();
+    subfn
+        .block_mut(sub_entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: reserved,
+            helper: BpfHelper::RingbufReserve as u32,
+            args: vec![
+                MirValue::StackSlot(map_slot),
+                MirValue::Const(8),
+                MirValue::Const(0),
+            ],
+        });
+    subfn.block_mut(sub_entry).terminator = MirInst::Return {
+        val: Some(MirValue::VReg(reserved)),
+    };
+
+    let mut types = HashMap::new();
+    types.insert(submit_ret, MirType::I64);
+    let summaries = infer_subfunction_summaries(&[subfn.clone()]);
+    let summary = summaries
+        .get(&SubfunctionId(0))
+        .copied()
+        .expect("expected summary");
+    verify_mir_with_subfunction_summaries_for_probe_context_with_current_summary(
+        &subfn,
+        &HashMap::new(),
+        &summaries,
+        Some(summary),
+        None,
+        None,
+    )
+    .expect("expected subfunction to return ringbuf record");
+    verify_mir_with_subfunction_summaries(&func, &types, &summaries)
+        .expect("expected caller to submit subfunction-reserved ringbuf record");
+}
+
+#[test]
 fn test_helper_ringbuf_submit_rejected_after_partial_reserve_join() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

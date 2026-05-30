@@ -44,6 +44,7 @@ impl SubfunctionReturnSummary {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct SubfunctionSummary {
     return_summary: SubfunctionReturnSummary,
+    ringbuf_record_return: bool,
     kfunc_ref_return_kind: Option<KfuncRefKind>,
     ringbuf_record_release_args: u8,
     ringbuf_dynptr_release_args: u8,
@@ -54,6 +55,7 @@ impl SubfunctionSummary {
     pub(crate) const fn unknown() -> Self {
         Self {
             return_summary: SubfunctionReturnSummary::Unknown,
+            ringbuf_record_return: false,
             kfunc_ref_return_kind: None,
             ringbuf_record_release_args: 0,
             ringbuf_dynptr_release_args: 0,
@@ -64,6 +66,7 @@ impl SubfunctionSummary {
     pub(crate) const fn from_return_summary(return_summary: SubfunctionReturnSummary) -> Self {
         Self {
             return_summary,
+            ringbuf_record_return: false,
             kfunc_ref_return_kind: None,
             ringbuf_record_release_args: 0,
             ringbuf_dynptr_release_args: 0,
@@ -77,6 +80,10 @@ impl SubfunctionSummary {
 
     pub(crate) const fn return_arg(self) -> Option<usize> {
         self.return_summary.return_arg()
+    }
+
+    pub(crate) const fn returns_ringbuf_record(self) -> bool {
+        self.ringbuf_record_return
     }
 
     pub(crate) const fn kfunc_ref_return_kind(self) -> Option<KfuncRefKind> {
@@ -105,6 +112,7 @@ impl SubfunctionSummary {
 
     const fn from_parts(
         return_arg: Option<usize>,
+        ringbuf_record_return: bool,
         kfunc_ref_return_kind: Option<KfuncRefKind>,
         changes_packet_data: bool,
         ringbuf_record_release_args: u8,
@@ -113,6 +121,7 @@ impl SubfunctionSummary {
     ) -> Self {
         Self {
             return_summary: SubfunctionReturnSummary::from_parts(return_arg, changes_packet_data),
+            ringbuf_record_return,
             kfunc_ref_return_kind,
             ringbuf_record_release_args,
             ringbuf_dynptr_release_args,
@@ -142,6 +151,7 @@ struct KfuncRefSource {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct SummaryState {
     aliases: Vec<AliasSource>,
+    ringbuf_record_sources: Vec<Option<VReg>>,
     kfunc_ref_sources: Vec<Option<KfuncRefSource>>,
     ringbuf_record_release_args: u8,
     ringbuf_dynptr_release_args: u8,
@@ -222,6 +232,7 @@ fn summarize_function(
         func.entry,
         SummaryState {
             aliases: entry_state,
+            ringbuf_record_sources: vec![None; total_vregs],
             kfunc_ref_sources: vec![None; total_vregs],
             ringbuf_record_release_args: 0,
             ringbuf_dynptr_release_args: 0,
@@ -231,6 +242,7 @@ fn summarize_function(
     worklist.push_back(func.entry);
 
     let mut return_alias: Option<Option<usize>> = None;
+    let mut returned_ringbuf_record: Option<bool> = None;
     let mut returned_kfunc_ref: Option<Option<KfuncRefKind>> = None;
     let mut changes_packet_data = false;
     let mut returned_record_releases: Option<u8> = None;
@@ -288,6 +300,11 @@ fn summarize_function(
                     Some(existing) if existing == alias => Some(existing),
                     Some(_) => Some(None),
                 };
+                let returns_record = ringbuf_record_return_for_value(val.as_ref(), &state);
+                returned_ringbuf_record = Some(match returned_ringbuf_record {
+                    None => returns_record,
+                    Some(existing) => existing && returns_record,
+                });
                 let returned_ref = kfunc_ref_return_kind_for_value(val.as_ref(), &state);
                 returned_kfunc_ref = match returned_kfunc_ref {
                     None => Some(returned_ref),
@@ -320,6 +337,7 @@ fn summarize_function(
 
     SubfunctionSummary::from_parts(
         return_alias.flatten(),
+        returned_ringbuf_record.unwrap_or(false),
         returned_kfunc_ref.flatten(),
         changes_packet_data,
         returned_record_releases.unwrap_or(0),
@@ -367,6 +385,17 @@ fn merge_alias_states(existing: &mut SummaryState, incoming: &SummaryState) -> b
         .kfunc_ref_sources
         .iter_mut()
         .zip(incoming.kfunc_ref_sources.iter().copied())
+    {
+        let merged = if *dst == src { *dst } else { None };
+        if *dst != merged {
+            *dst = merged;
+            changed = true;
+        }
+    }
+    for (dst, src) in existing
+        .ringbuf_record_sources
+        .iter_mut()
+        .zip(incoming.ringbuf_record_sources.iter().copied())
     {
         let merged = if *dst == src { *dst } else { None };
         if *dst != merged {
@@ -425,29 +454,46 @@ fn apply_alias_inst(
         MirInst::Copy { dst, src } => {
             let alias = alias_for_mir_value(src, &state.aliases, param_stack_aliases);
             set_alias(&mut state.aliases, *dst, alias);
+            let ringbuf_record_source = ringbuf_record_source_for_mir_value(src, state);
+            set_ringbuf_record_source(
+                &mut state.ringbuf_record_sources,
+                *dst,
+                ringbuf_record_source,
+            );
             let kfunc_ref_source = kfunc_ref_source_for_mir_value(src, state);
             set_kfunc_ref_source(&mut state.kfunc_ref_sources, *dst, kfunc_ref_source);
             InstEffects::default()
         }
         MirInst::Phi { dst, args } => {
             let mut alias = AliasSource::Unknown;
+            let mut ringbuf_record_source = None;
             let mut kfunc_ref_source = None;
             let mut first = true;
             for (_, arg) in args {
                 let current = get_alias(&state.aliases, *arg);
+                let current_record_source = ringbuf_record_source_for_vreg(state, *arg);
                 let current_ref_source = kfunc_ref_source_for_vreg(state, *arg);
                 if first {
                     alias = current;
+                    ringbuf_record_source = current_record_source;
                     kfunc_ref_source = current_ref_source;
                     first = false;
                 } else if alias != current {
                     alias = AliasSource::Unknown;
+                }
+                if !first && ringbuf_record_source != current_record_source {
+                    ringbuf_record_source = None;
                 }
                 if !first && kfunc_ref_source != current_ref_source {
                     kfunc_ref_source = None;
                 }
             }
             set_alias(&mut state.aliases, *dst, alias);
+            set_ringbuf_record_source(
+                &mut state.ringbuf_record_sources,
+                *dst,
+                ringbuf_record_source,
+            );
             set_kfunc_ref_source(&mut state.kfunc_ref_sources, *dst, kfunc_ref_source);
             InstEffects::default()
         }
@@ -462,6 +508,19 @@ fn apply_alias_inst(
                 None => AliasSource::Unknown,
             };
             set_alias(&mut state.aliases, *dst, alias);
+            let ringbuf_record_source = match summary.return_arg() {
+                Some(idx) => args
+                    .get(idx)
+                    .copied()
+                    .and_then(|arg| ringbuf_record_source_for_vreg(state, arg)),
+                None if summary.returns_ringbuf_record() => Some(*dst),
+                None => None,
+            };
+            set_ringbuf_record_source(
+                &mut state.ringbuf_record_sources,
+                *dst,
+                ringbuf_record_source,
+            );
             let kfunc_ref_source = match summary.return_arg() {
                 Some(idx) => args
                     .get(idx)
@@ -484,6 +543,7 @@ fn apply_alias_inst(
                 .map(AliasSource::Param)
                 .unwrap_or(AliasSource::Unknown);
             set_alias(&mut state.aliases, *dst, alias);
+            set_ringbuf_record_source(&mut state.ringbuf_record_sources, *dst, None);
             set_kfunc_ref_source(&mut state.kfunc_ref_sources, *dst, None);
             InstEffects::default()
         }
@@ -493,6 +553,16 @@ fn apply_alias_inst(
             let kfunc_ref_source = BpfHelper::from_u32(*helper)
                 .and_then(helper_acquire_ref_kind)
                 .map(|kind| KfuncRefSource { id: *dst, kind });
+            let ringbuf_record_source = matches!(
+                BpfHelper::from_u32(*helper),
+                Some(BpfHelper::RingbufReserve)
+            )
+            .then_some(*dst);
+            set_ringbuf_record_source(
+                &mut state.ringbuf_record_sources,
+                *dst,
+                ringbuf_record_source,
+            );
             set_kfunc_ref_source(&mut state.kfunc_ref_sources, *dst, kfunc_ref_source);
             InstEffects {
                 changes_packet_data: BpfHelper::from_u32(*helper)
@@ -526,6 +596,7 @@ fn apply_alias_inst(
         | MirInst::StrCmp { dst, .. }
         | MirInst::LoopHeader { counter: dst, .. } => {
             set_alias(&mut state.aliases, *dst, AliasSource::Unknown);
+            set_ringbuf_record_source(&mut state.ringbuf_record_sources, *dst, None);
             set_kfunc_ref_source(&mut state.kfunc_ref_sources, *dst, None);
             InstEffects::default()
         }
@@ -568,6 +639,7 @@ fn apply_subfunction_release_summary(
             || summary.releases_ringbuf_dynptr_arg(idx)
             || summary.kfunc_ref_release_arg_kind(idx).is_some()
         {
+            clear_ringbuf_record_source_for_vreg(state, *arg);
             clear_kfunc_ref_source_for_vreg(state, *arg);
         }
         let AliasSource::Param(param_idx) = get_alias(&state.aliases, *arg) else {
@@ -599,24 +671,34 @@ fn apply_helper_release_summary(
     let Some(arg0) = args.first() else {
         return;
     };
-    if let MirValue::VReg(arg) = arg0 {
-        clear_kfunc_ref_source_for_vreg(state, *arg);
-    }
     let alias = alias_for_mir_value(arg0, &state.aliases, param_stack_aliases);
-    let AliasSource::Param(param_idx) = alias else {
-        return;
+    let param_idx = match alias {
+        AliasSource::Param(param_idx) => Some(param_idx),
+        AliasSource::Unknown => None,
     };
     match helper {
         BpfHelper::RingbufSubmit | BpfHelper::RingbufDiscard => {
-            set_mask_bit(&mut state.ringbuf_record_release_args, param_idx);
+            if let MirValue::VReg(arg) = arg0 {
+                clear_ringbuf_record_source_for_vreg(state, *arg);
+            }
+            if let Some(param_idx) = param_idx {
+                set_mask_bit(&mut state.ringbuf_record_release_args, param_idx);
+            }
         }
         BpfHelper::RingbufSubmitDynptr | BpfHelper::RingbufDiscardDynptr => {
-            set_mask_bit(&mut state.ringbuf_dynptr_release_args, param_idx);
+            if let Some(param_idx) = param_idx {
+                set_mask_bit(&mut state.ringbuf_dynptr_release_args, param_idx);
+            }
         }
         _ => {}
     }
     if let Some(kind) = helper_release_ref_kind(helper) {
-        set_kfunc_release_arg(&mut state.kfunc_ref_release_args, param_idx, kind);
+        if let MirValue::VReg(arg) = arg0 {
+            clear_kfunc_ref_source_for_vreg(state, *arg);
+        }
+        if let Some(param_idx) = param_idx {
+            set_kfunc_release_arg(&mut state.kfunc_ref_release_args, param_idx, kind);
+        }
     }
 }
 
@@ -630,6 +712,7 @@ fn apply_kfunc_release_summary(kfunc: &str, args: &[VReg], state: &mut SummarySt
     let Some(arg) = args.get(arg_idx) else {
         return;
     };
+    clear_ringbuf_record_source_for_vreg(state, *arg);
     clear_kfunc_ref_source_for_vreg(state, *arg);
     let AliasSource::Param(param_idx) = get_alias(&state.aliases, *arg) else {
         return;
@@ -664,6 +747,45 @@ fn alias_for_value(
             AliasSource::Unknown => None,
         },
         None => None,
+    }
+}
+
+fn ringbuf_record_return_for_value(val: Option<&MirValue>, state: &SummaryState) -> bool {
+    let Some(MirValue::VReg(vreg)) = val else {
+        return false;
+    };
+    ringbuf_record_source_for_vreg(state, *vreg).is_some()
+}
+
+fn ringbuf_record_source_for_mir_value(value: &MirValue, state: &SummaryState) -> Option<VReg> {
+    match value {
+        MirValue::VReg(vreg) => ringbuf_record_source_for_vreg(state, *vreg),
+        MirValue::StackSlot(_) | MirValue::Const(_) => None,
+    }
+}
+
+fn ringbuf_record_source_for_vreg(state: &SummaryState, vreg: VReg) -> Option<VReg> {
+    state
+        .ringbuf_record_sources
+        .get(vreg.0 as usize)
+        .copied()
+        .flatten()
+}
+
+fn set_ringbuf_record_source(sources: &mut [Option<VReg>], vreg: VReg, source: Option<VReg>) {
+    if let Some(slot) = sources.get_mut(vreg.0 as usize) {
+        *slot = source;
+    }
+}
+
+fn clear_ringbuf_record_source_for_vreg(state: &mut SummaryState, vreg: VReg) {
+    let Some(source) = ringbuf_record_source_for_vreg(state, vreg) else {
+        return;
+    };
+    for slot in &mut state.ringbuf_record_sources {
+        if *slot == Some(source) {
+            *slot = None;
+        }
     }
 }
 
@@ -971,6 +1093,79 @@ mod tests {
             .copied()
             .expect("expected summary");
         assert!(!summary.releases_ringbuf_record_arg(0));
+    }
+
+    #[test]
+    fn test_infer_summary_tracks_ringbuf_record_return() {
+        let mut subfn = MirFunction::new();
+        let entry = subfn.alloc_block();
+        subfn.entry = entry;
+        subfn.param_count = 1;
+        subfn.vreg_count = 1;
+        let reserved = subfn.alloc_vreg();
+        subfn
+            .block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: reserved,
+                helper: BpfHelper::RingbufReserve as u32,
+                args: vec![
+                    MirValue::VReg(VReg(0)),
+                    MirValue::Const(8),
+                    MirValue::Const(0),
+                ],
+            });
+        subfn.block_mut(entry).terminator = MirInst::Return {
+            val: Some(MirValue::VReg(reserved)),
+        };
+
+        let summaries = infer_subfunction_summaries(&[subfn]);
+        let summary = summaries
+            .get(&SubfunctionId(0))
+            .copied()
+            .expect("expected summary");
+        assert!(summary.returns_ringbuf_record());
+    }
+
+    #[test]
+    fn test_infer_summary_does_not_return_released_ringbuf_record() {
+        let mut subfn = MirFunction::new();
+        let entry = subfn.alloc_block();
+        subfn.entry = entry;
+        subfn.param_count = 1;
+        subfn.vreg_count = 1;
+        let reserved = subfn.alloc_vreg();
+        let submit_ret = subfn.alloc_vreg();
+        subfn
+            .block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: reserved,
+                helper: BpfHelper::RingbufReserve as u32,
+                args: vec![
+                    MirValue::VReg(VReg(0)),
+                    MirValue::Const(8),
+                    MirValue::Const(0),
+                ],
+            });
+        subfn
+            .block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: submit_ret,
+                helper: BpfHelper::RingbufSubmit as u32,
+                args: vec![MirValue::VReg(reserved), MirValue::Const(0)],
+            });
+        subfn.block_mut(entry).terminator = MirInst::Return {
+            val: Some(MirValue::VReg(reserved)),
+        };
+
+        let summaries = infer_subfunction_summaries(&[subfn]);
+        let summary = summaries
+            .get(&SubfunctionId(0))
+            .copied()
+            .expect("expected summary");
+        assert!(!summary.returns_ringbuf_record());
     }
 
     #[test]
