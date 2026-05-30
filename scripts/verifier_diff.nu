@@ -10239,6 +10239,25 @@ const FIXTURES = [
         error_contains: "unreleased ringbuf record reference"
     }
     {
+        name: "ringbuf-submit-rejects-partial-reserve-submit"
+        category: "helper-state"
+        tags: [ringbuf ref-lifetime phi reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let selector = (helper-call "bpf_get_prandom_u32")'
+            '  let rec = (if $selector == 0 { helper-call "bpf_ringbuf_reserve" events 8 0 } else { 0 })'
+            '  if $rec {'
+            '    helper-call "bpf_ringbuf_submit" $rec 0'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "unreleased ringbuf record reference"
+    }
+    {
         name: "ringbuf-reserve-rejects-nonzero-flags"
         category: "helper-state"
         tags: [ringbuf flags reject]
