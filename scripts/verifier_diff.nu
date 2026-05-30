@@ -17057,6 +17057,21 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "tc-action-record-context-socket-write"
+        category: "context-surface"
+        tags: [tc-action context writable socket record source metadata]
+        target: "tc_action:diff-action"
+        program: [
+            '{|ctx|'
+            '  mut rec = { event: $ctx }'
+            '  $rec.event.sk = 0'
+            '  "ok"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "tc-helper-backed-socket-projections"
         category: "context-surface"
         tags: [tc context socket helper-backed]
@@ -20087,6 +20102,22 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "cgroup-sysctl-new-value-record-write"
+        category: "context-surface"
+        tags: [cgroup-sysctl context writable record source metadata]
+        requires: [cgroup-v2]
+        target: "cgroup_sysctl:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  mut rec = { event: $ctx }'
+            '  $rec.event.new_value = "1"'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "cgroup-sysctl-base-name-context"
         category: "context-surface"
         tags: [cgroup-sysctl context helper-backed alias source metadata]
@@ -20243,6 +20274,22 @@ const FIXTURES = [
             '{|ctx|'
             '  mut ctx = $ctx'
             '  $ctx.cb_flags = 1'
+            '  1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "sock-ops-cb-flags-record-helper-backed-write"
+        category: "context-surface"
+        tags: [sock-ops context writable record source metadata]
+        requires: [cgroup-v2]
+        target: "sock_ops:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  mut rec = { event: $ctx }'
+            '  $rec.event.cb_flags = 1'
             '  1'
             '}'
         ]
