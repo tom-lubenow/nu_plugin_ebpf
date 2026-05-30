@@ -420,6 +420,27 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         TypeInfo::Ptr { is_user: true, .. }
     ));
 
+    let pidfd_open = TracepointContext::sys_enter("sys_enter_pidfd_open");
+    assert!(!pidfd_open.has_field("pid"));
+    assert!(pidfd_open.has_field("flags"));
+    assert_eq!(pidfd_open.minimum_kernel(), Some("5.3"));
+    assert!(
+        pidfd_open
+            .minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v5.3/kernel/pid.c"))
+    );
+
+    let pidfd_getfd = TracepointContext::sys_enter("sys_enter_pidfd_getfd");
+    assert!(pidfd_getfd.has_field("pidfd"));
+    assert!(pidfd_getfd.has_field("fd"));
+    assert!(pidfd_getfd.has_field("flags"));
+    assert_eq!(pidfd_getfd.minimum_kernel(), Some("5.6"));
+    assert!(
+        pidfd_getfd
+            .minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v5.6/kernel/pid.c"))
+    );
+
     let old_mmap = TracepointContext::sys_enter("sys_enter_old_mmap");
     assert!(old_mmap.has_field("id"));
     assert!(old_mmap.has_field("args"));
@@ -705,6 +726,8 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
             &["sig", "act", "oact", "sigsetsize"][..],
         ),
         ("sys_enter_rt_sigsuspend", &["unewset", "sigsetsize"][..]),
+        ("sys_enter_pidfd_open", &["flags"][..]),
+        ("sys_enter_pidfd_getfd", &["pidfd", "fd", "flags"][..]),
         ("sys_enter_setpriority", &["which", "who", "niceval"][..]),
         ("sys_enter_getpriority", &["which", "who"][..]),
         ("sys_enter_setregid", &["rgid", "egid"][..]),

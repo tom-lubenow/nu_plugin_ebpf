@@ -45,6 +45,10 @@ const SIGNAL_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/
 const PIDFD_SEND_SIGNAL_MIN_KERNEL: &str = "5.1";
 const PIDFD_SEND_SIGNAL_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.1/kernel/signal.c";
+const PIDFD_OPEN_MIN_KERNEL: &str = "5.3";
+const PIDFD_OPEN_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.3/kernel/pid.c";
+const PIDFD_GETFD_MIN_KERNEL: &str = "5.6";
+const PIDFD_GETFD_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.6/kernel/pid.c";
 const KERNEL_SYS_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/sys.c";
 const GROUPS_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/groups.c";
 const CAPABILITY_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/capability.c";
@@ -186,6 +190,8 @@ const WELL_KNOWN_SYS_ENTER_SYSCALLS: &[&str] = &[
     "rt_sigaction",
     "rt_sigsuspend",
     "pidfd_send_signal",
+    "pidfd_open",
+    "pidfd_getfd",
     "setpriority",
     "getpriority",
     "setregid",
@@ -507,6 +513,8 @@ impl TracepointContext {
                 Some(PIDFD_SEND_SIGNAL_MIN_KERNEL),
                 Some(PIDFD_SEND_SIGNAL_SOURCE),
             ),
+            Some("pidfd_open") => (Some(PIDFD_OPEN_MIN_KERNEL), Some(PIDFD_OPEN_SOURCE)),
+            Some("pidfd_getfd") => (Some(PIDFD_GETFD_MIN_KERNEL), Some(PIDFD_GETFD_SOURCE)),
             _ => (
                 Some(SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL),
                 Some(SYSCALL_TRACEPOINT_FALLBACK_SOURCE),
@@ -555,6 +563,8 @@ impl TracepointContext {
             "clone3" => (CLONE3_MIN_KERNEL, CLONE3_SOURCE),
             "io_uring_setup" | "io_uring_enter" => (IO_URING_MIN_KERNEL, IO_URING_SOURCE),
             "pidfd_send_signal" => (PIDFD_SEND_SIGNAL_MIN_KERNEL, PIDFD_SEND_SIGNAL_SOURCE),
+            "pidfd_open" => (PIDFD_OPEN_MIN_KERNEL, PIDFD_OPEN_SOURCE),
+            "pidfd_getfd" => (PIDFD_GETFD_MIN_KERNEL, PIDFD_GETFD_SOURCE),
             _ => (
                 SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL,
                 SYSCALL_TRACEPOINT_FALLBACK_SOURCE,
@@ -645,6 +655,8 @@ impl TracepointContext {
                 (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, SIGNAL_SOURCE)
             }
             "pidfd_send_signal" => (PIDFD_SEND_SIGNAL_MIN_KERNEL, PIDFD_SEND_SIGNAL_SOURCE),
+            "pidfd_open" => (PIDFD_OPEN_MIN_KERNEL, PIDFD_OPEN_SOURCE),
+            "pidfd_getfd" => (PIDFD_GETFD_MIN_KERNEL, PIDFD_GETFD_SOURCE),
             "setpriority" | "getpriority" | "setregid" | "setgid" | "setreuid" | "setuid"
             | "setresuid" | "getresuid" | "setresgid" | "getresgid" | "setfsuid" | "setfsgid"
             | "setpgid" | "getpgid" | "getsid" | "sethostname" | "gethostname"
@@ -1237,6 +1249,15 @@ impl TracepointContext {
                 ("pidfd", Self::syscall_arg_int(true)),
                 ("sig", Self::syscall_arg_int(true)),
                 ("info", Self::syscall_arg_user_ptr()),
+                ("flags", Self::syscall_arg_int(false)),
+            ],
+            "pidfd_open" => vec![
+                ("pid", Self::syscall_arg_int(true)),
+                ("flags", Self::syscall_arg_int(false)),
+            ],
+            "pidfd_getfd" => vec![
+                ("pidfd", Self::syscall_arg_int(true)),
+                ("fd", Self::syscall_arg_int(true)),
                 ("flags", Self::syscall_arg_int(false)),
             ],
             "setpriority" => vec![

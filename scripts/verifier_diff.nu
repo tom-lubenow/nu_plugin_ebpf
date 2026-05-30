@@ -2726,6 +2726,18 @@ const SIGNAL_TRACEPOINT_FIELD_SPECS = [
         min_kernel: "5.1"
         source: "https://github.com/torvalds/linux/blob/v5.1/kernel/signal.c"
     }
+    {
+        syscalls: ["pidfd_open"]
+        fields: ["flags"]
+        min_kernel: "5.3"
+        source: "https://github.com/torvalds/linux/blob/v5.3/kernel/pid.c"
+    }
+    {
+        syscalls: ["pidfd_getfd"]
+        fields: ["pidfd" "fd" "flags"]
+        min_kernel: "5.6"
+        source: "https://github.com/torvalds/linux/blob/v5.6/kernel/pid.c"
+    }
 ]
 const IDENTITY_TRACEPOINT_FIELD_SPECS = [
     {
@@ -8269,6 +8281,36 @@ const FIXTURES = [
             '  ($ctx.pidfd + $ctx.sig + $ctx.flags) | count'
             '  let info = $ctx.info'
             '  if $info { 1 | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-pidfd-open-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_pidfd_open]
+        target: "tracepoint:syscalls/sys_enter_pidfd_open"
+        program: [
+            '{|ctx|'
+            '  $ctx.flags | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-pidfd-getfd-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_pidfd_getfd]
+        target: "tracepoint:syscalls/sys_enter_pidfd_getfd"
+        program: [
+            '{|ctx|'
+            '  ($ctx.pidfd + $ctx.fd + $ctx.flags) | count'
             '  0'
             '}'
         ]
@@ -29249,6 +29291,10 @@ def syscall-tracepoint-fallback-field-kernel-feature [field: string target] {
         "5.6"
     } else if $syscall == "pidfd_send_signal" {
         "5.1"
+    } else if $syscall == "pidfd_open" {
+        "5.3"
+    } else if $syscall == "pidfd_getfd" {
+        "5.6"
     } else if $syscall == "clone3" {
         "5.3"
     } else if $syscall in ["io_uring_setup" "io_uring_enter"] {
@@ -29262,6 +29308,10 @@ def syscall-tracepoint-fallback-field-kernel-feature [field: string target] {
         "https://github.com/torvalds/linux/blob/v5.6/fs/open.c"
     } else if $syscall == "pidfd_send_signal" {
         "https://github.com/torvalds/linux/blob/v5.1/kernel/signal.c"
+    } else if $syscall == "pidfd_open" {
+        "https://github.com/torvalds/linux/blob/v5.3/kernel/pid.c"
+    } else if $syscall == "pidfd_getfd" {
+        "https://github.com/torvalds/linux/blob/v5.6/kernel/pid.c"
     } else if $syscall == "clone3" {
         "https://github.com/torvalds/linux/blob/v5.3/kernel/fork.c"
     } else if $syscall in ["io_uring_setup" "io_uring_enter"] {
