@@ -6821,6 +6821,163 @@ fn test_helper_semantics_are_consistent_with_signatures() {
     }
 }
 
+fn assert_helper_scalar_constraint_arg(
+    helper: BpfHelper,
+    helper_id: u32,
+    signature: &HelperSignature,
+    arg_idx: usize,
+    constraint_kind: &str,
+    message: &str,
+) {
+    assert!(
+        arg_idx < signature.max_args,
+        "{} ({}) {} constraint references out-of-range arg{}",
+        helper.name(),
+        helper_id,
+        constraint_kind,
+        arg_idx
+    );
+    assert_eq!(
+        signature.arg_kind(arg_idx),
+        HelperArgKind::Scalar,
+        "{} ({}) {} constraint references non-scalar arg{}",
+        helper.name(),
+        helper_id,
+        constraint_kind,
+        arg_idx
+    );
+    assert!(
+        !message.is_empty(),
+        "{} ({}) {} constraint for arg{} must have an actionable diagnostic",
+        helper.name(),
+        helper_id,
+        constraint_kind,
+        arg_idx
+    );
+}
+
+#[test]
+fn test_helper_scalar_constraints_are_consistent_with_signatures() {
+    for helper_id in 1..=211 {
+        let Some(helper) = BpfHelper::from_u32(helper_id) else {
+            continue;
+        };
+        let signature = helper.signature();
+
+        for arg_idx in 0..signature.arg_kinds.len() {
+            if let Some((multiple_of, message)) = helper.scalar_arg_multiple_of_requirement(arg_idx)
+            {
+                assert_helper_scalar_constraint_arg(
+                    helper,
+                    helper_id,
+                    &signature,
+                    arg_idx,
+                    "multiple-of",
+                    message,
+                );
+                assert!(
+                    multiple_of > 0,
+                    "{} ({}) multiple-of constraint for arg{} must use a positive divisor",
+                    helper.name(),
+                    helper_id,
+                    arg_idx
+                );
+            }
+
+            if let Some(message) = helper.scalar_arg_nonnegative_requirement(arg_idx) {
+                assert_helper_scalar_constraint_arg(
+                    helper,
+                    helper_id,
+                    &signature,
+                    arg_idx,
+                    "nonnegative",
+                    message,
+                );
+            }
+
+            if let Some((min, max, message)) = helper.scalar_arg_range_requirement(arg_idx) {
+                assert_helper_scalar_constraint_arg(
+                    helper, helper_id, &signature, arg_idx, "range", message,
+                );
+                assert!(
+                    min <= max,
+                    "{} ({}) range constraint for arg{} has invalid bounds {}..{}",
+                    helper.name(),
+                    helper_id,
+                    arg_idx,
+                    min,
+                    max
+                );
+            }
+
+            if let Some((mask, message)) = helper.scalar_arg_bitmask_requirement(arg_idx) {
+                assert_helper_scalar_constraint_arg(
+                    helper, helper_id, &signature, arg_idx, "bitmask", message,
+                );
+                assert!(
+                    mask >= 0,
+                    "{} ({}) bitmask constraint for arg{} must use a nonnegative mask",
+                    helper.name(),
+                    helper_id,
+                    arg_idx
+                );
+            }
+
+            if let Some((allowed_values, message)) =
+                helper.scalar_arg_allowed_values_requirement(arg_idx)
+            {
+                assert_helper_scalar_constraint_arg(
+                    helper,
+                    helper_id,
+                    &signature,
+                    arg_idx,
+                    "allowed-values",
+                    message,
+                );
+                assert!(
+                    !allowed_values.is_empty(),
+                    "{} ({}) allowed-values constraint for arg{} must not be empty",
+                    helper.name(),
+                    helper_id,
+                    arg_idx
+                );
+                for (idx, value) in allowed_values.iter().enumerate() {
+                    assert!(
+                        !allowed_values[..idx].contains(value),
+                        "{} ({}) allowed-values constraint for arg{} repeats value {}",
+                        helper.name(),
+                        helper_id,
+                        arg_idx,
+                        value
+                    );
+                }
+            }
+
+            if let Some(message) = helper.scalar_arg_known_const_requirement(arg_idx) {
+                assert_helper_scalar_constraint_arg(
+                    helper,
+                    helper_id,
+                    &signature,
+                    arg_idx,
+                    "known-const",
+                    message,
+                );
+            }
+        }
+
+        if let Some((arg_idx, _value, message)) = helper.scalar_arg_const_requirement() {
+            assert_helper_scalar_constraint_arg(
+                helper,
+                helper_id,
+                &signature,
+                arg_idx,
+                "const-value",
+                message,
+            );
+        }
+    }
+}
+
 #[test]
 fn test_kfunc_semantics_are_consistent_with_signatures() {
     for name in quoted_kfunc_names(include_str!("kfunc_signature.rs")) {
