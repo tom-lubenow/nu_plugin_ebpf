@@ -1,6 +1,8 @@
 use super::*;
 use crate::kernel_btf::KernelBtf;
 
+use crate::compiler::packet_layout::PacketHeaderKind;
+
 #[derive(Copy, Clone)]
 pub(in crate::compiler::ir_to_mir) enum PacketPayloadStepKind {
     Ethernet,
@@ -579,167 +581,6 @@ impl<'a> HirToMirLowering<'a> {
         })
     }
 
-    fn packet_struct_field(
-        name: &str,
-        ty: MirType,
-        offset: usize,
-    ) -> crate::compiler::mir::StructField {
-        crate::compiler::mir::StructField {
-            name: name.to_string(),
-            ty,
-            offset,
-            synthetic: false,
-            bitfield: None,
-        }
-    }
-
-    fn packet_struct_bitfield(
-        name: &str,
-        ty: MirType,
-        offset: usize,
-        bit_offset: u32,
-        bit_size: u32,
-    ) -> crate::compiler::mir::StructField {
-        crate::compiler::mir::StructField {
-            name: name.to_string(),
-            ty,
-            offset,
-            synthetic: false,
-            bitfield: Some(BitfieldInfo {
-                bit_offset,
-                bit_size,
-            }),
-        }
-    }
-
-    fn packet_bytes(len: usize) -> MirType {
-        MirType::Array {
-            elem: Box::new(MirType::U8),
-            len,
-        }
-    }
-
-    fn packet_eth_header_type() -> MirType {
-        MirType::Struct {
-            name: Some("__packet_eth".to_string()),
-            kernel_btf_type_id: None,
-            fields: vec![
-                Self::packet_struct_field("dst", Self::packet_bytes(6), 0),
-                Self::packet_struct_field("src", Self::packet_bytes(6), 6),
-                Self::packet_struct_field("ethertype", MirType::U16, 12),
-            ],
-        }
-    }
-
-    fn packet_ipv4_header_type() -> MirType {
-        MirType::Struct {
-            name: Some("__packet_ipv4".to_string()),
-            kernel_btf_type_id: None,
-            fields: vec![
-                Self::packet_struct_field("version_ihl", MirType::U8, 0),
-                Self::packet_struct_bitfield("ihl", MirType::U8, 0, 0, 4),
-                Self::packet_struct_bitfield("version", MirType::U8, 0, 4, 4),
-                Self::packet_struct_field("dscp_ecn", MirType::U8, 1),
-                Self::packet_struct_bitfield("ecn", MirType::U8, 1, 0, 2),
-                Self::packet_struct_bitfield("dscp", MirType::U8, 1, 2, 6),
-                Self::packet_struct_field("total_len", MirType::U16, 2),
-                Self::packet_struct_field("identification", MirType::U16, 4),
-                Self::packet_struct_field("flags_fragment_offset", MirType::U16, 6),
-                Self::packet_struct_field("ttl", MirType::U8, 8),
-                Self::packet_struct_field("protocol", MirType::U8, 9),
-                Self::packet_struct_field("checksum", MirType::U16, 10),
-                Self::packet_struct_field("src", Self::packet_bytes(4), 12),
-                Self::packet_struct_field("dst", Self::packet_bytes(4), 16),
-            ],
-        }
-    }
-
-    fn packet_ipv6_header_type() -> MirType {
-        MirType::Struct {
-            name: Some("__packet_ipv6".to_string()),
-            kernel_btf_type_id: None,
-            fields: vec![
-                Self::packet_struct_field("version_tc_flow_label", MirType::U32, 0),
-                Self::packet_struct_bitfield("flow_label", MirType::U32, 0, 0, 20),
-                Self::packet_struct_bitfield("traffic_class", MirType::U32, 0, 20, 8),
-                Self::packet_struct_bitfield("version", MirType::U32, 0, 28, 4),
-                Self::packet_struct_field("payload_len", MirType::U16, 4),
-                Self::packet_struct_field("next_header", MirType::U8, 6),
-                Self::packet_struct_field("hop_limit", MirType::U8, 7),
-                Self::packet_struct_field("src", Self::packet_bytes(16), 8),
-                Self::packet_struct_field("dst", Self::packet_bytes(16), 24),
-            ],
-        }
-    }
-
-    fn packet_udp_header_type() -> MirType {
-        MirType::Struct {
-            name: Some("__packet_udp".to_string()),
-            kernel_btf_type_id: None,
-            fields: vec![
-                Self::packet_struct_field("src", MirType::U16, 0),
-                Self::packet_struct_field("dst", MirType::U16, 2),
-                Self::packet_struct_field("len", MirType::U16, 4),
-                Self::packet_struct_field("checksum", MirType::U16, 6),
-            ],
-        }
-    }
-
-    fn packet_icmp_header_type() -> MirType {
-        MirType::Struct {
-            name: Some("__packet_icmp".to_string()),
-            kernel_btf_type_id: None,
-            fields: vec![
-                Self::packet_struct_field("type", MirType::U8, 0),
-                Self::packet_struct_field("code", MirType::U8, 1),
-                Self::packet_struct_field("checksum", MirType::U16, 2),
-                Self::packet_struct_field("body", Self::packet_bytes(4), 4),
-            ],
-        }
-    }
-
-    fn packet_icmpv6_header_type() -> MirType {
-        MirType::Struct {
-            name: Some("__packet_icmpv6".to_string()),
-            kernel_btf_type_id: None,
-            fields: vec![
-                Self::packet_struct_field("type", MirType::U8, 0),
-                Self::packet_struct_field("code", MirType::U8, 1),
-                Self::packet_struct_field("checksum", MirType::U16, 2),
-                Self::packet_struct_field("body", Self::packet_bytes(4), 4),
-            ],
-        }
-    }
-
-    fn packet_tcp_header_type() -> MirType {
-        MirType::Struct {
-            name: Some("__packet_tcp".to_string()),
-            kernel_btf_type_id: None,
-            fields: vec![
-                Self::packet_struct_field("src", MirType::U16, 0),
-                Self::packet_struct_field("dst", MirType::U16, 2),
-                Self::packet_struct_field("seq", MirType::U32, 4),
-                Self::packet_struct_field("ack_seq", MirType::U32, 8),
-                Self::packet_struct_field("data_offset_flags", MirType::U16, 12),
-                Self::packet_struct_bitfield("ns", MirType::U8, 12, 0, 1),
-                Self::packet_struct_bitfield("reserved", MirType::U8, 12, 1, 3),
-                Self::packet_struct_bitfield("data_offset", MirType::U8, 12, 4, 4),
-                Self::packet_struct_field("flags", MirType::U8, 13),
-                Self::packet_struct_bitfield("fin", MirType::U8, 13, 0, 1),
-                Self::packet_struct_bitfield("syn", MirType::U8, 13, 1, 1),
-                Self::packet_struct_bitfield("rst", MirType::U8, 13, 2, 1),
-                Self::packet_struct_bitfield("psh", MirType::U8, 13, 3, 1),
-                Self::packet_struct_bitfield("ack", MirType::U8, 13, 4, 1),
-                Self::packet_struct_bitfield("urg", MirType::U8, 13, 5, 1),
-                Self::packet_struct_bitfield("ece", MirType::U8, 13, 6, 1),
-                Self::packet_struct_bitfield("cwr", MirType::U8, 13, 7, 1),
-                Self::packet_struct_field("window", MirType::U16, 14),
-                Self::packet_struct_field("checksum", MirType::U16, 16),
-                Self::packet_struct_field("urg_ptr", MirType::U16, 18),
-            ],
-        }
-    }
-
     pub(in crate::compiler::ir_to_mir) fn packet_header_view_spec(
         current_ty: &MirType,
         member: &PathMember,
@@ -754,46 +595,14 @@ impl<'a> HirToMirLowering<'a> {
         };
         let is_raw_packet = matches!(current_ty, MirType::U8);
 
-        match (current_name, is_raw_packet, val.as_str()) {
-            (_, true, "eth" | "ethhdr") => Some(TypedProjectionStep {
+        match (
+            current_name,
+            is_raw_packet,
+            PacketHeaderKind::from_alias(val),
+        ) {
+            (_, true, Some(header)) => Some(TypedProjectionStep {
                 offset: 0,
-                ty: Self::packet_eth_header_type(),
-                bitfield: None,
-                packet_big_endian: false,
-            }),
-            (_, true, "ipv4" | "iphdr") => Some(TypedProjectionStep {
-                offset: 0,
-                ty: Self::packet_ipv4_header_type(),
-                bitfield: None,
-                packet_big_endian: false,
-            }),
-            (_, true, "ipv6" | "ipv6hdr" | "ip6hdr") => Some(TypedProjectionStep {
-                offset: 0,
-                ty: Self::packet_ipv6_header_type(),
-                bitfield: None,
-                packet_big_endian: false,
-            }),
-            (_, true, "udp" | "udphdr") => Some(TypedProjectionStep {
-                offset: 0,
-                ty: Self::packet_udp_header_type(),
-                bitfield: None,
-                packet_big_endian: false,
-            }),
-            (_, true, "icmp" | "icmphdr") => Some(TypedProjectionStep {
-                offset: 0,
-                ty: Self::packet_icmp_header_type(),
-                bitfield: None,
-                packet_big_endian: false,
-            }),
-            (_, true, "icmpv6" | "icmp6" | "icmpv6hdr" | "icmp6hdr") => Some(TypedProjectionStep {
-                offset: 0,
-                ty: Self::packet_icmpv6_header_type(),
-                bitfield: None,
-                packet_big_endian: false,
-            }),
-            (_, true, "tcp" | "tcphdr") => Some(TypedProjectionStep {
-                offset: 0,
-                ty: Self::packet_tcp_header_type(),
+                ty: header.mir_type(),
                 bitfield: None,
                 packet_big_endian: false,
             }),
@@ -818,31 +627,36 @@ impl<'a> HirToMirLowering<'a> {
         match (name.as_str(), val.as_str()) {
             ("__packet_eth", "ipv4" | "iphdr") => Some((
                 PacketPayloadStepKind::Ethernet,
-                Self::packet_ipv4_header_type(),
+                PacketHeaderKind::Ipv4.mir_type(),
             )),
             ("__packet_eth", "ipv6" | "ipv6hdr" | "ip6hdr") => Some((
                 PacketPayloadStepKind::Ethernet,
-                Self::packet_ipv6_header_type(),
+                PacketHeaderKind::Ipv6.mir_type(),
             )),
-            ("__packet_ipv4", "udp" | "udphdr") => {
-                Some((PacketPayloadStepKind::Ipv4, Self::packet_udp_header_type()))
-            }
-            ("__packet_ipv4", "icmp" | "icmphdr") => {
-                Some((PacketPayloadStepKind::Ipv4, Self::packet_icmp_header_type()))
-            }
-            ("__packet_ipv4", "tcp" | "tcphdr") => {
-                Some((PacketPayloadStepKind::Ipv4, Self::packet_tcp_header_type()))
-            }
-            ("__packet_ipv6", "udp" | "udphdr") => {
-                Some((PacketPayloadStepKind::Ipv6, Self::packet_udp_header_type()))
-            }
+            ("__packet_ipv4", "udp" | "udphdr") => Some((
+                PacketPayloadStepKind::Ipv4,
+                PacketHeaderKind::Udp.mir_type(),
+            )),
+            ("__packet_ipv4", "icmp" | "icmphdr") => Some((
+                PacketPayloadStepKind::Ipv4,
+                PacketHeaderKind::Icmp.mir_type(),
+            )),
+            ("__packet_ipv4", "tcp" | "tcphdr") => Some((
+                PacketPayloadStepKind::Ipv4,
+                PacketHeaderKind::Tcp.mir_type(),
+            )),
+            ("__packet_ipv6", "udp" | "udphdr") => Some((
+                PacketPayloadStepKind::Ipv6,
+                PacketHeaderKind::Udp.mir_type(),
+            )),
             ("__packet_ipv6", "icmpv6" | "icmp6" | "icmpv6hdr" | "icmp6hdr") => Some((
                 PacketPayloadStepKind::Ipv6,
-                Self::packet_icmpv6_header_type(),
+                PacketHeaderKind::Icmpv6.mir_type(),
             )),
-            ("__packet_ipv6", "tcp" | "tcphdr") => {
-                Some((PacketPayloadStepKind::Ipv6, Self::packet_tcp_header_type()))
-            }
+            ("__packet_ipv6", "tcp" | "tcphdr") => Some((
+                PacketPayloadStepKind::Ipv6,
+                PacketHeaderKind::Tcp.mir_type(),
+            )),
             _ => None,
         }
     }
@@ -861,17 +675,22 @@ impl<'a> HirToMirLowering<'a> {
         match current_ty {
             MirType::Struct {
                 name: Some(name), ..
-            } => match name.as_str() {
-                "__packet_eth" => Some(PacketPayloadStepKind::Ethernet),
-                "__packet_ipv4" => Some(PacketPayloadStepKind::Ipv4),
-                "__packet_ipv6" => Some(PacketPayloadStepKind::Ipv6),
-                "__packet_icmp" => Some(PacketPayloadStepKind::Icmp),
-                "__packet_icmpv6" => Some(PacketPayloadStepKind::Icmpv6),
-                "__packet_udp" => Some(PacketPayloadStepKind::Udp),
-                "__packet_tcp" => Some(PacketPayloadStepKind::Tcp),
-                _ => None,
-            },
+            } => Self::packet_payload_step_kind_for_header(PacketHeaderKind::from_type_name(name)?),
             _ => None,
+        }
+    }
+
+    fn packet_payload_step_kind_for_header(
+        header: PacketHeaderKind,
+    ) -> Option<PacketPayloadStepKind> {
+        match header {
+            PacketHeaderKind::Ethernet => Some(PacketPayloadStepKind::Ethernet),
+            PacketHeaderKind::Ipv4 => Some(PacketPayloadStepKind::Ipv4),
+            PacketHeaderKind::Ipv6 => Some(PacketPayloadStepKind::Ipv6),
+            PacketHeaderKind::Icmp => Some(PacketPayloadStepKind::Icmp),
+            PacketHeaderKind::Icmpv6 => Some(PacketPayloadStepKind::Icmpv6),
+            PacketHeaderKind::Udp => Some(PacketPayloadStepKind::Udp),
+            PacketHeaderKind::Tcp => Some(PacketPayloadStepKind::Tcp),
         }
     }
 
@@ -886,30 +705,9 @@ impl<'a> HirToMirLowering<'a> {
             return false;
         };
 
-        match (name.as_str(), val.as_str()) {
-            ("__packet_eth", "ethertype") => true,
-            (
-                "__packet_ipv4",
-                "total_len" | "identification" | "flags_fragment_offset" | "checksum",
-            ) => true,
-            (
-                "__packet_ipv6",
-                "version_tc_flow_label"
-                | "version"
-                | "traffic_class"
-                | "flow_label"
-                | "payload_len",
-            ) => true,
-            ("__packet_icmp", "checksum") => true,
-            ("__packet_icmpv6", "checksum") => true,
-            ("__packet_udp", "src" | "dst" | "len" | "checksum") => true,
-            (
-                "__packet_tcp",
-                "src" | "dst" | "seq" | "ack_seq" | "data_offset_flags" | "window" | "checksum"
-                | "urg_ptr",
-            ) => true,
-            _ => false,
-        }
+        PacketHeaderKind::from_type_name(name)
+            .and_then(|header| header.field(val))
+            .is_some_and(|field| field.big_endian)
     }
 
     pub(in crate::compiler::ir_to_mir) fn resolve_typed_value_projection_step(

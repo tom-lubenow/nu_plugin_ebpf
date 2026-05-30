@@ -1032,6 +1032,128 @@ fn test_spec_record_includes_packet_context_metadata() {
             .as_bool()
             .expect("direct packet writes should be a bool")
     );
+    let packet_headers = record
+        .get("packet_headers")
+        .expect("packet headers should be present")
+        .as_list()
+        .expect("packet headers should be a list");
+    let ipv4 = packet_headers
+        .iter()
+        .find(|header| {
+            header
+                .as_record()
+                .ok()
+                .and_then(|record| record.get("header"))
+                .and_then(|header| header.as_str().ok())
+                .is_some_and(|header| header == "ipv4")
+        })
+        .expect("ipv4 packet header should be present")
+        .as_record()
+        .expect("ipv4 packet header should be a record");
+    let ipv4_fields = ipv4
+        .get("fields")
+        .expect("ipv4 packet header fields should be present")
+        .as_list()
+        .expect("ipv4 packet header fields should be a list");
+    let version = ipv4_fields
+        .iter()
+        .find(|field| {
+            field
+                .as_record()
+                .ok()
+                .and_then(|record| record.get("name"))
+                .and_then(|name| name.as_str().ok())
+                .is_some_and(|name| name == "version")
+        })
+        .expect("ipv4 version field should be present")
+        .as_record()
+        .expect("ipv4 version field should be a record");
+    assert_eq!(
+        version
+            .get("semantic_type")
+            .expect("ipv4 version semantic type should be present")
+            .as_str()
+            .expect("ipv4 version semantic type should be a string"),
+        "u8"
+    );
+    assert_eq!(
+        version
+            .get("offset")
+            .expect("ipv4 version offset should be present")
+            .as_int()
+            .expect("ipv4 version offset should be an int"),
+        0
+    );
+    assert_eq!(
+        version
+            .get("bit_offset")
+            .expect("ipv4 version bit offset should be present")
+            .as_int()
+            .expect("ipv4 version bit offset should be an int"),
+        4
+    );
+    assert_eq!(
+        version
+            .get("bit_size")
+            .expect("ipv4 version bit size should be present")
+            .as_int()
+            .expect("ipv4 version bit size should be an int"),
+        4
+    );
+    assert!(
+        !version
+            .get("packet_big_endian")
+            .expect("ipv4 version endian metadata should be present")
+            .as_bool()
+            .expect("ipv4 version endian metadata should be a bool")
+    );
+
+    let ipv6 = packet_headers
+        .iter()
+        .find(|header| {
+            header
+                .as_record()
+                .ok()
+                .and_then(|record| record.get("header"))
+                .and_then(|header| header.as_str().ok())
+                .is_some_and(|header| header == "ipv6")
+        })
+        .expect("ipv6 packet header should be present")
+        .as_record()
+        .expect("ipv6 packet header should be a record");
+    let ipv6_fields = ipv6
+        .get("fields")
+        .expect("ipv6 packet header fields should be present")
+        .as_list()
+        .expect("ipv6 packet header fields should be a list");
+    let flow_label = ipv6_fields
+        .iter()
+        .find(|field| {
+            field
+                .as_record()
+                .ok()
+                .and_then(|record| record.get("name"))
+                .and_then(|name| name.as_str().ok())
+                .is_some_and(|name| name == "flow_label")
+        })
+        .expect("ipv6 flow_label field should be present")
+        .as_record()
+        .expect("ipv6 flow_label field should be a record");
+    assert_eq!(
+        flow_label
+            .get("bit_size")
+            .expect("ipv6 flow_label bit size should be present")
+            .as_int()
+            .expect("ipv6 flow_label bit size should be an int"),
+        20
+    );
+    assert!(
+        flow_label
+            .get("packet_big_endian")
+            .expect("ipv6 flow_label endian metadata should be present")
+            .as_bool()
+            .expect("ipv6 flow_label endian metadata should be a bool")
+    );
 
     let kprobe = ProgramSpec::parse("kprobe:sys_read").expect("kprobe spec should parse");
     let record = spec_record(
@@ -1054,6 +1176,14 @@ fn test_spec_record_includes_packet_context_metadata() {
             .expect("direct packet writes should be present")
             .as_bool()
             .expect("direct packet writes should be a bool")
+    );
+    assert!(
+        record
+            .get("packet_headers")
+            .expect("packet headers should be present")
+            .as_list()
+            .expect("packet headers should be a list")
+            .is_empty()
     );
 }
 

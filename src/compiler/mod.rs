@@ -31,6 +31,7 @@ pub mod lir;
 pub mod mir;
 pub mod mir_to_ebpf;
 pub mod mir_to_lir;
+pub(crate) mod packet_layout;
 pub mod passes;
 pub mod reg_info;
 mod subfn_summaries;

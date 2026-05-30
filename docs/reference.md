@@ -253,8 +253,11 @@ carry nullable `compatibility_minimum_kernel` and
 context ABI, write-only surface, and backing helper/kfunc floors for that row.
 The component `minimum_kernel`, `backing_helper_minimum_kernel`,
 `helper_minimum_kernel`, and `kfunc_minimum_kernel` fields remain present where
-they apply. When a feature is unmodeled or kernel-version-specific, the kernel
-verifier and loader remain authoritative.
+they apply. Packet-capable program records also expose a `packet_headers` list
+with the packet header view names, aliases, fields, byte offsets, endian
+normalization, and bitfield slices available through `$ctx.data` projections.
+When a feature is unmodeled or kernel-version-specific, the kernel verifier and
+loader remain authoritative.
 
 Kernel-BTF-backed attach specs accept both the normal and sleepable
 section spellings where Aya/libbpf do: `fentry:func` / `fentry.s:func`,

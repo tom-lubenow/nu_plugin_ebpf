@@ -7,6 +7,7 @@ use crate::compiler::instruction::{
     kfunc_release_ref_arg_index, kfunc_release_ref_kind, kfunc_semantics,
 };
 use crate::compiler::mir::{AddressSpace, CtxField, MirType, StructField};
+use crate::compiler::packet_layout::PacketHeaderKind;
 use crate::compiler::{
     BpfHelper, ContextFieldCompatibilityRequirement, ContextFieldDirectLoadWidth,
     ContextFieldLoadGuard, HelperCompatibilityRequirement, MapKind, PacketContextKind,
@@ -418,6 +419,52 @@ fn string_list(values: &[&'static str], span: Span) -> Vec<Value> {
     values
         .iter()
         .map(|value| Value::string(*value, span))
+        .collect()
+}
+
+#[cfg(target_os = "linux")]
+fn packet_header_field_records(header: PacketHeaderKind, span: Span) -> Vec<Value> {
+    header
+        .fields()
+        .iter()
+        .copied()
+        .map(|field| {
+            let bitfield = field.bitfield;
+            Value::record(
+                record! {
+                    "name" => Value::string(field.name, span),
+                    "semantic_type" => Value::string(mir_type_label(&field.ty.mir_type()), span),
+                    "offset" => optional_usize(Some(field.offset), span),
+                    "packet_big_endian" => Value::bool(field.big_endian, span),
+                    "bit_offset" => optional_u32(bitfield.map(|bitfield| bitfield.bit_offset), span),
+                    "bit_size" => optional_u32(bitfield.map(|bitfield| bitfield.bit_size), span),
+                },
+                span,
+            )
+        })
+        .collect()
+}
+
+#[cfg(target_os = "linux")]
+fn packet_header_records(spec: &crate::program_spec::ProgramSpec, span: Span) -> Vec<Value> {
+    if spec.packet_context_kind().is_none() {
+        return Vec::new();
+    }
+
+    PacketHeaderKind::all()
+        .iter()
+        .copied()
+        .map(|header| {
+            Value::record(
+                record! {
+                    "header" => Value::string(header.key(), span),
+                    "type_name" => Value::string(header.type_name(), span),
+                    "names" => Value::list(string_list(header.aliases(), span), span),
+                    "fields" => Value::list(packet_header_field_records(header, span), span),
+                },
+                span,
+            )
+        })
         .collect()
 }
 
@@ -1991,6 +2038,7 @@ pub(super) fn spec_record(
     let (context_retval, context_retval_error) = spec_context_retval(&spec, resolve_dynamic_args);
     let context_retval = context_retval_record(context_retval, span);
     let context_writes = context_write_records(&spec, span);
+    let packet_headers = packet_header_records(&spec, span);
     let kfunc_calls = kfunc_call_records(&spec, span);
     let context_projections = context_projection_records(&spec, span);
     let capabilities = program_type
@@ -2118,6 +2166,7 @@ pub(super) fn spec_record(
             "context_retval" => context_retval,
             "context_retval_error" => optional_string(context_retval_error, span),
             "context_writes" => Value::list(context_writes, span),
+            "packet_headers" => Value::list(packet_headers, span),
             "kfunc_calls" => Value::list(kfunc_calls, span),
             "context_projections" => Value::list(context_projections, span),
             "capabilities" => Value::list(capabilities, span),
