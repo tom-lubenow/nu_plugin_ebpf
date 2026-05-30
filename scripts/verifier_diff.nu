@@ -2165,6 +2165,39 @@ const FILE_TRACEPOINT_FIELD_SPECS = [
     }
 ]
 
+const FILE_DATA_TRACEPOINT_FIELD_SPECS = [
+    {
+        syscalls: ["sendfile" "sendfile64"]
+        fields: ["out_fd" "in_fd" "offset" "count"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/read_write.c"
+    }
+    {
+        syscalls: ["copy_file_range"]
+        fields: ["fd_in" "off_in" "fd_out" "off_out" "len" "flags"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/read_write.c"
+    }
+    {
+        syscalls: ["splice"]
+        fields: ["fd_in" "off_in" "fd_out" "off_out" "len" "flags"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/splice.c"
+    }
+    {
+        syscalls: ["tee"]
+        fields: ["fdin" "fdout" "len" "flags"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/splice.c"
+    }
+    {
+        syscalls: ["vmsplice"]
+        fields: ["fd" "iov" "nr_segs" "flags"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/splice.c"
+    }
+]
+
 const SOCKET_TRACEPOINT_FIELD_SPECS = [
     {
         syscalls: ["socket"]
@@ -5823,6 +5856,48 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         ]
     }
     {
+        target: "tracepoint:syscalls/sys_enter_copy_file_range"
+        program: [
+            '{|ctx|'
+            '  let off_in = $ctx.off_in'
+            '  if $off_in { 1 | count }'
+            '  let off_out = $ctx.off_out'
+            '  if $off_out { 1 | count }'
+            '  ($ctx.fd_in + $ctx.fd_out + $ctx.len + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_copy_file_range:field:off_in"
+            "tracepoint:syscalls/sys_enter_copy_file_range:field:off_out"
+            "tracepoint:syscalls/sys_enter_copy_file_range:field:fd_in"
+            "tracepoint:syscalls/sys_enter_copy_file_range:field:fd_out"
+            "tracepoint:syscalls/sys_enter_copy_file_range:field:len"
+            "tracepoint:syscalls/sys_enter_copy_file_range:field:flags"
+        ]
+    }
+    {
+        target: "tracepoint:syscalls/sys_enter_splice"
+        program: [
+            '{|ctx|'
+            '  let off_in = $ctx.off_in'
+            '  if $off_in { 1 | count }'
+            '  let off_out = $ctx.off_out'
+            '  if $off_out { 1 | count }'
+            '  ($ctx.fd_in + $ctx.fd_out + $ctx.len + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_splice:field:off_in"
+            "tracepoint:syscalls/sys_enter_splice:field:off_out"
+            "tracepoint:syscalls/sys_enter_splice:field:fd_in"
+            "tracepoint:syscalls/sys_enter_splice:field:fd_out"
+            "tracepoint:syscalls/sys_enter_splice:field:len"
+            "tracepoint:syscalls/sys_enter_splice:field:flags"
+        ]
+    }
+    {
         target: "tracepoint:syscalls/sys_enter_close"
         program: [
             '{|ctx|'
@@ -7681,6 +7756,61 @@ const FIXTURES = [
             '  let buf = $ctx.buf'
             '  if $buf { $buf | read-str --max-len 16 | count }'
             '  ($ctx.fd + $ctx.count) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-sendfile64-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_sendfile64]
+        target: "tracepoint:syscalls/sys_enter_sendfile64"
+        program: [
+            '{|ctx|'
+            '  let offset = $ctx.offset'
+            '  if $offset { 1 | count }'
+            '  ($ctx.out_fd + $ctx.in_fd + $ctx.count) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-copy-file-range-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_copy_file_range]
+        target: "tracepoint:syscalls/sys_enter_copy_file_range"
+        program: [
+            '{|ctx|'
+            '  let off_in = $ctx.off_in'
+            '  if $off_in { 1 | count }'
+            '  let off_out = $ctx.off_out'
+            '  if $off_out { 1 | count }'
+            '  ($ctx.fd_in + $ctx.fd_out + $ctx.len + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-splice-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_splice]
+        target: "tracepoint:syscalls/sys_enter_splice"
+        program: [
+            '{|ctx|'
+            '  let off_in = $ctx.off_in'
+            '  if $off_in { 1 | count }'
+            '  let off_out = $ctx.off_out'
+            '  if $off_out { 1 | count }'
+            '  ($ctx.fd_in + $ctx.fd_out + $ctx.len + $ctx.flags) | count'
             '  0'
             '}'
         ]
@@ -30449,6 +30579,7 @@ def tracepoint-payload-field-kernel-feature [field: string target] {
 
     let source_backed_syscall_specs = (
         $FILE_TRACEPOINT_FIELD_SPECS
+        | append $FILE_DATA_TRACEPOINT_FIELD_SPECS
         | append $SOCKET_TRACEPOINT_FIELD_SPECS
         | append $PATH_TRACEPOINT_FIELD_SPECS
         | append $PROCESS_TRACEPOINT_FIELD_SPECS

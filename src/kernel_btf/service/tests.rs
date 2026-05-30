@@ -213,6 +213,82 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         TypeInfo::Ptr { is_user: true, .. }
     ));
 
+    let sendfile = TracepointContext::sys_enter("sys_enter_sendfile");
+    assert!(sendfile.has_field("out_fd"));
+    assert!(sendfile.has_field("in_fd"));
+    assert!(sendfile.has_field("offset"));
+    assert!(sendfile.has_field("count"));
+    let (_, sendfile_source) = TracepointContext::syscall_fallback_field_minimum_kernel(
+        "syscalls",
+        "sys_enter_sendfile",
+        "offset",
+    )
+    .expect("expected sendfile offset source metadata");
+    assert!(sendfile_source.contains("/v4.7/fs/read_write.c"));
+    assert!(matches!(
+        sendfile
+            .get_field("offset")
+            .expect("expected sendfile offset")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+
+    let copy_file_range = TracepointContext::sys_enter("sys_enter_copy_file_range");
+    assert!(copy_file_range.has_field("fd_in"));
+    assert!(copy_file_range.has_field("off_in"));
+    assert!(copy_file_range.has_field("fd_out"));
+    assert!(copy_file_range.has_field("off_out"));
+    assert!(copy_file_range.has_field("len"));
+    assert!(copy_file_range.has_field("flags"));
+    assert!(matches!(
+        copy_file_range
+            .get_field("off_out")
+            .expect("expected copy_file_range off_out")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+
+    let splice = TracepointContext::sys_enter("sys_enter_splice");
+    assert!(splice.has_field("fd_in"));
+    assert!(splice.has_field("off_in"));
+    assert!(splice.has_field("fd_out"));
+    assert!(splice.has_field("off_out"));
+    assert!(splice.has_field("len"));
+    assert!(splice.has_field("flags"));
+    let (_, splice_source) = TracepointContext::syscall_fallback_field_minimum_kernel(
+        "syscalls",
+        "sys_enter_splice",
+        "off_in",
+    )
+    .expect("expected splice off_in source metadata");
+    assert!(splice_source.contains("/v4.7/fs/splice.c"));
+    assert!(matches!(
+        splice
+            .get_field("off_in")
+            .expect("expected splice off_in")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+
+    let tee = TracepointContext::sys_enter("sys_enter_tee");
+    assert!(tee.has_field("fdin"));
+    assert!(tee.has_field("fdout"));
+    assert!(tee.has_field("len"));
+    assert!(tee.has_field("flags"));
+
+    let vmsplice = TracepointContext::sys_enter("sys_enter_vmsplice");
+    assert!(vmsplice.has_field("fd"));
+    assert!(vmsplice.has_field("iov"));
+    assert!(vmsplice.has_field("nr_segs"));
+    assert!(vmsplice.has_field("flags"));
+    assert!(matches!(
+        vmsplice
+            .get_field("iov")
+            .expect("expected vmsplice iov")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+
     let close = TracepointContext::sys_enter("sys_enter_close");
     assert!(close.has_field("fd"));
     assert!(!close.has_field("buf"));

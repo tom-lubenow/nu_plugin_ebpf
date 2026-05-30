@@ -6,6 +6,7 @@ const SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL: &str = "4.7";
 const SYSCALL_TRACEPOINT_FALLBACK_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v4.7/include/trace/events/syscalls.h";
 const READ_WRITE_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/read_write.c";
+const SPLICE_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/splice.c";
 const OPEN_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/open.c";
 const OPENAT2_MIN_KERNEL: &str = "5.6";
 const OPENAT2_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.6/fs/open.c";
@@ -80,6 +81,12 @@ const IPC_SHM_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/ipc/sh
 const WELL_KNOWN_SYS_ENTER_SYSCALLS: &[&str] = &[
     "read",
     "write",
+    "sendfile",
+    "sendfile64",
+    "copy_file_range",
+    "splice",
+    "tee",
+    "vmsplice",
     "close",
     "close_range",
     "open",
@@ -658,7 +665,12 @@ impl TracepointContext {
         }
 
         Some(match syscall {
-            "read" | "write" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, READ_WRITE_SOURCE),
+            "read" | "write" | "sendfile" | "sendfile64" | "copy_file_range" => {
+                (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, READ_WRITE_SOURCE)
+            }
+            "splice" | "tee" | "vmsplice" => {
+                (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, SPLICE_SOURCE)
+            }
             "close" | "open" | "creat" | "access" | "faccessat" | "truncate" | "truncate64"
             | "ftruncate" | "ftruncate64" | "chmod" | "fchmod" | "fchmodat" | "chown"
             | "lchown" | "fchown" | "fchownat" => {
@@ -824,6 +836,32 @@ impl TracepointContext {
                 ("fd", Self::syscall_arg_int(false)),
                 ("buf", Self::syscall_arg_user_ptr()),
                 ("count", Self::syscall_arg_int(false)),
+            ],
+            "sendfile" | "sendfile64" => vec![
+                ("out_fd", Self::syscall_arg_int(true)),
+                ("in_fd", Self::syscall_arg_int(true)),
+                ("offset", Self::syscall_arg_user_ptr()),
+                ("count", Self::syscall_arg_int(false)),
+            ],
+            "copy_file_range" | "splice" => vec![
+                ("fd_in", Self::syscall_arg_int(true)),
+                ("off_in", Self::syscall_arg_user_ptr()),
+                ("fd_out", Self::syscall_arg_int(true)),
+                ("off_out", Self::syscall_arg_user_ptr()),
+                ("len", Self::syscall_arg_int(false)),
+                ("flags", Self::syscall_arg_int(false)),
+            ],
+            "tee" => vec![
+                ("fdin", Self::syscall_arg_int(true)),
+                ("fdout", Self::syscall_arg_int(true)),
+                ("len", Self::syscall_arg_int(false)),
+                ("flags", Self::syscall_arg_int(false)),
+            ],
+            "vmsplice" => vec![
+                ("fd", Self::syscall_arg_int(true)),
+                ("iov", Self::syscall_arg_user_ptr()),
+                ("nr_segs", Self::syscall_arg_int(false)),
+                ("flags", Self::syscall_arg_int(false)),
             ],
             "close" => vec![("fd", Self::syscall_arg_int(false))],
             "close_range" => vec![
@@ -1684,6 +1722,18 @@ impl TracepointContext {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
+
+    #[test]
+    fn well_known_sys_enter_syscalls_are_unique() {
+        let mut seen = HashSet::new();
+        for syscall in TracepointContext::well_known_sys_enter_syscalls() {
+            assert!(
+                seen.insert(*syscall),
+                "duplicate syscall fallback: {syscall}"
+            );
+        }
+    }
 
     #[test]
     fn sys_enter_fallback_payload_collision_policy_preserves_context_builtins() {
