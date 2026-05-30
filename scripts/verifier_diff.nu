@@ -16882,6 +16882,58 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "iter-task-record-btf-fields"
+        category: "context-surface"
+        tags: [iter context record btf kernel-btf source metadata]
+        requires: [kernel-btf]
+        target: "iter:task"
+        program: [
+            '{|ctx|'
+            '  let rec = { meta: $ctx.iter_meta task: $ctx.iter_task }'
+            '  $rec.meta.seq_num | count'
+            '  if $rec.task { $rec.task.pid | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "iter-task-record-spread-btf-fields"
+        category: "context-surface"
+        tags: [iter context record spread btf kernel-btf source metadata]
+        requires: [kernel-btf]
+        target: "iter:task"
+        program: [
+            '{|ctx|'
+            '  let base = { task: $ctx.iter_task }'
+            '  let rec = { meta: $ctx.iter_meta, ...$base }'
+            '  $rec.meta.seq_num | count'
+            '  if $rec.task { $rec.task.pid | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "iter-task-user-function-record-btf-fields"
+        category: "context-surface"
+        tags: [iter context user-function record btf kernel-btf source metadata]
+        requires: [kernel-btf]
+        target: "iter:task"
+        program: [
+            '{|ctx|'
+            '  def wrap [task] { { task: $task } }'
+            '  let rec = (wrap $ctx.iter_task)'
+            '  if $rec.task { $rec.task.pid | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "iter-task-file-context"
         category: "context-surface"
         tags: [iter context]
