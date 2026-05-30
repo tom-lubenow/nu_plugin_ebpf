@@ -20,10 +20,12 @@ fn unsupported_live_attach_error(
     }
     .unwrap_or("this attach kind has no live attach implementation");
     let requirements = live_attach_compatibility_requirements_detail(spec, requirements);
+    let external_alpha_status = live_attach_external_alpha_status_detail(spec);
     LoadError::Attach(format!(
-        "live attach for {} programs is not supported by this loader yet; {}{}; use --dry-run to compile",
+        "live attach for {} programs is not supported by this loader yet; {}{}{}; use --dry-run to compile",
         prog_type.canonical_prefix(),
         detail,
+        external_alpha_status,
         requirements
     ))
 }
@@ -38,10 +40,12 @@ fn unsupported_cgroup_sock_addr_target_error(target: &CgroupSockAddrTarget) -> L
     let reason = policy
         .note
         .unwrap_or(crate::program_spec::CGROUP_SOCK_ADDR_UNIX_LIVE_ATTACH_UNSUPPORTED);
+    let external_alpha_status = live_attach_external_alpha_status_detail(&spec);
     LoadError::Attach(format!(
-        "live attach for cgroup_sock_addr {} hooks is not supported by this loader yet; {}{}; use --dry-run to compile",
+        "live attach for cgroup_sock_addr {} hooks is not supported by this loader yet; {}{}{}; use --dry-run to compile",
         target.attach_type_name(),
         reason,
+        external_alpha_status,
         requirements
     ))
 }
@@ -105,6 +109,13 @@ fn live_attach_compatibility_requirements_detail(
         requirements,
         spec.live_attach_default_test_lane().key(),
         "live attach default test lane",
+    )
+}
+
+fn live_attach_external_alpha_status_detail(spec: &ProgramSpec) -> String {
+    format!(
+        "; external alpha status: {}",
+        spec.external_alpha_status().key()
     )
 }
 
@@ -1848,8 +1859,9 @@ impl EbpfState {
             let reason = policy
                 .note
                 .unwrap_or("live attach requires explicit opt-in");
+            let external_alpha_status = live_attach_external_alpha_status_detail(&spec);
             return Err(LoadError::Attach(format!(
-                "live attach for struct_ops {value_type_name} requires explicit opt-in; {reason}; use --dry-run to compile or pass --unsafe-struct-ops for an intentional live load"
+                "live attach for struct_ops {value_type_name} requires explicit opt-in; {reason}{external_alpha_status}; use --dry-run to compile or pass --unsafe-struct-ops for an intentional live load"
             )));
         }
 

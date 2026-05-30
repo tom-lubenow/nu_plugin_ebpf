@@ -1627,6 +1627,7 @@ fn test_attach_rejects_risky_struct_ops_without_explicit_opt_in() {
             LoadError::Attach(ref msg)
                 if msg.contains("requires explicit opt-in")
                     && msg.contains("sched_ext")
+                    && msg.contains("external alpha status: unsafe-opt-in")
                     && msg.contains("--unsafe-struct-ops")
         ),
         "unexpected risky struct_ops attach error: {err:?}"
@@ -1643,6 +1644,7 @@ fn test_attach_rejects_risky_struct_ops_without_explicit_opt_in() {
             LoadError::Attach(ref msg)
                     if msg.contains("requires explicit opt-in")
                         && msg.contains(value_type_name)
+                        && msg.contains("external alpha status: unsafe-opt-in")
                         && msg.contains("--unsafe-struct-ops")
             ),
             "unexpected struct_ops attach error for {value_type_name}: {err:?}"
@@ -1672,6 +1674,7 @@ fn test_attach_rejects_struct_ops_callback_program_before_loading() {
                 if msg.contains("live attach for struct_ops programs is not supported by this loader yet")
                     && msg.contains("struct_ops callbacks")
                     && msg.contains("not directly attachable")
+                    && msg.contains("external alpha status: dry-run-only")
                     && msg.contains("live attach default test lane: dry-run")
                     && msg.contains("use --dry-run to compile")
         ),
@@ -1814,6 +1817,7 @@ fn test_attach_rejects_compile_only_programs_before_loading() {
                     if msg.contains(&format!(
                         "live attach for {label} programs is not supported by this loader yet"
                     )) && msg.contains(detail)
+                        && msg.contains("external alpha status: dry-run-only")
                         && msg.contains("live attach default test lane: dry-run")
                         && msg.contains("use --dry-run to compile")
             ),
@@ -1864,6 +1868,7 @@ fn test_attach_rejects_xdp_map_targets_before_loading() {
                 LoadError::Attach(ref msg)
                     if msg.contains("live attach for xdp programs is not supported by this loader yet")
                         && msg.contains("map entries")
+                        && msg.contains("external alpha status: dry-run-only")
                         && msg.contains("live attach default test lane: dry-run")
                         && msg.contains("use --dry-run to compile")
                         && msg.contains(requirement.description())
@@ -1896,6 +1901,7 @@ fn test_attach_rejects_compile_only_programs_with_spec_requirements() {
         panic!("expected attach error for sleepable fmod_ret");
     };
     assert!(msg.contains("live attach for fmod_ret programs is not supported by this loader yet"));
+    assert!(msg.contains("external alpha status: dry-run-only"));
     assert!(msg.contains(ProgramCompatibilityRequirement::KernelBtf.description()));
     assert!(msg.contains(ProgramCompatibilityRequirement::BpfTrampoline.description()));
     assert!(msg.contains(ProgramCompatibilityRequirement::SleepableProgram.description()));
@@ -1929,6 +1935,7 @@ fn test_attach_rejects_cgroup_sock_addr_unix_before_loading() {
             LoadError::Attach(ref msg)
                 if msg.contains("live attach for cgroup_sock_addr connect_unix hooks is not supported by this loader yet")
                     && msg.contains("does not expose BPF_CGROUP_UNIX_* hooks")
+                    && msg.contains("external alpha status: dry-run-only")
                     && msg.contains("live attach default test lane: dry-run")
                     && msg.contains("use --dry-run to compile")
         ),

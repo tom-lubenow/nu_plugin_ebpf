@@ -140,12 +140,13 @@ pub(super) fn validate_struct_ops_attach_safety(
     let reason = policy
         .note
         .unwrap_or("live attach requires explicit opt-in");
+    let external_alpha_status = program_spec.external_alpha_status().key();
 
     Err(LabeledError::new("Unsafe struct_ops attach requires explicit opt-in")
         .with_label(
             format!(
-                "live loading of struct_ops '{}' is disabled by default: {}",
-                value_type_name, reason
+                "live loading of struct_ops '{}' is disabled by default: {}; external alpha status: {}",
+                value_type_name, reason, external_alpha_status
             ),
             span,
         )

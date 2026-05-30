@@ -1471,6 +1471,7 @@ fn test_validate_struct_ops_attach_safety_rejects_sched_ext_live_load_by_default
         label
             .text
             .contains("live loading of struct_ops 'sched_ext_ops' is disabled by default")
+            && label.text.contains("external alpha status: unsafe-opt-in")
     }));
 }
 
@@ -1487,7 +1488,8 @@ fn test_validate_struct_ops_attach_safety_rejects_known_behavior_changing_live_l
         assert!(
             err.labels
                 .iter()
-                .any(|label| label.text.contains("disabled by default")),
+                .any(|label| label.text.contains("disabled by default")
+                    && label.text.contains("external alpha status: unsafe-opt-in")),
             "unexpected safety diagnostic for {spec_text}: {err:?}"
         );
     }
