@@ -2,8 +2,10 @@ use super::*;
 use crate::compiler::instruction::{
     kfunc_allowed_while_lock_held, unknown_kfunc_signature_message,
 };
-use crate::compiler::mir::SubfunctionId;
-use crate::compiler::subfn_summaries::{SubfunctionSummary, SubfunctionUnknownStackObjectType};
+use crate::compiler::mir::{MapRef, SubfunctionId};
+use crate::compiler::subfn_summaries::{
+    SubfunctionMapSource, SubfunctionSummary, SubfunctionUnknownStackObjectType,
+};
 use crate::compiler::{ProbeContext, ProgramTypeInfo};
 
 fn reject_call_if_kernel_lock_held(
@@ -580,46 +582,121 @@ fn apply_subfunction_map_value_map_fd_requirements(
     errors: &mut Vec<VerifierTypeError>,
 ) {
     for requirement in summary.map_value_map_fd_requirements() {
-        let Some(map_value) = args.get(requirement.map_value_arg_idx).copied() else {
-            errors.push(VerifierTypeError::new(format!(
-                "subfunction arg{} map value argument is missing",
-                requirement.map_value_arg_idx
-            )));
+        let Some(map_fd_source) =
+            subfunction_map_fd_requirement_source(&requirement.map_fd, args, state, errors)
+        else {
             continue;
         };
-        let Some(map_fd) = args.get(requirement.map_fd_arg_idx).copied() else {
+        if subfunction_map_value_requirement_is_ambiguous(&requirement.map_value, args, state) {
             errors.push(VerifierTypeError::new(format!(
-                "subfunction arg{} map fd argument is missing",
-                requirement.map_fd_arg_idx
-            )));
-            continue;
-        };
-        let Some(map_fd_source) = state.map_fd_source(map_fd) else {
-            continue;
-        };
-        if state.map_value_source_is_ambiguous(map_value) {
-            errors.push(VerifierTypeError::new(format!(
-                "{} arg{} map value may come from multiple maps and cannot be matched to arg{} map '{}'",
+                "{} {} may come from multiple maps and cannot be matched to {} '{}'",
                 requirement.call,
-                requirement.map_value_arg_idx,
-                requirement.map_fd_arg_idx,
+                subfunction_map_source_label(
+                    &requirement.map_value,
+                    SubfunctionMapSourceRole::MapValue
+                ),
+                subfunction_map_source_label(&requirement.map_fd, SubfunctionMapSourceRole::MapFd),
                 map_fd_source.name
             )));
             continue;
         }
-        let Some(map_value_source) = state.map_value_source(map_value) else {
+        let Some(map_value_source) =
+            subfunction_map_value_requirement_source(&requirement.map_value, args, state, errors)
+        else {
             continue;
         };
-        if map_value_source.map != *map_fd_source {
+        if map_value_source != map_fd_source {
             errors.push(VerifierTypeError::new(format!(
-                "{} arg{} map '{}' does not match arg{} map value '{}'",
+                "{} {} '{}' does not match {} '{}'",
                 requirement.call,
-                requirement.map_fd_arg_idx,
+                subfunction_map_source_label(&requirement.map_fd, SubfunctionMapSourceRole::MapFd),
                 map_fd_source.name,
-                requirement.map_value_arg_idx,
-                map_value_source.map.name
+                subfunction_map_source_label(
+                    &requirement.map_value,
+                    SubfunctionMapSourceRole::MapValue
+                ),
+                map_value_source.name
             )));
         }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum SubfunctionMapSourceRole {
+    MapValue,
+    MapFd,
+}
+
+fn subfunction_map_fd_requirement_source(
+    source: &SubfunctionMapSource,
+    args: &[VReg],
+    state: &VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) -> Option<MapRef> {
+    match source {
+        SubfunctionMapSource::Arg(idx) => {
+            let Some(arg) = args.get(*idx).copied() else {
+                errors.push(VerifierTypeError::new(format!(
+                    "subfunction arg{} map fd argument is missing",
+                    idx
+                )));
+                return None;
+            };
+            state.map_fd_source(arg).cloned()
+        }
+        SubfunctionMapSource::Map(map) => Some(map.clone()),
+    }
+}
+
+fn subfunction_map_value_requirement_source(
+    source: &SubfunctionMapSource,
+    args: &[VReg],
+    state: &VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) -> Option<MapRef> {
+    match source {
+        SubfunctionMapSource::Arg(idx) => {
+            let Some(arg) = args.get(*idx).copied() else {
+                errors.push(VerifierTypeError::new(format!(
+                    "subfunction arg{} map value argument is missing",
+                    idx
+                )));
+                return None;
+            };
+            state.map_value_source(arg).map(|source| source.map.clone())
+        }
+        SubfunctionMapSource::Map(map) => Some(map.clone()),
+    }
+}
+
+fn subfunction_map_value_requirement_is_ambiguous(
+    source: &SubfunctionMapSource,
+    args: &[VReg],
+    state: &VerifierState,
+) -> bool {
+    let SubfunctionMapSource::Arg(idx) = source else {
+        return false;
+    };
+    args.get(*idx)
+        .copied()
+        .is_some_and(|arg| state.map_value_source_is_ambiguous(arg))
+}
+
+fn subfunction_map_source_label(
+    source: &SubfunctionMapSource,
+    role: SubfunctionMapSourceRole,
+) -> String {
+    match (source, role) {
+        (SubfunctionMapSource::Arg(idx), SubfunctionMapSourceRole::MapValue) => {
+            format!("arg{} map value", idx)
+        }
+        (SubfunctionMapSource::Arg(idx), SubfunctionMapSourceRole::MapFd) => {
+            format!("arg{} map", idx)
+        }
+        (SubfunctionMapSource::Map(_), SubfunctionMapSourceRole::MapValue) => {
+            "map value".to_string()
+        }
+        (SubfunctionMapSource::Map(_), SubfunctionMapSourceRole::MapFd) => "map".to_string(),
     }
 }
 

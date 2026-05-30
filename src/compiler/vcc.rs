@@ -265,8 +265,8 @@ pub enum VccInst {
     AssertMapFdMatchesMapValue {
         map_value: VccReg,
         map_fd: VccReg,
-        map_value_arg_idx: usize,
-        map_fd_arg_idx: usize,
+        map_value_label: String,
+        map_fd_label: String,
         call: String,
     },
     AssertScalar {

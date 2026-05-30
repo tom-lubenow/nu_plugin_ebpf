@@ -325,8 +325,8 @@ impl VccVerifier {
             VccInst::AssertMapFdMatchesMapValue {
                 map_value,
                 map_fd,
-                map_value_arg_idx,
-                map_fd_arg_idx,
+                map_value_label,
+                map_fd_label,
                 call,
             } => {
                 let Some(map_fd_source) = state.map_fd_source(*map_fd) else {
@@ -336,8 +336,8 @@ impl VccVerifier {
                     self.errors.push(VccError::new(
                         VccErrorKind::PointerBounds,
                         format!(
-                            "{} arg{} map value may come from multiple maps and cannot be matched to arg{} map '{}'",
-                            call, map_value_arg_idx, map_fd_arg_idx, map_fd_source.name
+                            "{} {} may come from multiple maps and cannot be matched to {} '{}'",
+                            call, map_value_label, map_fd_label, map_fd_source.name
                         ),
                     ));
                     return;
@@ -349,12 +349,8 @@ impl VccVerifier {
                     self.errors.push(VccError::new(
                         VccErrorKind::PointerBounds,
                         format!(
-                            "{} arg{} map '{}' does not match arg{} map value '{}'",
-                            call,
-                            map_fd_arg_idx,
-                            map_fd_source.name,
-                            map_value_arg_idx,
-                            map_value_source.map.name
+                            "{} {} '{}' does not match {} '{}'",
+                            call, map_fd_label, map_fd_source.name, map_value_label, map_value_source.map.name
                         ),
                     ));
                 }

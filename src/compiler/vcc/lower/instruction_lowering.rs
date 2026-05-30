@@ -1109,8 +1109,8 @@ impl<'a> VccLowerer<'a> {
                     out.push(VccInst::AssertMapFdMatchesMapValue {
                         map_value: VccReg(timer.0),
                         map_fd: VccReg(map_fd.0),
-                        map_value_arg_idx: 0,
-                        map_fd_arg_idx: 1,
+                        map_value_label: "arg0 map value".to_string(),
+                        map_fd_label: "arg1 map".to_string(),
                         call: "helper 'bpf_timer_init'".to_string(),
                     });
                 }
@@ -1257,8 +1257,8 @@ impl<'a> VccLowerer<'a> {
                     out.push(VccInst::AssertMapFdMatchesMapValue {
                         map_value: VccReg(wq.0),
                         map_fd: VccReg(map_fd.0),
-                        map_value_arg_idx: 0,
-                        map_fd_arg_idx: 1,
+                        map_value_label: "arg0 map value".to_string(),
+                        map_fd_label: "arg1 map".to_string(),
                         call: "kfunc 'bpf_wq_init'".to_string(),
                     });
                 }
@@ -1802,17 +1802,21 @@ impl<'a> VccLowerer<'a> {
         out: &mut Vec<VccInst>,
     ) {
         for requirement in summary.map_value_map_fd_requirements() {
-            let (Some(map_value), Some(map_fd)) = (
-                args.get(requirement.map_value_arg_idx),
-                args.get(requirement.map_fd_arg_idx),
-            ) else {
+            let Some((map_value, map_value_label)) =
+                self.lower_subfunction_map_value_source(&requirement.map_value, args, out)
+            else {
+                continue;
+            };
+            let Some((map_fd, map_fd_label)) =
+                self.lower_subfunction_map_fd_source(&requirement.map_fd, args, out)
+            else {
                 continue;
             };
             out.push(VccInst::AssertMapFdMatchesMapValue {
-                map_value: VccReg(map_value.0),
-                map_fd: VccReg(map_fd.0),
-                map_value_arg_idx: requirement.map_value_arg_idx,
-                map_fd_arg_idx: requirement.map_fd_arg_idx,
+                map_value,
+                map_fd,
+                map_value_label,
+                map_fd_label,
                 call: requirement.call.clone(),
             });
         }
@@ -1920,6 +1924,50 @@ impl<'a> VccLowerer<'a> {
                     kind,
                     arg_idx: idx,
                 });
+            }
+        }
+    }
+
+    fn lower_subfunction_map_value_source(
+        &mut self,
+        source: &crate::compiler::subfn_summaries::SubfunctionMapSource,
+        args: &[VReg],
+        out: &mut Vec<VccInst>,
+    ) -> Option<(VccReg, String)> {
+        match source {
+            crate::compiler::subfn_summaries::SubfunctionMapSource::Arg(idx) => args
+                .get(*idx)
+                .map(|arg| (VccReg(arg.0), format!("arg{} map value", idx))),
+            crate::compiler::subfn_summaries::SubfunctionMapSource::Map(map) => {
+                let root = self.temp_reg();
+                let key = self.temp_reg();
+                out.push(VccInst::MapLookupSource {
+                    root,
+                    map: map.clone(),
+                    key,
+                });
+                Some((root, "map value".to_string()))
+            }
+        }
+    }
+
+    fn lower_subfunction_map_fd_source(
+        &mut self,
+        source: &crate::compiler::subfn_summaries::SubfunctionMapSource,
+        args: &[VReg],
+        out: &mut Vec<VccInst>,
+    ) -> Option<(VccReg, String)> {
+        match source {
+            crate::compiler::subfn_summaries::SubfunctionMapSource::Arg(idx) => {
+                args.get(*idx).map(|arg| (VccReg(arg.0), format!("arg{} map", idx)))
+            }
+            crate::compiler::subfn_summaries::SubfunctionMapSource::Map(map) => {
+                let map_fd = self.temp_reg();
+                out.push(VccInst::MapFdSource {
+                    map_fd,
+                    map: map.clone(),
+                });
+                Some((map_fd, "map".to_string()))
             }
         }
     }

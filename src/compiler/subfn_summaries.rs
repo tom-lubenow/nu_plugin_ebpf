@@ -8,7 +8,7 @@ use super::instruction::{
     kfunc_unknown_dynptr_copy, kfunc_unknown_stack_object_copy,
     kfunc_unknown_stack_object_lifecycle,
 };
-use super::mir::{BlockId, MirFunction, MirInst, MirValue, SubfunctionId, VReg};
+use super::mir::{BlockId, MapRef, MirFunction, MirInst, MirValue, SubfunctionId, VReg};
 
 const SUMMARY_ARG_SLOTS: usize = 8;
 
@@ -115,9 +115,15 @@ pub(crate) struct SubfunctionUnknownStackObjectDelta {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SubfunctionMapValueMapFdRequirement {
-    pub(crate) map_value_arg_idx: usize,
-    pub(crate) map_fd_arg_idx: usize,
+    pub(crate) map_value: SubfunctionMapSource,
+    pub(crate) map_fd: SubfunctionMapSource,
     pub(crate) call: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum SubfunctionMapSource {
+    Arg(usize),
+    Map(MapRef),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -415,10 +421,18 @@ struct KfuncRefSource {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+enum SummaryMapSource {
+    Param(usize),
+    Map(MapRef),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct SummaryState {
     aliases: Vec<AliasSource>,
     ringbuf_record_sources: Vec<Option<VReg>>,
     kfunc_ref_sources: Vec<Option<KfuncRefSource>>,
+    map_value_sources: Vec<Option<SummaryMapSource>>,
+    map_fd_sources: Vec<Option<MapRef>>,
     rcu_read_lock_delta: Option<i8>,
     preempt_disable_delta: Option<i8>,
     local_irq_deltas: [Option<i8>; SUMMARY_ARG_SLOTS],
@@ -512,6 +526,8 @@ fn summarize_function(
             aliases: entry_state,
             ringbuf_record_sources: vec![None; total_vregs],
             kfunc_ref_sources: vec![None; total_vregs],
+            map_value_sources: vec![None; total_vregs],
+            map_fd_sources: vec![None; total_vregs],
             rcu_read_lock_delta: Some(0),
             preempt_disable_delta: Some(0),
             local_irq_deltas: [Some(0); SUMMARY_ARG_SLOTS],
@@ -802,6 +818,28 @@ fn merge_alias_states(existing: &mut SummaryState, incoming: &SummaryState) -> b
             changed = true;
         }
     }
+    for (dst, src) in existing
+        .map_value_sources
+        .iter_mut()
+        .zip(incoming.map_value_sources.iter().cloned())
+    {
+        let merged = if *dst == src { (*dst).clone() } else { None };
+        if *dst != merged {
+            *dst = merged;
+            changed = true;
+        }
+    }
+    for (dst, src) in existing
+        .map_fd_sources
+        .iter_mut()
+        .zip(incoming.map_fd_sources.iter().cloned())
+    {
+        let merged = if *dst == src { (*dst).clone() } else { None };
+        if *dst != merged {
+            *dst = merged;
+            changed = true;
+        }
+    }
     let rcu_delta = merge_delta(existing.rcu_read_lock_delta, incoming.rcu_read_lock_delta);
     if existing.rcu_read_lock_delta != rcu_delta {
         existing.rcu_read_lock_delta = rcu_delta;
@@ -1073,21 +1111,31 @@ fn apply_alias_inst(
             );
             let kfunc_ref_source = kfunc_ref_source_for_mir_value(src, state);
             set_kfunc_ref_source(&mut state.kfunc_ref_sources, *dst, kfunc_ref_source);
+            let map_value_source = map_value_source_for_mir_value(src, state);
+            set_map_value_source(&mut state.map_value_sources, *dst, map_value_source);
+            let map_fd_source = map_fd_source_for_mir_value(src, state);
+            set_map_fd_source(&mut state.map_fd_sources, *dst, map_fd_source);
             InstEffects::default()
         }
         MirInst::Phi { dst, args } => {
             let mut alias = AliasSource::Unknown;
             let mut ringbuf_record_source = None;
             let mut kfunc_ref_source = None;
+            let mut map_value_source = None;
+            let mut map_fd_source = None;
             let mut first = true;
             for (_, arg) in args {
                 let current = get_alias(&state.aliases, *arg);
                 let current_record_source = ringbuf_record_source_for_vreg(state, *arg);
                 let current_ref_source = kfunc_ref_source_for_vreg(state, *arg);
+                let current_map_value_source = map_value_source_for_vreg(state, *arg);
+                let current_map_fd_source = map_fd_source_for_vreg(state, *arg);
                 if first {
                     alias = current;
                     ringbuf_record_source = current_record_source;
                     kfunc_ref_source = current_ref_source;
+                    map_value_source = current_map_value_source.clone();
+                    map_fd_source = current_map_fd_source.clone();
                     first = false;
                 } else if alias != current {
                     alias = AliasSource::Unknown;
@@ -1098,6 +1146,12 @@ fn apply_alias_inst(
                 if !first && kfunc_ref_source != current_ref_source {
                     kfunc_ref_source = None;
                 }
+                if !first && map_value_source != current_map_value_source {
+                    map_value_source = None;
+                }
+                if !first && map_fd_source != current_map_fd_source {
+                    map_fd_source = None;
+                }
             }
             set_alias(&mut state.aliases, *dst, alias);
             set_ringbuf_record_source(
@@ -1106,6 +1160,8 @@ fn apply_alias_inst(
                 ringbuf_record_source,
             );
             set_kfunc_ref_source(&mut state.kfunc_ref_sources, *dst, kfunc_ref_source);
+            set_map_value_source(&mut state.map_value_sources, *dst, map_value_source);
+            set_map_fd_source(&mut state.map_fd_sources, *dst, map_fd_source);
             InstEffects::default()
         }
         MirInst::CallSubfn { dst, subfn, args } => {
@@ -1142,6 +1198,16 @@ fn apply_alias_inst(
                     .map(|kind| KfuncRefSource { id: *dst, kind }),
             };
             set_kfunc_ref_source(&mut state.kfunc_ref_sources, *dst, kfunc_ref_source);
+            let map_value_source = summary
+                .return_arg()
+                .and_then(|idx| args.get(idx).copied())
+                .and_then(|arg| map_value_source_for_vreg(state, arg));
+            set_map_value_source(&mut state.map_value_sources, *dst, map_value_source);
+            let map_fd_source = summary
+                .return_arg()
+                .and_then(|idx| args.get(idx).copied())
+                .and_then(|arg| map_fd_source_for_vreg(state, arg));
+            set_map_fd_source(&mut state.map_fd_sources, *dst, map_fd_source);
             apply_subfunction_critical_delta(&summary, args, state);
             apply_subfunction_release_summary(&summary, args, state);
             apply_subfunction_map_value_map_fd_requirements(&summary, args, state);
@@ -1158,6 +1224,8 @@ fn apply_alias_inst(
             set_alias(&mut state.aliases, *dst, alias);
             set_ringbuf_record_source(&mut state.ringbuf_record_sources, *dst, None);
             set_kfunc_ref_source(&mut state.kfunc_ref_sources, *dst, None);
+            set_map_value_source(&mut state.map_value_sources, *dst, None);
+            set_map_fd_source(&mut state.map_fd_sources, *dst, None);
             InstEffects::default()
         }
         MirInst::CallHelper { dst, helper, args } => {
@@ -1178,6 +1246,8 @@ fn apply_alias_inst(
                 ringbuf_record_source,
             );
             set_kfunc_ref_source(&mut state.kfunc_ref_sources, *dst, kfunc_ref_source);
+            set_map_value_source(&mut state.map_value_sources, *dst, None);
+            set_map_fd_source(&mut state.map_fd_sources, *dst, None);
             InstEffects {
                 changes_packet_data: BpfHelper::from_u32(*helper)
                     .map(BpfHelper::changes_packet_data_in_subprogram)
@@ -1196,13 +1266,33 @@ fn apply_alias_inst(
             let kfunc_ref_source =
                 kfunc_acquire_ref_kind(kfunc).map(|kind| KfuncRefSource { id: *dst, kind });
             set_kfunc_ref_source(&mut state.kfunc_ref_sources, *dst, kfunc_ref_source);
+            set_map_value_source(&mut state.map_value_sources, *dst, None);
+            set_map_fd_source(&mut state.map_fd_sources, *dst, None);
+            InstEffects::default()
+        }
+        MirInst::LoadMapFd { dst, map } => {
+            set_alias(&mut state.aliases, *dst, AliasSource::Unknown);
+            set_ringbuf_record_source(&mut state.ringbuf_record_sources, *dst, None);
+            set_kfunc_ref_source(&mut state.kfunc_ref_sources, *dst, None);
+            set_map_value_source(&mut state.map_value_sources, *dst, None);
+            set_map_fd_source(&mut state.map_fd_sources, *dst, Some(map.clone()));
+            InstEffects::default()
+        }
+        MirInst::MapLookup { dst, map, .. } => {
+            set_alias(&mut state.aliases, *dst, AliasSource::Unknown);
+            set_ringbuf_record_source(&mut state.ringbuf_record_sources, *dst, None);
+            set_kfunc_ref_source(&mut state.kfunc_ref_sources, *dst, None);
+            set_map_value_source(
+                &mut state.map_value_sources,
+                *dst,
+                Some(SummaryMapSource::Map(map.clone())),
+            );
+            set_map_fd_source(&mut state.map_fd_sources, *dst, None);
             InstEffects::default()
         }
         MirInst::BinOp { dst, .. }
         | MirInst::UnaryOp { dst, .. }
-        | MirInst::LoadMapFd { dst, .. }
         | MirInst::LoadSubprogram { dst, .. }
-        | MirInst::MapLookup { dst, .. }
         | MirInst::MapLookupDynamic { dst, .. }
         | MirInst::LoadCtxField { dst, .. }
         | MirInst::ListNew { dst, .. }
@@ -1216,6 +1306,8 @@ fn apply_alias_inst(
             set_alias(&mut state.aliases, *dst, AliasSource::Unknown);
             set_ringbuf_record_source(&mut state.ringbuf_record_sources, *dst, None);
             set_kfunc_ref_source(&mut state.kfunc_ref_sources, *dst, None);
+            set_map_value_source(&mut state.map_value_sources, *dst, None);
+            set_map_fd_source(&mut state.map_fd_sources, *dst, None);
             InstEffects::default()
         }
         MirInst::Store { .. }
@@ -1453,14 +1545,16 @@ fn apply_helper_map_value_map_fd_requirement(
     let (Some(map_value), Some(map_fd)) = (args.first(), args.get(1)) else {
         return;
     };
-    let map_value = alias_for_mir_value(map_value, &state.aliases, param_stack_aliases);
-    let map_fd = alias_for_mir_value(map_fd, &state.aliases, param_stack_aliases);
-    record_map_value_map_fd_requirement_for_aliases(
-        state,
-        map_value,
-        map_fd,
-        "helper 'bpf_timer_init'",
-    );
+    let Some(map_value) =
+        map_value_requirement_source_for_mir_value(map_value, state, param_stack_aliases)
+    else {
+        return;
+    };
+    let Some(map_fd) = map_fd_requirement_source_for_mir_value(map_fd, state, param_stack_aliases)
+    else {
+        return;
+    };
+    record_map_value_map_fd_requirement(state, map_value, map_fd, "helper 'bpf_timer_init'");
 }
 
 fn apply_kfunc_map_value_map_fd_requirement(kfunc: &str, args: &[VReg], state: &mut SummaryState) {
@@ -1470,14 +1564,13 @@ fn apply_kfunc_map_value_map_fd_requirement(kfunc: &str, args: &[VReg], state: &
     let (Some(map_value), Some(map_fd)) = (args.first(), args.get(1)) else {
         return;
     };
-    let map_value = get_alias(&state.aliases, *map_value);
-    let map_fd = get_alias(&state.aliases, *map_fd);
-    record_map_value_map_fd_requirement_for_aliases(
-        state,
-        map_value,
-        map_fd,
-        "kfunc 'bpf_wq_init'",
-    );
+    let Some(map_value) = map_value_requirement_source_for_vreg(*map_value, state) else {
+        return;
+    };
+    let Some(map_fd) = map_fd_requirement_source_for_vreg(*map_fd, state) else {
+        return;
+    };
+    record_map_value_map_fd_requirement(state, map_value, map_fd, "kfunc 'bpf_wq_init'");
 }
 
 fn apply_subfunction_map_value_map_fd_requirements(
@@ -1486,44 +1579,121 @@ fn apply_subfunction_map_value_map_fd_requirements(
     state: &mut SummaryState,
 ) {
     for requirement in summary.map_value_map_fd_requirements() {
-        let (Some(map_value), Some(map_fd)) = (
-            args.get(requirement.map_value_arg_idx),
-            args.get(requirement.map_fd_arg_idx),
-        ) else {
+        let Some(map_value) =
+            resolve_subfunction_map_value_requirement_source(&requirement.map_value, args, state)
+        else {
             continue;
         };
-        let map_value = get_alias(&state.aliases, *map_value);
-        let map_fd = get_alias(&state.aliases, *map_fd);
-        record_map_value_map_fd_requirement_for_aliases(
-            state,
-            map_value,
-            map_fd,
-            &requirement.call,
-        );
+        let Some(map_fd) =
+            resolve_subfunction_map_fd_requirement_source(&requirement.map_fd, args, state)
+        else {
+            continue;
+        };
+        record_map_value_map_fd_requirement(state, map_value, map_fd, &requirement.call);
     }
 }
 
-fn record_map_value_map_fd_requirement_for_aliases(
+fn map_value_requirement_source_for_mir_value(
+    value: &MirValue,
+    state: &SummaryState,
+    param_stack_aliases: &HashMap<super::mir::StackSlotId, usize>,
+) -> Option<SummaryMapSource> {
+    match alias_for_mir_value(value, &state.aliases, param_stack_aliases) {
+        AliasSource::Param(idx) => Some(SummaryMapSource::Param(idx)),
+        AliasSource::Unknown => map_value_source_for_mir_value(value, state),
+    }
+}
+
+fn map_value_requirement_source_for_vreg(
+    value: VReg,
+    state: &SummaryState,
+) -> Option<SummaryMapSource> {
+    match get_alias(&state.aliases, value) {
+        AliasSource::Param(idx) => Some(SummaryMapSource::Param(idx)),
+        AliasSource::Unknown => map_value_source_for_vreg(state, value),
+    }
+}
+
+fn map_fd_requirement_source_for_mir_value(
+    value: &MirValue,
+    state: &SummaryState,
+    param_stack_aliases: &HashMap<super::mir::StackSlotId, usize>,
+) -> Option<SummaryMapSource> {
+    match alias_for_mir_value(value, &state.aliases, param_stack_aliases) {
+        AliasSource::Param(idx) => Some(SummaryMapSource::Param(idx)),
+        AliasSource::Unknown => {
+            map_fd_source_for_mir_value(value, state).map(SummaryMapSource::Map)
+        }
+    }
+}
+
+fn map_fd_requirement_source_for_vreg(
+    value: VReg,
+    state: &SummaryState,
+) -> Option<SummaryMapSource> {
+    match get_alias(&state.aliases, value) {
+        AliasSource::Param(idx) => Some(SummaryMapSource::Param(idx)),
+        AliasSource::Unknown => map_fd_source_for_vreg(state, value).map(SummaryMapSource::Map),
+    }
+}
+
+fn resolve_subfunction_map_value_requirement_source(
+    source: &SubfunctionMapSource,
+    args: &[VReg],
+    state: &SummaryState,
+) -> Option<SummaryMapSource> {
+    match source {
+        SubfunctionMapSource::Arg(idx) => args
+            .get(*idx)
+            .copied()
+            .and_then(|arg| map_value_requirement_source_for_vreg(arg, state)),
+        SubfunctionMapSource::Map(map) => Some(SummaryMapSource::Map(map.clone())),
+    }
+}
+
+fn resolve_subfunction_map_fd_requirement_source(
+    source: &SubfunctionMapSource,
+    args: &[VReg],
+    state: &SummaryState,
+) -> Option<SummaryMapSource> {
+    match source {
+        SubfunctionMapSource::Arg(idx) => args
+            .get(*idx)
+            .copied()
+            .and_then(|arg| map_fd_requirement_source_for_vreg(arg, state)),
+        SubfunctionMapSource::Map(map) => Some(SummaryMapSource::Map(map.clone())),
+    }
+}
+
+fn record_map_value_map_fd_requirement(
     state: &mut SummaryState,
-    map_value: AliasSource,
-    map_fd: AliasSource,
+    map_value: SummaryMapSource,
+    map_fd: SummaryMapSource,
     call: &str,
 ) {
-    let (AliasSource::Param(map_value_arg_idx), AliasSource::Param(map_fd_arg_idx)) =
-        (map_value, map_fd)
-    else {
+    let Some(map_value) = summary_source_to_requirement(map_value) else {
         return;
     };
-    if map_value_arg_idx >= SUMMARY_ARG_SLOTS || map_fd_arg_idx >= SUMMARY_ARG_SLOTS {
+    let Some(map_fd) = summary_source_to_requirement(map_fd) else {
         return;
-    }
+    };
     let requirement = SubfunctionMapValueMapFdRequirement {
-        map_value_arg_idx,
-        map_fd_arg_idx,
+        map_value,
+        map_fd,
         call: call.to_string(),
     };
     if !state.map_value_map_fd_requirements.contains(&requirement) {
         state.map_value_map_fd_requirements.push(requirement);
+    }
+}
+
+fn summary_source_to_requirement(source: SummaryMapSource) -> Option<SubfunctionMapSource> {
+    match source {
+        SummaryMapSource::Param(idx) if idx < SUMMARY_ARG_SLOTS => {
+            Some(SubfunctionMapSource::Arg(idx))
+        }
+        SummaryMapSource::Param(_) => None,
+        SummaryMapSource::Map(map) => Some(SubfunctionMapSource::Map(map)),
     }
 }
 
@@ -1836,6 +2006,51 @@ fn clear_kfunc_ref_source_for_vreg(state: &mut SummaryState, vreg: VReg) {
         if *slot == Some(source) {
             *slot = None;
         }
+    }
+}
+
+fn map_value_source_for_mir_value(
+    value: &MirValue,
+    state: &SummaryState,
+) -> Option<SummaryMapSource> {
+    match value {
+        MirValue::VReg(vreg) => map_value_source_for_vreg(state, *vreg),
+        MirValue::StackSlot(_) | MirValue::Const(_) => None,
+    }
+}
+
+fn map_value_source_for_vreg(state: &SummaryState, vreg: VReg) -> Option<SummaryMapSource> {
+    state
+        .map_value_sources
+        .get(vreg.0 as usize)
+        .cloned()
+        .flatten()
+}
+
+fn set_map_value_source(
+    sources: &mut [Option<SummaryMapSource>],
+    vreg: VReg,
+    source: Option<SummaryMapSource>,
+) {
+    if let Some(slot) = sources.get_mut(vreg.0 as usize) {
+        *slot = source;
+    }
+}
+
+fn map_fd_source_for_mir_value(value: &MirValue, state: &SummaryState) -> Option<MapRef> {
+    match value {
+        MirValue::VReg(vreg) => map_fd_source_for_vreg(state, *vreg),
+        MirValue::StackSlot(_) | MirValue::Const(_) => None,
+    }
+}
+
+fn map_fd_source_for_vreg(state: &SummaryState, vreg: VReg) -> Option<MapRef> {
+    state.map_fd_sources.get(vreg.0 as usize).cloned().flatten()
+}
+
+fn set_map_fd_source(sources: &mut [Option<MapRef>], vreg: VReg, source: Option<MapRef>) {
+    if let Some(slot) = sources.get_mut(vreg.0 as usize) {
+        *slot = source;
     }
 }
 
