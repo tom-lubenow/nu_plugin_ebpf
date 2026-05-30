@@ -7090,6 +7090,22 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "ksyscall-task-pt-regs-context"
+        category: "context-surface"
+        tags: [ksyscall context task pt-regs helper-backed source metadata]
+        requires: [kernel-btf]
+        target: "ksyscall:nanosleep"
+        program: [
+            '{|ctx|'
+            '  let task = $ctx.task'
+            '  ($task.pt_regs.arg0 + $ctx.func_ip) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "kretsyscall-context"
         category: "tracing"
         tags: [kretsyscall context]
