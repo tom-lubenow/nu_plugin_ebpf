@@ -6,6 +6,7 @@ use crate::compiler::packet_layout::PacketHeaderKind;
 #[derive(Copy, Clone)]
 pub(in crate::compiler::ir_to_mir) enum PacketPayloadStepKind {
     Ethernet,
+    Arp,
     Ipv4,
     Ipv6,
     Icmp,
@@ -659,6 +660,7 @@ impl<'a> HirToMirLowering<'a> {
     fn packet_payload_step_kind_for_header(header: PacketHeaderKind) -> PacketPayloadStepKind {
         match header {
             PacketHeaderKind::Ethernet => PacketPayloadStepKind::Ethernet,
+            PacketHeaderKind::Arp => PacketPayloadStepKind::Arp,
             PacketHeaderKind::Ipv4 => PacketPayloadStepKind::Ipv4,
             PacketHeaderKind::Ipv6 => PacketPayloadStepKind::Ipv6,
             PacketHeaderKind::Icmp => PacketPayloadStepKind::Icmp,
@@ -1150,6 +1152,14 @@ impl<'a> HirToMirLowering<'a> {
                     target: continue_block,
                 });
                 self.current_block = continue_block;
+            }
+            PacketPayloadStepKind::Arp => {
+                self.emit(MirInst::BinOp {
+                    dst: payload_ptr_vreg,
+                    op: BinOpKind::Add,
+                    lhs: MirValue::VReg(base_ptr_vreg),
+                    rhs: MirValue::Const(28),
+                });
             }
             PacketPayloadStepKind::Ipv4 => {
                 let version_ihl_vreg = self.func.alloc_vreg();

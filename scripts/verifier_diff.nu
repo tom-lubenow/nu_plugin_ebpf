@@ -8387,6 +8387,22 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "xdp-packet-arp-header-fields"
+        category: "packet"
+        tags: [xdp packet header arp source metadata]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  let arp = ($ctx.data.eth.arp.hardware_type + $ctx.data.eth.arp.protocol_type + $ctx.data.eth.arp.hardware_len + $ctx.data.eth.arp.protocol_len + $ctx.data.eth.arp.opcode)'
+            '  $arp | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "xdp-frags-driver-context"
         category: "context-surface"
         tags: [xdp context frags]

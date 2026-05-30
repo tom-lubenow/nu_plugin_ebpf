@@ -194,6 +194,7 @@ Context parameter syntax (recommended):
     {|ctx| ($ctx.data | get 0) } - Read the first packet byte with an auto-generated data_end guard
     {|ctx| $ctx.data.u16be.6 } - Read a big-endian 16-bit packet scalar (here: bytes 12..13)
     {|ctx| $ctx.data.eth.ethertype } - Read the Ethernet ethertype through a typed packet header view
+    {|ctx| $ctx.data.eth.arp.opcode } - Step past Ethernet and read the ARP opcode
     {|ctx| $ctx.data.eth.payload.ipv4.protocol } - Step past Ethernet and up to two stacked VLAN tags, then parse IPv4
     {|ctx| $ctx.data.eth.payload.ipv6.next_header } - Step past Ethernet and up to two stacked VLAN tags, then parse IPv6
     {|ctx| $ctx.data.eth.payload.ipv4.payload.icmp.type } - Step through IPv4 and read the ICMP type byte
@@ -257,7 +258,7 @@ Context parameter syntax (recommended):
     Raw numeric return codes still work. Packet reads
     currently support scalar byte access through `get`/indexing, direct
     `u16be`/`u32be` cell-path scalar loads, and typed header views `eth`,
-    `ipv4`, `ipv6`, `icmp`, `icmpv6`, `udp`, and `tcp`. On `xdp`,
+    `arp`, `ipv4`, `ipv6`, `icmp`, `icmpv6`, `udp`, and `tcp`. On `xdp`,
     `lwt_xmit`, `tc_action`, `tc`, `tcx`, `netkit`, `sk_msg`, `sk_skb`, and
     `sk_skb_parser`, those same scalar/header paths are also writable
     after shadowing the closure parameter as mutable, for
@@ -275,6 +276,9 @@ Context parameter syntax (recommended):
     fixed 8-byte ICMP header, and `tcp.payload` uses the runtime data
     offset. Nested protocol-following views like `eth.ipv4.tcp.seq` and
     `eth.ipv6.udp.src` reuse those same runtime steps automatically.
+    ARP exposes the fixed Ethernet/IPv4 fields `hardware_type`,
+    `protocol_type`, `hardware_len`, `protocol_len`, `opcode`,
+    `sender_mac`, `sender_ip`, `target_mac`, and `target_ip`.
     IPv4 exposes derived `version`, `ihl`, `dscp`, and `ecn` fields;
     IPv6 exposes derived `version`, `traffic_class`, and `flow_label`
     fields; TCP exposes derived `data_offset`, `reserved`, `flags`, and

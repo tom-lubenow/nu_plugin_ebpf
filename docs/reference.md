@@ -349,9 +349,10 @@ $ctx.data.eth.ethertype = 0x86dd`; bound packet-pointer aliases such as
 guarded write path. Those lower to guarded packet
 stores and automatically normalize big-endian packet scalars back to
 network byte order. Other packet families remain read-only for direct
-packet writes. Fixed header views `eth`, `ipv4`, `ipv6`, `icmp`,
+packet writes. Fixed header views `eth`, `arp`, `ipv4`, `ipv6`, `icmp`,
 `icmpv6`, `udp`, and `tcp` are also available, for example
-`$ctx.data.eth.ethertype`, `$ctx.data.eth.payload.ipv4.protocol`,
+`$ctx.data.eth.ethertype`, `$ctx.data.eth.arp.opcode`,
+`$ctx.data.eth.payload.ipv4.protocol`,
 `$ctx.data.eth.payload.ipv6.next_header`,
 `$ctx.data.eth.payload.ipv4.payload.icmp.type`, or
 `$ctx.data.eth.payload.ipv6.payload.icmpv6.code`. Nested
@@ -359,7 +360,9 @@ protocol-following views reuse the same runtime packet stepping as
 explicit `.payload`, so forms like `$ctx.data.eth.ipv4.tcp.seq` and
 `$ctx.data.eth.ipv6.udp.src` also skip stacked VLAN tags, runtime-sized
 IPv4 headers, and the bounded common IPv6 extension-header chain
-automatically. IPv4 exposes derived `version`, `ihl`, `dscp`, and `ecn`
+automatically. ARP exposes fixed Ethernet/IPv4 fields such as
+`hardware_type`, `protocol_type`, `opcode`, `sender_mac`, `sender_ip`,
+`target_mac`, and `target_ip`. IPv4 exposes derived `version`, `ihl`, `dscp`, and `ecn`
 fields; IPv6 exposes derived `version`, `traffic_class`, and
 `flow_label` fields; TCP exposes derived `data_offset`, `reserved`,
 `flags`, and per-flag `ns`, `cwr`, `ece`, `urg`, `ack`, `psh`, `rst`,

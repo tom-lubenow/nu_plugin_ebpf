@@ -1210,6 +1210,69 @@ fn test_spec_record_includes_packet_context_metadata() {
         }),
         "eth packet header should expose ipv6 aliases for protocol-following views"
     );
+    assert!(
+        eth_protocol_views.iter().any(|view| {
+            view.as_record()
+                .ok()
+                .and_then(|record| record.get("header"))
+                .and_then(|header| header.as_str().ok())
+                .is_some_and(|header| header == "arp")
+        }),
+        "eth packet header should expose arp as a protocol-following view"
+    );
+
+    let arp = packet_headers
+        .iter()
+        .find(|header| {
+            header
+                .as_record()
+                .ok()
+                .and_then(|record| record.get("header"))
+                .and_then(|header| header.as_str().ok())
+                .is_some_and(|header| header == "arp")
+        })
+        .expect("arp packet header should be present")
+        .as_record()
+        .expect("arp packet header should be a record");
+    assert!(
+        !arp.get("payload_step")
+            .expect("arp packet header payload metadata should be present")
+            .as_bool()
+            .expect("arp packet header payload metadata should be a bool")
+    );
+    let arp_fields = arp
+        .get("fields")
+        .expect("arp packet header fields should be present")
+        .as_list()
+        .expect("arp packet header fields should be a list");
+    let opcode = arp_fields
+        .iter()
+        .find(|field| {
+            field
+                .as_record()
+                .ok()
+                .and_then(|record| record.get("name"))
+                .and_then(|name| name.as_str().ok())
+                .is_some_and(|name| name == "opcode")
+        })
+        .expect("arp opcode field should be present")
+        .as_record()
+        .expect("arp opcode field should be a record");
+    assert_eq!(
+        opcode
+            .get("offset")
+            .expect("arp opcode offset should be present")
+            .as_int()
+            .expect("arp opcode offset should be an int"),
+        6
+    );
+    assert!(
+        opcode
+            .get("packet_big_endian")
+            .expect("arp opcode endian metadata should be present")
+            .as_bool()
+            .expect("arp opcode endian metadata should be a bool")
+    );
 
     let kprobe = ProgramSpec::parse("kprobe:sys_read").expect("kprobe spec should parse");
     let record = spec_record(

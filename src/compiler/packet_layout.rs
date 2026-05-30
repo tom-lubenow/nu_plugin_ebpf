@@ -3,6 +3,7 @@ use super::mir::{BitfieldInfo, MirType, StructField};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum PacketHeaderKind {
     Ethernet,
+    Arp,
     Ipv4,
     Ipv6,
     Udp,
@@ -81,6 +82,7 @@ const fn protocol_view(from: PacketHeaderKind, to: PacketHeaderKind) -> PacketHe
 
 const ALL_PACKET_HEADERS: &[PacketHeaderKind] = &[
     PacketHeaderKind::Ethernet,
+    PacketHeaderKind::Arp,
     PacketHeaderKind::Ipv4,
     PacketHeaderKind::Ipv6,
     PacketHeaderKind::Udp,
@@ -90,6 +92,7 @@ const ALL_PACKET_HEADERS: &[PacketHeaderKind] = &[
 ];
 
 const PACKET_PROTOCOL_VIEWS: &[PacketHeaderProtocolView] = &[
+    protocol_view(PacketHeaderKind::Ethernet, PacketHeaderKind::Arp),
     protocol_view(PacketHeaderKind::Ethernet, PacketHeaderKind::Ipv4),
     protocol_view(PacketHeaderKind::Ethernet, PacketHeaderKind::Ipv6),
     protocol_view(PacketHeaderKind::Ipv4, PacketHeaderKind::Udp),
@@ -104,6 +107,18 @@ const ETHERNET_FIELDS: &[PacketHeaderFieldSpec] = &[
     packet_field("dst", PacketHeaderFieldType::Bytes(6), 0, false),
     packet_field("src", PacketHeaderFieldType::Bytes(6), 6, false),
     packet_field("ethertype", PacketHeaderFieldType::U16, 12, true),
+];
+
+const ARP_FIELDS: &[PacketHeaderFieldSpec] = &[
+    packet_field("hardware_type", PacketHeaderFieldType::U16, 0, true),
+    packet_field("protocol_type", PacketHeaderFieldType::U16, 2, true),
+    packet_field("hardware_len", PacketHeaderFieldType::U8, 4, false),
+    packet_field("protocol_len", PacketHeaderFieldType::U8, 5, false),
+    packet_field("opcode", PacketHeaderFieldType::U16, 6, true),
+    packet_field("sender_mac", PacketHeaderFieldType::Bytes(6), 8, false),
+    packet_field("sender_ip", PacketHeaderFieldType::Bytes(4), 14, false),
+    packet_field("target_mac", PacketHeaderFieldType::Bytes(6), 18, false),
+    packet_field("target_ip", PacketHeaderFieldType::Bytes(4), 24, false),
 ];
 
 const IPV4_FIELDS: &[PacketHeaderFieldSpec] = &[
@@ -216,6 +231,7 @@ impl PacketHeaderKind {
     pub(crate) fn key(self) -> &'static str {
         match self {
             Self::Ethernet => "eth",
+            Self::Arp => "arp",
             Self::Ipv4 => "ipv4",
             Self::Ipv6 => "ipv6",
             Self::Udp => "udp",
@@ -228,6 +244,7 @@ impl PacketHeaderKind {
     pub(crate) fn type_name(self) -> &'static str {
         match self {
             Self::Ethernet => "__packet_eth",
+            Self::Arp => "__packet_arp",
             Self::Ipv4 => "__packet_ipv4",
             Self::Ipv6 => "__packet_ipv6",
             Self::Udp => "__packet_udp",
@@ -240,6 +257,7 @@ impl PacketHeaderKind {
     pub(crate) fn aliases(self) -> &'static [&'static str] {
         match self {
             Self::Ethernet => &["eth", "ethhdr"],
+            Self::Arp => &["arp", "arphdr"],
             Self::Ipv4 => &["ipv4", "iphdr"],
             Self::Ipv6 => &["ipv6", "ipv6hdr", "ip6hdr"],
             Self::Udp => &["udp", "udphdr"],
@@ -252,6 +270,7 @@ impl PacketHeaderKind {
     pub(crate) fn fields(self) -> &'static [PacketHeaderFieldSpec] {
         match self {
             Self::Ethernet => ETHERNET_FIELDS,
+            Self::Arp => ARP_FIELDS,
             Self::Ipv4 => IPV4_FIELDS,
             Self::Ipv6 => IPV6_FIELDS,
             Self::Udp => UDP_FIELDS,
@@ -283,7 +302,7 @@ impl PacketHeaderKind {
     }
 
     pub(crate) fn supports_payload_step(self) -> bool {
-        true
+        !matches!(self, Self::Arp)
     }
 
     pub(crate) fn from_type_name(name: &str) -> Option<Self> {
