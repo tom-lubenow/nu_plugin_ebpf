@@ -2658,6 +2658,12 @@ const IO_URING_TRACEPOINT_FIELD_SPECS = [
         min_kernel: "5.1"
         source: "https://github.com/torvalds/linux/blob/v5.1/fs/io_uring.c"
     }
+    {
+        syscalls: ["io_uring_register"]
+        fields: ["fd" "opcode" "nr_args"]
+        min_kernel: "5.1"
+        source: "https://github.com/torvalds/linux/blob/v5.1/fs/io_uring.c"
+    }
 ]
 const SIGNAL_TRACEPOINT_FIELD_SPECS = [
     {
@@ -8209,6 +8215,21 @@ const FIXTURES = [
             '  ($ctx.fd + $ctx.to_submit + $ctx.min_complete + $ctx.flags + $ctx.sigsz) | count'
             '  let sig = $ctx.sig'
             '  if $sig { 1 | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-io-uring-register-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_io_uring_register]
+        target: "tracepoint:syscalls/sys_enter_io_uring_register"
+        program: [
+            '{|ctx|'
+            '  ($ctx.fd + $ctx.opcode + $ctx.nr_args) | count'
             '  0'
             '}'
         ]
@@ -29297,7 +29318,7 @@ def syscall-tracepoint-fallback-field-kernel-feature [field: string target] {
         "5.6"
     } else if $syscall == "clone3" {
         "5.3"
-    } else if $syscall in ["io_uring_setup" "io_uring_enter"] {
+    } else if $syscall in ["io_uring_setup" "io_uring_enter" "io_uring_register"] {
         "5.1"
     } else if $syscall == "statx" {
         "4.11"
@@ -29314,7 +29335,7 @@ def syscall-tracepoint-fallback-field-kernel-feature [field: string target] {
         "https://github.com/torvalds/linux/blob/v5.6/kernel/pid.c"
     } else if $syscall == "clone3" {
         "https://github.com/torvalds/linux/blob/v5.3/kernel/fork.c"
-    } else if $syscall in ["io_uring_setup" "io_uring_enter"] {
+    } else if $syscall in ["io_uring_setup" "io_uring_enter" "io_uring_register"] {
         "https://github.com/torvalds/linux/blob/v5.1/fs/io_uring.c"
     } else if $syscall == "statx" {
         "https://github.com/torvalds/linux/blob/v4.11/fs/stat.c"

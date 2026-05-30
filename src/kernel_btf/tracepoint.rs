@@ -178,6 +178,7 @@ const WELL_KNOWN_SYS_ENTER_SYSCALLS: &[&str] = &[
     "timerfd_gettime",
     "io_uring_setup",
     "io_uring_enter",
+    "io_uring_register",
     "rt_sigprocmask",
     "rt_sigpending",
     "rt_sigtimedwait",
@@ -506,7 +507,7 @@ impl TracepointContext {
             Some("openat2") => (Some(OPENAT2_MIN_KERNEL), Some(OPENAT2_SOURCE)),
             Some("statx") => (Some(STATX_MIN_KERNEL), Some(STATX_SOURCE)),
             Some("clone3") => (Some(CLONE3_MIN_KERNEL), Some(CLONE3_SOURCE)),
-            Some("io_uring_setup" | "io_uring_enter") => {
+            Some("io_uring_setup" | "io_uring_enter" | "io_uring_register") => {
                 (Some(IO_URING_MIN_KERNEL), Some(IO_URING_SOURCE))
             }
             Some("pidfd_send_signal") => (
@@ -561,7 +562,9 @@ impl TracepointContext {
             "openat2" => (OPENAT2_MIN_KERNEL, OPENAT2_SOURCE),
             "statx" => (STATX_MIN_KERNEL, STATX_SOURCE),
             "clone3" => (CLONE3_MIN_KERNEL, CLONE3_SOURCE),
-            "io_uring_setup" | "io_uring_enter" => (IO_URING_MIN_KERNEL, IO_URING_SOURCE),
+            "io_uring_setup" | "io_uring_enter" | "io_uring_register" => {
+                (IO_URING_MIN_KERNEL, IO_URING_SOURCE)
+            }
             "pidfd_send_signal" => (PIDFD_SEND_SIGNAL_MIN_KERNEL, PIDFD_SEND_SIGNAL_SOURCE),
             "pidfd_open" => (PIDFD_OPEN_MIN_KERNEL, PIDFD_OPEN_SOURCE),
             "pidfd_getfd" => (PIDFD_GETFD_MIN_KERNEL, PIDFD_GETFD_SOURCE),
@@ -648,7 +651,9 @@ impl TracepointContext {
             "timerfd_create" | "timerfd_settime" | "timerfd_gettime" => {
                 (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, TIMERFD_SOURCE)
             }
-            "io_uring_setup" | "io_uring_enter" => (IO_URING_MIN_KERNEL, IO_URING_SOURCE),
+            "io_uring_setup" | "io_uring_enter" | "io_uring_register" => {
+                (IO_URING_MIN_KERNEL, IO_URING_SOURCE)
+            }
             "rt_sigprocmask" | "rt_sigpending" | "rt_sigtimedwait" | "kill" | "tgkill"
             | "tkill" | "rt_sigqueueinfo" | "rt_tgsigqueueinfo" | "sigaltstack"
             | "rt_sigaction" | "rt_sigsuspend" => {
@@ -1194,6 +1199,12 @@ impl TracepointContext {
                 ("flags", Self::syscall_arg_int(false)),
                 ("sig", Self::syscall_arg_user_ptr()),
                 ("sigsz", Self::syscall_arg_int(false)),
+            ],
+            "io_uring_register" => vec![
+                ("fd", Self::syscall_arg_int(false)),
+                ("opcode", Self::syscall_arg_int(false)),
+                ("arg", Self::syscall_arg_user_ptr()),
+                ("nr_args", Self::syscall_arg_int(false)),
             ],
             "rt_sigprocmask" => vec![
                 ("how", Self::syscall_arg_int(true)),

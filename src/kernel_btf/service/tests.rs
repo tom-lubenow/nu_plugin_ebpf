@@ -355,6 +355,25 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         TypeInfo::Ptr { is_user: true, .. }
     ));
 
+    let io_uring_register = TracepointContext::sys_enter("sys_enter_io_uring_register");
+    assert!(io_uring_register.has_field("fd"));
+    assert!(io_uring_register.has_field("opcode"));
+    assert!(!io_uring_register.has_field("arg"));
+    assert!(io_uring_register.has_field("nr_args"));
+    assert_eq!(io_uring_register.minimum_kernel(), Some("5.1"));
+    assert!(
+        io_uring_register
+            .minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v5.1/fs/io_uring.c"))
+    );
+    assert_eq!(
+        io_uring_register
+            .get_field("nr_args")
+            .expect("expected io_uring_register nr_args")
+            .offset,
+        40
+    );
+
     let epoll_ctl = TracepointContext::sys_enter("sys_enter_epoll_ctl");
     assert!(epoll_ctl.has_field("epfd"));
     assert!(epoll_ctl.has_field("op"));
@@ -705,6 +724,10 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         (
             "sys_enter_io_uring_enter",
             &["fd", "to_submit", "min_complete", "flags", "sig", "sigsz"][..],
+        ),
+        (
+            "sys_enter_io_uring_register",
+            &["fd", "opcode", "nr_args"][..],
         ),
         (
             "sys_enter_rt_sigprocmask",
