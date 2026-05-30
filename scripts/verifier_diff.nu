@@ -26361,6 +26361,38 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "adjust-message-sk-msg-pull-rejects-stale-data"
+        category: "language-surface"
+        tags: [adjust-message sk-msg packet-bounds reject]
+        target: "sk_msg:/sys/fs/bpf/demo_sockmap"
+        program: [
+            '{|ctx|'
+            '  let data = $ctx.data'
+            '  adjust-message --pull 0 1'
+            '  ($data | get 0) | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "stale packet pointer"
+    }
+    {
+        name: "adjust-message-sk-msg-pull-allows-reloaded-data"
+        category: "language-surface"
+        tags: [adjust-message sk-msg packet-bounds accept]
+        target: "sk_msg:/sys/fs/bpf/demo_sockmap"
+        program: [
+            '{|ctx|'
+            '  adjust-message --pull 0 1'
+            '  ($ctx.data | get 0) | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "adjust-message-sk-msg-push"
         category: "language-surface"
         tags: [adjust-message sk-msg]
@@ -26450,6 +26482,38 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  adjust-packet --pull 0'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "adjust-packet-sk-skb-pull-rejects-stale-data"
+        category: "language-surface"
+        tags: [adjust-packet sk-skb packet-bounds reject]
+        target: "sk_skb:/sys/fs/bpf/demo_sockmap"
+        program: [
+            '{|ctx|'
+            '  let data = $ctx.data'
+            '  adjust-packet --pull 0'
+            '  ($data | get 0) | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "stale packet pointer"
+    }
+    {
+        name: "adjust-packet-sk-skb-pull-allows-reloaded-data"
+        category: "language-surface"
+        tags: [adjust-packet sk-skb packet-bounds accept]
+        target: "sk_skb:/sys/fs/bpf/demo_sockmap"
+        program: [
+            '{|ctx|'
+            '  adjust-packet --pull 0'
+            '  ($ctx.data | get 0) | count'
             '  "pass"'
             '}'
         ]

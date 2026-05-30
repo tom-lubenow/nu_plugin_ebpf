@@ -1,4 +1,5 @@
 use super::*;
+use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::AddressSpace;
 
 impl<'a> HirToMirLowering<'a> {
@@ -307,6 +308,44 @@ impl<'a> HirToMirLowering<'a> {
         )
     }
 
+    fn materialize_packet_ctx_field_aliases_before_invalidation(&mut self) {
+        // Reloadable ctx.data aliases must become real values before helpers
+        // that mutate packet storage, otherwise later local uses would reload
+        // the fresh post-helper pointer instead of seeing the stale value.
+        let aliases: Vec<(VarId, RegMetadata)> = self
+            .var_metadata
+            .iter()
+            .filter(|(var_id, meta)| {
+                !self.var_mappings.contains_key(var_id)
+                    && meta
+                        .direct_ctx_field
+                        .as_ref()
+                        .is_some_and(Self::should_rematerialize_direct_ctx_field_alias)
+            })
+            .map(|(var_id, meta)| (*var_id, meta.clone()))
+            .collect();
+
+        for (var_id, mut meta) in aliases {
+            let Some(field) = meta.direct_ctx_field.clone() else {
+                continue;
+            };
+            let vreg = self.func.alloc_vreg();
+            self.current_block_mut()
+                .instructions
+                .push(MirInst::LoadCtxField {
+                    dst: vreg,
+                    field,
+                    slot: None,
+                });
+            if let Some(ty) = meta.field_type.clone() {
+                self.vreg_type_hints.insert(vreg, ty);
+            }
+            meta.source_var.get_or_insert(var_id);
+            self.var_mappings.insert(var_id, vreg);
+            self.var_metadata.insert(var_id, meta);
+        }
+    }
+
     pub(super) fn direct_scalar_var_out_arg_type(
         &self,
         reg: RegId,
@@ -423,6 +462,11 @@ impl<'a> HirToMirLowering<'a> {
 
     /// Add an instruction to the current block
     pub(super) fn emit(&mut self, inst: MirInst) {
+        if let MirInst::CallHelper { helper, .. } = &inst
+            && BpfHelper::from_u32(*helper).is_some_and(BpfHelper::invalidates_packet_pointers)
+        {
+            self.materialize_packet_ctx_field_aliases_before_invalidation();
+        }
         self.current_block_mut().instructions.push(inst);
     }
 
