@@ -1608,6 +1608,15 @@ mod tests {
         let mut program_types = HashSet::new();
         let mut listed_prefixes = HashSet::new();
         let mut context_family_keys = HashSet::new();
+        let all_attach_kinds = ProgramAttachKind::all()
+            .iter()
+            .copied()
+            .collect::<HashSet<_>>();
+        let all_target_kinds = ProgramTargetKind::all()
+            .iter()
+            .copied()
+            .collect::<HashSet<_>>();
+        let mut registry_attach_kinds = HashSet::new();
 
         for family in [
             ProgramContextFamily::Probe,
@@ -1669,6 +1678,17 @@ mod tests {
                 "{program_type:?} must have an ELF section prefix"
             );
             assert!(
+                all_attach_kinds.contains(&info.attach_kind),
+                "{program_type:?} attach kind {:?} must be declared in ProgramAttachKind::all()",
+                info.attach_kind
+            );
+            assert!(
+                all_target_kinds.contains(&info.target_kind),
+                "{program_type:?} target kind {:?} must be declared in ProgramTargetKind::all()",
+                info.target_kind
+            );
+            registry_attach_kinds.insert(info.attach_kind);
+            assert!(
                 info.spec_aliases.contains(&info.canonical_prefix),
                 "{program_type:?} canonical prefix '{}' must be one of its aliases",
                 info.canonical_prefix
@@ -1694,6 +1714,10 @@ mod tests {
         assert_eq!(
             listed_prefixes, alias_prefixes,
             "PROGRAM_SPEC_PREFIXES must exactly match per-program aliases"
+        );
+        assert_eq!(
+            registry_attach_kinds, all_attach_kinds,
+            "ProgramAttachKind::all() must exactly cover program-type attach kinds"
         );
     }
 

@@ -3791,6 +3791,7 @@ impl fmt::Display for ProgramSpec {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
 
     #[test]
     fn test_cgroup_sock_addr_target_attach_shape_helpers() {
@@ -5016,6 +5017,74 @@ mod tests {
 
             assert_eq!(parsed, direct);
             assert_eq!(parsed.program_type(), program_type);
+            assert_eq!(
+                parsed.target_kind(),
+                program_type.target_kind(),
+                "{} representative spec should expose the registry target kind",
+                program_type.canonical_prefix()
+            );
+            for requirement in program_type.compatibility_requirements() {
+                assert!(
+                    parsed.requires_compatibility_feature(*requirement),
+                    "{} representative spec should include base compatibility requirement {:?}",
+                    program_type.canonical_prefix(),
+                    requirement
+                );
+            }
+            if program_type == EbpfProgramType::StructOps {
+                assert_eq!(parsed.btf_callable_surface(), None);
+                assert_eq!(parsed.arg_access(), ProgramValueAccess::None);
+                assert_eq!(parsed.retval_access(), ProgramValueAccess::None);
+            } else {
+                assert_eq!(
+                    parsed.btf_callable_surface(),
+                    program_type.btf_callable_surface(),
+                    "{} representative spec should expose the registry BTF callable surface",
+                    program_type.canonical_prefix()
+                );
+                assert_eq!(
+                    parsed.arg_access(),
+                    program_type.arg_access(),
+                    "{} representative spec should expose the registry argument access",
+                    program_type.canonical_prefix()
+                );
+                assert_eq!(
+                    parsed.retval_access(),
+                    program_type.retval_access(),
+                    "{} representative spec should expose the registry return-value access",
+                    program_type.canonical_prefix()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_program_spec_target_kind_registry_has_parse_coverage() {
+        let mut target_kinds = HashSet::new();
+
+        for &program_type in EbpfProgramType::supported_program_types() {
+            let target = ProgramSpec::representative_target_for_program_type(program_type);
+            let spec =
+                ProgramSpec::from_program_type_target(program_type, target).unwrap_or_else(|err| {
+                    panic!(
+                        "{} representative target should parse directly: {err}",
+                        program_type.canonical_prefix()
+                    )
+                });
+            target_kinds.insert(spec.target_kind());
+        }
+
+        for spec_source in ["xdp:devmap", "xdp:cpumap", "struct_ops:sched_ext_ops.init"] {
+            let spec = ProgramSpec::parse(spec_source)
+                .unwrap_or_else(|err| panic!("{spec_source} should parse: {err}"));
+            target_kinds.insert(spec.target_kind());
+        }
+
+        for target_kind in ProgramTargetKind::all() {
+            assert!(
+                target_kinds.contains(target_kind),
+                "{target_kind:?} must be covered by a parseable ProgramSpec"
+            );
         }
     }
 
