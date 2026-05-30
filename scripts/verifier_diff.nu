@@ -12991,7 +12991,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "cgroup-skb-rich-egress-context"
@@ -13007,7 +13007,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "cgroup-skb-egress-timestamp-context-write"
@@ -13024,7 +13024,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "cgroup-skb-ingress-rejects-tstamp-write"
@@ -13059,7 +13059,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "cgroup-sock-create-context-write"
@@ -13078,7 +13078,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "cgroup-sock-release-context-write"
@@ -13096,7 +13096,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "cgroup-sock-post-bind6-context"
@@ -13111,7 +13111,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "cgroup-sock-rejects-post-bind-mark-write"
@@ -14508,7 +14508,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "cgroup-device-context"
@@ -14523,7 +14523,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "cgroup-device-current-context"
@@ -14538,7 +14538,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "cgroup-device-rejects-packet-context"
