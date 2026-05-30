@@ -9,6 +9,7 @@ impl VerifierState {
             && self.not_equal == other.not_equal
             && self.ctx_field_sources == other.ctx_field_sources
             && self.map_lookup_sources == other.map_lookup_sources
+            && self.ambiguous_map_lookup_sources == other.ambiguous_map_lookup_sources
             && self.map_fd_sources == other.map_fd_sources
             && self.live_ringbuf_refs == other.live_ringbuf_refs
             && self.released_ringbuf_record_regs == other.released_ringbuf_record_regs
@@ -133,9 +134,15 @@ impl VerifierState {
             ctx_field_sources.push(merged);
         }
         let mut map_lookup_sources = Vec::with_capacity(self.map_lookup_sources.len());
+        let mut ambiguous_map_lookup_sources =
+            Vec::with_capacity(self.ambiguous_map_lookup_sources.len());
         for i in 0..self.map_lookup_sources.len() {
+            let left_ambiguous = self.ambiguous_map_lookup_sources[i];
+            let right_ambiguous = other.ambiguous_map_lookup_sources[i];
             let merged = match (&self.map_lookup_sources[i], &other.map_lookup_sources[i]) {
+                _ if left_ambiguous || right_ambiguous => None,
                 (Some(left), Some(right)) if left == right => Some(left.clone()),
+                (Some(_), Some(_)) => None,
                 (Some(left), None) if matches!(other.regs[i], VerifierType::Uninit) => {
                     Some(left.clone())
                 }
@@ -144,7 +151,14 @@ impl VerifierState {
                 }
                 _ => None,
             };
+            let ambiguous = left_ambiguous
+                || right_ambiguous
+                || matches!(
+                    (&self.map_lookup_sources[i], &other.map_lookup_sources[i]),
+                    (Some(left), Some(right)) if left != right
+                );
             map_lookup_sources.push(merged);
+            ambiguous_map_lookup_sources.push(ambiguous);
         }
         let mut map_fd_sources = Vec::with_capacity(self.map_fd_sources.len());
         for i in 0..self.map_fd_sources.len() {
@@ -243,6 +257,7 @@ impl VerifierState {
             not_equal,
             ctx_field_sources,
             map_lookup_sources,
+            ambiguous_map_lookup_sources,
             map_fd_sources,
             live_ringbuf_refs,
             released_ringbuf_record_regs,

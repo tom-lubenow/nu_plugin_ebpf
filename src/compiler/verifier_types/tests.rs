@@ -10,6 +10,7 @@ mod helper_refs;
 mod helpers;
 mod kfuncs;
 mod map_ops;
+mod map_value_objects;
 mod pointer_ranges;
 mod records;
 mod scalars;

@@ -22,6 +22,14 @@ pub(super) fn apply_copy_inst(
         MirValue::VReg(vreg) => state.map_fd_source(*vreg).cloned(),
         _ => None,
     };
+    let src_map_value_source = match src {
+        MirValue::VReg(vreg) => state.map_value_source(*vreg).cloned(),
+        _ => None,
+    };
+    let src_map_value_ambiguous = match src {
+        MirValue::VReg(vreg) => state.map_value_source_is_ambiguous(*vreg),
+        _ => false,
+    };
     let src_guard = match src {
         MirValue::VReg(vreg) => state.guard(*vreg),
         _ => None,
@@ -55,6 +63,11 @@ pub(super) fn apply_copy_inst(
     state.set_ctx_field_source(dst, src_ctx_field);
     if let Some(map) = src_map_fd {
         state.set_map_fd_source(dst, &map);
+    }
+    if src_map_value_ambiguous {
+        state.set_ambiguous_map_lookup_source(dst);
+    } else if let Some(source) = src_map_value_source {
+        state.set_map_lookup_source(dst, &source.map, source.key);
     }
     if src_non_zero {
         state.set_non_zero(dst, true);
@@ -299,8 +312,14 @@ pub(super) fn apply_phi_inst(
     if let Some(Some(map)) = merged_map_fd {
         state.set_map_fd_source(dst, &map);
     }
-    if let Some(source) = merged_map_value_source {
-        state.set_map_lookup_source(dst, &source.map, source.key);
+    match merged_map_value_source {
+        PhiMapValueSource::None => {}
+        PhiMapValueSource::Known(source) => {
+            state.set_map_lookup_source(dst, &source.map, source.key);
+        }
+        PhiMapValueSource::Ambiguous => {
+            state.set_ambiguous_map_lookup_source(dst);
+        }
     }
     if let Some(Some(source)) = merged_ctx_field {
         state.set_ctx_field_source(dst, Some(source));
@@ -330,13 +349,15 @@ fn scalar_alias_root_for_phi(
     root
 }
 
-fn map_value_source_for_phi(
-    args: &[(BlockId, VReg)],
-    state: &VerifierState,
-) -> Option<MapLookupSource> {
+fn map_value_source_for_phi(args: &[(BlockId, VReg)], state: &VerifierState) -> PhiMapValueSource {
     let mut source: Option<MapLookupSource> = None;
     for (_, reg) in args {
-        let next = state.map_value_source(*reg).cloned()?;
+        if state.map_value_source_is_ambiguous(*reg) {
+            return PhiMapValueSource::Ambiguous;
+        }
+        let Some(next) = state.map_value_source(*reg).cloned() else {
+            return PhiMapValueSource::None;
+        };
         source = Some(match source {
             None => next,
             Some(existing)
@@ -345,10 +366,18 @@ fn map_value_source_for_phi(
             {
                 existing
             }
-            _ => return None,
+            _ => return PhiMapValueSource::Ambiguous,
         });
     }
     source
+        .map(PhiMapValueSource::Known)
+        .unwrap_or(PhiMapValueSource::None)
+}
+
+enum PhiMapValueSource {
+    None,
+    Known(MapLookupSource),
+    Ambiguous,
 }
 
 fn ctx_field_phi_type(dst: VReg, ty: VerifierType, field: &CtxField) -> VerifierType {

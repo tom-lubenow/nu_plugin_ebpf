@@ -623,10 +623,17 @@ fn validate_kfunc_map_fd_matches_map_value(
     else {
         return;
     };
-    let (Some(map_value_source), Some(map_fd_source)) = (
-        state.map_value_source(*map_value),
-        state.map_fd_source(*map_fd),
-    ) else {
+    let Some(map_fd_source) = state.map_fd_source(*map_fd) else {
+        return;
+    };
+    if state.map_value_source_is_ambiguous(*map_value) {
+        errors.push(VerifierTypeError::new(format!(
+            "kfunc '{}' arg{} map value may come from multiple maps and cannot be matched to arg{} map '{}'",
+            kfunc, map_value_arg_idx, map_fd_arg_idx, map_fd_source.name
+        )));
+        return;
+    }
+    let Some(map_value_source) = state.map_value_source(*map_value) else {
         return;
     };
     if map_value_source.map != *map_fd_source {
