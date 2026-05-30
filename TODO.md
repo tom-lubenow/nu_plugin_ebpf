@@ -1,7 +1,7 @@
 # TODO
 
 Status legend: `[x]` done, `[~]` in progress, `[ ]` todo.
-Last updated: 2026-05-29.
+Last updated: 2026-05-30.
 
 This file tracks remaining scope. Detailed historical progress belongs in git
 history and release notes, not here.
@@ -98,10 +98,10 @@ history and release notes, not here.
   - Keep `struct_ops` maps behind the struct_ops object loader rather than generic `map-*` commands.
 
 - [~] Strengthen global/static data support.
-  - Broaden fixed-layout globals beyond current scalar/string/binary/list/array/record cases when the type annotation gives an honest byte layout.
-  - Keep source-level fixed-record globals and metadata-built record constants naturally aligned with zero-filled padding and aligned array stride.
-  - Record constants and typed globals can already carry nested string, binary, numeric-list, fixed-array, and record fields when their layout is explicit or inferable; fixed-array record elements can carry nested string and numeric-list fields while preserving the materialization metadata needed for ordinary string/list operations.
-  - Keep implicit mutable globals, leading typed `mut`, and explicit `global-*` declarations consistent.
+  - Keep broadening fixed-layout globals only when a type annotation or initializer gives an honest byte layout.
+  - Keep source-level fixed-record globals, leading typed `mut`, explicit `global-*` declarations, and metadata-built record constants on the same layout/materialization model.
+  - Record constants and typed globals can carry nested string, binary, numeric-list, fixed-array, and record fields when their layout is explicit or inferable; fixed-array record elements can carry nested string and numeric-list fields while preserving the materialization metadata needed for ordinary string/list operations.
+  - Keep implicit mutable globals consistent with leading typed `mut` and explicit `global-*` declarations.
   - Add clearer diagnostics when a Nushell value cannot be represented as fixed-layout eBPF data.
 
 ## Language Surface and Control Flow
