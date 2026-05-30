@@ -246,6 +246,7 @@ ebpf attach --dry-run 'struct_ops:sched_ext_ops' {
 ## Documentation
 
 - [Example Gallery](docs/examples.md): attach-family examples and common recipes
+- [External Alpha Guide](docs/external-alpha.md): status labels, safe starting points, and host/VM guidance
 - [Language and Context Reference](docs/reference.md): context fields, program-family notes, language-surface policy, commands, helpers, tracepoint discovery, and limits
 - [Development Guide](docs/development.md): manual integration harness and contributor-facing notes
 

@@ -2,7 +2,7 @@
 
 Runnable snippets for the current attach surface. See the [README](../README.md) for installation and the short quick start, and see the [reference](reference.md) for detailed field and helper semantics.
 
-> Safety: prefer `--dry-run` on the host when exploring new `struct_ops` objects. Live loads for unclassified or high-risk families such as `sched_ext_ops`, `hid_bpf_ops`, and `Qdisc_ops` require `--unsafe-struct-ops` and should be done in an isolated environment.
+> Safety: prefer `--dry-run` on the host when exploring new `struct_ops` objects. Live loads for unclassified or high-risk families such as `sched_ext_ops`, `hid_bpf_ops`, and `Qdisc_ops` require `--unsafe-struct-ops` and should be done in an isolated environment. See the [External Alpha Guide](external-alpha.md) for status labels and host/VM guidance.
 
 ## Core Tracing
 
