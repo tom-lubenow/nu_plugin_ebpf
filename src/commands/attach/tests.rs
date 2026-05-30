@@ -16008,53 +16008,64 @@ fn test_compile_sk_lookup_assign_socket_null_program() {
 
 #[test]
 fn test_compile_sk_lookup_ctx_sk_assignment_null_program() {
-    let hir = make_ctx_path_store_program(
-        CellPath {
-            members: vec![string_member("sk")],
-        },
-        HirLiteral::Int(0),
-        HirLiteral::Int(1),
-    );
-    let probe_ctx = ProbeContext::new(EbpfProgramType::SkLookup, "/proc/self/ns/net");
+    for field_name in ["sk", "sock", "socket"] {
+        let hir = make_ctx_path_store_program(
+            CellPath {
+                members: vec![string_member(field_name)],
+            },
+            HirLiteral::Int(0),
+            HirLiteral::Int(1),
+        );
+        let probe_ctx = ProbeContext::new(EbpfProgramType::SkLookup, "/proc/self/ns/net");
 
-    let mut lowering = lower_hir_to_mir_with_hints(
-        &hir,
-        Some(&probe_ctx),
-        &HashMap::new(),
-        None,
-        &HashMap::new(),
-        &HashMap::new(),
-    )
-    .expect("sk_lookup ctx.sk assignment null should lower through attach flow");
+        let mut lowering = lower_hir_to_mir_with_hints(
+            &hir,
+            Some(&probe_ctx),
+            &HashMap::new(),
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!(
+                "sk_lookup ctx.{field_name} assignment null should lower through attach flow: {err}"
+            )
+        });
 
-    let block = lowering.program.main.block(lowering.program.main.entry);
-    assert!(block.instructions.iter().any(|inst| matches!(
-        inst,
-        MirInst::CallHelper {
-            helper,
-            args,
-            ..
-        } if *helper == BpfHelper::SkAssign as u32
-            && args.len() == 3
-            && matches!(args.get(2), Some(crate::compiler::mir::MirValue::Const(0)))
-    )));
+        let block = lowering.program.main.block(lowering.program.main.entry);
+        assert!(block.instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::CallHelper {
+                helper,
+                args,
+                ..
+            } if *helper == BpfHelper::SkAssign as u32
+                && args.len() == 3
+                && matches!(args.get(2), Some(crate::compiler::mir::MirValue::Const(0)))
+        )));
 
-    optimize_with_ssa_hints(
-        &mut lowering.program.main,
-        Some(&probe_ctx),
-        &mut lowering.type_hints.main,
-        &lowering.type_hints.main_stack_slots,
-        &lowering.type_hints.generic_map_value_types,
-    );
+        optimize_with_ssa_hints(
+            &mut lowering.program.main,
+            Some(&probe_ctx),
+            &mut lowering.type_hints.main,
+            &lowering.type_hints.main_stack_slots,
+            &lowering.type_hints.generic_map_value_types,
+        );
 
-    let result = compile_mir_to_ebpf_with_hints(
-        &lowering.program,
-        Some(&probe_ctx),
-        Some(&lowering.type_hints),
-    )
-    .expect("sk_lookup ctx.sk assignment null should compile through attach flow");
+        let result = compile_mir_to_ebpf_with_hints(
+            &lowering.program,
+            Some(&probe_ctx),
+            Some(&lowering.type_hints),
+        )
+        .unwrap_or_else(|err| {
+            panic!("sk_lookup ctx.{field_name} assignment null should compile through attach flow: {err}")
+        });
 
-    assert!(!result.bytecode.is_empty(), "Should produce bytecode");
+        assert!(
+            !result.bytecode.is_empty(),
+            "ctx.{field_name} assignment should produce bytecode"
+        );
+    }
 }
 
 #[test]

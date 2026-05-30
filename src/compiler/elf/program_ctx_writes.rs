@@ -682,6 +682,16 @@ const TC_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] = &[
         CtxField::Socket,
         ContextWriteTargetSpec::AssignSocket,
     ),
+    ContextWriteSurfaceSpec::special_write_field(
+        "sock",
+        CtxField::Socket,
+        ContextWriteTargetSpec::AssignSocket,
+    ),
+    ContextWriteSurfaceSpec::special_write_field(
+        "socket",
+        CtxField::Socket,
+        ContextWriteTargetSpec::AssignSocket,
+    ),
     ContextWriteSurfaceSpec::store_field(
         "mark",
         CtxField::SockMark,
@@ -917,12 +927,23 @@ const CGROUP_SOCK_ADDR_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] = &[
     ),
 ];
 
-const SK_LOOKUP_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] =
-    &[ContextWriteSurfaceSpec::special_write_field(
+const SK_LOOKUP_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] = &[
+    ContextWriteSurfaceSpec::special_write_field(
         "sk",
         CtxField::Socket,
         ContextWriteTargetSpec::AssignSocket,
-    )];
+    ),
+    ContextWriteSurfaceSpec::special_write_field(
+        "sock",
+        CtxField::Socket,
+        ContextWriteTargetSpec::AssignSocket,
+    ),
+    ContextWriteSurfaceSpec::special_write_field(
+        "socket",
+        CtxField::Socket,
+        ContextWriteTargetSpec::AssignSocket,
+    ),
+];
 
 const FLOW_DISSECTOR_CTX_WRITE_SURFACES: &[ContextWriteSurfaceSpec] =
     &[ContextWriteSurfaceSpec::special_write_field(

@@ -3824,6 +3824,53 @@ fn test_lower_sk_lookup_ctx_sk_assignment_calls_sk_assign() {
 }
 
 #[test]
+fn test_lower_sk_lookup_ctx_socket_assignment_aliases_call_sk_assign() {
+    for root in ["sock", "socket"] {
+        let hir = make_ctx_upsert_program(
+            CellPath {
+                members: vec![string_member(root)],
+            },
+            HirLiteral::Int(0),
+        );
+        let probe_ctx = ProbeContext::new(EbpfProgramType::SkLookup, "/proc/self/ns/net");
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            Some(&probe_ctx),
+            &HashMap::new(),
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("sk_lookup ctx.{root} assignment should lower to bpf_sk_assign: {err}")
+        });
+
+        assert!(
+            result
+                .type_hints
+                .used_ctx_fields
+                .contains(&CtxField::Socket),
+            "ctx.{root} assignment should preserve socket context compatibility metadata"
+        );
+        assert!(result.program.main.blocks.iter().any(|block| {
+            block.instructions.iter().any(|inst| {
+                matches!(
+                    inst,
+                    MirInst::CallHelper {
+                        helper,
+                        args,
+                        ..
+                    } if *helper == BpfHelper::SkAssign as u32
+                        && args.len() == 3
+                        && matches!(args.get(2), Some(MirValue::Const(0)))
+                )
+            })
+        }));
+    }
+}
+
+#[test]
 fn test_lower_tc_egress_ctx_sk_assignment_rejects_sk_assign() {
     let hir = make_ctx_upsert_program(
         CellPath {

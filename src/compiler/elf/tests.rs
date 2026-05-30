@@ -7850,37 +7850,51 @@ fn test_probe_context_resolves_cgroup_sysctl_new_value_write_target() {
 #[test]
 fn test_probe_context_resolves_socket_assignment_write_target() {
     let sk_lookup = ProbeContext::new(EbpfProgramType::SkLookup, "/proc/self/ns/net");
-    assert_eq!(
-        sk_lookup
-            .resolve_ctx_write_target("sk", None)
-            .expect("sk_lookup ctx.sk write target should resolve"),
-        CtxWriteTarget::AssignSocket
-    );
+    for field_name in ["sk", "sock", "socket"] {
+        assert_eq!(
+            sk_lookup
+                .resolve_ctx_write_target(field_name, None)
+                .unwrap_or_else(|err| panic!(
+                    "sk_lookup ctx.{field_name} write target should resolve: {err}"
+                )),
+            CtxWriteTarget::AssignSocket
+        );
+    }
 
     let tc_ingress = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
-    assert_eq!(
-        tc_ingress
-            .resolve_ctx_write_target("sk", None)
-            .expect("tc ingress ctx.sk write target should resolve"),
-        CtxWriteTarget::AssignSocket
-    );
+    for field_name in ["sk", "sock", "socket"] {
+        assert_eq!(
+            tc_ingress
+                .resolve_ctx_write_target(field_name, None)
+                .unwrap_or_else(|err| panic!(
+                    "tc ingress ctx.{field_name} write target should resolve: {err}"
+                )),
+            CtxWriteTarget::AssignSocket
+        );
+    }
 
     let tc_action = ProbeContext::new(EbpfProgramType::TcAction, "demo-action");
-    assert_eq!(
-        tc_action
-            .resolve_ctx_write_target("sk", None)
-            .expect("tc_action ctx.sk write target should resolve"),
-        CtxWriteTarget::AssignSocket
-    );
+    for field_name in ["sk", "sock", "socket"] {
+        assert_eq!(
+            tc_action
+                .resolve_ctx_write_target(field_name, None)
+                .unwrap_or_else(|err| panic!(
+                    "tc_action ctx.{field_name} write target should resolve: {err}"
+                )),
+            CtxWriteTarget::AssignSocket
+        );
+    }
 }
 
 #[test]
 fn test_probe_context_rejects_socket_assignment_on_tc_egress() {
     let tc_egress = ProbeContext::new(EbpfProgramType::Tc, "lo:egress");
-    let err = tc_egress
-        .resolve_ctx_write_target("sk", None)
-        .expect_err("tc egress ctx.sk write target should reject");
-    assert!(err.contains("helper 'bpf_sk_assign' is only valid in tc/tcx ingress programs"));
+    for field_name in ["sk", "sock", "socket"] {
+        let err = tc_egress
+            .resolve_ctx_write_target(field_name, None)
+            .expect_err("tc egress socket write target should reject");
+        assert!(err.contains("helper 'bpf_sk_assign' is only valid in tc/tcx ingress programs"));
+    }
 }
 
 #[test]

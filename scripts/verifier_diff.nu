@@ -15377,6 +15377,23 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "sk-lookup-context-clear-socket-aliases"
+        category: "context-surface"
+        tags: [sk-lookup context writable socket alias]
+        requires: [netns-self]
+        target: "sk_lookup:/proc/self/ns/net"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.sock = 0'
+            '  $ctx.socket = 0'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "sk-lookup-tuple-cookie-context"
         category: "context-surface"
         tags: [sk-lookup context source metadata]
@@ -28917,7 +28934,7 @@ def program-surface-kernel-features [source: string target] {
             or (($target_text | str starts-with "tcx:") and ($target_text | str contains ":ingress"))
         )
         let assigns_ctx_sk = (
-            line-assigns-context-field? $trimmed $context_names ["sk"]
+            line-assigns-context-field? $trimmed $context_names ["sk" "sock" "socket"]
         )
         let map_kind = (source-line-map-kind $trimmed "hash")
         if (line-invokes-command? $trimmed "map-get") and (generic-map-lookup-kind? $map_kind) {

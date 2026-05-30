@@ -5338,47 +5338,57 @@ fn test_spec_context_fields_resolve_btf_retval_when_available() {
 
 #[test]
 fn test_context_write_records_filter_target_specific_writes() {
+    fn assert_socket_assign_writes(writes: &[SpecContextWrite], context: &str) {
+        for field_name in ["sk", "sock", "socket"] {
+            assert!(
+                writes.iter().any(|surface| {
+                    surface.field == field_name
+                        && surface.kind == "assign-socket"
+                        && !surface.indexed
+                }),
+                "{context} should advertise ctx.{field_name} assignment"
+            );
+        }
+    }
+
+    fn assert_no_socket_assign_writes(writes: &[SpecContextWrite], context: &str) {
+        for field_name in ["sk", "sock", "socket"] {
+            assert!(
+                !writes.iter().any(|surface| surface.field == field_name),
+                "{context} should not advertise ctx.{field_name} assignment"
+            );
+        }
+    }
+
     let tc_ingress = ProgramSpec::parse("tc:lo:ingress").expect("tc ingress spec should parse");
     let tc_ingress_writes = spec_context_writes(&tc_ingress);
-    assert!(tc_ingress_writes.iter().any(|surface| {
-        surface.field == "sk" && surface.kind == "assign-socket" && !surface.indexed
-    }));
+    assert_socket_assign_writes(&tc_ingress_writes, "tc ingress");
 
     let tc_egress = ProgramSpec::parse("tc:lo:egress").expect("tc egress spec should parse");
     let tc_egress_writes = spec_context_writes(&tc_egress);
-    assert!(
-        !tc_egress_writes.iter().any(|surface| surface.field == "sk"),
-        "ctx.sk assignment should not be advertised on tc egress"
-    );
+    assert_no_socket_assign_writes(&tc_egress_writes, "tc egress");
 
     let tcx_ingress = ProgramSpec::parse("tcx:lo:ingress").expect("tcx ingress spec should parse");
     let tcx_ingress_writes = spec_context_writes(&tcx_ingress);
-    assert!(tcx_ingress_writes.iter().any(|surface| {
-        surface.field == "sk" && surface.kind == "assign-socket" && !surface.indexed
-    }));
+    assert_socket_assign_writes(&tcx_ingress_writes, "tcx ingress");
 
     let tcx_egress = ProgramSpec::parse("tcx:lo:egress").expect("tcx egress spec should parse");
     let tcx_egress_writes = spec_context_writes(&tcx_egress);
-    assert!(
-        !tcx_egress_writes
-            .iter()
-            .any(|surface| surface.field == "sk"),
-        "ctx.sk assignment should not be advertised on tcx egress"
-    );
+    assert_no_socket_assign_writes(&tcx_egress_writes, "tcx egress");
 
     let tc_action =
         ProgramSpec::parse("tc_action:diff-action").expect("tc_action spec should parse");
     let tc_action_writes = spec_context_writes(&tc_action);
-    assert!(tc_action_writes.iter().any(|surface| {
-        surface.field == "sk" && surface.kind == "assign-socket" && !surface.indexed
-    }));
+    assert_socket_assign_writes(&tc_action_writes, "tc_action");
+
+    let sk_lookup =
+        ProgramSpec::parse("sk_lookup:/proc/self/ns/net").expect("sk_lookup spec should parse");
+    let sk_lookup_writes = spec_context_writes(&sk_lookup);
+    assert_socket_assign_writes(&sk_lookup_writes, "sk_lookup");
 
     let netkit = ProgramSpec::parse("netkit:lo:primary").expect("netkit spec should parse");
     let netkit_writes = spec_context_writes(&netkit);
-    assert!(
-        !netkit_writes.iter().any(|surface| surface.field == "sk"),
-        "ctx.sk assignment should not be advertised on netkit"
-    );
+    assert_no_socket_assign_writes(&netkit_writes, "netkit");
 }
 
 #[test]
@@ -5461,6 +5471,16 @@ fn test_context_write_records_include_backing_abi_metadata() {
     assert_eq!(sk.helper, Some("bpf_sk_assign"));
     assert_eq!(sk.helper_minimum_kernel, Some("5.7"));
     assert_eq!(sk.compatibility_minimum_kernel, Some("5.7"));
+    let socket = context_write(&tc_ingress_writes, "socket");
+    assert_eq!(socket.kind, "assign-socket");
+    assert_eq!(
+        socket.context_field_requirement_key.as_deref(),
+        Some("ctx:sk")
+    );
+    assert_eq!(socket.minimum_kernel, Some("5.1"));
+    assert_eq!(socket.helper, Some("bpf_sk_assign"));
+    assert_eq!(socket.helper_minimum_kernel, Some("5.7"));
+    assert_eq!(socket.compatibility_minimum_kernel, Some("5.7"));
 
     let cgroup_sockopt_set = ProgramSpec::parse("cgroup_sockopt:/sys/fs/cgroup:set")
         .expect("cgroup_sockopt set spec should parse");
