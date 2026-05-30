@@ -22436,7 +22436,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "callback-bpf-loop-rejects-extra-declared-param"
@@ -22522,7 +22522,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "callback-for-each-map-elem-map-btf-field"
@@ -22643,7 +22643,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "callback-user-ringbuf-drain-dynptr-data-guarded"
@@ -22663,7 +22663,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "callback-user-ringbuf-drain-dynptr-data-requires-null-check"
@@ -22695,7 +22695,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "callback-user-ringbuf-drain-rejects-extra-declared-param"
@@ -22724,7 +22724,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "reserved-events-rejects-user-ringbuf"
