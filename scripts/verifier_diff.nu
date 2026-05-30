@@ -22289,7 +22289,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "lsm-bprm-opts-set-rejects-flags"
