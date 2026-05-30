@@ -104,6 +104,9 @@ const LINUX_READ_WRITE_C_V4_7_SOURCE: &str =
 const LINUX_OPEN_C_V4_7_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/open.c";
 const LINUX_OPEN_C_V5_6_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.6/fs/open.c";
 const LINUX_EXEC_C_V4_7_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/exec.c";
+const LINUX_STAT_C_V4_7_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/stat.c";
+const LINUX_STAT_C_V4_11_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.11/fs/stat.c";
+const LINUX_NAMEI_C_V4_7_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/namei.c";
 const LINUX_SOCKET_C_V4_7_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/net/socket.c";
 const LINUX_SYSCALLS_H_V4_7_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v4.7/include/trace/events/syscalls.h";
@@ -635,6 +638,35 @@ fn tracepoint_field_kernel_floor(
             ("5.6", LINUX_OPEN_C_V5_6_SOURCE)
         }
         ("sys_enter_execve", "filename" | "argv" | "envp") => ("4.7", LINUX_EXEC_C_V4_7_SOURCE),
+        (
+            "sys_enter_stat" | "sys_enter_lstat" | "sys_enter_newstat" | "sys_enter_newlstat"
+            | "sys_enter_stat64" | "sys_enter_lstat64",
+            "filename" | "statbuf",
+        ) => ("4.7", LINUX_STAT_C_V4_7_SOURCE),
+        ("sys_enter_fstat" | "sys_enter_newfstat" | "sys_enter_fstat64", "fd" | "statbuf") => {
+            ("4.7", LINUX_STAT_C_V4_7_SOURCE)
+        }
+        (
+            "sys_enter_newfstatat" | "sys_enter_fstatat64",
+            "dfd" | "filename" | "statbuf" | "flag",
+        ) => ("4.7", LINUX_STAT_C_V4_7_SOURCE),
+        ("sys_enter_statx", "dfd" | "filename" | "flags" | "mask" | "buffer") => {
+            ("4.11", LINUX_STAT_C_V4_11_SOURCE)
+        }
+        ("sys_enter_mkdirat", "dfd" | "pathname" | "mode") => ("4.7", LINUX_NAMEI_C_V4_7_SOURCE),
+        ("sys_enter_unlinkat", "dfd" | "pathname" | "flag") => ("4.7", LINUX_NAMEI_C_V4_7_SOURCE),
+        ("sys_enter_symlinkat", "oldname" | "newdfd" | "newname") => {
+            ("4.7", LINUX_NAMEI_C_V4_7_SOURCE)
+        }
+        ("sys_enter_linkat", "olddfd" | "oldname" | "newdfd" | "newname" | "flags") => {
+            ("4.7", LINUX_NAMEI_C_V4_7_SOURCE)
+        }
+        ("sys_enter_renameat", "olddfd" | "oldname" | "newdfd" | "newname") => {
+            ("4.7", LINUX_NAMEI_C_V4_7_SOURCE)
+        }
+        ("sys_enter_renameat2", "olddfd" | "oldname" | "newdfd" | "newname" | "flags") => {
+            ("4.7", LINUX_NAMEI_C_V4_7_SOURCE)
+        }
         ("sys_enter_socket", "family" | "type" | "protocol") => ("4.7", LINUX_SOCKET_C_V4_7_SOURCE),
         ("sys_enter_socketpair", "family" | "type" | "protocol" | "usockvec") => {
             ("4.7", LINUX_SOCKET_C_V4_7_SOURCE)
@@ -696,6 +728,7 @@ fn syscall_tracepoint_fallback_field_kernel_floor(
 
     Some(match syscall {
         "openat2" => ("5.6", LINUX_OPEN_C_V5_6_SOURCE),
+        "statx" => ("4.11", LINUX_STAT_C_V4_11_SOURCE),
         _ => ("4.7", LINUX_SYSCALLS_H_V4_7_SOURCE),
     })
 }

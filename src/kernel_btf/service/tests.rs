@@ -235,6 +235,39 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
     assert!(execve.has_field("argv"));
     assert!(execve.has_field("envp"));
 
+    let newfstatat = TracepointContext::sys_enter("sys_enter_newfstatat");
+    assert!(newfstatat.has_field("dfd"));
+    assert!(newfstatat.has_field("filename"));
+    assert!(newfstatat.has_field("statbuf"));
+    assert!(newfstatat.has_field("flag"));
+    assert!(matches!(
+        newfstatat
+            .get_field("statbuf")
+            .expect("expected newfstatat statbuf")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+
+    let statx = TracepointContext::sys_enter("sys_enter_statx");
+    assert!(statx.has_field("dfd"));
+    assert!(statx.has_field("filename"));
+    assert!(statx.has_field("flags"));
+    assert!(statx.has_field("mask"));
+    assert!(statx.has_field("buffer"));
+    assert_eq!(statx.minimum_kernel(), Some("4.11"));
+    assert!(
+        statx
+            .minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v4.11/fs/stat.c"))
+    );
+    assert!(matches!(
+        statx
+            .get_field("buffer")
+            .expect("expected statx buffer")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+
     let connect = TracepointContext::sys_enter("sys_enter_connect");
     assert!(connect.has_field("fd"));
     assert!(connect.has_field("uservaddr"));
@@ -317,6 +350,25 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         (
             "sys_enter_recvmmsg",
             &["fd", "mmsg", "vlen", "flags", "timeout"][..],
+        ),
+        ("sys_enter_stat", &["filename", "statbuf"][..]),
+        ("sys_enter_newstat", &["filename", "statbuf"][..]),
+        ("sys_enter_fstat", &["fd", "statbuf"][..]),
+        ("sys_enter_newfstat", &["fd", "statbuf"][..]),
+        ("sys_enter_mkdirat", &["dfd", "pathname", "mode"][..]),
+        ("sys_enter_unlinkat", &["dfd", "pathname", "flag"][..]),
+        ("sys_enter_symlinkat", &["oldname", "newdfd", "newname"][..]),
+        (
+            "sys_enter_linkat",
+            &["olddfd", "oldname", "newdfd", "newname", "flags"][..],
+        ),
+        (
+            "sys_enter_renameat",
+            &["olddfd", "oldname", "newdfd", "newname"][..],
+        ),
+        (
+            "sys_enter_renameat2",
+            &["olddfd", "oldname", "newdfd", "newname", "flags"][..],
         ),
     ] {
         let ctx = TracepointContext::sys_enter(name);

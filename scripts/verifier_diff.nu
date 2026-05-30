@@ -2070,6 +2070,68 @@ const SOCKET_TRACEPOINT_FIELD_SPECS = [
     { syscall: "sendmmsg" fields: ["fd" "mmsg" "vlen" "flags"] }
     { syscall: "recvmmsg" fields: ["fd" "mmsg" "vlen" "flags" "timeout"] }
 ]
+const PATH_TRACEPOINT_FIELD_SPECS = [
+    {
+        syscalls: ["stat" "lstat" "newstat" "newlstat" "stat64" "lstat64"]
+        fields: ["filename" "statbuf"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/stat.c"
+    }
+    {
+        syscalls: ["fstat" "newfstat" "fstat64"]
+        fields: ["fd" "statbuf"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/stat.c"
+    }
+    {
+        syscalls: ["newfstatat" "fstatat64"]
+        fields: ["dfd" "filename" "statbuf" "flag"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/stat.c"
+    }
+    {
+        syscalls: ["statx"]
+        fields: ["dfd" "filename" "flags" "mask" "buffer"]
+        min_kernel: "4.11"
+        source: "https://github.com/torvalds/linux/blob/v4.11/fs/stat.c"
+    }
+    {
+        syscalls: ["mkdirat"]
+        fields: ["dfd" "pathname" "mode"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/namei.c"
+    }
+    {
+        syscalls: ["unlinkat"]
+        fields: ["dfd" "pathname" "flag"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/namei.c"
+    }
+    {
+        syscalls: ["symlinkat"]
+        fields: ["oldname" "newdfd" "newname"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/namei.c"
+    }
+    {
+        syscalls: ["linkat"]
+        fields: ["olddfd" "oldname" "newdfd" "newname" "flags"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/namei.c"
+    }
+    {
+        syscalls: ["renameat"]
+        fields: ["olddfd" "oldname" "newdfd" "newname"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/namei.c"
+    }
+    {
+        syscalls: ["renameat2"]
+        fields: ["olddfd" "oldname" "newdfd" "newname" "flags"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/namei.c"
+    }
+]
 const TRACEPOINT_FIELD_KERNEL_FEATURES = [
     { target: "tracepoint:syscalls/sys_enter_read" field: "fd" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_READ_FD }
     { target: "tracepoint:syscalls/sys_enter_read" field: "buf" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_READ_BUF }
@@ -6545,6 +6607,82 @@ const FIXTURES = [
             '  let timeout = $ctx.timeout'
             '  if $timeout { 1 | count }'
             '  ($ctx.fd + $ctx.vlen + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-newfstatat-context"
+        category: "tracing"
+        tags: [tracepoint context]
+        requires: [tracefs kernel-btf]
+        target: "tracepoint:syscalls/sys_enter_newfstatat"
+        program: [
+            '{|ctx|'
+            '  let filename = $ctx.filename'
+            '  if $filename { $filename | read-str --max-len 64 | count }'
+            '  let statbuf = $ctx.statbuf'
+            '  if $statbuf { 1 | count }'
+            '  ($ctx.dfd + $ctx.flag) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-statx-context"
+        category: "tracing"
+        tags: [tracepoint context]
+        requires: [tracefs kernel-btf]
+        target: "tracepoint:syscalls/sys_enter_statx"
+        program: [
+            '{|ctx|'
+            '  let filename = $ctx.filename'
+            '  if $filename { $filename | read-str --max-len 64 | count }'
+            '  let buffer = $ctx.buffer'
+            '  if $buffer { 1 | count }'
+            '  ($ctx.dfd + $ctx.flags + $ctx.mask) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-renameat2-context"
+        category: "tracing"
+        tags: [tracepoint context]
+        requires: [tracefs kernel-btf]
+        target: "tracepoint:syscalls/sys_enter_renameat2"
+        program: [
+            '{|ctx|'
+            '  let oldname = $ctx.oldname'
+            '  if $oldname { $oldname | read-str --max-len 64 | count }'
+            '  let newname = $ctx.newname'
+            '  if $newname { $newname | read-str --max-len 64 | count }'
+            '  ($ctx.olddfd + $ctx.newdfd + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-linkat-context"
+        category: "tracing"
+        tags: [tracepoint context]
+        requires: [tracefs kernel-btf]
+        target: "tracepoint:syscalls/sys_enter_linkat"
+        program: [
+            '{|ctx|'
+            '  let oldname = $ctx.oldname'
+            '  if $oldname { $oldname | read-str --max-len 64 | count }'
+            '  let newname = $ctx.newname'
+            '  if $newname { $newname | read-str --max-len 64 | count }'
+            '  ($ctx.olddfd + $ctx.newdfd + $ctx.flags) | count'
             '  0'
             '}'
         ]
@@ -25086,9 +25224,17 @@ def syscall-tracepoint-fallback-field-kernel-feature [field: string target] {
         return null
     }
 
-    let min_kernel = if $syscall == "openat2" { "5.6" } else { "4.7" }
+    let min_kernel = if $syscall == "openat2" {
+        "5.6"
+    } else if $syscall == "statx" {
+        "4.11"
+    } else {
+        "4.7"
+    }
     let source = if $syscall == "openat2" {
         "https://github.com/torvalds/linux/blob/v5.6/fs/open.c"
+    } else if $syscall == "statx" {
+        "https://github.com/torvalds/linux/blob/v4.11/fs/stat.c"
     } else {
         "https://github.com/torvalds/linux/blob/v4.7/include/trace/events/syscalls.h"
     }
@@ -25124,6 +25270,30 @@ def socket-tracepoint-field-kernel-feature [field: string target] {
     }
 }
 
+def path-tracepoint-field-kernel-feature [field: string target] {
+    let target_text = ($target | default "")
+    if not ($target_text | str starts-with "tracepoint:syscalls/sys_enter_") {
+        return null
+    }
+
+    let syscall = ($target_text | str replace "tracepoint:syscalls/sys_enter_" "")
+    let matches = ($PATH_TRACEPOINT_FIELD_SPECS | where {|entry| $syscall in $entry.syscalls })
+    if ($matches | is-empty) {
+        return null
+    }
+
+    let spec = ($matches | first)
+    if $field not-in $spec.fields {
+        return null
+    }
+
+    {
+        key: $"tracepoint:syscalls/sys_enter_($syscall):field:($field)"
+        min_kernel: $spec.min_kernel
+        source: $spec.source
+    }
+}
+
 def tracepoint-payload-field-kernel-feature [field: string target] {
     let target_text = ($target | default "")
     if not ($target_text | str starts-with "tracepoint:") {
@@ -25141,6 +25311,11 @@ def tracepoint-payload-field-kernel-feature [field: string target] {
     let socket_feature = (socket-tracepoint-field-kernel-feature $field $target)
     if $socket_feature != null {
         return $socket_feature
+    }
+
+    let path_feature = (path-tracepoint-field-kernel-feature $field $target)
+    if $path_feature != null {
+        return $path_feature
     }
 
     let matches = (

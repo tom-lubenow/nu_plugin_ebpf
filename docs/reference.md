@@ -895,7 +895,9 @@ for `syscalls/sys_enter_openat2` matching the kernel argument name. Socket
 syscall fallbacks also expose source-known names for common socket entry
 tracepoints such as `sys_enter_socket`, `sys_enter_bind`, `sys_enter_connect`,
 `sys_enter_sendto`, `sys_enter_recvfrom`, `sys_enter_setsockopt`, and
-`sys_enter_recvmmsg`;
+`sys_enter_recvmmsg`. Path-oriented syscall fallbacks also expose common stat
+and pathname operation aliases such as `sys_enter_newfstatat`,
+`sys_enter_statx`, `sys_enter_linkat`, and `sys_enter_renameat2`.
 syscall-entry pointer fields are modeled as userspace pointers, so
 `ctx.filename | read-str --max-len 64` is the preferred form. The generic
 fallback `($ctx.args | get 1)` is only a raw numeric ABI value and is not enough

@@ -7,6 +7,8 @@ const SYSCALL_TRACEPOINT_FALLBACK_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v4.7/include/trace/events/syscalls.h";
 const OPENAT2_MIN_KERNEL: &str = "5.6";
 const OPENAT2_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.6/fs/open.c";
+const STATX_MIN_KERNEL: &str = "4.11";
+const STATX_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.11/fs/stat.c";
 
 /// Source used to construct a tracepoint context layout.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -220,6 +222,7 @@ impl TracepointContext {
             .or_else(|| name.strip_prefix("sys_exit_"));
         match syscall {
             Some("openat2") => (Some(OPENAT2_MIN_KERNEL), Some(OPENAT2_SOURCE)),
+            Some("statx") => (Some(STATX_MIN_KERNEL), Some(STATX_SOURCE)),
             _ => (
                 Some(SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL),
                 Some(SYSCALL_TRACEPOINT_FALLBACK_SOURCE),
@@ -278,6 +281,62 @@ impl TracepointContext {
                 ("filename", Self::syscall_arg_user_ptr()),
                 ("argv", Self::syscall_arg_user_ptr()),
                 ("envp", Self::syscall_arg_user_ptr()),
+            ],
+            "stat" | "lstat" | "newstat" | "newlstat" | "stat64" | "lstat64" => vec![
+                ("filename", Self::syscall_arg_user_ptr()),
+                ("statbuf", Self::syscall_arg_user_ptr()),
+            ],
+            "fstat" | "newfstat" | "fstat64" => vec![
+                ("fd", Self::syscall_arg_int(false)),
+                ("statbuf", Self::syscall_arg_user_ptr()),
+            ],
+            "newfstatat" | "fstatat64" => vec![
+                ("dfd", Self::syscall_arg_int(true)),
+                ("filename", Self::syscall_arg_user_ptr()),
+                ("statbuf", Self::syscall_arg_user_ptr()),
+                ("flag", Self::syscall_arg_int(true)),
+            ],
+            "statx" => vec![
+                ("dfd", Self::syscall_arg_int(true)),
+                ("filename", Self::syscall_arg_user_ptr()),
+                ("flags", Self::syscall_arg_int(false)),
+                ("mask", Self::syscall_arg_int(false)),
+                ("buffer", Self::syscall_arg_user_ptr()),
+            ],
+            "mkdirat" => vec![
+                ("dfd", Self::syscall_arg_int(true)),
+                ("pathname", Self::syscall_arg_user_ptr()),
+                ("mode", Self::syscall_arg_int(false)),
+            ],
+            "unlinkat" => vec![
+                ("dfd", Self::syscall_arg_int(true)),
+                ("pathname", Self::syscall_arg_user_ptr()),
+                ("flag", Self::syscall_arg_int(true)),
+            ],
+            "symlinkat" => vec![
+                ("oldname", Self::syscall_arg_user_ptr()),
+                ("newdfd", Self::syscall_arg_int(true)),
+                ("newname", Self::syscall_arg_user_ptr()),
+            ],
+            "linkat" => vec![
+                ("olddfd", Self::syscall_arg_int(true)),
+                ("oldname", Self::syscall_arg_user_ptr()),
+                ("newdfd", Self::syscall_arg_int(true)),
+                ("newname", Self::syscall_arg_user_ptr()),
+                ("flags", Self::syscall_arg_int(true)),
+            ],
+            "renameat" => vec![
+                ("olddfd", Self::syscall_arg_int(true)),
+                ("oldname", Self::syscall_arg_user_ptr()),
+                ("newdfd", Self::syscall_arg_int(true)),
+                ("newname", Self::syscall_arg_user_ptr()),
+            ],
+            "renameat2" => vec![
+                ("olddfd", Self::syscall_arg_int(true)),
+                ("oldname", Self::syscall_arg_user_ptr()),
+                ("newdfd", Self::syscall_arg_int(true)),
+                ("newname", Self::syscall_arg_user_ptr()),
+                ("flags", Self::syscall_arg_int(false)),
             ],
             "socket" => vec![
                 ("family", Self::syscall_arg_int(false)),
