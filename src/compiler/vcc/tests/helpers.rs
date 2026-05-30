@@ -1538,6 +1538,21 @@ fn test_verify_mir_callback_dynptr_param_seeds_initialized_stack_slot() {
     ]);
 
     verify_mir(&func, &types).expect("expected callback dynptr param to verify as initialized");
+
+    let summaries = infer_subfunction_summaries(&[func.clone()]);
+    let current_summary = summaries
+        .get(&SubfunctionId(0))
+        .cloned()
+        .expect("expected dynptr callback current summary");
+    verify_mir_with_subfunction_summaries_for_probe_context_with_current_summary(
+        &func,
+        &types,
+        &HashMap::new(),
+        Some(current_summary),
+        None,
+        None,
+    )
+    .expect("expected current-summary dynptr param seeding to avoid double initialization");
 }
 
 fn bpf_spin_lock_types(lock: VReg, extra: &[(VReg, MirType)]) -> HashMap<VReg, MirType> {

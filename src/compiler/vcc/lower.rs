@@ -283,7 +283,13 @@ impl<'a> VccLowerer<'a> {
                 }
             }
             let ringbuf_dynptr_seeded = summary.ringbuf_dynptr_delta_arg(idx) < 0;
+            let dynptr_slot_preinitialized = self
+                .func
+                .param_stack_slots
+                .get(&idx)
+                .is_some_and(|slot| self.func.entry_initialized_dynptr_slots.contains(slot));
             if !ringbuf_dynptr_seeded
+                && !dynptr_slot_preinitialized
                 && (summary.requires_initialized_dynptr_arg(idx) || summary.dynptr_delta_arg(idx) < 0)
             {
                 out.push(VccInst::DynptrMarkInitialized {
