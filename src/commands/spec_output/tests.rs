@@ -4747,6 +4747,18 @@ fn test_spec_context_projections_include_socket_members() {
     assert!(remote_port.supported);
     assert!(remote_port.unsupported_reason.is_none());
 
+    let sock_family = projection(&projections, "sock.family");
+    assert_eq!(sock_family.root, "sock");
+    assert_eq!(sock_family.name, "family");
+    assert_eq!(sock_family.source, "context_field_root_alias");
+    assert_eq!(sock_family.ty, "u32");
+    assert_eq!(sock_family.offset, Some(4));
+
+    let socket_remote_port = projection(&projections, "socket.remote_port");
+    assert_eq!(socket_remote_port.root, "socket");
+    assert_eq!(socket_remote_port.source, "context_field_alias");
+    assert_eq!(socket_remote_port.offset, remote_port.offset);
+
     projection_absent(&projections, "sk.src_ip4");
     projection_absent(&projections, "sk.local_ip4");
 }

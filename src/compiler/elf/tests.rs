@@ -7300,6 +7300,18 @@ fn test_program_type_resolves_program_specific_context_aliases() {
             .expect("netfilter skb alias should resolve"),
         CtxField::NetfilterSkb
     );
+    assert_eq!(
+        EbpfProgramType::SkLookup
+            .resolve_ctx_field_name("sock")
+            .expect("socket root alias should resolve"),
+        CtxField::Socket
+    );
+    assert_eq!(
+        EbpfProgramType::SkLookup
+            .resolve_ctx_field_name("socket")
+            .expect("socket root alias should resolve"),
+        CtxField::Socket
+    );
 }
 
 #[test]

@@ -10214,6 +10214,14 @@ fn test_compile_sk_lookup_ctx_array_and_socket_projection_counter_programs() {
             "sk_lookup ctx.sk.bound_dev_if count",
         ),
         (
+            vec![string_member("sock"), string_member("family")],
+            "sk_lookup ctx.sock.family count",
+        ),
+        (
+            vec![string_member("socket"), string_member("dst_port")],
+            "sk_lookup ctx.socket.dst_port count",
+        ),
+        (
             vec![string_member("sk"), string_member("src_ip4")],
             "sk_lookup ctx.sk.src_ip4 count",
         ),

@@ -15386,6 +15386,22 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "sk-lookup-socket-root-alias-context"
+        category: "context-surface"
+        tags: [sk-lookup context socket alias source metadata]
+        requires: [netns-self]
+        target: "sk_lookup:/proc/self/ns/net"
+        program: [
+            '{|ctx|'
+            '  let sock = $ctx.sock'
+            '  ($sock.family + $ctx.socket.dst_port + $sock.priority) | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "sk-lookup-rejects-socket-cookie-context"
         category: "context-policy"
         tags: [sk-lookup reject context socket]
@@ -26217,7 +26233,7 @@ def sock-ops-context-field-kernel-feature [field: string] {
         }
     }
 
-    if $field == "sk" {
+    if $field in ["sk" "sock" "socket"] {
         return {
             key: "ctx:sk"
             min_kernel: "5.3"
@@ -26301,14 +26317,14 @@ def target-context-field-alias-kernel-feature [field: string target] {
         if $field == "size" or $field == "packet_len" or $field == "len" {
             return { matched: true, feature: $KERNEL_FEATURE_CTX_SK_MSG_PACKET_LEN }
         }
-        if $field == "sk" {
+        if $field in ["sk" "sock" "socket"] {
             return { matched: true, feature: $KERNEL_FEATURE_CTX_SK_MSG_SK }
         }
     }
     if (
         ($target_text | str starts-with "sk_skb:")
         or ($target_text | str starts-with "sk_skb_parser:")
-    ) and $field == "sk" {
+    ) and ($field in ["sk" "sock" "socket"]) {
         return { matched: true, feature: $KERNEL_FEATURE_CTX_SK_SKB_SK }
     }
     if (
@@ -26318,7 +26334,7 @@ def target-context-field-alias-kernel-feature [field: string target] {
         or ($target_text | str starts-with "tcx:")
         or ($target_text | str starts-with "netkit:")
         or ($target_text | str starts-with "cgroup_skb:")
-    ) and $field == "sk" {
+    ) and ($field in ["sk" "sock" "socket"]) {
         return { matched: true, feature: $KERNEL_FEATURE_CTX_SKB_SK }
     }
     if ($target_text | str starts-with "sk_reuseport:") {
@@ -26343,7 +26359,7 @@ def target-context-field-alias-kernel-feature [field: string target] {
         if $field == "hash" {
             return { matched: true, feature: $KERNEL_FEATURE_CTX_SK_REUSEPORT_HASH }
         }
-        if $field == "sk" {
+        if $field in ["sk" "sock" "socket"] {
             return { matched: true, feature: $KERNEL_FEATURE_CTX_SK_REUSEPORT_SK }
         }
         if $field == "migrating_sk" or $field == "migrating_socket" {
@@ -26506,7 +26522,7 @@ def target-context-field-alias-kernel-feature [field: string target] {
         }
     }
     if ($target_text | str starts-with "sk_lookup:") {
-        if $field == "sk" {
+        if $field in ["sk" "sock" "socket"] {
             return { matched: true, feature: $KERNEL_FEATURE_CTX_SK_LOOKUP_SK }
         }
         if $field == "family" {
@@ -27145,6 +27161,7 @@ def iter-btf-context-projection-root? [root: string] {
         "iter_dmabuf"
         "sk"
         "sock"
+        "socket"
         "iter_sock"
     ]
 }
@@ -27163,6 +27180,8 @@ def context-projection-root? [root: string] {
 
     $root in [
         "sk"
+        "sock"
+        "socket"
         "migrating_sk"
         "migrating_socket"
         "arg"
@@ -27344,7 +27363,7 @@ def context-projection-kernel-feature [raw_access: string target] {
     let member = ($parts | get 1)
     let target_text = ($target | default "")
     let socket_projection_root = (
-        ($root in ["sk" "migrating_sk" "migrating_socket"])
+        ($root in ["sk" "sock" "socket" "migrating_sk" "migrating_socket"])
         and not ($target_text | str starts-with "iter:")
     )
 

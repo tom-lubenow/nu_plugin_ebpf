@@ -107,6 +107,7 @@ const ITER_CTX_FIELD_ALIAS_ENTRIES: &[CtxFieldNameEntry] = &[
     ("iter_netlink_sk", CtxField::IterNetlinkSk),
     ("sk", CtxField::IterSock),
     ("sock", CtxField::IterSock),
+    ("socket", CtxField::IterSock),
     ("iter_sock", CtxField::IterSock),
 ];
 const CTX_FIELD_ALIAS_SURFACES: &[CtxFieldAliasSurface] = &[
@@ -224,6 +225,8 @@ const GENERIC_CTX_FIELD_NAME_ENTRIES: &[CtxFieldNameEntry] = &[
     ("protocol", CtxField::Protocol),
     ("ip_protocol", CtxField::Protocol),
     ("sk", CtxField::Socket),
+    ("sock", CtxField::Socket),
+    ("socket", CtxField::Socket),
     ("flow_keys", CtxField::FlowKeys),
     ("netfilter_hook", CtxField::NetfilterHook),
     ("netfilter_pf", CtxField::NetfilterProtocolFamily),
@@ -1320,6 +1323,7 @@ mod tests {
             ("iter_netlink_sk", CtxField::IterNetlinkSk),
             ("sk", CtxField::IterSock),
             ("sock", CtxField::IterSock),
+            ("socket", CtxField::IterSock),
             ("iter_sock", CtxField::IterSock),
         ] {
             assert_eq!(
