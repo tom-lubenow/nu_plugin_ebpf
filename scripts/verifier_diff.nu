@@ -21992,6 +21992,30 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "source-kptr-xchg-cgroup-clear-rejects-partial-old-release"
+        category: "helper-state"
+        tags: [kfunc helper-call kptr cgroup ref-lifetime phi source reject]
+        requires: [kernel-btf]
+        target: "kprobe:do_exit"
+        program: [
+            '{|ctx|'
+            '  map-define cgroup_slots --kind array --key-type u32 --value-type "record{cgrp:kptr:cgroup,cookie:u64}" --max-entries 1'
+            '  let entry = (0 | map-get cgroup_slots --kind array)'
+            '  if $entry {'
+            '    let selector = (helper-call "bpf_get_prandom_u32")'
+            '    let old = (if $selector == 0 { helper-call "bpf_kptr_xchg" $entry.cgrp 0 } else { 0 })'
+            '    if $old {'
+            '      $old | kfunc-call "bpf_cgroup_release"'
+            '    }'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "unreleased kfunc reference at function exit"
+    }
+    {
         name: "source-kptr-xchg-rejects-nonzero-scalar-src"
         category: "helper-state"
         tags: [helper-call kptr cgroup source reject]
