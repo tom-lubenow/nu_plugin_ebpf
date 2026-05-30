@@ -246,6 +246,35 @@ fn test_validate_runtime_artifacts_rejects_mismatched_cached_program_spec() {
     assert!(
         matches!(err, CompileError::InvalidProgram(msg) if msg.contains("declares kprobe") && msg.contains("resolves to tracepoint"))
     );
+
+    let mut section =
+        EbpfProgram::from_bytecode(EbpfProgramType::Extension, "replace_me", "test", vec![])
+            .into_program_section();
+    section.program_spec =
+        Some(ProgramSpec::parse("kprobe:sys_clone").expect("kprobe spec should parse"));
+    let object = EbpfObject {
+        kind: EbpfObjectKind::Program,
+        license: "GPL".to_string(),
+        maps: vec![],
+        readonly_globals: vec![],
+        data_globals: vec![],
+        bss_globals: vec![],
+        extra_data_symbols: vec![ObjectDataSymbol {
+            section_name: ".rodata.custom".to_string(),
+            name: "blob".to_string(),
+            data: vec![1],
+            align: 1,
+            writable: false,
+            relocations: vec![],
+        }],
+        programs: vec![section],
+    };
+    let err = object
+        .validate_runtime_artifacts()
+        .expect_err("object validation should reject metadata drift before artifact policy");
+    assert!(
+        matches!(err, CompileError::InvalidProgram(msg) if msg.contains("declares freplace") && msg.contains("resolves to kprobe"))
+    );
 }
 
 #[test]

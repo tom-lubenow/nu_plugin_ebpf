@@ -523,6 +523,24 @@ fn section_name_for_program(
     Ok(require_program_spec_for_program(prog_type, target)?.section_name())
 }
 
+fn validate_cached_program_spec_matches_program_type(
+    program_name: &str,
+    prog_type: EbpfProgramType,
+    program_spec: Option<&ProgramSpec>,
+) -> Result<(), CompileError> {
+    if let Some(program_spec) = program_spec {
+        let spec_type = program_spec.program_type();
+        if spec_type != prog_type {
+            return Err(CompileError::InvalidProgram(format!(
+                "program '{}' declares {} but cached program spec '{}' resolves to {}",
+                program_name, prog_type, program_spec, spec_type
+            )));
+        }
+    }
+
+    Ok(())
+}
+
 impl EbpfProgram {
     /// Create a new eBPF program from a builder
     pub fn new(
@@ -860,15 +878,11 @@ impl EbpfProgram {
     }
 
     pub fn validate_runtime_artifacts(&self) -> Result<(), CompileError> {
-        if let Some(program_spec) = &self.program_spec {
-            let spec_type = program_spec.program_type();
-            if spec_type != self.prog_type {
-                return Err(CompileError::InvalidProgram(format!(
-                    "program '{}' declares {} but cached program spec '{}' resolves to {}",
-                    self.name, self.prog_type, program_spec, spec_type
-                )));
-            }
-        }
+        validate_cached_program_spec_matches_program_type(
+            &self.name,
+            self.prog_type,
+            self.program_spec.as_ref(),
+        )?;
 
         self.validate_runtime_artifacts_for_info(self.prog_type.info())
     }
@@ -1391,6 +1405,14 @@ impl EbpfObject {
             return Err(CompileError::InvalidProgram(
                 "eBPF object must contain at least one program section".to_string(),
             ));
+        }
+
+        for program in &self.programs {
+            validate_cached_program_spec_matches_program_type(
+                &program.name,
+                program.prog_type,
+                program.program_spec.as_ref(),
+            )?;
         }
 
         if let EbpfObjectKind::StructOps {
