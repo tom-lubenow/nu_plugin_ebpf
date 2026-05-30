@@ -948,6 +948,17 @@ const PROGRAM_GLOBAL_KERNEL_FEATURE_EXPECTATIONS = [
         ]
         feature_keys: []
     }
+    {
+        program: [
+            '{|ctx|'
+            '  let base = { state: $ctx.nf_state }'
+            '  let rec = { ok: true, ...$base }'
+            '  $rec.state.hook | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: []
+    }
 ]
 
 const KERNEL_FEATURE_MAP_HASH = {
@@ -15647,6 +15658,53 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "sk-reuseport-record-socket-context"
+        category: "context-surface"
+        tags: [sk-reuseport context socket record source metadata]
+        target: "sk_reuseport:select"
+        program: [
+            '{|ctx|'
+            '  let rec = { sock: $ctx.sk }'
+            '  ($rec.sock.family + $ctx.hash) | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "sk-reuseport-record-spread-socket-context"
+        category: "context-surface"
+        tags: [sk-reuseport context socket record spread source metadata]
+        target: "sk_reuseport:select"
+        program: [
+            '{|ctx|'
+            '  let base = { sock: $ctx.sock }'
+            '  let rec = { ok: true, ...$base }'
+            '  ($rec.sock.priority + $ctx.protocol) | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "sk-reuseport-user-function-record-socket-context"
+        category: "context-surface"
+        tags: [sk-reuseport context socket user-function record source metadata]
+        target: "sk_reuseport:select"
+        program: [
+            '{|ctx|'
+            '  def wrap [sock] { { sock: $sock } }'
+            '  let rec = (wrap $ctx.sk)'
+            '  ($rec.sock.rx_queue_mapping + $ctx.bind_inany) | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "sk-reuseport-migrate-context"
         category: "context-surface"
         tags: [sk-reuseport context]
@@ -15670,6 +15728,23 @@ const FIXTURES = [
             '  let migrating = $ctx.migrating_socket'
             '  if $migrating {'
             '    $migrating.remote_port | count'
+            '  }'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "sk-reuseport-record-migrating-socket-context"
+        category: "context-surface"
+        tags: [sk-reuseport context socket record source metadata]
+        target: "sk_reuseport:migrate"
+        program: [
+            '{|ctx|'
+            '  let rec = { migrating: $ctx.migrating_socket }'
+            '  if $rec.migrating {'
+            '    $rec.migrating.remote_port | count'
             '  }'
             '  "pass"'
             '}'
@@ -29335,6 +29410,28 @@ def line-declares-readonly-aggregate-constant? [line: string context_names conte
     false
 }
 
+def line-declares-aggregate-literal-with-variable? [line: string] {
+    let trimmed = ($line | str trim)
+    if not (line-invokes-command? $trimmed "let") {
+        return false
+    }
+
+    for assignment in (declaration-assignments $trimmed) {
+        let aggregate_rhs = (trim-simple-parentheses (declaration-rhs-token $assignment))
+        let compact = ($aggregate_rhs | str replace --all " " "")
+
+        if (
+            (($compact | str starts-with "{") and $compact != "{}")
+            or (($compact | str starts-with "[") and $compact != "[]")
+            or (($compact | str starts-with "0x[") and $compact != "0x[]")
+        ) and (line-contains-code-marker? $aggregate_rhs "$") {
+            return true
+        }
+    }
+
+    false
+}
+
 def line-invokes-global-command? [line: string] {
     for command in ["global-define" "global-get" "global-set"] {
         if (line-invokes-command? $line $command) {
@@ -29359,6 +29456,8 @@ def line-declares-annotated-mut-global? [line: string] {
 def program-global-kernel-features [source: string] {
     let context_names = (program-context-variable-names $source)
     let context_root_aliases = (program-bound-context-root-aliases $source $context_names)
+    mut context_aliases = $context_root_aliases
+    mut record_context_aliases_loaded = false
 
     for line in ($source | lines) {
         let trimmed = ($line | str trim)
@@ -29374,9 +29473,24 @@ def program-global-kernel-features [source: string] {
             return [$KERNEL_FEATURE_GLOBAL_DATA_SECTIONS]
         }
 
-        if (line-declares-readonly-aggregate-constant? $trimmed $context_names $context_root_aliases) {
-            return [$KERNEL_FEATURE_GLOBAL_DATA_SECTIONS]
+        if not (line-declares-readonly-aggregate-constant? $trimmed $context_names $context_aliases) {
+            continue
         }
+
+        if (line-declares-aggregate-literal-with-variable? $trimmed) {
+            if not $record_context_aliases_loaded {
+                $context_aliases = (
+                    $context_aliases
+                    | append (program-record-context-aliases $source $context_names)
+                )
+                $record_context_aliases_loaded = true
+            }
+            if not (line-declares-readonly-aggregate-constant? $trimmed $context_names $context_aliases) {
+                continue
+            }
+        }
+
+        return [$KERNEL_FEATURE_GLOBAL_DATA_SECTIONS]
     }
 
     []
