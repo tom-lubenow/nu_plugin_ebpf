@@ -1055,6 +1055,40 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
     .expect("expected ioctl source metadata");
     assert!(ioctl_source.contains("/v4.7/fs/ioctl.c"));
 
+    let readlinkat = TracepointContext::sys_enter("sys_enter_readlinkat");
+    assert!(readlinkat.has_field("dfd"));
+    assert!(readlinkat.has_field("pathname"));
+    assert!(readlinkat.has_field("buf"));
+    assert!(readlinkat.has_field("bufsiz"));
+    assert!(matches!(
+        readlinkat
+            .get_field("pathname")
+            .expect("expected readlinkat pathname")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+    let (_, readlinkat_source) = TracepointContext::syscall_fallback_field_minimum_kernel(
+        "syscalls",
+        "sys_enter_readlinkat",
+        "pathname",
+    )
+    .expect("expected readlinkat source metadata");
+    assert!(readlinkat_source.contains("/v4.7/fs/stat.c"));
+
+    let name_to_handle_at = TracepointContext::sys_enter("sys_enter_name_to_handle_at");
+    assert!(name_to_handle_at.has_field("dfd"));
+    assert!(name_to_handle_at.has_field("name"));
+    assert!(name_to_handle_at.has_field("handle"));
+    assert!(name_to_handle_at.has_field("mnt_id"));
+    assert!(name_to_handle_at.has_field("flag"));
+    let (_, handle_source) = TracepointContext::syscall_fallback_field_minimum_kernel(
+        "syscalls",
+        "sys_enter_name_to_handle_at",
+        "handle",
+    )
+    .expect("expected name_to_handle_at source metadata");
+    assert!(handle_source.contains("/v4.7/fs/fhandle.c"));
+
     let futex = TracepointContext::sys_enter("sys_enter_futex");
     assert!(futex.has_field("uaddr"));
     assert!(futex.has_field("op"));
@@ -1211,6 +1245,27 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         ("sys_enter_fcntl", &["fd", "cmd"][..]),
         ("sys_enter_flock", &["fd", "cmd"][..]),
         ("sys_enter_ioctl", &["fd", "cmd"][..]),
+        ("sys_enter_chdir", &["filename"][..]),
+        ("sys_enter_fchdir", &["fd"][..]),
+        ("sys_enter_chroot", &["filename"][..]),
+        ("sys_enter_getcwd", &["buf", "size"][..]),
+        ("sys_enter_readlink", &["path", "buf", "bufsiz"][..]),
+        (
+            "sys_enter_readlinkat",
+            &["dfd", "pathname", "buf", "bufsiz"][..],
+        ),
+        ("sys_enter_statfs", &["pathname", "buf"][..]),
+        ("sys_enter_fstatfs", &["fd", "buf"][..]),
+        ("sys_enter_getdents", &["fd", "dirent", "count"][..]),
+        ("sys_enter_getdents64", &["fd", "dirent", "count"][..]),
+        (
+            "sys_enter_name_to_handle_at",
+            &["dfd", "name", "handle", "mnt_id", "flag"][..],
+        ),
+        (
+            "sys_enter_open_by_handle_at",
+            &["mountdirfd", "handle", "flags"][..],
+        ),
         ("sys_enter_stat", &["filename", "statbuf"][..]),
         ("sys_enter_newstat", &["filename", "statbuf"][..]),
         ("sys_enter_fstat", &["fd", "statbuf"][..]),

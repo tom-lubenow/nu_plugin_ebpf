@@ -34,6 +34,10 @@ const EPOLL_PWAIT2_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.11/
 const SELECT_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/select.c";
 const SYNC_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/sync.c";
 const STAT_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/stat.c";
+const STATFS_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/statfs.c";
+const READDIR_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/readdir.c";
+const FHANDLE_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/fhandle.c";
+const DCACHE_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/dcache.c";
 const STATX_MIN_KERNEL: &str = "4.11";
 const STATX_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.11/fs/stat.c";
 const NAMEI_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/namei.c";
@@ -131,6 +135,18 @@ const WELL_KNOWN_SYS_ENTER_SYSCALLS: &[&str] = &[
     "lchown",
     "fchown",
     "fchownat",
+    "chdir",
+    "fchdir",
+    "chroot",
+    "getcwd",
+    "readlink",
+    "readlinkat",
+    "statfs",
+    "fstatfs",
+    "getdents",
+    "getdents64",
+    "name_to_handle_at",
+    "open_by_handle_at",
     "execve",
     "execveat",
     "exit",
@@ -747,6 +763,8 @@ impl TracepointContext {
             | "lchown" | "fchown" | "fchownat" => {
                 (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, OPEN_SOURCE)
             }
+            "chdir" | "fchdir" | "chroot" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, OPEN_SOURCE),
+            "getcwd" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, DCACHE_SOURCE),
             "openat" => (
                 SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL,
                 SYSCALL_TRACEPOINT_FALLBACK_SOURCE,
@@ -787,6 +805,12 @@ impl TracepointContext {
                 (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, STAT_SOURCE)
             }
             "statx" => (STATX_MIN_KERNEL, STATX_SOURCE),
+            "readlink" | "readlinkat" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, STAT_SOURCE),
+            "statfs" | "fstatfs" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, STATFS_SOURCE),
+            "getdents" | "getdents64" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, READDIR_SOURCE),
+            "name_to_handle_at" | "open_by_handle_at" => {
+                (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, FHANDLE_SOURCE)
+            }
             "mknod" | "mknodat" | "mkdir" | "mkdirat" | "rmdir" | "unlink" | "unlinkat"
             | "symlink" | "symlinkat" | "link" | "linkat" | "rename" | "renameat" | "renameat2" => {
                 (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, NAMEI_SOURCE)
@@ -1073,6 +1097,48 @@ impl TracepointContext {
                 ("user", Self::syscall_arg_int(false)),
                 ("group", Self::syscall_arg_int(false)),
                 ("flag", Self::syscall_arg_int(true)),
+            ],
+            "chdir" | "chroot" => vec![("filename", Self::syscall_arg_user_ptr())],
+            "fchdir" => vec![("fd", Self::syscall_arg_int(false))],
+            "getcwd" => vec![
+                ("buf", Self::syscall_arg_user_ptr()),
+                ("size", Self::syscall_arg_int(false)),
+            ],
+            "readlink" => vec![
+                ("path", Self::syscall_arg_user_ptr()),
+                ("buf", Self::syscall_arg_user_ptr()),
+                ("bufsiz", Self::syscall_arg_int(true)),
+            ],
+            "readlinkat" => vec![
+                ("dfd", Self::syscall_arg_int(true)),
+                ("pathname", Self::syscall_arg_user_ptr()),
+                ("buf", Self::syscall_arg_user_ptr()),
+                ("bufsiz", Self::syscall_arg_int(true)),
+            ],
+            "statfs" => vec![
+                ("pathname", Self::syscall_arg_user_ptr()),
+                ("buf", Self::syscall_arg_user_ptr()),
+            ],
+            "fstatfs" => vec![
+                ("fd", Self::syscall_arg_int(false)),
+                ("buf", Self::syscall_arg_user_ptr()),
+            ],
+            "getdents" | "getdents64" => vec![
+                ("fd", Self::syscall_arg_int(false)),
+                ("dirent", Self::syscall_arg_user_ptr()),
+                ("count", Self::syscall_arg_int(false)),
+            ],
+            "name_to_handle_at" => vec![
+                ("dfd", Self::syscall_arg_int(true)),
+                ("name", Self::syscall_arg_user_ptr()),
+                ("handle", Self::syscall_arg_user_ptr()),
+                ("mnt_id", Self::syscall_arg_user_ptr()),
+                ("flag", Self::syscall_arg_int(true)),
+            ],
+            "open_by_handle_at" => vec![
+                ("mountdirfd", Self::syscall_arg_int(true)),
+                ("handle", Self::syscall_arg_user_ptr()),
+                ("flags", Self::syscall_arg_int(true)),
             ],
             "execve" => vec![
                 ("filename", Self::syscall_arg_user_ptr()),

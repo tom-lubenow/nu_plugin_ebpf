@@ -920,6 +920,8 @@ tracepoints such as `sys_enter_socket`, `sys_enter_bind`, `sys_enter_connect`,
 open, permission, ownership, and pathname operation aliases such as
 `sys_enter_newfstatat`, `sys_enter_statx`, `sys_enter_open`,
 `sys_enter_creat`, `sys_enter_fchmodat`, `sys_enter_fchownat`,
+`sys_enter_chdir`, `sys_enter_getcwd`, `sys_enter_readlinkat`,
+`sys_enter_statfs`, `sys_enter_getdents64`, `sys_enter_name_to_handle_at`,
 `sys_enter_mknod`, `sys_enter_link`, `sys_enter_linkat`, `sys_enter_rename`,
 `sys_enter_renameat2`, and Linux 6.6+ `sys_enter_fchmodat2`.
 Extended-attribute fallbacks expose aliases for
