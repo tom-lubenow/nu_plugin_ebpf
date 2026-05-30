@@ -5034,7 +5034,14 @@ fn test_spec_context_projections_only_include_supported_entries() {
         let spec = ProgramSpec::from_program_type_target(*program_type, target)
             .unwrap_or_else(|err| panic!("{program_type:?} representative target failed: {err}"));
 
-        for projection in spec_context_projections(&spec) {
+        let projections = spec_context_projections(&spec);
+        let mut seen_paths = HashSet::new();
+        for projection in projections {
+            assert!(
+                seen_paths.insert(projection.path.clone()),
+                "{program_type:?} exposed duplicate projection {}",
+                projection.path
+            );
             assert!(projection.supported);
             assert!(
                 projection.unsupported_reason.is_none(),
