@@ -433,6 +433,12 @@ fn packet_header_field_records(header: PacketHeaderKind, span: Span) -> Vec<Valu
             Value::record(
                 record! {
                     "name" => Value::string(field.name, span),
+                    "names" => Value::list({
+                        let mut names = Vec::with_capacity(1 + field.aliases.len());
+                        names.push(Value::string(field.name, span));
+                        names.extend(field.aliases.iter().map(|alias| Value::string(*alias, span)));
+                        names
+                    }, span),
                     "semantic_type" => Value::string(mir_type_label(&field.ty.mir_type()), span),
                     "offset" => optional_usize(Some(field.offset), span),
                     "packet_big_endian" => Value::bool(field.big_endian, span),

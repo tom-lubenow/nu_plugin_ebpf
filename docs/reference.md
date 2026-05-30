@@ -367,7 +367,10 @@ automatically. ARP exposes fixed Ethernet/IPv4 fields such as
 `fragment_offset` fields; IPv6 exposes derived `version`, `traffic_class`, and
 `flow_label` fields; TCP exposes derived `data_offset`, `reserved`,
 `flags`, and per-flag `ns`, `cwr`, `ece`, `urg`, `ack`, `psh`, `rst`,
-`syn`, and `fin` fields. Those header views also support `payload` stepping:
+`syn`, and `fin` fields. Packet headers also accept common kernel-header
+field aliases such as `eth.h_proto`, `ipv4.tot_len`, `ipv4.saddr`,
+`udp.source`, `udp.dest`, `tcp.source`, and `tcp.dest`. Those header views
+also support `payload` stepping:
 `$ctx.data.eth.payload` skips Ethernet and up to two stacked VLAN tags
 when present, `$ctx.data.eth.payload.ipv4.payload` skips a runtime-sized
 IPv4 header using the IHL nibble, `$ctx.data.eth.payload.ipv6.payload`

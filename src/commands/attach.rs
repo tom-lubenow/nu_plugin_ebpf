@@ -285,9 +285,11 @@ Context parameter syntax (recommended):
     IPv6 exposes derived `version`, `traffic_class`, and `flow_label`
     fields; TCP exposes derived `data_offset`, `reserved`, `flags`, and
     per-flag `ns`, `cwr`, `ece`, `urg`, `ack`, `psh`, `rst`, `syn`, and
-    `fin` fields. Deeper TCP option parsing, ICMP subtype-specific body
-    decoding, and ESP/non-front-decodable IPv6 extension headers are
-    still not modeled.
+    `fin` fields. Packet headers also accept common kernel-header field
+    aliases such as `eth.h_proto`, `ipv4.tot_len`, `ipv4.saddr`,
+    `udp.source`, `udp.dest`, `tcp.source`, and `tcp.dest`. Deeper TCP
+    option parsing, ICMP subtype-specific body decoding, and
+    ESP/non-front-decodable IPv6 extension headers are still not modeled.
     Writable skb metadata is attach-sensitive. On `socket_filter`,
     fixed `ctx.cb.N` is writable. On `lwt_*`, `ctx.mark`,
     `ctx.priority`, and fixed `ctx.cb.N` are writable. On `tc_action`, `tc`, `tcx`, and `netkit`, `ctx.mark`,

@@ -2169,6 +2169,52 @@ fn test_lower_xdp_eth_ipv4_tcp_syn_projection_extracts_packet_bitfield() {
 }
 
 #[test]
+fn test_lower_xdp_packet_header_field_alias_projection_canonicalizes() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![
+            string_member("data"),
+            string_member("eth"),
+            string_member("ipv4"),
+            string_member("udp"),
+            string_member("source"),
+        ],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("xdp udp source field alias projection should lower");
+
+    let instructions: Vec<_> = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect();
+    assert!(instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::Load {
+            ty: MirType::U16,
+            ..
+        }
+    )));
+    assert!(instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::BinOp {
+            op: BinOpKind::Shl,
+            ..
+        }
+    )));
+}
+
+#[test]
 fn test_lower_xdp_eth_payload_ipv6_next_header_projection_adds_ipv6_view() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![

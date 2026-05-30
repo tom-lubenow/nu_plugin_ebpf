@@ -29,6 +29,7 @@ pub(crate) struct PacketHeaderBitfieldSpec {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct PacketHeaderFieldSpec {
     pub name: &'static str,
+    pub aliases: &'static [&'static str],
     pub ty: PacketHeaderFieldType,
     pub offset: usize,
     pub bitfield: Option<PacketHeaderBitfieldSpec>,
@@ -47,8 +48,19 @@ const fn packet_field(
     offset: usize,
     big_endian: bool,
 ) -> PacketHeaderFieldSpec {
+    packet_field_with_aliases(name, &[], ty, offset, big_endian)
+}
+
+const fn packet_field_with_aliases(
+    name: &'static str,
+    aliases: &'static [&'static str],
+    ty: PacketHeaderFieldType,
+    offset: usize,
+    big_endian: bool,
+) -> PacketHeaderFieldSpec {
     PacketHeaderFieldSpec {
         name,
+        aliases,
         ty,
         offset,
         bitfield: None,
@@ -64,8 +76,21 @@ const fn packet_bitfield(
     bit_size: u32,
     big_endian: bool,
 ) -> PacketHeaderFieldSpec {
+    packet_bitfield_with_aliases(name, &[], ty, offset, bit_offset, bit_size, big_endian)
+}
+
+const fn packet_bitfield_with_aliases(
+    name: &'static str,
+    aliases: &'static [&'static str],
+    ty: PacketHeaderFieldType,
+    offset: usize,
+    bit_offset: u32,
+    bit_size: u32,
+    big_endian: bool,
+) -> PacketHeaderFieldSpec {
     PacketHeaderFieldSpec {
         name,
+        aliases,
         ty,
         offset,
         bitfield: Some(PacketHeaderBitfieldSpec {
@@ -104,17 +129,59 @@ const PACKET_PROTOCOL_VIEWS: &[PacketHeaderProtocolView] = &[
 ];
 
 const ETHERNET_FIELDS: &[PacketHeaderFieldSpec] = &[
-    packet_field("dst", PacketHeaderFieldType::Bytes(6), 0, false),
-    packet_field("src", PacketHeaderFieldType::Bytes(6), 6, false),
-    packet_field("ethertype", PacketHeaderFieldType::U16, 12, true),
+    packet_field_with_aliases(
+        "dst",
+        &["dest", "h_dest"],
+        PacketHeaderFieldType::Bytes(6),
+        0,
+        false,
+    ),
+    packet_field_with_aliases(
+        "src",
+        &["source", "h_source"],
+        PacketHeaderFieldType::Bytes(6),
+        6,
+        false,
+    ),
+    packet_field_with_aliases(
+        "ethertype",
+        &["protocol", "h_proto"],
+        PacketHeaderFieldType::U16,
+        12,
+        true,
+    ),
 ];
 
 const ARP_FIELDS: &[PacketHeaderFieldSpec] = &[
-    packet_field("hardware_type", PacketHeaderFieldType::U16, 0, true),
-    packet_field("protocol_type", PacketHeaderFieldType::U16, 2, true),
-    packet_field("hardware_len", PacketHeaderFieldType::U8, 4, false),
-    packet_field("protocol_len", PacketHeaderFieldType::U8, 5, false),
-    packet_field("opcode", PacketHeaderFieldType::U16, 6, true),
+    packet_field_with_aliases(
+        "hardware_type",
+        &["ar_hrd"],
+        PacketHeaderFieldType::U16,
+        0,
+        true,
+    ),
+    packet_field_with_aliases(
+        "protocol_type",
+        &["ar_pro"],
+        PacketHeaderFieldType::U16,
+        2,
+        true,
+    ),
+    packet_field_with_aliases(
+        "hardware_len",
+        &["ar_hln"],
+        PacketHeaderFieldType::U8,
+        4,
+        false,
+    ),
+    packet_field_with_aliases(
+        "protocol_len",
+        &["ar_pln"],
+        PacketHeaderFieldType::U8,
+        5,
+        false,
+    ),
+    packet_field_with_aliases("opcode", &["ar_op"], PacketHeaderFieldType::U16, 6, true),
     packet_field("sender_mac", PacketHeaderFieldType::Bytes(6), 8, false),
     packet_field("sender_ip", PacketHeaderFieldType::Bytes(4), 14, false),
     packet_field("target_mac", PacketHeaderFieldType::Bytes(6), 18, false),
@@ -128,9 +195,27 @@ const IPV4_FIELDS: &[PacketHeaderFieldSpec] = &[
     packet_field("dscp_ecn", PacketHeaderFieldType::U8, 1, false),
     packet_bitfield("ecn", PacketHeaderFieldType::U8, 1, 0, 2, false),
     packet_bitfield("dscp", PacketHeaderFieldType::U8, 1, 2, 6, false),
-    packet_field("total_len", PacketHeaderFieldType::U16, 2, true),
-    packet_field("identification", PacketHeaderFieldType::U16, 4, true),
-    packet_field("flags_fragment_offset", PacketHeaderFieldType::U16, 6, true),
+    packet_field_with_aliases(
+        "total_len",
+        &["tot_len"],
+        PacketHeaderFieldType::U16,
+        2,
+        true,
+    ),
+    packet_field_with_aliases(
+        "identification",
+        &["id"],
+        PacketHeaderFieldType::U16,
+        4,
+        true,
+    ),
+    packet_field_with_aliases(
+        "flags_fragment_offset",
+        &["frag_off"],
+        PacketHeaderFieldType::U16,
+        6,
+        true,
+    ),
     packet_bitfield(
         "fragment_offset",
         PacketHeaderFieldType::U16,
@@ -145,9 +230,21 @@ const IPV4_FIELDS: &[PacketHeaderFieldSpec] = &[
     packet_bitfield("flags", PacketHeaderFieldType::U16, 6, 13, 3, true),
     packet_field("ttl", PacketHeaderFieldType::U8, 8, false),
     packet_field("protocol", PacketHeaderFieldType::U8, 9, false),
-    packet_field("checksum", PacketHeaderFieldType::U16, 10, true),
-    packet_field("src", PacketHeaderFieldType::Bytes(4), 12, false),
-    packet_field("dst", PacketHeaderFieldType::Bytes(4), 16, false),
+    packet_field_with_aliases("checksum", &["check"], PacketHeaderFieldType::U16, 10, true),
+    packet_field_with_aliases(
+        "src",
+        &["saddr"],
+        PacketHeaderFieldType::Bytes(4),
+        12,
+        false,
+    ),
+    packet_field_with_aliases(
+        "dst",
+        &["daddr"],
+        PacketHeaderFieldType::Bytes(4),
+        16,
+        false,
+    ),
 ];
 
 const IPV6_FIELDS: &[PacketHeaderFieldSpec] = &[
@@ -156,36 +253,54 @@ const IPV6_FIELDS: &[PacketHeaderFieldSpec] = &[
     packet_bitfield("traffic_class", PacketHeaderFieldType::U32, 0, 20, 8, true),
     packet_bitfield("version", PacketHeaderFieldType::U32, 0, 28, 4, true),
     packet_field("payload_len", PacketHeaderFieldType::U16, 4, true),
-    packet_field("next_header", PacketHeaderFieldType::U8, 6, false),
+    packet_field_with_aliases(
+        "next_header",
+        &["nexthdr"],
+        PacketHeaderFieldType::U8,
+        6,
+        false,
+    ),
     packet_field("hop_limit", PacketHeaderFieldType::U8, 7, false),
-    packet_field("src", PacketHeaderFieldType::Bytes(16), 8, false),
-    packet_field("dst", PacketHeaderFieldType::Bytes(16), 24, false),
+    packet_field_with_aliases(
+        "src",
+        &["saddr"],
+        PacketHeaderFieldType::Bytes(16),
+        8,
+        false,
+    ),
+    packet_field_with_aliases(
+        "dst",
+        &["daddr"],
+        PacketHeaderFieldType::Bytes(16),
+        24,
+        false,
+    ),
 ];
 
 const UDP_FIELDS: &[PacketHeaderFieldSpec] = &[
-    packet_field("src", PacketHeaderFieldType::U16, 0, true),
-    packet_field("dst", PacketHeaderFieldType::U16, 2, true),
+    packet_field_with_aliases("src", &["source"], PacketHeaderFieldType::U16, 0, true),
+    packet_field_with_aliases("dst", &["dest"], PacketHeaderFieldType::U16, 2, true),
     packet_field("len", PacketHeaderFieldType::U16, 4, true),
-    packet_field("checksum", PacketHeaderFieldType::U16, 6, true),
+    packet_field_with_aliases("checksum", &["check"], PacketHeaderFieldType::U16, 6, true),
 ];
 
 const ICMP_FIELDS: &[PacketHeaderFieldSpec] = &[
     packet_field("type", PacketHeaderFieldType::U8, 0, false),
     packet_field("code", PacketHeaderFieldType::U8, 1, false),
-    packet_field("checksum", PacketHeaderFieldType::U16, 2, true),
+    packet_field_with_aliases("checksum", &["check"], PacketHeaderFieldType::U16, 2, true),
     packet_field("body", PacketHeaderFieldType::Bytes(4), 4, false),
 ];
 
 const ICMPV6_FIELDS: &[PacketHeaderFieldSpec] = &[
     packet_field("type", PacketHeaderFieldType::U8, 0, false),
     packet_field("code", PacketHeaderFieldType::U8, 1, false),
-    packet_field("checksum", PacketHeaderFieldType::U16, 2, true),
+    packet_field_with_aliases("checksum", &["check"], PacketHeaderFieldType::U16, 2, true),
     packet_field("body", PacketHeaderFieldType::Bytes(4), 4, false),
 ];
 
 const TCP_FIELDS: &[PacketHeaderFieldSpec] = &[
-    packet_field("src", PacketHeaderFieldType::U16, 0, true),
-    packet_field("dst", PacketHeaderFieldType::U16, 2, true),
+    packet_field_with_aliases("src", &["source"], PacketHeaderFieldType::U16, 0, true),
+    packet_field_with_aliases("dst", &["dest"], PacketHeaderFieldType::U16, 2, true),
     packet_field("seq", PacketHeaderFieldType::U32, 4, true),
     packet_field("ack_seq", PacketHeaderFieldType::U32, 8, true),
     packet_field("data_offset_flags", PacketHeaderFieldType::U16, 12, true),
@@ -202,7 +317,7 @@ const TCP_FIELDS: &[PacketHeaderFieldSpec] = &[
     packet_bitfield("ece", PacketHeaderFieldType::U8, 13, 6, 1, false),
     packet_bitfield("cwr", PacketHeaderFieldType::U8, 13, 7, 1, false),
     packet_field("window", PacketHeaderFieldType::U16, 14, true),
-    packet_field("checksum", PacketHeaderFieldType::U16, 16, true),
+    packet_field_with_aliases("checksum", &["check"], PacketHeaderFieldType::U16, 16, true),
     packet_field("urg_ptr", PacketHeaderFieldType::U16, 18, true),
 ];
 
@@ -296,7 +411,11 @@ impl PacketHeaderKind {
         self.fields()
             .iter()
             .copied()
-            .find(|field| field.name == name)
+            .find(|field| field.name == name || field.aliases.contains(&name))
+    }
+
+    pub(crate) fn canonical_field_name(self, name: &str) -> Option<&'static str> {
+        self.field(name).map(|field| field.name)
     }
 
     pub(crate) fn protocol_views(self) -> impl Iterator<Item = PacketHeaderProtocolView> {
@@ -378,6 +497,26 @@ mod tests {
                     "packet header {header:?} field {:?} should be unique",
                     field.name
                 );
+                for alias in field.aliases {
+                    assert!(
+                        fields.insert(alias),
+                        "packet header {header:?} field alias {alias:?} should be unique"
+                    );
+                }
+                assert_eq!(
+                    header.canonical_field_name(field.name),
+                    Some(field.name),
+                    "packet header {header:?} canonical field {:?} should resolve",
+                    field.name
+                );
+                for alias in field.aliases {
+                    assert_eq!(
+                        header.canonical_field_name(alias),
+                        Some(field.name),
+                        "packet header {header:?} field alias {alias:?} should resolve to {:?}",
+                        field.name
+                    );
+                }
             }
         }
     }

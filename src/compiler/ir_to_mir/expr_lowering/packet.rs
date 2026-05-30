@@ -705,6 +705,10 @@ impl<'a> HirToMirLowering<'a> {
                     if name.as_deref() == Some("bpf_sock") && kernel_btf_type_id.is_none() {
                         crate::compiler::canonical_bpf_sock_projection_member(val)
                             .unwrap_or(val.as_str())
+                    } else if let Some(header) =
+                        name.as_deref().and_then(PacketHeaderKind::from_type_name)
+                    {
+                        header.canonical_field_name(val).unwrap_or(val.as_str())
                     } else {
                         val.as_str()
                     };

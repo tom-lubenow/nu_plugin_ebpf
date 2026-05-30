@@ -1156,6 +1156,29 @@ fn test_spec_record_includes_packet_context_metadata() {
             .as_bool()
             .expect("ipv4 fragment_offset endian metadata should be a bool")
     );
+    let total_len = ipv4_fields
+        .iter()
+        .find(|field| {
+            field
+                .as_record()
+                .ok()
+                .and_then(|record| record.get("name"))
+                .and_then(|name| name.as_str().ok())
+                .is_some_and(|name| name == "total_len")
+        })
+        .expect("ipv4 total_len field should be present")
+        .as_record()
+        .expect("ipv4 total_len field should be a record");
+    assert!(
+        total_len
+            .get("names")
+            .expect("ipv4 total_len names should be present")
+            .as_list()
+            .expect("ipv4 total_len names should be a list")
+            .iter()
+            .any(|name| name.as_str().is_ok_and(|name| name == "tot_len")),
+        "ipv4 total_len should expose its kernel-header alias"
+    );
 
     let ipv6 = packet_headers
         .iter()
@@ -1300,6 +1323,16 @@ fn test_spec_record_includes_packet_context_metadata() {
             .expect("arp opcode endian metadata should be present")
             .as_bool()
             .expect("arp opcode endian metadata should be a bool")
+    );
+    assert!(
+        opcode
+            .get("names")
+            .expect("arp opcode names should be present")
+            .as_list()
+            .expect("arp opcode names should be a list")
+            .iter()
+            .any(|name| name.as_str().is_ok_and(|name| name == "ar_op")),
+        "arp opcode should expose its kernel-header alias"
     );
 
     let kprobe = ProgramSpec::parse("kprobe:sys_read").expect("kprobe spec should parse");

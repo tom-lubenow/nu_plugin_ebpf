@@ -8403,6 +8403,24 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "xdp-packet-header-field-aliases"
+        category: "packet"
+        tags: [xdp packet header alias source metadata]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  let eth = $ctx.data.eth.h_proto'
+            '  let ip4 = ($ctx.data.eth.ipv4.tot_len + $ctx.data.eth.ipv4.saddr.0 + $ctx.data.eth.ipv4.daddr.0)'
+            '  let udp = ($ctx.data.eth.ipv4.udp.source + $ctx.data.eth.ipv4.udp.dest)'
+            '  ($eth + $ip4 + $udp) | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "xdp-frags-driver-context"
         category: "context-surface"
         tags: [xdp context frags]
