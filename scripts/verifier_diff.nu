@@ -8664,7 +8664,7 @@ const FIXTURES = [
     {
         name: "annotated-mut-scalar-null-rejected-by-nushell-parser"
         category: "globals"
-        tags: [globals scalar null parser reject]
+        tags: [globals scalar "null" parser reject]
         target: "raw_tracepoint:sys_enter"
         program: [
             '{|ctx|'
@@ -8680,7 +8680,7 @@ const FIXTURES = [
     {
         name: "annotated-mut-record-null-rejected-by-nushell-parser"
         category: "globals"
-        tags: [globals records null parser reject]
+        tags: [globals records "null" parser reject]
         target: "raw_tracepoint:sys_enter"
         program: [
             '{|ctx|'
@@ -23009,7 +23009,7 @@ const FIXTURES = [
     {
         name: "core-null-compare-flow"
         category: "language-core"
-        tags: [control-flow null]
+        tags: [control-flow "null"]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
@@ -29575,6 +29575,25 @@ def validate-host-features [fixture field: string] {
     }
 }
 
+def validate-fixture-tags [fixture] {
+    let tags = (optional $fixture tags [])
+    for tag in $tags {
+        if (($tag | describe) != "string") {
+            fail $"fixture ($fixture.name) declares non-string tag value '($tag)'"
+        }
+        if ($tag | str trim) == "" {
+            fail $"fixture ($fixture.name) declares an empty tag"
+        }
+    }
+
+    for tag in ($tags | uniq) {
+        let count = ($tags | where {|candidate| $candidate == $tag } | length)
+        if $count > 1 {
+            fail $"fixture ($fixture.name) declares duplicate tag '($tag)'"
+        }
+    }
+}
+
 def validate-kernel-feature-key-uniqueness [fixture_name: string origin: string features] {
     let keys = ($features | each {|feature| $feature | get -o key })
 
@@ -29895,6 +29914,7 @@ def validate-fixture-metadata [fixtures] {
         if $fixture.local != "accept" and $fixture.kernel != "skip" {
             fail $"fixture ($fixture.name) declares kernel=($fixture.kernel), but kernel checks only run after local accept; use kernel=skip for local ($fixture.local) fixtures"
         }
+        validate-fixture-tags $fixture
         validate-host-features $fixture requires
         validate-host-features $fixture kernel_requires
         let kernel_features = (validate-kernel-feature-metadata $fixture)
