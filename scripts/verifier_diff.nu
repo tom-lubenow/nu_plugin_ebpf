@@ -2296,6 +2296,12 @@ const SOCKET_TRACEPOINT_FIELD_SPECS = [
         source: "https://github.com/torvalds/linux/blob/v4.7/net/socket.c"
     }
     {
+        syscalls: ["getsockname" "getpeername"]
+        fields: ["fd" "usockaddr" "usockaddr_len"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/net/socket.c"
+    }
+    {
         syscalls: ["shutdown"]
         fields: ["fd" "how"]
         min_kernel: "4.7"
@@ -3132,6 +3138,18 @@ const SIGNAL_TRACEPOINT_FIELD_SPECS = [
         source: "https://github.com/torvalds/linux/blob/v4.7/kernel/signal.c"
     }
     {
+        syscalls: ["signalfd"]
+        fields: ["ufd" "user_mask" "sizemask"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/signalfd.c"
+    }
+    {
+        syscalls: ["signalfd4"]
+        fields: ["ufd" "user_mask" "sizemask" "flags"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/signalfd.c"
+    }
+    {
         syscalls: ["pidfd_send_signal"]
         fields: ["pidfd" "sig" "info" "flags"]
         min_kernel: "5.1"
@@ -3258,6 +3276,30 @@ const IDENTITY_TRACEPOINT_FIELD_SPECS = [
     {
         syscalls: ["getcpu"]
         fields: ["cpup" "nodep" "unused"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/sys.c"
+    }
+    {
+        syscalls: ["getrandom"]
+        fields: ["buf" "count" "flags"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/drivers/char/random.c"
+    }
+    {
+        syscalls: ["times"]
+        fields: ["tbuf"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/sys.c"
+    }
+    {
+        syscalls: ["newuname"]
+        fields: ["name"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/sys.c"
+    }
+    {
+        syscalls: ["sysinfo"]
+        fields: ["info"]
         min_kernel: "4.7"
         source: "https://github.com/torvalds/linux/blob/v4.7/kernel/sys.c"
     }
@@ -6724,6 +6766,57 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         ]
     }
     {
+        target: "tracepoint:syscalls/sys_enter_getpeername"
+        program: [
+            '{|ctx|'
+            '  let usockaddr = $ctx.usockaddr'
+            '  let usockaddr_len = $ctx.usockaddr_len'
+            '  if $usockaddr { 1 | count }'
+            '  if $usockaddr_len { 1 | count }'
+            '  $ctx.fd | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_getpeername:field:usockaddr"
+            "tracepoint:syscalls/sys_enter_getpeername:field:usockaddr_len"
+            "tracepoint:syscalls/sys_enter_getpeername:field:fd"
+        ]
+    }
+    {
+        target: "tracepoint:syscalls/sys_enter_getrandom"
+        program: [
+            '{|ctx|'
+            '  let buf = $ctx.buf'
+            '  if $buf { 1 | count }'
+            '  ($ctx.count + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_getrandom:field:buf"
+            "tracepoint:syscalls/sys_enter_getrandom:field:count"
+            "tracepoint:syscalls/sys_enter_getrandom:field:flags"
+        ]
+    }
+    {
+        target: "tracepoint:syscalls/sys_enter_signalfd4"
+        program: [
+            '{|ctx|'
+            '  let user_mask = $ctx.user_mask'
+            '  if $user_mask { 1 | count }'
+            '  ($ctx.ufd + $ctx.sizemask + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_signalfd4:field:user_mask"
+            "tracepoint:syscalls/sys_enter_signalfd4:field:ufd"
+            "tracepoint:syscalls/sys_enter_signalfd4:field:sizemask"
+            "tracepoint:syscalls/sys_enter_signalfd4:field:flags"
+        ]
+    }
+    {
         target: "tracepoint:syscalls/sys_enter_openat"
         program: [
             '{|ctx|'
@@ -8913,6 +9006,59 @@ const FIXTURES = [
             '  let timeout = $ctx.timeout'
             '  if $timeout { 1 | count }'
             '  ($ctx.fd + $ctx.vlen + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-getpeername-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_getpeername]
+        target: "tracepoint:syscalls/sys_enter_getpeername"
+        program: [
+            '{|ctx|'
+            '  let usockaddr = $ctx.usockaddr'
+            '  let usockaddr_len = $ctx.usockaddr_len'
+            '  if $usockaddr { 1 | count }'
+            '  if $usockaddr_len { 1 | count }'
+            '  $ctx.fd | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-getrandom-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_getrandom]
+        target: "tracepoint:syscalls/sys_enter_getrandom"
+        program: [
+            '{|ctx|'
+            '  let buf = $ctx.buf'
+            '  if $buf { 1 | count }'
+            '  ($ctx.count + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-signalfd4-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_signalfd4]
+        target: "tracepoint:syscalls/sys_enter_signalfd4"
+        program: [
+            '{|ctx|'
+            '  let user_mask = $ctx.user_mask'
+            '  if $user_mask { 1 | count }'
+            '  ($ctx.ufd + $ctx.sizemask + $ctx.flags) | count'
             '  0'
             '}'
         ]

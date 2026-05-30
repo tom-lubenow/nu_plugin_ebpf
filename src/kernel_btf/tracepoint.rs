@@ -83,6 +83,8 @@ const TIMERFD_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/tim
 const IO_URING_MIN_KERNEL: &str = "5.1";
 const IO_URING_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.1/fs/io_uring.c";
 const SIGNAL_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/signal.c";
+const SIGNALFD_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/signalfd.c";
+const RANDOM_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/drivers/char/random.c";
 const PIDFD_SEND_SIGNAL_MIN_KERNEL: &str = "5.1";
 const PIDFD_SEND_SIGNAL_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.1/kernel/signal.c";
@@ -255,6 +257,8 @@ const WELL_KNOWN_SYS_ENTER_SYSCALLS: &[&str] = &[
     "accept4",
     "setsockopt",
     "getsockopt",
+    "getsockname",
+    "getpeername",
     "shutdown",
     "sendmsg",
     "recvmsg",
@@ -317,6 +321,8 @@ const WELL_KNOWN_SYS_ENTER_SYSCALLS: &[&str] = &[
     "sigaltstack",
     "rt_sigaction",
     "rt_sigsuspend",
+    "signalfd",
+    "signalfd4",
     "pidfd_send_signal",
     "pidfd_open",
     "pidfd_getfd",
@@ -347,6 +353,10 @@ const WELL_KNOWN_SYS_ENTER_SYSCALLS: &[&str] = &[
     "umask",
     "prctl",
     "getcpu",
+    "getrandom",
+    "times",
+    "newuname",
+    "sysinfo",
     "getgroups",
     "setgroups",
     "capget",
@@ -843,8 +853,8 @@ impl TracepointContext {
             "fsopen" | "fsconfig" | "fspick" => (MOUNT_API_MIN_KERNEL, MOUNT_API_FSOPEN_SOURCE),
             "mount_setattr" => (MOUNT_SETATTR_MIN_KERNEL, MOUNT_SETATTR_SOURCE),
             "socket" | "socketpair" | "bind" | "listen" | "accept" | "connect" | "sendto"
-            | "recvfrom" | "accept4" | "setsockopt" | "getsockopt" | "shutdown" | "sendmsg"
-            | "recvmsg" | "sendmmsg" | "recvmmsg" => {
+            | "recvfrom" | "accept4" | "setsockopt" | "getsockopt" | "getsockname"
+            | "getpeername" | "shutdown" | "sendmsg" | "recvmsg" | "sendmmsg" | "recvmmsg" => {
                 (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, SOCKET_SOURCE)
             }
             "mmap" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, X86_MMAP_SOURCE),
@@ -887,6 +897,7 @@ impl TracepointContext {
             | "rt_sigaction" | "rt_sigsuspend" => {
                 (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, SIGNAL_SOURCE)
             }
+            "signalfd" | "signalfd4" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, SIGNALFD_SOURCE),
             "pidfd_send_signal" => (PIDFD_SEND_SIGNAL_MIN_KERNEL, PIDFD_SEND_SIGNAL_SOURCE),
             "pidfd_open" => (PIDFD_OPEN_MIN_KERNEL, PIDFD_OPEN_SOURCE),
             "pidfd_getfd" => (PIDFD_GETFD_MIN_KERNEL, PIDFD_GETFD_SOURCE),
@@ -897,7 +908,10 @@ impl TracepointContext {
             | "setresuid" | "getresuid" | "setresgid" | "getresgid" | "setfsuid" | "setfsgid"
             | "setpgid" | "getpgid" | "getsid" | "sethostname" | "gethostname"
             | "setdomainname" | "getrlimit" | "setrlimit" | "getrusage" | "umask" | "prctl"
-            | "getcpu" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, KERNEL_SYS_SOURCE),
+            | "getcpu" | "times" | "newuname" | "sysinfo" => {
+                (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, KERNEL_SYS_SOURCE)
+            }
+            "getrandom" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, RANDOM_SOURCE),
             "getgroups" | "setgroups" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, GROUPS_SOURCE),
             "capget" | "capset" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, CAPABILITY_SOURCE),
             "nice"
@@ -1584,6 +1598,11 @@ impl TracepointContext {
                 ("optval", Self::syscall_arg_user_ptr()),
                 ("optlen", Self::syscall_arg_user_ptr()),
             ],
+            "getsockname" | "getpeername" => vec![
+                ("fd", Self::syscall_arg_int(false)),
+                ("usockaddr", Self::syscall_arg_user_ptr()),
+                ("usockaddr_len", Self::syscall_arg_user_ptr()),
+            ],
             "shutdown" => vec![
                 ("fd", Self::syscall_arg_int(false)),
                 ("how", Self::syscall_arg_int(false)),
@@ -1840,6 +1859,17 @@ impl TracepointContext {
                 ("unewset", Self::syscall_arg_user_ptr()),
                 ("sigsetsize", Self::syscall_arg_int(false)),
             ],
+            "signalfd" => vec![
+                ("ufd", Self::syscall_arg_int(true)),
+                ("user_mask", Self::syscall_arg_user_ptr()),
+                ("sizemask", Self::syscall_arg_int(false)),
+            ],
+            "signalfd4" => vec![
+                ("ufd", Self::syscall_arg_int(true)),
+                ("user_mask", Self::syscall_arg_user_ptr()),
+                ("sizemask", Self::syscall_arg_int(false)),
+                ("flags", Self::syscall_arg_int(true)),
+            ],
             "pidfd_send_signal" => vec![
                 ("pidfd", Self::syscall_arg_int(true)),
                 ("sig", Self::syscall_arg_int(true)),
@@ -1941,6 +1971,14 @@ impl TracepointContext {
                 ("nodep", Self::syscall_arg_user_ptr()),
                 ("unused", Self::syscall_arg_user_ptr()),
             ],
+            "getrandom" => vec![
+                ("buf", Self::syscall_arg_user_ptr()),
+                ("count", Self::syscall_arg_int(false)),
+                ("flags", Self::syscall_arg_int(false)),
+            ],
+            "times" => vec![("tbuf", Self::syscall_arg_user_ptr())],
+            "newuname" => vec![("name", Self::syscall_arg_user_ptr())],
+            "sysinfo" => vec![("info", Self::syscall_arg_user_ptr())],
             "getgroups" | "setgroups" => vec![
                 ("gidsetsize", Self::syscall_arg_int(true)),
                 ("grouplist", Self::syscall_arg_user_ptr()),

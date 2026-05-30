@@ -915,8 +915,9 @@ argument aliases over those ABI slots, such as `ctx.dfd`, `ctx.filename`,
 for `syscalls/sys_enter_openat2` matching the kernel argument name. Socket
 syscall fallbacks also expose source-known names for common socket entry
 tracepoints such as `sys_enter_socket`, `sys_enter_bind`, `sys_enter_connect`,
-`sys_enter_sendto`, `sys_enter_recvfrom`, `sys_enter_setsockopt`, and
-`sys_enter_recvmmsg`. Path-oriented syscall fallbacks also expose common stat,
+`sys_enter_sendto`, `sys_enter_recvfrom`, `sys_enter_setsockopt`,
+`sys_enter_getpeername`, and `sys_enter_recvmmsg`. Path-oriented syscall
+fallbacks also expose common stat,
 open, permission, ownership, and pathname operation aliases such as
 `sys_enter_newfstatat`, `sys_enter_statx`, `sys_enter_open`,
 `sys_enter_creat`, `sys_enter_fchmodat`, `sys_enter_fchownat`,
@@ -952,11 +953,13 @@ Time and timer fallbacks expose aliases for common entry tracepoints such as
 `sys_enter_timer_create`, and `sys_enter_timerfd_settime`.
 Signal fallbacks expose aliases for common entry tracepoints such as
 `sys_enter_kill`, `sys_enter_tgkill`, `sys_enter_rt_sigaction`,
-`sys_enter_rt_sigtimedwait`, and `sys_enter_pidfd_send_signal`.
+`sys_enter_rt_sigtimedwait`, `sys_enter_signalfd4`, and
+`sys_enter_pidfd_send_signal`.
 Credential and process-control fallbacks expose source-known aliases for common
 entry tracepoints such as `sys_enter_setresuid`, `sys_enter_getresgid`,
 `sys_enter_setgroups`, `sys_enter_capset`, `sys_enter_prctl`, and
-`sys_enter_getcpu`.
+`sys_enter_getcpu`, plus query-style system calls such as `sys_enter_getrandom`,
+`sys_enter_times`, `sys_enter_newuname`, and `sys_enter_sysinfo`.
 Scheduler fallbacks expose source-known aliases for common entry tracepoints
 such as `sys_enter_sched_setscheduler`, `sys_enter_sched_setaffinity`,
 `sys_enter_sched_getattr`, `sys_enter_sched_rr_get_interval`, and

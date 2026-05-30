@@ -1110,6 +1110,50 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
     .expect("expected fanotify_mark source metadata");
     assert!(fanotify_source.contains("/v4.7/fs/notify/fanotify/fanotify_user.c"));
 
+    let getpeername = TracepointContext::sys_enter("sys_enter_getpeername");
+    assert!(getpeername.has_field("fd"));
+    assert!(getpeername.has_field("usockaddr"));
+    assert!(getpeername.has_field("usockaddr_len"));
+    assert!(matches!(
+        getpeername
+            .get_field("usockaddr")
+            .expect("expected getpeername usockaddr")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+    let (_, getpeername_source) = TracepointContext::syscall_fallback_field_minimum_kernel(
+        "syscalls",
+        "sys_enter_getpeername",
+        "usockaddr",
+    )
+    .expect("expected getpeername source metadata");
+    assert!(getpeername_source.contains("/v4.7/net/socket.c"));
+
+    let signalfd4 = TracepointContext::sys_enter("sys_enter_signalfd4");
+    assert!(signalfd4.has_field("ufd"));
+    assert!(signalfd4.has_field("user_mask"));
+    assert!(signalfd4.has_field("sizemask"));
+    assert!(signalfd4.has_field("flags"));
+    let (_, signalfd_source) = TracepointContext::syscall_fallback_field_minimum_kernel(
+        "syscalls",
+        "sys_enter_signalfd4",
+        "user_mask",
+    )
+    .expect("expected signalfd4 source metadata");
+    assert!(signalfd_source.contains("/v4.7/fs/signalfd.c"));
+
+    let getrandom = TracepointContext::sys_enter("sys_enter_getrandom");
+    assert!(getrandom.has_field("buf"));
+    assert!(getrandom.has_field("count"));
+    assert!(getrandom.has_field("flags"));
+    let (_, getrandom_source) = TracepointContext::syscall_fallback_field_minimum_kernel(
+        "syscalls",
+        "sys_enter_getrandom",
+        "buf",
+    )
+    .expect("expected getrandom source metadata");
+    assert!(getrandom_source.contains("/v4.7/drivers/char/random.c"));
+
     let futex = TracepointContext::sys_enter("sys_enter_futex");
     assert!(futex.has_field("uaddr"));
     assert!(futex.has_field("op"));
@@ -1184,6 +1228,14 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         (
             "sys_enter_getsockopt",
             &["fd", "level", "optname", "optval", "optlen"][..],
+        ),
+        (
+            "sys_enter_getsockname",
+            &["fd", "usockaddr", "usockaddr_len"][..],
+        ),
+        (
+            "sys_enter_getpeername",
+            &["fd", "usockaddr", "usockaddr_len"][..],
         ),
         ("sys_enter_shutdown", &["fd", "how"][..]),
         ("sys_enter_sendmsg", &["fd", "msg", "flags"][..]),
@@ -1456,6 +1508,11 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
             &["sig", "act", "oact", "sigsetsize"][..],
         ),
         ("sys_enter_rt_sigsuspend", &["unewset", "sigsetsize"][..]),
+        ("sys_enter_signalfd", &["ufd", "user_mask", "sizemask"][..]),
+        (
+            "sys_enter_signalfd4",
+            &["ufd", "user_mask", "sizemask", "flags"][..],
+        ),
         ("sys_enter_pidfd_open", &["flags"][..]),
         ("sys_enter_pidfd_getfd", &["pidfd", "fd", "flags"][..]),
         (
@@ -1488,6 +1545,10 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         ("sys_enter_umask", &["mask"][..]),
         ("sys_enter_prctl", &["option"][..]),
         ("sys_enter_getcpu", &["cpup", "nodep", "unused"][..]),
+        ("sys_enter_getrandom", &["buf", "count", "flags"][..]),
+        ("sys_enter_times", &["tbuf"][..]),
+        ("sys_enter_newuname", &["name"][..]),
+        ("sys_enter_sysinfo", &["info"][..]),
         ("sys_enter_getgroups", &["gidsetsize", "grouplist"][..]),
         ("sys_enter_setgroups", &["gidsetsize", "grouplist"][..]),
         ("sys_enter_capget", &["header", "dataptr"][..]),
