@@ -538,7 +538,7 @@ pub(in crate::compiler::verifier_types) fn check_kfunc_semantics(
     }
 
     for (idx, arg) in args.iter().enumerate() {
-        if !kfunc_scalar_arg_requires_zero(kfunc, idx) {
+        if !kfunc_arg_requires_known_zero(kfunc, idx) {
             continue;
         }
         let is_zero = matches!(
@@ -638,11 +638,11 @@ pub(in crate::compiler::verifier_types) fn kfunc_scalar_arg_requires_positive(
     kfunc_scalar_arg_requires_positive_shared(kfunc, arg_idx)
 }
 
-pub(in crate::compiler::verifier_types) fn kfunc_scalar_arg_requires_zero(
+pub(in crate::compiler::verifier_types) fn kfunc_arg_requires_known_zero(
     kfunc: &str,
     arg_idx: usize,
 ) -> bool {
-    kfunc_scalar_arg_requires_zero_shared(kfunc, arg_idx)
+    kfunc_arg_requires_known_zero_shared(kfunc, arg_idx)
 }
 
 pub(in crate::compiler::verifier_types) fn kfunc_supports_local_map_fd(

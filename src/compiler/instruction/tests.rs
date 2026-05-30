@@ -5775,38 +5775,26 @@ fn test_kfunc_scalar_arg_requires_known_const_static_mapping() {
 }
 
 #[test]
-fn test_kfunc_scalar_arg_requires_zero_static_mapping() {
-    assert!(kfunc_scalar_arg_requires_zero("bpf_obj_new_impl", 1));
-    assert!(kfunc_scalar_arg_requires_zero("bpf_obj_drop_impl", 1));
-    assert!(kfunc_scalar_arg_requires_zero(
+fn test_kfunc_arg_requires_known_zero_static_mapping() {
+    assert!(kfunc_arg_requires_known_zero("bpf_obj_new_impl", 1));
+    assert!(kfunc_arg_requires_known_zero("bpf_obj_drop_impl", 1));
+    assert!(kfunc_arg_requires_known_zero(
         "bpf_refcount_acquire_impl",
         1
     ));
-    assert!(kfunc_scalar_arg_requires_zero("bpf_percpu_obj_new_impl", 1));
-    assert!(kfunc_scalar_arg_requires_zero(
-        "bpf_percpu_obj_drop_impl",
-        1
-    ));
-    assert!(kfunc_scalar_arg_requires_zero(
-        "bpf_list_push_front_impl",
-        2
-    ));
-    assert!(kfunc_scalar_arg_requires_zero("bpf_list_push_back_impl", 2));
-    assert!(kfunc_scalar_arg_requires_zero("bpf_rbtree_add_impl", 3));
-    assert!(kfunc_scalar_arg_requires_zero("bpf_wq_init", 2));
-    assert!(kfunc_scalar_arg_requires_zero("bpf_wq_start", 1));
-    assert!(kfunc_scalar_arg_requires_zero(
-        "bpf_wq_set_callback_impl",
-        2
-    ));
-    assert!(kfunc_scalar_arg_requires_zero(
-        "bpf_wq_set_callback_impl",
-        3
-    ));
-    assert!(kfunc_scalar_arg_requires_zero("bpf_dynptr_from_skb", 1));
-    assert!(kfunc_scalar_arg_requires_zero("bpf_dynptr_from_xdp", 1));
-    assert!(!kfunc_scalar_arg_requires_zero("bpf_rbtree_add_impl", 4));
-    assert!(!kfunc_scalar_arg_requires_zero("bpf_dynptr_from_xdp", 2));
+    assert!(kfunc_arg_requires_known_zero("bpf_percpu_obj_new_impl", 1));
+    assert!(kfunc_arg_requires_known_zero("bpf_percpu_obj_drop_impl", 1));
+    assert!(kfunc_arg_requires_known_zero("bpf_list_push_front_impl", 2));
+    assert!(kfunc_arg_requires_known_zero("bpf_list_push_back_impl", 2));
+    assert!(kfunc_arg_requires_known_zero("bpf_rbtree_add_impl", 3));
+    assert!(kfunc_arg_requires_known_zero("bpf_wq_init", 2));
+    assert!(kfunc_arg_requires_known_zero("bpf_wq_start", 1));
+    assert!(kfunc_arg_requires_known_zero("bpf_wq_set_callback_impl", 2));
+    assert!(kfunc_arg_requires_known_zero("bpf_wq_set_callback_impl", 3));
+    assert!(kfunc_arg_requires_known_zero("bpf_dynptr_from_skb", 1));
+    assert!(kfunc_arg_requires_known_zero("bpf_dynptr_from_xdp", 1));
+    assert!(!kfunc_arg_requires_known_zero("bpf_rbtree_add_impl", 4));
+    assert!(!kfunc_arg_requires_known_zero("bpf_dynptr_from_xdp", 2));
 }
 
 #[test]
@@ -7022,7 +7010,7 @@ fn test_kfunc_scalar_constraints_are_consistent_with_signatures() {
             if kfunc_scalar_arg_requires_positive(name, arg_idx) {
                 assert_kfunc_scalar_constraint_arg(name, &signature, arg_idx, "positive");
             }
-            if kfunc_scalar_arg_requires_zero(name, arg_idx) {
+            if kfunc_arg_requires_known_zero(name, arg_idx) {
                 assert_kfunc_zero_constraint_arg(name, &signature, arg_idx);
             }
         }

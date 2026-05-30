@@ -129,8 +129,8 @@ impl<'a> TypeInference<'a> {
         kfunc_scalar_arg_requires_positive_shared(kfunc, arg_idx)
     }
 
-    pub(super) fn kfunc_scalar_arg_requires_zero(kfunc: &str, arg_idx: usize) -> bool {
-        kfunc_scalar_arg_requires_zero_shared(kfunc, arg_idx)
+    pub(super) fn kfunc_arg_requires_known_zero(kfunc: &str, arg_idx: usize) -> bool {
+        kfunc_arg_requires_known_zero_shared(kfunc, arg_idx)
     }
 
     pub(super) fn kfunc_supports_local_map_fd(kfunc: &str, arg_idx: usize) -> bool {
@@ -1134,7 +1134,7 @@ impl<'a> TypeInference<'a> {
         }
 
         for (idx, arg) in args.iter().enumerate() {
-            if !Self::kfunc_scalar_arg_requires_zero(kfunc, idx) {
+            if !Self::kfunc_arg_requires_known_zero(kfunc, idx) {
                 continue;
             }
             let is_zero = matches!(

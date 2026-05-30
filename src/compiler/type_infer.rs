@@ -28,6 +28,7 @@ use super::instruction::{
     BpfHelper, HelperArgKind, HelperRetKind, HelperSignature, KfuncArgKind, KfuncRetKind,
     KfuncSignature, KfuncUnknownDynptrCopy, KfuncUnknownStackObjectCopy, helper_acquire_ref_kind,
     kfunc_arg_accepts_skb_pointee_name as kfunc_arg_accepts_skb_pointee_name_shared,
+    kfunc_arg_requires_known_zero as kfunc_arg_requires_known_zero_shared,
     kfunc_arg_requires_skb_context_or_pointer as kfunc_arg_requires_skb_context_or_pointer_shared,
     kfunc_pointer_arg_allows_const_zero as kfunc_pointer_arg_allows_const_zero_shared,
     kfunc_pointer_arg_fixed_size as kfunc_pointer_arg_fixed_size_shared,
@@ -41,8 +42,7 @@ use super::instruction::{
     kfunc_pointer_arg_size_from_scalar as kfunc_pointer_arg_size_from_scalar_shared,
     kfunc_scalar_arg_requires_known_const as kfunc_scalar_arg_requires_known_const_shared,
     kfunc_scalar_arg_requires_positive as kfunc_scalar_arg_requires_positive_shared,
-    kfunc_scalar_arg_requires_zero as kfunc_scalar_arg_requires_zero_shared, kfunc_semantics,
-    kfunc_supports_local_map_fd as kfunc_supports_local_map_fd_shared,
+    kfunc_semantics, kfunc_supports_local_map_fd as kfunc_supports_local_map_fd_shared,
     kfunc_unknown_dynptr_copy as kfunc_unknown_dynptr_copy_shared,
     kfunc_unknown_stack_object_copy as kfunc_unknown_stack_object_copy_shared,
 };
