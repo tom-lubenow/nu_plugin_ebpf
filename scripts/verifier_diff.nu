@@ -16154,6 +16154,25 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "source-helper-strncmp-accepts-captured-binary-needle"
+        category: "helper-state"
+        tags: [helper string compare rodata capture accept source metadata]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '(do {'
+            '  let needle = 0x[61 62 63 64 65 66 67 68 00]'
+            '  {|ctx|'
+            '    let input = "abcdefgh"'
+            '    helper-call "bpf_strncmp" $input 8 $needle'
+            '    "pass"'
+            '  }'
+            '})'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "source-helper-strncmp-rejects-short-map-input"
         category: "helper-state"
         tags: [helper string compare map-bounds reject source metadata]
