@@ -1,7 +1,7 @@
 use super::*;
 use crate::compiler::elf::GetSocketCookieArgPolicy;
 use crate::compiler::instruction::{
-    HelperDynptrArgRole, KfuncRefKind, helper_pointer_arg_ref_kind,
+    HelperDynptrArgRole, KfuncRefKind, helper_named_arg_shape, helper_pointer_arg_ref_kind,
     kfunc_ref_kind_from_bpf_type_name, scalar_range_contains_only_allowed_values,
     scalar_range_contains_only_bitmask,
 };
@@ -559,11 +559,18 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
         validate_get_socket_cookie_arg_shape(args, types, state, program, probe_ctx, errors);
     }
     for arg_idx in 0..args.len() {
-        let Some((predicate, expected)) = helper_expected_named_arg_shape(helper, arg_idx) else {
+        let Some(shape) = helper_named_arg_shape(helper, arg_idx) else {
             continue;
         };
         validate_named_helper_arg_shape(
-            helper, args, arg_idx, types, state, predicate, expected, errors,
+            helper,
+            args,
+            arg_idx,
+            types,
+            state,
+            shape.predicate,
+            shape.expected,
+            errors,
         );
     }
     validate_helper_map_fd_matches_map_value(helper, args, state, errors);
@@ -1123,50 +1130,6 @@ fn helper_arg_has_tracked_kfunc_ref(arg: &MirValue, state: &VerifierState) -> bo
 
 fn helper_named_arg_shape_allows_tracked_kfunc_ref(helper: BpfHelper, arg_idx: usize) -> bool {
     helper_pointer_arg_ref_kind(helper, arg_idx).is_some()
-}
-
-fn helper_expected_named_arg_shape(
-    helper: BpfHelper,
-    arg_idx: usize,
-) -> Option<(fn(&MirType) -> bool, &'static str)> {
-    if matches!(
-        (helper, arg_idx),
-        (
-            BpfHelper::TimerInit
-                | BpfHelper::TimerSetCallback
-                | BpfHelper::TimerStart
-                | BpfHelper::TimerCancel,
-            0
-        )
-    ) {
-        return Some((
-            MirType::is_bpf_timer_map_ptr,
-            "map-backed bpf_timer pointer",
-        ));
-    }
-    if matches!(
-        (helper, arg_idx),
-        (BpfHelper::SpinLock | BpfHelper::SpinUnlock, 0)
-    ) {
-        return Some((
-            MirType::is_bpf_spin_lock_map_ptr,
-            "map-backed bpf_spin_lock pointer",
-        ));
-    }
-    if matches!((helper, arg_idx), (BpfHelper::SkbOutput, 0)) {
-        return Some((MirType::is_sk_buff_kernel_ptr, "sk_buff pointer"));
-    }
-    if matches!((helper, arg_idx), (BpfHelper::XdpOutput, 0)) {
-        return Some((MirType::is_xdp_buff_kernel_ptr, "xdp_buff pointer"));
-    }
-    match helper_pointer_arg_ref_kind(helper, arg_idx)? {
-        KfuncRefKind::Socket => Some((MirType::is_socket_ptr, "socket pointer")),
-        KfuncRefKind::Task => Some((MirType::is_task_struct_ptr, "task pointer")),
-        KfuncRefKind::File => Some((MirType::is_file_ptr, "file pointer")),
-        KfuncRefKind::Inode => Some((MirType::is_inode_ptr, "inode pointer")),
-        KfuncRefKind::Cgroup => Some((MirType::is_cgroup_ptr, "cgroup pointer")),
-        _ => None,
-    }
 }
 
 fn helper_local_map_ref_arg(

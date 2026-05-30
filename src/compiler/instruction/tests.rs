@@ -4306,6 +4306,41 @@ fn test_helper_ref_kind_mappings() {
 }
 
 #[test]
+fn test_helper_named_arg_shape_mappings() {
+    assert_eq!(
+        helper_named_arg_shape(BpfHelper::TimerStart, 0)
+            .expect("timer helper arg0 should have a named shape")
+            .expected,
+        "map-backed bpf_timer pointer"
+    );
+    assert_eq!(
+        helper_named_arg_shape(BpfHelper::SpinLock, 0)
+            .expect("spin lock helper arg0 should have a named shape")
+            .expected,
+        "map-backed bpf_spin_lock pointer"
+    );
+    assert_eq!(
+        helper_named_arg_shape(BpfHelper::SkbOutput, 0)
+            .expect("skb output arg0 should have a named shape")
+            .expected,
+        "sk_buff pointer"
+    );
+    assert_eq!(
+        helper_named_arg_shape(BpfHelper::XdpOutput, 0)
+            .expect("xdp output arg0 should have a named shape")
+            .expected,
+        "xdp_buff pointer"
+    );
+    assert_eq!(
+        helper_named_arg_shape(BpfHelper::TcpSendAck, 0)
+            .expect("socket helper arg0 should have a named shape")
+            .expected,
+        "socket pointer"
+    );
+    assert!(helper_named_arg_shape(BpfHelper::SkRelease, 1).is_none());
+}
+
+#[test]
 fn test_kfunc_signature_task_from_pid() {
     let sig = KfuncSignature::for_name("bpf_task_from_pid")
         .expect("expected bpf_task_from_pid kfunc signature");

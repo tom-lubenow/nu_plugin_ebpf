@@ -1,9 +1,9 @@
 use super::*;
 use crate::compiler::elf::GetSocketCookieArgPolicy;
 use crate::compiler::instruction::{
-    KfuncRefKind, kfunc_arg_accepts_skb_pointee_name, kfunc_arg_pointee_mismatch,
-    kfunc_arg_requires_skb_context_or_pointer, scalar_range_contains_only_bitmask,
-    unknown_kfunc_signature_message,
+    KfuncRefKind, helper_named_arg_shape, kfunc_arg_accepts_skb_pointee_name,
+    kfunc_arg_pointee_mismatch, kfunc_arg_requires_skb_context_or_pointer,
+    scalar_range_contains_only_bitmask, unknown_kfunc_signature_message,
 };
 
 impl<'a> VccLowerer<'a> {
@@ -1420,12 +1420,16 @@ impl<'a> VccLowerer<'a> {
             self.verify_get_socket_cookie_arg_shape(args)?;
         }
         for arg_idx in 0..args.len() {
-            let Some((predicate, expected)) =
-                Self::helper_expected_named_arg_shape(helper, arg_idx)
-            else {
+            let Some(shape) = helper_named_arg_shape(helper, arg_idx) else {
                 continue;
             };
-            self.verify_named_helper_arg_shape(helper, args, arg_idx, predicate, expected)?;
+            self.verify_named_helper_arg_shape(
+                helper,
+                args,
+                arg_idx,
+                shape.predicate,
+                shape.expected,
+            )?;
         }
 
         Ok(())
@@ -1635,47 +1639,6 @@ impl<'a> VccLowerer<'a> {
         arg_idx: usize,
     ) -> bool {
         Self::helper_pointer_arg_expected_ref_kind(helper as u32, arg_idx).is_some()
-    }
-
-    fn helper_expected_named_arg_shape(
-        helper: BpfHelper,
-        arg_idx: usize,
-    ) -> Option<(fn(&MirType) -> bool, &'static str)> {
-        if matches!(
-            (helper, arg_idx),
-            (
-                BpfHelper::TimerInit
-                    | BpfHelper::TimerSetCallback
-                    | BpfHelper::TimerStart
-                    | BpfHelper::TimerCancel,
-                0
-            )
-        ) {
-            return Some((MirType::is_bpf_timer_map_ptr, "map-backed bpf_timer pointer"));
-        }
-        if matches!(
-            (helper, arg_idx),
-            (BpfHelper::SpinLock | BpfHelper::SpinUnlock, 0)
-        ) {
-            return Some((
-                MirType::is_bpf_spin_lock_map_ptr,
-                "map-backed bpf_spin_lock pointer",
-            ));
-        }
-        if matches!((helper, arg_idx), (BpfHelper::SkbOutput, 0)) {
-            return Some((MirType::is_sk_buff_kernel_ptr, "sk_buff pointer"));
-        }
-        if matches!((helper, arg_idx), (BpfHelper::XdpOutput, 0)) {
-            return Some((MirType::is_xdp_buff_kernel_ptr, "xdp_buff pointer"));
-        }
-        match Self::helper_pointer_arg_expected_ref_kind(helper as u32, arg_idx)? {
-            KfuncRefKind::Socket => Some((MirType::is_socket_ptr, "socket pointer")),
-            KfuncRefKind::Task => Some((MirType::is_task_struct_ptr, "task pointer")),
-            KfuncRefKind::File => Some((MirType::is_file_ptr, "file pointer")),
-            KfuncRefKind::Inode => Some((MirType::is_inode_ptr, "inode pointer")),
-            KfuncRefKind::Cgroup => Some((MirType::is_cgroup_ptr, "cgroup pointer")),
-            _ => None,
-        }
     }
 
     fn helper_pointer_arg_allows_maybe_null(&self, helper_id: u32, arg_idx: usize) -> bool {

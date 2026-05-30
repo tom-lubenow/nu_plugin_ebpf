@@ -1002,6 +1002,72 @@ pub const fn helper_pointer_arg_ref_kind(
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct HelperNamedArgShape {
+    pub predicate: fn(&MirType) -> bool,
+    pub expected: &'static str,
+}
+
+pub fn helper_named_arg_shape(helper: BpfHelper, arg_idx: usize) -> Option<HelperNamedArgShape> {
+    if matches!(
+        (helper, arg_idx),
+        (
+            BpfHelper::TimerInit
+                | BpfHelper::TimerSetCallback
+                | BpfHelper::TimerStart
+                | BpfHelper::TimerCancel,
+            0
+        )
+    ) {
+        return Some(HelperNamedArgShape {
+            predicate: MirType::is_bpf_timer_map_ptr,
+            expected: "map-backed bpf_timer pointer",
+        });
+    }
+
+    if matches!(
+        (helper, arg_idx),
+        (BpfHelper::SpinLock | BpfHelper::SpinUnlock, 0)
+    ) {
+        return Some(HelperNamedArgShape {
+            predicate: MirType::is_bpf_spin_lock_map_ptr,
+            expected: "map-backed bpf_spin_lock pointer",
+        });
+    }
+
+    if matches!((helper, arg_idx), (BpfHelper::SkbOutput, 0)) {
+        return Some(HelperNamedArgShape {
+            predicate: MirType::is_sk_buff_kernel_ptr,
+            expected: "sk_buff pointer",
+        });
+    }
+
+    if matches!((helper, arg_idx), (BpfHelper::XdpOutput, 0)) {
+        return Some(HelperNamedArgShape {
+            predicate: MirType::is_xdp_buff_kernel_ptr,
+            expected: "xdp_buff pointer",
+        });
+    }
+
+    let (predicate, expected): (fn(&MirType) -> bool, &'static str) =
+        match helper_pointer_arg_ref_kind(helper, arg_idx)? {
+            KfuncRefKind::Socket => (
+                MirType::is_socket_ptr as fn(&MirType) -> bool,
+                "socket pointer",
+            ),
+            KfuncRefKind::Task => (MirType::is_task_struct_ptr, "task pointer"),
+            KfuncRefKind::File => (MirType::is_file_ptr, "file pointer"),
+            KfuncRefKind::Inode => (MirType::is_inode_ptr, "inode pointer"),
+            KfuncRefKind::Cgroup => (MirType::is_cgroup_ptr, "cgroup pointer"),
+            _ => return None,
+        };
+
+    Some(HelperNamedArgShape {
+        predicate,
+        expected,
+    })
+}
+
 pub fn kfunc_pointer_arg_ref_kind(kfunc: &str, arg_idx: usize) -> Option<KfuncRefKind> {
     if matches!(
         (kfunc, arg_idx),

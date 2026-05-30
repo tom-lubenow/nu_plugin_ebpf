@@ -1768,14 +1768,15 @@ mod ref_kinds;
 pub use kfunc_metadata::KfuncCompatibilityRequirement;
 pub use kfunc_signature::unknown_kfunc_signature_message;
 pub use ref_kinds::{
-    KfuncAllowedPtrSpaces, KfuncIterFamily, KfuncIterLifecycleOp, KfuncPtrArgRule, KfuncSemantics,
-    KfuncUnknownDynptrArg, KfuncUnknownDynptrArgRole, KfuncUnknownDynptrCopy,
-    KfuncUnknownIterLifecycle, KfuncUnknownStackObjectCopy, KfuncUnknownStackObjectLifecycle,
-    KfuncUnknownStackObjectLifecycleOp, helper_acquire_ref_kind, helper_pointer_arg_ref_kind,
-    helper_release_ref_kind, kfunc_acquire_ref_kind, kfunc_allowed_while_lock_held,
-    kfunc_arg_accepts_skb_pointee_name, kfunc_arg_pointee_mismatch,
-    kfunc_arg_requires_skb_context_or_pointer, kfunc_bpf_spin_lock_protected_graph_root_arg,
-    kfunc_iter_lifecycle, kfunc_pointer_arg_allows_const_zero, kfunc_pointer_arg_fixed_size,
+    HelperNamedArgShape, KfuncAllowedPtrSpaces, KfuncIterFamily, KfuncIterLifecycleOp,
+    KfuncPtrArgRule, KfuncSemantics, KfuncUnknownDynptrArg, KfuncUnknownDynptrArgRole,
+    KfuncUnknownDynptrCopy, KfuncUnknownIterLifecycle, KfuncUnknownStackObjectCopy,
+    KfuncUnknownStackObjectLifecycle, KfuncUnknownStackObjectLifecycleOp, helper_acquire_ref_kind,
+    helper_named_arg_shape, helper_pointer_arg_ref_kind, helper_release_ref_kind,
+    kfunc_acquire_ref_kind, kfunc_allowed_while_lock_held, kfunc_arg_accepts_skb_pointee_name,
+    kfunc_arg_pointee_mismatch, kfunc_arg_requires_skb_context_or_pointer,
+    kfunc_bpf_spin_lock_protected_graph_root_arg, kfunc_iter_lifecycle,
+    kfunc_pointer_arg_allows_const_zero, kfunc_pointer_arg_fixed_size,
     kfunc_pointer_arg_min_access_size, kfunc_pointer_arg_ref_kind,
     kfunc_pointer_arg_requires_kernel, kfunc_pointer_arg_requires_raw_context,
     kfunc_pointer_arg_requires_stack, kfunc_pointer_arg_requires_stack_or_map,
