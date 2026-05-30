@@ -20691,7 +20691,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "source-kfunc-cgroup-acquire-rejects-leak"
@@ -20729,7 +20729,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "source-kfunc-cgroup-release-rejects-one-branch-release-leak"
@@ -20810,7 +20810,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "source-kfunc-cgroup-ancestor-release"
@@ -20832,7 +20832,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "source-kfunc-cpumask-ref-release"
