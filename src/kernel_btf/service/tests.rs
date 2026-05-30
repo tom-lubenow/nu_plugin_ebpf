@@ -721,6 +721,32 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
     assert!(reboot.has_field("cmd"));
     assert!(!reboot.has_field("arg"));
 
+    let bpf = TracepointContext::sys_enter("sys_enter_bpf");
+    assert!(bpf.has_field("cmd"));
+    assert!(bpf.has_field("uattr"));
+    assert!(bpf.has_field("size"));
+    let (_, bpf_source) = TracepointContext::syscall_fallback_field_minimum_kernel(
+        "syscalls",
+        "sys_enter_bpf",
+        "uattr",
+    )
+    .expect("expected bpf source metadata");
+    assert!(bpf_source.contains("/v4.7/kernel/bpf/syscall.c"));
+
+    let perf_event_open = TracepointContext::sys_enter("sys_enter_perf_event_open");
+    assert!(perf_event_open.has_field("attr_uptr"));
+    assert!(!perf_event_open.has_field("pid"));
+    assert!(!perf_event_open.has_field("cpu"));
+    assert!(perf_event_open.has_field("group_fd"));
+    assert!(perf_event_open.has_field("flags"));
+    assert_eq!(
+        perf_event_open
+            .get_field("group_fd")
+            .expect("expected perf_event_open group_fd")
+            .offset,
+        40
+    );
+
     let add_key = TracepointContext::sys_enter("sys_enter_add_key");
     assert!(add_key.has_field("_type"));
     assert!(add_key.has_field("_description"));
@@ -1862,6 +1888,14 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         ("sys_enter_membarrier", &["cmd", "flags"][..]),
         ("sys_enter_rseq", &["rseq", "rseq_len", "flags", "sig"][..]),
         ("sys_enter_set_tid_address", &["tidptr"][..]),
+        ("sys_enter_bpf", &["cmd", "uattr", "size"][..]),
+        (
+            "sys_enter_perf_event_open",
+            &["attr_uptr", "group_fd", "flags"][..],
+        ),
+        ("sys_enter_ptrace", &["request", "addr", "data"][..]),
+        ("sys_enter_seccomp", &["op", "flags", "uargs"][..]),
+        ("sys_enter_userfaultfd", &["flags"][..]),
         ("sys_enter_getgroups", &["gidsetsize", "grouplist"][..]),
         ("sys_enter_setgroups", &["gidsetsize", "grouplist"][..]),
         ("sys_enter_capget", &["header", "dataptr"][..]),

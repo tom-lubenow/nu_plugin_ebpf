@@ -972,6 +972,9 @@ entry tracepoints such as `sys_enter_setresuid`, `sys_enter_getresgid`,
 `sys_enter_times`, `sys_enter_newuname`, and `sys_enter_sysinfo`, and
 process-state calls such as `sys_enter_prlimit64`, `sys_enter_membarrier`,
 Linux 4.18+ `sys_enter_rseq`, and `sys_enter_set_tid_address`.
+Instrumentation and security-control fallbacks expose aliases for
+`sys_enter_bpf`, `sys_enter_perf_event_open`, `sys_enter_ptrace`,
+`sys_enter_seccomp`, and `sys_enter_userfaultfd`.
 Key-management fallbacks expose source-known aliases for entry tracepoints such
 as `sys_enter_add_key`, `sys_enter_request_key`, and `sys_enter_keyctl`.
 Scheduler fallbacks expose source-known aliases for common entry tracepoints

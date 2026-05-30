@@ -3514,6 +3514,36 @@ const IDENTITY_TRACEPOINT_FIELD_SPECS = [
         source: "https://github.com/torvalds/linux/blob/v4.18/kernel/rseq.c"
     }
     {
+        syscalls: ["bpf"]
+        fields: ["cmd" "uattr" "size"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/bpf/syscall.c"
+    }
+    {
+        syscalls: ["perf_event_open"]
+        fields: ["attr_uptr" "group_fd" "flags"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/events/core.c"
+    }
+    {
+        syscalls: ["ptrace"]
+        fields: ["request" "addr" "data"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/ptrace.c"
+    }
+    {
+        syscalls: ["seccomp"]
+        fields: ["op" "flags" "uargs"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/seccomp.c"
+    }
+    {
+        syscalls: ["userfaultfd"]
+        fields: ["flags"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/userfaultfd.c"
+    }
+    {
         syscalls: ["getgroups" "setgroups"]
         fields: ["gidsetsize" "grouplist"]
         min_kernel: "4.7"
@@ -7388,6 +7418,54 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         ]
     }
     {
+        target: "tracepoint:syscalls/sys_enter_bpf"
+        program: [
+            '{|ctx|'
+            '  let uattr = $ctx.uattr'
+            '  if $uattr { 1 | count }'
+            '  ($ctx.cmd + $ctx.size) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_bpf:field:uattr"
+            "tracepoint:syscalls/sys_enter_bpf:field:cmd"
+            "tracepoint:syscalls/sys_enter_bpf:field:size"
+        ]
+    }
+    {
+        target: "tracepoint:syscalls/sys_enter_perf_event_open"
+        program: [
+            '{|ctx|'
+            '  let attr = $ctx.attr_uptr'
+            '  if $attr { 1 | count }'
+            '  ($ctx.group_fd + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_perf_event_open:field:attr_uptr"
+            "tracepoint:syscalls/sys_enter_perf_event_open:field:group_fd"
+            "tracepoint:syscalls/sys_enter_perf_event_open:field:flags"
+        ]
+    }
+    {
+        target: "tracepoint:syscalls/sys_enter_seccomp"
+        program: [
+            '{|ctx|'
+            '  let uargs = $ctx.uargs'
+            '  if $uargs { 1 | count }'
+            '  ($ctx.op + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_seccomp:field:uargs"
+            "tracepoint:syscalls/sys_enter_seccomp:field:op"
+            "tracepoint:syscalls/sys_enter_seccomp:field:flags"
+        ]
+    }
+    {
         target: "tracepoint:syscalls/sys_enter_openat"
         program: [
             '{|ctx|'
@@ -9940,6 +10018,57 @@ const FIXTURES = [
             '  let specialfile = $ctx.specialfile'
             '  if $specialfile { 1 | count }'
             '  $ctx.swap_flags | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-bpf-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_bpf]
+        target: "tracepoint:syscalls/sys_enter_bpf"
+        program: [
+            '{|ctx|'
+            '  let uattr = $ctx.uattr'
+            '  if $uattr { 1 | count }'
+            '  ($ctx.cmd + $ctx.size) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-perf-event-open-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_perf_event_open]
+        target: "tracepoint:syscalls/sys_enter_perf_event_open"
+        program: [
+            '{|ctx|'
+            '  let attr = $ctx.attr_uptr'
+            '  if $attr { 1 | count }'
+            '  ($ctx.group_fd + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-seccomp-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_seccomp]
+        target: "tracepoint:syscalls/sys_enter_seccomp"
+        program: [
+            '{|ctx|'
+            '  let uargs = $ctx.uargs'
+            '  if $uargs { 1 | count }'
+            '  ($ctx.op + $ctx.flags) | count'
             '  0'
             '}'
         ]

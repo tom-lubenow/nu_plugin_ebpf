@@ -119,6 +119,11 @@ const KERNEL_SYS_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/ker
 const MEMBARRIER_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/membarrier.c";
 const RSEQ_MIN_KERNEL: &str = "4.18";
 const RSEQ_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.18/kernel/rseq.c";
+const BPF_SYSCALL_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/bpf/syscall.c";
+const PERF_EVENT_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/events/core.c";
+const PTRACE_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/ptrace.c";
+const SECCOMP_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/seccomp.c";
+const USERFAULTFD_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/userfaultfd.c";
 const GROUPS_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/groups.c";
 const CAPABILITY_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/capability.c";
 const SCHED_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/sched/core.c";
@@ -416,6 +421,11 @@ const WELL_KNOWN_SYS_ENTER_SYSCALLS: &[&str] = &[
     "membarrier",
     "rseq",
     "set_tid_address",
+    "bpf",
+    "perf_event_open",
+    "ptrace",
+    "seccomp",
+    "userfaultfd",
     "getgroups",
     "setgroups",
     "capget",
@@ -1025,6 +1035,11 @@ impl TracepointContext {
             "membarrier" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, MEMBARRIER_SOURCE),
             "rseq" => (RSEQ_MIN_KERNEL, RSEQ_SOURCE),
             "set_tid_address" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, FORK_SOURCE),
+            "bpf" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, BPF_SYSCALL_SOURCE),
+            "perf_event_open" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, PERF_EVENT_SOURCE),
+            "ptrace" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, PTRACE_SOURCE),
+            "seccomp" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, SECCOMP_SOURCE),
+            "userfaultfd" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, USERFAULTFD_SOURCE),
             "getrandom" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, RANDOM_SOURCE),
             "getgroups" | "setgroups" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, GROUPS_SOURCE),
             "capget" | "capset" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, CAPABILITY_SOURCE),
@@ -2271,6 +2286,30 @@ impl TracepointContext {
                 ("sig", Self::syscall_arg_int(false)),
             ],
             "set_tid_address" => vec![("tidptr", Self::syscall_arg_user_ptr())],
+            "bpf" => vec![
+                ("cmd", Self::syscall_arg_int(true)),
+                ("uattr", Self::syscall_arg_user_ptr()),
+                ("size", Self::syscall_arg_int(false)),
+            ],
+            "perf_event_open" => vec![
+                ("attr_uptr", Self::syscall_arg_user_ptr()),
+                ("pid", Self::syscall_arg_int(true)),
+                ("cpu", Self::syscall_arg_int(true)),
+                ("group_fd", Self::syscall_arg_int(true)),
+                ("flags", Self::syscall_arg_int(false)),
+            ],
+            "ptrace" => vec![
+                ("request", Self::syscall_arg_int(true)),
+                ("pid", Self::syscall_arg_int(true)),
+                ("addr", Self::syscall_arg_int(false)),
+                ("data", Self::syscall_arg_int(false)),
+            ],
+            "seccomp" => vec![
+                ("op", Self::syscall_arg_int(false)),
+                ("flags", Self::syscall_arg_int(false)),
+                ("uargs", Self::syscall_arg_user_ptr()),
+            ],
+            "userfaultfd" => vec![("flags", Self::syscall_arg_int(true))],
             "getgroups" | "setgroups" => vec![
                 ("gidsetsize", Self::syscall_arg_int(true)),
                 ("grouplist", Self::syscall_arg_user_ptr()),
