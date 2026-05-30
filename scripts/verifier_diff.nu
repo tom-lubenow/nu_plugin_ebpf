@@ -22547,7 +22547,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "callback-find-vma-btf-field"
@@ -22565,7 +22565,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "callback-find-vma-rejects-extra-declared-param"
@@ -22617,7 +22617,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "callback-find-vma-allows-prefix-params"
@@ -22635,7 +22635,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "callback-user-ringbuf-drain"
