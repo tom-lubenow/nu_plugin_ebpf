@@ -451,6 +451,29 @@ impl VerifierState {
         self.local_irq_disable_max_depth > 0
     }
 
+    pub(in crate::compiler::verifier_types) fn has_live_local_irq_disable_except_slots(
+        &self,
+        allowed_slots: &HashMap<StackSlotId, u32>,
+    ) -> bool {
+        let allowed_total = allowed_slots.values().copied().sum();
+        let tracked_total: u32 = self
+            .local_irq_disable_slots
+            .values()
+            .map(|(_, max_depth)| *max_depth)
+            .sum();
+        if self.local_irq_disable_max_depth > tracked_total {
+            return true;
+        }
+        if self.local_irq_disable_max_depth > allowed_total {
+            return true;
+        }
+        self.local_irq_disable_slots
+            .iter()
+            .any(|(slot, (_, max_depth))| {
+                *max_depth > allowed_slots.get(slot).copied().unwrap_or(0)
+            })
+    }
+
     pub(in crate::compiler::verifier_types) fn acquire_iter_task_vma_slot(
         &mut self,
         slot: StackSlotId,

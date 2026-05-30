@@ -267,6 +267,9 @@ impl<'a> VccLowerer<'a> {
         }
         for idx in 0..self.func.param_count {
             let reg = VccReg(idx as u32);
+            for _ in 0..summary.local_irq_delta_arg(idx).saturating_neg() {
+                out.push(VccInst::LocalIrqDisableAcquire { flags: reg });
+            }
             if summary.releases_ringbuf_record_arg(idx) {
                 out.push(VccInst::RingbufAcquire { id: reg });
             }

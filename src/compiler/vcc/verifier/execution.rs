@@ -2347,7 +2347,8 @@ impl VccVerifier {
                         "unreleased preempt disable at function exit",
                     ));
                 }
-                if state.has_live_local_irq_disable() {
+                let allowed_local_irq_slots = self.allowed_local_irq_slots(state);
+                if state.has_live_local_irq_disable_except_slots(&allowed_local_irq_slots) {
                     self.errors.push(VccError::new(
                         VccErrorKind::PointerBounds,
                         "unreleased local irq disable at function exit",
@@ -2565,6 +2566,27 @@ impl VccVerifier {
         self.current_summary
             .map(|summary| summary.preempt_disable_delta().max(0) as u32)
             .unwrap_or(0)
+    }
+
+    fn allowed_local_irq_slots(&self, state: &VccState) -> HashMap<StackSlotId, u32> {
+        let mut allowed = HashMap::new();
+        let Some(summary) = self.current_summary else {
+            return allowed;
+        };
+        for idx in 0..5 {
+            let delta = summary.local_irq_delta_arg(idx).max(0) as u32;
+            if delta == 0 {
+                continue;
+            }
+            let Ok(VccValueType::Ptr(ptr)) = state.reg_type(VccReg(idx as u32)) else {
+                continue;
+            };
+            if let VccAddrSpace::Stack(slot) = ptr.space {
+                let entry = allowed.entry(slot).or_insert(0u32);
+                *entry = entry.saturating_add(delta);
+            }
+        }
+        allowed
     }
 
     fn allowed_returned_ringbuf_ref(

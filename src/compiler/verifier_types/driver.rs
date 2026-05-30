@@ -219,7 +219,7 @@ fn verify_mir_with_subfunction_summaries_impl(
         entry_state.initialize_dynptr_slot(*slot);
     }
     if let Some(summary) = current_summary {
-        seed_entry_critical_section_state(&mut entry_state, summary);
+        seed_entry_critical_section_state(&mut entry_state, func, summary);
         for i in 0..func.param_count {
             if !summary.releases_ringbuf_dynptr_arg(i) {
                 continue;
@@ -331,7 +331,8 @@ fn verify_mir_with_subfunction_summaries_impl(
                         "unreleased preempt disable at function exit",
                     ));
                 }
-                if state.has_live_local_irq_disable() {
+                let allowed_local_irq_slots = allowed_local_irq_slots(current_summary, func);
+                if state.has_live_local_irq_disable_except_slots(&allowed_local_irq_slots) {
                     errors.push(VerifierTypeError::new(
                         "unreleased local irq disable at function exit",
                     ));
@@ -532,12 +533,24 @@ fn verify_mir_with_subfunction_summaries_impl(
     }
 }
 
-fn seed_entry_critical_section_state(state: &mut VerifierState, summary: SubfunctionSummary) {
+fn seed_entry_critical_section_state(
+    state: &mut VerifierState,
+    func: &MirFunction,
+    summary: SubfunctionSummary,
+) {
     for _ in 0..summary.rcu_read_lock_delta().saturating_neg() {
         state.acquire_rcu_read_lock();
     }
     for _ in 0..summary.preempt_disable_delta().saturating_neg() {
         state.acquire_preempt_disable();
+    }
+    for idx in 0..func.param_count {
+        let Some(slot) = func.param_stack_slots.get(&idx).copied() else {
+            continue;
+        };
+        for _ in 0..summary.local_irq_delta_arg(idx).saturating_neg() {
+            state.acquire_local_irq_disable_slot(slot);
+        }
     }
 }
 
@@ -551,6 +564,27 @@ fn allowed_preempt_depth(current_summary: Option<SubfunctionSummary>) -> u32 {
     current_summary
         .map(|summary| summary.preempt_disable_delta().max(0) as u32)
         .unwrap_or(0)
+}
+
+fn allowed_local_irq_slots(
+    current_summary: Option<SubfunctionSummary>,
+    func: &MirFunction,
+) -> HashMap<StackSlotId, u32> {
+    let mut allowed = HashMap::new();
+    let Some(summary) = current_summary else {
+        return allowed;
+    };
+    for idx in 0..func.param_count {
+        let delta = summary.local_irq_delta_arg(idx).max(0) as u32;
+        if delta == 0 {
+            continue;
+        }
+        if let Some(slot) = func.param_stack_slots.get(&idx).copied() {
+            let entry = allowed.entry(slot).or_insert(0u32);
+            *entry = entry.saturating_add(delta);
+        }
+    }
+    allowed
 }
 
 fn allowed_returned_ringbuf_ref(

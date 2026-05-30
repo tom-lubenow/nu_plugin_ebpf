@@ -48,6 +48,7 @@ pub(crate) struct SubfunctionSummary {
     kfunc_ref_return_kind: Option<KfuncRefKind>,
     rcu_read_lock_delta: i8,
     preempt_disable_delta: i8,
+    local_irq_deltas: [i8; SUMMARY_ARG_SLOTS],
     ringbuf_record_release_args: u8,
     ringbuf_dynptr_release_args: u8,
     kfunc_ref_release_args: [Option<KfuncRefKind>; SUMMARY_ARG_SLOTS],
@@ -61,6 +62,7 @@ impl SubfunctionSummary {
             kfunc_ref_return_kind: None,
             rcu_read_lock_delta: 0,
             preempt_disable_delta: 0,
+            local_irq_deltas: [0; SUMMARY_ARG_SLOTS],
             ringbuf_record_release_args: 0,
             ringbuf_dynptr_release_args: 0,
             kfunc_ref_release_args: [None; SUMMARY_ARG_SLOTS],
@@ -74,6 +76,7 @@ impl SubfunctionSummary {
             kfunc_ref_return_kind: None,
             rcu_read_lock_delta: 0,
             preempt_disable_delta: 0,
+            local_irq_deltas: [0; SUMMARY_ARG_SLOTS],
             ringbuf_record_release_args: 0,
             ringbuf_dynptr_release_args: 0,
             kfunc_ref_release_args: [None; SUMMARY_ARG_SLOTS],
@@ -104,6 +107,14 @@ impl SubfunctionSummary {
         self.preempt_disable_delta
     }
 
+    pub(crate) const fn local_irq_delta_arg(self, idx: usize) -> i8 {
+        if idx < SUMMARY_ARG_SLOTS {
+            self.local_irq_deltas[idx]
+        } else {
+            0
+        }
+    }
+
     pub(crate) const fn changes_packet_data(self) -> bool {
         self.return_summary.changes_packet_data()
     }
@@ -130,6 +141,7 @@ impl SubfunctionSummary {
         kfunc_ref_return_kind: Option<KfuncRefKind>,
         rcu_read_lock_delta: i8,
         preempt_disable_delta: i8,
+        local_irq_deltas: [i8; SUMMARY_ARG_SLOTS],
         changes_packet_data: bool,
         ringbuf_record_release_args: u8,
         ringbuf_dynptr_release_args: u8,
@@ -141,6 +153,7 @@ impl SubfunctionSummary {
             kfunc_ref_return_kind,
             rcu_read_lock_delta,
             preempt_disable_delta,
+            local_irq_deltas,
             ringbuf_record_release_args,
             ringbuf_dynptr_release_args,
             kfunc_ref_release_args,
@@ -173,6 +186,7 @@ struct SummaryState {
     kfunc_ref_sources: Vec<Option<KfuncRefSource>>,
     rcu_read_lock_delta: Option<i8>,
     preempt_disable_delta: Option<i8>,
+    local_irq_deltas: [Option<i8>; SUMMARY_ARG_SLOTS],
     ringbuf_record_release_args: u8,
     ringbuf_dynptr_release_args: u8,
     kfunc_ref_release_args: [Option<KfuncRefKind>; SUMMARY_ARG_SLOTS],
@@ -256,6 +270,7 @@ fn summarize_function(
             kfunc_ref_sources: vec![None; total_vregs],
             rcu_read_lock_delta: Some(0),
             preempt_disable_delta: Some(0),
+            local_irq_deltas: [Some(0); SUMMARY_ARG_SLOTS],
             ringbuf_record_release_args: 0,
             ringbuf_dynptr_release_args: 0,
             kfunc_ref_release_args: [None; SUMMARY_ARG_SLOTS],
@@ -268,6 +283,7 @@ fn summarize_function(
     let mut returned_kfunc_ref: Option<Option<KfuncRefKind>> = None;
     let mut returned_rcu_delta: Option<Option<i8>> = None;
     let mut returned_preempt_delta: Option<Option<i8>> = None;
+    let mut returned_local_irq_deltas: Option<[Option<i8>; SUMMARY_ARG_SLOTS]> = None;
     let mut changes_packet_data = false;
     let mut returned_record_releases: Option<u8> = None;
     let mut returned_dynptr_releases: Option<u8> = None;
@@ -345,6 +361,10 @@ fn summarize_function(
                     Some(existing) if existing == state.preempt_disable_delta => Some(existing),
                     Some(_) => Some(None),
                 };
+                returned_local_irq_deltas = Some(match returned_local_irq_deltas {
+                    None => state.local_irq_deltas,
+                    Some(existing) => merge_delta_args(existing, state.local_irq_deltas),
+                });
                 returned_record_releases = Some(match returned_record_releases {
                     None => state.ringbuf_record_release_args,
                     Some(existing) => existing & state.ringbuf_record_release_args,
@@ -375,6 +395,7 @@ fn summarize_function(
         returned_kfunc_ref.flatten(),
         returned_rcu_delta.flatten().unwrap_or(0),
         returned_preempt_delta.flatten().unwrap_or(0),
+        finalize_delta_args(returned_local_irq_deltas),
         changes_packet_data,
         returned_record_releases.unwrap_or(0),
         returned_dynptr_releases.unwrap_or(0),
@@ -452,6 +473,11 @@ fn merge_alias_states(existing: &mut SummaryState, incoming: &SummaryState) -> b
         existing.preempt_disable_delta = preempt_delta;
         changed = true;
     }
+    let local_irq_deltas = merge_delta_args(existing.local_irq_deltas, incoming.local_irq_deltas);
+    if existing.local_irq_deltas != local_irq_deltas {
+        existing.local_irq_deltas = local_irq_deltas;
+        changed = true;
+    }
     let record_releases =
         existing.ringbuf_record_release_args & incoming.ringbuf_record_release_args;
     if existing.ringbuf_record_release_args != record_releases {
@@ -477,6 +503,30 @@ fn merge_alias_states(existing: &mut SummaryState, incoming: &SummaryState) -> b
 
 fn merge_delta(existing: Option<i8>, incoming: Option<i8>) -> Option<i8> {
     if existing == incoming { existing } else { None }
+}
+
+fn merge_delta_args(
+    existing: [Option<i8>; SUMMARY_ARG_SLOTS],
+    incoming: [Option<i8>; SUMMARY_ARG_SLOTS],
+) -> [Option<i8>; SUMMARY_ARG_SLOTS] {
+    let mut merged = [None; SUMMARY_ARG_SLOTS];
+    for idx in 0..SUMMARY_ARG_SLOTS {
+        merged[idx] = merge_delta(existing[idx], incoming[idx]);
+    }
+    merged
+}
+
+fn finalize_delta_args(
+    returned: Option<[Option<i8>; SUMMARY_ARG_SLOTS]>,
+) -> [i8; SUMMARY_ARG_SLOTS] {
+    let Some(returned) = returned else {
+        return [0; SUMMARY_ARG_SLOTS];
+    };
+    let mut finalized = [0; SUMMARY_ARG_SLOTS];
+    for idx in 0..SUMMARY_ARG_SLOTS {
+        finalized[idx] = returned[idx].unwrap_or(0);
+    }
+    finalized
 }
 
 fn merge_kfunc_release_args(
@@ -584,7 +634,7 @@ fn apply_alias_inst(
                     .map(|kind| KfuncRefSource { id: *dst, kind }),
             };
             set_kfunc_ref_source(&mut state.kfunc_ref_sources, *dst, kfunc_ref_source);
-            apply_subfunction_critical_delta(summary, state);
+            apply_subfunction_critical_delta(summary, args, state);
             apply_subfunction_release_summary(summary, args, state);
             InstEffects {
                 changes_packet_data: summary.changes_packet_data(),
@@ -629,7 +679,7 @@ fn apply_alias_inst(
         } => {
             set_alias(&mut state.aliases, *dst, AliasSource::Unknown);
             apply_kfunc_release_summary(kfunc, args, state);
-            apply_kfunc_critical_delta(kfunc, state);
+            apply_kfunc_critical_delta(kfunc, args, state);
             let kfunc_ref_source =
                 kfunc_acquire_ref_kind(kfunc).map(|kind| KfuncRefSource { id: *dst, kind });
             set_kfunc_ref_source(&mut state.kfunc_ref_sources, *dst, kfunc_ref_source);
@@ -681,7 +731,11 @@ fn apply_alias_inst(
     }
 }
 
-fn apply_subfunction_critical_delta(summary: SubfunctionSummary, state: &mut SummaryState) {
+fn apply_subfunction_critical_delta(
+    summary: SubfunctionSummary,
+    args: &[VReg],
+    state: &mut SummaryState,
+) {
     add_delta(
         &mut state.rcu_read_lock_delta,
         summary.rcu_read_lock_delta(),
@@ -690,20 +744,51 @@ fn apply_subfunction_critical_delta(summary: SubfunctionSummary, state: &mut Sum
         &mut state.preempt_disable_delta,
         summary.preempt_disable_delta(),
     );
+    for idx in 0..SUMMARY_ARG_SLOTS {
+        let delta = summary.local_irq_delta_arg(idx);
+        if delta == 0 {
+            continue;
+        }
+        let Some(arg) = args.get(idx) else {
+            continue;
+        };
+        let AliasSource::Param(param_idx) = get_alias(&state.aliases, *arg) else {
+            continue;
+        };
+        add_delta_arg(&mut state.local_irq_deltas, param_idx, delta);
+    }
 }
 
-fn apply_kfunc_critical_delta(kfunc: &str, state: &mut SummaryState) {
+fn apply_kfunc_critical_delta(kfunc: &str, args: &[VReg], state: &mut SummaryState) {
     match kfunc {
         "bpf_rcu_read_lock" => add_delta(&mut state.rcu_read_lock_delta, 1),
         "bpf_rcu_read_unlock" => add_delta(&mut state.rcu_read_lock_delta, -1),
         "bpf_preempt_disable" => add_delta(&mut state.preempt_disable_delta, 1),
         "bpf_preempt_enable" => add_delta(&mut state.preempt_disable_delta, -1),
+        "bpf_local_irq_save" => apply_local_irq_delta(args, state, 1),
+        "bpf_local_irq_restore" => apply_local_irq_delta(args, state, -1),
         _ => {}
     }
 }
 
+fn apply_local_irq_delta(args: &[VReg], state: &mut SummaryState, delta: i8) {
+    let Some(arg) = args.first() else {
+        return;
+    };
+    let AliasSource::Param(param_idx) = get_alias(&state.aliases, *arg) else {
+        return;
+    };
+    add_delta_arg(&mut state.local_irq_deltas, param_idx, delta);
+}
+
 fn add_delta(slot: &mut Option<i8>, delta: i8) {
     *slot = slot.and_then(|value| value.checked_add(delta));
+}
+
+fn add_delta_arg(slots: &mut [Option<i8>; SUMMARY_ARG_SLOTS], idx: usize, delta: i8) {
+    if let Some(slot) = slots.get_mut(idx) {
+        add_delta(slot, delta);
+    }
 }
 
 fn apply_subfunction_release_summary(
@@ -1570,5 +1655,91 @@ mod tests {
             .copied()
             .expect("expected summary");
         assert_eq!(summary.preempt_disable_delta(), 1);
+    }
+
+    #[test]
+    fn test_infer_summary_tracks_local_irq_arg_delta() {
+        let mut save = MirFunction::new();
+        let save_entry = save.alloc_block();
+        save.entry = save_entry;
+        save.param_count = 1;
+        save.vreg_count = 1;
+        let save_ret = save.alloc_vreg();
+        save.block_mut(save_entry)
+            .instructions
+            .push(MirInst::CallKfunc {
+                dst: save_ret,
+                kfunc: "bpf_local_irq_save".to_string(),
+                btf_id: None,
+                args: vec![VReg(0)],
+            });
+        save.block_mut(save_entry).terminator = MirInst::Return { val: None };
+
+        let mut restore = MirFunction::new();
+        let restore_entry = restore.alloc_block();
+        restore.entry = restore_entry;
+        restore.param_count = 1;
+        restore.vreg_count = 1;
+        let restore_ret = restore.alloc_vreg();
+        restore
+            .block_mut(restore_entry)
+            .instructions
+            .push(MirInst::CallKfunc {
+                dst: restore_ret,
+                kfunc: "bpf_local_irq_restore".to_string(),
+                btf_id: None,
+                args: vec![VReg(0)],
+            });
+        restore.block_mut(restore_entry).terminator = MirInst::Return { val: None };
+
+        let summaries = infer_subfunction_summaries(&[save, restore]);
+        assert_eq!(
+            summaries
+                .get(&SubfunctionId(0))
+                .copied()
+                .expect("expected save summary")
+                .local_irq_delta_arg(0),
+            1
+        );
+        assert_eq!(
+            summaries
+                .get(&SubfunctionId(1))
+                .copied()
+                .expect("expected restore summary")
+                .local_irq_delta_arg(0),
+            -1
+        );
+    }
+
+    #[test]
+    fn test_infer_summary_requires_local_irq_delta_on_all_returns() {
+        let mut subfn = MirFunction::new();
+        let entry = subfn.alloc_block();
+        let save = subfn.alloc_block();
+        let done = subfn.alloc_block();
+        subfn.entry = entry;
+        subfn.param_count = 1;
+        subfn.vreg_count = 2;
+        subfn.block_mut(entry).terminator = MirInst::Branch {
+            cond: VReg(1),
+            if_true: save,
+            if_false: done,
+        };
+        let save_ret = subfn.alloc_vreg();
+        subfn.block_mut(save).instructions.push(MirInst::CallKfunc {
+            dst: save_ret,
+            kfunc: "bpf_local_irq_save".to_string(),
+            btf_id: None,
+            args: vec![VReg(0)],
+        });
+        subfn.block_mut(save).terminator = MirInst::Return { val: None };
+        subfn.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let summaries = infer_subfunction_summaries(&[subfn]);
+        let summary = summaries
+            .get(&SubfunctionId(0))
+            .copied()
+            .expect("expected summary");
+        assert_eq!(summary.local_irq_delta_arg(0), 0);
     }
 }

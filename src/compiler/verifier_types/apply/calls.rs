@@ -346,7 +346,7 @@ pub(super) fn apply_call_subfn_inst(
         state.invalidate_packet_pointers();
     }
 
-    apply_subfunction_critical_delta(&summary, state, errors);
+    apply_subfunction_critical_delta(&summary, args, state, errors);
     apply_subfunction_release_summary(&summary, args, state, errors);
 
     if let Some(idx) = summary.return_arg()
@@ -406,6 +406,7 @@ pub(super) fn apply_call_subfn_inst(
 
 fn apply_subfunction_critical_delta(
     summary: &SubfunctionSummary,
+    args: &[VReg],
     state: &mut VerifierState,
     errors: &mut Vec<VerifierTypeError>,
 ) {
@@ -427,6 +428,36 @@ fn apply_subfunction_critical_delta(
             errors.push(VerifierTypeError::new(
                 "subfunction requires a matching bpf_preempt_disable",
             ));
+        }
+    }
+    for idx in 0..5 {
+        let delta = summary.local_irq_delta_arg(idx);
+        if delta == 0 {
+            continue;
+        }
+        let Some(arg) = args.get(idx).copied() else {
+            errors.push(VerifierTypeError::new(format!(
+                "subfunction arg{} local irq flags argument is missing",
+                idx
+            )));
+            continue;
+        };
+        let Some(slot) = stack_slot_base_from_vreg(arg, state) else {
+            errors.push(VerifierTypeError::new(format!(
+                "subfunction arg{} expects local irq flags stack slot pointer",
+                idx
+            )));
+            continue;
+        };
+        for _ in 0..delta.max(0) {
+            state.acquire_local_irq_disable_slot(slot);
+        }
+        for _ in 0..delta.saturating_neg() {
+            if !state.release_local_irq_disable_slot(slot) {
+                errors.push(VerifierTypeError::new(
+                    "subfunction requires a matching bpf_local_irq_save",
+                ));
+            }
         }
     }
 }

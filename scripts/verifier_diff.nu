@@ -23727,6 +23727,30 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "source-kfunc-local-irq-user-function-save-restore"
+        category: "helper-state"
+        tags: [kfunc irq source accept user-function]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  def save [flags] {'
+            '    kfunc-call "bpf_local_irq_save" $flags'
+            '    0'
+            '  }'
+            '  def restore [flags] {'
+            '    kfunc-call "bpf_local_irq_restore" $flags'
+            '    0'
+            '  }'
+            '  let flags = "00000000"'
+            '  save $flags'
+            '  restore $flags'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "source-kfunc-local-irq-restore-rejects-unmatched"
         category: "helper-state"
         tags: [kfunc irq source reject]

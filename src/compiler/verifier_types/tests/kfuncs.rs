@@ -14237,6 +14237,114 @@ fn test_kfunc_local_irq_save_restore_balanced() {
 }
 
 #[test]
+fn test_kfunc_local_irq_subfn_save_restore_balanced() {
+    let mut save = MirFunction::new();
+    let save_entry = save.alloc_block();
+    save.entry = save_entry;
+    save.param_count = 1;
+    save.vreg_count = 1;
+    let save_slot = save.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    save.param_stack_slots.insert(0, save_slot);
+    let save_ret = save.alloc_vreg();
+    save.block_mut(save_entry)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: save_ret,
+            kfunc: "bpf_local_irq_save".to_string(),
+            btf_id: None,
+            args: vec![VReg(0)],
+        });
+    save.block_mut(save_entry).terminator = MirInst::Return { val: None };
+
+    let mut restore = MirFunction::new();
+    let restore_entry = restore.alloc_block();
+    restore.entry = restore_entry;
+    restore.param_count = 1;
+    restore.vreg_count = 1;
+    let restore_slot = restore.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    restore.param_stack_slots.insert(0, restore_slot);
+    let restore_ret = restore.alloc_vreg();
+    restore
+        .block_mut(restore_entry)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: restore_ret,
+            kfunc: "bpf_local_irq_restore".to_string(),
+            btf_id: None,
+            args: vec![VReg(0)],
+        });
+    restore.block_mut(restore_entry).terminator = MirInst::Return { val: None };
+
+    let summaries = infer_subfunction_summaries(&[save.clone(), restore.clone()]);
+    let save_summary = summaries
+        .get(&SubfunctionId(0))
+        .copied()
+        .expect("expected save summary");
+    let restore_summary = summaries
+        .get(&SubfunctionId(1))
+        .copied()
+        .expect("expected restore summary");
+    let stack_ptr_ty = MirType::Ptr {
+        pointee: Box::new(MirType::Unknown),
+        address_space: AddressSpace::Stack,
+    };
+    let mut save_types = HashMap::new();
+    save_types.insert(VReg(0), stack_ptr_ty.clone());
+    save_types.insert(save_ret, MirType::I64);
+    verify_mir_with_subfunction_summaries_for_probe_context_with_current_summary(
+        &save,
+        &save_types,
+        &summaries,
+        Some(save_summary),
+        None,
+        None,
+    )
+    .expect("expected local IRQ save wrapper to verify");
+    let mut restore_types = HashMap::new();
+    restore_types.insert(VReg(0), stack_ptr_ty.clone());
+    restore_types.insert(restore_ret, MirType::I64);
+    verify_mir_with_subfunction_summaries_for_probe_context_with_current_summary(
+        &restore,
+        &restore_types,
+        &summaries,
+        Some(restore_summary),
+        None,
+        None,
+    )
+    .expect("expected local IRQ restore wrapper to verify");
+
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    let flags = func.alloc_vreg();
+    let call_save_ret = func.alloc_vreg();
+    let call_restore_ret = func.alloc_vreg();
+    let flags_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: flags,
+        src: MirValue::StackSlot(flags_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallSubfn {
+        dst: call_save_ret,
+        subfn: SubfunctionId(0),
+        args: vec![flags],
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallSubfn {
+        dst: call_restore_ret,
+        subfn: SubfunctionId(1),
+        args: vec![flags],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(flags, stack_ptr_ty);
+    types.insert(call_save_ret, MirType::I64);
+    types.insert(call_restore_ret, MirType::I64);
+    verify_mir_with_subfunction_summaries(&func, &types, &summaries)
+        .expect("expected local IRQ save/restore wrappers to balance");
+}
+
+#[test]
 fn test_kfunc_local_irq_restore_requires_matching_save() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

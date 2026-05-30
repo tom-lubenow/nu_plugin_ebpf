@@ -1466,7 +1466,7 @@ impl<'a> VccLowerer<'a> {
                     if summary.changes_packet_data() {
                         out.push(VccInst::InvalidatePacketPointers);
                     }
-                    self.lower_subfunction_critical_delta(summary, out);
+                    self.lower_subfunction_critical_delta(summary, args, out);
                     self.lower_subfunction_release_summary(summary, args, out);
                     if let Some(idx) = summary.return_arg()
                         && let Some(arg) = args.get(idx)
@@ -1837,6 +1837,7 @@ impl<'a> VccLowerer<'a> {
     fn lower_subfunction_critical_delta(
         &self,
         summary: crate::compiler::subfn_summaries::SubfunctionSummary,
+        args: &[VReg],
         out: &mut Vec<VccInst>,
     ) {
         for _ in 0..summary.rcu_read_lock_delta().max(0) {
@@ -1850,6 +1851,18 @@ impl<'a> VccLowerer<'a> {
         }
         for _ in 0..summary.preempt_disable_delta().saturating_neg() {
             out.push(VccInst::PreemptDisableRelease);
+        }
+        for idx in 0..5 {
+            let Some(arg) = args.get(idx).copied() else {
+                continue;
+            };
+            let reg = VccReg(arg.0);
+            for _ in 0..summary.local_irq_delta_arg(idx).max(0) {
+                out.push(VccInst::LocalIrqDisableAcquire { flags: reg });
+            }
+            for _ in 0..summary.local_irq_delta_arg(idx).saturating_neg() {
+                out.push(VccInst::LocalIrqDisableRelease { flags: reg });
+            }
         }
     }
 
