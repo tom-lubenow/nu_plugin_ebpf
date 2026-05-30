@@ -996,6 +996,41 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
     .expect("expected utimensat source metadata");
     assert!(utimensat_source.contains("/v4.7/fs/utimes.c"));
 
+    let ppoll = TracepointContext::sys_enter("sys_enter_ppoll");
+    assert!(ppoll.has_field("ufds"));
+    assert!(ppoll.has_field("nfds"));
+    assert!(ppoll.has_field("tsp"));
+    assert!(ppoll.has_field("sigmask"));
+    assert!(ppoll.has_field("sigsetsize"));
+    assert!(matches!(
+        ppoll
+            .get_field("ufds")
+            .expect("expected ppoll ufds")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+    let (_, ppoll_source) = TracepointContext::syscall_fallback_field_minimum_kernel(
+        "syscalls",
+        "sys_enter_ppoll",
+        "sigmask",
+    )
+    .expect("expected ppoll source metadata");
+    assert!(ppoll_source.contains("/v4.7/fs/select.c"));
+
+    let epoll_pwait2 = TracepointContext::sys_enter("sys_enter_epoll_pwait2");
+    assert!(epoll_pwait2.has_field("epfd"));
+    assert!(epoll_pwait2.has_field("events"));
+    assert!(epoll_pwait2.has_field("maxevents"));
+    assert!(epoll_pwait2.has_field("timeout"));
+    assert!(epoll_pwait2.has_field("sigmask"));
+    assert!(epoll_pwait2.has_field("sigsetsize"));
+    assert_eq!(epoll_pwait2.minimum_kernel(), Some("5.11"));
+    assert!(
+        epoll_pwait2
+            .minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v5.11/fs/eventpoll.c"))
+    );
+
     let futex = TracepointContext::sys_enter("sys_enter_futex");
     assert!(futex.has_field("uaddr"));
     assert!(futex.has_field("op"));
@@ -1112,6 +1147,27 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
                 "sigmask",
                 "sigsetsize",
             ][..],
+        ),
+        (
+            "sys_enter_epoll_pwait2",
+            &[
+                "epfd",
+                "events",
+                "maxevents",
+                "timeout",
+                "sigmask",
+                "sigsetsize",
+            ][..],
+        ),
+        ("sys_enter_poll", &["ufds", "nfds", "timeout_msecs"][..]),
+        (
+            "sys_enter_ppoll",
+            &["ufds", "nfds", "tsp", "sigmask", "sigsetsize"][..],
+        ),
+        ("sys_enter_select", &["n", "inp", "outp", "exp", "tvp"][..]),
+        (
+            "sys_enter_pselect6",
+            &["n", "inp", "outp", "exp", "tsp", "sig"][..],
         ),
         ("sys_enter_stat", &["filename", "statbuf"][..]),
         ("sys_enter_newstat", &["filename", "statbuf"][..]),

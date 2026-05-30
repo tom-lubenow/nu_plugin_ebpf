@@ -26,6 +26,9 @@ const FILE_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/file.c
 const PIPE_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/pipe.c";
 const EVENTFD_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/eventfd.c";
 const EVENTPOLL_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/eventpoll.c";
+const EPOLL_PWAIT2_MIN_KERNEL: &str = "5.11";
+const EPOLL_PWAIT2_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.11/fs/eventpoll.c";
+const SELECT_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/select.c";
 const STAT_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/stat.c";
 const STATX_MIN_KERNEL: &str = "4.11";
 const STATX_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.11/fs/stat.c";
@@ -143,6 +146,11 @@ const WELL_KNOWN_SYS_ENTER_SYSCALLS: &[&str] = &[
     "epoll_ctl",
     "epoll_wait",
     "epoll_pwait",
+    "epoll_pwait2",
+    "poll",
+    "ppoll",
+    "select",
+    "pselect6",
     "stat",
     "lstat",
     "newstat",
@@ -586,6 +594,7 @@ impl TracepointContext {
             Some("faccessat2") => (Some(FACCESSAT2_MIN_KERNEL), Some(FACCESSAT2_SOURCE)),
             Some("fchmodat2") => (Some(FCHMODAT2_MIN_KERNEL), Some(FCHMODAT2_SOURCE)),
             Some("close_range") => (Some(CLOSE_RANGE_MIN_KERNEL), Some(CLOSE_RANGE_SOURCE)),
+            Some("epoll_pwait2") => (Some(EPOLL_PWAIT2_MIN_KERNEL), Some(EPOLL_PWAIT2_SOURCE)),
             Some("open_tree" | "move_mount" | "fsmount") => {
                 (Some(MOUNT_API_MIN_KERNEL), Some(MOUNT_API_NAMESPACE_SOURCE))
             }
@@ -666,6 +675,7 @@ impl TracepointContext {
             "faccessat2" => (FACCESSAT2_MIN_KERNEL, FACCESSAT2_SOURCE),
             "fchmodat2" => (FCHMODAT2_MIN_KERNEL, FCHMODAT2_SOURCE),
             "close_range" => (CLOSE_RANGE_MIN_KERNEL, CLOSE_RANGE_SOURCE),
+            "epoll_pwait2" => (EPOLL_PWAIT2_MIN_KERNEL, EPOLL_PWAIT2_SOURCE),
             "open_tree" | "move_mount" | "fsmount" => {
                 (MOUNT_API_MIN_KERNEL, MOUNT_API_NAMESPACE_SOURCE)
             }
@@ -739,6 +749,10 @@ impl TracepointContext {
             "eventfd" | "eventfd2" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, EVENTFD_SOURCE),
             "epoll_create" | "epoll_create1" | "epoll_ctl" | "epoll_wait" | "epoll_pwait" => {
                 (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, EVENTPOLL_SOURCE)
+            }
+            "epoll_pwait2" => (EPOLL_PWAIT2_MIN_KERNEL, EPOLL_PWAIT2_SOURCE),
+            "poll" | "ppoll" | "select" | "pselect6" => {
+                (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, SELECT_SOURCE)
             }
             "stat" | "lstat" | "newstat" | "newlstat" | "stat64" | "lstat64" | "fstat"
             | "newfstat" | "fstat64" | "newfstatat" | "fstatat64" => {
@@ -1110,6 +1124,41 @@ impl TracepointContext {
                 ("timeout", Self::syscall_arg_int(true)),
                 ("sigmask", Self::syscall_arg_user_ptr()),
                 ("sigsetsize", Self::syscall_arg_int(false)),
+            ],
+            "epoll_pwait2" => vec![
+                ("epfd", Self::syscall_arg_int(true)),
+                ("events", Self::syscall_arg_user_ptr()),
+                ("maxevents", Self::syscall_arg_int(true)),
+                ("timeout", Self::syscall_arg_user_ptr()),
+                ("sigmask", Self::syscall_arg_user_ptr()),
+                ("sigsetsize", Self::syscall_arg_int(false)),
+            ],
+            "poll" => vec![
+                ("ufds", Self::syscall_arg_user_ptr()),
+                ("nfds", Self::syscall_arg_int(false)),
+                ("timeout_msecs", Self::syscall_arg_int(true)),
+            ],
+            "ppoll" => vec![
+                ("ufds", Self::syscall_arg_user_ptr()),
+                ("nfds", Self::syscall_arg_int(false)),
+                ("tsp", Self::syscall_arg_user_ptr()),
+                ("sigmask", Self::syscall_arg_user_ptr()),
+                ("sigsetsize", Self::syscall_arg_int(false)),
+            ],
+            "select" => vec![
+                ("n", Self::syscall_arg_int(true)),
+                ("inp", Self::syscall_arg_user_ptr()),
+                ("outp", Self::syscall_arg_user_ptr()),
+                ("exp", Self::syscall_arg_user_ptr()),
+                ("tvp", Self::syscall_arg_user_ptr()),
+            ],
+            "pselect6" => vec![
+                ("n", Self::syscall_arg_int(true)),
+                ("inp", Self::syscall_arg_user_ptr()),
+                ("outp", Self::syscall_arg_user_ptr()),
+                ("exp", Self::syscall_arg_user_ptr()),
+                ("tsp", Self::syscall_arg_user_ptr()),
+                ("sig", Self::syscall_arg_user_ptr()),
             ],
             "stat" | "lstat" | "newstat" | "newlstat" | "stat64" | "lstat64" => vec![
                 ("filename", Self::syscall_arg_user_ptr()),

@@ -2649,6 +2649,36 @@ const FD_TRACEPOINT_FIELD_SPECS = [
         min_kernel: "4.7"
         source: "https://github.com/torvalds/linux/blob/v4.7/fs/eventpoll.c"
     }
+    {
+        syscalls: ["epoll_pwait2"]
+        fields: ["epfd" "events" "maxevents" "timeout" "sigmask" "sigsetsize"]
+        min_kernel: "5.11"
+        source: "https://github.com/torvalds/linux/blob/v5.11/fs/eventpoll.c"
+    }
+    {
+        syscalls: ["poll"]
+        fields: ["ufds" "nfds" "timeout_msecs"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/select.c"
+    }
+    {
+        syscalls: ["ppoll"]
+        fields: ["ufds" "nfds" "tsp" "sigmask" "sigsetsize"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/select.c"
+    }
+    {
+        syscalls: ["select"]
+        fields: ["n" "inp" "outp" "exp" "tvp"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/select.c"
+    }
+    {
+        syscalls: ["pselect6"]
+        fields: ["n" "inp" "outp" "exp" "tsp" "sig"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/select.c"
+    }
 ]
 const MM_TRACEPOINT_FIELD_SPECS = [
     {
@@ -5946,6 +5976,51 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         ]
     }
     {
+        target: "tracepoint:syscalls/sys_enter_ppoll"
+        program: [
+            '{|ctx|'
+            '  let ufds = $ctx.ufds'
+            '  let tsp = $ctx.tsp'
+            '  let sigmask = $ctx.sigmask'
+            '  if $ufds { 1 | count }'
+            '  if $tsp { 1 | count }'
+            '  if $sigmask { 1 | count }'
+            '  ($ctx.nfds + $ctx.sigsetsize) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_ppoll:field:ufds"
+            "tracepoint:syscalls/sys_enter_ppoll:field:tsp"
+            "tracepoint:syscalls/sys_enter_ppoll:field:sigmask"
+            "tracepoint:syscalls/sys_enter_ppoll:field:nfds"
+            "tracepoint:syscalls/sys_enter_ppoll:field:sigsetsize"
+        ]
+    }
+    {
+        target: "tracepoint:syscalls/sys_enter_epoll_pwait2"
+        program: [
+            '{|ctx|'
+            '  let events = $ctx.events'
+            '  let timeout = $ctx.timeout'
+            '  let sigmask = $ctx.sigmask'
+            '  if $events { 1 | count }'
+            '  if $timeout { 1 | count }'
+            '  if $sigmask { 1 | count }'
+            '  ($ctx.epfd + $ctx.maxevents + $ctx.sigsetsize) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_epoll_pwait2:field:events"
+            "tracepoint:syscalls/sys_enter_epoll_pwait2:field:timeout"
+            "tracepoint:syscalls/sys_enter_epoll_pwait2:field:sigmask"
+            "tracepoint:syscalls/sys_enter_epoll_pwait2:field:epfd"
+            "tracepoint:syscalls/sys_enter_epoll_pwait2:field:maxevents"
+            "tracepoint:syscalls/sys_enter_epoll_pwait2:field:sigsetsize"
+        ]
+    }
+    {
         target: "tracepoint:syscalls/sys_enter_fchownat"
         program: [
             '{|ctx|'
@@ -8906,6 +8981,73 @@ const FIXTURES = [
             '  let sigmask = $ctx.sigmask'
             '  if $sigmask { 1 | count }'
             '  ($ctx.epfd + $ctx.maxevents + $ctx.timeout + $ctx.sigsetsize) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-epoll-pwait2-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_epoll_pwait2]
+        target: "tracepoint:syscalls/sys_enter_epoll_pwait2"
+        program: [
+            '{|ctx|'
+            '  let events = $ctx.events'
+            '  let timeout = $ctx.timeout'
+            '  let sigmask = $ctx.sigmask'
+            '  if $events { 1 | count }'
+            '  if $timeout { 1 | count }'
+            '  if $sigmask { 1 | count }'
+            '  ($ctx.epfd + $ctx.maxevents + $ctx.sigsetsize) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-ppoll-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_ppoll]
+        target: "tracepoint:syscalls/sys_enter_ppoll"
+        program: [
+            '{|ctx|'
+            '  let ufds = $ctx.ufds'
+            '  let tsp = $ctx.tsp'
+            '  let sigmask = $ctx.sigmask'
+            '  if $ufds { 1 | count }'
+            '  if $tsp { 1 | count }'
+            '  if $sigmask { 1 | count }'
+            '  ($ctx.nfds + $ctx.sigsetsize) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-pselect6-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_pselect6]
+        target: "tracepoint:syscalls/sys_enter_pselect6"
+        program: [
+            '{|ctx|'
+            '  let inp = $ctx.inp'
+            '  let outp = $ctx.outp'
+            '  let exp = $ctx.exp'
+            '  let tsp = $ctx.tsp'
+            '  let sig = $ctx.sig'
+            '  if $inp { 1 | count }'
+            '  if $outp { 1 | count }'
+            '  if $exp { 1 | count }'
+            '  if $tsp { 1 | count }'
+            '  if $sig { 1 | count }'
+            '  $ctx.n | count'
             '  0'
             '}'
         ]
@@ -30968,6 +31110,8 @@ def syscall-tracepoint-fallback-field-kernel-feature [field: string target] {
         "6.6"
     } else if $syscall == "close_range" {
         "5.9"
+    } else if $syscall == "epoll_pwait2" {
+        "5.11"
     } else if $syscall in ["open_tree" "move_mount" "fsmount" "fsopen" "fsconfig" "fspick"] {
         "5.2"
     } else if $syscall == "mount_setattr" {
@@ -31005,6 +31149,8 @@ def syscall-tracepoint-fallback-field-kernel-feature [field: string target] {
         "https://github.com/torvalds/linux/blob/v6.6/fs/open.c"
     } else if $syscall == "close_range" {
         "https://github.com/torvalds/linux/blob/v5.9/fs/open.c"
+    } else if $syscall == "epoll_pwait2" {
+        "https://github.com/torvalds/linux/blob/v5.11/fs/eventpoll.c"
     } else if $syscall in ["open_tree" "move_mount" "fsmount"] {
         "https://github.com/torvalds/linux/blob/v5.2/fs/namespace.c"
     } else if $syscall in ["fsopen" "fsconfig" "fspick"] {
