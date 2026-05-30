@@ -41,6 +41,45 @@ const SIGNAL_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/
 const PIDFD_SEND_SIGNAL_MIN_KERNEL: &str = "5.1";
 const PIDFD_SEND_SIGNAL_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v5.1/kernel/signal.c";
+const TRACEPOINT_PRESERVED_FALLBACK_FIELD_NAMES: &[&str] = &[
+    "pid",
+    "tid",
+    "tgid",
+    "pid_tgid",
+    "current_pid_tgid",
+    "uid",
+    "gid",
+    "uid_gid",
+    "current_uid_gid",
+    "comm",
+    "current_task",
+    "current_cgroup",
+    "cpu",
+    "numa_node",
+    "numa_node_id",
+    "random",
+    "prandom_u32",
+    "ktime",
+    "timestamp",
+    "ktime_boot",
+    "boot_ktime",
+    "boot_time",
+    "ktime_coarse",
+    "coarse_ktime",
+    "coarse_time",
+    "ktime_tai",
+    "tai_ktime",
+    "tai_time",
+    "jiffies",
+    "func_ip",
+    "function_ip",
+    "attach_cookie",
+    "bpf_cookie",
+    "cgroup_id",
+    "arg_count",
+    "kstack",
+    "ustack",
+];
 
 /// Source used to construct a tracepoint context layout.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -416,29 +455,20 @@ impl TracepointContext {
         }
     }
 
+    fn sys_enter_arg_field_name_is_reachable(name: &str) -> bool {
+        if name == "arg" || TRACEPOINT_PRESERVED_FALLBACK_FIELD_NAMES.contains(&name) {
+            return false;
+        }
+
+        !name.strip_prefix("arg").is_some_and(|suffix| {
+            !suffix.is_empty() && suffix.chars().all(|ch| ch.is_ascii_digit())
+        })
+    }
+
     fn well_known_sys_enter_arg_fields(name: &str) -> Vec<FieldInfo> {
         let Some(syscall) = name.strip_prefix("sys_enter_") else {
             return Vec::new();
         };
-        let explicit_fields: Option<Vec<(usize, &str, TypeInfo)>> = match syscall {
-            "kill" | "tkill" => Some(vec![(1, "sig", Self::syscall_arg_int(true))]),
-            "tgkill" => Some(vec![(2, "sig", Self::syscall_arg_int(true))]),
-            "rt_sigqueueinfo" => Some(vec![
-                (1, "sig", Self::syscall_arg_int(true)),
-                (2, "uinfo", Self::syscall_arg_user_ptr()),
-            ]),
-            "rt_tgsigqueueinfo" => Some(vec![
-                (2, "sig", Self::syscall_arg_int(true)),
-                (3, "uinfo", Self::syscall_arg_user_ptr()),
-            ]),
-            _ => None,
-        };
-        if let Some(fields) = explicit_fields {
-            return fields
-                .into_iter()
-                .filter_map(|(idx, name, ty)| Self::sys_enter_arg_field(idx, name, ty))
-                .collect();
-        }
 
         let fields: Vec<(&str, TypeInfo)> = match syscall {
             "read" | "write" => vec![
@@ -695,10 +725,7 @@ impl TracepointContext {
                 ("fd", Self::syscall_arg_int(false)),
                 ("pgoff", Self::syscall_arg_int(false)),
             ],
-            // The legacy syscall names its single parameter "arg", but
-            // ctx.arg is reserved for BTF named-argument projections. Keep it
-            // reachable through ctx.args instead of exposing an unusable alias.
-            "old_mmap" => vec![],
+            "old_mmap" => vec![("arg", Self::syscall_arg_user_ptr())],
             "munmap" => vec![
                 ("addr", Self::syscall_arg_int(false)),
                 ("len", Self::syscall_arg_int(false)),
@@ -874,6 +901,7 @@ impl TracepointContext {
         fields
             .iter()
             .enumerate()
+            .filter(|(_, (name, _))| Self::sys_enter_arg_field_name_is_reachable(name))
             .filter_map(|(idx, (name, ty))| Self::sys_enter_arg_field(idx, name, ty.clone()))
             .collect()
     }
