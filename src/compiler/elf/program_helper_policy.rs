@@ -1897,6 +1897,10 @@ mod tests {
 
         for program_type in program_types {
             assert!(
+                EbpfProgramType::supported_program_types().contains(program_type),
+                "{program_type:?} in {table_name} must be a supported program type"
+            );
+            assert!(
                 seen.insert(*program_type),
                 "duplicate program type {program_type:?} in {table_name}"
             );

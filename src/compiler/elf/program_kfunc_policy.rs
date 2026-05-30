@@ -357,6 +357,24 @@ mod tests {
         }
     }
 
+    fn assert_supported_program_type(table_name: &str, program_type: EbpfProgramType) {
+        assert!(
+            EbpfProgramType::supported_program_types().contains(&program_type),
+            "{program_type:?} in {table_name} must be a supported program type"
+        );
+    }
+
+    fn assert_kfunc_has_static_metadata(table_name: &str, kfunc: &str) {
+        assert!(
+            KfuncSignature::for_name(kfunc).is_some(),
+            "{table_name} kfunc '{kfunc}' must have a static signature before it is advertised by ebpf spec"
+        );
+        assert!(
+            KfuncCompatibilityRequirement::for_name(kfunc).is_some(),
+            "{table_name} kfunc '{kfunc}' must have source-backed compatibility metadata before it is advertised by ebpf spec"
+        );
+    }
+
     fn kfunc_surface_names(spec: &ProgramSpec) -> Vec<&'static str> {
         spec.kfunc_call_surfaces_for_spec()
             .into_iter()
@@ -370,6 +388,7 @@ mod tests {
         let mut modeled_kfuncs = HashSet::new();
 
         for policy in PROGRAM_SPECIFIC_KFUNC_POLICIES {
+            assert_supported_program_type("program-specific kfunc policy", policy.program_type);
             assert!(
                 policy_program_types.insert(policy.program_type),
                 "duplicate program-specific kfunc policy for {:?}",
@@ -410,6 +429,7 @@ mod tests {
         assert!(!SKB_PACKET_DYNPTR_PROGRAMS.is_empty());
         let mut skb_dynptr_programs = HashSet::new();
         for program_type in SKB_PACKET_DYNPTR_PROGRAMS {
+            assert_supported_program_type("skb packet dynptr program list", *program_type);
             assert!(
                 skb_dynptr_programs.insert(*program_type),
                 "duplicate skb packet dynptr program type {:?}",
@@ -419,6 +439,7 @@ mod tests {
         assert!(!SKB_RAW_CONTEXT_DYNPTR_PROGRAMS.is_empty());
         let mut raw_skb_context_programs = HashSet::new();
         for program_type in SKB_RAW_CONTEXT_DYNPTR_PROGRAMS {
+            assert_supported_program_type("raw skb context dynptr program list", *program_type);
             assert!(
                 SKB_PACKET_DYNPTR_PROGRAMS.contains(program_type),
                 "raw skb context program type {:?} must be an skb packet dynptr program",
@@ -436,6 +457,7 @@ mod tests {
         );
         assert!(!SKB_TRACING_DYNPTR_PROGRAMS.is_empty());
         for program_type in SKB_TRACING_DYNPTR_PROGRAMS {
+            assert_supported_program_type("skb tracing dynptr program list", *program_type);
             assert!(
                 skb_dynptr_programs.insert(*program_type),
                 "duplicate skb dynptr program type {:?}",
@@ -514,15 +536,13 @@ mod tests {
 
     #[test]
     fn test_advertised_kfunc_call_surfaces_have_static_metadata() {
+        for policy in PROGRAM_SPECIFIC_KFUNC_POLICIES {
+            for kfunc in policy.modeled_kfuncs {
+                assert_kfunc_has_static_metadata("program-specific kfunc policy", kfunc);
+            }
+        }
+
         for (table_name, kfuncs) in [
-            (
-                "program-specific sock_ops kfuncs",
-                &["bpf_sock_ops_enable_tx_tstamp"][..],
-            ),
-            (
-                "program-specific cgroup_sock_addr kfuncs",
-                &["bpf_sock_addr_set_sun_path"][..],
-            ),
             ("xdp-only kfuncs", XDP_ONLY_KFUNCS),
             ("skb packet dynptr kfuncs", SKB_PACKET_DYNPTR_KFUNCS),
             ("skb tracing dynptr kfuncs", SKB_PACKET_DYNPTR_KFUNCS),
@@ -548,13 +568,41 @@ mod tests {
             ),
         ] {
             for kfunc in kfuncs {
-                assert!(
-                    KfuncSignature::for_name(kfunc).is_some(),
-                    "{table_name} kfunc '{kfunc}' must have a static signature before it is advertised by ebpf spec"
+                assert_kfunc_has_static_metadata(table_name, kfunc);
+            }
+        }
+    }
+
+    #[test]
+    fn test_advertised_kfunc_call_surfaces_are_accepted_by_same_spec_policy() {
+        for spec_source in [
+            "xdp:lo",
+            "tc:lo:ingress",
+            "fentry:tcp_sendmsg",
+            "sock_ops:/sys/fs/cgroup",
+            "cgroup_sock_addr:/sys/fs/cgroup:connect_unix",
+            "struct_ops:sched_ext_ops.dispatch",
+            "struct_ops:sched_ext_ops.init",
+            "struct_ops:sched_ext_ops.select_cpu",
+        ] {
+            let spec = ProgramSpec::parse(spec_source)
+                .unwrap_or_else(|err| panic!("{spec_source} should parse: {err}"));
+            for surface in spec.kfunc_call_surfaces_for_spec() {
+                assert_eq!(
+                    spec.kfunc_call_error(surface.kfunc),
+                    None,
+                    "{spec_source} advertises kfunc '{}' but rejects it through kfunc_call_error",
+                    surface.kfunc
                 );
                 assert!(
-                    KfuncCompatibilityRequirement::for_name(kfunc).is_some(),
-                    "{table_name} kfunc '{kfunc}' must have source-backed compatibility metadata before it is advertised by ebpf spec"
+                    !surface.policy.is_empty(),
+                    "{spec_source} kfunc '{}' should report a non-empty policy label",
+                    surface.kfunc
+                );
+                assert!(
+                    !surface.note.is_empty(),
+                    "{spec_source} kfunc '{}' should report a non-empty policy note",
+                    surface.kfunc
                 );
             }
         }
