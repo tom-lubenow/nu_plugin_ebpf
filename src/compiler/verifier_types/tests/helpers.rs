@@ -15213,6 +15213,88 @@ fn test_helper_ringbuf_reserve_submit_releases_reference() {
 }
 
 #[test]
+fn test_helper_ringbuf_submit_rejected_after_partial_reserve_join() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let reserve_path = func.alloc_block();
+    let join = func.alloc_block();
+    let submit = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let selector = func.alloc_vreg();
+    let select_cond = func.alloc_vreg();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let record = func.alloc_vreg();
+    let submit_cond = func.alloc_vreg();
+    let submit_ret = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: select_cond,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(selector),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: select_cond,
+        if_true: reserve_path,
+        if_false: join,
+    };
+
+    func.block_mut(reserve_path)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: record,
+            helper: BpfHelper::RingbufReserve as u32,
+            args: vec![
+                MirValue::StackSlot(map_slot),
+                MirValue::Const(8),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(reserve_path).terminator = MirInst::Jump { target: join };
+
+    func.block_mut(join).instructions.push(MirInst::BinOp {
+        dst: submit_cond,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(record),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(join).terminator = MirInst::Branch {
+        cond: submit_cond,
+        if_true: submit,
+        if_false: done,
+    };
+
+    func.block_mut(submit)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: submit_ret,
+            helper: BpfHelper::RingbufSubmit as u32,
+            args: vec![MirValue::VReg(record), MirValue::Const(0)],
+        });
+    func.block_mut(submit).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(selector, MirType::I64);
+    types.insert(select_cond, MirType::Bool);
+    types.insert(submit_cond, MirType::Bool);
+    types.insert(submit_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected partial-join submit rejection");
+    assert!(
+        err.iter().any(|e| {
+            e.message.contains("expects ringbuf record pointer")
+                || e.message.contains("uninitialized")
+        }),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_helper_ringbuf_reserve_leak_is_rejected() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

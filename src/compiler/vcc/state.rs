@@ -1292,16 +1292,20 @@ impl VccState {
         if !other.reachable {
             return self.clone();
         }
-        let mut merged = self.reg_types.clone();
-        for (reg, rhs) in &other.reg_types {
-            match merged.get(reg).copied() {
-                Some(lhs) => {
-                    merged.insert(*reg, self.merge_types(lhs, *rhs));
-                }
-                None => {
-                    merged.insert(*reg, *rhs);
-                }
-            }
+        let mut reg_keys: HashSet<VccReg> = self.reg_types.keys().copied().collect();
+        reg_keys.extend(other.reg_types.keys().copied());
+        let mut merged = HashMap::new();
+        for reg in reg_keys {
+            let ty = match (
+                self.reg_types.get(&reg).copied(),
+                other.reg_types.get(&reg).copied(),
+            ) {
+                (Some(lhs), Some(rhs)) => self.merge_types(lhs, rhs),
+                (Some(lhs), None) => Self::clear_resource_refs_after_partial_join(lhs),
+                (None, Some(rhs)) => Self::clear_resource_refs_after_partial_join(rhs),
+                (None, None) => continue,
+            };
+            merged.insert(reg, ty);
         }
         let mut scalar_alias_regs: HashSet<VccReg> =
             self.scalar_alias_roots.keys().copied().collect();
@@ -1936,6 +1940,9 @@ impl VccState {
 
     fn merge_types(&self, lhs: VccValueType, rhs: VccValueType) -> VccValueType {
         match (lhs, rhs) {
+            (VccValueType::Uninit, other) | (other, VccValueType::Uninit) => {
+                Self::clear_resource_refs_after_partial_join(other)
+            }
             (VccValueType::Scalar { range: l }, VccValueType::Scalar { range: r }) => {
                 VccValueType::Scalar {
                     range: match (l, r) {
@@ -1956,6 +1963,17 @@ impl VccState {
             }
             (left, right) if left == right => left,
             _ => VccValueType::Unknown,
+        }
+    }
+
+    fn clear_resource_refs_after_partial_join(ty: VccValueType) -> VccValueType {
+        match ty {
+            VccValueType::Ptr(mut ptr) => {
+                ptr.ringbuf_ref = None;
+                ptr.kfunc_ref = None;
+                VccValueType::Ptr(ptr)
+            }
+            other => other,
         }
     }
 
