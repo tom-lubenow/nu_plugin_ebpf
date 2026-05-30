@@ -3076,6 +3076,78 @@ const IO_URING_TRACEPOINT_FIELD_SPECS = [
         source: "https://github.com/torvalds/linux/blob/v5.1/fs/io_uring.c"
     }
 ]
+const AIO_TRACEPOINT_FIELD_SPECS = [
+    {
+        syscalls: ["io_setup"]
+        fields: ["nr_events" "ctxp"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/aio.c"
+    }
+    {
+        syscalls: ["io_destroy"]
+        fields: ["ctx"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/aio.c"
+    }
+    {
+        syscalls: ["io_submit"]
+        fields: ["ctx_id" "nr" "iocbpp"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/aio.c"
+    }
+    {
+        syscalls: ["io_cancel"]
+        fields: ["ctx_id" "iocb" "result"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/aio.c"
+    }
+    {
+        syscalls: ["io_getevents"]
+        fields: ["ctx_id" "min_nr" "nr" "events" "timeout"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/aio.c"
+    }
+    {
+        syscalls: ["io_pgetevents"]
+        fields: ["ctx_id" "min_nr" "nr" "events" "timeout" "usig"]
+        min_kernel: "4.18"
+        source: "https://github.com/torvalds/linux/blob/v4.18/fs/aio.c"
+    }
+]
+const IOPRIO_TRACEPOINT_FIELD_SPECS = [
+    {
+        syscalls: ["ioprio_set"]
+        fields: ["which" "who" "ioprio"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/block/ioprio.c"
+    }
+    {
+        syscalls: ["ioprio_get"]
+        fields: ["which" "who"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/block/ioprio.c"
+    }
+]
+const KEY_TRACEPOINT_FIELD_SPECS = [
+    {
+        syscalls: ["add_key"]
+        fields: ["_type" "_description" "_payload" "plen" "ringid"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/security/keys/keyctl.c"
+    }
+    {
+        syscalls: ["request_key"]
+        fields: ["_type" "_description" "_callout_info" "destringid"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/security/keys/keyctl.c"
+    }
+    {
+        syscalls: ["keyctl"]
+        fields: ["option"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/security/keys/keyctl.c"
+    }
+]
 const SIGNAL_TRACEPOINT_FIELD_SPECS = [
     {
         syscalls: ["rt_sigprocmask"]
@@ -6817,6 +6889,65 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         ]
     }
     {
+        target: "tracepoint:syscalls/sys_enter_io_pgetevents"
+        program: [
+            '{|ctx|'
+            '  let events = $ctx.events'
+            '  let timeout = $ctx.timeout'
+            '  let usig = $ctx.usig'
+            '  if $events { 1 | count }'
+            '  if $timeout { 1 | count }'
+            '  if $usig { 1 | count }'
+            '  ($ctx.ctx_id + $ctx.min_nr + $ctx.nr) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_io_pgetevents:field:events"
+            "tracepoint:syscalls/sys_enter_io_pgetevents:field:timeout"
+            "tracepoint:syscalls/sys_enter_io_pgetevents:field:usig"
+            "tracepoint:syscalls/sys_enter_io_pgetevents:field:ctx_id"
+            "tracepoint:syscalls/sys_enter_io_pgetevents:field:min_nr"
+            "tracepoint:syscalls/sys_enter_io_pgetevents:field:nr"
+        ]
+    }
+    {
+        target: "tracepoint:syscalls/sys_enter_ioprio_set"
+        program: [
+            '{|ctx|'
+            '  ($ctx.which + $ctx.who + $ctx.ioprio) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_ioprio_set:field:which"
+            "tracepoint:syscalls/sys_enter_ioprio_set:field:who"
+            "tracepoint:syscalls/sys_enter_ioprio_set:field:ioprio"
+        ]
+    }
+    {
+        target: "tracepoint:syscalls/sys_enter_add_key"
+        program: [
+            '{|ctx|'
+            '  let key_type = $ctx._type'
+            '  let description = $ctx._description'
+            '  let payload = $ctx._payload'
+            '  if $key_type { 1 | count }'
+            '  if $description { 1 | count }'
+            '  if $payload { 1 | count }'
+            '  ($ctx.plen + $ctx.ringid) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_add_key:field:_type"
+            "tracepoint:syscalls/sys_enter_add_key:field:_description"
+            "tracepoint:syscalls/sys_enter_add_key:field:_payload"
+            "tracepoint:syscalls/sys_enter_add_key:field:plen"
+            "tracepoint:syscalls/sys_enter_add_key:field:ringid"
+        ]
+    }
+    {
         target: "tracepoint:syscalls/sys_enter_openat"
         program: [
             '{|ctx|'
@@ -9059,6 +9190,63 @@ const FIXTURES = [
             '  let user_mask = $ctx.user_mask'
             '  if $user_mask { 1 | count }'
             '  ($ctx.ufd + $ctx.sizemask + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-io-pgetevents-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_io_pgetevents]
+        target: "tracepoint:syscalls/sys_enter_io_pgetevents"
+        program: [
+            '{|ctx|'
+            '  let events = $ctx.events'
+            '  let timeout = $ctx.timeout'
+            '  let usig = $ctx.usig'
+            '  if $events { 1 | count }'
+            '  if $timeout { 1 | count }'
+            '  if $usig { 1 | count }'
+            '  ($ctx.ctx_id + $ctx.min_nr + $ctx.nr) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-ioprio-set-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_ioprio_set]
+        target: "tracepoint:syscalls/sys_enter_ioprio_set"
+        program: [
+            '{|ctx|'
+            '  ($ctx.which + $ctx.who + $ctx.ioprio) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-add-key-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_add_key]
+        target: "tracepoint:syscalls/sys_enter_add_key"
+        program: [
+            '{|ctx|'
+            '  let key_type = $ctx._type'
+            '  let description = $ctx._description'
+            '  let payload = $ctx._payload'
+            '  if $key_type { 1 | count }'
+            '  if $description { 1 | count }'
+            '  if $payload { 1 | count }'
+            '  ($ctx.plen + $ctx.ringid) | count'
             '  0'
             '}'
         ]
@@ -31658,6 +31846,8 @@ def syscall-tracepoint-fallback-field-kernel-feature [field: string target] {
         "5.3"
     } else if $syscall in ["io_uring_setup" "io_uring_enter" "io_uring_register"] {
         "5.1"
+    } else if $syscall == "io_pgetevents" {
+        "4.18"
     } else if $syscall == "memfd_secret" {
         "5.14"
     } else if $syscall == "process_madvise" {
@@ -31699,6 +31889,8 @@ def syscall-tracepoint-fallback-field-kernel-feature [field: string target] {
         "https://github.com/torvalds/linux/blob/v5.3/kernel/fork.c"
     } else if $syscall in ["io_uring_setup" "io_uring_enter" "io_uring_register"] {
         "https://github.com/torvalds/linux/blob/v5.1/fs/io_uring.c"
+    } else if $syscall == "io_pgetevents" {
+        "https://github.com/torvalds/linux/blob/v4.18/fs/aio.c"
     } else if $syscall == "memfd_secret" {
         "https://github.com/torvalds/linux/blob/v5.14/mm/secretmem.c"
     } else if $syscall == "process_madvise" {
@@ -31765,6 +31957,9 @@ def tracepoint-payload-field-kernel-feature [field: string target] {
         | append $MM_TRACEPOINT_FIELD_SPECS
         | append $TIME_TRACEPOINT_FIELD_SPECS
         | append $IO_URING_TRACEPOINT_FIELD_SPECS
+        | append $AIO_TRACEPOINT_FIELD_SPECS
+        | append $IOPRIO_TRACEPOINT_FIELD_SPECS
+        | append $KEY_TRACEPOINT_FIELD_SPECS
         | append $SIGNAL_TRACEPOINT_FIELD_SPECS
         | append $LANDLOCK_TRACEPOINT_FIELD_SPECS
         | append $IDENTITY_TRACEPOINT_FIELD_SPECS

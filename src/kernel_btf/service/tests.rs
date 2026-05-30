@@ -560,6 +560,66 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         40
     );
 
+    let io_pgetevents = TracepointContext::sys_enter("sys_enter_io_pgetevents");
+    assert!(io_pgetevents.has_field("ctx_id"));
+    assert!(io_pgetevents.has_field("min_nr"));
+    assert!(io_pgetevents.has_field("nr"));
+    assert!(io_pgetevents.has_field("events"));
+    assert!(io_pgetevents.has_field("timeout"));
+    assert!(io_pgetevents.has_field("usig"));
+    assert_eq!(io_pgetevents.minimum_kernel(), Some("4.18"));
+    assert!(
+        io_pgetevents
+            .minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v4.18/fs/aio.c"))
+    );
+    assert!(matches!(
+        io_pgetevents
+            .get_field("usig")
+            .expect("expected io_pgetevents usig")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+    let (_, io_pgetevents_source) = TracepointContext::syscall_fallback_field_minimum_kernel(
+        "syscalls",
+        "sys_enter_io_pgetevents",
+        "events",
+    )
+    .expect("expected io_pgetevents source metadata");
+    assert!(io_pgetevents_source.contains("/v4.18/fs/aio.c"));
+
+    let add_key = TracepointContext::sys_enter("sys_enter_add_key");
+    assert!(add_key.has_field("_type"));
+    assert!(add_key.has_field("_description"));
+    assert!(add_key.has_field("_payload"));
+    assert!(add_key.has_field("plen"));
+    assert!(add_key.has_field("ringid"));
+    assert!(matches!(
+        add_key
+            .get_field("_payload")
+            .expect("expected add_key _payload")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+    let (_, add_key_source) = TracepointContext::syscall_fallback_field_minimum_kernel(
+        "syscalls",
+        "sys_enter_add_key",
+        "_payload",
+    )
+    .expect("expected add_key source metadata");
+    assert!(add_key_source.contains("/v4.7/security/keys/keyctl.c"));
+
+    let keyctl = TracepointContext::sys_enter("sys_enter_keyctl");
+    assert!(keyctl.has_field("option"));
+    assert!(!keyctl.has_field("arg2"));
+    let (_, keyctl_source) = TracepointContext::syscall_fallback_field_minimum_kernel(
+        "syscalls",
+        "sys_enter_keyctl",
+        "option",
+    )
+    .expect("expected keyctl source metadata");
+    assert!(keyctl_source.contains("/v4.7/security/keys/keyctl.c"));
+
     let epoll_ctl = TracepointContext::sys_enter("sys_enter_epoll_ctl");
     assert!(epoll_ctl.has_field("epfd"));
     assert!(epoll_ctl.has_field("op"));
@@ -1488,6 +1548,29 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
             "sys_enter_io_uring_register",
             &["fd", "opcode", "nr_args"][..],
         ),
+        ("sys_enter_io_setup", &["nr_events", "ctxp"][..]),
+        ("sys_enter_io_destroy", &["ctx"][..]),
+        ("sys_enter_io_submit", &["ctx_id", "nr", "iocbpp"][..]),
+        ("sys_enter_io_cancel", &["ctx_id", "iocb", "result"][..]),
+        (
+            "sys_enter_io_getevents",
+            &["ctx_id", "min_nr", "nr", "events", "timeout"][..],
+        ),
+        (
+            "sys_enter_io_pgetevents",
+            &["ctx_id", "min_nr", "nr", "events", "timeout", "usig"][..],
+        ),
+        ("sys_enter_ioprio_set", &["which", "who", "ioprio"][..]),
+        ("sys_enter_ioprio_get", &["which", "who"][..]),
+        (
+            "sys_enter_add_key",
+            &["_type", "_description", "_payload", "plen", "ringid"][..],
+        ),
+        (
+            "sys_enter_request_key",
+            &["_type", "_description", "_callout_info", "destringid"][..],
+        ),
+        ("sys_enter_keyctl", &["option"][..]),
         (
             "sys_enter_rt_sigprocmask",
             &["how", "nset", "oset", "sigsetsize"][..],

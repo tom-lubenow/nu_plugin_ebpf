@@ -951,6 +951,10 @@ Time and timer fallbacks expose aliases for common entry tracepoints such as
 `sys_enter_utime`, `sys_enter_utimes`, `sys_enter_futimesat`,
 `sys_enter_utimensat`, `sys_enter_gettimeofday`, `sys_enter_clock_gettime`,
 `sys_enter_timer_create`, and `sys_enter_timerfd_settime`.
+AIO and io-priority fallbacks expose aliases for entry tracepoints such as
+`sys_enter_io_setup`, `sys_enter_io_submit`, `sys_enter_io_getevents`,
+Linux 4.18+ `sys_enter_io_pgetevents`, `sys_enter_ioprio_set`, and
+`sys_enter_ioprio_get`.
 Signal fallbacks expose aliases for common entry tracepoints such as
 `sys_enter_kill`, `sys_enter_tgkill`, `sys_enter_rt_sigaction`,
 `sys_enter_rt_sigtimedwait`, `sys_enter_signalfd4`, and
@@ -960,6 +964,8 @@ entry tracepoints such as `sys_enter_setresuid`, `sys_enter_getresgid`,
 `sys_enter_setgroups`, `sys_enter_capset`, `sys_enter_prctl`, and
 `sys_enter_getcpu`, plus query-style system calls such as `sys_enter_getrandom`,
 `sys_enter_times`, `sys_enter_newuname`, and `sys_enter_sysinfo`.
+Key-management fallbacks expose source-known aliases for entry tracepoints such
+as `sys_enter_add_key`, `sys_enter_request_key`, and `sys_enter_keyctl`.
 Scheduler fallbacks expose source-known aliases for common entry tracepoints
 such as `sys_enter_sched_setscheduler`, `sys_enter_sched_setaffinity`,
 `sys_enter_sched_getattr`, `sys_enter_sched_rr_get_interval`, and

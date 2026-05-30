@@ -82,6 +82,11 @@ const POSIX_TIMERS_SOURCE: &str =
 const TIMERFD_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/timerfd.c";
 const IO_URING_MIN_KERNEL: &str = "5.1";
 const IO_URING_SOURCE: &str = "https://github.com/torvalds/linux/blob/v5.1/fs/io_uring.c";
+const AIO_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/aio.c";
+const AIO_PGETEVENTS_MIN_KERNEL: &str = "4.18";
+const AIO_PGETEVENTS_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.18/fs/aio.c";
+const IOPRIO_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/block/ioprio.c";
+const KEYCTL_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/security/keys/keyctl.c";
 const SIGNAL_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/signal.c";
 const SIGNALFD_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/signalfd.c";
 const RANDOM_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/drivers/char/random.c";
@@ -310,6 +315,17 @@ const WELL_KNOWN_SYS_ENTER_SYSCALLS: &[&str] = &[
     "io_uring_setup",
     "io_uring_enter",
     "io_uring_register",
+    "io_setup",
+    "io_destroy",
+    "io_submit",
+    "io_cancel",
+    "io_getevents",
+    "io_pgetevents",
+    "ioprio_set",
+    "ioprio_get",
+    "add_key",
+    "request_key",
+    "keyctl",
     "rt_sigprocmask",
     "rt_sigpending",
     "rt_sigtimedwait",
@@ -661,6 +677,7 @@ impl TracepointContext {
             Some("io_uring_setup" | "io_uring_enter" | "io_uring_register") => {
                 (Some(IO_URING_MIN_KERNEL), Some(IO_URING_SOURCE))
             }
+            Some("io_pgetevents") => (Some(AIO_PGETEVENTS_MIN_KERNEL), Some(AIO_PGETEVENTS_SOURCE)),
             Some("memfd_secret") => (Some(MEMFD_SECRET_MIN_KERNEL), Some(MEMFD_SECRET_SOURCE)),
             Some("process_madvise") => (
                 Some(PROCESS_MADVISE_MIN_KERNEL),
@@ -740,6 +757,7 @@ impl TracepointContext {
             "io_uring_setup" | "io_uring_enter" | "io_uring_register" => {
                 (IO_URING_MIN_KERNEL, IO_URING_SOURCE)
             }
+            "io_pgetevents" => (AIO_PGETEVENTS_MIN_KERNEL, AIO_PGETEVENTS_SOURCE),
             "memfd_secret" => (MEMFD_SECRET_MIN_KERNEL, MEMFD_SECRET_SOURCE),
             "process_madvise" => (PROCESS_MADVISE_MIN_KERNEL, PROCESS_MADVISE_SOURCE),
             "process_mrelease" => (PROCESS_MRELEASE_MIN_KERNEL, PROCESS_MRELEASE_SOURCE),
@@ -891,6 +909,14 @@ impl TracepointContext {
             }
             "io_uring_setup" | "io_uring_enter" | "io_uring_register" => {
                 (IO_URING_MIN_KERNEL, IO_URING_SOURCE)
+            }
+            "io_setup" | "io_destroy" | "io_submit" | "io_cancel" | "io_getevents" => {
+                (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, AIO_SOURCE)
+            }
+            "io_pgetevents" => (AIO_PGETEVENTS_MIN_KERNEL, AIO_PGETEVENTS_SOURCE),
+            "ioprio_set" | "ioprio_get" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, IOPRIO_SOURCE),
+            "add_key" | "request_key" | "keyctl" => {
+                (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, KEYCTL_SOURCE)
             }
             "rt_sigprocmask" | "rt_sigpending" | "rt_sigtimedwait" | "kill" | "tgkill"
             | "tkill" | "rt_sigqueueinfo" | "rt_tgsigqueueinfo" | "sigaltstack"
@@ -1808,6 +1834,65 @@ impl TracepointContext {
                 ("opcode", Self::syscall_arg_int(false)),
                 ("arg", Self::syscall_arg_user_ptr()),
                 ("nr_args", Self::syscall_arg_int(false)),
+            ],
+            "io_setup" => vec![
+                ("nr_events", Self::syscall_arg_int(false)),
+                ("ctxp", Self::syscall_arg_user_ptr()),
+            ],
+            "io_destroy" => vec![("ctx", Self::syscall_arg_int(false))],
+            "io_submit" => vec![
+                ("ctx_id", Self::syscall_arg_int(false)),
+                ("nr", Self::syscall_arg_int(true)),
+                ("iocbpp", Self::syscall_arg_user_ptr()),
+            ],
+            "io_cancel" => vec![
+                ("ctx_id", Self::syscall_arg_int(false)),
+                ("iocb", Self::syscall_arg_user_ptr()),
+                ("result", Self::syscall_arg_user_ptr()),
+            ],
+            "io_getevents" => vec![
+                ("ctx_id", Self::syscall_arg_int(false)),
+                ("min_nr", Self::syscall_arg_int(true)),
+                ("nr", Self::syscall_arg_int(true)),
+                ("events", Self::syscall_arg_user_ptr()),
+                ("timeout", Self::syscall_arg_user_ptr()),
+            ],
+            "io_pgetevents" => vec![
+                ("ctx_id", Self::syscall_arg_int(false)),
+                ("min_nr", Self::syscall_arg_int(true)),
+                ("nr", Self::syscall_arg_int(true)),
+                ("events", Self::syscall_arg_user_ptr()),
+                ("timeout", Self::syscall_arg_user_ptr()),
+                ("usig", Self::syscall_arg_user_ptr()),
+            ],
+            "ioprio_set" => vec![
+                ("which", Self::syscall_arg_int(true)),
+                ("who", Self::syscall_arg_int(true)),
+                ("ioprio", Self::syscall_arg_int(true)),
+            ],
+            "ioprio_get" => vec![
+                ("which", Self::syscall_arg_int(true)),
+                ("who", Self::syscall_arg_int(true)),
+            ],
+            "add_key" => vec![
+                ("_type", Self::syscall_arg_user_ptr()),
+                ("_description", Self::syscall_arg_user_ptr()),
+                ("_payload", Self::syscall_arg_user_ptr()),
+                ("plen", Self::syscall_arg_int(false)),
+                ("ringid", Self::syscall_arg_int(true)),
+            ],
+            "request_key" => vec![
+                ("_type", Self::syscall_arg_user_ptr()),
+                ("_description", Self::syscall_arg_user_ptr()),
+                ("_callout_info", Self::syscall_arg_user_ptr()),
+                ("destringid", Self::syscall_arg_int(true)),
+            ],
+            "keyctl" => vec![
+                ("option", Self::syscall_arg_int(true)),
+                ("arg2", Self::syscall_arg_int(false)),
+                ("arg3", Self::syscall_arg_int(false)),
+                ("arg4", Self::syscall_arg_int(false)),
+                ("arg5", Self::syscall_arg_int(false)),
             ],
             "rt_sigprocmask" => vec![
                 ("how", Self::syscall_arg_int(true)),
