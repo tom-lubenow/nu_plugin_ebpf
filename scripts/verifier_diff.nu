@@ -11803,6 +11803,31 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "dynptr-kfunc-from-skb-rejects-reinit-after-conditional-user-function-init"
+        category: "helper-state"
+        tags: [kfunc dynptr skb tc reject user-function branch]
+        requires: [kernel-btf]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  def maybe-init [raw_ctx d selector] {'
+            '    if $selector == 0 {'
+            '      kfunc-call "bpf_dynptr_from_skb" $raw_ctx 0 $d'
+            '    }'
+            '    0'
+            '  }'
+            '  let d = "0123456789abcdef"'
+            '  let selector = (helper-call "bpf_get_prandom_u32")'
+            '  maybe-init $ctx $d $selector'
+            '  kfunc-call "bpf_dynptr_from_skb" $ctx 0 $d'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "requires uninitialized dynptr stack object slot"
+    }
+    {
         name: "dynptr-kfunc-from-skb-accepts-netfilter-skb-pointer"
         category: "helper-state"
         tags: [kfunc dynptr skb netfilter accept]
