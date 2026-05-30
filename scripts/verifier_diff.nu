@@ -927,6 +927,27 @@ const PROGRAM_GLOBAL_KERNEL_FEATURE_EXPECTATIONS = [
         ]
         feature_keys: []
     }
+    {
+        program: [
+            '{|ctx|'
+            '  let rec = { root: $ctx nf: $ctx.nf_state }'
+            '  $rec.nf.hook | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: []
+    }
+    {
+        program: [
+            '{|ctx|'
+            '  let state = $ctx.nf_state'
+            '  let rec = { state: $state }'
+            '  $rec.state.hook | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: []
+    }
 ]
 
 const KERNEL_FEATURE_MAP_HASH = {
@@ -14300,6 +14321,53 @@ const FIXTURES = [
             '{|ctx|'
             '  let input = $ctx.state.in'
             '  ($input.ifindex + $ctx.hook) | count'
+            '  "accept"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "netfilter-record-state-context"
+        category: "context-surface"
+        tags: [netfilter context record source metadata]
+        target: "netfilter:ipv4:pre_routing:priority=-100:defrag"
+        program: [
+            '{|ctx|'
+            '  let rec = { state: $ctx.nf_state skb: $ctx.skb }'
+            '  ($rec.state.in.ifindex + $rec.skb.len + $ctx.hook) | count'
+            '  "accept"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "netfilter-record-spread-state-context"
+        category: "context-surface"
+        tags: [netfilter context record spread source metadata]
+        target: "netfilter:ipv4:pre_routing:priority=-100:defrag"
+        program: [
+            '{|ctx|'
+            '  let base = { state: $ctx.state }'
+            '  let rec = { ok: true, ...$base, skb: $ctx.skb }'
+            '  ($rec.state.out.ifindex + $rec.skb.len + $ctx.pf) | count'
+            '  "accept"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "netfilter-user-function-record-state-context"
+        category: "context-surface"
+        tags: [netfilter context user-function record source metadata]
+        target: "netfilter:ipv4:pre_routing:priority=-100:defrag"
+        program: [
+            '{|ctx|'
+            '  def wrap [state] { { state: $state } }'
+            '  let rec = (wrap $ctx.nf_state)'
+            '  ($rec.state.in.ifindex + $ctx.skb.len + $ctx.protocol_family) | count'
             '  "accept"'
             '}'
         ]
@@ -29161,7 +29229,38 @@ def program-map-value-kernel-features [source: string] {
     $features
 }
 
-def line-declares-readonly-aggregate-constant? [line: string] {
+def variable-token-used-outside-simple-string? [text: string name: string] {
+    for tail in (marker-tails-outside-simple-string $text $"$($name)") {
+        if $tail == "" {
+            return true
+        }
+        let first = ($tail | str substring 0..0)
+        if $first in [" " "\t" "." "," ":" ")" "}" "]" "|" ";"] {
+            return true
+        }
+    }
+
+    false
+}
+
+def aggregate-rhs-contains-context-token? [rhs: string context_names context_root_aliases] {
+    for context_name in $context_names {
+        if (variable-token-used-outside-simple-string? $rhs $context_name) {
+            return true
+        }
+    }
+
+    for alias in $context_root_aliases {
+        let name = ($alias | get -o name)
+        if $name != null and (variable-token-used-outside-simple-string? $rhs $name) {
+            return true
+        }
+    }
+
+    false
+}
+
+def line-declares-readonly-aggregate-constant? [line: string context_names context_root_aliases] {
     let trimmed = ($line | str trim)
     if not (line-invokes-command? $trimmed "let") {
         return false
@@ -29169,7 +29268,11 @@ def line-declares-readonly-aggregate-constant? [line: string] {
 
     for assignment in (declaration-assignments $trimmed) {
         let rhs = (declaration-rhs-token $assignment)
-        let compact = (trim-simple-parentheses $rhs | str replace --all " " "")
+        let aggregate_rhs = (trim-simple-parentheses $rhs)
+        if (aggregate-rhs-contains-context-token? $aggregate_rhs $context_names $context_root_aliases) {
+            continue
+        }
+        let compact = ($aggregate_rhs | str replace --all " " "")
 
         if (($compact | str starts-with "{") and $compact != "{}") {
             return true
@@ -29207,6 +29310,9 @@ def line-declares-annotated-mut-global? [line: string] {
 }
 
 def program-global-kernel-features [source: string] {
+    let context_names = (program-context-variable-names $source)
+    let context_root_aliases = (program-bound-context-root-aliases $source $context_names)
+
     for line in ($source | lines) {
         let trimmed = ($line | str trim)
         if ($trimmed | str starts-with "#") {
@@ -29221,7 +29327,7 @@ def program-global-kernel-features [source: string] {
             return [$KERNEL_FEATURE_GLOBAL_DATA_SECTIONS]
         }
 
-        if (line-declares-readonly-aggregate-constant? $trimmed) {
+        if (line-declares-readonly-aggregate-constant? $trimmed $context_names $context_root_aliases) {
             return [$KERNEL_FEATURE_GLOBAL_DATA_SECTIONS]
         }
     }
