@@ -879,6 +879,109 @@ $targets
     Some(keys_by_target)
 }
 
+fn verifier_diff_nu_program_kfunc_feature_records(
+    checks: &[(String, String)],
+) -> Option<Vec<VerifierDiffFeatureRecord>> {
+    let check_rows = checks
+        .iter()
+        .map(|(target, kfunc)| format!("    {{ target: {:?} kfunc: {:?} }}", target, kfunc))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let script = format!(
+        r#"source scripts/verifier_diff.nu
+let checks = [
+{check_rows}
+]
+$checks
+| enumerate
+| each {{|row|
+    let check = $row.item
+    let program = ([
+        "{{|ctx|"
+        $"  kfunc-call \"($check.kfunc)\""
+        "  0"
+        "}}"
+    ] | str join "\n")
+    let matches = (
+        program-kfunc-kernel-features $program $check.target
+        | where {{|feature| $feature.key == $"kfunc:($check.kfunc)" }}
+    )
+    let feature = if ($matches | is-empty) {{ null }} else {{ $matches | first }}
+    {{
+        index: $row.index
+        key: ($feature | get -o key)
+        min_kernel: ($feature | get -o min_kernel)
+        source: ($feature | get -o source)
+        max_kernel_exclusive: ($feature | get -o max_kernel_exclusive)
+    }}
+}}
+| to json"#
+    );
+
+    let output = run_nu_script(&script, "program-kfunc-kernel-features coverage")?;
+    assert!(
+        output.status.success(),
+        "verifier_diff.nu program-kfunc-kernel-features failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let actual: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .expect("verifier_diff.nu program-kfunc-kernel-features should emit JSON");
+    let actual = actual
+        .as_array()
+        .expect("verifier_diff.nu program-kfunc-kernel-features output should be a JSON list");
+    assert_eq!(
+        actual.len(),
+        checks.len(),
+        "verifier_diff.nu program-kfunc-kernel-features should return one result per checked target"
+    );
+
+    let mut records = vec![
+        VerifierDiffFeatureRecord {
+            key: String::new(),
+            min_kernel: String::new(),
+            source: String::new(),
+            max_kernel_exclusive: None,
+        };
+        checks.len()
+    ];
+    for value in actual {
+        let index = value
+            .get("index")
+            .and_then(serde_json::Value::as_u64)
+            .expect("verifier_diff.nu program kfunc result should include index")
+            as usize;
+        assert!(
+            index < checks.len(),
+            "verifier_diff.nu program kfunc index should refer to a checked target"
+        );
+        records[index] = VerifierDiffFeatureRecord {
+            key: value
+                .get("key")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("")
+                .to_string(),
+            min_kernel: value
+                .get("min_kernel")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("")
+                .to_string(),
+            source: value
+                .get("source")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("")
+                .to_string(),
+            max_kernel_exclusive: value
+                .get("max_kernel_exclusive")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_string),
+        };
+    }
+
+    Some(records)
+}
+
 #[test]
 fn test_verifier_diff_map_value_feature_metadata_matches_rust() {
     let verifier_diff = include_str!("../../../../scripts/verifier_diff.nu");
@@ -1143,6 +1246,47 @@ fn test_verifier_diff_kfunc_feature_metadata_matches_rust() {
         !explicit_records.is_empty() && !fallback_records.is_empty(),
         "expected verifier_diff.nu kfunc feature metadata"
     );
+}
+
+#[test]
+fn test_verifier_diff_program_kfunc_scanner_matches_program_specific_rust_floors() {
+    let kfunc = "bpf_dynptr_from_skb".to_string();
+    let checks = [
+        "socket_filter:udp4:127.0.0.1:31337",
+        "tc:lo:ingress",
+        "tcx:lo:ingress",
+        "netkit:lo:primary",
+        "netfilter:ipv4:pre_routing",
+        "fentry:tcp_v4_rcv",
+        "fexit:tcp_v4_rcv",
+        "fmod_ret:bpf_modify_return_test",
+        "tp_btf:sys_enter",
+    ]
+    .into_iter()
+    .map(|target| (target.to_string(), kfunc.clone()))
+    .collect::<Vec<_>>();
+
+    let Some(records) = verifier_diff_nu_program_kfunc_feature_records(&checks) else {
+        return;
+    };
+
+    for ((target, kfunc), record) in checks.iter().zip(records.iter()) {
+        let spec = ProgramSpec::parse(target).unwrap_or_else(|err| {
+            panic!("program-specific kfunc target {target} should parse: {err}")
+        });
+        let requirement = spec
+            .kfunc_compatibility_requirement_for_name(kfunc)
+            .unwrap_or_else(|| {
+                panic!(
+                    "program-specific kfunc target {target} should expose Rust metadata for {kfunc}"
+                )
+            });
+        assert_verifier_feature_record_matches_kfunc_requirement(
+            &format!("{target} {kfunc}"),
+            requirement,
+            record,
+        );
+    }
 }
 
 #[test]
