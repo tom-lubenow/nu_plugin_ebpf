@@ -676,14 +676,16 @@ mod tests {
         for surface in CTX_FIELD_ALIAS_SURFACES {
             for program_type in surface.program_types {
                 for (name, expected) in surface.entries {
+                    let resolved = program_type.resolve_ctx_field_name(name).unwrap_or_else(|err| {
+                        panic!("{program_type:?} ctx.{name} should resolve: {err}")
+                    });
                     assert_eq!(
-                        program_type
-                            .resolve_ctx_field_name(name)
-                            .unwrap_or_else(|err| panic!(
-                                "{program_type:?} ctx.{name} should resolve: {err}"
-                            )),
-                        *expected,
+                        resolved, *expected,
                         "{program_type:?} ctx.{name} alias should resolve to {expected:?}"
+                    );
+                    assert!(
+                        program_type.base_ctx_field_access_error(expected).is_none(),
+                        "{program_type:?} ctx.{name} alias resolves to unavailable field {expected:?}"
                     );
                 }
             }
