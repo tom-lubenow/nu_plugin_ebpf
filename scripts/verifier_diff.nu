@@ -21955,6 +21955,40 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "lwt-xmit-push-encap-rejects-stale-data"
+        category: "helper-state"
+        tags: [lwt helper-call packet-bounds reject source metadata]
+        target: "lwt_xmit:demo-route"
+        program: [
+            '{|ctx|'
+            '  let data = $ctx.data'
+            '  let hdr = "0123456789abcdef"'
+            '  helper-call "bpf_lwt_push_encap" $ctx 0 $hdr 16'
+            '  ($data | get 0) | count'
+            '  "reroute"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "stale packet pointer"
+    }
+    {
+        name: "lwt-xmit-push-encap-allows-reloaded-data"
+        category: "helper-state"
+        tags: [lwt helper-call packet-bounds accept source metadata]
+        target: "lwt_xmit:demo-route"
+        program: [
+            '{|ctx|'
+            '  let hdr = "0123456789abcdef"'
+            '  helper-call "bpf_lwt_push_encap" $ctx 0 $hdr 16'
+            '  ($ctx.data | get 0) | count'
+            '  "reroute"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "lwt-seg6local-store-bytes-helper"
         category: "helper-state"
         tags: [lwt helper-call seg6local accept source metadata]
@@ -21964,6 +21998,40 @@ const FIXTURES = [
             '  map-define seg6_bytes --kind array --value-type bytes:16 --max-entries 1'
             '  let bytes = (0 | map-get seg6_bytes --kind array)'
             '  if $bytes { helper-call "bpf_lwt_seg6_store_bytes" $ctx 0 $bytes 16 }'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "lwt-seg6local-store-bytes-rejects-stale-data"
+        category: "helper-state"
+        tags: [lwt helper-call seg6local packet-bounds reject source metadata]
+        target: "lwt_seg6local:demo-route"
+        program: [
+            '{|ctx|'
+            '  let data = $ctx.data'
+            '  let bytes = "0123456789abcdef"'
+            '  helper-call "bpf_lwt_seg6_store_bytes" $ctx 0 $bytes 16'
+            '  ($data | get 0) | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "stale packet pointer"
+    }
+    {
+        name: "lwt-seg6local-store-bytes-allows-reloaded-data"
+        category: "helper-state"
+        tags: [lwt helper-call seg6local packet-bounds accept source metadata]
+        target: "lwt_seg6local:demo-route"
+        program: [
+            '{|ctx|'
+            '  let bytes = "0123456789abcdef"'
+            '  helper-call "bpf_lwt_seg6_store_bytes" $ctx 0 $bytes 16'
+            '  ($ctx.data | get 0) | count'
             '  "pass"'
             '}'
         ]
