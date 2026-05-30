@@ -12930,7 +12930,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "socket-filter-rich-skb-context"
@@ -12945,7 +12945,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "socket-filter-cb-context-write"
@@ -12960,7 +12960,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "socket-filter-rejects-mark-context-write"
