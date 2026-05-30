@@ -19834,6 +19834,27 @@ const FIXTURES = [
         error_contains: "requires a matching bpf_rcu_read_lock"
     }
     {
+        name: "source-kfunc-rcu-read-lock-rejects-branch-leak"
+        category: "helper-state"
+        tags: [kfunc rcu source branch reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let selector = (helper-call "bpf_get_prandom_u32")'
+            '  if $selector == 0 {'
+            '    kfunc-call "bpf_rcu_read_lock"'
+            '  } else {'
+            '    kfunc-call "bpf_rcu_read_lock"'
+            '    kfunc-call "bpf_rcu_read_unlock"'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "unreleased RCU read lock"
+    }
+    {
         name: "source-kfunc-preempt-disable-enable"
         category: "helper-state"
         tags: [kfunc preempt source accept]
@@ -19896,6 +19917,27 @@ const FIXTURES = [
         local: "reject"
         kernel: "skip"
         error_contains: "requires a matching bpf_preempt_disable"
+    }
+    {
+        name: "source-kfunc-preempt-disable-rejects-branch-leak"
+        category: "helper-state"
+        tags: [kfunc preempt source branch reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let selector = (helper-call "bpf_get_prandom_u32")'
+            '  if $selector == 0 {'
+            '    kfunc-call "bpf_preempt_disable"'
+            '  } else {'
+            '    kfunc-call "bpf_preempt_disable"'
+            '    kfunc-call "bpf_preempt_enable"'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "unreleased preempt disable"
     }
     {
         name: "source-kfunc-local-irq-save-restore"
@@ -19982,6 +20024,28 @@ const FIXTURES = [
         local: "reject"
         kernel: "skip"
         error_contains: "requires a matching bpf_local_irq_save"
+    }
+    {
+        name: "source-kfunc-local-irq-save-rejects-branch-leak"
+        category: "helper-state"
+        tags: [kfunc irq source branch reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let flags = "00000000"'
+            '  let selector = (helper-call "bpf_get_prandom_u32")'
+            '  if $selector == 0 {'
+            '    kfunc-call "bpf_local_irq_save" $flags'
+            '  } else {'
+            '    kfunc-call "bpf_local_irq_save" $flags'
+            '    kfunc-call "bpf_local_irq_restore" $flags'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "unreleased local irq disable"
     }
     {
         name: "source-kfunc-res-spin-rejects-non-lock-kernel-pointer"
