@@ -10096,7 +10096,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "ringbuf-submit-rejects-invalid-wakeup-flags"
@@ -10186,7 +10186,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "ringbuf-dynptr-reserve-discard-balanced"
@@ -10202,7 +10202,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "ringbuf-dynptr-submit-rejects-return-use"
@@ -10297,7 +10297,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "ringbuf-dynptr-allows-slot-reuse-after-submit"
@@ -10315,7 +10315,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "ringbuf-dynptr-allows-slot-reuse-after-discard"
@@ -10333,7 +10333,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "ringbuf-dynptr-rejects-double-submit"
@@ -10401,7 +10401,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "ringbuf-dynptr-submit-rejects-invalid-wakeup-flags"
@@ -10471,7 +10471,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "dynptr-from-mem-rejects-reinitialize"
@@ -10537,7 +10537,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "dynptr-from-mem-rejects-one-branch-initialization"
@@ -10584,7 +10584,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "dynptr-read-rejects-uninitialized"
