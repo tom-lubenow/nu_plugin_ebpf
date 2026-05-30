@@ -2262,6 +2262,126 @@ fn test_verify_mir_bpf_spin_lock_must_be_released_at_exit() {
 }
 
 #[test]
+fn test_verify_mir_bpf_spin_unlock_rejected_after_mixed_join() {
+    let (mut func, entry) = new_mir_function();
+    let acquire = func.alloc_block();
+    let join = func.alloc_block();
+    func.param_count = 2;
+
+    let selector = func.alloc_vreg();
+    let lock = func.alloc_vreg();
+    let cond = func.alloc_vreg();
+    let lock_ret = func.alloc_vreg();
+    let unlock_ret = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: cond,
+        op: BinOpKind::Eq,
+        lhs: MirValue::VReg(selector),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond,
+        if_true: acquire,
+        if_false: join,
+    };
+
+    func.block_mut(acquire)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: lock_ret,
+            helper: BpfHelper::SpinLock as u32,
+            args: vec![MirValue::VReg(lock)],
+        });
+    func.block_mut(acquire).terminator = MirInst::Jump { target: join };
+
+    func.block_mut(join).instructions.push(MirInst::CallHelper {
+        dst: unlock_ret,
+        helper: BpfHelper::SpinUnlock as u32,
+        args: vec![MirValue::VReg(lock)],
+    });
+    func.block_mut(join).terminator = MirInst::Return { val: None };
+
+    let types = bpf_spin_lock_types(
+        lock,
+        &[
+            (selector, MirType::I64),
+            (cond, MirType::Bool),
+            (lock_ret, MirType::I64),
+            (unlock_ret, MirType::I64),
+        ],
+    );
+
+    let err = verify_mir(&func, &types).expect_err("expected mixed-path bpf_spin_unlock error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("requires a matching bpf_spin_lock")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_bpf_spin_lock_rejected_after_mixed_join() {
+    let (mut func, entry) = new_mir_function();
+    let acquire = func.alloc_block();
+    let join = func.alloc_block();
+    func.param_count = 2;
+
+    let selector = func.alloc_vreg();
+    let lock = func.alloc_vreg();
+    let cond = func.alloc_vreg();
+    let lock_ret = func.alloc_vreg();
+    let relock_ret = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: cond,
+        op: BinOpKind::Eq,
+        lhs: MirValue::VReg(selector),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond,
+        if_true: acquire,
+        if_false: join,
+    };
+
+    func.block_mut(acquire)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: lock_ret,
+            helper: BpfHelper::SpinLock as u32,
+            args: vec![MirValue::VReg(lock)],
+        });
+    func.block_mut(acquire).terminator = MirInst::Jump { target: join };
+
+    func.block_mut(join).instructions.push(MirInst::CallHelper {
+        dst: relock_ret,
+        helper: BpfHelper::SpinLock as u32,
+        args: vec![MirValue::VReg(lock)],
+    });
+    func.block_mut(join).terminator = MirInst::Return { val: None };
+
+    let types = bpf_spin_lock_types(
+        lock,
+        &[
+            (selector, MirType::I64),
+            (cond, MirType::Bool),
+            (lock_ret, MirType::I64),
+            (relock_ret, MirType::I64),
+        ],
+    );
+
+    let err = verify_mir(&func, &types).expect_err("expected mixed-path bpf_spin_lock error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("cannot acquire a second bpf_spin_lock")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_bpf_spin_lock_rejects_second_lock() {
     let mut lock_ret = VReg(0);
     let mut second_lock_ret = VReg(0);
