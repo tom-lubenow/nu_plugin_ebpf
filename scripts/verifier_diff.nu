@@ -20850,7 +20850,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "source-kfunc-cpumask-ref-release-dtor"
@@ -20868,7 +20868,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "source-kfunc-cpumask-ref-rejects-leak"
@@ -20906,7 +20906,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "source-kfunc-cpumask-release-rejects-one-branch-release-leak"
@@ -21011,7 +21011,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "source-kfunc-cpumask-acquire-rejects-owned-leak"
@@ -21052,7 +21052,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "source-kptr-xchg-task-ref-transfer"
