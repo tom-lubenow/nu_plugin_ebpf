@@ -13797,6 +13797,73 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "raw-map-update-delete-helpers"
+        category: "maps"
+        tags: [maps helper-call map-update map-delete accept source metadata]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let key = "abcd"'
+            '  let value = "abcdefgh"'
+            '  helper-call "bpf_map_update_elem" seen $key $value 0'
+            '  helper-call "bpf_map_delete_elem" seen $key'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "raw-map-update-rejects-invalid-flags"
+        category: "maps"
+        tags: [maps helper-call map-update flags reject source metadata]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let key = "abcd"'
+            '  let value = "abcdefgh"'
+            '  helper-call "bpf_map_update_elem" seen $key $value 4'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_map_update_elem' requires arg3 flags"
+    }
+    {
+        name: "raw-queue-map-push-peek-pop-helpers"
+        category: "maps"
+        tags: [maps queue helper-call map-push map-peek map-pop accept source metadata]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let value = "abcdefgh"'
+            '  helper-call "bpf_map_push_elem" recent_raw $value 0 --kind queue'
+            '  helper-call "bpf_map_peek_elem" recent_raw $value --kind queue'
+            '  helper-call "bpf_map_pop_elem" recent_raw $value --kind queue'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "raw-queue-map-push-rejects-invalid-flags"
+        category: "maps"
+        tags: [maps queue helper-call map-push flags reject source metadata]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let value = "abcdefgh"'
+            '  helper-call "bpf_map_push_elem" recent_raw $value 4 --kind queue'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_map_push_elem' requires arg2 flags"
+    }
+    {
         name: "bloom-filter-push-contains"
         category: "maps"
         tags: [maps bloom-filter map-push map-contains accept]
