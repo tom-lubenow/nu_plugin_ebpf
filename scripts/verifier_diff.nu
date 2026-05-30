@@ -8674,7 +8674,7 @@ const FIXTURES = [
             '}'
         ]
         local: "reject"
-        kernel: "reject"
+        kernel: "skip"
         error_contains: "expected int, found nothing"
     }
     {
@@ -8690,7 +8690,7 @@ const FIXTURES = [
             '}'
         ]
         local: "reject"
-        kernel: "reject"
+        kernel: "skip"
         error_contains: "expected record<pid: int, stats: record<hits: int, ok: bool>>, found nothing"
     }
     {
@@ -8782,7 +8782,7 @@ const FIXTURES = [
             '}'
         ]
         local: "reject"
-        kernel: "reject"
+        kernel: "skip"
         error_contains: "expected record<pid: int, stats: record<hits: int, ok: bool>>, found record<pid: int>"
     }
     {
@@ -29892,6 +29892,9 @@ def validate-fixture-metadata [fixtures] {
         validate-test-lane-option $"fixture ($fixture.name)" ($fixture | get -o default_test_lane)
         validate-status-option $"fixture ($fixture.name) local" $fixture.local
         validate-status-option $"fixture ($fixture.name) kernel" $fixture.kernel
+        if $fixture.local != "accept" and $fixture.kernel != "skip" {
+            fail $"fixture ($fixture.name) declares kernel=($fixture.kernel), but kernel checks only run after local accept; use kernel=skip for local ($fixture.local) fixtures"
+        }
         validate-host-features $fixture requires
         validate-host-features $fixture kernel_requires
         let kernel_features = (validate-kernel-feature-metadata $fixture)
