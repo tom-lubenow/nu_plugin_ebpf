@@ -24930,7 +24930,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "read-kernel-str-kernel-pointer"
@@ -24945,7 +24945,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "assign-socket-sk-lookup-clear"
