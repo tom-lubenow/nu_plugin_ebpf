@@ -1793,6 +1793,137 @@ fn test_verify_mir_ringbuf_dynptr_conditional_release_leak_is_rejected() {
 }
 
 #[test]
+fn test_verify_mir_ringbuf_dynptr_submit_rejected_after_mixed_join() {
+    let (mut func, entry) = new_mir_function();
+    let reserve = func.alloc_block();
+    let join = func.alloc_block();
+    func.param_count = 1;
+
+    let selector = func.alloc_vreg();
+    let cond = func.alloc_vreg();
+    let reserve_ret = func.alloc_vreg();
+    let submit_ret = func.alloc_vreg();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let dynptr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: cond,
+        op: BinOpKind::Eq,
+        lhs: MirValue::VReg(selector),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond,
+        if_true: reserve,
+        if_false: join,
+    };
+
+    func.block_mut(reserve)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: reserve_ret,
+            helper: BpfHelper::RingbufReserveDynptr as u32,
+            args: vec![
+                MirValue::StackSlot(map_slot),
+                MirValue::Const(8),
+                MirValue::Const(0),
+                MirValue::StackSlot(dynptr_slot),
+            ],
+        });
+    func.block_mut(reserve).terminator = MirInst::Jump { target: join };
+
+    func.block_mut(join).instructions.push(MirInst::CallHelper {
+        dst: submit_ret,
+        helper: BpfHelper::RingbufSubmitDynptr as u32,
+        args: vec![MirValue::StackSlot(dynptr_slot), MirValue::Const(0)],
+    });
+    func.block_mut(join).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(selector, MirType::I64);
+    types.insert(cond, MirType::Bool);
+    types.insert(reserve_ret, MirType::I64);
+    types.insert(submit_ret, MirType::I64);
+    let err =
+        verify_mir(&func, &types).expect_err("expected mixed-path ringbuf dynptr submit error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("requires initialized dynptr stack object")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_ringbuf_dynptr_reserve_rejected_after_mixed_join() {
+    let (mut func, entry) = new_mir_function();
+    let reserve = func.alloc_block();
+    let join = func.alloc_block();
+    func.param_count = 1;
+
+    let selector = func.alloc_vreg();
+    let cond = func.alloc_vreg();
+    let reserve_ret = func.alloc_vreg();
+    let reinit_ret = func.alloc_vreg();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let dynptr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: cond,
+        op: BinOpKind::Eq,
+        lhs: MirValue::VReg(selector),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond,
+        if_true: reserve,
+        if_false: join,
+    };
+
+    func.block_mut(reserve)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: reserve_ret,
+            helper: BpfHelper::RingbufReserveDynptr as u32,
+            args: vec![
+                MirValue::StackSlot(map_slot),
+                MirValue::Const(8),
+                MirValue::Const(0),
+                MirValue::StackSlot(dynptr_slot),
+            ],
+        });
+    func.block_mut(reserve).terminator = MirInst::Jump { target: join };
+
+    func.block_mut(join).instructions.push(MirInst::CallHelper {
+        dst: reinit_ret,
+        helper: BpfHelper::RingbufReserveDynptr as u32,
+        args: vec![
+            MirValue::StackSlot(map_slot),
+            MirValue::Const(8),
+            MirValue::Const(0),
+            MirValue::StackSlot(dynptr_slot),
+        ],
+    });
+    func.block_mut(join).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(selector, MirType::I64);
+    types.insert(cond, MirType::Bool);
+    types.insert(reserve_ret, MirType::I64);
+    types.insert(reinit_ret, MirType::I64);
+    let err =
+        verify_mir(&func, &types).expect_err("expected mixed-path ringbuf dynptr reinit error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("requires uninitialized dynptr stack object slot")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_ringbuf_dynptr_submit_rejects_non_ringbuf_dynptr() {
     let mut from_ret = VReg(0);
     let mut submit_ret = VReg(0);
