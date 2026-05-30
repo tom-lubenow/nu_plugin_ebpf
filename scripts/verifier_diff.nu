@@ -4948,6 +4948,18 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         target: "raw_tracepoint:sys_enter"
         program: [
             '{|ctx|'
+            '  def id [x] { ($x) }'
+            '  let event = (id ($ctx))'
+            '  $event.pid | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:pid" "helper:bpf_get_current_pid_tgid"]
+    }
+    {
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
             '  def read_pid [event] {'
             '    $event.pid | count'
             '    0'
@@ -5151,6 +5163,23 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
             '{|ctx|'
             '  def id [x] { $x }'
             '  def id2 [x] { id $x }'
+            '  def read_pid [c] {'
+            '    let actual = (id2 $c)'
+            '    $actual.pid | count'
+            '    0'
+            '  }'
+            '  read_pid $ctx'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:pid" "helper:bpf_get_current_pid_tgid"]
+    }
+    {
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  def id [x] { $x }'
+            '  def id2 [x] { id ($x) }'
             '  def read_pid [c] {'
             '    let actual = (id2 $c)'
             '    $actual.pid | count'
@@ -26076,6 +26105,22 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-user-function-returned-parenthesized-context-alias"
+        category: "language-core"
+        tags: [user-function context source metadata accept]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  def id [x] { ($x) }'
+            '  let actual = (id ($ctx))'
+            '  $actual.pid | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-record-context-field-access"
         category: "language-core"
         tags: [record context accept]
@@ -29915,6 +29960,23 @@ def declaration-rhs-token [assignment] {
     trim-simple-parentheses (($assignment.rhs | split row ";" | first) | str trim)
 }
 
+def two-token-invocation [raw: string] {
+    let tokens = (
+        $raw
+        | split row " "
+        | each {|part| $part | str trim }
+        | where {|part| $part != "" }
+    )
+    if ($tokens | length) != 2 {
+        return null
+    }
+
+    {
+        callee: ($tokens | get 0)
+        arg: (trim-simple-parentheses ($tokens | get 1))
+    }
+}
+
 def context-variable-binding [line: string context_names identity_wrappers] {
     for assignment in (declaration-assignments $line) {
         let rhs = (declaration-rhs-token $assignment)
@@ -29924,18 +29986,11 @@ def context-variable-binding [line: string context_names identity_wrappers] {
             }
         }
 
-        let tokens = (
-            $rhs
-            | split row " "
-            | each {|part| $part | str trim }
-            | where {|part| $part != "" }
-        )
-        if ($tokens | length) == 2 {
-            let callee = ($tokens | get 0)
-            let arg = ($tokens | get 1)
-            if $callee in $identity_wrappers {
+        let invocation = (two-token-invocation $rhs)
+        if $invocation != null {
+            if $invocation.callee in $identity_wrappers {
                 for context_name in $context_names {
-                    if $arg == $"$($context_name)" {
+                    if $invocation.arg == $"$($context_name)" {
                         return $assignment.name
                     }
                 }
@@ -30002,17 +30057,10 @@ def context-root-binding [line: string context_names bound_aliases identity_wrap
             return { name: $assignment.name root: $direct_root }
         }
 
-        let tokens = (
-            $rhs
-            | split row " "
-            | each {|part| $part | str trim }
-            | where {|part| $part != "" }
-        )
-        if ($tokens | length) == 2 {
-            let callee = ($tokens | get 0)
-            let arg = ($tokens | get 1)
-            if $callee in $identity_wrappers {
-                let root_path = (context-root-from-value-token $arg $context_names $bound_aliases)
+        let invocation = (two-token-invocation $rhs)
+        if $invocation != null {
+            if $invocation.callee in $identity_wrappers {
+                let root_path = (context-root-from-value-token $invocation.arg $context_names $bound_aliases)
                 if $root_path != null and $root_path != "" {
                     return { name: $assignment.name root: $root_path }
                 }
@@ -30190,20 +30238,13 @@ def record-wrapper-context-bindings [line: string context_names bound_aliases wr
     mut bindings = []
     for assignment in (declaration-assignments $line) {
         let rhs = (declaration-rhs-token $assignment)
-        let tokens = (
-            $rhs
-            | split row " "
-            | each {|part| $part | str trim }
-            | where {|part| $part != "" }
-        )
-        if ($tokens | length) != 2 {
+        let invocation = (two-token-invocation $rhs)
+        if $invocation == null {
             continue
         }
 
-        let callee = ($tokens | get 0)
-        let arg = ($tokens | get 1)
-        for wrapper in ($wrapper_defs | where {|wrapper| $wrapper.name == $callee }) {
-            let root = (context-root-from-value-token $arg $context_names $bound_aliases)
+        for wrapper in ($wrapper_defs | where {|wrapper| $wrapper.name == $invocation.callee }) {
+            let root = (context-root-from-value-token $invocation.arg $context_names $bound_aliases)
             if $root == null {
                 continue
             }
@@ -30290,7 +30331,7 @@ def identity-wrapper-definitions [source: string] {
         for line in ($source | lines) {
             for parsed in (
                 $line
-                | parse --regex '^\s*def\s+(?P<name>[A-Za-z_][A-Za-z0-9_-]*)\s+\[\s*(?P<param>[A-Za-z_][A-Za-z0-9_-]*)\s*\]\s*\{\s*\$(?P<value>[A-Za-z_][A-Za-z0-9_-]*)\s*\}\s*$'
+                | parse --regex '^\s*def\s+(?P<name>[A-Za-z_][A-Za-z0-9_-]*)\s+\[\s*(?P<param>[A-Za-z_][A-Za-z0-9_-]*)\s*\]\s*\{\s*\(?\s*\$(?P<value>[A-Za-z_][A-Za-z0-9_-]*)\s*\)?\s*\}\s*$'
             ) {
                 if $parsed.param != $parsed.value {
                     continue
@@ -30303,7 +30344,7 @@ def identity-wrapper-definitions [source: string] {
 
             for parsed in (
                 $line
-                | parse --regex '^\s*def\s+(?P<name>[A-Za-z_][A-Za-z0-9_-]*)\s+\[\s*(?P<param>[A-Za-z_][A-Za-z0-9_-]*)\s*\]\s*\{\s*(?P<callee>[A-Za-z_][A-Za-z0-9_-]*)\s+\$(?P<value>[A-Za-z_][A-Za-z0-9_-]*)\s*\}\s*$'
+                | parse --regex '^\s*def\s+(?P<name>[A-Za-z_][A-Za-z0-9_-]*)\s+\[\s*(?P<param>[A-Za-z_][A-Za-z0-9_-]*)\s*\]\s*\{\s*(?P<callee>[A-Za-z_][A-Za-z0-9_-]*)\s+\(?\s*\$(?P<value>[A-Za-z_][A-Za-z0-9_-]*)\s*\)?\s*\}\s*$'
             ) {
                 if $parsed.param != $parsed.value {
                     continue
@@ -30495,17 +30536,10 @@ def function-context-root-aliases [body param: string identity_wrappers] {
             let rhs = (declaration-rhs-token $assignment)
             mut root = (context-root-from-value-token $rhs [$param] $aliases)
             if $root == null {
-                let tokens = (
-                    $rhs
-                    | split row " "
-                    | each {|part| $part | str trim }
-                    | where {|part| $part != "" }
-                )
-                if ($tokens | length) == 2 {
-                    let callee = ($tokens | get 0)
-                    let arg = ($tokens | get 1)
-                    if $callee in $identity_wrappers {
-                        $root = (context-root-from-value-token $arg [$param] $aliases)
+                let invocation = (two-token-invocation $rhs)
+                if $invocation != null {
+                    if $invocation.callee in $identity_wrappers {
+                        $root = (context-root-from-value-token $invocation.arg [$param] $aliases)
                     }
                 }
             }
