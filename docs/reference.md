@@ -916,9 +916,12 @@ for `syscalls/sys_enter_openat2` matching the kernel argument name. Socket
 syscall fallbacks also expose source-known names for common socket entry
 tracepoints such as `sys_enter_socket`, `sys_enter_bind`, `sys_enter_connect`,
 `sys_enter_sendto`, `sys_enter_recvfrom`, `sys_enter_setsockopt`, and
-`sys_enter_recvmmsg`. Path-oriented syscall fallbacks also expose common stat
-and pathname operation aliases such as `sys_enter_newfstatat`,
-`sys_enter_statx`, `sys_enter_linkat`, and `sys_enter_renameat2`. Process
+`sys_enter_recvmmsg`. Path-oriented syscall fallbacks also expose common stat,
+open, permission, ownership, and pathname operation aliases such as
+`sys_enter_newfstatat`, `sys_enter_statx`, `sys_enter_open`,
+`sys_enter_creat`, `sys_enter_fchmodat`, `sys_enter_fchownat`,
+`sys_enter_mknod`, `sys_enter_link`, `sys_enter_linkat`, `sys_enter_rename`,
+and `sys_enter_renameat2`. Process
 control fallbacks expose stable aliases for entry tracepoints such as
 `sys_enter_execveat`, `sys_enter_wait4`, and `sys_enter_setns`. File-descriptor
 and event fallbacks expose aliases for common entry tracepoints such as

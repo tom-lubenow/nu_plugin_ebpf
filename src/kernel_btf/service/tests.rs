@@ -230,6 +230,50 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
             .is_some_and(|source| source.contains("/v5.6/fs/open.c"))
     );
 
+    let open = TracepointContext::sys_enter("sys_enter_open");
+    assert!(open.has_field("filename"));
+    assert!(open.has_field("flags"));
+    assert!(open.has_field("mode"));
+    assert!(matches!(
+        open.get_field("filename")
+            .expect("expected open filename")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+    let (_, open_source) = TracepointContext::syscall_fallback_field_minimum_kernel(
+        "syscalls",
+        "sys_enter_open",
+        "filename",
+    )
+    .expect("expected open filename source metadata");
+    assert!(open_source.contains("/v4.7/fs/open.c"));
+
+    let fchownat = TracepointContext::sys_enter("sys_enter_fchownat");
+    assert!(fchownat.has_field("dfd"));
+    assert!(fchownat.has_field("filename"));
+    assert!(fchownat.has_field("user"));
+    assert!(fchownat.has_field("group"));
+    assert!(fchownat.has_field("flag"));
+    assert!(matches!(
+        fchownat
+            .get_field("filename")
+            .expect("expected fchownat filename")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+
+    let mknod = TracepointContext::sys_enter("sys_enter_mknod");
+    assert!(mknod.has_field("filename"));
+    assert!(mknod.has_field("mode"));
+    assert!(mknod.has_field("dev"));
+    let (_, mknod_source) = TracepointContext::syscall_fallback_field_minimum_kernel(
+        "syscalls",
+        "sys_enter_mknod",
+        "filename",
+    )
+    .expect("expected mknod filename source metadata");
+    assert!(mknod_source.contains("/v4.7/fs/namei.c"));
+
     let execve = TracepointContext::sys_enter("sys_enter_execve");
     assert!(execve.has_field("filename"));
     assert!(execve.has_field("argv"));
@@ -421,6 +465,24 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
     ));
 
     for (name, fields) in [
+        ("sys_enter_open", &["filename", "flags", "mode"][..]),
+        ("sys_enter_creat", &["pathname", "mode"][..]),
+        ("sys_enter_access", &["filename", "mode"][..]),
+        ("sys_enter_faccessat", &["dfd", "filename", "mode"][..]),
+        ("sys_enter_truncate", &["path", "length"][..]),
+        ("sys_enter_truncate64", &["path", "length"][..]),
+        ("sys_enter_ftruncate", &["fd", "length"][..]),
+        ("sys_enter_ftruncate64", &["fd", "length"][..]),
+        ("sys_enter_chmod", &["filename", "mode"][..]),
+        ("sys_enter_fchmod", &["fd", "mode"][..]),
+        ("sys_enter_fchmodat", &["dfd", "filename", "mode"][..]),
+        ("sys_enter_chown", &["filename", "user", "group"][..]),
+        ("sys_enter_lchown", &["filename", "user", "group"][..]),
+        ("sys_enter_fchown", &["fd", "user", "group"][..]),
+        (
+            "sys_enter_fchownat",
+            &["dfd", "filename", "user", "group", "flag"][..],
+        ),
         ("sys_enter_socket", &["family", "type", "protocol"][..]),
         (
             "sys_enter_socketpair",
@@ -484,13 +546,21 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         ("sys_enter_newstat", &["filename", "statbuf"][..]),
         ("sys_enter_fstat", &["fd", "statbuf"][..]),
         ("sys_enter_newfstat", &["fd", "statbuf"][..]),
+        ("sys_enter_mknod", &["filename", "mode", "dev"][..]),
+        ("sys_enter_mknodat", &["dfd", "filename", "mode", "dev"][..]),
+        ("sys_enter_mkdir", &["pathname", "mode"][..]),
         ("sys_enter_mkdirat", &["dfd", "pathname", "mode"][..]),
+        ("sys_enter_rmdir", &["pathname"][..]),
+        ("sys_enter_unlink", &["pathname"][..]),
         ("sys_enter_unlinkat", &["dfd", "pathname", "flag"][..]),
+        ("sys_enter_symlink", &["oldname", "newname"][..]),
         ("sys_enter_symlinkat", &["oldname", "newdfd", "newname"][..]),
+        ("sys_enter_link", &["oldname", "newname"][..]),
         (
             "sys_enter_linkat",
             &["olddfd", "oldname", "newdfd", "newname", "flags"][..],
         ),
+        ("sys_enter_rename", &["oldname", "newname"][..]),
         (
             "sys_enter_renameat",
             &["olddfd", "oldname", "newdfd", "newname"][..],

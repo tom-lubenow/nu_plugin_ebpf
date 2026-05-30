@@ -372,7 +372,11 @@ impl TracepointContext {
 
         Some(match syscall {
             "read" | "write" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, READ_WRITE_SOURCE),
-            "close" => (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, OPEN_SOURCE),
+            "close" | "open" | "creat" | "access" | "faccessat" | "truncate" | "truncate64"
+            | "ftruncate" | "ftruncate64" | "chmod" | "fchmod" | "fchmodat" | "chown"
+            | "lchown" | "fchown" | "fchownat" => {
+                (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, OPEN_SOURCE)
+            }
             "openat" => (
                 SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL,
                 SYSCALL_TRACEPOINT_FALLBACK_SOURCE,
@@ -395,7 +399,8 @@ impl TracepointContext {
                 (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, STAT_SOURCE)
             }
             "statx" => (STATX_MIN_KERNEL, STATX_SOURCE),
-            "mkdirat" | "unlinkat" | "symlinkat" | "linkat" | "renameat" | "renameat2" => {
+            "mknod" | "mknodat" | "mkdir" | "mkdirat" | "rmdir" | "unlink" | "unlinkat"
+            | "symlink" | "symlinkat" | "link" | "linkat" | "rename" | "renameat" | "renameat2" => {
                 (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, NAMEI_SOURCE)
             }
             "socket" | "socketpair" | "bind" | "listen" | "accept" | "connect" | "sendto"
@@ -513,6 +518,11 @@ impl TracepointContext {
                 ("count", Self::syscall_arg_int(false)),
             ],
             "close" => vec![("fd", Self::syscall_arg_int(false))],
+            "open" => vec![
+                ("filename", Self::syscall_arg_user_ptr()),
+                ("flags", Self::syscall_arg_int(false)),
+                ("mode", Self::syscall_arg_int(false)),
+            ],
             "openat" => vec![
                 ("dfd", Self::syscall_arg_int(true)),
                 ("filename", Self::syscall_arg_user_ptr()),
@@ -524,6 +534,61 @@ impl TracepointContext {
                 ("filename", Self::syscall_arg_user_ptr()),
                 ("how", Self::syscall_arg_user_ptr()),
                 ("usize", Self::syscall_arg_int(false)),
+            ],
+            "creat" => vec![
+                ("pathname", Self::syscall_arg_user_ptr()),
+                ("mode", Self::syscall_arg_int(false)),
+            ],
+            "access" => vec![
+                ("filename", Self::syscall_arg_user_ptr()),
+                ("mode", Self::syscall_arg_int(true)),
+            ],
+            "faccessat" => vec![
+                ("dfd", Self::syscall_arg_int(true)),
+                ("filename", Self::syscall_arg_user_ptr()),
+                ("mode", Self::syscall_arg_int(true)),
+            ],
+            "truncate" | "truncate64" => vec![
+                ("path", Self::syscall_arg_user_ptr()),
+                ("length", Self::syscall_arg_int(true)),
+            ],
+            "ftruncate" => vec![
+                ("fd", Self::syscall_arg_int(false)),
+                ("length", Self::syscall_arg_int(false)),
+            ],
+            "ftruncate64" => vec![
+                ("fd", Self::syscall_arg_int(false)),
+                ("length", Self::syscall_arg_int(true)),
+            ],
+            "chmod" => vec![
+                ("filename", Self::syscall_arg_user_ptr()),
+                ("mode", Self::syscall_arg_int(false)),
+            ],
+            "fchmod" => vec![
+                ("fd", Self::syscall_arg_int(false)),
+                ("mode", Self::syscall_arg_int(false)),
+            ],
+            "fchmodat" => vec![
+                ("dfd", Self::syscall_arg_int(true)),
+                ("filename", Self::syscall_arg_user_ptr()),
+                ("mode", Self::syscall_arg_int(false)),
+            ],
+            "chown" | "lchown" => vec![
+                ("filename", Self::syscall_arg_user_ptr()),
+                ("user", Self::syscall_arg_int(false)),
+                ("group", Self::syscall_arg_int(false)),
+            ],
+            "fchown" => vec![
+                ("fd", Self::syscall_arg_int(false)),
+                ("user", Self::syscall_arg_int(false)),
+                ("group", Self::syscall_arg_int(false)),
+            ],
+            "fchownat" => vec![
+                ("dfd", Self::syscall_arg_int(true)),
+                ("filename", Self::syscall_arg_user_ptr()),
+                ("user", Self::syscall_arg_int(false)),
+                ("group", Self::syscall_arg_int(false)),
+                ("flag", Self::syscall_arg_int(true)),
             ],
             "execve" => vec![
                 ("filename", Self::syscall_arg_user_ptr()),
@@ -621,15 +686,35 @@ impl TracepointContext {
                 ("mask", Self::syscall_arg_int(false)),
                 ("buffer", Self::syscall_arg_user_ptr()),
             ],
+            "mknod" => vec![
+                ("filename", Self::syscall_arg_user_ptr()),
+                ("mode", Self::syscall_arg_int(false)),
+                ("dev", Self::syscall_arg_int(false)),
+            ],
+            "mknodat" => vec![
+                ("dfd", Self::syscall_arg_int(true)),
+                ("filename", Self::syscall_arg_user_ptr()),
+                ("mode", Self::syscall_arg_int(false)),
+                ("dev", Self::syscall_arg_int(false)),
+            ],
+            "mkdir" => vec![
+                ("pathname", Self::syscall_arg_user_ptr()),
+                ("mode", Self::syscall_arg_int(false)),
+            ],
             "mkdirat" => vec![
                 ("dfd", Self::syscall_arg_int(true)),
                 ("pathname", Self::syscall_arg_user_ptr()),
                 ("mode", Self::syscall_arg_int(false)),
             ],
+            "rmdir" | "unlink" => vec![("pathname", Self::syscall_arg_user_ptr())],
             "unlinkat" => vec![
                 ("dfd", Self::syscall_arg_int(true)),
                 ("pathname", Self::syscall_arg_user_ptr()),
                 ("flag", Self::syscall_arg_int(true)),
+            ],
+            "symlink" | "link" | "rename" => vec![
+                ("oldname", Self::syscall_arg_user_ptr()),
+                ("newname", Self::syscall_arg_user_ptr()),
             ],
             "symlinkat" => vec![
                 ("oldname", Self::syscall_arg_user_ptr()),

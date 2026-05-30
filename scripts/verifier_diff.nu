@@ -2084,6 +2084,81 @@ const KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_EXECVE_ENVP = {
     min_kernel: "4.7"
     source: "https://github.com/torvalds/linux/blob/v4.7/fs/exec.c"
 }
+const FILE_TRACEPOINT_FIELD_SPECS = [
+    {
+        syscalls: ["open"]
+        fields: ["filename" "flags" "mode"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/open.c"
+    }
+    {
+        syscalls: ["creat"]
+        fields: ["pathname" "mode"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/open.c"
+    }
+    {
+        syscalls: ["access"]
+        fields: ["filename" "mode"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/open.c"
+    }
+    {
+        syscalls: ["faccessat"]
+        fields: ["dfd" "filename" "mode"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/open.c"
+    }
+    {
+        syscalls: ["truncate" "truncate64"]
+        fields: ["path" "length"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/open.c"
+    }
+    {
+        syscalls: ["ftruncate" "ftruncate64"]
+        fields: ["fd" "length"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/open.c"
+    }
+    {
+        syscalls: ["chmod"]
+        fields: ["filename" "mode"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/open.c"
+    }
+    {
+        syscalls: ["fchmod"]
+        fields: ["fd" "mode"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/open.c"
+    }
+    {
+        syscalls: ["fchmodat"]
+        fields: ["dfd" "filename" "mode"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/open.c"
+    }
+    {
+        syscalls: ["chown" "lchown"]
+        fields: ["filename" "user" "group"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/open.c"
+    }
+    {
+        syscalls: ["fchown"]
+        fields: ["fd" "user" "group"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/open.c"
+    }
+    {
+        syscalls: ["fchownat"]
+        fields: ["dfd" "filename" "user" "group" "flag"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/open.c"
+    }
+]
+
 const SOCKET_TRACEPOINT_FIELD_SPECS = [
     {
         syscalls: ["socket"]
@@ -2208,14 +2283,44 @@ const PATH_TRACEPOINT_FIELD_SPECS = [
         source: "https://github.com/torvalds/linux/blob/v4.11/fs/stat.c"
     }
     {
+        syscalls: ["mknod"]
+        fields: ["filename" "mode" "dev"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/namei.c"
+    }
+    {
+        syscalls: ["mknodat"]
+        fields: ["dfd" "filename" "mode" "dev"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/namei.c"
+    }
+    {
+        syscalls: ["mkdir"]
+        fields: ["pathname" "mode"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/namei.c"
+    }
+    {
         syscalls: ["mkdirat"]
         fields: ["dfd" "pathname" "mode"]
         min_kernel: "4.7"
         source: "https://github.com/torvalds/linux/blob/v4.7/fs/namei.c"
     }
     {
+        syscalls: ["rmdir" "unlink"]
+        fields: ["pathname"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/namei.c"
+    }
+    {
         syscalls: ["unlinkat"]
         fields: ["dfd" "pathname" "flag"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/fs/namei.c"
+    }
+    {
+        syscalls: ["symlink" "link" "rename"]
+        fields: ["oldname" "newname"]
         min_kernel: "4.7"
         source: "https://github.com/torvalds/linux/blob/v4.7/fs/namei.c"
     }
@@ -5402,6 +5507,56 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         ]
     }
     {
+        target: "tracepoint:syscalls/sys_enter_open"
+        program: [
+            '{|ctx|'
+            '  let filename = $ctx.filename'
+            '  if $filename { 1 | count }'
+            '  ($ctx.flags + $ctx.mode) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_open:field:filename"
+            "tracepoint:syscalls/sys_enter_open:field:flags"
+            "tracepoint:syscalls/sys_enter_open:field:mode"
+        ]
+    }
+    {
+        target: "tracepoint:syscalls/sys_enter_fchownat"
+        program: [
+            '{|ctx|'
+            '  let filename = $ctx.filename'
+            '  if $filename { 1 | count }'
+            '  ($ctx.dfd + $ctx.user + $ctx.group + $ctx.flag) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_fchownat:field:filename"
+            "tracepoint:syscalls/sys_enter_fchownat:field:dfd"
+            "tracepoint:syscalls/sys_enter_fchownat:field:user"
+            "tracepoint:syscalls/sys_enter_fchownat:field:group"
+            "tracepoint:syscalls/sys_enter_fchownat:field:flag"
+        ]
+    }
+    {
+        target: "tracepoint:syscalls/sys_enter_mknod"
+        program: [
+            '{|ctx|'
+            '  let filename = $ctx.filename'
+            '  if $filename { 1 | count }'
+            '  ($ctx.mode + $ctx.dev) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_mknod:field:filename"
+            "tracepoint:syscalls/sys_enter_mknod:field:mode"
+            "tracepoint:syscalls/sys_enter_mknod:field:dev"
+        ]
+    }
+    {
         target: "tracepoint:syscalls/sys_enter_read"
         program: [
             '{|ctx|'
@@ -7300,6 +7455,23 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "tracepoint-legacy-open-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_open]
+        target: "tracepoint:syscalls/sys_enter_open"
+        program: [
+            '{|ctx|'
+            '  let filename = $ctx.filename'
+            '  if $filename { $filename | read-str --max-len 64 | count }'
+            '  ($ctx.flags + $ctx.mode) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "tracepoint-exit-openat2-context"
         category: "tracing"
         tags: [tracepoint context compatibility]
@@ -7510,6 +7682,23 @@ const FIXTURES = [
             '  let buffer = $ctx.buffer'
             '  if $buffer { 1 | count }'
             '  ($ctx.dfd + $ctx.flags + $ctx.mask) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-mknod-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf tracepoint:syscalls/sys_enter_mknod]
+        target: "tracepoint:syscalls/sys_enter_mknod"
+        program: [
+            '{|ctx|'
+            '  let filename = $ctx.filename'
+            '  if $filename { $filename | read-str --max-len 64 | count }'
+            '  ($ctx.mode + $ctx.dev) | count'
             '  0'
             '}'
         ]
@@ -27671,7 +27860,8 @@ def tracepoint-payload-field-kernel-feature [field: string target] {
     }
 
     let source_backed_syscall_specs = (
-        $SOCKET_TRACEPOINT_FIELD_SPECS
+        $FILE_TRACEPOINT_FIELD_SPECS
+        | append $SOCKET_TRACEPOINT_FIELD_SPECS
         | append $PATH_TRACEPOINT_FIELD_SPECS
         | append $PROCESS_TRACEPOINT_FIELD_SPECS
         | append $FD_TRACEPOINT_FIELD_SPECS
