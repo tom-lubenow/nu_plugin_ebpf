@@ -13539,7 +13539,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "source-helper-bind-rejects-non-connect-hook"
@@ -14102,7 +14102,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "source-helper-setsockopt-cgroup-sockopt"
@@ -14118,7 +14118,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "source-helper-getsockopt-rejects-non-socket-option-context"
@@ -14149,7 +14149,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "source-helper-set-retval-cgroup-sock"
@@ -14164,7 +14164,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "source-helper-get-retval-cgroup-sockopt"
@@ -14179,7 +14179,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "source-helper-set-retval-cgroup-sock-addr-sendmsg"
@@ -14194,7 +14194,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "source-helper-get-retval-cgroup-sysctl"
@@ -14209,7 +14209,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "source-helper-get-retval-rejects-non-cgroup-context"
