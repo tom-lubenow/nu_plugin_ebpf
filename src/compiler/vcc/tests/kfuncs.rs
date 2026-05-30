@@ -12611,6 +12611,88 @@ fn test_verify_mir_kfunc_rcu_read_lock_unlock_balanced() {
 }
 
 #[test]
+fn test_verify_mir_kfunc_rcu_subfn_lock_unlock_balanced() {
+    let (mut acquire, acquire_entry) = new_mir_function();
+    let acquire_ret = acquire.alloc_vreg();
+    acquire
+        .block_mut(acquire_entry)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: acquire_ret,
+            kfunc: "bpf_rcu_read_lock".to_string(),
+            btf_id: None,
+            args: vec![],
+        });
+    acquire.block_mut(acquire_entry).terminator = MirInst::Return { val: None };
+
+    let (mut release, release_entry) = new_mir_function();
+    let release_ret = release.alloc_vreg();
+    release
+        .block_mut(release_entry)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: release_ret,
+            kfunc: "bpf_rcu_read_unlock".to_string(),
+            btf_id: None,
+            args: vec![],
+        });
+    release.block_mut(release_entry).terminator = MirInst::Return { val: None };
+
+    let (mut func, entry) = new_mir_function();
+    let call_acquire_ret = func.alloc_vreg();
+    let call_release_ret = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::CallSubfn {
+        dst: call_acquire_ret,
+        subfn: SubfunctionId(0),
+        args: vec![],
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallSubfn {
+        dst: call_release_ret,
+        subfn: SubfunctionId(1),
+        args: vec![],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let summaries = infer_subfunction_summaries(&[acquire.clone(), release.clone()]);
+    let acquire_summary = summaries
+        .get(&SubfunctionId(0))
+        .copied()
+        .expect("expected acquire summary");
+    let release_summary = summaries
+        .get(&SubfunctionId(1))
+        .copied()
+        .expect("expected release summary");
+    let mut acquire_types = HashMap::new();
+    acquire_types.insert(acquire_ret, MirType::I64);
+    verify_mir_with_subfunction_summaries_for_probe_context_with_current_summary(
+        &acquire,
+        &acquire_types,
+        &summaries,
+        Some(acquire_summary),
+        None,
+        None,
+    )
+    .expect("expected RCU acquire wrapper to verify");
+    let mut release_types = HashMap::new();
+    release_types.insert(release_ret, MirType::I64);
+    verify_mir_with_subfunction_summaries_for_probe_context_with_current_summary(
+        &release,
+        &release_types,
+        &summaries,
+        Some(release_summary),
+        None,
+        None,
+    )
+    .expect("expected RCU release wrapper to verify");
+
+    let mut types = HashMap::new();
+    types.insert(call_acquire_ret, MirType::I64);
+    types.insert(call_release_ret, MirType::I64);
+    verify_mir_with_subfunction_summaries(&func, &types, &summaries)
+        .expect("expected RCU subfunction lock/unlock wrappers to balance");
+}
+
+#[test]
 fn test_verify_mir_kfunc_rcu_read_unlock_requires_matching_lock() {
     let (mut func, entry) = new_mir_function();
     let unlock_ret = func.alloc_vreg();

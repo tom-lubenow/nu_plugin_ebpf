@@ -219,6 +219,7 @@ fn verify_mir_with_subfunction_summaries_impl(
         entry_state.initialize_dynptr_slot(*slot);
     }
     if let Some(summary) = current_summary {
+        seed_entry_critical_section_state(&mut entry_state, summary);
         for i in 0..func.param_count {
             if !summary.releases_ringbuf_dynptr_arg(i) {
                 continue;
@@ -320,12 +321,12 @@ fn verify_mir_with_subfunction_summaries_impl(
                         "unreleased kfunc reference at function exit",
                     ));
                 }
-                if state.has_live_rcu_read_lock() {
+                if state.has_live_rcu_read_lock_except(allowed_rcu_depth(current_summary)) {
                     errors.push(VerifierTypeError::new(
                         "unreleased RCU read lock at function exit",
                     ));
                 }
-                if state.has_live_preempt_disable() {
+                if state.has_live_preempt_disable_except(allowed_preempt_depth(current_summary)) {
                     errors.push(VerifierTypeError::new(
                         "unreleased preempt disable at function exit",
                     ));
@@ -529,6 +530,27 @@ fn verify_mir_with_subfunction_summaries_impl(
     } else {
         Err(errors)
     }
+}
+
+fn seed_entry_critical_section_state(state: &mut VerifierState, summary: SubfunctionSummary) {
+    for _ in 0..summary.rcu_read_lock_delta().saturating_neg() {
+        state.acquire_rcu_read_lock();
+    }
+    for _ in 0..summary.preempt_disable_delta().saturating_neg() {
+        state.acquire_preempt_disable();
+    }
+}
+
+fn allowed_rcu_depth(current_summary: Option<SubfunctionSummary>) -> u32 {
+    current_summary
+        .map(|summary| summary.rcu_read_lock_delta().max(0) as u32)
+        .unwrap_or(0)
+}
+
+fn allowed_preempt_depth(current_summary: Option<SubfunctionSummary>) -> u32 {
+    current_summary
+        .map(|summary| summary.preempt_disable_delta().max(0) as u32)
+        .unwrap_or(0)
 }
 
 fn allowed_returned_ringbuf_ref(

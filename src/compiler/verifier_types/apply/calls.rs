@@ -346,6 +346,7 @@ pub(super) fn apply_call_subfn_inst(
         state.invalidate_packet_pointers();
     }
 
+    apply_subfunction_critical_delta(&summary, state, errors);
     apply_subfunction_release_summary(&summary, args, state, errors);
 
     if let Some(idx) = summary.return_arg()
@@ -401,6 +402,33 @@ pub(super) fn apply_call_subfn_inst(
         .map(verifier_type_from_mir)
         .unwrap_or(VerifierType::Scalar);
     state.set_with_range(dst, ty, ValueRange::Unknown);
+}
+
+fn apply_subfunction_critical_delta(
+    summary: &SubfunctionSummary,
+    state: &mut VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    for _ in 0..summary.rcu_read_lock_delta().max(0) {
+        state.acquire_rcu_read_lock();
+    }
+    for _ in 0..summary.rcu_read_lock_delta().saturating_neg() {
+        if !state.release_rcu_read_lock() {
+            errors.push(VerifierTypeError::new(
+                "subfunction requires a matching bpf_rcu_read_lock",
+            ));
+        }
+    }
+    for _ in 0..summary.preempt_disable_delta().max(0) {
+        state.acquire_preempt_disable();
+    }
+    for _ in 0..summary.preempt_disable_delta().saturating_neg() {
+        if !state.release_preempt_disable() {
+            errors.push(VerifierTypeError::new(
+                "subfunction requires a matching bpf_preempt_disable",
+            ));
+        }
+    }
 }
 
 fn apply_subfunction_release_summary(

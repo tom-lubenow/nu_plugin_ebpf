@@ -514,8 +514,8 @@ impl VccState {
         true
     }
 
-    fn has_live_rcu_read_lock(&self) -> bool {
-        self.rcu_read_lock_max_depth > 0
+    fn has_live_rcu_read_lock_except(&self, allowed_depth: u32) -> bool {
+        self.rcu_read_lock_max_depth > allowed_depth
     }
 
     fn acquire_preempt_disable(&mut self) {
@@ -532,8 +532,8 @@ impl VccState {
         true
     }
 
-    fn has_live_preempt_disable(&self) -> bool {
-        self.preempt_disable_max_depth > 0
+    fn has_live_preempt_disable_except(&self, allowed_depth: u32) -> bool {
+        self.preempt_disable_max_depth > allowed_depth
     }
 
     fn acquire_local_irq_disable(&mut self) {

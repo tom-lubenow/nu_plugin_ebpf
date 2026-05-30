@@ -259,6 +259,12 @@ impl<'a> VccLowerer<'a> {
         let Some(summary) = self.current_summary else {
             return;
         };
+        for _ in 0..summary.rcu_read_lock_delta().saturating_neg() {
+            out.push(VccInst::RcuReadLockAcquire);
+        }
+        for _ in 0..summary.preempt_disable_delta().saturating_neg() {
+            out.push(VccInst::PreemptDisableAcquire);
+        }
         for idx in 0..self.func.param_count {
             let reg = VccReg(idx as u32);
             if summary.releases_ringbuf_record_arg(idx) {

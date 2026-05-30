@@ -2335,13 +2335,13 @@ impl VccVerifier {
                         "unreleased kfunc reference at function exit",
                     ));
                 }
-                if state.has_live_rcu_read_lock() {
+                if state.has_live_rcu_read_lock_except(self.allowed_rcu_depth()) {
                     self.errors.push(VccError::new(
                         VccErrorKind::PointerBounds,
                         "unreleased RCU read lock at function exit",
                     ));
                 }
-                if state.has_live_preempt_disable() {
+                if state.has_live_preempt_disable_except(self.allowed_preempt_depth()) {
                     self.errors.push(VccError::new(
                         VccErrorKind::PointerBounds,
                         "unreleased preempt disable at function exit",
@@ -2553,6 +2553,18 @@ impl VccVerifier {
         } else {
             None
         }
+    }
+
+    fn allowed_rcu_depth(&self) -> u32 {
+        self.current_summary
+            .map(|summary| summary.rcu_read_lock_delta().max(0) as u32)
+            .unwrap_or(0)
+    }
+
+    fn allowed_preempt_depth(&self) -> u32 {
+        self.current_summary
+            .map(|summary| summary.preempt_disable_delta().max(0) as u32)
+            .unwrap_or(0)
     }
 
     fn allowed_returned_ringbuf_ref(

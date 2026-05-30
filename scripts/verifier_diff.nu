@@ -23494,6 +23494,29 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "source-kfunc-rcu-read-lock-user-function-unlock"
+        category: "helper-state"
+        tags: [kfunc rcu source accept user-function]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  def lock [] {'
+            '    kfunc-call "bpf_rcu_read_lock"'
+            '    0'
+            '  }'
+            '  def unlock [] {'
+            '    kfunc-call "bpf_rcu_read_unlock"'
+            '    0'
+            '  }'
+            '  lock'
+            '  unlock'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "source-kfunc-rcu-read-lock-rejects-return-use"
         category: "helper-state"
         tags: [kfunc rcu source void-return reject]
@@ -23588,6 +23611,29 @@ const FIXTURES = [
             '{|ctx|'
             '  kfunc-call "bpf_preempt_disable"'
             '  kfunc-call "bpf_preempt_enable"'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "source-kfunc-preempt-disable-user-function-enable"
+        category: "helper-state"
+        tags: [kfunc preempt source accept user-function]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  def disable [] {'
+            '    kfunc-call "bpf_preempt_disable"'
+            '    0'
+            '  }'
+            '  def enable [] {'
+            '    kfunc-call "bpf_preempt_enable"'
+            '    0'
+            '  }'
+            '  disable'
+            '  enable'
             '  0'
             '}'
         ]
