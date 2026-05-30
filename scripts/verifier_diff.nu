@@ -13310,7 +13310,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "cgroup-sock-addr-connect4-writable-context"
@@ -13327,7 +13327,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "cgroup-sock-addr-connect4-alias-writable-context"
@@ -13344,7 +13344,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "cgroup-sock-addr-connect6-indexed-context"
@@ -13359,7 +13359,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "cgroup-sock-addr-getpeername4-writable-context"
@@ -13375,7 +13375,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "cgroup-sock-addr-getsockname6-writable-context"
@@ -13391,7 +13391,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "cgroup-sock-addr-getsockname6-alias-writable-context"
@@ -13407,7 +13407,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "cgroup-sock-addr-sendmsg6-writable-context"
@@ -13424,7 +13424,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "cgroup-sock-addr-unix-sun-path-write"
@@ -13440,7 +13440,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "cgroup-sock-addr-unix-sun-path-alias-write"
@@ -13456,7 +13456,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "cgroup-sock-addr-unix-sun-path-record-write"
@@ -13472,7 +13472,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "cgroup-sock-addr-unix-sun-path-record-upsert-write"
@@ -13489,7 +13489,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "cgroup-sock-addr-unix-sun-path-record-spread-write"
@@ -13506,7 +13506,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "cgroup-sock-addr-unix-sun-path-user-function-record-write"
@@ -13523,7 +13523,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "source-helper-bind-cgroup-sock-addr-connect4"
