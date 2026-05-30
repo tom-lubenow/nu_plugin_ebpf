@@ -21079,7 +21079,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "source-kptr-xchg-cgroup-clear-requires-null-checked-dst"
@@ -21154,7 +21154,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "source-kptr-xchg-old-ref-rejects-one-branch-release-leak"
@@ -21242,7 +21242,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "source-kptr-xchg-cpumask-rejects-old-ref-leak"
@@ -21295,7 +21295,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "source-kptr-xchg-file-rejects-old-ref-leak"
@@ -21348,7 +21348,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "source-kptr-xchg-cgroup-clear-release"
@@ -21370,7 +21370,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "source-kptr-xchg-cgroup-clear-zero-vreg-release"
@@ -21393,7 +21393,7 @@ const FIXTURES = [
             '}'
         ]
         local: "accept"
-        kernel: "skip"
+        kernel: "accept"
     }
     {
         name: "source-kptr-xchg-rejects-nonzero-scalar-src"
