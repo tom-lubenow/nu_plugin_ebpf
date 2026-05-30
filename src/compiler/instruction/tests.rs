@@ -6683,6 +6683,145 @@ fn test_helper_arg0_context_pointer_semantics_have_raw_context_metadata() {
 }
 
 #[test]
+fn test_helper_semantics_are_consistent_with_signatures() {
+    for helper_id in 1..=211 {
+        let Some(helper) = BpfHelper::from_u32(helper_id) else {
+            continue;
+        };
+        let signature = helper.signature();
+        let semantics = helper.semantics();
+
+        assert!(
+            signature.min_args <= signature.max_args,
+            "{} ({}) has invalid helper signature arity",
+            helper.name(),
+            helper_id
+        );
+        assert!(
+            signature.max_args <= signature.arg_kinds.len(),
+            "{} ({}) helper signature exceeds the BPF helper argument limit",
+            helper.name(),
+            helper_id
+        );
+
+        let mut seen_positive_size_args = Vec::new();
+        for &arg_idx in semantics.positive_size_args {
+            assert!(
+                arg_idx < signature.max_args,
+                "{} ({}) marks out-of-range arg{} as a positive size argument",
+                helper.name(),
+                helper_id,
+                arg_idx
+            );
+            assert_eq!(
+                signature.arg_kind(arg_idx),
+                HelperArgKind::Scalar,
+                "{} ({}) marks non-scalar arg{} as a positive size argument",
+                helper.name(),
+                helper_id,
+                arg_idx
+            );
+            assert!(
+                !seen_positive_size_args.contains(&arg_idx),
+                "{} ({}) repeats arg{} in positive size metadata",
+                helper.name(),
+                helper_id,
+                arg_idx
+            );
+            seen_positive_size_args.push(arg_idx);
+        }
+
+        for rule in semantics.ptr_arg_rules {
+            assert!(
+                rule.arg_idx < signature.max_args,
+                "{} ({}) semantic rule '{}' references out-of-range arg{}",
+                helper.name(),
+                helper_id,
+                rule.op,
+                rule.arg_idx
+            );
+            assert_eq!(
+                signature.arg_kind(rule.arg_idx),
+                HelperArgKind::Pointer,
+                "{} ({}) semantic rule '{}' references non-pointer arg{}",
+                helper.name(),
+                helper_id,
+                rule.op,
+                rule.arg_idx
+            );
+            assert!(
+                !rule.op.is_empty(),
+                "{} ({}) semantic rule for arg{} must describe the checked operation",
+                helper.name(),
+                helper_id,
+                rule.arg_idx
+            );
+            assert!(
+                rule.allowed.allow_stack
+                    || rule.allowed.allow_map
+                    || rule.allowed.allow_kernel
+                    || rule.allowed.allow_user,
+                "{} ({}) semantic rule '{}' must allow at least one pointer address space",
+                helper.name(),
+                helper_id,
+                rule.op
+            );
+            if let Some(size) = rule.fixed_size {
+                assert!(
+                    size > 0,
+                    "{} ({}) semantic rule '{}' has a zero fixed size",
+                    helper.name(),
+                    helper_id,
+                    rule.op
+                );
+            }
+            assert!(
+                rule.fixed_size.is_none() || rule.size_from_arg.is_none(),
+                "{} ({}) semantic rule '{}' must not declare both fixed_size and size_from_arg",
+                helper.name(),
+                helper_id,
+                rule.op
+            );
+            if let Some(size_arg_idx) = rule.size_from_arg {
+                assert!(
+                    size_arg_idx < signature.max_args,
+                    "{} ({}) semantic rule '{}' references out-of-range size arg{}",
+                    helper.name(),
+                    helper_id,
+                    rule.op,
+                    size_arg_idx
+                );
+                assert_eq!(
+                    signature.arg_kind(size_arg_idx),
+                    HelperArgKind::Scalar,
+                    "{} ({}) semantic rule '{}' uses non-scalar arg{} as a size",
+                    helper.name(),
+                    helper_id,
+                    rule.op,
+                    size_arg_idx
+                );
+            }
+        }
+
+        if semantics.ringbuf_record_arg0 {
+            assert!(
+                signature.max_args > 0,
+                "{} ({}) ringbuf record metadata requires arg0",
+                helper.name(),
+                helper_id
+            );
+            assert_eq!(
+                signature.arg_kind(0),
+                HelperArgKind::Pointer,
+                "{} ({}) ringbuf record metadata requires pointer arg0",
+                helper.name(),
+                helper_id
+            );
+        }
+    }
+}
+
+#[test]
 fn test_kfunc_pointer_arg_requires_user_mappings() {
     assert!(kfunc_pointer_arg_requires_user("bpf_copy_from_user_str", 2));
     assert!(kfunc_pointer_arg_requires_user(
