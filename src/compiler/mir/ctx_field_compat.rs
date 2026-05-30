@@ -635,6 +635,15 @@ fn tracepoint_field_kernel_floor(
             ("5.6", LINUX_OPEN_C_V5_6_SOURCE)
         }
         ("sys_enter_execve", "filename" | "argv" | "envp") => ("4.7", LINUX_EXEC_C_V4_7_SOURCE),
+        ("sys_enter_socket", "family" | "type" | "protocol") => ("4.7", LINUX_SOCKET_C_V4_7_SOURCE),
+        ("sys_enter_socketpair", "family" | "type" | "protocol" | "usockvec") => {
+            ("4.7", LINUX_SOCKET_C_V4_7_SOURCE)
+        }
+        ("sys_enter_bind", "fd" | "umyaddr" | "addrlen") => ("4.7", LINUX_SOCKET_C_V4_7_SOURCE),
+        ("sys_enter_listen", "fd" | "backlog") => ("4.7", LINUX_SOCKET_C_V4_7_SOURCE),
+        ("sys_enter_accept", "fd" | "upeer_sockaddr" | "upeer_addrlen") => {
+            ("4.7", LINUX_SOCKET_C_V4_7_SOURCE)
+        }
         ("sys_enter_connect", "fd" | "uservaddr" | "addrlen") => {
             ("4.7", LINUX_SOCKET_C_V4_7_SOURCE)
         }
@@ -645,6 +654,22 @@ fn tracepoint_field_kernel_floor(
             ("4.7", LINUX_SOCKET_C_V4_7_SOURCE)
         }
         ("sys_enter_accept4", "fd" | "upeer_sockaddr" | "upeer_addrlen" | "flags") => {
+            ("4.7", LINUX_SOCKET_C_V4_7_SOURCE)
+        }
+        ("sys_enter_setsockopt", "fd" | "level" | "optname" | "optval" | "optlen") => {
+            ("4.7", LINUX_SOCKET_C_V4_7_SOURCE)
+        }
+        ("sys_enter_getsockopt", "fd" | "level" | "optname" | "optval" | "optlen") => {
+            ("4.7", LINUX_SOCKET_C_V4_7_SOURCE)
+        }
+        ("sys_enter_shutdown", "fd" | "how") => ("4.7", LINUX_SOCKET_C_V4_7_SOURCE),
+        ("sys_enter_sendmsg" | "sys_enter_recvmsg", "fd" | "msg" | "flags") => {
+            ("4.7", LINUX_SOCKET_C_V4_7_SOURCE)
+        }
+        ("sys_enter_sendmmsg", "fd" | "mmsg" | "vlen" | "flags") => {
+            ("4.7", LINUX_SOCKET_C_V4_7_SOURCE)
+        }
+        ("sys_enter_recvmmsg", "fd" | "mmsg" | "vlen" | "flags" | "timeout") => {
             ("4.7", LINUX_SOCKET_C_V4_7_SOURCE)
         }
         _ => return None,

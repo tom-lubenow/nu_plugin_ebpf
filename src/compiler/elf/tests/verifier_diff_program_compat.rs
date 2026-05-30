@@ -1046,6 +1046,18 @@ fn test_verifier_diff_tracepoint_payload_scanner_matches_rust_fallback_fields() 
         ("tracepoint:syscalls/sys_enter_sendto", "addr_len"),
         ("tracepoint:syscalls/sys_enter_recvfrom", "addr_len"),
         ("tracepoint:syscalls/sys_enter_accept4", "upeer_addrlen"),
+        ("tracepoint:syscalls/sys_enter_socket", "type"),
+        ("tracepoint:syscalls/sys_enter_socketpair", "usockvec"),
+        ("tracepoint:syscalls/sys_enter_bind", "umyaddr"),
+        ("tracepoint:syscalls/sys_enter_listen", "backlog"),
+        ("tracepoint:syscalls/sys_enter_accept", "upeer_sockaddr"),
+        ("tracepoint:syscalls/sys_enter_setsockopt", "optval"),
+        ("tracepoint:syscalls/sys_enter_getsockopt", "optlen"),
+        ("tracepoint:syscalls/sys_enter_shutdown", "how"),
+        ("tracepoint:syscalls/sys_enter_sendmsg", "msg"),
+        ("tracepoint:syscalls/sys_enter_recvmsg", "msg"),
+        ("tracepoint:syscalls/sys_enter_sendmmsg", "mmsg"),
+        ("tracepoint:syscalls/sys_enter_recvmmsg", "timeout"),
     ]
     .into_iter()
     .map(|(target, field)| (target.to_string(), field.to_string()))

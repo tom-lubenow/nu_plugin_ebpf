@@ -290,6 +290,57 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         TypeInfo::Ptr { is_user: true, .. }
     ));
 
+    for (name, fields) in [
+        ("sys_enter_socket", &["family", "type", "protocol"][..]),
+        (
+            "sys_enter_socketpair",
+            &["family", "type", "protocol", "usockvec"][..],
+        ),
+        ("sys_enter_bind", &["fd", "umyaddr", "addrlen"][..]),
+        ("sys_enter_listen", &["fd", "backlog"][..]),
+        (
+            "sys_enter_accept",
+            &["fd", "upeer_sockaddr", "upeer_addrlen"][..],
+        ),
+        (
+            "sys_enter_setsockopt",
+            &["fd", "level", "optname", "optval", "optlen"][..],
+        ),
+        (
+            "sys_enter_getsockopt",
+            &["fd", "level", "optname", "optval", "optlen"][..],
+        ),
+        ("sys_enter_shutdown", &["fd", "how"][..]),
+        ("sys_enter_sendmsg", &["fd", "msg", "flags"][..]),
+        ("sys_enter_recvmsg", &["fd", "msg", "flags"][..]),
+        ("sys_enter_sendmmsg", &["fd", "mmsg", "vlen", "flags"][..]),
+        (
+            "sys_enter_recvmmsg",
+            &["fd", "mmsg", "vlen", "flags", "timeout"][..],
+        ),
+    ] {
+        let ctx = TracepointContext::sys_enter(name);
+        for field in fields {
+            assert!(ctx.has_field(field), "{name} should expose {field}");
+        }
+    }
+
+    let bind = TracepointContext::sys_enter("sys_enter_bind");
+    assert!(matches!(
+        bind.get_field("umyaddr")
+            .expect("expected bind umyaddr")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+    let getsockopt = TracepointContext::sys_enter("sys_enter_getsockopt");
+    assert!(matches!(
+        getsockopt
+            .get_field("optlen")
+            .expect("expected getsockopt optlen")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+
     let unknown = TracepointContext::sys_enter("sys_enter_unknown");
     assert!(unknown.has_field("id"));
     assert!(unknown.has_field("args"));

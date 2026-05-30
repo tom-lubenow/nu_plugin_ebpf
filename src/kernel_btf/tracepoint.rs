@@ -279,6 +279,31 @@ impl TracepointContext {
                 ("argv", Self::syscall_arg_user_ptr()),
                 ("envp", Self::syscall_arg_user_ptr()),
             ],
+            "socket" => vec![
+                ("family", Self::syscall_arg_int(false)),
+                ("type", Self::syscall_arg_int(false)),
+                ("protocol", Self::syscall_arg_int(false)),
+            ],
+            "socketpair" => vec![
+                ("family", Self::syscall_arg_int(false)),
+                ("type", Self::syscall_arg_int(false)),
+                ("protocol", Self::syscall_arg_int(false)),
+                ("usockvec", Self::syscall_arg_user_ptr()),
+            ],
+            "bind" => vec![
+                ("fd", Self::syscall_arg_int(false)),
+                ("umyaddr", Self::syscall_arg_user_ptr()),
+                ("addrlen", Self::syscall_arg_int(false)),
+            ],
+            "listen" => vec![
+                ("fd", Self::syscall_arg_int(false)),
+                ("backlog", Self::syscall_arg_int(false)),
+            ],
+            "accept" => vec![
+                ("fd", Self::syscall_arg_int(false)),
+                ("upeer_sockaddr", Self::syscall_arg_user_ptr()),
+                ("upeer_addrlen", Self::syscall_arg_user_ptr()),
+            ],
             "connect" => vec![
                 ("fd", Self::syscall_arg_int(false)),
                 ("uservaddr", Self::syscall_arg_user_ptr()),
@@ -305,6 +330,42 @@ impl TracepointContext {
                 ("upeer_sockaddr", Self::syscall_arg_user_ptr()),
                 ("upeer_addrlen", Self::syscall_arg_user_ptr()),
                 ("flags", Self::syscall_arg_int(false)),
+            ],
+            "setsockopt" => vec![
+                ("fd", Self::syscall_arg_int(false)),
+                ("level", Self::syscall_arg_int(false)),
+                ("optname", Self::syscall_arg_int(false)),
+                ("optval", Self::syscall_arg_user_ptr()),
+                ("optlen", Self::syscall_arg_int(false)),
+            ],
+            "getsockopt" => vec![
+                ("fd", Self::syscall_arg_int(false)),
+                ("level", Self::syscall_arg_int(false)),
+                ("optname", Self::syscall_arg_int(false)),
+                ("optval", Self::syscall_arg_user_ptr()),
+                ("optlen", Self::syscall_arg_user_ptr()),
+            ],
+            "shutdown" => vec![
+                ("fd", Self::syscall_arg_int(false)),
+                ("how", Self::syscall_arg_int(false)),
+            ],
+            "sendmsg" | "recvmsg" => vec![
+                ("fd", Self::syscall_arg_int(false)),
+                ("msg", Self::syscall_arg_user_ptr()),
+                ("flags", Self::syscall_arg_int(false)),
+            ],
+            "sendmmsg" => vec![
+                ("fd", Self::syscall_arg_int(false)),
+                ("mmsg", Self::syscall_arg_user_ptr()),
+                ("vlen", Self::syscall_arg_int(false)),
+                ("flags", Self::syscall_arg_int(false)),
+            ],
+            "recvmmsg" => vec![
+                ("fd", Self::syscall_arg_int(false)),
+                ("mmsg", Self::syscall_arg_user_ptr()),
+                ("vlen", Self::syscall_arg_int(false)),
+                ("flags", Self::syscall_arg_int(false)),
+                ("timeout", Self::syscall_arg_user_ptr()),
             ],
             _ => return Vec::new(),
         };

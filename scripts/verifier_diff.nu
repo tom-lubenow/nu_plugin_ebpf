@@ -2052,101 +2052,24 @@ const KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_EXECVE_ENVP = {
     min_kernel: "4.7"
     source: "https://github.com/torvalds/linux/blob/v4.7/fs/exec.c"
 }
-const KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_CONNECT_FD = {
-    key: "tracepoint:syscalls/sys_enter_connect:field:fd"
-    min_kernel: "4.7"
-    source: "https://github.com/torvalds/linux/blob/v4.7/net/socket.c"
-}
-const KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_CONNECT_USERVADDR = {
-    key: "tracepoint:syscalls/sys_enter_connect:field:uservaddr"
-    min_kernel: "4.7"
-    source: "https://github.com/torvalds/linux/blob/v4.7/net/socket.c"
-}
-const KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_CONNECT_ADDRLEN = {
-    key: "tracepoint:syscalls/sys_enter_connect:field:addrlen"
-    min_kernel: "4.7"
-    source: "https://github.com/torvalds/linux/blob/v4.7/net/socket.c"
-}
-const KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_SENDTO_FD = {
-    key: "tracepoint:syscalls/sys_enter_sendto:field:fd"
-    min_kernel: "4.7"
-    source: "https://github.com/torvalds/linux/blob/v4.7/net/socket.c"
-}
-const KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_SENDTO_BUFF = {
-    key: "tracepoint:syscalls/sys_enter_sendto:field:buff"
-    min_kernel: "4.7"
-    source: "https://github.com/torvalds/linux/blob/v4.7/net/socket.c"
-}
-const KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_SENDTO_LEN = {
-    key: "tracepoint:syscalls/sys_enter_sendto:field:len"
-    min_kernel: "4.7"
-    source: "https://github.com/torvalds/linux/blob/v4.7/net/socket.c"
-}
-const KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_SENDTO_FLAGS = {
-    key: "tracepoint:syscalls/sys_enter_sendto:field:flags"
-    min_kernel: "4.7"
-    source: "https://github.com/torvalds/linux/blob/v4.7/net/socket.c"
-}
-const KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_SENDTO_ADDR = {
-    key: "tracepoint:syscalls/sys_enter_sendto:field:addr"
-    min_kernel: "4.7"
-    source: "https://github.com/torvalds/linux/blob/v4.7/net/socket.c"
-}
-const KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_SENDTO_ADDR_LEN = {
-    key: "tracepoint:syscalls/sys_enter_sendto:field:addr_len"
-    min_kernel: "4.7"
-    source: "https://github.com/torvalds/linux/blob/v4.7/net/socket.c"
-}
-const KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_RECVFROM_FD = {
-    key: "tracepoint:syscalls/sys_enter_recvfrom:field:fd"
-    min_kernel: "4.7"
-    source: "https://github.com/torvalds/linux/blob/v4.7/net/socket.c"
-}
-const KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_RECVFROM_UBUF = {
-    key: "tracepoint:syscalls/sys_enter_recvfrom:field:ubuf"
-    min_kernel: "4.7"
-    source: "https://github.com/torvalds/linux/blob/v4.7/net/socket.c"
-}
-const KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_RECVFROM_SIZE = {
-    key: "tracepoint:syscalls/sys_enter_recvfrom:field:size"
-    min_kernel: "4.7"
-    source: "https://github.com/torvalds/linux/blob/v4.7/net/socket.c"
-}
-const KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_RECVFROM_FLAGS = {
-    key: "tracepoint:syscalls/sys_enter_recvfrom:field:flags"
-    min_kernel: "4.7"
-    source: "https://github.com/torvalds/linux/blob/v4.7/net/socket.c"
-}
-const KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_RECVFROM_ADDR = {
-    key: "tracepoint:syscalls/sys_enter_recvfrom:field:addr"
-    min_kernel: "4.7"
-    source: "https://github.com/torvalds/linux/blob/v4.7/net/socket.c"
-}
-const KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_RECVFROM_ADDR_LEN = {
-    key: "tracepoint:syscalls/sys_enter_recvfrom:field:addr_len"
-    min_kernel: "4.7"
-    source: "https://github.com/torvalds/linux/blob/v4.7/net/socket.c"
-}
-const KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_ACCEPT4_FD = {
-    key: "tracepoint:syscalls/sys_enter_accept4:field:fd"
-    min_kernel: "4.7"
-    source: "https://github.com/torvalds/linux/blob/v4.7/net/socket.c"
-}
-const KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_ACCEPT4_UPEER_SOCKADDR = {
-    key: "tracepoint:syscalls/sys_enter_accept4:field:upeer_sockaddr"
-    min_kernel: "4.7"
-    source: "https://github.com/torvalds/linux/blob/v4.7/net/socket.c"
-}
-const KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_ACCEPT4_UPEER_ADDRLEN = {
-    key: "tracepoint:syscalls/sys_enter_accept4:field:upeer_addrlen"
-    min_kernel: "4.7"
-    source: "https://github.com/torvalds/linux/blob/v4.7/net/socket.c"
-}
-const KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_ACCEPT4_FLAGS = {
-    key: "tracepoint:syscalls/sys_enter_accept4:field:flags"
-    min_kernel: "4.7"
-    source: "https://github.com/torvalds/linux/blob/v4.7/net/socket.c"
-}
+const SOCKET_TRACEPOINT_FIELD_SPECS = [
+    { syscall: "socket" fields: ["family" "type" "protocol"] }
+    { syscall: "socketpair" fields: ["family" "type" "protocol" "usockvec"] }
+    { syscall: "bind" fields: ["fd" "umyaddr" "addrlen"] }
+    { syscall: "listen" fields: ["fd" "backlog"] }
+    { syscall: "accept" fields: ["fd" "upeer_sockaddr" "upeer_addrlen"] }
+    { syscall: "connect" fields: ["fd" "uservaddr" "addrlen"] }
+    { syscall: "sendto" fields: ["fd" "buff" "len" "flags" "addr" "addr_len"] }
+    { syscall: "recvfrom" fields: ["fd" "ubuf" "size" "flags" "addr" "addr_len"] }
+    { syscall: "accept4" fields: ["fd" "upeer_sockaddr" "upeer_addrlen" "flags"] }
+    { syscall: "setsockopt" fields: ["fd" "level" "optname" "optval" "optlen"] }
+    { syscall: "getsockopt" fields: ["fd" "level" "optname" "optval" "optlen"] }
+    { syscall: "shutdown" fields: ["fd" "how"] }
+    { syscall: "sendmsg" fields: ["fd" "msg" "flags"] }
+    { syscall: "recvmsg" fields: ["fd" "msg" "flags"] }
+    { syscall: "sendmmsg" fields: ["fd" "mmsg" "vlen" "flags"] }
+    { syscall: "recvmmsg" fields: ["fd" "mmsg" "vlen" "flags" "timeout"] }
+]
 const TRACEPOINT_FIELD_KERNEL_FEATURES = [
     { target: "tracepoint:syscalls/sys_enter_read" field: "fd" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_READ_FD }
     { target: "tracepoint:syscalls/sys_enter_read" field: "buf" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_READ_BUF }
@@ -2166,25 +2089,6 @@ const TRACEPOINT_FIELD_KERNEL_FEATURES = [
     { target: "tracepoint:syscalls/sys_enter_execve" field: "filename" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_EXECVE_FILENAME }
     { target: "tracepoint:syscalls/sys_enter_execve" field: "argv" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_EXECVE_ARGV }
     { target: "tracepoint:syscalls/sys_enter_execve" field: "envp" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_EXECVE_ENVP }
-    { target: "tracepoint:syscalls/sys_enter_connect" field: "fd" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_CONNECT_FD }
-    { target: "tracepoint:syscalls/sys_enter_connect" field: "uservaddr" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_CONNECT_USERVADDR }
-    { target: "tracepoint:syscalls/sys_enter_connect" field: "addrlen" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_CONNECT_ADDRLEN }
-    { target: "tracepoint:syscalls/sys_enter_sendto" field: "fd" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_SENDTO_FD }
-    { target: "tracepoint:syscalls/sys_enter_sendto" field: "buff" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_SENDTO_BUFF }
-    { target: "tracepoint:syscalls/sys_enter_sendto" field: "len" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_SENDTO_LEN }
-    { target: "tracepoint:syscalls/sys_enter_sendto" field: "flags" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_SENDTO_FLAGS }
-    { target: "tracepoint:syscalls/sys_enter_sendto" field: "addr" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_SENDTO_ADDR }
-    { target: "tracepoint:syscalls/sys_enter_sendto" field: "addr_len" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_SENDTO_ADDR_LEN }
-    { target: "tracepoint:syscalls/sys_enter_recvfrom" field: "fd" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_RECVFROM_FD }
-    { target: "tracepoint:syscalls/sys_enter_recvfrom" field: "ubuf" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_RECVFROM_UBUF }
-    { target: "tracepoint:syscalls/sys_enter_recvfrom" field: "size" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_RECVFROM_SIZE }
-    { target: "tracepoint:syscalls/sys_enter_recvfrom" field: "flags" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_RECVFROM_FLAGS }
-    { target: "tracepoint:syscalls/sys_enter_recvfrom" field: "addr" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_RECVFROM_ADDR }
-    { target: "tracepoint:syscalls/sys_enter_recvfrom" field: "addr_len" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_RECVFROM_ADDR_LEN }
-    { target: "tracepoint:syscalls/sys_enter_accept4" field: "fd" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_ACCEPT4_FD }
-    { target: "tracepoint:syscalls/sys_enter_accept4" field: "upeer_sockaddr" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_ACCEPT4_UPEER_SOCKADDR }
-    { target: "tracepoint:syscalls/sys_enter_accept4" field: "upeer_addrlen" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_ACCEPT4_UPEER_ADDRLEN }
-    { target: "tracepoint:syscalls/sys_enter_accept4" field: "flags" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_ACCEPT4_FLAGS }
 ]
 const KERNEL_FEATURE_CTX_PACKET_LEN = {
     key: "ctx:packet_len"
@@ -4829,6 +4733,74 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         ]
     }
     {
+        target: "tracepoint:syscalls/sys_enter_socket"
+        program: [
+            '{|ctx|'
+            '  ($ctx.family + $ctx.type + $ctx.protocol) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_socket:field:family"
+            "tracepoint:syscalls/sys_enter_socket:field:type"
+            "tracepoint:syscalls/sys_enter_socket:field:protocol"
+        ]
+    }
+    {
+        target: "tracepoint:syscalls/sys_enter_bind"
+        program: [
+            '{|ctx|'
+            '  let addr = $ctx.umyaddr'
+            '  if $addr { 1 | count }'
+            '  ($ctx.fd + $ctx.addrlen) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_bind:field:umyaddr"
+            "tracepoint:syscalls/sys_enter_bind:field:fd"
+            "tracepoint:syscalls/sys_enter_bind:field:addrlen"
+        ]
+    }
+    {
+        target: "tracepoint:syscalls/sys_enter_setsockopt"
+        program: [
+            '{|ctx|'
+            '  let optval = $ctx.optval'
+            '  if $optval { 1 | count }'
+            '  ($ctx.fd + $ctx.level + $ctx.optname + $ctx.optlen) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_setsockopt:field:optval"
+            "tracepoint:syscalls/sys_enter_setsockopt:field:fd"
+            "tracepoint:syscalls/sys_enter_setsockopt:field:level"
+            "tracepoint:syscalls/sys_enter_setsockopt:field:optname"
+            "tracepoint:syscalls/sys_enter_setsockopt:field:optlen"
+        ]
+    }
+    {
+        target: "tracepoint:syscalls/sys_enter_recvmmsg"
+        program: [
+            '{|ctx|'
+            '  let mmsg = $ctx.mmsg'
+            '  if $mmsg { 1 | count }'
+            '  let timeout = $ctx.timeout'
+            '  if $timeout { 1 | count }'
+            '  ($ctx.fd + $ctx.vlen + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "tracepoint:syscalls/sys_enter_recvmmsg:field:mmsg"
+            "tracepoint:syscalls/sys_enter_recvmmsg:field:timeout"
+            "tracepoint:syscalls/sys_enter_recvmmsg:field:fd"
+            "tracepoint:syscalls/sys_enter_recvmmsg:field:vlen"
+            "tracepoint:syscalls/sys_enter_recvmmsg:field:flags"
+        ]
+    }
+    {
         target: "tracepoint:syscalls/sys_enter_openat"
         program: [
             '{|ctx|'
@@ -6505,6 +6477,74 @@ const FIXTURES = [
             '  let addrlen = $ctx.upeer_addrlen'
             '  if $addrlen { 1 | count }'
             '  ($ctx.fd + $ctx.flags) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-socket-context"
+        category: "tracing"
+        tags: [tracepoint context]
+        requires: [tracefs kernel-btf]
+        target: "tracepoint:syscalls/sys_enter_socket"
+        program: [
+            '{|ctx|'
+            '  ($ctx.family + $ctx.type + $ctx.protocol) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-bind-context"
+        category: "tracing"
+        tags: [tracepoint context]
+        requires: [tracefs kernel-btf]
+        target: "tracepoint:syscalls/sys_enter_bind"
+        program: [
+            '{|ctx|'
+            '  let addr = $ctx.umyaddr'
+            '  if $addr { 1 | count }'
+            '  ($ctx.fd + $ctx.addrlen) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-setsockopt-context"
+        category: "tracing"
+        tags: [tracepoint context]
+        requires: [tracefs kernel-btf]
+        target: "tracepoint:syscalls/sys_enter_setsockopt"
+        program: [
+            '{|ctx|'
+            '  let optval = $ctx.optval'
+            '  if $optval { 1 | count }'
+            '  ($ctx.fd + $ctx.level + $ctx.optname + $ctx.optlen) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-recvmmsg-context"
+        category: "tracing"
+        tags: [tracepoint context]
+        requires: [tracefs kernel-btf]
+        target: "tracepoint:syscalls/sys_enter_recvmmsg"
+        program: [
+            '{|ctx|'
+            '  let mmsg = $ctx.mmsg'
+            '  if $mmsg { 1 | count }'
+            '  let timeout = $ctx.timeout'
+            '  if $timeout { 1 | count }'
+            '  ($ctx.fd + $ctx.vlen + $ctx.flags) | count'
             '  0'
             '}'
         ]
@@ -25060,6 +25100,30 @@ def syscall-tracepoint-fallback-field-kernel-feature [field: string target] {
     }
 }
 
+def socket-tracepoint-field-kernel-feature [field: string target] {
+    let target_text = ($target | default "")
+    if not ($target_text | str starts-with "tracepoint:syscalls/sys_enter_") {
+        return null
+    }
+
+    let syscall = ($target_text | str replace "tracepoint:syscalls/sys_enter_" "")
+    let matches = ($SOCKET_TRACEPOINT_FIELD_SPECS | where {|entry| $entry.syscall == $syscall })
+    if ($matches | is-empty) {
+        return null
+    }
+
+    let spec = ($matches | first)
+    if $field not-in $spec.fields {
+        return null
+    }
+
+    {
+        key: $"tracepoint:syscalls/sys_enter_($syscall):field:($field)"
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/net/socket.c"
+    }
+}
+
 def tracepoint-payload-field-kernel-feature [field: string target] {
     let target_text = ($target | default "")
     if not ($target_text | str starts-with "tracepoint:") {
@@ -25072,6 +25136,11 @@ def tracepoint-payload-field-kernel-feature [field: string target] {
     let fallback = (syscall-tracepoint-fallback-field-kernel-feature $field $target)
     if $fallback != null {
         return $fallback
+    }
+
+    let socket_feature = (socket-tracepoint-field-kernel-feature $field $target)
+    if $socket_feature != null {
+        return $socket_feature
     }
 
     let matches = (
