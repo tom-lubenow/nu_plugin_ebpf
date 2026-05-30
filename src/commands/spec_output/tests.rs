@@ -4869,6 +4869,15 @@ fn test_spec_context_projections_include_migrating_socket_alias_members() {
         ProgramSpec::parse("sk_reuseport:migrate").expect("sk_reuseport migrate spec should parse");
     let projections = spec_context_projections(&spec);
 
+    let root_alias_family = projection(&projections, "migrating_socket.family");
+    assert_eq!(root_alias_family.root, "migrating_socket");
+    assert_eq!(root_alias_family.name, "family");
+    assert_eq!(root_alias_family.source, "context_field_root_alias");
+    assert_eq!(root_alias_family.ty, "u32");
+    assert_eq!(root_alias_family.offset, Some(4));
+    assert!(root_alias_family.supported);
+    assert!(root_alias_family.unsupported_reason.is_none());
+
     let remote_port = projection(&projections, "migrating_sk.remote_port");
     assert_eq!(remote_port.root, "migrating_sk");
     assert_eq!(remote_port.name, "remote_port");
@@ -4877,6 +4886,11 @@ fn test_spec_context_projections_include_migrating_socket_alias_members() {
     assert_eq!(remote_port.offset, Some(48));
     assert!(remote_port.supported);
     assert!(remote_port.unsupported_reason.is_none());
+
+    let root_alias_remote_port = projection(&projections, "migrating_socket.remote_port");
+    assert_eq!(root_alias_remote_port.root, "migrating_socket");
+    assert_eq!(root_alias_remote_port.source, "context_field_alias");
+    assert_eq!(root_alias_remote_port.offset, remote_port.offset);
 }
 
 #[test]

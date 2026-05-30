@@ -904,14 +904,11 @@ fn context_field_records(
 #[cfg(target_os = "linux")]
 fn spec_context_projections(spec: &crate::program_spec::ProgramSpec) -> Vec<SpecContextProjection> {
     let mut projections = Vec::new();
-    let mut seen_roots = Vec::new();
 
     for entry in spec.program_type().ctx_field_name_entries() {
-        if spec.ctx_field_access_error(&entry.field).is_some() || seen_roots.contains(&entry.field)
-        {
+        if spec.ctx_field_access_error(&entry.field).is_some() {
             continue;
         }
-        seen_roots.push(entry.field.clone());
 
         let Some(type_spec) = spec.ctx_field_type_spec(&entry.field) else {
             continue;
@@ -925,7 +922,12 @@ fn spec_context_projections(spec: &crate::program_spec::ProgramSpec) -> Vec<Spec
             continue;
         };
 
-        let root = entry.field.display_name();
+        let root = entry.name;
+        let projection_source = if root == entry.field.display_name() {
+            "context_field"
+        } else {
+            "context_field_root_alias"
+        };
         for field in fields.into_iter().filter(|field| !field.synthetic) {
             let unsupported_reason = match entry.field {
                 CtxField::Socket => spec.socket_projection_access_error(&field.name),
@@ -938,9 +940,9 @@ fn spec_context_projections(spec: &crate::program_spec::ProgramSpec) -> Vec<Spec
                 context_projection_compatibility_requirement(spec, &entry.field, &field.name);
             push_context_field_projection(
                 &mut projections,
-                &root,
+                root,
                 &field.name,
-                "context_field",
+                projection_source,
                 &field,
                 compatibility_requirement,
                 read_helper,
@@ -959,7 +961,7 @@ fn spec_context_projections(spec: &crate::program_spec::ProgramSpec) -> Vec<Spec
                         context_projection_compatibility_requirement(spec, &entry.field, alias);
                     push_context_field_projection(
                         &mut projections,
-                        &root,
+                        root,
                         alias,
                         "context_field_alias",
                         &field,
@@ -975,7 +977,7 @@ fn spec_context_projections(spec: &crate::program_spec::ProgramSpec) -> Vec<Spec
                         context_projection_compatibility_requirement(spec, &entry.field, alias);
                     push_context_field_projection(
                         &mut projections,
-                        &root,
+                        root,
                         alias,
                         "context_field_alias",
                         &field,
