@@ -2508,6 +2508,74 @@ const TIME_TRACEPOINT_FIELD_SPECS = [
         source: "https://github.com/torvalds/linux/blob/v4.7/fs/timerfd.c"
     }
 ]
+const SIGNAL_TRACEPOINT_FIELD_SPECS = [
+    {
+        syscalls: ["rt_sigprocmask"]
+        fields: ["how" "nset" "oset" "sigsetsize"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/signal.c"
+    }
+    {
+        syscalls: ["rt_sigpending"]
+        fields: ["uset" "sigsetsize"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/signal.c"
+    }
+    {
+        syscalls: ["rt_sigtimedwait"]
+        fields: ["uthese" "uinfo" "uts" "sigsetsize"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/signal.c"
+    }
+    {
+        syscalls: ["kill" "tkill"]
+        fields: ["sig"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/signal.c"
+    }
+    {
+        syscalls: ["tgkill"]
+        fields: ["sig"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/signal.c"
+    }
+    {
+        syscalls: ["rt_sigqueueinfo"]
+        fields: ["sig" "uinfo"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/signal.c"
+    }
+    {
+        syscalls: ["rt_tgsigqueueinfo"]
+        fields: ["sig" "uinfo"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/signal.c"
+    }
+    {
+        syscalls: ["sigaltstack"]
+        fields: ["uss" "uoss"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/signal.c"
+    }
+    {
+        syscalls: ["rt_sigaction"]
+        fields: ["sig" "act" "oact" "sigsetsize"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/signal.c"
+    }
+    {
+        syscalls: ["rt_sigsuspend"]
+        fields: ["unewset" "sigsetsize"]
+        min_kernel: "4.7"
+        source: "https://github.com/torvalds/linux/blob/v4.7/kernel/signal.c"
+    }
+    {
+        syscalls: ["pidfd_send_signal"]
+        fields: ["pidfd" "sig" "info" "flags"]
+        min_kernel: "5.1"
+        source: "https://github.com/torvalds/linux/blob/v5.1/kernel/signal.c"
+    }
+]
 const TRACEPOINT_FIELD_KERNEL_FEATURES = [
     { target: "tracepoint:syscalls/sys_enter_read" field: "fd" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_READ_FD }
     { target: "tracepoint:syscalls/sys_enter_read" field: "buf" feature: $KERNEL_FEATURE_TRACEPOINT_SYS_ENTER_READ_BUF }
@@ -7317,6 +7385,78 @@ const FIXTURES = [
             '  let otmr = $ctx.otmr'
             '  if $utmr { 1 | count }'
             '  if $otmr { 1 | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-kill-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf]
+        target: "tracepoint:syscalls/sys_enter_kill"
+        program: [
+            '{|ctx|'
+            '  $ctx.sig | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-rt-sigaction-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf]
+        target: "tracepoint:syscalls/sys_enter_rt_sigaction"
+        program: [
+            '{|ctx|'
+            '  ($ctx.sig + $ctx.sigsetsize) | count'
+            '  let act = $ctx.act'
+            '  let oact = $ctx.oact'
+            '  if $act { 1 | count }'
+            '  if $oact { 1 | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-rt-sigtimedwait-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf]
+        target: "tracepoint:syscalls/sys_enter_rt_sigtimedwait"
+        program: [
+            '{|ctx|'
+            '  $ctx.sigsetsize | count'
+            '  let uthese = $ctx.uthese'
+            '  let uinfo = $ctx.uinfo'
+            '  let uts = $ctx.uts'
+            '  if $uthese { 1 | count }'
+            '  if $uinfo { 1 | count }'
+            '  if $uts { 1 | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tracepoint-pidfd-send-signal-context"
+        category: "tracing"
+        tags: [tracepoint context source metadata]
+        requires: [tracefs kernel-btf]
+        target: "tracepoint:syscalls/sys_enter_pidfd_send_signal"
+        program: [
+            '{|ctx|'
+            '  ($ctx.pidfd + $ctx.sig + $ctx.flags) | count'
+            '  let info = $ctx.info'
+            '  if $info { 1 | count }'
             '  0'
             '}'
         ]
@@ -25860,6 +26000,8 @@ def syscall-tracepoint-fallback-field-kernel-feature [field: string target] {
 
     let min_kernel = if $syscall == "openat2" {
         "5.6"
+    } else if $syscall == "pidfd_send_signal" {
+        "5.1"
     } else if $syscall == "statx" {
         "4.11"
     } else {
@@ -25867,6 +26009,8 @@ def syscall-tracepoint-fallback-field-kernel-feature [field: string target] {
     }
     let source = if $syscall == "openat2" {
         "https://github.com/torvalds/linux/blob/v5.6/fs/open.c"
+    } else if $syscall == "pidfd_send_signal" {
+        "https://github.com/torvalds/linux/blob/v5.1/kernel/signal.c"
     } else if $syscall == "statx" {
         "https://github.com/torvalds/linux/blob/v4.11/fs/stat.c"
     } else {
@@ -25924,6 +26068,7 @@ def tracepoint-payload-field-kernel-feature [field: string target] {
         | append $FD_TRACEPOINT_FIELD_SPECS
         | append $MM_TRACEPOINT_FIELD_SPECS
         | append $TIME_TRACEPOINT_FIELD_SPECS
+        | append $SIGNAL_TRACEPOINT_FIELD_SPECS
     )
     let source_backed_feature = (
         source-backed-sys-enter-tracepoint-field-kernel-feature $field $target $source_backed_syscall_specs

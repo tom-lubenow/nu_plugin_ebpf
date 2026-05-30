@@ -308,6 +308,25 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
         TypeInfo::Ptr { is_user: true, .. }
     ));
 
+    let pidfd_send_signal = TracepointContext::sys_enter("sys_enter_pidfd_send_signal");
+    assert!(pidfd_send_signal.has_field("pidfd"));
+    assert!(pidfd_send_signal.has_field("sig"));
+    assert!(pidfd_send_signal.has_field("info"));
+    assert!(pidfd_send_signal.has_field("flags"));
+    assert_eq!(pidfd_send_signal.minimum_kernel(), Some("5.1"));
+    assert!(
+        pidfd_send_signal
+            .minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v5.1/kernel/signal.c"))
+    );
+    assert!(matches!(
+        pidfd_send_signal
+            .get_field("info")
+            .expect("expected pidfd_send_signal info")
+            .type_info,
+        TypeInfo::Ptr { is_user: true, .. }
+    ));
+
     let connect = TracepointContext::sys_enter("sys_enter_connect");
     assert!(connect.has_field("fd"));
     assert!(connect.has_field("uservaddr"));
@@ -474,6 +493,26 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
             &["ufd", "flags", "utmr", "otmr"][..],
         ),
         ("sys_enter_timerfd_gettime", &["ufd", "otmr"][..]),
+        (
+            "sys_enter_rt_sigprocmask",
+            &["how", "nset", "oset", "sigsetsize"][..],
+        ),
+        ("sys_enter_rt_sigpending", &["uset", "sigsetsize"][..]),
+        (
+            "sys_enter_rt_sigtimedwait",
+            &["uthese", "uinfo", "uts", "sigsetsize"][..],
+        ),
+        ("sys_enter_kill", &["sig"][..]),
+        ("sys_enter_tkill", &["sig"][..]),
+        ("sys_enter_tgkill", &["sig"][..]),
+        ("sys_enter_rt_sigqueueinfo", &["sig", "uinfo"][..]),
+        ("sys_enter_rt_tgsigqueueinfo", &["sig", "uinfo"][..]),
+        ("sys_enter_sigaltstack", &["uss", "uoss"][..]),
+        (
+            "sys_enter_rt_sigaction",
+            &["sig", "act", "oact", "sigsetsize"][..],
+        ),
+        ("sys_enter_rt_sigsuspend", &["unewset", "sigsetsize"][..]),
     ] {
         let ctx = TracepointContext::sys_enter(name);
         for field in fields {
@@ -496,6 +535,27 @@ fn test_wellknown_sys_enter_common_named_arg_fallbacks() {
             .type_info,
         TypeInfo::Ptr { is_user: true, .. }
     ));
+    let kill = TracepointContext::sys_enter("sys_enter_kill");
+    assert!(!kill.has_field("pid"));
+    assert_eq!(kill.get_field("sig").expect("expected kill sig").offset, 24);
+
+    let rt_tgsigqueueinfo = TracepointContext::sys_enter("sys_enter_rt_tgsigqueueinfo");
+    assert!(!rt_tgsigqueueinfo.has_field("tgid"));
+    assert!(!rt_tgsigqueueinfo.has_field("pid"));
+    assert_eq!(
+        rt_tgsigqueueinfo
+            .get_field("sig")
+            .expect("expected rt_tgsigqueueinfo sig")
+            .offset,
+        32
+    );
+    assert_eq!(
+        rt_tgsigqueueinfo
+            .get_field("uinfo")
+            .expect("expected rt_tgsigqueueinfo uinfo")
+            .offset,
+        40
+    );
 
     let unknown = TracepointContext::sys_enter("sys_enter_unknown");
     assert!(unknown.has_field("id"));

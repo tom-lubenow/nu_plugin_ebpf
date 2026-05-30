@@ -1102,6 +1102,14 @@ fn test_verifier_diff_tracepoint_payload_scanner_matches_rust_fallback_fields() 
         ("tracepoint:syscalls/sys_enter_clock_gettime", "tp"),
         ("tracepoint:syscalls/sys_enter_clock_nanosleep", "rmtp"),
         ("tracepoint:syscalls/sys_enter_timerfd_settime", "otmr"),
+        ("tracepoint:syscalls/sys_enter_rt_sigprocmask", "oset"),
+        ("tracepoint:syscalls/sys_enter_rt_sigtimedwait", "uts"),
+        ("tracepoint:syscalls/sys_enter_kill", "sig"),
+        ("tracepoint:syscalls/sys_enter_tgkill", "sig"),
+        ("tracepoint:syscalls/sys_enter_rt_tgsigqueueinfo", "uinfo"),
+        ("tracepoint:syscalls/sys_enter_rt_sigaction", "oact"),
+        ("tracepoint:syscalls/sys_enter_pidfd_send_signal", "info"),
+        ("tracepoint:syscalls/sys_enter_pidfd_send_signal", "args"),
     ]
     .into_iter()
     .map(|(target, field)| (target.to_string(), field.to_string()))

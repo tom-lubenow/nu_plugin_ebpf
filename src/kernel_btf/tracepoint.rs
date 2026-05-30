@@ -37,6 +37,10 @@ const HRTIMER_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel
 const POSIX_TIMERS_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v4.7/kernel/time/posix-timers.c";
 const TIMERFD_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/fs/timerfd.c";
+const SIGNAL_SOURCE: &str = "https://github.com/torvalds/linux/blob/v4.7/kernel/signal.c";
+const PIDFD_SEND_SIGNAL_MIN_KERNEL: &str = "5.1";
+const PIDFD_SEND_SIGNAL_SOURCE: &str =
+    "https://github.com/torvalds/linux/blob/v5.1/kernel/signal.c";
 
 /// Source used to construct a tracepoint context layout.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -251,6 +255,10 @@ impl TracepointContext {
         match syscall {
             Some("openat2") => (Some(OPENAT2_MIN_KERNEL), Some(OPENAT2_SOURCE)),
             Some("statx") => (Some(STATX_MIN_KERNEL), Some(STATX_SOURCE)),
+            Some("pidfd_send_signal") => (
+                Some(PIDFD_SEND_SIGNAL_MIN_KERNEL),
+                Some(PIDFD_SEND_SIGNAL_SOURCE),
+            ),
             _ => (
                 Some(SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL),
                 Some(SYSCALL_TRACEPOINT_FALLBACK_SOURCE),
@@ -296,6 +304,7 @@ impl TracepointContext {
         Some(match syscall {
             "openat2" => (OPENAT2_MIN_KERNEL, OPENAT2_SOURCE),
             "statx" => (STATX_MIN_KERNEL, STATX_SOURCE),
+            "pidfd_send_signal" => (PIDFD_SEND_SIGNAL_MIN_KERNEL, PIDFD_SEND_SIGNAL_SOURCE),
             _ => (
                 SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL,
                 SYSCALL_TRACEPOINT_FALLBACK_SOURCE,
@@ -373,6 +382,12 @@ impl TracepointContext {
             "timerfd_create" | "timerfd_settime" | "timerfd_gettime" => {
                 (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, TIMERFD_SOURCE)
             }
+            "rt_sigprocmask" | "rt_sigpending" | "rt_sigtimedwait" | "kill" | "tgkill"
+            | "tkill" | "rt_sigqueueinfo" | "rt_tgsigqueueinfo" | "sigaltstack"
+            | "rt_sigaction" | "rt_sigsuspend" => {
+                (SYSCALL_TRACEPOINT_FALLBACK_MIN_KERNEL, SIGNAL_SOURCE)
+            }
+            "pidfd_send_signal" => (PIDFD_SEND_SIGNAL_MIN_KERNEL, PIDFD_SEND_SIGNAL_SOURCE),
             _ => return None,
         })
     }
@@ -405,6 +420,26 @@ impl TracepointContext {
         let Some(syscall) = name.strip_prefix("sys_enter_") else {
             return Vec::new();
         };
+        let explicit_fields: Option<Vec<(usize, &str, TypeInfo)>> = match syscall {
+            "kill" | "tkill" => Some(vec![(1, "sig", Self::syscall_arg_int(true))]),
+            "tgkill" => Some(vec![(2, "sig", Self::syscall_arg_int(true))]),
+            "rt_sigqueueinfo" => Some(vec![
+                (1, "sig", Self::syscall_arg_int(true)),
+                (2, "uinfo", Self::syscall_arg_user_ptr()),
+            ]),
+            "rt_tgsigqueueinfo" => Some(vec![
+                (2, "sig", Self::syscall_arg_int(true)),
+                (3, "uinfo", Self::syscall_arg_user_ptr()),
+            ]),
+            _ => None,
+        };
+        if let Some(fields) = explicit_fields {
+            return fields
+                .into_iter()
+                .filter_map(|(idx, name, ty)| Self::sys_enter_arg_field(idx, name, ty))
+                .collect();
+        }
+
         let fields: Vec<(&str, TypeInfo)> = match syscall {
             "read" | "write" => vec![
                 ("fd", Self::syscall_arg_int(false)),
@@ -773,6 +808,62 @@ impl TracepointContext {
             "timerfd_gettime" => vec![
                 ("ufd", Self::syscall_arg_int(true)),
                 ("otmr", Self::syscall_arg_user_ptr()),
+            ],
+            "rt_sigprocmask" => vec![
+                ("how", Self::syscall_arg_int(true)),
+                ("nset", Self::syscall_arg_user_ptr()),
+                ("oset", Self::syscall_arg_user_ptr()),
+                ("sigsetsize", Self::syscall_arg_int(false)),
+            ],
+            "rt_sigpending" => vec![
+                ("uset", Self::syscall_arg_user_ptr()),
+                ("sigsetsize", Self::syscall_arg_int(false)),
+            ],
+            "rt_sigtimedwait" => vec![
+                ("uthese", Self::syscall_arg_user_ptr()),
+                ("uinfo", Self::syscall_arg_user_ptr()),
+                ("uts", Self::syscall_arg_user_ptr()),
+                ("sigsetsize", Self::syscall_arg_int(false)),
+            ],
+            "kill" | "tkill" => vec![
+                ("pid", Self::syscall_arg_int(true)),
+                ("sig", Self::syscall_arg_int(true)),
+            ],
+            "tgkill" => vec![
+                ("tgid", Self::syscall_arg_int(true)),
+                ("pid", Self::syscall_arg_int(true)),
+                ("sig", Self::syscall_arg_int(true)),
+            ],
+            "rt_sigqueueinfo" => vec![
+                ("pid", Self::syscall_arg_int(true)),
+                ("sig", Self::syscall_arg_int(true)),
+                ("uinfo", Self::syscall_arg_user_ptr()),
+            ],
+            "rt_tgsigqueueinfo" => vec![
+                ("tgid", Self::syscall_arg_int(true)),
+                ("pid", Self::syscall_arg_int(true)),
+                ("sig", Self::syscall_arg_int(true)),
+                ("uinfo", Self::syscall_arg_user_ptr()),
+            ],
+            "sigaltstack" => vec![
+                ("uss", Self::syscall_arg_user_ptr()),
+                ("uoss", Self::syscall_arg_user_ptr()),
+            ],
+            "rt_sigaction" => vec![
+                ("sig", Self::syscall_arg_int(true)),
+                ("act", Self::syscall_arg_user_ptr()),
+                ("oact", Self::syscall_arg_user_ptr()),
+                ("sigsetsize", Self::syscall_arg_int(false)),
+            ],
+            "rt_sigsuspend" => vec![
+                ("unewset", Self::syscall_arg_user_ptr()),
+                ("sigsetsize", Self::syscall_arg_int(false)),
+            ],
+            "pidfd_send_signal" => vec![
+                ("pidfd", Self::syscall_arg_int(true)),
+                ("sig", Self::syscall_arg_int(true)),
+                ("info", Self::syscall_arg_user_ptr()),
+                ("flags", Self::syscall_arg_int(false)),
             ],
             _ => return Vec::new(),
         };

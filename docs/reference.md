@@ -908,6 +908,12 @@ and `sys_enter_msync`.
 Time and timer fallbacks expose aliases for common entry tracepoints such as
 `sys_enter_gettimeofday`, `sys_enter_clock_gettime`, `sys_enter_timer_create`,
 and `sys_enter_timerfd_settime`.
+Signal fallbacks expose aliases for common entry tracepoints such as
+`sys_enter_kill`, `sys_enter_tgkill`, `sys_enter_rt_sigaction`,
+`sys_enter_rt_sigtimedwait`, and `sys_enter_pidfd_send_signal`.
+When a syscall argument name collides with a preserved tracepoint builtin such
+as `pid` or `tgid`, the fallback exposes the non-conflicting arguments and the
+raw payload remains available through `ctx.args`.
 syscall-entry pointer fields are modeled as userspace pointers, so
 `ctx.filename | read-str --max-len 64` is the preferred form. The generic
 fallback `($ctx.args | get 1)` is only a raw numeric ABI value and is not enough
