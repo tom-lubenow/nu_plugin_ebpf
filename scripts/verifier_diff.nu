@@ -25548,6 +25548,92 @@ const FIXTURES = [
         error_contains: "helper 'bpf_trace_vprintk' requires arg3 to be a multiple of 8"
     }
     {
+        name: "snprintf-btf-accepts-stack-btf-ptr"
+        category: "helper-state"
+        tags: [helper-call snprintf-btf accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let out = "00000000000000000000000000000000"'
+            '  let btf_ptr = "0123456789abcdef"'
+            '  helper-call "bpf_snprintf_btf" $out 32 $btf_ptr 16 15'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "snprintf-btf-rejects-negative-output-size"
+        category: "helper-state"
+        tags: [helper-call snprintf-btf scalar-policy reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let out = "00000000000000000000000000000000"'
+            '  let btf_ptr = "0123456789abcdef"'
+            '  let size = (0 - 1)'
+            '  helper-call "bpf_snprintf_btf" $out $size $btf_ptr 16 0'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 149 arg1 must be >= 0"
+    }
+    {
+        name: "snprintf-btf-rejects-bad-btf-ptr-size"
+        category: "helper-state"
+        tags: [helper-call snprintf-btf scalar-policy reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let out = "00000000000000000000000000000000"'
+            '  let btf_ptr = "0123456789abcdef"'
+            '  helper-call "bpf_snprintf_btf" $out 32 $btf_ptr 8 0'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_snprintf_btf' requires arg3 = 16"
+    }
+    {
+        name: "snprintf-btf-rejects-invalid-flags"
+        category: "helper-state"
+        tags: [helper-call snprintf-btf flags reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let out = "00000000000000000000000000000000"'
+            '  let btf_ptr = "0123456789abcdef"'
+            '  helper-call "bpf_snprintf_btf" $out 32 $btf_ptr 16 16'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_snprintf_btf' requires arg4 to contain only BTF_F_* bits"
+    }
+    {
+        name: "snprintf-btf-rejects-small-btf-ptr-buffer"
+        category: "helper-state"
+        tags: [helper-call snprintf-btf bounds reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let out = "00000000000000000000000000000000"'
+            '  map-define snprintf_btf_ptr --kind array --value-type bytes:8 --max-entries 1'
+            '  let btf_ptr = (0 | map-get snprintf_btf_ptr)'
+            '  if $btf_ptr { helper-call "bpf_snprintf_btf" $out 32 $btf_ptr 16 0 }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper snprintf_btf ptr"
+    }
+    {
         name: "perf-event-read-helpers"
         category: "helper-state"
         tags: [perf-event helper-call]
