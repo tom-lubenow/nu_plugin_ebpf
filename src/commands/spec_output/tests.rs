@@ -3343,6 +3343,9 @@ fn test_spec_context_fields_include_lirc_minimum_kernel_metadata() {
                 .is_some_and(|source| source.contains("/v4.18/drivers/media/rc/bpf-lirc.c"))
         );
     }
+
+    let sample = field(&fields, "sample");
+    assert!(sample.names.contains(&"raw"));
 }
 
 #[test]
