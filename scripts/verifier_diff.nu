@@ -33043,6 +33043,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-string-str-length"
+        category: "language-core"
+        tags: [string str length]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "abc" | str length'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-null-is-empty"
         category: "language-core"
         tags: ["null" is-empty]

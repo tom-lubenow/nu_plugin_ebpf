@@ -47,6 +47,7 @@ const NU_CLOSURE_COMMANDS: &[&str] = &[
     "prepend",
     "is-empty",
     "is-not-empty",
+    "str length",
     "length",
     "math max",
     "math min",
@@ -1187,10 +1188,23 @@ fn fetch_block_ir(
     block_id: BlockId,
     span: Span,
 ) -> Result<FetchedIrBlock, LabeledError> {
+    let ir_block = engine.get_block_ir(block_id).map_err(|e| {
+        LabeledError::new("Failed to fetch compiled IR").with_label(e.to_string(), span)
+    })?;
+
     let mut eval = EvaluatedCall::new(span);
     eval.add_flag("json".into_spanned(span));
     eval.add_positional(Value::int(block_id.get() as i64, span));
-    fetch_view_ir_json(engine, eval, span)
+    let fetched = fetch_view_ir_json(engine, eval, span).ok();
+
+    Ok(FetchedIrBlock {
+        ir_block,
+        decl_names: fetched
+            .as_ref()
+            .map(|fetched| fetched.decl_names.clone())
+            .unwrap_or_default(),
+        block_span: fetched.and_then(|fetched| fetched.block_span),
+    })
 }
 
 fn fetch_decl_ir(

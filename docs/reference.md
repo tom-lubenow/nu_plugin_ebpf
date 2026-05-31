@@ -834,6 +834,7 @@ eBPF layout and verifier bounds are explicit:
 | `compact` | Stack-backed numeric lists as an identity operation because numeric-list elements cannot be null or empty; column arguments are not modeled |
 | `append` / `prepend` | Stack-backed numeric lists with scalar numeric items when the output fits the modeled capacity |
 | `is-empty` / `is-not-empty` | Stack-backed lists, tracked strings, literal null, literal list constants, and metadata-backed fixed records |
+| `str length` | Tracked strings and literal strings, returning the byte length tracked by the string buffer |
 | `length` | Stack-backed numeric lists plus literal binary and literal null values |
 | `math sum` / `math product` / `math min` / `math max` | Stack-backed numeric lists with known non-empty length; empty-list input is rejected to match Nushell semantics |
 | `first` / `last` | Scalar first/last element access for stack-backed numeric lists; counted forms rebuild bounded prefix/suffix stack-list slices |

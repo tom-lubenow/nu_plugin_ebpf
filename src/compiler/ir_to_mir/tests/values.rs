@@ -2265,6 +2265,53 @@ fn test_lower_is_empty_on_string_compares_length_to_zero() {
 }
 
 #[test]
+fn test_lower_str_length_on_string_copies_tracked_length() {
+    let str_length_decl = DeclId::new(117);
+    let hir = make_string_pipeline_call_program(str_length_decl, "abc");
+    let decl_names = HashMap::from([(str_length_decl, "str length".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str length should lower on tracked strings");
+
+    let tracked_len = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .find_map(|inst| match inst {
+            MirInst::StringAppend { dst_len, .. } => Some(*dst_len),
+            _ => None,
+        })
+        .expect("expected string literal lowering to track a length vreg");
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Copy {
+                    src: MirValue::VReg(src),
+                    ..
+                } if *src == tracked_len
+            )),
+        "expected str length to copy the tracked string length"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("str length on tracked string should compile through codegen");
+}
+
+#[test]
 fn test_lower_is_empty_on_metadata_record_uses_known_field_count() {
     let is_empty_decl = DeclId::new(114);
     let (hir, decl_names) = make_record_empty_predicate_program(is_empty_decl, "is-empty", false);
