@@ -1,0 +1,171 @@
+use std::collections::HashMap;
+
+use crate::compiler::mir::{
+    AddressSpace, BinOpKind, BlockId, MirFunction, MirInst, MirType, MirValue, VReg,
+};
+
+pub(crate) fn unknown_kernel_ptr_ty() -> MirType {
+    MirType::Ptr {
+        pointee: Box::new(MirType::Unknown),
+        address_space: AddressSpace::Kernel,
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum ExplicitNullRefKfuncCase {
+    CgroupFromId,
+    TaskExeFile,
+    CpumaskCreate,
+}
+
+impl ExplicitNullRefKfuncCase {
+    fn acquire_kfunc(self) -> &'static str {
+        match self {
+            Self::CgroupFromId => "bpf_cgroup_from_id",
+            Self::TaskExeFile => "bpf_get_task_exe_file",
+            Self::CpumaskCreate => "bpf_cpumask_create",
+        }
+    }
+
+    fn release_kfunc(self) -> &'static str {
+        match self {
+            Self::CgroupFromId => "bpf_cgroup_release",
+            Self::TaskExeFile => "bpf_put_file",
+            Self::CpumaskCreate => "bpf_cpumask_release",
+        }
+    }
+
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::CgroupFromId => "cgroup",
+            Self::TaskExeFile => "file",
+            Self::CpumaskCreate => "cpumask",
+        }
+    }
+
+    fn push_acquire_args(
+        self,
+        func: &mut MirFunction,
+        acquire_path: BlockId,
+        types: &mut HashMap<VReg, MirType>,
+    ) -> Vec<VReg> {
+        match self {
+            Self::CgroupFromId => {
+                let cgid = func.alloc_vreg();
+                func.block_mut(acquire_path)
+                    .instructions
+                    .push(MirInst::Copy {
+                        dst: cgid,
+                        src: MirValue::Const(123),
+                    });
+                types.insert(cgid, MirType::I64);
+                vec![cgid]
+            }
+            Self::TaskExeFile => {
+                let task = func.alloc_vreg();
+                types.insert(task, unknown_kernel_ptr_ty());
+                vec![task]
+            }
+            Self::CpumaskCreate => vec![],
+        }
+    }
+}
+
+pub(crate) fn explicit_null_ref_join_release_mir(
+    case: ExplicitNullRefKfuncCase,
+    use_phi: bool,
+) -> (MirFunction, HashMap<VReg, MirType>) {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let acquire_path = func.alloc_block();
+    let null_path = func.alloc_block();
+    let join = func.alloc_block();
+    let release = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+
+    let mut types = HashMap::new();
+    let selector = func.alloc_vreg();
+    let acquire_args = case.push_acquire_args(&mut func, acquire_path, &mut types);
+    let select_cond = func.alloc_vreg();
+    let acquired = func.alloc_vreg();
+    let null_ref = use_phi.then(|| func.alloc_vreg());
+    let joined = if use_phi { func.alloc_vreg() } else { acquired };
+    let release_cond = func.alloc_vreg();
+    let release_ret = func.alloc_vreg();
+
+    func.param_count = if matches!(case, ExplicitNullRefKfuncCase::TaskExeFile) {
+        2
+    } else {
+        1
+    };
+
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: select_cond,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(selector),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: select_cond,
+        if_true: acquire_path,
+        if_false: null_path,
+    };
+
+    func.block_mut(acquire_path)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: acquired,
+            kfunc: case.acquire_kfunc().to_string(),
+            btf_id: None,
+            args: acquire_args,
+        });
+    func.block_mut(acquire_path).terminator = MirInst::Jump { target: join };
+
+    func.block_mut(null_path).instructions.push(MirInst::Copy {
+        dst: null_ref.unwrap_or(joined),
+        src: MirValue::Const(0),
+    });
+    func.block_mut(null_path).terminator = MirInst::Jump { target: join };
+
+    if let Some(null_ref) = null_ref {
+        func.block_mut(join).instructions.push(MirInst::Phi {
+            dst: joined,
+            args: vec![(acquire_path, acquired), (null_path, null_ref)],
+        });
+        types.insert(null_ref, MirType::I64);
+    }
+    func.block_mut(join).instructions.push(MirInst::BinOp {
+        dst: release_cond,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(joined),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(join).terminator = MirInst::Branch {
+        cond: release_cond,
+        if_true: release,
+        if_false: done,
+    };
+
+    func.block_mut(release)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: release_ret,
+            kfunc: case.release_kfunc().to_string(),
+            btf_id: None,
+            args: vec![joined],
+        });
+    func.block_mut(release).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    types.insert(selector, MirType::I64);
+    types.insert(select_cond, MirType::Bool);
+    types.insert(acquired, unknown_kernel_ptr_ty());
+    if use_phi {
+        types.insert(joined, unknown_kernel_ptr_ty());
+    }
+    types.insert(release_cond, MirType::Bool);
+    types.insert(release_ret, MirType::I64);
+
+    (func, types)
+}

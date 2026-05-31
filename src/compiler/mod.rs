@@ -35,6 +35,8 @@ pub(crate) mod packet_layout;
 pub mod passes;
 pub mod reg_info;
 mod subfn_summaries;
+#[cfg(test)]
+pub(crate) mod test_mir_builders;
 mod type_hints;
 pub mod type_infer;
 pub mod vcc;

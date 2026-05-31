@@ -1,6 +1,9 @@
 use super::*;
 use crate::compiler::mir::StructField;
 use crate::compiler::subfn_summaries::infer_subfunction_summaries;
+use crate::compiler::test_mir_builders::{
+    ExplicitNullRefKfuncCase, explicit_null_ref_join_release_mir,
+};
 use crate::compiler::{EbpfProgramType, ProbeContext};
 
 fn push_bpf_spin_lock_call(func: &mut MirFunction, block: BlockId, dst: VReg, lock: VReg) {
@@ -45,6 +48,46 @@ fn res_spin_lock_kernel_ptr_ty() -> MirType {
         pointee: Box::new(MirType::bpf_res_spin_lock_struct()),
         address_space: AddressSpace::Kernel,
     }
+}
+
+fn assert_explicit_null_ref_join_release_accepts(case: ExplicitNullRefKfuncCase, use_phi: bool) {
+    let (func, types) = explicit_null_ref_join_release_mir(case, use_phi);
+    verify_mir(&func, &types).unwrap_or_else(|err| {
+        panic!(
+            "expected explicit null/{} ref join to preserve release identity: {err:?}",
+            case.label()
+        )
+    });
+}
+
+#[test]
+fn test_verify_mir_kfunc_cgroup_release_accepts_explicit_null_after_acquire_join() {
+    assert_explicit_null_ref_join_release_accepts(ExplicitNullRefKfuncCase::CgroupFromId, false);
+}
+
+#[test]
+fn test_verify_mir_kfunc_cgroup_release_accepts_explicit_null_phi_after_acquire_join() {
+    assert_explicit_null_ref_join_release_accepts(ExplicitNullRefKfuncCase::CgroupFromId, true);
+}
+
+#[test]
+fn test_verify_mir_kfunc_file_release_accepts_explicit_null_after_acquire_join() {
+    assert_explicit_null_ref_join_release_accepts(ExplicitNullRefKfuncCase::TaskExeFile, false);
+}
+
+#[test]
+fn test_verify_mir_kfunc_file_release_accepts_explicit_null_phi_after_acquire_join() {
+    assert_explicit_null_ref_join_release_accepts(ExplicitNullRefKfuncCase::TaskExeFile, true);
+}
+
+#[test]
+fn test_verify_mir_kfunc_cpumask_release_accepts_explicit_null_after_acquire_join() {
+    assert_explicit_null_ref_join_release_accepts(ExplicitNullRefKfuncCase::CpumaskCreate, false);
+}
+
+#[test]
+fn test_verify_mir_kfunc_cpumask_release_accepts_explicit_null_phi_after_acquire_join() {
+    assert_explicit_null_ref_join_release_accepts(ExplicitNullRefKfuncCase::CpumaskCreate, true);
 }
 
 fn graph_value_with_lock_and_root_ty() -> MirType {

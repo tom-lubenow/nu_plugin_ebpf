@@ -28289,6 +28289,25 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "source-kfunc-file-release-accepts-acquire-or-null-release"
+        category: "helper-state"
+        tags: [kfunc file ref-lifetime phi source accept]
+        requires: [kernel-btf]
+        target: "lsm:file_open"
+        program: [
+            '{|ctx|'
+            '  let selector = (helper-call "bpf_get_prandom_u32")'
+            '  let file = (if $selector == 0 { kfunc-call "bpf_get_task_exe_file" $ctx.current_task } else { 0 })'
+            '  if $file {'
+            '    $file | kfunc-call "bpf_put_file"'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "source-kfunc-file-ref-rejects-leak"
         category: "helper-state"
         tags: [kfunc file ref-lifetime source reject]
@@ -29170,6 +29189,25 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "source-kfunc-cgroup-release-accepts-acquire-or-null-release"
+        category: "helper-state"
+        tags: [kfunc cgroup ref-lifetime phi source accept]
+        requires: [kernel-btf]
+        target: "kprobe:do_exit"
+        program: [
+            '{|ctx|'
+            '  let selector = (helper-call "bpf_get_prandom_u32")'
+            '  let cgrp = (if $selector == 0 { kfunc-call "bpf_cgroup_from_id" 1 } else { 0 })'
+            '  if $cgrp {'
+            '    $cgrp | kfunc-call "bpf_cgroup_release"'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "source-kfunc-cgroup-ancestor-release"
         category: "helper-state"
         tags: [kfunc cgroup ref-lifetime source accept]
@@ -29220,6 +29258,25 @@ const FIXTURES = [
             '  let mask = (kfunc-call "bpf_cpumask_create")'
             '  if $mask {'
             '    $mask | kfunc-call "bpf_cpumask_release_dtor"'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "source-kfunc-cpumask-release-accepts-acquire-or-null-release"
+        category: "helper-state"
+        tags: [kfunc cpumask ref-lifetime phi source accept]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let selector = (helper-call "bpf_get_prandom_u32")'
+            '  let mask = (if $selector == 0 { kfunc-call "bpf_cpumask_create" } else { 0 })'
+            '  if $mask {'
+            '    $mask | kfunc-call "bpf_cpumask_release"'
             '  }'
             '  0'
             '}'
