@@ -2071,6 +2071,115 @@ fn test_lower_length_on_numeric_list_reads_runtime_length() {
 }
 
 #[test]
+fn test_lower_math_sum_on_numeric_list_accumulates_items() {
+    let sum_decl = DeclId::new(106);
+    let hir = make_numeric_list_pipeline_call_program(sum_decl, None);
+    let decl_names = HashMap::from([(sum_decl, "math sum".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("math sum should lower on known non-empty stack-backed numeric lists");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+
+    assert!(
+        instructions
+            .iter()
+            .any(|inst| matches!(inst, MirInst::ListLen { .. })),
+        "expected math sum to inspect the input list runtime length"
+    );
+    assert!(
+        instructions
+            .iter()
+            .filter(|inst| matches!(inst, MirInst::ListGet { .. }))
+            .count()
+            >= 3,
+        "expected math sum to use bounded constant-index list reads"
+    );
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::Add,
+                ..
+            }
+        )),
+        "expected math sum to accumulate with Add"
+    );
+    assert!(
+        instructions
+            .iter()
+            .any(|inst| matches!(inst, MirInst::StoreSlot { .. }))
+            && instructions
+                .iter()
+                .any(|inst| matches!(inst, MirInst::LoadSlot { .. })),
+        "expected math sum to accumulate through a stack scalar slot"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("math sum should compile through codegen");
+}
+
+#[test]
+fn test_lower_math_sum_on_empty_numeric_list_is_rejected() {
+    let sum_decl = DeclId::new(107);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::list(Vec::new(), Span::test_data())),
+                },
+                HirStmt::Call {
+                    decl_id: sum_decl,
+                    src_dst: RegId::new(1),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 2,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+    let decl_names = HashMap::from([(sum_decl, "math sum".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("math sum over an empty list should keep Nushell's rejection semantics");
+
+    assert!(
+        err.to_string()
+            .contains("math sum requires a non-empty stack-backed numeric list"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn test_lower_length_on_null_returns_zero() {
     let length_decl = DeclId::new(105);
     let func = HirFunction {

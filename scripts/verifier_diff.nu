@@ -32762,6 +32762,33 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-list-math-sum"
+        category: "language-core"
+        tags: [aggregate list math sum]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [10 20 30] | math sum'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-list-math-sum-empty-reject"
+        category: "language-core"
+        tags: [aggregate list math sum reject]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [] | math sum'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "math sum requires a non-empty stack-backed numeric list"
+    }
+    {
         name: "core-null-length"
         category: "language-core"
         tags: ["null" length]

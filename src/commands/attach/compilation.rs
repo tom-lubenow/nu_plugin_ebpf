@@ -45,6 +45,7 @@ const NU_CLOSURE_COMMANDS: &[&str] = &[
     "is-empty",
     "is-not-empty",
     "length",
+    "math sum",
     "first",
     "last",
     "get",

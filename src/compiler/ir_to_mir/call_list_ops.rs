@@ -552,6 +552,161 @@ impl<'a> HirToMirLowering<'a> {
         Ok(())
     }
 
+    pub(super) fn lower_stack_list_math_sum(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+    ) -> Result<(), CompileError> {
+        let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
+        let input_reg = self
+            .pipeline_input_reg
+            .or(src_dst_had_value.then_some(src_dst));
+
+        if !self.named_flags.is_empty()
+            || !self.named_args.is_empty()
+            || !self.positional_args.is_empty()
+        {
+            return Err(CompileError::UnsupportedInstruction(
+                "math sum does not accept arguments in eBPF".into(),
+            ));
+        }
+
+        let input_meta = input_reg
+            .and_then(|reg| self.get_metadata(reg).cloned())
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "math sum requires a stack-backed numeric list input in eBPF".into(),
+                )
+            })?;
+        let Some((_slot, max_len)) = input_meta.list_buffer else {
+            return Err(CompileError::UnsupportedInstruction(
+                "math sum requires a stack-backed numeric list input in eBPF".into(),
+            ));
+        };
+        let Some(known_len) = Self::numeric_list_known_len(&input_meta) else {
+            return Err(CompileError::UnsupportedInstruction(
+                "math sum requires a stack-backed numeric list with known non-empty length in eBPF"
+                    .into(),
+            ));
+        };
+        if known_len == 0 {
+            return Err(CompileError::UnsupportedInstruction(
+                "math sum requires a non-empty stack-backed numeric list in eBPF".into(),
+            ));
+        }
+
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+
+        let sum_slot = self.func.alloc_stack_slot(8, 8, StackSlotKind::Local);
+        self.record_stack_slot_type(sum_slot, MirType::I64);
+        self.emit(MirInst::StoreSlot {
+            slot: sum_slot,
+            offset: 0,
+            val: MirValue::Const(0),
+            ty: MirType::I64,
+        });
+
+        let len_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::ListLen {
+            dst: len_vreg,
+            list: input_vreg,
+        });
+        self.vreg_type_hints.insert(len_vreg, MirType::U64);
+
+        let continuation_block = self.func.alloc_block();
+        for i in 0..max_len {
+            let add_block = self.func.alloc_block();
+            let next_block = if i + 1 == max_len {
+                continuation_block
+            } else {
+                self.func.alloc_block()
+            };
+
+            let in_bounds_vreg = self.func.alloc_vreg();
+            self.emit(MirInst::BinOp {
+                dst: in_bounds_vreg,
+                op: BinOpKind::Lt,
+                lhs: MirValue::Const(i as i64),
+                rhs: MirValue::VReg(len_vreg),
+            });
+            self.vreg_type_hints.insert(in_bounds_vreg, MirType::Bool);
+            self.terminate(MirInst::Branch {
+                cond: in_bounds_vreg,
+                if_true: add_block,
+                if_false: next_block,
+            });
+
+            self.current_block = add_block;
+            let item_vreg = self.func.alloc_vreg();
+            self.emit(MirInst::ListGet {
+                dst: item_vreg,
+                list: input_vreg,
+                idx: MirValue::Const(i as i64),
+            });
+            self.vreg_type_hints.insert(item_vreg, MirType::I64);
+
+            let current_sum_vreg = self.func.alloc_vreg();
+            self.emit(MirInst::LoadSlot {
+                dst: current_sum_vreg,
+                slot: sum_slot,
+                offset: 0,
+                ty: MirType::I64,
+            });
+            self.vreg_type_hints.insert(current_sum_vreg, MirType::I64);
+
+            let next_sum_vreg = self.func.alloc_vreg();
+            self.emit(MirInst::BinOp {
+                dst: next_sum_vreg,
+                op: BinOpKind::Add,
+                lhs: MirValue::VReg(current_sum_vreg),
+                rhs: MirValue::VReg(item_vreg),
+            });
+            self.vreg_type_hints.insert(next_sum_vreg, MirType::I64);
+            self.emit(MirInst::StoreSlot {
+                slot: sum_slot,
+                offset: 0,
+                val: MirValue::VReg(next_sum_vreg),
+                ty: MirType::I64,
+            });
+            self.terminate(MirInst::Jump { target: next_block });
+
+            self.current_block = next_block;
+        }
+
+        self.emit(MirInst::LoadSlot {
+            dst: result_vreg,
+            slot: sum_slot,
+            offset: 0,
+            ty: MirType::I64,
+        });
+        self.current_block = continuation_block;
+
+        self.reset_call_result_metadata(src_dst);
+        let out_meta = self.get_or_create_metadata(src_dst);
+        out_meta.field_type = Some(MirType::I64);
+        self.vreg_type_hints.insert(result_vreg, MirType::I64);
+
+        if let Some(nu_protocol::Value::List { vals, .. }) = input_meta.constant_value {
+            let sum = vals
+                .into_iter()
+                .filter_map(|val| match val {
+                    nu_protocol::Value::Int { val, .. } => Some(val),
+                    _ => None,
+                })
+                .sum::<i64>();
+            self.set_reg_constant_value(
+                src_dst,
+                Some(nu_protocol::Value::int(sum, Span::unknown())),
+            );
+        }
+        Ok(())
+    }
+
     pub(super) fn lower_stack_list_all_or_any(
         &mut self,
         cmd_name: &str,
