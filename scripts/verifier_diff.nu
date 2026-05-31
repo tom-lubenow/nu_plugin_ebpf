@@ -6460,6 +6460,18 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         target: "tc:lo:ingress"
         program: [
             '{|ctx|'
+            '  let base = { socket: $ctx.sk }'
+            '  let rec = ({ ...$base } | rename sock)'
+            '  $rec.sock.family | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:family" "ctx:sk" "helper:bpf_probe_read_kernel"]
+    }
+    {
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
             '  def wrap [sock] { { ok: true } | upsert socket $sock }'
             '  let rec = (wrap $ctx.sk)'
             '  $rec.socket.family | count'
@@ -18345,6 +18357,22 @@ const FIXTURES = [
             '{|ctx|'
             '  let rec = ({ ok: true } | default $ctx.sk socket)'
             '  $rec.socket.family | count'
+            '  "ok"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tc-record-socket-context-spread-pipeline-rename"
+        category: "context-surface"
+        tags: [tc context socket record spread rename source metadata]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let base = { socket: $ctx.sk }'
+            '  let rec = ({ ...$base } | rename sock)'
+            '  $rec.sock.family | count'
             '  "ok"'
             '}'
         ]
@@ -39297,6 +39325,28 @@ def record-literal-field-names [raw: string] {
     $names
 }
 
+def record-literal-spread-field-names [raw: string aliases] {
+    let trimmed = ($raw | str trim)
+    if not (($trimmed | str starts-with "{") and ($trimmed | str ends-with "}")) {
+        return []
+    }
+
+    mut names = []
+    let inner = ($trimmed | str substring 1..-2)
+    for parsed in (
+        $inner
+        | parse --regex '\.\.\.\$(?P<name>[A-Za-z_][A-Za-z0-9_-]*)'
+    ) {
+        for alias in ($aliases | where {|alias| $alias.name == $parsed.name }) {
+            if $alias.field not-in $names {
+                $names = ($names | append $alias.field)
+            }
+        }
+    }
+
+    $names
+}
+
 def record-literal-null-field-names [raw: string] {
     let trimmed = ($raw | str trim)
     if not (($trimmed | str starts-with "{") and ($trimmed | str ends-with "}")) {
@@ -39359,6 +39409,10 @@ def record-pipeline-input-context-fields [raw: string context_names bound_aliase
             $identity_wrappers
             $root_wrapper_defs
     )
+    $fields = (
+        $fields
+        | append (record-literal-spread-context-fields $input $aliases)
+    )
 
     for parsed in (
         $input
@@ -39375,11 +39429,16 @@ def record-pipeline-input-context-fields [raw: string context_names bound_aliase
     unique-record-context-fields $fields
 }
 
-def record-pipeline-input-field-order [raw: string] {
+def record-pipeline-input-field-order [raw: string aliases] {
     let input = (record-pipeline-input-token $raw)
     let literal_order = (record-literal-field-names $input)
-    if not ($literal_order | is-empty) {
+    let spread_order = (record-literal-spread-field-names $input $aliases)
+
+    if ($spread_order | is-empty) and not ($literal_order | is-empty) {
         return $literal_order
+    }
+    if ($literal_order | is-empty) and not ($spread_order | is-empty) {
+        return $spread_order
     }
 
     null
@@ -39537,7 +39596,7 @@ def record-pipeline-flow-context-fields [raw: string context_names bound_aliases
             $root_wrapper_defs
             $aliases
     )
-    mut field_order = (record-pipeline-input-field-order $raw)
+    mut field_order = (record-pipeline-input-field-order $raw $aliases)
     mut null_fields = (record-pipeline-input-null-fields $raw)
 
     for segment in ($parts | skip 1) {
