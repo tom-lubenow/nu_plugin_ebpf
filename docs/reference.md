@@ -755,7 +755,7 @@ Read-only closure captures now lower as real constants for supported types (`int
 | Command | Description |
 |---------|-------------|
 | `ebpf attach` | Attach eBPF probe with closure |
-| `ebpf spec` | Inspect parsed target metadata, aliases, parsed attach shape, context family, packet context kind, packet header fields/protocol views, direct packet-write support, concrete context argument and return-value surfaces when knowable, modeled context fields with type labels, pointer verifier facts, load guards, aggregate/direct/helper compatibility floors, direct/array/nested context load-shape metadata including direct-load read transforms, backing helpers with compatibility keys and inherited helper kernel floors where applicable, and nested direct/helper-backed projections, tracepoint payload fields with tracefs/fallback provenance, writable context surfaces with direct context-field keys plus backing helper/kfunc compatibility keys and version metadata where applicable, argument/return access mode, return aliases, capabilities, supported first-class intrinsic commands with helper floors, intrinsic context-field requirements, and map-kind floors for kind-sensitive redirect variants, section naming/target usage, struct_ops value/callback metadata, sleepable/BTF-callable metadata, kernel-target validation, live-attach/default-safety support, derived external-alpha status, and compatibility requirements; pass `--list` for all modeled program families |
+| `ebpf spec` | Inspect parsed target metadata, aliases, parsed attach shape, context family, packet context kind, packet header fields/protocol views, direct packet-write support, concrete context argument and return-value surfaces when knowable, modeled context fields with type labels, pointer verifier facts, load guards, aggregate/direct/helper compatibility floors, direct/array/nested context load-shape metadata including direct/array read transforms, backing helpers with compatibility keys and inherited helper kernel floors where applicable, and nested direct/helper-backed projections, tracepoint payload fields with tracefs/fallback provenance, writable context surfaces with direct context-field keys plus backing helper/kfunc compatibility keys and version metadata where applicable, argument/return access mode, return aliases, capabilities, supported first-class intrinsic commands with helper floors, intrinsic context-field requirements, and map-kind floors for kind-sensitive redirect variants, section naming/target usage, struct_ops value/callback metadata, sleepable/BTF-callable metadata, kernel-target validation, live-attach/default-safety support, derived external-alpha status, and compatibility requirements; pass `--list` for all modeled program families |
 | `ebpf detach` | Detach a probe by ID |
 | `ebpf list` | List active probes |
 | `ebpf counters` | Read counter map |
@@ -780,7 +780,11 @@ source-backed by the program context. Direct loads also expose
 `direct_load_transform` when the compiler changes the raw ABI value into the
 semantic value seen by Nushell, for example big-endian address/protocol
 normalization, lirc mode/value masking, and cgroup-device access/type
-extraction from `access_type`.
+extraction from `access_type`. Array loads similarly expose
+`array_load_transform` for semantic array normalization such as IPv6 address
+words converted from big-endian ABI order to host order; this is separate from
+`array_load_normalize_big_endian`, which describes the backend context-copy
+path.
 
 For `struct_ops`, use `struct_ops:<value_type>` for object-level metadata and
 `struct_ops:<value_type>.<callback>` for callback-level metadata such as

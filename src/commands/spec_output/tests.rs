@@ -1037,6 +1037,14 @@ fn test_context_field_compatibility_metadata_invariants() {
                 field.field
             );
             assert_eq!(
+                field.array_load_transform,
+                array_load
+                    .and_then(|_| spec.ctx_field_array_load_transform(&entry.field))
+                    .map(context_field_read_transform_label),
+                "{spec_text} ctx.{} should report the ProgramSpec array-load read transform",
+                field.field
+            );
+            assert_eq!(
                 field.nested_load_pointer_offset,
                 nested_load.map(|load| load.pointer_offset),
                 "{spec_text} ctx.{} should report the ProgramSpec nested-load pointer offset",
@@ -1228,6 +1236,7 @@ fn test_spec_context_fields_include_context_load_metadata() {
     assert_eq!(cb.array_load_base_offset, Some(48));
     assert_eq!(cb.array_load_count, Some(5));
     assert_eq!(cb.array_load_normalize_big_endian, Some(false));
+    assert_eq!(cb.array_load_transform, None);
     assert_eq!(cb.direct_load_offset, None);
     assert_eq!(cb.nested_load_pointer_offset, None);
 
@@ -1239,6 +1248,22 @@ fn test_spec_context_fields_include_context_load_metadata() {
     assert_eq!(local_ip6.array_load_base_offset, Some(28));
     assert_eq!(local_ip6.array_load_count, Some(4));
     assert_eq!(local_ip6.array_load_normalize_big_endian, Some(true));
+    assert_eq!(
+        local_ip6.array_load_transform,
+        Some("big-endian-u32-words-to-host")
+    );
+
+    let spec = ProgramSpec::parse("cgroup_sock_addr:/sys/fs/cgroup:connect6")
+        .expect("cgroup_sock_addr spec should parse");
+    let fields = spec_context_fields(&spec, false);
+    let remote_ip6 = field(&fields, "remote_ip6");
+    assert_eq!(remote_ip6.load_kind, Some("array"));
+    assert_eq!(remote_ip6.array_load_base_offset, Some(8));
+    assert_eq!(remote_ip6.array_load_normalize_big_endian, Some(false));
+    assert_eq!(
+        remote_ip6.array_load_transform,
+        Some("big-endian-u32-words-to-host")
+    );
 
     let spec = ProgramSpec::parse("netfilter:ipv4:pre_routing:priority=-100:defrag")
         .expect("netfilter spec should parse");
@@ -2179,6 +2204,43 @@ fn test_spec_record_context_fields_include_direct_load_transform_metadata() {
             .as_str()
             .expect("direct load transform should be a string"),
         "access-type-high-16-bits"
+    );
+}
+
+#[test]
+fn test_spec_record_context_fields_include_array_load_transform_metadata() {
+    let local_ip6 = context_field_record("cgroup_sock:/sys/fs/cgroup:post_bind6", "local_ip6");
+    let local_ip6 = local_ip6
+        .as_record()
+        .expect("ctx.local_ip6 should be a record");
+    assert_eq!(
+        local_ip6
+            .get("array_load_transform")
+            .expect("array load transform should be present")
+            .as_str()
+            .expect("array load transform should be a string"),
+        "big-endian-u32-words-to-host"
+    );
+
+    let remote_ip6 = context_field_record("cgroup_sock_addr:/sys/fs/cgroup:connect6", "remote_ip6");
+    let remote_ip6 = remote_ip6
+        .as_record()
+        .expect("ctx.remote_ip6 should be a record");
+    assert_eq!(
+        remote_ip6
+            .get("array_load_normalize_big_endian")
+            .expect("array load normalize metadata should be present")
+            .as_bool()
+            .expect("array load normalize metadata should be a bool"),
+        false
+    );
+    assert_eq!(
+        remote_ip6
+            .get("array_load_transform")
+            .expect("array load transform should be present")
+            .as_str()
+            .expect("array load transform should be a string"),
+        "big-endian-u32-words-to-host"
     );
 }
 

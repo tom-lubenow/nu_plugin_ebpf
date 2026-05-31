@@ -1082,6 +1082,30 @@ impl ProgramSpec {
         self.program_type().ctx_field_array_load(field)
     }
 
+    pub(crate) fn ctx_field_array_load_transform(
+        &self,
+        field: &CtxField,
+    ) -> Option<ContextFieldReadTransform> {
+        if self.ctx_field_access_error(field).is_some() {
+            return None;
+        }
+
+        if let Some(alias_field) = self.cgroup_sock_addr_tuple_alias_field(field)
+            && &alias_field != field
+        {
+            return self.ctx_field_array_load_transform(&alias_field);
+        }
+
+        let array_load = self.ctx_field_array_load(field)?;
+        if array_load.normalize_big_endian {
+            return Some(ContextFieldReadTransform::BigEndianU32WordsToHost);
+        }
+
+        self.ctx_field_projection_spec(field)
+            .is_some_and(|spec| spec.normalize_u32_words_host_order)
+            .then_some(ContextFieldReadTransform::BigEndianU32WordsToHost)
+    }
+
     pub(crate) fn ctx_field_nested_load(&self, field: &CtxField) -> Option<ContextFieldNestedLoad> {
         if self.ctx_field_access_error(field).is_some() {
             return None;
@@ -1715,6 +1739,47 @@ mod tests {
         ] {
             let spec = ProgramSpec::parse(spec).expect("program spec should parse");
             assert_eq!(spec.ctx_field_direct_load_transform(&field), expected);
+        }
+    }
+
+    #[test]
+    fn test_context_array_load_transform_metadata_tracks_semantic_normalization() {
+        for (spec, field, expected) in [
+            (
+                "cgroup_sock_addr:/sys/fs/cgroup:connect6",
+                CtxField::UserIp6,
+                Some(ContextFieldReadTransform::BigEndianU32WordsToHost),
+            ),
+            (
+                "cgroup_sock_addr:/sys/fs/cgroup:connect6",
+                CtxField::RemoteIp6,
+                Some(ContextFieldReadTransform::BigEndianU32WordsToHost),
+            ),
+            (
+                "cgroup_sock_addr:/sys/fs/cgroup:sendmsg6",
+                CtxField::MsgSrcIp6,
+                Some(ContextFieldReadTransform::BigEndianU32WordsToHost),
+            ),
+            (
+                "cgroup_sock_addr:/sys/fs/cgroup:sendmsg6",
+                CtxField::LocalIp6,
+                Some(ContextFieldReadTransform::BigEndianU32WordsToHost),
+            ),
+            (
+                "cgroup_sock:/sys/fs/cgroup:post_bind6",
+                CtxField::LocalIp6,
+                Some(ContextFieldReadTransform::BigEndianU32WordsToHost),
+            ),
+            (
+                "sk_lookup:/proc/self/ns/net",
+                CtxField::RemoteIp6,
+                Some(ContextFieldReadTransform::BigEndianU32WordsToHost),
+            ),
+            ("sock_ops:/sys/fs/cgroup", CtxField::SockOpsArgs, None),
+            ("tc:lo:ingress", CtxField::SkbCb, None),
+        ] {
+            let spec = ProgramSpec::parse(spec).expect("program spec should parse");
+            assert_eq!(spec.ctx_field_array_load_transform(&field), expected);
         }
     }
 

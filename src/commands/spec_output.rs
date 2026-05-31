@@ -51,6 +51,7 @@ struct SpecContextField {
     array_load_base_offset: Option<i16>,
     array_load_count: Option<usize>,
     array_load_normalize_big_endian: Option<bool>,
+    array_load_transform: Option<&'static str>,
     nested_load_pointer_offset: Option<i16>,
     nested_load_width: Option<&'static str>,
     nested_load_field_offset: Option<i16>,
@@ -341,6 +342,7 @@ fn context_field_read_transform_label(transform: ContextFieldReadTransform) -> &
     match transform {
         ContextFieldReadTransform::BigEndianU16ToHost => "big-endian-u16-to-host",
         ContextFieldReadTransform::BigEndianU32ToHost => "big-endian-u32-to-host",
+        ContextFieldReadTransform::BigEndianU32WordsToHost => "big-endian-u32-words-to-host",
         ContextFieldReadTransform::BigEndianU32PortToHost => "big-endian-u32-port-to-host",
         ContextFieldReadTransform::LircValueMask => "low-24-bits",
         ContextFieldReadTransform::LircModeMask => "high-byte-mask",
@@ -793,6 +795,8 @@ fn spec_context_fields(
             let direct_load_transform =
                 direct_load.and_then(|_| spec.ctx_field_direct_load_transform(&entry.field));
             let array_load = spec.ctx_field_array_load(&entry.field);
+            let array_load_transform =
+                array_load.and_then(|_| spec.ctx_field_array_load_transform(&entry.field));
             let nested_load = spec.ctx_field_nested_load(&entry.field);
             let load_kind = if direct_load.is_some() {
                 Some("direct")
@@ -855,6 +859,8 @@ fn spec_context_fields(
                     array_load_count: array_load.map(|load| load.count),
                     array_load_normalize_big_endian: array_load
                         .map(|load| load.normalize_big_endian),
+                    array_load_transform: array_load_transform
+                        .map(context_field_read_transform_label),
                     nested_load_pointer_offset: nested_load.map(|load| load.pointer_offset),
                     nested_load_width: nested_load
                         .map(|load| context_field_direct_load_width_label(load.field_load.width)),
@@ -910,6 +916,7 @@ fn context_field_records(
                     "array_load_base_offset" => optional_i16(field.array_load_base_offset, span),
                     "array_load_count" => optional_usize(field.array_load_count, span),
                     "array_load_normalize_big_endian" => optional_bool(field.array_load_normalize_big_endian, span),
+                    "array_load_transform" => optional_static_str(field.array_load_transform, span),
                     "nested_load_pointer_offset" => optional_i16(field.nested_load_pointer_offset, span),
                     "nested_load_width" => optional_static_str(field.nested_load_width, span),
                     "nested_load_field_offset" => optional_i16(field.nested_load_field_offset, span),

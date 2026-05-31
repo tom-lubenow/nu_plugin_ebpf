@@ -128,7 +128,7 @@ ebpf spec --list
 argument and return-value surfaces when knowable, argument/return access mode,
 packet context kind, direct packet-write support, modeled context fields with
 type labels, pointer verifier facts, compatibility floors, load-shape metadata
-including direct-load read transforms such as endian normalization or bit
+including direct/array read transforms such as endian normalization or bit
 extraction, and any load guards,
 tracepoint payload fields with tracefs/fallback provenance, nested context
 projections, writable context surfaces with backing helper/kfunc metadata where

@@ -2881,6 +2881,7 @@ impl ContextFieldArrayLoad {
 pub(crate) enum ContextFieldReadTransform {
     BigEndianU16ToHost,
     BigEndianU32ToHost,
+    BigEndianU32WordsToHost,
     BigEndianU32PortToHost,
     LircValueMask,
     LircModeMask,
