@@ -3812,6 +3812,26 @@ fn test_spec_context_fields_include_sk_reuseport_minimum_kernel_metadata() {
         );
     }
 
+    let packet_len = field(&select_fields, "packet_len");
+    assert!(packet_len.names.contains(&"len"));
+    let protocol = field(&select_fields, "protocol");
+    assert!(protocol.names.contains(&"ip_protocol"));
+    let socket_cookie = field(&select_fields, "socket_cookie");
+    assert_eq!(socket_cookie.minimum_kernel, Some("4.12"));
+    assert_eq!(
+        socket_cookie.requirement_key.as_deref(),
+        Some("ctx:socket_cookie")
+    );
+    assert_eq!(
+        socket_cookie.backing_helper_requirement_key.as_deref(),
+        Some("helper:bpf_get_socket_cookie")
+    );
+    assert!(
+        socket_cookie
+            .minimum_kernel_source
+            .is_some_and(|source| source.contains("/v4.12/include/uapi/linux/bpf.h"))
+    );
+
     for spec_text in ["sk_reuseport:select", "sk_reuseport:migrate"] {
         let spec = ProgramSpec::parse(spec_text).expect("sk_reuseport spec should parse");
         let fields = spec_context_fields(&spec, false);
