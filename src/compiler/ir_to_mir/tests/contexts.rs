@@ -5142,6 +5142,65 @@ fn test_lower_netfilter_action_alias_return_to_const() {
 }
 
 #[test]
+fn test_lower_netfilter_scalar_context_aliases_compile() {
+    for (field_name, expected_field) in [
+        ("hook", CtxField::NetfilterHook),
+        ("pf", CtxField::NetfilterProtocolFamily),
+        ("protocol_family", CtxField::NetfilterProtocolFamily),
+    ] {
+        let hir = make_ctx_path_program(CellPath {
+            members: vec![string_member(field_name)],
+        });
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Netfilter, "ipv4:pre_routing");
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            Some(&probe_ctx),
+            &HashMap::new(),
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("netfilter ctx.{field_name} should lower: {err}"));
+
+        assert!(
+            result.program.main.blocks.iter().any(|block| {
+                block.instructions.iter().any(|inst| {
+                    matches!(
+                        inst,
+                        MirInst::LoadCtxField { field, .. } if field == &expected_field
+                    )
+                })
+            }),
+            "netfilter ctx.{field_name} should load {expected_field:?}"
+        );
+
+        let compiled = compile_mir_to_ebpf_with_hints(
+            &result.program,
+            Some(&probe_ctx),
+            Some(&result.type_hints),
+        )
+        .unwrap_or_else(|err| panic!("netfilter ctx.{field_name} should compile: {err}"));
+        assert!(
+            compiled.used_ctx_fields.contains(&expected_field),
+            "netfilter ctx.{field_name} should preserve {expected_field:?} compatibility metadata"
+        );
+        let program = compiled.into_program(
+            EbpfProgramType::Netfilter,
+            "ipv4:pre_routing",
+            "main",
+            HashMap::new(),
+            HashMap::new(),
+        );
+        assert_eq!(
+            program.context_field_compatibility_minimum_kernel(),
+            Some("6.4"),
+            "netfilter ctx.{field_name} should report the netfilter context-field floor"
+        );
+    }
+}
+
+#[test]
 fn test_lower_lwt_action_alias_return_to_const() {
     let hir = make_return_literal_program(HirLiteral::String(b"reroute".to_vec()));
     let probe_ctx = ProbeContext::new(EbpfProgramType::LwtXmit, "demo-route");
