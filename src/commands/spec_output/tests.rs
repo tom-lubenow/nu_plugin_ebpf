@@ -3310,6 +3310,11 @@ fn test_spec_context_fields_include_netfilter_minimum_kernel_metadata() {
                 .is_some_and(|source| source.contains("/v6.4/net/netfilter/nf_bpf_link.c"))
         );
     }
+
+    let state = field(&fields, "state");
+    assert!(state.names.contains(&"nf_state"));
+    let pf = field(&fields, "pf");
+    assert!(pf.names.contains(&"protocol_family"));
 }
 
 #[test]
