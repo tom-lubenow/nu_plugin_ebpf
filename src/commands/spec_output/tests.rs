@@ -5786,6 +5786,37 @@ fn test_context_write_backing_abi_metadata_invariants() {
             assert_eq!(write.indexed, surface.indexed);
             assert_eq!(write.minimum_kernel, surface.minimum_kernel);
             assert_eq!(write.minimum_kernel_source, surface.minimum_kernel_source);
+            assert_eq!(
+                write.direct_store_offset, surface.direct_store_offset,
+                "{spec_source} ctx.{} write should report the ProgramSpec direct-store offset",
+                write.field
+            );
+            assert_eq!(
+                write.indexed_store_base_offset, surface.indexed_store_base_offset,
+                "{spec_source} ctx.{} write should report the ProgramSpec indexed-store base offset",
+                write.field
+            );
+            assert_eq!(
+                write.indexed_store_count, surface.indexed_store_count,
+                "{spec_source} ctx.{} write should report the ProgramSpec indexed-store count",
+                write.field
+            );
+            assert_eq!(
+                write.indexed_store_convert_to_big_endian,
+                surface.indexed_store_convert_to_big_endian,
+                "{spec_source} ctx.{} write should report the ProgramSpec indexed-store endian conversion",
+                write.field
+            );
+            assert_eq!(
+                write.transformed_store_offset, surface.transformed_store_offset,
+                "{spec_source} ctx.{} write should report the ProgramSpec transformed-store offset",
+                write.field
+            );
+            assert_eq!(
+                write.transformed_store_transform, surface.transformed_store_transform,
+                "{spec_source} ctx.{} write should report the ProgramSpec transformed-store label",
+                write.field
+            );
 
             match surface.context_field_requirement.as_ref() {
                 Some(requirement) => {
