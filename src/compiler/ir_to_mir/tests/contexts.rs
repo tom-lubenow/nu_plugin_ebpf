@@ -10776,6 +10776,78 @@ fn test_lower_cgroup_sock_addr_alias_assignments_record_context_compatibility_fi
 }
 
 #[test]
+fn test_lower_cgroup_sock_addr_unavailable_alias_assignments_keep_source_diagnostics() {
+    fn assert_alias_assignment_rejects(
+        target: &'static str,
+        path: CellPath,
+        lit: HirLiteral,
+        expected: &'static str,
+    ) {
+        for (label, hir) in [
+            (
+                "direct cgroup_sock_addr tuple-alias assignment",
+                make_ctx_upsert_program(path.clone(), lit.clone()),
+            ),
+            (
+                "record-held cgroup_sock_addr tuple-alias assignment",
+                make_record_context_upsert_program("event", path.clone(), lit.clone()),
+            ),
+        ] {
+            let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockAddr, target);
+            let err = match lower_hir_to_mir_with_hints(
+                &hir,
+                Some(&probe_ctx),
+                &HashMap::new(),
+                None,
+                &HashMap::new(),
+                &HashMap::new(),
+            ) {
+                Ok(_) => panic!("{label} on {target} should reject"),
+                Err(err) => err,
+            };
+
+            assert!(
+                err.to_string().contains(expected),
+                "{label} on {target} should report source-level context-field availability: {err}"
+            );
+        }
+    }
+
+    assert_alias_assignment_rejects(
+        "/sys/fs/cgroup:connect4",
+        CellPath {
+            members: vec![string_member("local_ip4")],
+        },
+        HirLiteral::Int(0x7f000001),
+        "ctx.local_ip4 is only available on cgroup_sock_addr bind4/bind6, getsockname4/getsockname6, and sendmsg4/sendmsg6 hooks",
+    );
+    assert_alias_assignment_rejects(
+        "/sys/fs/cgroup:bind4",
+        CellPath {
+            members: vec![string_member("remote_ip4")],
+        },
+        HirLiteral::Int(0x7f000001),
+        "ctx.remote_ip4 is only available on cgroup_sock_addr connect4/connect6, getpeername4/getpeername6, sendmsg4/sendmsg6, and recvmsg4/recvmsg6 hooks",
+    );
+    assert_alias_assignment_rejects(
+        "/sys/fs/cgroup:sendmsg4",
+        CellPath {
+            members: vec![string_member("local_port")],
+        },
+        HirLiteral::Int(31337),
+        "ctx.local_port is only available on cgroup_sock_addr bind4/bind6 and getsockname4/getsockname6 hooks",
+    );
+    assert_alias_assignment_rejects(
+        "/sys/fs/cgroup:connect6",
+        CellPath {
+            members: vec![string_member("user_ip4")],
+        },
+        HirLiteral::Int(0x7f000001),
+        "ctx.user_ip4 is only available on IPv4 cgroup_sock_addr hooks (*4)",
+    );
+}
+
+#[test]
 fn test_lower_cgroup_skb_egress_ctx_tstamp_assignment() {
     let hir = make_ctx_upsert_program(
         CellPath {
