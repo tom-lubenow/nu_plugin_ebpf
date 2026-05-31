@@ -7123,6 +7123,183 @@ fn test_helper_call_ringbuf_query_literal_lowers_and_compiles() {
 }
 
 #[test]
+fn test_helper_call_user_ringbuf_drain_closure_lowers_and_compiles() {
+    let closure_block_id = nu_protocol::BlockId::new(9);
+    let closure = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: VarId::new(10),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(0),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 2,
+        file_count: 0,
+    };
+
+    let main = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String(b"bpf_user_ringbuf_drain".to_vec()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String(b"user_events".to_vec()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::Closure(closure_block_id),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::String(b"ctx".to_vec()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(5),
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(42),
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![
+                            RegId::new(1),
+                            RegId::new(2),
+                            RegId::new(3),
+                            RegId::new(4),
+                            RegId::new(5),
+                        ],
+                        ..Default::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 6,
+        file_count: 0,
+    };
+
+    let mut hir_program = HirProgram::new(
+        main,
+        HashMap::from([(closure_block_id, closure)]),
+        vec![],
+        None,
+    );
+    hir_program.closure_param_sources.insert(
+        closure_block_id,
+        HirClosureParamSource {
+            params: vec![
+                HirClosureParam {
+                    name: "dynptr".to_string(),
+                    var_id: Some(VarId::new(10)),
+                },
+                HirClosureParam {
+                    name: "cb".to_string(),
+                    var_id: Some(VarId::new(11)),
+                },
+            ],
+        },
+    );
+    let decl_names = HashMap::from([(DeclId::new(42), "helper-call".to_string())]);
+    let hir_types = infer_hir_types(&hir_program, &decl_names)
+        .expect("user_ringbuf_drain helper-call should type-check");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        None,
+        &decl_names,
+        Some(&hir_types),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("user_ringbuf_drain helper-call with closure should lower");
+
+    assert_eq!(result.program.subfunctions.len(), 1);
+    let callback = &result.program.subfunctions[0];
+    assert_eq!(callback.param_count, 2);
+    assert!(callback.param_non_null.contains(&0));
+    assert!(
+        !callback.entry_initialized_dynptr_slots.is_empty(),
+        "expected callback dynptr parameter stack slot to start initialized"
+    );
+    assert_eq!(
+        callback.required_return_range,
+        Some(ScalarValueRange::new(0, 1))
+    );
+
+    let callback_hints = &result.type_hints.subfunctions[0];
+    assert!(matches!(
+        callback_hints.get(&VReg(0)),
+        Some(MirType::Ptr {
+            pointee,
+            address_space: AddressSpace::Stack,
+        }) if pointee.is_bpf_dynptr_struct()
+    ));
+    assert!(matches!(
+        callback_hints.get(&VReg(1)),
+        Some(MirType::Ptr {
+            address_space: AddressSpace::Stack,
+            ..
+        })
+    ));
+
+    let entry = result.program.main.entry;
+    let block = result.program.main.block(entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadMapFd {
+            map: MapRef { name, kind: MapKind::UserRingBuf },
+            ..
+        } if name == "user_events"
+    )));
+    assert!(
+        block
+            .instructions
+            .iter()
+            .any(|inst| matches!(inst, MirInst::LoadSubprogram { .. }))
+    );
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::CallHelper {
+            helper,
+            args,
+            ..
+        } if *helper == BpfHelper::UserRingbufDrain as u32 && args.len() == 4
+    )));
+
+    let compiled = compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("user_ringbuf_drain helper-call should compile");
+    assert!(compiled.maps.iter().any(|map| {
+        map.name == "user_events" && map.def.map_type == BpfMapType::UserRingBuf as u32
+    }));
+    assert!(
+        compiled
+            .relocations
+            .iter()
+            .any(|reloc| reloc.symbol_name == "user_events"),
+        "expected user-ringbuf relocation"
+    );
+}
+
+#[test]
 fn test_helper_call_task_storage_literal_lowers_and_compiles() {
     let func = HirFunction {
         blocks: vec![HirBlock {
