@@ -6407,6 +6407,34 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         feature_keys: ["ctx:family" "ctx:sk" "helper:bpf_probe_read_kernel"]
     }
     {
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let inserted = ({ ok: true } | insert socket $ctx.sk)'
+            '  let base = { socket: null }'
+            '  let updated = ($base | update socket $ctx.sk)'
+            '  let upserted = ({ ok: true } | upsert socket $ctx.sk)'
+            '  $inserted.socket.family | count'
+            '  $updated.socket.family | count'
+            '  $upserted.socket.family | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:family" "ctx:sk" "helper:bpf_probe_read_kernel"]
+    }
+    {
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  def wrap [sock] { { ok: true } | upsert socket $sock }'
+            '  let rec = (wrap $ctx.sk)'
+            '  $rec.socket.family | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:family" "ctx:sk" "helper:bpf_probe_read_kernel"]
+    }
+    {
         target: "cgroup_sockopt:/sys/fs/cgroup:get"
         program: [
             '{|ctx|'
@@ -18222,6 +18250,21 @@ const FIXTURES = [
             '  mut rec = {}'
             '  $rec.event = $ctx'
             '  $rec.event.tstamp = 123'
+            '  "ok"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tc-record-socket-context-pipeline-upsert"
+        category: "context-surface"
+        tags: [tc context socket record upsert source metadata]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let rec = ({ ok: true } | upsert socket $ctx.sk)'
+            '  $rec.socket.family | count'
             '  "ok"'
             '}'
         ]
@@ -39073,6 +39116,76 @@ def record-upsert-context-bindings [line: string context_names bound_aliases] {
     $bindings
 }
 
+def record-command-field-value [tail: string] {
+    let parsed = (
+        $tail
+        | str trim
+        | parse --regex '^(?P<field>[A-Za-z_][A-Za-z0-9_-]*)\s+(?P<value>.+)$'
+    )
+    if ($parsed | is-empty) {
+        return null
+    }
+
+    let result = ($parsed | first)
+    {
+        field: ($result.field | str trim)
+        value: ($result.value | str trim)
+    }
+}
+
+def record-pipeline-context-fields [raw: string context_names bound_aliases identity_wrappers root_wrapper_defs] {
+    mut fields = []
+
+    for command in [insert update upsert] {
+        for tail in (command-invocation-tails $raw $command) {
+            let field_value = (record-command-field-value $tail)
+            if $field_value == null {
+                continue
+            }
+
+            let root = (
+                context-root-from-record-value-token
+                    $field_value.value
+                    $context_names
+                    $bound_aliases
+                    $identity_wrappers
+                    $root_wrapper_defs
+            )
+            if $root != null {
+                $fields = ($fields | append {
+                    field: $field_value.field
+                    root: $root
+                })
+            }
+        }
+    }
+
+    $fields
+}
+
+def record-pipeline-context-bindings [line: string context_names bound_aliases identity_wrappers root_wrapper_defs] {
+    mut bindings = []
+
+    for assignment in (declaration-assignments $line) {
+        for field in (
+            record-pipeline-context-fields
+                (declaration-rhs-token $assignment)
+                $context_names
+                $bound_aliases
+                $identity_wrappers
+                $root_wrapper_defs
+        ) {
+            $bindings = ($bindings | append {
+                name: $assignment.name
+                field: $field.field
+                root: $field.root
+            })
+        }
+    }
+
+    $bindings
+}
+
 def record-literal-spread-context-fields [raw: string aliases] {
     let trimmed = ($raw | str trim)
     if not (($trimmed | str starts-with "{") and ($trimmed | str ends-with "}")) {
@@ -39317,6 +39430,7 @@ def record-context-wrapper-definitions [source: string] {
                 (record-context-bindings $line [$function.param] $root_aliases $identity_wrappers $root_wrapper_defs)
                 | append (record-wrapper-context-bindings $line [$function.param] $root_aliases $base_wrapper_defs)
                 | append (record-upsert-context-bindings $line [$function.param] $root_aliases)
+                | append (record-pipeline-context-bindings $line [$function.param] $root_aliases $identity_wrappers $root_wrapper_defs)
                 | append (record-spread-context-bindings $line $aliases)
             )
             for binding in $bindings {
@@ -39345,6 +39459,7 @@ def record-context-wrapper-definitions [source: string] {
             let returned_fields = (
                 (record-literal-context-fields $trimmed [$function.param] $root_aliases $identity_wrappers $root_wrapper_defs)
                 | append (record-literal-spread-context-fields $trimmed $aliases)
+                | append (record-pipeline-context-fields $trimmed [$function.param] $root_aliases $identity_wrappers $root_wrapper_defs)
             )
             for field in $returned_fields {
                 if (
@@ -39603,6 +39718,7 @@ def program-record-context-aliases [source: string context_names] {
                 (record-context-bindings $line $context_names $bound_aliases $identity_wrappers $root_wrapper_defs)
                 | append (record-wrapper-context-bindings $line $context_names $bound_aliases $wrapper_defs)
                 | append (record-upsert-context-bindings $line $context_names $bound_aliases)
+                | append (record-pipeline-context-bindings $line $context_names $bound_aliases $identity_wrappers $root_wrapper_defs)
                 | append (record-spread-context-bindings $line $aliases)
             )
             for binding in $bindings {
