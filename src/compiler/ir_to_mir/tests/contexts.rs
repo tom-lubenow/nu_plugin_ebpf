@@ -8743,6 +8743,37 @@ fn test_lower_perf_event_helper_ctx_fields() {
             inst,
             MirInst::LoadCtxField { field, .. } if field == &expected_field
         )));
+
+        let compiled = compile_mir_to_ebpf_with_hints(
+            &result.program,
+            Some(&probe_ctx),
+            Some(&result.type_hints),
+        )
+        .unwrap_or_else(|err| panic!("perf_event ctx.{field_name} should compile: {err}"));
+        assert!(
+            compiled.used_ctx_fields.contains(&expected_field),
+            "perf_event ctx.{field_name} should preserve {expected_field:?} metadata"
+        );
+        let program = compiled.into_program(
+            EbpfProgramType::PerfEvent,
+            "software:cpu-clock:period=100000",
+            "main",
+            HashMap::new(),
+            HashMap::new(),
+        );
+        let requirement = program
+            .helper_compatibility_requirements()
+            .into_iter()
+            .find(|requirement| requirement.helper() == BpfHelper::PerfProgReadValue)
+            .unwrap_or_else(|| {
+                panic!("perf_event ctx.{field_name} should report bpf_perf_prog_read_value")
+            });
+        assert_eq!(requirement.minimum_kernel(), "4.15");
+        assert!(
+            requirement
+                .minimum_kernel_source()
+                .contains("/v4.15/include/uapi/linux/bpf.h")
+        );
     }
 }
 
