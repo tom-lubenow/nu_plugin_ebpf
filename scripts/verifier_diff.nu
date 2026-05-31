@@ -20755,6 +20755,24 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "flow-dissector-user-function-returned-flow-key-write-context"
+        category: "context-surface"
+        tags: [flow-dissector context writable user-function alias source metadata]
+        requires: [netns-self]
+        target: "flow_dissector:/proc/self/ns/net"
+        program: [
+            '{|ctx|'
+            '  def get_keys [event] { $event.flow_keys }'
+            '  mut keys = (get_keys $ctx)'
+            '  $keys.ip_proto = 17'
+            '  $keys.ipv6_src.0 = 1'
+            '  "parsed"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "flow-dissector-record-flow-key-write-context"
         category: "context-surface"
         tags: [flow-dissector context writable record source metadata]
