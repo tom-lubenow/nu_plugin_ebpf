@@ -2,6 +2,35 @@ use super::*;
 use crate::compiler::mir::AddressSpace;
 
 impl<'a> HirToMirLowering<'a> {
+    fn metadata_record_values_supported_field(meta: &RegMetadata, field: &RecordField) -> bool {
+        let storage_is_integer = matches!(
+            field.ty,
+            MirType::I8
+                | MirType::I16
+                | MirType::I32
+                | MirType::I64
+                | MirType::U8
+                | MirType::U16
+                | MirType::U32
+                | MirType::U64
+        );
+        if !storage_is_integer {
+            return false;
+        }
+
+        let Some(nu_protocol::Value::Record { val, .. }) = meta.constant_value.as_ref() else {
+            return true;
+        };
+        matches!(
+            val.get(&field.name),
+            Some(
+                nu_protocol::Value::Int { .. }
+                    | nu_protocol::Value::Filesize { .. }
+                    | nu_protocol::Value::Duration { .. }
+            )
+        )
+    }
+
     fn default_should_replace_value(value: &nu_protocol::Value, replace_empty: bool) -> bool {
         match value {
             nu_protocol::Value::Nothing { .. } => true,
@@ -358,6 +387,85 @@ impl<'a> HirToMirLowering<'a> {
             ..Default::default()
         };
         self.emit_metadata_record_result(src_dst, result_vreg, projected_meta)
+    }
+
+    pub(super) fn lower_metadata_record_values(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+    ) -> Result<(), CompileError> {
+        let input_reg = self
+            .pipeline_input_reg
+            .or(src_dst_had_value.then_some(src_dst));
+
+        if !self.named_flags.is_empty()
+            || !self.named_args.is_empty()
+            || !self.positional_args.is_empty()
+        {
+            return Err(CompileError::UnsupportedInstruction(
+                "values does not accept arguments in eBPF".into(),
+            ));
+        }
+
+        let input_meta = input_reg
+            .and_then(|reg| self.get_metadata(reg).cloned())
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "values requires record input with compiler-known fields in eBPF".into(),
+                )
+            })?;
+        let input_is_known_empty_record = matches!(
+            input_meta.constant_value.as_ref(),
+            Some(nu_protocol::Value::Record { val, .. }) if val.is_empty()
+        );
+        if input_meta.record_fields.is_empty() && !input_is_known_empty_record {
+            return Err(CompileError::UnsupportedInstruction(
+                "values requires record input with compiler-known fields in eBPF".into(),
+            ));
+        }
+
+        for field in &input_meta.record_fields {
+            if !Self::metadata_record_values_supported_field(&input_meta, field) {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "values supports only integer scalar record fields in eBPF; field '{}' has type {:?}",
+                    field.name, field.ty
+                )));
+            }
+        }
+
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+        let max_len = input_meta.record_fields.len();
+        let (out_slot, out_ty) = self.create_stack_numeric_list_result(result_vreg, max_len);
+
+        for field in &input_meta.record_fields {
+            self.emit(MirInst::ListPush {
+                list: result_vreg,
+                item: field.value_vreg,
+            });
+        }
+
+        self.install_stack_numeric_list_result_metadata(
+            src_dst,
+            out_slot,
+            out_ty,
+            max_len,
+            Some(max_len),
+        );
+        if let Some(nu_protocol::Value::Record { val, .. }) = input_meta.constant_value {
+            let vals = val
+                .iter()
+                .map(|(_key, value)| value.clone())
+                .collect::<Vec<_>>();
+            self.get_or_create_metadata(src_dst).constant_value =
+                Some(nu_protocol::Value::list(vals, Span::unknown()));
+        }
+
+        Ok(())
     }
 
     pub(super) fn lower_default(

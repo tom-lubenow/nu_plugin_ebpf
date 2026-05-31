@@ -32848,6 +32848,46 @@ const FIXTURES = [
         error_contains: "merge requires a record argument with compiler-known fields"
     }
     {
+        name: "core-record-values-get"
+        category: "language-core"
+        tags: [aggregate record values list]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  { pid: 7 cpu: 2 } | values | get 1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-record-values-after-merge"
+        category: "language-core"
+        tags: [aggregate record values merge list]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  { pid: 7 cpu: 2 } | merge { mem: 9 } | values | get 2'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-record-values-non-integer-reject"
+        category: "language-core"
+        tags: [aggregate record values reject]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  { pid: 7 ok: true } | values'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "values supports only integer scalar record fields"
+    }
+    {
         name: "core-record-insert-field"
         category: "language-core"
         tags: [aggregate record insert]

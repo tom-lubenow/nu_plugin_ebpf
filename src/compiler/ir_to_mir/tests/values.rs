@@ -409,6 +409,63 @@ fn make_record_merge_then_field_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_record_values_then_get_program(
+    values_decl: DeclId,
+    get_decl: DeclId,
+    include_bool_field: bool,
+    get_index: i64,
+) -> HirProgram {
+    let mut record = Record::new();
+    record.push("pid", Value::int(7, Span::test_data()));
+    record.push("cpu", Value::int(2, Span::test_data()));
+    if include_bool_field {
+        record.push("ok", Value::bool(true, Span::test_data()));
+    }
+
+    let stmts = vec![
+        HirStmt::LoadValue {
+            dst: RegId::new(0),
+            val: Box::new(Value::record(record, Span::test_data())),
+        },
+        HirStmt::Call {
+            decl_id: values_decl,
+            src_dst: RegId::new(1),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(0)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(2),
+            lit: HirLiteral::Int(get_index),
+        },
+        HirStmt::Call {
+            decl_id: get_decl,
+            src_dst: RegId::new(3),
+            args: HirCallArgs {
+                positional: vec![RegId::new(2)],
+                pipeline_input: Some(RegId::new(1)),
+                ..HirCallArgs::default()
+            },
+        },
+    ];
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(3) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 4,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 #[test]
 fn test_lower_load_value_duration_as_const() {
     let func = HirFunction {
@@ -1735,6 +1792,67 @@ fn test_lower_merge_rejects_non_record_argument() {
     assert!(
         err.to_string()
             .contains("merge requires a record argument with compiler-known fields"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_values_on_integer_metadata_record_builds_numeric_list() {
+    let values_decl = DeclId::new(110);
+    let get_decl = DeclId::new(111);
+    let hir = make_record_values_then_get_program(values_decl, get_decl, false, 1);
+    let decl_names = HashMap::from([
+        (values_decl, "values".to_string()),
+        (get_decl, "get".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("values should lower integer metadata-backed record fields");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::ListNew { max_len: 2, .. })),
+        "expected values to materialize a numeric list with one slot per record field"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("record values followed by get should compile through codegen");
+}
+
+#[test]
+fn test_lower_values_rejects_non_integer_metadata_record_field() {
+    let values_decl = DeclId::new(112);
+    let get_decl = DeclId::new(113);
+    let hir = make_record_values_then_get_program(values_decl, get_decl, true, 1);
+    let decl_names = HashMap::from([
+        (values_decl, "values".to_string()),
+        (get_decl, "get".to_string()),
+    ]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("values of a record containing a bool field should be rejected");
+
+    assert!(
+        err.to_string()
+            .contains("values supports only integer scalar record fields"),
         "unexpected error: {err}"
     );
 }
