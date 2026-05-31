@@ -2097,6 +2097,12 @@ mod tests {
         matches!(field, CtxField::KStack | CtxField::UStack)
     }
 
+    fn push_unique_field(fields: &mut Vec<CtxField>, field: CtxField) {
+        if !fields.contains(&field) {
+            fields.push(field);
+        }
+    }
+
     #[test]
     fn test_context_access_surface_tables_are_unique() {
         for (table_name, surfaces) in [
@@ -2538,6 +2544,82 @@ mod tests {
                         "{program_type:?} exposes ctx.{} backed by helper {}, but the helper is not allowed",
                         field.display_name(),
                         helper.name()
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_program_spec_context_load_metadata_respects_access_policy() {
+        let mut fields = Vec::new();
+        for (surface_fields, _) in BASE_CONTEXT_FIELD_ACCESS_SURFACES {
+            for field in *surface_fields {
+                push_unique_field(&mut fields, field.clone());
+            }
+        }
+        for field in [
+            CtxField::Arg(0),
+            CtxField::Arg(3),
+            CtxField::Arg(u8::MAX),
+            CtxField::ArgCount,
+            CtxField::RetVal,
+        ] {
+            push_unique_field(&mut fields, field);
+        }
+
+        for spec in [
+            "xdp:lo",
+            "socket_filter:tcp4:127.0.0.1:80",
+            "tc:lo:ingress",
+            "tc:lo:egress",
+            "cgroup_sock:/sys/fs/cgroup:sock_create",
+            "cgroup_sock:/sys/fs/cgroup:post_bind4",
+            "cgroup_sock_addr:/sys/fs/cgroup:connect4",
+            "cgroup_sock_addr:/sys/fs/cgroup:bind4",
+            "cgroup_sock_addr:/sys/fs/cgroup:sendmsg6",
+            "cgroup_sockopt:/sys/fs/cgroup:get",
+            "cgroup_sockopt:/sys/fs/cgroup:set",
+            "sk_lookup:/proc/self/ns/net",
+            "flow_dissector:/proc/self/ns/net",
+            "netfilter:ipv4:pre_routing:priority=-100:defrag",
+            "sk_reuseport:select",
+            "sk_reuseport:migrate",
+            "sk_msg:/sys/fs/bpf/demo",
+            "sock_ops:/sys/fs/cgroup",
+            "cgroup_device:/sys/fs/cgroup",
+            "cgroup_sysctl:/sys/fs/cgroup",
+            "lirc_mode2:/dev/lirc0",
+            "perf_event:software:cpu-clock:period=100000",
+            "raw_tracepoint:sys_enter",
+            "raw_tracepoint.w:sys_enter",
+            "iter:task",
+            "iter:bpf_map_elem",
+            "iter:udp",
+        ] {
+            let spec = ProgramSpec::parse(spec).expect("program spec should parse");
+            for field in &fields {
+                if spec.ctx_field_access_error(field).is_some() {
+                    assert_eq!(
+                        spec.ctx_field_direct_load(field),
+                        None,
+                        "{} exposes direct-load metadata for rejected ctx.{}",
+                        spec,
+                        field.display_name()
+                    );
+                    assert_eq!(
+                        spec.ctx_field_array_load(field),
+                        None,
+                        "{} exposes array-load metadata for rejected ctx.{}",
+                        spec,
+                        field.display_name()
+                    );
+                    assert_eq!(
+                        spec.ctx_field_nested_load(field),
+                        None,
+                        "{} exposes nested-load metadata for rejected ctx.{}",
+                        spec,
+                        field.display_name()
                     );
                 }
             }
