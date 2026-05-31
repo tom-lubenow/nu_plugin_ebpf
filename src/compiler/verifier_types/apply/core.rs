@@ -188,6 +188,7 @@ pub(super) fn apply_binop_inst(
     rhs: &MirValue,
     slot_sizes: &HashMap<StackSlotId, i64>,
     state: &mut VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
 ) {
     if matches!(
         op,
@@ -221,11 +222,34 @@ pub(super) fn apply_binop_inst(
         return;
     }
 
+    if binop_has_pointer_operand(lhs, rhs, state, slot_sizes) {
+        errors.push(VerifierTypeError::new(
+            "binop requires scalar operands (pointer used)",
+        ));
+        state.set(dst, VerifierType::Unknown);
+        return;
+    }
+
     let range = range_for_binop(op, lhs, rhs, state);
     state.set_with_range(dst, VerifierType::Scalar, range);
     if let Some(src) = scalar_identity_source(op, lhs, rhs, state, slot_sizes) {
         state.set_scalar_alias(dst, src);
     }
+}
+
+fn binop_has_pointer_operand(
+    lhs: &MirValue,
+    rhs: &MirValue,
+    state: &VerifierState,
+    slot_sizes: &HashMap<StackSlotId, i64>,
+) -> bool {
+    matches!(
+        value_type(lhs, state, slot_sizes),
+        VerifierType::Ptr { .. } | VerifierType::StalePacketPtr
+    ) || matches!(
+        value_type(rhs, state, slot_sizes),
+        VerifierType::Ptr { .. } | VerifierType::StalePacketPtr
+    )
 }
 
 fn scalar_identity_source(

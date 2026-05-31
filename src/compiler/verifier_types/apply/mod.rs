@@ -70,7 +70,7 @@ pub(super) fn apply_inst(
             apply_store_slot_inst(*slot, *offset, ty, slot_sizes, errors);
         }
         MirInst::BinOp { dst, op, lhs, rhs } => {
-            apply_binop_inst(*dst, *op, lhs, rhs, slot_sizes, state);
+            apply_binop_inst(*dst, *op, lhs, rhs, slot_sizes, state, errors);
         }
         MirInst::UnaryOp { dst, op, src } => {
             apply_unary_inst(*dst, *op, src, state);

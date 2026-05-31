@@ -164,6 +164,43 @@ fn test_stack_pointer_offset_in_bounds() {
 }
 
 #[test]
+fn test_rejects_pointer_pointer_binop() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let left_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let right_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let left = func.alloc_vreg();
+    let right = func.alloc_vreg();
+    let out = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: left,
+        src: MirValue::StackSlot(left_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: right,
+        src: MirValue::StackSlot(right_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: out,
+        op: BinOpKind::Add,
+        lhs: MirValue::VReg(left),
+        rhs: MirValue::VReg(right),
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let err = verify_mir(&func, &HashMap::new()).expect_err("expected pointer binop error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("binop requires scalar operands")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_stack_pointer_loop_counter_range_in_bounds() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
