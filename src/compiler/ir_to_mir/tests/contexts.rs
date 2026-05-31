@@ -13,6 +13,10 @@ use nu_protocol::ast::{CellPath, Comparison, Operator, PathMember};
 use nu_protocol::{DeclId, RegId, VarId};
 use std::collections::{BTreeSet, HashMap};
 
+const BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB: i64 = 4;
+const BPF_SOCK_OPS_HDR_OPT_LEN_CB: i64 = 14;
+const BPF_SOCK_OPS_TSTAMP_SCHED_CB: i64 = 16;
+
 fn make_returned_context_upsert_program(
     path: CellPath,
     lit: HirLiteral,
@@ -1530,6 +1534,241 @@ fn assert_ctx_field_load_compiles_with_floor(
         program.context_field_compatibility_minimum_kernel(),
         Some(expected_minimum_kernel),
         "{program_label} ctx.{field_name} should report its context-field floor"
+    );
+}
+
+fn make_discarded_ctx_path_program(path: CellPath) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(path)),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(1),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(2) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 4],
+        ast: vec![None; 4],
+        comments: vec![],
+        register_count: 3,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
+fn assert_discarded_ctx_field_load_compiles_with_floor(
+    program_type: EbpfProgramType,
+    target: &str,
+    field_name: &str,
+    expected_field: CtxField,
+    expected_minimum_kernel: &str,
+) {
+    let hir = make_discarded_ctx_path_program(CellPath {
+        members: vec![string_member(field_name)],
+    });
+    let probe_ctx = ProbeContext::new(program_type, target);
+    let program_label = program_type.canonical_prefix();
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .unwrap_or_else(|err| panic!("{program_label} ctx.{field_name} should lower: {err}"));
+
+    assert!(
+        result.program.main.blocks.iter().any(|block| {
+            block.instructions.iter().any(|inst| {
+                matches!(
+                    inst,
+                    MirInst::LoadCtxField {
+                        field,
+                        slot: Some(_),
+                        ..
+                    } if field == &expected_field
+                )
+            })
+        }),
+        "{program_label} ctx.{field_name} should load stack-backed {expected_field:?}"
+    );
+
+    let compiled =
+        compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{program_label} ctx.{field_name} should compile: {err}"));
+    assert!(
+        compiled.used_ctx_fields.contains(&expected_field),
+        "{program_label} ctx.{field_name} should preserve {expected_field:?} compatibility metadata"
+    );
+    let program =
+        compiled.into_program(program_type, target, "main", HashMap::new(), HashMap::new());
+    assert_eq!(
+        program.context_field_compatibility_minimum_kernel(),
+        Some(expected_minimum_kernel),
+        "{program_label} ctx.{field_name} should report its context-field floor"
+    );
+}
+
+fn make_guarded_return_ctx_path_program(path: CellPath, callback_op: i64) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let func = HirFunction {
+        blocks: vec![
+            HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(0),
+                        var_id: ctx_var,
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::CellPath(Box::new(CellPath {
+                            members: vec![string_member("op")],
+                        })),
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(0),
+                        path: RegId::new(1),
+                    },
+                    HirStmt::Move {
+                        dst: RegId::new(3),
+                        src: RegId::new(0),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::Int(callback_op),
+                    },
+                    HirStmt::BinaryOp {
+                        lhs_dst: RegId::new(3),
+                        op: Operator::Comparison(Comparison::Equal),
+                        rhs: RegId::new(2),
+                    },
+                ],
+                terminator: HirTerminator::BranchIf {
+                    cond: RegId::new(3),
+                    if_true: HirBlockId(1),
+                    if_false: HirBlockId(2),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(1),
+                stmts: vec![
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(4),
+                        var_id: ctx_var,
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(5),
+                        lit: HirLiteral::CellPath(Box::new(path)),
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(4),
+                        path: RegId::new(5),
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(4) },
+            },
+            HirBlock {
+                id: HirBlockId(2),
+                stmts: vec![HirStmt::LoadLiteral {
+                    dst: RegId::new(6),
+                    lit: HirLiteral::Int(1),
+                }],
+                terminator: HirTerminator::Return { src: RegId::new(6) },
+            },
+        ],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 11],
+        ast: vec![None; 11],
+        comments: vec![],
+        register_count: 7,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
+fn assert_guarded_ctx_field_load_compiles_with_floor(
+    field_name: &str,
+    expected_field: CtxField,
+    callback_op: i64,
+    expected_minimum_kernel: &str,
+) {
+    let hir = make_guarded_return_ctx_path_program(
+        CellPath {
+            members: vec![string_member(field_name)],
+        },
+        callback_op,
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+
+    let mut result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .unwrap_or_else(|err| panic!("guarded sock_ops ctx.{field_name} should lower: {err}"));
+
+    optimize_with_ssa_hints(
+        &mut result.program.main,
+        Some(&probe_ctx),
+        &mut result.type_hints.main,
+        &result.type_hints.main_stack_slots,
+        &result.type_hints.generic_map_value_types,
+    );
+
+    assert!(
+        result.program.main.blocks.iter().any(|block| {
+            block.instructions.iter().any(|inst| {
+                matches!(
+                    inst,
+                    MirInst::LoadCtxField { field, .. } if field == &expected_field
+                )
+            })
+        }),
+        "guarded sock_ops ctx.{field_name} should load {expected_field:?}"
+    );
+
+    let compiled =
+        compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("guarded sock_ops ctx.{field_name} should compile: {err}")
+            });
+    assert!(
+        compiled.used_ctx_fields.contains(&expected_field),
+        "guarded sock_ops ctx.{field_name} should preserve {expected_field:?} compatibility metadata"
+    );
+    let program = compiled.into_program(
+        EbpfProgramType::SockOps,
+        "/sys/fs/cgroup",
+        "main",
+        HashMap::new(),
+        HashMap::new(),
+    );
+    assert_eq!(
+        program.context_field_compatibility_minimum_kernel(),
+        Some(expected_minimum_kernel),
+        "guarded sock_ops ctx.{field_name} should report its context-field floor"
     );
 }
 
@@ -5822,85 +6061,97 @@ fn test_lower_sk_msg_ctx_socket_src_port_field() {
 }
 
 #[test]
-fn test_lower_sock_ops_ctx_op_field() {
-    let hir = make_ctx_path_program(CellPath {
-        members: vec![string_member("op")],
-    });
-    let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
-
-    let result = lower_hir_to_mir_with_hints(
-        &hir,
-        Some(&probe_ctx),
-        &HashMap::new(),
-        None,
-        &HashMap::new(),
-        &HashMap::new(),
-    )
-    .expect("sock_ops ctx.op should lower");
-
-    let block = result.program.main.block(result.program.main.entry);
-    assert!(block.instructions.iter().any(|inst| matches!(
-        inst,
-        MirInst::LoadCtxField {
-            field: CtxField::SockOp,
-            ..
-        }
-    )));
-}
-
-#[test]
-fn test_lower_sock_ops_ctx_args_field() {
-    let hir = make_ctx_path_program(CellPath {
-        members: vec![string_member("args")],
-    });
-    let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
-
-    let result = lower_hir_to_mir_with_hints(
-        &hir,
-        Some(&probe_ctx),
-        &HashMap::new(),
-        None,
-        &HashMap::new(),
-        &HashMap::new(),
-    )
-    .expect("sock_ops ctx.args should lower");
-
-    let block = result.program.main.block(result.program.main.entry);
-    assert!(block.instructions.iter().any(|inst| matches!(
-        inst,
-        MirInst::LoadCtxField {
-            field: CtxField::SockOpsArgs,
-            ..
-        }
-    )));
-}
-
-#[test]
-fn test_lower_sock_ops_ctx_reply_fields() {
-    for (field_name, expected_field) in [
-        ("reply", CtxField::SockOpsReply),
-        ("replylong", CtxField::SockOpsReplyLong),
+fn test_lower_sock_ops_scalar_context_fields_compile() {
+    for (field_name, expected_field, expected_minimum_kernel) in [
+        ("op", CtxField::SockOp, "4.14"),
+        ("reply", CtxField::SockOpsReply, "4.14"),
+        ("is_fullsock", CtxField::IsFullsock, "4.16"),
+        ("snd_cwnd", CtxField::SockOpsSndCwnd, "4.16"),
+        ("srtt_us", CtxField::SockOpsSrttUs, "4.16"),
+        ("cb_flags", CtxField::SockOpsCbFlags, "4.16"),
+        ("state", CtxField::SockState, "4.16"),
+        ("rtt_min", CtxField::SockOpsRttMin, "4.16"),
+        ("snd_ssthresh", CtxField::SockOpsSndSsthresh, "4.16"),
+        ("rcv_nxt", CtxField::SockOpsRcvNxt, "4.16"),
+        ("snd_nxt", CtxField::SockOpsSndNxt, "4.16"),
+        ("snd_una", CtxField::SockOpsSndUna, "4.16"),
+        ("mss_cache", CtxField::SockOpsMssCache, "4.16"),
+        ("ecn_flags", CtxField::SockOpsEcnFlags, "4.16"),
+        ("rate_delivered", CtxField::SockOpsRateDelivered, "4.16"),
+        ("rate_interval_us", CtxField::SockOpsRateIntervalUs, "4.16"),
+        ("packets_out", CtxField::SockOpsPacketsOut, "4.16"),
+        ("retrans_out", CtxField::SockOpsRetransOut, "4.16"),
+        ("total_retrans", CtxField::SockOpsTotalRetrans, "4.16"),
+        ("segs_in", CtxField::SockOpsSegsIn, "4.16"),
+        ("data_segs_in", CtxField::SockOpsDataSegsIn, "4.16"),
+        ("segs_out", CtxField::SockOpsSegsOut, "4.16"),
+        ("data_segs_out", CtxField::SockOpsDataSegsOut, "4.16"),
+        ("lost_out", CtxField::SockOpsLostOut, "4.16"),
+        ("sacked_out", CtxField::SockOpsSackedOut, "4.16"),
+        ("sk_txhash", CtxField::SockOpsSkTxhash, "4.16"),
+        ("bytes_received", CtxField::SockOpsBytesReceived, "4.16"),
+        ("bytes_acked", CtxField::SockOpsBytesAcked, "4.16"),
     ] {
-        let hir = make_ctx_path_program(CellPath {
-            members: vec![string_member(field_name)],
-        });
-        let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+        assert_ctx_field_load_compiles_with_floor(
+            EbpfProgramType::SockOps,
+            "/sys/fs/cgroup",
+            field_name,
+            expected_field,
+            expected_minimum_kernel,
+        );
+    }
+}
 
-        let result = lower_hir_to_mir_with_hints(
-            &hir,
-            Some(&probe_ctx),
-            &HashMap::new(),
-            None,
-            &HashMap::new(),
-            &HashMap::new(),
-        )
-        .unwrap_or_else(|err| panic!("sock_ops ctx.{field_name} should lower: {err}"));
+#[test]
+fn test_lower_sock_ops_guarded_packet_context_fields_compile() {
+    for (field_name, expected_field, callback_op, expected_minimum_kernel) in [
+        (
+            "packet_len",
+            CtxField::PacketLen,
+            BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB,
+            "5.10",
+        ),
+        (
+            "skb_len",
+            CtxField::SockOpsSkbLen,
+            BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB,
+            "5.10",
+        ),
+        (
+            "skb_tcp_flags",
+            CtxField::SockOpsSkbTcpFlags,
+            BPF_SOCK_OPS_HDR_OPT_LEN_CB,
+            "5.10",
+        ),
+        (
+            "skb_hwtstamp",
+            CtxField::SockOpsSkbHwtstamp,
+            BPF_SOCK_OPS_TSTAMP_SCHED_CB,
+            "6.2",
+        ),
+    ] {
+        assert_guarded_ctx_field_load_compiles_with_floor(
+            field_name,
+            expected_field,
+            callback_op,
+            expected_minimum_kernel,
+        );
+    }
+}
 
-        let block = result.program.main.block(result.program.main.entry);
-        assert!(block.instructions.iter().any(|inst| matches!(
-            inst,
-            MirInst::LoadCtxField { field, .. } if field == &expected_field
-        )));
+#[test]
+fn test_lower_sock_ops_stack_backed_context_fields_compile_when_discarded() {
+    for (field_name, expected_field, expected_minimum_kernel) in [
+        ("replylong", CtxField::SockOpsReplyLong, "4.14"),
+        ("args", CtxField::SockOpsArgs, "4.16"),
+    ] {
+        assert_discarded_ctx_field_load_compiles_with_floor(
+            EbpfProgramType::SockOps,
+            "/sys/fs/cgroup",
+            field_name,
+            expected_field,
+            expected_minimum_kernel,
+        );
     }
 }
 
@@ -6457,87 +6708,6 @@ fn test_lower_sock_ops_ctx_sk_txhash_assignment() {
 }
 
 #[test]
-fn test_lower_sock_ops_ctx_snd_cwnd_field() {
-    let hir = make_ctx_path_program(CellPath {
-        members: vec![string_member("snd_cwnd")],
-    });
-    let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
-
-    let result = lower_hir_to_mir_with_hints(
-        &hir,
-        Some(&probe_ctx),
-        &HashMap::new(),
-        None,
-        &HashMap::new(),
-        &HashMap::new(),
-    )
-    .expect("sock_ops ctx.snd_cwnd should lower");
-
-    let block = result.program.main.block(result.program.main.entry);
-    assert!(block.instructions.iter().any(|inst| matches!(
-        inst,
-        MirInst::LoadCtxField {
-            field: CtxField::SockOpsSndCwnd,
-            ..
-        }
-    )));
-}
-
-#[test]
-fn test_lower_sock_ops_ctx_snd_nxt_field() {
-    let hir = make_ctx_path_program(CellPath {
-        members: vec![string_member("snd_nxt")],
-    });
-    let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
-
-    let result = lower_hir_to_mir_with_hints(
-        &hir,
-        Some(&probe_ctx),
-        &HashMap::new(),
-        None,
-        &HashMap::new(),
-        &HashMap::new(),
-    )
-    .expect("sock_ops ctx.snd_nxt should lower");
-
-    let block = result.program.main.block(result.program.main.entry);
-    assert!(block.instructions.iter().any(|inst| matches!(
-        inst,
-        MirInst::LoadCtxField {
-            field: CtxField::SockOpsSndNxt,
-            ..
-        }
-    )));
-}
-
-#[test]
-fn test_lower_sock_ops_ctx_skb_len_field() {
-    let hir = make_ctx_path_program(CellPath {
-        members: vec![string_member("skb_len")],
-    });
-    let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
-
-    let result = lower_hir_to_mir_with_hints(
-        &hir,
-        Some(&probe_ctx),
-        &HashMap::new(),
-        None,
-        &HashMap::new(),
-        &HashMap::new(),
-    )
-    .expect("sock_ops ctx.skb_len should lower");
-
-    let block = result.program.main.block(result.program.main.entry);
-    assert!(block.instructions.iter().any(|inst| matches!(
-        inst,
-        MirInst::LoadCtxField {
-            field: CtxField::SockOpsSkbLen,
-            ..
-        }
-    )));
-}
-
-#[test]
 fn test_lower_sock_ops_ctx_socket_state_field() {
     for root in ["sk", "sock", "socket"] {
         let hir = make_ctx_path_program(CellPath {
@@ -6564,87 +6734,6 @@ fn test_lower_sock_ops_ctx_socket_state_field() {
             }
         )));
     }
-}
-
-#[test]
-fn test_lower_sock_ops_ctx_packet_len_field() {
-    let hir = make_ctx_path_program(CellPath {
-        members: vec![string_member("packet_len")],
-    });
-    let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
-
-    let result = lower_hir_to_mir_with_hints(
-        &hir,
-        Some(&probe_ctx),
-        &HashMap::new(),
-        None,
-        &HashMap::new(),
-        &HashMap::new(),
-    )
-    .expect("sock_ops ctx.packet_len should lower");
-
-    let block = result.program.main.block(result.program.main.entry);
-    assert!(block.instructions.iter().any(|inst| matches!(
-        inst,
-        MirInst::LoadCtxField {
-            field: CtxField::PacketLen,
-            ..
-        }
-    )));
-}
-
-#[test]
-fn test_lower_sock_ops_ctx_bytes_acked_field() {
-    let hir = make_ctx_path_program(CellPath {
-        members: vec![string_member("bytes_acked")],
-    });
-    let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
-
-    let result = lower_hir_to_mir_with_hints(
-        &hir,
-        Some(&probe_ctx),
-        &HashMap::new(),
-        None,
-        &HashMap::new(),
-        &HashMap::new(),
-    )
-    .expect("sock_ops ctx.bytes_acked should lower");
-
-    let block = result.program.main.block(result.program.main.entry);
-    assert!(block.instructions.iter().any(|inst| matches!(
-        inst,
-        MirInst::LoadCtxField {
-            field: CtxField::SockOpsBytesAcked,
-            ..
-        }
-    )));
-}
-
-#[test]
-fn test_lower_sock_ops_ctx_mss_cache_field() {
-    let hir = make_ctx_path_program(CellPath {
-        members: vec![string_member("mss_cache")],
-    });
-    let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
-
-    let result = lower_hir_to_mir_with_hints(
-        &hir,
-        Some(&probe_ctx),
-        &HashMap::new(),
-        None,
-        &HashMap::new(),
-        &HashMap::new(),
-    )
-    .expect("sock_ops ctx.mss_cache should lower");
-
-    let block = result.program.main.block(result.program.main.entry);
-    assert!(block.instructions.iter().any(|inst| matches!(
-        inst,
-        MirInst::LoadCtxField {
-            field: CtxField::SockOpsMssCache,
-            ..
-        }
-    )));
 }
 
 #[test]
