@@ -31132,6 +31132,21 @@ const FIXTURES = [
         error_contains: "helper 'bpf_loop' requires arg3 flags to be 0"
     }
     {
+        name: "bpf-loop-rejects-too-many-iterations"
+        category: "helper-state"
+        tags: [bpf-loop bounds reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_loop" 8388609 {|i cb| $i } "ctx" 0'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_loop' requires arg0 nr_loops"
+    }
+    {
         name: "user-ringbuf-drain-rejects-invalid-flags"
         category: "helper-state"
         tags: [user-ringbuf flags reject]

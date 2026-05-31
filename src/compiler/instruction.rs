@@ -14,6 +14,7 @@ const SKB_GET_TUNNEL_KEY_FLAGS: &[i64] = &[0, 1, 16, 17];
 const MAP_UPDATE_FLAGS: &[i64] = &[0, 1, 2];
 const MAP_PUSH_FLAGS: &[i64] = &[0, 2];
 const TIMER_INIT_FLAGS: &[i64] = &[0, 1, 7];
+const BPF_MAX_LOOPS: i64 = 8 * 1024 * 1024;
 
 pub(crate) fn scalar_range_contains_only_allowed_values(
     min: i64,
@@ -1205,6 +1206,11 @@ impl BpfHelper {
                 "helper 'bpf_timer_start' requires arg2 flags to contain only BPF_F_TIMER_* bits (0x03)",
             )),
             (Self::FindVma, 4) => Some((0, 0, "helper 'bpf_find_vma' requires arg4 flags to be 0")),
+            (Self::BpfLoop, 0) => Some((
+                0,
+                BPF_MAX_LOOPS,
+                "helper 'bpf_loop' requires arg0 nr_loops to be between 0 and BPF_MAX_LOOPS (8 * 1024 * 1024)",
+            )),
             (Self::BpfLoop, 3) => Some((0, 0, "helper 'bpf_loop' requires arg3 flags to be 0")),
             (Self::SysctlGetName, 3) => Some((
                 0,

@@ -1402,6 +1402,59 @@ fn test_type_error_bpf_loop_rejects_wrong_callback_signature() {
 }
 
 #[test]
+fn test_type_error_bpf_loop_rejects_too_many_iterations() {
+    let mut callback = MirFunction::with_name("loop_cb");
+    callback.param_count = 2;
+    let callback_entry = callback.alloc_block();
+    callback.entry = callback_entry;
+    callback.block_mut(callback_entry).terminator = MirInst::Return {
+        val: Some(MirValue::Const(0)),
+    };
+
+    let hints = vec![HashMap::from([(
+        VReg(1),
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Stack,
+        },
+    )])];
+    let stack_hints = vec![HashMap::new()];
+    let subfn_schemes =
+        infer_subfunction_schemes_with_hints(&[callback], None, Some(&hints), Some(&stack_hints))
+            .expect("expected callback scheme inference to succeed");
+
+    let mut func = make_test_function();
+    let callback_ctx = func.alloc_stack_slot(8, 8, StackSlotKind::Local);
+    let callback_fn = func.alloc_vreg();
+    let helper_ret = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadSubprogram {
+        dst: callback_fn,
+        subfn: SubfunctionId(0),
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst: helper_ret,
+        helper: BpfHelper::BpfLoop as u32,
+        args: vec![
+            MirValue::Const(8 * 1024 * 1024 + 1),
+            MirValue::VReg(callback_fn),
+            MirValue::StackSlot(callback_ctx),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new_with_env(None, Some(&subfn_schemes), None, None, None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_loop iteration bound error");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_loop' requires arg0 nr_loops")
+    }));
+}
+
+#[test]
 fn test_infer_user_ringbuf_drain_callback_subprogram_type() {
     let mut callback = MirFunction::with_name("user_ringbuf_cb");
     callback.param_count = 2;

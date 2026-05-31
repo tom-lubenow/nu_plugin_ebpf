@@ -1910,6 +1910,61 @@ fn test_verify_mir_bpf_loop_rejects_wrong_callback_signature() {
 }
 
 #[test]
+fn test_verify_mir_bpf_loop_rejects_too_many_iterations() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let callback_ctx = func.alloc_stack_slot(8, 8, StackSlotKind::Local);
+    let callback_fn = func.alloc_vreg();
+    let helper_ret = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadSubprogram {
+            dst: callback_fn,
+            subfn: SubfunctionId(0),
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: helper_ret,
+            helper: BpfHelper::BpfLoop as u32,
+            args: vec![
+                MirValue::Const(8 * 1024 * 1024 + 1),
+                MirValue::VReg(callback_fn),
+                MirValue::StackSlot(callback_ctx),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        callback_fn,
+        MirType::Subprogram {
+            args: vec![
+                MirType::I64,
+                MirType::Ptr {
+                    pointee: Box::new(MirType::U8),
+                    address_space: AddressSpace::Stack,
+                },
+            ],
+            ret: Box::new(MirType::I64),
+        },
+    );
+    types.insert(helper_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected bpf_loop iteration bound error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_loop' requires arg0 nr_loops")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_callback_dynptr_param_seeds_initialized_stack_slot() {
     let mut func = MirFunction::new();
     func.param_count = 2;

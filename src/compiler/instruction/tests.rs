@@ -8048,6 +8048,14 @@ fn test_callback_helper_flag_contracts() {
         Some((0, 0, "helper 'bpf_loop' requires arg3 flags to be 0"))
     );
     assert_eq!(
+        BpfHelper::BpfLoop.scalar_arg_range_requirement(0),
+        Some((
+            0,
+            8 * 1024 * 1024,
+            "helper 'bpf_loop' requires arg0 nr_loops to be between 0 and BPF_MAX_LOOPS (8 * 1024 * 1024)"
+        ))
+    );
+    assert_eq!(
         BpfHelper::UserRingbufDrain.scalar_arg_range_requirement(3),
         Some((
             0,
