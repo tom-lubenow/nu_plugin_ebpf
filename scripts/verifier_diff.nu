@@ -6426,6 +6426,18 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         target: "tc:lo:ingress"
         program: [
             '{|ctx|'
+            '  let base = { socket: $ctx.sk }'
+            '  let rec = ($base | upsert ok true)'
+            '  $rec.socket.family | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:family" "ctx:sk" "helper:bpf_probe_read_kernel"]
+    }
+    {
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
             '  def wrap [sock] { { ok: true } | upsert socket $sock }'
             '  let rec = (wrap $ctx.sk)'
             '  $rec.socket.family | count'
@@ -18264,6 +18276,22 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  let rec = ({ ok: true } | upsert socket $ctx.sk)'
+            '  $rec.socket.family | count'
+            '  "ok"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tc-record-socket-context-pipeline-preserve"
+        category: "context-surface"
+        tags: [tc context socket record upsert preserve source metadata]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let base = { socket: $ctx.sk }'
+            '  let rec = ($base | upsert ok true)'
             '  $rec.socket.family | count'
             '  "ok"'
             '}'
@@ -39133,6 +39161,112 @@ def record-command-field-value [tail: string] {
     }
 }
 
+def record-pipeline-input-token [raw: string] {
+    let input = (
+        $raw
+        | str trim
+        | split row "|"
+        | first
+        | str trim
+    )
+    trim-simple-parentheses $input
+}
+
+def record-pipeline-command-field-names [raw: string] {
+    mut names = []
+
+    for command in [insert update upsert] {
+        for tail in (command-invocation-tails $raw $command) {
+            let field_value = (record-command-field-value $tail)
+            if $field_value == null {
+                continue
+            }
+            if $field_value.field not-in $names {
+                $names = ($names | append $field_value.field)
+            }
+        }
+    }
+
+    $names
+}
+
+def record-pipeline-preserved-context-fields [raw: string context_names bound_aliases identity_wrappers root_wrapper_defs aliases] {
+    let updated_fields = (record-pipeline-command-field-names $raw)
+    if ($updated_fields | is-empty) {
+        return []
+    }
+
+    let input = (record-pipeline-input-token $raw)
+    mut fields = (
+        record-literal-context-fields
+            $input
+            $context_names
+            $bound_aliases
+            $identity_wrappers
+            $root_wrapper_defs
+    )
+
+    for parsed in (
+        $input
+        | parse --regex '^\$(?P<name>[A-Za-z_][A-Za-z0-9_-]*)$'
+    ) {
+        for alias in ($aliases | where {|alias| $alias.name == $parsed.name }) {
+            $fields = ($fields | append {
+                field: $alias.field
+                root: ($alias | get -o root | default "")
+            })
+        }
+    }
+
+    mut preserved = []
+    for field in $fields {
+        if $field.field in $updated_fields {
+            continue
+        }
+        if (
+            $preserved
+            | any {|existing|
+                (
+                    $existing.field == $field.field
+                    and (($existing | get -o root | default "") == ($field | get -o root | default ""))
+                )
+            }
+        ) {
+            continue
+        }
+        $preserved = ($preserved | append {
+            field: $field.field
+            root: ($field | get -o root | default "")
+        })
+    }
+
+    $preserved
+}
+
+def record-pipeline-preserved-context-bindings [line: string context_names bound_aliases identity_wrappers root_wrapper_defs aliases] {
+    mut bindings = []
+
+    for assignment in (declaration-assignments $line) {
+        for field in (
+            record-pipeline-preserved-context-fields
+                (declaration-rhs-token $assignment)
+                $context_names
+                $bound_aliases
+                $identity_wrappers
+                $root_wrapper_defs
+                $aliases
+        ) {
+            $bindings = ($bindings | append {
+                name: $assignment.name
+                field: $field.field
+                root: ($field | get -o root | default "")
+            })
+        }
+    }
+
+    $bindings
+}
+
 def record-pipeline-context-fields [raw: string context_names bound_aliases identity_wrappers root_wrapper_defs] {
     mut fields = []
 
@@ -39431,6 +39565,7 @@ def record-context-wrapper-definitions [source: string] {
                 | append (record-wrapper-context-bindings $line [$function.param] $root_aliases $base_wrapper_defs)
                 | append (record-upsert-context-bindings $line [$function.param] $root_aliases)
                 | append (record-pipeline-context-bindings $line [$function.param] $root_aliases $identity_wrappers $root_wrapper_defs)
+                | append (record-pipeline-preserved-context-bindings $line [$function.param] $root_aliases $identity_wrappers $root_wrapper_defs $aliases)
                 | append (record-spread-context-bindings $line $aliases)
             )
             for binding in $bindings {
@@ -39460,6 +39595,7 @@ def record-context-wrapper-definitions [source: string] {
                 (record-literal-context-fields $trimmed [$function.param] $root_aliases $identity_wrappers $root_wrapper_defs)
                 | append (record-literal-spread-context-fields $trimmed $aliases)
                 | append (record-pipeline-context-fields $trimmed [$function.param] $root_aliases $identity_wrappers $root_wrapper_defs)
+                | append (record-pipeline-preserved-context-fields $trimmed [$function.param] $root_aliases $identity_wrappers $root_wrapper_defs $aliases)
             )
             for field in $returned_fields {
                 if (
@@ -39719,6 +39855,7 @@ def program-record-context-aliases [source: string context_names] {
                 | append (record-wrapper-context-bindings $line $context_names $bound_aliases $wrapper_defs)
                 | append (record-upsert-context-bindings $line $context_names $bound_aliases)
                 | append (record-pipeline-context-bindings $line $context_names $bound_aliases $identity_wrappers $root_wrapper_defs)
+                | append (record-pipeline-preserved-context-bindings $line $context_names $bound_aliases $identity_wrappers $root_wrapper_defs $aliases)
                 | append (record-spread-context-bindings $line $aliases)
             )
             for binding in $bindings {
