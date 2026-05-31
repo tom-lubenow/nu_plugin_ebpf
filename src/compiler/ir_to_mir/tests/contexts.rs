@@ -10659,6 +10659,123 @@ fn test_lower_record_context_assignment_records_context_compatibility_fields() {
 }
 
 #[test]
+fn test_lower_cgroup_sock_addr_alias_assignments_record_context_compatibility_fields() {
+    fn assert_alias_assignment_metadata(
+        hir: HirProgram,
+        target: &'static str,
+        field: CtxField,
+        minimum_kernel: &'static str,
+        label: &'static str,
+    ) {
+        let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockAddr, target);
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            Some(&probe_ctx),
+            &HashMap::new(),
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("{label} should lower: {err}"));
+
+        assert!(
+            result.type_hints.used_ctx_fields.contains(&field),
+            "{label} should preserve source-level context compatibility metadata for ctx.{}",
+            field.display_name()
+        );
+
+        let compiled = compile_mir_to_ebpf_with_hints(
+            &result.program,
+            Some(&probe_ctx),
+            Some(&result.type_hints),
+        )
+        .unwrap_or_else(|err| panic!("{label} should compile: {err}"));
+        assert!(
+            compiled.used_ctx_fields.contains(&field),
+            "{label} should carry ctx.{} through codegen metadata",
+            field.display_name()
+        );
+
+        let program = compiled.into_program(
+            EbpfProgramType::CgroupSockAddr,
+            target,
+            "main",
+            HashMap::new(),
+            HashMap::new(),
+        );
+        let requirement = program
+            .context_field_compatibility_requirements()
+            .into_iter()
+            .find(|requirement| requirement.field() == &field)
+            .unwrap_or_else(|| {
+                panic!(
+                    "{label} should report context compatibility for ctx.{}",
+                    field.display_name()
+                )
+            });
+        assert_eq!(requirement.minimum_kernel(), minimum_kernel);
+        assert_eq!(
+            program.context_field_compatibility_minimum_kernel(),
+            Some(minimum_kernel)
+        );
+    }
+
+    for (target, path, lit, field, minimum_kernel) in [
+        (
+            "/sys/fs/cgroup:connect4",
+            CellPath {
+                members: vec![string_member("remote_ip4")],
+            },
+            HirLiteral::Int(0x7f000001),
+            CtxField::RemoteIp4,
+            "4.17",
+        ),
+        (
+            "/sys/fs/cgroup:connect6",
+            CellPath {
+                members: vec![string_member("remote_ip6"), int_member(0)],
+            },
+            HirLiteral::Int(1),
+            CtxField::RemoteIp6,
+            "4.17",
+        ),
+        (
+            "/sys/fs/cgroup:sendmsg4",
+            CellPath {
+                members: vec![string_member("local_ip4")],
+            },
+            HirLiteral::Int(0x7f000001),
+            CtxField::LocalIp4,
+            "4.18",
+        ),
+        (
+            "/sys/fs/cgroup:sendmsg6",
+            CellPath {
+                members: vec![string_member("local_ip6"), int_member(1)],
+            },
+            HirLiteral::Int(1),
+            CtxField::LocalIp6,
+            "4.18",
+        ),
+    ] {
+        assert_alias_assignment_metadata(
+            make_ctx_upsert_program(path.clone(), lit.clone()),
+            target,
+            field.clone(),
+            minimum_kernel,
+            "direct cgroup_sock_addr tuple-alias assignment",
+        );
+        assert_alias_assignment_metadata(
+            make_record_context_upsert_program("event", path, lit),
+            target,
+            field,
+            minimum_kernel,
+            "record-held cgroup_sock_addr tuple-alias assignment",
+        );
+    }
+}
+
+#[test]
 fn test_lower_cgroup_skb_egress_ctx_tstamp_assignment() {
     let hir = make_ctx_upsert_program(
         CellPath {

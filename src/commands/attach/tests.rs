@@ -12529,6 +12529,50 @@ fn test_context_write_program_reports_direct_field_compatibility() {
             "4.14",
         ),
         (
+            EbpfProgramType::CgroupSockAddr,
+            "/sys/fs/cgroup:connect4",
+            CellPath {
+                members: vec![string_member("remote_ip4")],
+            },
+            HirLiteral::Int(0x7f000001),
+            HirLiteral::String(b"allow".to_vec()),
+            CtxField::RemoteIp4,
+            "4.17",
+        ),
+        (
+            EbpfProgramType::CgroupSockAddr,
+            "/sys/fs/cgroup:connect6",
+            CellPath {
+                members: vec![string_member("remote_ip6"), int_member(0)],
+            },
+            HirLiteral::Int(1),
+            HirLiteral::String(b"allow".to_vec()),
+            CtxField::RemoteIp6,
+            "4.17",
+        ),
+        (
+            EbpfProgramType::CgroupSockAddr,
+            "/sys/fs/cgroup:sendmsg4",
+            CellPath {
+                members: vec![string_member("local_ip4")],
+            },
+            HirLiteral::Int(0x7f000001),
+            HirLiteral::String(b"allow".to_vec()),
+            CtxField::LocalIp4,
+            "4.18",
+        ),
+        (
+            EbpfProgramType::CgroupSockAddr,
+            "/sys/fs/cgroup:sendmsg6",
+            CellPath {
+                members: vec![string_member("local_ip6"), int_member(1)],
+            },
+            HirLiteral::Int(1),
+            HirLiteral::String(b"allow".to_vec()),
+            CtxField::LocalIp6,
+            "4.18",
+        ),
+        (
             EbpfProgramType::TcAction,
             "demo-action",
             CellPath {
