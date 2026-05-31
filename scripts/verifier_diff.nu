@@ -32565,6 +32565,46 @@ const FIXTURES = [
         error_contains: "sort supports stack-backed numeric lists with capacity <= 16"
     }
     {
+        name: "core-list-compact"
+        category: "language-core"
+        tags: [aggregate list compact]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [10 20 30] | compact | get 1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-list-compact-empty"
+        category: "language-core"
+        tags: [aggregate list compact empty]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [10 20 30] | compact --empty | get 1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-list-compact-column-reject"
+        category: "language-core"
+        tags: [aggregate list compact reject]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [10 20 30] | compact value'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "compact does not accept column arguments"
+    }
+    {
         name: "core-list-drop-default"
         category: "language-core"
         tags: [aggregate list drop]

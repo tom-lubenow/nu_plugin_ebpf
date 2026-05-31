@@ -2521,6 +2521,104 @@ fn test_lower_sort_large_numeric_list_capacity_is_rejected() {
 }
 
 #[test]
+fn test_lower_compact_on_numeric_list_is_passthrough() {
+    let compact_decl = DeclId::new(126);
+    let get_decl = DeclId::new(127);
+    let hir = make_numeric_list_call_then_get_program(compact_decl, get_decl, None, 1);
+    let decl_names = HashMap::from([
+        (compact_decl, "compact".to_string()),
+        (get_decl, "get".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("compact should lower as identity on stack-backed numeric lists");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::Copy {
+                src: MirValue::VReg(_),
+                ..
+            }
+        )),
+        "expected compact to pass through the tracked list pointer"
+    );
+    assert!(
+        instructions
+            .iter()
+            .all(|inst| !matches!(inst, MirInst::ListPush { .. })),
+        "compact should not rebuild numeric lists that cannot contain null values"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("compact followed by get should compile through codegen");
+}
+
+#[test]
+fn test_lower_compact_empty_on_numeric_list_is_passthrough() {
+    let compact_decl = DeclId::new(128);
+    let get_decl = DeclId::new(129);
+    let mut hir = make_numeric_list_call_then_get_program(compact_decl, get_decl, None, 1);
+    let HirStmt::Call { args, .. } = &mut hir.main.blocks[0].stmts[1] else {
+        panic!("expected compact call");
+    };
+    args.flags.push(b"empty".to_vec());
+    let decl_names = HashMap::from([
+        (compact_decl, "compact".to_string()),
+        (get_decl, "get".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("compact --empty should still be identity on stack-backed numeric lists");
+
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("compact --empty followed by get should compile through codegen");
+}
+
+#[test]
+fn test_lower_compact_column_argument_on_numeric_list_is_rejected() {
+    let compact_decl = DeclId::new(130);
+    let hir = make_numeric_list_pipeline_call_program(compact_decl, Some(0));
+    let decl_names = HashMap::from([(compact_decl, "compact".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("compact column arguments should be rejected for numeric lists");
+
+    assert!(
+        err.to_string()
+            .contains("compact does not accept column arguments"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn test_lower_length_on_null_returns_zero() {
     let length_decl = DeclId::new(105);
     let func = HirFunction {
