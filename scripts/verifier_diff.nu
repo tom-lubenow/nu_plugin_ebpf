@@ -37540,12 +37540,30 @@ def program-record-context-aliases [source: string context_names] {
     $aliases
 }
 
+def source-has-non-context-record-projection? [source: string context_names] {
+    for line in ($source | lines) {
+        for parsed in (
+            $line
+            | parse --regex '\$(?P<name>[A-Za-z_][A-Za-z0-9_-]*)\.[A-Za-z_][A-Za-z0-9_-]*\.'
+        ) {
+            if $parsed.name not-in $context_names {
+                return true
+            }
+        }
+    }
+
+    false
+}
+
 def record-context-projection-kernel-features [source: string target context_names] {
     if (
         not ($source | str contains "let")
         and not ($source | str contains "mut")
         and not ($source | str contains "def ")
     ) {
+        return []
+    }
+    if not (source-has-non-context-record-projection? $source $context_names) {
         return []
     }
 
