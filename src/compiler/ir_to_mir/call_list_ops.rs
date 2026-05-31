@@ -49,6 +49,117 @@ impl<'a> HirToMirLowering<'a> {
         })
     }
 
+    pub(super) fn lower_stack_list_first_or_last_scalar(
+        &mut self,
+        cmd_name: &str,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+    ) -> Result<(), CompileError> {
+        let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
+        let input_reg = self
+            .pipeline_input_reg
+            .or(src_dst_had_value.then_some(src_dst));
+
+        if !matches!(cmd_name, "first" | "last") {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "unsupported stack list scalar command '{cmd_name}'"
+            )));
+        }
+        if !self.named_flags.is_empty()
+            || !self.named_args.is_empty()
+            || !self.positional_args.is_empty()
+        {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} does not accept arguments in scalar eBPF list lowering"
+            )));
+        }
+
+        let Some(input_reg) = input_reg else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires a pipeline input in eBPF"
+            )));
+        };
+        let input_meta = self.get_metadata(input_reg).cloned();
+
+        if input_meta
+            .as_ref()
+            .and_then(|meta| meta.list_buffer)
+            .is_some()
+        {
+            let input_meta = input_meta.expect("checked stack-list metadata");
+            let Some(known_len) = Self::numeric_list_known_len(&input_meta) else {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{cmd_name} requires a stack-backed numeric list with known non-empty length in eBPF"
+                )));
+            };
+            if known_len == 0 {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{cmd_name} requires a non-empty stack-backed numeric list in eBPF"
+                )));
+            }
+
+            let result_vreg = if src_dst_had_value {
+                self.assign_fresh_vreg(src_dst)
+            } else {
+                dst_vreg
+            };
+
+            let idx = if cmd_name == "first" {
+                MirValue::Const(0)
+            } else {
+                let len_vreg = self.func.alloc_vreg();
+                let idx_vreg = self.func.alloc_vreg();
+                self.emit(MirInst::ListLen {
+                    dst: len_vreg,
+                    list: input_vreg,
+                });
+                self.vreg_type_hints.insert(len_vreg, MirType::U64);
+                self.emit(MirInst::BinOp {
+                    dst: idx_vreg,
+                    op: BinOpKind::Sub,
+                    lhs: MirValue::VReg(len_vreg),
+                    rhs: MirValue::Const(1),
+                });
+                self.vreg_type_hints.insert(idx_vreg, MirType::U64);
+                MirValue::VReg(idx_vreg)
+            };
+
+            self.emit(MirInst::ListGet {
+                dst: result_vreg,
+                list: input_vreg,
+                idx,
+            });
+            self.reset_call_result_metadata(src_dst);
+            let out_meta = self.get_or_create_metadata(src_dst);
+            out_meta.field_type = Some(MirType::I64);
+            out_meta.constant_value = match &input_meta.constant_value {
+                Some(nu_protocol::Value::List { vals, .. }) => {
+                    if cmd_name == "first" {
+                        vals.first().cloned()
+                    } else {
+                        vals.last().cloned()
+                    }
+                }
+                _ => None,
+            };
+            self.vreg_type_hints.insert(result_vreg, MirType::I64);
+        } else {
+            let result_vreg = if src_dst_had_value {
+                self.assign_fresh_vreg(src_dst)
+            } else {
+                dst_vreg
+            };
+            self.emit(MirInst::Copy {
+                dst: result_vreg,
+                src: MirValue::VReg(input_vreg),
+            });
+            self.propagate_passthrough_reg_metadata(src_dst, result_vreg, input_reg, input_vreg);
+        }
+
+        Ok(())
+    }
+
     pub(super) fn lower_stack_list_take_skip_or_drop(
         &mut self,
         cmd_name: &str,

@@ -2899,11 +2899,6 @@ impl<'a> HirToMirLowering<'a> {
             }
 
             "first" | "last" => {
-                let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
-                let input_reg = self
-                    .pipeline_input_reg
-                    .or(src_dst_had_value.then_some(src_dst));
-
                 if !self.named_flags.is_empty() || !self.named_args.is_empty() {
                     return Err(CompileError::UnsupportedInstruction(format!(
                         "{cmd_name} does not accept named flags or arguments in eBPF"
@@ -2925,52 +2920,12 @@ impl<'a> HirToMirLowering<'a> {
                     return Ok(());
                 }
 
-                let input_meta = input_reg.and_then(|reg| self.get_metadata(reg).cloned());
-                if input_meta
-                    .as_ref()
-                    .and_then(|meta| meta.list_buffer)
-                    .is_some()
-                {
-                    let idx = if cmd_name == "first" {
-                        MirValue::Const(0)
-                    } else {
-                        let len_vreg = self.func.alloc_vreg();
-                        let idx_vreg = self.func.alloc_vreg();
-                        self.emit(MirInst::ListLen {
-                            dst: len_vreg,
-                            list: input_vreg,
-                        });
-                        self.vreg_type_hints.insert(len_vreg, MirType::U64);
-                        self.emit(MirInst::BinOp {
-                            dst: idx_vreg,
-                            op: BinOpKind::Sub,
-                            lhs: MirValue::VReg(len_vreg),
-                            rhs: MirValue::Const(1),
-                        });
-                        self.vreg_type_hints.insert(idx_vreg, MirType::U64);
-                        MirValue::VReg(idx_vreg)
-                    };
-
-                    self.emit(MirInst::ListGet {
-                        dst: dst_vreg,
-                        list: input_vreg,
-                        idx,
-                    });
-                    self.reset_call_result_metadata(src_dst);
-                    let out_meta = self.get_or_create_metadata(src_dst);
-                    out_meta.field_type = Some(MirType::I64);
-                    self.vreg_type_hints.insert(dst_vreg, MirType::I64);
-                } else if let Some(reg) = input_reg {
-                    self.emit(MirInst::Copy {
-                        dst: dst_vreg,
-                        src: MirValue::VReg(input_vreg),
-                    });
-                    self.propagate_passthrough_reg_metadata(src_dst, dst_vreg, reg, input_vreg);
-                } else {
-                    return Err(CompileError::UnsupportedInstruction(format!(
-                        "{cmd_name} requires a pipeline input in eBPF"
-                    )));
-                }
+                self.lower_stack_list_first_or_last_scalar(
+                    &cmd_name,
+                    src_dst,
+                    dst_vreg,
+                    src_dst_had_value,
+                )?;
             }
 
             _ => {

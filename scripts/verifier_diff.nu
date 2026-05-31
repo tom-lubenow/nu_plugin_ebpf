@@ -32366,6 +32366,34 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-list-first-empty-reject"
+        category: "language-core"
+        tags: [aggregate list first reject]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [] | first'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "first requires a non-empty stack-backed numeric list"
+    }
+    {
+        name: "core-list-last-empty-reject"
+        category: "language-core"
+        tags: [aggregate list last reject]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [] | last'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "last requires a non-empty stack-backed numeric list"
+    }
+    {
         name: "core-list-first-count"
         category: "language-core"
         tags: [aggregate list first]

@@ -62,6 +62,36 @@ fn make_numeric_list_pipeline_call_program(decl_id: DeclId, count: Option<i64>) 
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_empty_numeric_list_pipeline_call_program(decl_id: DeclId) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::list(Vec::new(), Span::test_data())),
+                },
+                HirStmt::Call {
+                    decl_id,
+                    src_dst: RegId::new(1),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 2,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_numeric_list_call_then_get_program(
     command_decl: DeclId,
     get_decl: DeclId,
@@ -817,6 +847,52 @@ fn test_lower_last_on_numeric_list_gets_length_minus_one() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("last on stack-backed numeric list should compile through codegen");
+}
+
+#[test]
+fn test_lower_first_on_empty_numeric_list_is_rejected() {
+    let first_decl = DeclId::new(86);
+    let hir = make_empty_numeric_list_pipeline_call_program(first_decl);
+    let decl_names = HashMap::from([(first_decl, "first".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("scalar first on an empty list should be rejected");
+
+    assert!(
+        err.to_string()
+            .contains("first requires a non-empty stack-backed numeric list"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_last_on_empty_numeric_list_is_rejected() {
+    let last_decl = DeclId::new(87);
+    let hir = make_empty_numeric_list_pipeline_call_program(last_decl);
+    let decl_names = HashMap::from([(last_decl, "last".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("scalar last on an empty list should be rejected");
+
+    assert!(
+        err.to_string()
+            .contains("last requires a non-empty stack-backed numeric list"),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]
