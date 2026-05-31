@@ -51,6 +51,7 @@ const NU_CLOSURE_COMMANDS: &[&str] = &[
     "str length",
     "str starts-with",
     "str ends-with",
+    "str contains",
     "length",
     "math max",
     "math min",

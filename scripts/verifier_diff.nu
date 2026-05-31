@@ -33134,6 +33134,32 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-string-contains"
+        category: "language-core"
+        tags: [string str contains]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "abcdef" | str contains "cd"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-string-contains-missing"
+        category: "language-core"
+        tags: [string str contains]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "abcdef" | str contains "zz"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-null-is-empty"
         category: "language-core"
         tags: ["null" is-empty]

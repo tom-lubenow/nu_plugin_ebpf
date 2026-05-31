@@ -2475,6 +2475,86 @@ fn test_lower_str_ends_with_suffix_longer_than_known_string_is_false() {
 }
 
 #[test]
+fn test_lower_str_contains_on_known_string_uses_offset_strcmps() {
+    let contains_decl = DeclId::new(122);
+    let hir = make_string_arg_pipeline_call_program(contains_decl, "abcdef", "cd");
+    let decl_names = HashMap::from([(contains_decl, "str contains".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str contains should lower on tracked strings with known lengths");
+
+    let comparisons = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .filter(|inst| matches!(inst, MirInst::StrCmp { len: 2, .. }))
+        .count();
+    assert_eq!(
+        comparisons, 5,
+        "expected str contains to test each possible fixed substring offset"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StrCmp {
+                    lhs_offset: 2,
+                    rhs_offset: 0,
+                    len: 2,
+                    ..
+                }
+            )),
+        "expected str contains to compare the matching middle offset"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("str contains on known tracked strings should compile through codegen");
+}
+
+#[test]
+fn test_lower_str_contains_too_long_substring_is_false() {
+    let contains_decl = DeclId::new(123);
+    let hir = make_string_arg_pipeline_call_program(contains_decl, "a", "abcdef");
+    let decl_names = HashMap::from([(contains_decl, "str contains".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str contains should prove impossible substrings false");
+
+    assert!(
+        !result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::StrCmp { .. })),
+        "expected too-long str contains substring to avoid out-of-slot StrCmp"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("false str contains result should compile through codegen");
+}
+
+#[test]
 fn test_lower_is_empty_on_metadata_record_uses_known_field_count() {
     let is_empty_decl = DeclId::new(114);
     let (hir, decl_names) = make_record_empty_predicate_program(is_empty_decl, "is-empty", false);
