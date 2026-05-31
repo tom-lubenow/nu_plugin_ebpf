@@ -392,6 +392,110 @@ impl<'a> HirToMirLowering<'a> {
         self.emit_metadata_record_result(src_dst, result_vreg, projected_meta)
     }
 
+    fn lower_metadata_record_insert_update_or_upsert(
+        &mut self,
+        cmd_name: &str,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+    ) -> Result<(), CompileError> {
+        let input_reg = self
+            .pipeline_input_reg
+            .or(src_dst_had_value.then_some(src_dst));
+
+        if !self.named_flags.is_empty() || !self.named_args.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} does not accept named flags or arguments in eBPF"
+            )));
+        }
+        if self.positional_args.len() != 2 {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires exactly one field name and one replacement value in eBPF"
+            )));
+        }
+
+        let (_, field_reg) = self.positional_args[0];
+        let (_, value_reg) = self.positional_args[1];
+        if self
+            .get_metadata(value_reg)
+            .is_some_and(|meta| meta.closure_block_id.is_some())
+        {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} closure replacement values are not supported in eBPF"
+            )));
+        }
+        let field_name = self.top_level_field_name_arg(field_reg, cmd_name)?;
+
+        let input_meta = input_reg
+            .and_then(|reg| self.get_metadata(reg).cloned())
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "{cmd_name} requires record input with compiler-known fields in eBPF"
+                ))
+            })?;
+        let input_is_known_empty_record = matches!(
+            input_meta.constant_value.as_ref(),
+            Some(nu_protocol::Value::Record { val, .. }) if val.is_empty()
+        );
+        if input_meta.record_fields.is_empty() && !input_is_known_empty_record {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires record input with compiler-known fields in eBPF"
+            )));
+        }
+
+        let mut fields = input_meta.record_fields.clone();
+        let existing_index = fields.iter().position(|field| field.name == field_name);
+        match (cmd_name, existing_index) {
+            ("insert", Some(_)) => {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "insert cannot replace existing record field '{field_name}'"
+                )));
+            }
+            ("update", None) => {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "update cannot find record field '{field_name}'"
+                )));
+            }
+            ("upsert", _) | ("insert", None) | ("update", Some(_)) => {}
+            _ => {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "unsupported metadata record command '{cmd_name}'"
+                )));
+            }
+        }
+
+        let replacement_field = self.record_field_from_value(field_name.clone(), value_reg)?;
+        if let Some(index) = existing_index {
+            fields[index] = replacement_field;
+        } else {
+            fields.push(replacement_field);
+        }
+
+        let replacement_constant = self
+            .get_metadata(value_reg)
+            .and_then(|meta| meta.constant_value.clone());
+        let constant_value = match (input_meta.constant_value.clone(), replacement_constant) {
+            (Some(nu_protocol::Value::Record { val, .. }), Some(value)) => {
+                let mut record = val.into_owned();
+                record.insert(field_name, value);
+                Some(nu_protocol::Value::record(record, Span::unknown()))
+            }
+            _ => None,
+        };
+
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+        let projected_meta = RegMetadata {
+            record_fields: fields,
+            constant_value,
+            ..Default::default()
+        };
+        self.emit_metadata_record_result(src_dst, result_vreg, projected_meta)
+    }
+
     fn lower_stack_list_append_or_prepend(
         &mut self,
         cmd_name: &str,
@@ -3102,6 +3206,15 @@ impl<'a> HirToMirLowering<'a> {
 
             "select" | "reject" => {
                 self.lower_metadata_record_select_or_reject(
+                    &cmd_name,
+                    src_dst,
+                    dst_vreg,
+                    src_dst_had_value,
+                )?;
+            }
+
+            "insert" | "update" | "upsert" => {
+                self.lower_metadata_record_insert_update_or_upsert(
                     &cmd_name,
                     src_dst,
                     dst_vreg,

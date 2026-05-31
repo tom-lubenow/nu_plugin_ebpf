@@ -283,6 +283,71 @@ fn make_record_projection_then_field_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_record_set_then_field_program(
+    command_decl: DeclId,
+    field: &str,
+    value: i64,
+    return_field: &str,
+) -> HirProgram {
+    let mut rec = Record::new();
+    rec.push("pid", Value::int(7, Span::test_data()));
+    rec.push("cpu", Value::int(2, Span::test_data()));
+
+    let field_reg = RegId::new(2);
+    let value_reg = RegId::new(3);
+    let path_reg = RegId::new(4);
+    let mut stmts = vec![
+        HirStmt::LoadValue {
+            dst: RegId::new(0),
+            val: Box::new(Value::record(rec, Span::test_data())),
+        },
+        HirStmt::LoadLiteral {
+            dst: field_reg,
+            lit: HirLiteral::CellPath(Box::new(CellPath {
+                members: vec![string_member(field)],
+            })),
+        },
+        HirStmt::LoadLiteral {
+            dst: value_reg,
+            lit: HirLiteral::Int(value),
+        },
+        HirStmt::Call {
+            decl_id: command_decl,
+            src_dst: RegId::new(1),
+            args: HirCallArgs {
+                positional: vec![field_reg, value_reg],
+                pipeline_input: Some(RegId::new(0)),
+                ..HirCallArgs::default()
+            },
+        },
+    ];
+    stmts.push(HirStmt::LoadLiteral {
+        dst: path_reg,
+        lit: HirLiteral::CellPath(Box::new(CellPath {
+            members: vec![string_member(return_field)],
+        })),
+    });
+    stmts.push(HirStmt::FollowCellPath {
+        src_dst: RegId::new(1),
+        path: path_reg,
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 5,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 #[test]
 fn test_lower_load_value_duration_as_const() {
     let func = HirFunction {
@@ -1471,6 +1536,132 @@ fn test_lower_select_missing_metadata_record_field_is_rejected() {
     assert!(
         err.to_string()
             .contains("cannot find record field 'missing'"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_insert_adds_metadata_record_field() {
+    let insert_decl = DeclId::new(97);
+    let hir = make_record_set_then_field_program(insert_decl, "mem", 9, "mem");
+    let decl_names = HashMap::from([(insert_decl, "insert".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("insert should add a missing metadata-backed record field");
+
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("insert-added record field projection should compile through codegen");
+}
+
+#[test]
+fn test_lower_update_replaces_metadata_record_field() {
+    let update_decl = DeclId::new(98);
+    let hir = make_record_set_then_field_program(update_decl, "pid", 9, "pid");
+    let decl_names = HashMap::from([(update_decl, "update".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("update should replace an existing metadata-backed record field");
+
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("updated record field projection should compile through codegen");
+}
+
+#[test]
+fn test_lower_upsert_adds_or_replaces_metadata_record_field() {
+    let upsert_decl = DeclId::new(99);
+    let insert_hir = make_record_set_then_field_program(upsert_decl, "mem", 9, "mem");
+    let update_hir = make_record_set_then_field_program(upsert_decl, "pid", 9, "pid");
+    let decl_names = HashMap::from([(upsert_decl, "upsert".to_string())]);
+
+    let insert_result = lower_hir_to_mir_with_hints(
+        &insert_hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("upsert should add a missing metadata-backed record field");
+    compile_mir_to_ebpf_with_hints(
+        &insert_result.program,
+        None,
+        Some(&insert_result.type_hints),
+    )
+    .expect("upsert-added record field projection should compile through codegen");
+
+    let update_result = lower_hir_to_mir_with_hints(
+        &update_hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("upsert should replace an existing metadata-backed record field");
+    compile_mir_to_ebpf_with_hints(
+        &update_result.program,
+        None,
+        Some(&update_result.type_hints),
+    )
+    .expect("upsert-updated record field projection should compile through codegen");
+}
+
+#[test]
+fn test_lower_insert_existing_metadata_record_field_is_rejected() {
+    let insert_decl = DeclId::new(100);
+    let hir = make_record_set_then_field_program(insert_decl, "pid", 9, "pid");
+    let decl_names = HashMap::from([(insert_decl, "insert".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("insert of an existing metadata-backed record field should be rejected");
+
+    assert!(
+        err.to_string()
+            .contains("insert cannot replace existing record field 'pid'"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_update_missing_metadata_record_field_is_rejected() {
+    let update_decl = DeclId::new(101);
+    let hir = make_record_set_then_field_program(update_decl, "mem", 9, "mem");
+    let decl_names = HashMap::from([(update_decl, "update".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("update of a missing metadata-backed record field should be rejected");
+
+    assert!(
+        err.to_string()
+            .contains("update cannot find record field 'mem'"),
         "unexpected error: {err}"
     );
 }
