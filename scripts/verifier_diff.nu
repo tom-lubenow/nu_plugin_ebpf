@@ -33225,6 +33225,32 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-string-downcase"
+        category: "language-core"
+        tags: [string str downcase]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "AbC" | str downcase | str starts-with "abc"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-string-upcase"
+        category: "language-core"
+        tags: [string str upcase]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "AbC" | str upcase | str starts-with "ABC"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-null-is-empty"
         category: "language-core"
         tags: ["null" is-empty]

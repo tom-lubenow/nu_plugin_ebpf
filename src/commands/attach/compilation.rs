@@ -55,6 +55,8 @@ const NU_CLOSURE_COMMANDS: &[&str] = &[
     "str index-of",
     "str replace",
     "str trim",
+    "str downcase",
+    "str upcase",
     "length",
     "math max",
     "math min",

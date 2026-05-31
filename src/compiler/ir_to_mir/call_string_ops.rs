@@ -494,26 +494,13 @@ impl<'a> HirToMirLowering<'a> {
             ));
         }
 
-        let input = input_reg
-            .and_then(|reg| self.get_metadata(reg).cloned())
-            .and_then(|meta| Self::exact_string_value(&meta))
-            .ok_or_else(|| {
-                CompileError::UnsupportedInstruction(
-                    "str replace requires compile-time known string input in eBPF".into(),
-                )
-            })?;
+        let input = self.exact_string_input(input_reg, "str replace")?;
         let find = self.literal_string_arg(self.positional_args[0].1, "str replace find")?;
         let replacement =
             self.literal_string_arg(self.positional_args[1].1, "str replace replacement")?;
 
         let output = input.replacen(&find, &replacement, 1);
-        self.reset_call_result_metadata(src_dst);
-        self.lower_string_like_literal(src_dst, result_vreg, output.as_bytes())?;
-        self.set_reg_constant_value(
-            src_dst,
-            Some(nu_protocol::Value::string(output, Span::unknown())),
-        );
-        Ok(())
+        self.lower_known_string_result(src_dst, result_vreg, output)
     }
 
     pub(super) fn lower_string_trim(
@@ -540,16 +527,72 @@ impl<'a> HirToMirLowering<'a> {
             ));
         }
 
-        let input = input_reg
+        let input = self.exact_string_input(input_reg, "str trim")?;
+
+        let output = input.trim().to_string();
+        self.lower_known_string_result(src_dst, result_vreg, output)
+    }
+
+    pub(super) fn lower_string_case(
+        &mut self,
+        command: &str,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+    ) -> Result<(), CompileError> {
+        let input_reg = self
+            .pipeline_input_reg
+            .or(src_dst_had_value.then_some(src_dst));
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+
+        if !self.named_flags.is_empty()
+            || !self.named_args.is_empty()
+            || !self.positional_args.is_empty()
+        {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{command} currently supports only the default no-argument form in eBPF"
+            )));
+        }
+
+        let input = self.exact_string_input(input_reg, command)?;
+        let output = match command {
+            "str downcase" => input.to_lowercase(),
+            "str upcase" => input.to_uppercase(),
+            _ => {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "unsupported string case command '{command}'"
+                )));
+            }
+        };
+
+        self.lower_known_string_result(src_dst, result_vreg, output)
+    }
+
+    fn exact_string_input(
+        &self,
+        input_reg: Option<RegId>,
+        command: &str,
+    ) -> Result<String, CompileError> {
+        input_reg
             .and_then(|reg| self.get_metadata(reg).cloned())
             .and_then(|meta| Self::exact_string_value(&meta))
             .ok_or_else(|| {
-                CompileError::UnsupportedInstruction(
-                    "str trim requires compile-time known string input in eBPF".into(),
-                )
-            })?;
+                CompileError::UnsupportedInstruction(format!(
+                    "{command} requires compile-time known string input in eBPF"
+                ))
+            })
+    }
 
-        let output = input.trim().to_string();
+    fn lower_known_string_result(
+        &mut self,
+        src_dst: RegId,
+        result_vreg: VReg,
+        output: String,
+    ) -> Result<(), CompileError> {
         self.reset_call_result_metadata(src_dst);
         self.lower_string_like_literal(src_dst, result_vreg, output.as_bytes())?;
         self.set_reg_constant_value(

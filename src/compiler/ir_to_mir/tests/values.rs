@@ -2891,6 +2891,88 @@ fn test_lower_str_trim_on_known_string_materializes_trimmed_literal() {
 }
 
 #[test]
+fn test_lower_str_downcase_on_known_string_materializes_lowercase_literal() {
+    let downcase_decl = DeclId::new(132);
+    let starts_with_decl = DeclId::new(133);
+    let hir =
+        make_string_command_then_starts_with_program(downcase_decl, starts_with_decl, "AbC", "abc");
+    let decl_names = HashMap::from([
+        (downcase_decl, "str downcase".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str downcase should lower for compile-time known string input");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"abc\0")
+            )),
+        "expected str downcase to materialize the lowercase string"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("str downcase result consumed by str starts-with should compile through codegen");
+}
+
+#[test]
+fn test_lower_str_upcase_on_known_string_materializes_uppercase_literal() {
+    let upcase_decl = DeclId::new(134);
+    let starts_with_decl = DeclId::new(135);
+    let hir =
+        make_string_command_then_starts_with_program(upcase_decl, starts_with_decl, "AbC", "ABC");
+    let decl_names = HashMap::from([
+        (upcase_decl, "str upcase".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str upcase should lower for compile-time known string input");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"ABC\0")
+            )),
+        "expected str upcase to materialize the uppercase string"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("str upcase result consumed by str starts-with should compile through codegen");
+}
+
+#[test]
 fn test_lower_is_empty_on_metadata_record_uses_known_field_count() {
     let is_empty_decl = DeclId::new(114);
     let (hir, decl_names) = make_record_empty_predicate_program(is_empty_decl, "is-empty", false);
