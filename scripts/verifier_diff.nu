@@ -40281,10 +40281,7 @@ def program-context-variable-names [source: string] {
 
 def context-root-from-wrapper-invocation [invocation context_names bound_aliases root_wrapper_defs] {
     for wrapper in ($root_wrapper_defs | where {|wrapper| $wrapper.name == $invocation.callee }) {
-        mut root = (context-root-from-get-pipeline $invocation.arg $context_names $bound_aliases)
-        if $root == null {
-            $root = (context-root-from-value-token $invocation.arg $context_names $bound_aliases)
-        }
+        let root = (context-root-from-argument-token $invocation.arg $context_names $bound_aliases)
         if $root == null {
             continue
         }
@@ -40297,25 +40294,29 @@ def context-root-from-wrapper-invocation [invocation context_names bound_aliases
 
 def context-root-from-multi-param-wrapper-invocation [raw_value: string context_names bound_aliases wrapper_defs] {
     let trimmed = (trim-simple-parentheses ($raw_value | str trim))
-    let tokens = (
+    let callee = (
         $trimmed
         | split row " "
-        | each {|part| $part | str trim }
-        | where {|part| $part != "" }
+        | first
+        | str trim
     )
-    if ($tokens | length) < 2 {
+    if $callee == "" {
         return null
     }
 
-    let callee = ($tokens | first)
-    let args = ($tokens | skip 1)
+    let tail = (
+        $trimmed
+        | str substring ($callee | str length)..
+        | str trim
+    )
+    let args = (command-tail-positional-args $tail)
     for wrapper in ($wrapper_defs | where {|wrapper| $wrapper.name == $callee }) {
         let arg = ($args | get -o $wrapper.param_index)
         if $arg == null {
             continue
         }
 
-        let root = (context-root-from-value-token $arg $context_names $bound_aliases)
+        let root = (context-root-from-argument-token $arg $context_names $bound_aliases)
         if $root == null {
             continue
         }
@@ -40821,7 +40822,7 @@ def record-wrapper-definitions [source: string] {
 def context-root-from-record-wrapper-invocation [invocation wrapper context_names bound_aliases] {
     let param_index = ($wrapper | get -o param_index)
     if $param_index == null {
-        return (context-root-from-value-token $invocation.arg $context_names $bound_aliases)
+        return (context-root-from-argument-token $invocation.arg $context_names $bound_aliases)
     }
 
     let args = (command-tail-positional-args $invocation.arg)
@@ -40830,7 +40831,7 @@ def context-root-from-record-wrapper-invocation [invocation wrapper context_name
         return null
     }
 
-    context-root-from-value-token $arg $context_names $bound_aliases
+    context-root-from-argument-token $arg $context_names $bound_aliases
 }
 
 def context-root-from-value-token [raw_value: string context_names bound_aliases] {
@@ -40877,6 +40878,15 @@ def context-root-from-value-token [raw_value: string context_names bound_aliases
     }
 
     null
+}
+
+def context-root-from-argument-token [raw_value: string context_names bound_aliases] {
+    mut root = (context-root-from-get-pipeline $raw_value $context_names $bound_aliases)
+    if $root == null {
+        $root = (context-root-from-value-token $raw_value $context_names $bound_aliases)
+    }
+
+    $root
 }
 
 def combine-context-roots [base: string wrapper: string] {
@@ -42330,21 +42340,75 @@ def multi-param-record-wrapper-definitions [source: string] {
 }
 
 def command-tail-positional-args [raw_tail: string] {
-    let raw_args = (
-        $raw_tail
-        | str trim
-        | split row ";"
-        | first
-        | str trim
-    )
-    if $raw_args == "" {
+    let text = ($raw_tail | str trim)
+    if $text == "" {
         return []
     }
 
-    $raw_args
-    | split row " "
-    | each {|part| $part | str trim }
-    | where {|part| $part != "" }
+    mut args = []
+    mut current = ""
+    mut paren_depth = 0
+    mut brace_depth = 0
+    mut bracket_depth = 0
+    mut in_single = false
+    mut in_double = false
+
+    for ch in ($text | split chars) {
+        if ($ch == "'" and (not $in_double)) {
+            $in_single = not $in_single
+            $current = $"($current)($ch)"
+            continue
+        }
+        if ($ch == '"' and (not $in_single)) {
+            $in_double = not $in_double
+            $current = $"($current)($ch)"
+            continue
+        }
+
+        let at_top = (
+            (not $in_single)
+            and (not $in_double)
+            and $paren_depth == 0
+            and $brace_depth == 0
+            and $bracket_depth == 0
+        )
+        if $at_top and $ch == ";" {
+            break
+        }
+        if $at_top and ($ch == " " or $ch == "\t") {
+            let arg = ($current | str trim)
+            if $arg != "" {
+                $args = ($args | append $arg)
+            }
+            $current = ""
+            continue
+        }
+
+        if (not $in_single) and (not $in_double) {
+            if $ch == "(" {
+                $paren_depth = $paren_depth + 1
+            } else if $ch == ")" and $paren_depth > 0 {
+                $paren_depth = $paren_depth - 1
+            } else if $ch == "{" {
+                $brace_depth = $brace_depth + 1
+            } else if $ch == "}" and $brace_depth > 0 {
+                $brace_depth = $brace_depth - 1
+            } else if $ch == "[" {
+                $bracket_depth = $bracket_depth + 1
+            } else if $ch == "]" and $bracket_depth > 0 {
+                $bracket_depth = $bracket_depth - 1
+            }
+        }
+
+        $current = $"($current)($ch)"
+    }
+
+    let arg = ($current | str trim)
+    if $arg != "" {
+        $args = ($args | append $arg)
+    }
+
+    $args
 }
 
 def multi-param-function-context-field-accesses [source: string] {
@@ -42486,7 +42550,7 @@ def multi-param-user-function-context-field-kernel-features [source: string targ
                     continue
                 }
 
-                let root = (context-root-from-value-token $arg $context_names $bound_aliases)
+                let root = (context-root-from-argument-token $arg $context_names $bound_aliases)
                 if $root == null {
                     continue
                 }
