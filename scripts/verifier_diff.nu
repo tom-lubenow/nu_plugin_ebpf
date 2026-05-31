@@ -8832,6 +8832,18 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         target: "tc:lo:ingress"
         program: [
             '{|ctx|'
+            '  def id [x] { $x }'
+            '  mut rec = { data: (id ($ctx | get data)) }'
+            '  $rec.data.0 = 42'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:data"]
+    }
+    {
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
             '  let base = { data: $ctx.data }'
             '  mut rec = { ok: true, ...$base }'
             '  $rec.data.0 = 42'
@@ -19508,6 +19520,23 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  mut rec = { data: ($ctx | get data) }'
+            '  $rec.data.0 = 42'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tc-record-identity-get-packet-data-write"
+        category: "context-surface"
+        tags: [tc context packet writable record identity-wrapper get source metadata]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  def id [x] { $x }'
+            '  mut rec = { data: (id ($ctx | get data)) }'
             '  $rec.data.0 = 42'
             '  0'
             '}'
@@ -40109,13 +40138,13 @@ def two-token-invocation [raw: string] {
         | each {|part| $part | str trim }
         | where {|part| $part != "" }
     )
-    if ($tokens | length) != 2 {
+    if ($tokens | length) < 2 {
         return null
     }
 
     {
         callee: ($tokens | get 0)
-        arg: (trim-simple-parentheses ($tokens | get 1))
+        arg: (trim-simple-parentheses ($tokens | skip 1 | str join " "))
     }
 }
 
@@ -40211,7 +40240,10 @@ def program-context-variable-names [source: string] {
 
 def context-root-from-wrapper-invocation [invocation context_names bound_aliases root_wrapper_defs] {
     for wrapper in ($root_wrapper_defs | where {|wrapper| $wrapper.name == $invocation.callee }) {
-        let root = (context-root-from-value-token $invocation.arg $context_names $bound_aliases)
+        mut root = (context-root-from-get-pipeline $invocation.arg $context_names $bound_aliases)
+        if $root == null {
+            $root = (context-root-from-value-token $invocation.arg $context_names $bound_aliases)
+        }
         if $root == null {
             continue
         }
@@ -40238,7 +40270,14 @@ def context-root-binding [line: string context_names bound_aliases identity_wrap
         let invocation = (two-token-invocation $rhs)
         if $invocation != null {
             if $invocation.callee in $identity_wrappers {
-                let root_path = (context-root-from-value-token $invocation.arg $context_names $bound_aliases)
+                let root_path = (
+                    context-root-from-record-value-token
+                        $invocation.arg
+                        $context_names
+                        $bound_aliases
+                        $identity_wrappers
+                        $root_wrapper_defs
+                )
                 if $root_path != null and $root_path != "" {
                     return { name: $assignment.name root: $root_path }
                 }
@@ -40514,6 +40553,11 @@ def context-root-from-record-value-token [raw_value: string context_names bound_
 
     let invocation = (two-token-invocation (trim-simple-parentheses ($raw_value | str trim)))
     if $invocation != null and $invocation.callee in $identity_wrappers {
+        let root = (context-root-from-get-pipeline $invocation.arg $context_names $bound_aliases)
+        if $root != null {
+            return $root
+        }
+
         return (context-root-from-value-token $invocation.arg $context_names $bound_aliases)
     }
     if $invocation != null {
@@ -40561,6 +40605,27 @@ def record-literal-context-fields [raw: string context_names bound_aliases ident
     for parsed_field in (
         $inner
         | parse --regex '(?P<field>[A-Za-z_][A-Za-z0-9_-]*)\s*:\s*(?P<value>\([^)]*\|\s*get\s+[^)]*\))'
+    ) {
+        let field_name = ($parsed_field.field | str trim)
+        let root = (
+            context-root-from-record-value-token
+                $parsed_field.value
+                $context_names
+                $bound_aliases
+                $identity_wrappers
+                $root_wrapper_defs
+        )
+        if $root != null {
+            $fields = ($fields | append {
+                field: $field_name
+                root: $root
+            })
+        }
+    }
+
+    for parsed_field in (
+        $inner
+        | parse --regex '(?P<field>[A-Za-z_][A-Za-z0-9_-]*)\s*:\s*(?P<value>\(?[A-Za-z_][A-Za-z0-9_-]*\s+\([^)]*\|\s*get\s+[^)]*\)\)?)'
     ) {
         let field_name = ($parsed_field.field | str trim)
         let root = (
@@ -41436,6 +41501,11 @@ def function-return-context-root [function identity_wrappers root_wrapper_defs] 
     }
 
     if $invocation.callee in $identity_wrappers {
+        $root = (context-root-from-get-pipeline $invocation.arg [$param] $aliases)
+        if $root != null {
+            return $root
+        }
+
         $root = (context-root-from-value-token $invocation.arg [$param] $aliases)
         if $root != null {
             return $root
