@@ -999,6 +999,15 @@ fn test_context_field_compatibility_metadata_invariants() {
                 field.field
             );
             assert_eq!(
+                field.abi_field,
+                expected_load_kind.and_then(|_| {
+                    spec.ctx_field_abi_field(&entry.field)
+                        .map(|field| field.display_name())
+                }),
+                "{spec_text} ctx.{} should report the ProgramSpec ABI load field",
+                field.field
+            );
+            assert_eq!(
                 field.direct_load_width,
                 direct_load.map(|load| context_field_direct_load_width_label(load.width)),
                 "{spec_text} ctx.{} should report the ProgramSpec direct-load width",
@@ -1215,6 +1224,7 @@ fn test_spec_context_fields_include_context_load_metadata() {
     let fields = spec_context_fields(&spec, false);
     let data = field(&fields, "data");
     assert_eq!(data.load_kind, Some("direct"));
+    assert_eq!(data.abi_field.as_deref(), Some("data"));
     assert_eq!(data.direct_load_width, Some("u32"));
     assert_eq!(data.direct_load_offset, Some(0));
     assert_eq!(data.array_load_base_offset, None);
@@ -1258,6 +1268,7 @@ fn test_spec_context_fields_include_context_load_metadata() {
     let fields = spec_context_fields(&spec, false);
     let remote_ip6 = field(&fields, "remote_ip6");
     assert_eq!(remote_ip6.load_kind, Some("array"));
+    assert_eq!(remote_ip6.abi_field.as_deref(), Some("user_ip6"));
     assert_eq!(remote_ip6.array_load_base_offset, Some(8));
     assert_eq!(remote_ip6.array_load_normalize_big_endian, Some(false));
     assert_eq!(
@@ -1314,6 +1325,7 @@ fn test_spec_context_fields_include_context_load_metadata() {
     let fields = spec_context_fields(&spec, false);
     let remote_ip4 = field(&fields, "remote_ip4");
     assert_eq!(remote_ip4.load_kind, Some("direct"));
+    assert_eq!(remote_ip4.abi_field.as_deref(), Some("user_ip4"));
     assert_eq!(remote_ip4.direct_load_width, Some("u32"));
     assert_eq!(remote_ip4.direct_load_offset, Some(4));
     assert_eq!(
@@ -2175,6 +2187,45 @@ fn test_spec_record_context_fields_include_minimum_kernel_metadata() {
             .as_str()
             .expect("minimum kernel source should be a string")
             .contains("/v4.8/")
+    );
+}
+
+#[test]
+fn test_spec_record_context_fields_include_abi_field_metadata() {
+    let data = context_field_record("xdp:lo", "data");
+    let data = data.as_record().expect("ctx.data should be a record");
+    assert_eq!(
+        data.get("abi_field")
+            .expect("ABI field should be present")
+            .as_str()
+            .expect("ABI field should be a string"),
+        "data"
+    );
+
+    let remote_ip4 = context_field_record("cgroup_sock_addr:/sys/fs/cgroup:connect4", "remote_ip4");
+    let remote_ip4 = remote_ip4
+        .as_record()
+        .expect("ctx.remote_ip4 should be a record");
+    assert_eq!(
+        remote_ip4
+            .get("abi_field")
+            .expect("ABI field should be present")
+            .as_str()
+            .expect("ABI field should be a string"),
+        "user_ip4"
+    );
+
+    let local_ip4 = context_field_record("cgroup_sock_addr:/sys/fs/cgroup:sendmsg4", "local_ip4");
+    let local_ip4 = local_ip4
+        .as_record()
+        .expect("ctx.local_ip4 should be a record");
+    assert_eq!(
+        local_ip4
+            .get("abi_field")
+            .expect("ABI field should be present")
+            .as_str()
+            .expect("ABI field should be a string"),
+        "msg_src_ip4"
     );
 }
 

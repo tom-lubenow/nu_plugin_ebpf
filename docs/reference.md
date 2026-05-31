@@ -776,15 +776,18 @@ remain `generic` when the target string already carries all currently modeled
 policy.
 
 Context-field rows report direct/array/nested ABI load shapes when a field is
-source-backed by the program context. Direct loads also expose
-`direct_load_transform` when the compiler changes the raw ABI value into the
-semantic value seen by Nushell, for example big-endian address/protocol
-normalization, lirc mode/value masking, and cgroup-device access/type
-extraction from `access_type`. Array loads similarly expose
-`array_load_transform` for semantic array normalization such as IPv6 address
-words converted from big-endian ABI order to host order; this is separate from
-`array_load_normalize_big_endian`, which describes the backend context-copy
-path.
+source-backed by the program context. Rows with an ABI load also report
+`abi_field`, the modeled kernel-context field whose load shape is used; this is
+usually the row's own field, but attach-sensitive `cgroup_sock_addr` aliases
+such as `remote_ip4` or `local_ip4` can resolve to underlying ABI fields such
+as `user_ip4` or `msg_src_ip4`. Direct loads also expose `direct_load_transform`
+when the compiler changes the raw ABI value into the semantic value seen by
+Nushell, for example big-endian address/protocol normalization, lirc mode/value
+masking, and cgroup-device access/type extraction from `access_type`. Array
+loads similarly expose `array_load_transform` for semantic array normalization
+such as IPv6 address words converted from big-endian ABI order to host order;
+this is separate from `array_load_normalize_big_endian`, which describes the
+backend context-copy path.
 
 For `struct_ops`, use `struct_ops:<value_type>` for object-level metadata and
 `struct_ops:<value_type>.<callback>` for callback-level metadata such as

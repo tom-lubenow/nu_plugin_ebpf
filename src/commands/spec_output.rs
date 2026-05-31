@@ -26,6 +26,7 @@ use crate::program_spec::ProgramAttachShape;
 struct SpecContextField {
     field: String,
     names: Vec<&'static str>,
+    abi_field: Option<String>,
     semantic_type: Option<String>,
     runtime_type: Option<String>,
     kernel_btf_runtime_type: Option<&'static str>,
@@ -807,11 +808,16 @@ fn spec_context_fields(
             } else {
                 None
             };
+            let abi_field = load_kind.and_then(|_| {
+                spec.ctx_field_abi_field(&entry.field)
+                    .map(|field| field.display_name())
+            });
             fields.push((
                 entry.field.clone(),
                 SpecContextField {
                     field: entry.field.display_name(),
                     names: vec![entry.name],
+                    abi_field,
                     semantic_type: type_spec
                         .as_ref()
                         .map(|type_spec| mir_type_label(&type_spec.semantic_ty))
@@ -891,6 +897,7 @@ fn context_field_records(
                 record! {
                     "field" => Value::string(field.field, span),
                     "names" => Value::list(names, span),
+                    "abi_field" => optional_string(field.abi_field, span),
                     "semantic_type" => optional_string(field.semantic_type, span),
                     "runtime_type" => optional_string(field.runtime_type, span),
                     "kernel_btf_runtime_type" => optional_static_str(field.kernel_btf_runtime_type, span),

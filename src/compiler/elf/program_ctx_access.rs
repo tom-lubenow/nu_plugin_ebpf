@@ -2659,4 +2659,96 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn test_cgroup_sock_addr_tuple_aliases_share_target_load_metadata() {
+        for (spec_source, alias_field, target_field) in [
+            (
+                "cgroup_sock_addr:/sys/fs/cgroup:connect4",
+                CtxField::RemoteIp4,
+                CtxField::UserIp4,
+            ),
+            (
+                "cgroup_sock_addr:/sys/fs/cgroup:connect6",
+                CtxField::RemoteIp6,
+                CtxField::UserIp6,
+            ),
+            (
+                "cgroup_sock_addr:/sys/fs/cgroup:connect4",
+                CtxField::RemotePort,
+                CtxField::UserPort,
+            ),
+            (
+                "cgroup_sock_addr:/sys/fs/cgroup:bind4",
+                CtxField::LocalIp4,
+                CtxField::UserIp4,
+            ),
+            (
+                "cgroup_sock_addr:/sys/fs/cgroup:bind6",
+                CtxField::LocalIp6,
+                CtxField::UserIp6,
+            ),
+            (
+                "cgroup_sock_addr:/sys/fs/cgroup:bind4",
+                CtxField::LocalPort,
+                CtxField::UserPort,
+            ),
+            (
+                "cgroup_sock_addr:/sys/fs/cgroup:sendmsg4",
+                CtxField::LocalIp4,
+                CtxField::MsgSrcIp4,
+            ),
+            (
+                "cgroup_sock_addr:/sys/fs/cgroup:sendmsg6",
+                CtxField::LocalIp6,
+                CtxField::MsgSrcIp6,
+            ),
+        ] {
+            let spec = ProgramSpec::parse(spec_source)
+                .unwrap_or_else(|err| panic!("{spec_source} should parse: {err}"));
+
+            assert_eq!(
+                spec.cgroup_sock_addr_tuple_alias_field(&alias_field),
+                Some(target_field.clone()),
+                "{spec_source} ctx.{} should resolve to ctx.{}",
+                alias_field.display_name(),
+                target_field.display_name()
+            );
+            assert_eq!(
+                spec.ctx_field_abi_field(&alias_field),
+                Some(target_field.clone()),
+                "{spec_source} ctx.{} should report ctx.{} as its ABI field",
+                alias_field.display_name(),
+                target_field.display_name()
+            );
+            assert_eq!(
+                spec.ctx_field_direct_load(&alias_field),
+                spec.ctx_field_direct_load(&target_field),
+                "{spec_source} ctx.{} direct-load metadata should match ctx.{}",
+                alias_field.display_name(),
+                target_field.display_name()
+            );
+            assert_eq!(
+                spec.ctx_field_array_load(&alias_field),
+                spec.ctx_field_array_load(&target_field),
+                "{spec_source} ctx.{} array-load metadata should match ctx.{}",
+                alias_field.display_name(),
+                target_field.display_name()
+            );
+            assert_eq!(
+                spec.ctx_field_direct_load_transform(&alias_field),
+                spec.ctx_field_direct_load_transform(&target_field),
+                "{spec_source} ctx.{} direct-load transform should match ctx.{}",
+                alias_field.display_name(),
+                target_field.display_name()
+            );
+            assert_eq!(
+                spec.ctx_field_array_load_transform(&alias_field),
+                spec.ctx_field_array_load_transform(&target_field),
+                "{spec_source} ctx.{} array-load transform should match ctx.{}",
+                alias_field.display_name(),
+                target_field.display_name()
+            );
+        }
+    }
 }

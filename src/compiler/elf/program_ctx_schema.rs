@@ -1106,6 +1106,21 @@ impl ProgramSpec {
             .then_some(ContextFieldReadTransform::BigEndianU32WordsToHost)
     }
 
+    pub(crate) fn ctx_field_abi_field(&self, field: &CtxField) -> Option<CtxField> {
+        if self.ctx_field_access_error(field).is_some() {
+            return None;
+        }
+
+        let abi_field = self
+            .cgroup_sock_addr_tuple_alias_field(field)
+            .unwrap_or_else(|| field.clone());
+
+        (self.ctx_field_direct_load(&abi_field).is_some()
+            || self.ctx_field_array_load(&abi_field).is_some()
+            || self.ctx_field_nested_load(&abi_field).is_some())
+        .then_some(abi_field)
+    }
+
     pub(crate) fn ctx_field_nested_load(&self, field: &CtxField) -> Option<ContextFieldNestedLoad> {
         if self.ctx_field_access_error(field).is_some() {
             return None;
