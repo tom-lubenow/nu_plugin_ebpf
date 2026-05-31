@@ -147,6 +147,63 @@ fn make_ctx_pipeline_get_chain_program(paths: Vec<CellPath>, get_decl: DeclId) -
     )
 }
 
+fn make_bound_ctx_pipeline_get_program(
+    binding: CellPath,
+    access: CellPath,
+    get_decl: DeclId,
+) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let local_var = VarId::new(1);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(binding)),
+                },
+                HirStmt::Call {
+                    decl_id: get_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        positional: vec![RegId::new(1)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::StoreVariable {
+                    var_id: local_var,
+                    src: RegId::new(2),
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: local_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::CellPath(Box::new(access)),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(3),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 8],
+        ast: vec![None; 8],
+        comments: vec![],
+        register_count: 4,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
 fn make_returned_record_context_upsert_program(
     record_field: &str,
     path: CellPath,
@@ -830,6 +887,49 @@ fn test_lower_context_pipeline_get_cell_path_socket_projection() {
 
     compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
         .expect("ctx | get sk.family should compile");
+}
+
+#[test]
+fn test_lower_bound_context_pipeline_get_socket_projection() {
+    let get_decl = DeclId::new(42);
+    let hir = make_bound_ctx_pipeline_get_program(
+        CellPath {
+            members: vec![string_member("sk")],
+        },
+        CellPath {
+            members: vec![string_member("family")],
+        },
+        get_decl,
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let decl_names = HashMap::from([(get_decl, "get".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("let sk = ($ctx | get sk); $sk.family should lower");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .any(|block| block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::LoadCtxField {
+                    field: CtxField::Socket,
+                    ..
+                }
+            )))
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+        .expect("let sk = ($ctx | get sk); $sk.family should compile");
 }
 
 #[test]
