@@ -7106,6 +7106,108 @@ fn test_lower_leading_annotated_mut_record_array_uses_declared_element_layout() 
 }
 
 #[test]
+fn test_lower_leading_annotated_mut_bool_array_supports_scalar_projection_and_store() {
+    let global_var = VarId::new(260);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: global_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![int_member(1)],
+                    })),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Bool(true),
+                },
+                HirStmt::UpsertCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                    new_value: RegId::new(2),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+
+    let mut hir = HirProgram::new(func, HashMap::new(), vec![], None);
+    hir.annotated_mut_globals = vec![AnnotatedMutGlobal {
+        var_id: global_var,
+        declared_type: Type::List(Box::new(Type::Bool)),
+        initial_value: Value::list(
+            vec![
+                Value::bool(true, Span::test_data()),
+                Value::bool(false, Span::test_data()),
+            ],
+            Span::test_data(),
+        ),
+    }];
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("annotated bool fixed arrays should project and store bool elements");
+
+    assert_eq!(result.data_globals.len(), 1);
+    assert_eq!(result.data_globals[0].data, vec![1, 0]);
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Store {
+                    offset: 1,
+                    ty: MirType::Bool,
+                    ..
+                }
+            )),
+        "expected $flags.1 = true to store a bool at the second array byte"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Load {
+                    offset: 1,
+                    ty: MirType::Bool,
+                    ..
+                }
+            )),
+        "expected $flags.1 projection to load a bool element"
+    );
+}
+
+#[test]
 fn test_lower_leading_annotated_mut_record_array_partial_element_preserves_string_semantics() {
     let global_var = VarId::new(259);
     let func = HirFunction {

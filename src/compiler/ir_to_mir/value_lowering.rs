@@ -486,7 +486,7 @@ impl<'a> HirToMirLowering<'a> {
         for value in values {
             let Some((_item_ty, item_data)) = Self::scalar_constant_rodata_repr(value) else {
                 return Err(CompileError::UnsupportedInstruction(
-                    "constant lists currently only support numeric scalar elements in eBPF lowering"
+                    "constant list lowering currently supports only bool, numeric, or null scalar elements"
                         .into(),
                 ));
             };

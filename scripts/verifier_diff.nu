@@ -31870,6 +31870,21 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-annotated-bool-fixed-array-upsert-local"
+        category: "language-core"
+        tags: [aggregate fixed-array bool upsert annotated local]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  mut flags: list<bool> = [true false]'
+            '  $flags.1 = true'
+            '  if $flags.1 { 1 } else { 0 }'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-record-upsert-nested-numeric-list-sparse-append-reject"
         category: "language-core"
         tags: [aggregate record list upsert append nested reject]
