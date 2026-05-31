@@ -1460,6 +1460,73 @@ mod tests {
         }
     }
 
+    fn assert_reported_write_surfaces_have_kernel_floor_metadata(spec_source: &str) {
+        let spec = ProgramSpec::parse(spec_source)
+            .unwrap_or_else(|err| panic!("{spec_source} should parse: {err}"));
+
+        for surface in spec.ctx_write_surfaces_for_spec() {
+            assert_eq!(
+                surface.minimum_kernel.is_some(),
+                surface.minimum_kernel_source.is_some(),
+                "{spec_source} ctx.{} write minimum kernel/source should be reported together",
+                surface.field_name
+            );
+
+            if let Some(requirement) = surface.context_field_requirement.as_ref() {
+                let minimum_kernel = surface.minimum_kernel.unwrap_or_else(|| {
+                    panic!(
+                        "{spec_source} ctx.{} write should report a context-field minimum kernel",
+                        surface.field_name
+                    )
+                });
+                assert!(
+                    ContextFieldCompatibilityRequirement::kernel_version_at_least(
+                        minimum_kernel,
+                        requirement.minimum_kernel()
+                    ),
+                    "{spec_source} ctx.{} write floor {minimum_kernel} should cover {}",
+                    surface.field_name,
+                    requirement.minimum_kernel()
+                );
+            }
+
+            if let Some(helper) = surface.helper {
+                assert!(
+                    helper.minimum_kernel().is_some(),
+                    "{spec_source} ctx.{} helper-backed write should have helper kernel metadata",
+                    surface.field_name
+                );
+                assert_eq!(
+                    helper.minimum_kernel().is_some(),
+                    helper.minimum_kernel_source().is_some(),
+                    "{spec_source} ctx.{} helper minimum kernel/source should be reported together",
+                    surface.field_name
+                );
+            }
+
+            if let Some(kfunc) = surface.kfunc {
+                let requirement = spec
+                    .kfunc_compatibility_requirement_for_name(kfunc)
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "{spec_source} ctx.{} kfunc-backed write should have kfunc metadata for {kfunc}",
+                            surface.field_name
+                        )
+                    });
+                assert!(
+                    !requirement.minimum_kernel().is_empty(),
+                    "{spec_source} ctx.{} kfunc-backed write should have a non-empty kfunc floor",
+                    surface.field_name
+                );
+                assert!(
+                    !requirement.minimum_kernel_source().is_empty(),
+                    "{spec_source} ctx.{} kfunc-backed write should have a non-empty kfunc source",
+                    surface.field_name
+                );
+            }
+        }
+    }
+
     fn all_context_write_surface_tables() -> [(&'static str, &'static [ContextWriteSurfaceSpec]); 12]
     {
         [
@@ -1795,6 +1862,13 @@ mod tests {
     fn test_available_context_write_surfaces_have_exclusive_store_shapes() {
         for spec_source in REPRESENTATIVE_CONTEXT_WRITE_SPEC_SOURCES {
             assert_reported_write_surfaces_have_exclusive_store_shapes(spec_source);
+        }
+    }
+
+    #[test]
+    fn test_available_context_write_surfaces_have_kernel_floor_metadata() {
+        for spec_source in REPRESENTATIVE_CONTEXT_WRITE_SPEC_SOURCES {
+            assert_reported_write_surfaces_have_kernel_floor_metadata(spec_source);
         }
     }
 
