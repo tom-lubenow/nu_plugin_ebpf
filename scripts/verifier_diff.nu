@@ -6020,6 +6020,40 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
     {
         target: "tc:lo:ingress"
         program: [
+            '{|ctx|'
+            '  let rec = { socket: ($ctx | get sk) }'
+            '  $rec.socket.family | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:family" "ctx:sk" "helper:bpf_probe_read_kernel"]
+    }
+    {
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  def get_sk [c] { $c | get sk }'
+            '  let sk = (get_sk $ctx)'
+            '  $sk.family | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:family" "ctx:sk" "helper:bpf_probe_read_kernel"]
+    }
+    {
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  def wrap [c] { { socket: ($c | get sk) } }'
+            '  wrap $ctx | get socket | get family | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:family" "ctx:sk" "helper:bpf_probe_read_kernel"]
+    }
+    {
+        target: "tc:lo:ingress"
+        program: [
             '{|ctx| $ctx | get sk | get family | count; 0}'
         ]
         feature_keys: ["ctx:family" "ctx:sk" "helper:bpf_probe_read_kernel"]
@@ -18570,6 +18604,52 @@ const FIXTURES = [
             '{|ctx|'
             '  let sk = ($ctx | get sk)'
             '  $sk.family | count'
+            '  "ok"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tc-record-context-get-root"
+        category: "context-surface"
+        tags: [tc context socket record get source metadata]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let rec = { socket: ($ctx | get sk) }'
+            '  $rec.socket.family | count'
+            '  "ok"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tc-user-function-context-get-root"
+        category: "context-surface"
+        tags: [tc context socket user-function get source metadata]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  def get_sk [c] { $c | get sk }'
+            '  let sk = (get_sk $ctx)'
+            '  $sk.family | count'
+            '  "ok"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tc-user-function-record-context-get-root"
+        category: "context-surface"
+        tags: [tc context socket record user-function get source metadata]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  def wrap [c] { { socket: ($c | get sk) } }'
+            '  wrap $ctx | get socket | get family | count'
             '  "ok"'
             '}'
         ]
@@ -39482,6 +39562,27 @@ def record-literal-context-fields [raw: string context_names bound_aliases ident
         }
     }
 
+    for parsed_field in (
+        $inner
+        | parse --regex '(?P<field>[A-Za-z_][A-Za-z0-9_-]*)\s*:\s*(?P<value>\([^)]*\|\s*get\s+[^)]*\))'
+    ) {
+        let field_name = ($parsed_field.field | str trim)
+        let root = (
+            context-root-from-record-value-token
+                $parsed_field.value
+                $context_names
+                $bound_aliases
+                $identity_wrappers
+                $root_wrapper_defs
+        )
+        if $root != null {
+            $fields = ($fields | append {
+                field: $field_name
+                root: $root
+            })
+        }
+    }
+
     $fields
 }
 
@@ -40312,7 +40413,6 @@ def function-return-context-root [function identity_wrappers root_wrapper_defs] 
             (
                 $line != ""
                 and not ($line | str starts-with "#")
-                and not ($line | str contains "|")
                 and not ($line | str contains "=")
             )
         }
@@ -40322,6 +40422,15 @@ def function-return-context-root [function identity_wrappers root_wrapper_defs] 
     }
 
     let returned = ($return_lines | last)
+    if ($returned | str contains "|") {
+        let root = (context-root-from-get-pipeline $returned [$param] $aliases)
+        if $root != null {
+            return $root
+        }
+
+        return null
+    }
+
     mut root = (context-root-from-value-token $returned [$param] $aliases)
     if $root != null {
         return $root
@@ -40557,6 +40666,9 @@ def function-context-root-aliases [body param: string identity_wrappers root_wra
         for assignment in (declaration-assignments $line) {
             let rhs = (declaration-rhs-token $assignment)
             mut root = (context-root-from-value-token $rhs [$param] $aliases)
+            if $root == null {
+                $root = (context-root-from-get-pipeline $rhs [$param] $aliases)
+            }
             if $root == null {
                 let invocation = (two-token-invocation $rhs)
                 if $invocation != null {
