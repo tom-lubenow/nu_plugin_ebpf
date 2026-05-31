@@ -722,6 +722,116 @@ fn make_record_merge_then_field_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_record_get_field_program(get_decl: DeclId, field: &str) -> HirProgram {
+    let mut record = Record::new();
+    record.push("pid", Value::int(7, Span::test_data()));
+    record.push("cpu", Value::int(2, Span::test_data()));
+
+    let stmts = vec![
+        HirStmt::LoadValue {
+            dst: RegId::new(0),
+            val: Box::new(Value::record(record, Span::test_data())),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: HirLiteral::CellPath(Box::new(CellPath {
+                members: vec![string_member(field)],
+            })),
+        },
+        HirStmt::Call {
+            decl_id: get_decl,
+            src_dst: RegId::new(2),
+            args: HirCallArgs {
+                positional: vec![RegId::new(1)],
+                pipeline_input: Some(RegId::new(0)),
+                ..HirCallArgs::default()
+            },
+        },
+    ];
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(2) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_record_get_nested_list_item_program(get_decl: DeclId) -> HirProgram {
+    let stmts = vec![
+        HirStmt::LoadLiteral {
+            dst: RegId::new(0),
+            lit: HirLiteral::Record { capacity: 0 },
+        },
+        HirStmt::LoadValue {
+            dst: RegId::new(1),
+            val: Box::new(Value::list(
+                vec![
+                    Value::int(11, Span::test_data()),
+                    Value::int(22, Span::test_data()),
+                ],
+                Span::test_data(),
+            )),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(2),
+            lit: HirLiteral::CellPath(Box::new(CellPath {
+                members: vec![string_member("samples")],
+            })),
+        },
+        HirStmt::UpsertCellPath {
+            src_dst: RegId::new(0),
+            path: RegId::new(2),
+            new_value: RegId::new(1),
+        },
+        HirStmt::Call {
+            decl_id: get_decl,
+            src_dst: RegId::new(3),
+            args: HirCallArgs {
+                positional: vec![RegId::new(2)],
+                pipeline_input: Some(RegId::new(0)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(4),
+            lit: HirLiteral::Int(1),
+        },
+        HirStmt::Call {
+            decl_id: get_decl,
+            src_dst: RegId::new(5),
+            args: HirCallArgs {
+                positional: vec![RegId::new(4)],
+                pipeline_input: Some(RegId::new(3)),
+                ..HirCallArgs::default()
+            },
+        },
+    ];
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(5) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 6,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_record_values_then_get_program(
     values_decl: DeclId,
     get_decl: DeclId,
@@ -3192,6 +3302,85 @@ fn test_lower_merge_rejects_non_record_argument() {
             .contains("merge requires a record argument with compiler-known fields"),
         "unexpected error: {err}"
     );
+}
+
+#[test]
+fn test_lower_get_metadata_record_field_projects_value() {
+    let get_decl = DeclId::new(114);
+    let hir = make_record_get_field_program(get_decl, "cpu");
+    let decl_names = HashMap::from([(get_decl, "get".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("get should project metadata-backed record fields");
+
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("metadata-backed record get should compile through codegen");
+}
+
+#[test]
+fn test_lower_get_missing_metadata_record_field_is_rejected() {
+    let get_decl = DeclId::new(115);
+    let hir = make_record_get_field_program(get_decl, "missing");
+    let decl_names = HashMap::from([(get_decl, "get".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("get of a missing metadata-backed record field should be rejected");
+
+    assert!(
+        err.to_string()
+            .contains("get field 'missing' was not found"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_get_metadata_record_list_field_preserves_list_metadata() {
+    let get_decl = DeclId::new(116);
+    let hir = make_record_get_nested_list_item_program(get_decl);
+    let decl_names = HashMap::from([(get_decl, "get".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("get should preserve nested metadata-backed list fields");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::ListGet {
+                    idx: MirValue::Const(1),
+                    ..
+                }
+            )),
+        "expected record field get followed by list get to preserve stack-list metadata"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("metadata-backed record list field get should compile through codegen");
 }
 
 #[test]

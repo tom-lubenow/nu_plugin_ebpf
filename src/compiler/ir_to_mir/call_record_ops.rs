@@ -468,6 +468,94 @@ impl<'a> HirToMirLowering<'a> {
         Ok(())
     }
 
+    pub(super) fn lower_metadata_record_get(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+    ) -> Result<(), CompileError> {
+        let input_reg = self
+            .pipeline_input_reg
+            .or(src_dst_had_value.then_some(src_dst));
+
+        if !self.named_flags.is_empty() || !self.named_args.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(
+                "get does not accept named flags or arguments in eBPF".into(),
+            ));
+        }
+        if self.positional_args.len() != 1 {
+            return Err(CompileError::UnsupportedInstruction(
+                "get requires exactly one record field name argument in eBPF".into(),
+            ));
+        }
+
+        let (_, field_reg) = self.positional_args[0];
+        let field_name = self.top_level_field_name_arg(field_reg, "get")?;
+        let input_meta = input_reg
+            .and_then(|reg| self.get_metadata(reg).cloned())
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "get requires record input with compiler-known fields in eBPF".into(),
+                )
+            })?;
+        if input_meta.record_fields.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(
+                "get requires record input with compiler-known fields in eBPF".into(),
+            ));
+        }
+
+        let field = input_meta
+            .record_fields
+            .iter()
+            .find(|field| field.name == field_name)
+            .cloned()
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "get field '{field_name}' was not found in metadata-backed record in eBPF"
+                ))
+            })?;
+        let field_constant = input_meta
+            .constant_value
+            .as_ref()
+            .and_then(|value| match value {
+                nu_protocol::Value::Record { val, .. } => val.get(&field_name).cloned(),
+                _ => None,
+            });
+        let field_source_meta = field
+            .source_reg
+            .and_then(|reg| self.get_metadata(reg).cloned());
+
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+        self.emit(MirInst::Copy {
+            dst: result_vreg,
+            src: MirValue::VReg(field.value_vreg),
+        });
+        self.vreg_type_hints.insert(result_vreg, field.ty.clone());
+
+        let mut out_meta = field_source_meta.unwrap_or_default();
+        out_meta.is_context = field.is_context;
+        out_meta.field_type = Some(field.ty);
+        out_meta.root_ctx_field = field.root_ctx_field;
+        out_meta.trusted_btf = out_meta.trusted_btf
+            && matches!(
+                out_meta.field_type.as_ref(),
+                Some(MirType::Ptr {
+                    address_space: AddressSpace::Kernel,
+                    ..
+                })
+            );
+        out_meta.annotated_semantics = field.semantics;
+        out_meta.source_var = None;
+        out_meta.constant_value = field_constant;
+        self.reg_metadata.insert(src_dst.get(), out_meta);
+
+        Ok(())
+    }
+
     pub(super) fn lower_default(
         &mut self,
         src_dst: RegId,

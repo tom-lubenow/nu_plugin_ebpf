@@ -33095,6 +33095,46 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-record-get-field"
+        category: "language-core"
+        tags: [aggregate record get]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  { pid: 7 cpu: 2 } | get cpu'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-record-get-list-field"
+        category: "language-core"
+        tags: [aggregate record get list]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  { samples: [11 22] } | get samples | get 1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-record-get-missing-field-reject"
+        category: "language-core"
+        tags: [aggregate record get reject]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  { pid: 7 cpu: 2 } | get missing'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "get field 'missing' was not found"
+    }
+    {
         name: "core-record-select"
         category: "language-core"
         tags: [aggregate record select]

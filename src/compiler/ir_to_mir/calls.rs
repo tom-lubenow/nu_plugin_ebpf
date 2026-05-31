@@ -2793,114 +2793,108 @@ impl<'a> HirToMirLowering<'a> {
                     ));
                 }
 
-                let mut input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
                 let input_reg = self
                     .pipeline_input_reg
                     .or(src_dst_had_value.then_some(src_dst));
-                let result_vreg = if src_dst_had_value {
-                    self.assign_fresh_vreg(src_dst)
-                } else {
-                    dst_vreg
-                };
-                let (idx_vreg, idx_reg) =
-                    self.positional_args.first().copied().ok_or_else(|| {
-                        CompileError::UnsupportedInstruction(
-                            "get requires a numeric positional index argument".into(),
-                        )
-                    })?;
-                if self.positional_args.len() != 1 {
-                    return Err(CompileError::UnsupportedInstruction(
-                        "get accepts exactly one positional index argument in eBPF".into(),
-                    ));
-                }
-
-                let idx = self
-                    .get_metadata(idx_reg)
-                    .and_then(|meta| {
-                        meta.literal_int.or_else(|| {
-                            meta.cell_path
-                                .as_ref()
-                                .and_then(|path| match path.members.as_slice() {
-                                    [PathMember::Int { val, .. }] => Some(*val as i64),
-                                    _ => None,
-                                })
-                        })
-                    })
-                    .map(MirValue::Const)
-                    .unwrap_or(MirValue::VReg(idx_vreg));
                 let input_meta = input_reg.and_then(|reg| self.get_metadata(reg).cloned());
-                let mut handled_list_get = false;
-                if let Some(meta) = input_meta {
-                    if let Some((_slot, max_len)) = meta.list_buffer {
-                        if let MirValue::Const(raw_idx) = &idx {
-                            let raw_idx = *raw_idx;
-                            if raw_idx < 0 {
-                                return Err(CompileError::UnsupportedInstruction(
+                if input_meta
+                    .as_ref()
+                    .is_some_and(|meta| !meta.record_fields.is_empty())
+                {
+                    self.lower_metadata_record_get(src_dst, dst_vreg, src_dst_had_value)?;
+                } else {
+                    let mut input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
+                    let result_vreg = if src_dst_had_value {
+                        self.assign_fresh_vreg(src_dst)
+                    } else {
+                        dst_vreg
+                    };
+                    let (idx_vreg, idx_reg) =
+                        self.positional_args.first().copied().ok_or_else(|| {
+                            CompileError::UnsupportedInstruction(
+                                "get requires a numeric positional index argument".into(),
+                            )
+                        })?;
+                    if self.positional_args.len() != 1 {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "get accepts exactly one positional index argument in eBPF".into(),
+                        ));
+                    }
+
+                    let idx = self
+                        .get_metadata(idx_reg)
+                        .and_then(|meta| {
+                            meta.literal_int.or_else(|| {
+                                meta.cell_path.as_ref().and_then(|path| {
+                                    match path.members.as_slice() {
+                                        [PathMember::Int { val, .. }] => Some(*val as i64),
+                                        _ => None,
+                                    }
+                                })
+                            })
+                        })
+                        .map(MirValue::Const)
+                        .unwrap_or(MirValue::VReg(idx_vreg));
+                    let mut handled_list_get = false;
+                    if let Some(meta) = input_meta {
+                        if let Some((_slot, max_len)) = meta.list_buffer {
+                            if let MirValue::Const(raw_idx) = &idx {
+                                let raw_idx = *raw_idx;
+                                if raw_idx < 0 {
+                                    return Err(CompileError::UnsupportedInstruction(
                                     "get index must be non-negative for stack-backed numeric lists in eBPF"
                                         .into(),
                                 ));
-                            }
-                            let idx_usize = usize::try_from(raw_idx).map_err(|_| {
-                                CompileError::UnsupportedInstruction(
+                                }
+                                let idx_usize = usize::try_from(raw_idx).map_err(|_| {
+                                    CompileError::UnsupportedInstruction(
                                     "get index is too large for stack-backed numeric list lowering"
                                         .into(),
                                 )
-                            })?;
-                            if let Some(known_len) = Self::numeric_list_known_len(&meta) {
-                                if idx_usize >= known_len {
+                                })?;
+                                if let Some(known_len) = Self::numeric_list_known_len(&meta) {
+                                    if idx_usize >= known_len {
+                                        return Err(CompileError::UnsupportedInstruction(format!(
+                                            "get index {raw_idx} is out of bounds for stack-backed numeric list with known length {known_len} in eBPF"
+                                        )));
+                                    }
+                                } else if idx_usize >= max_len {
                                     return Err(CompileError::UnsupportedInstruction(format!(
-                                        "get index {raw_idx} is out of bounds for stack-backed numeric list with known length {known_len} in eBPF"
+                                        "get index {raw_idx} is out of bounds for stack-backed numeric list capacity {max_len} in eBPF"
                                     )));
                                 }
-                            } else if idx_usize >= max_len {
-                                return Err(CompileError::UnsupportedInstruction(format!(
-                                    "get index {raw_idx} is out of bounds for stack-backed numeric list capacity {max_len} in eBPF"
-                                )));
                             }
+
+                            self.emit(MirInst::ListGet {
+                                dst: result_vreg,
+                                list: input_vreg,
+                                idx: idx.clone(),
+                            });
+
+                            self.reset_call_result_metadata(src_dst);
+                            let out_meta = self.get_or_create_metadata(src_dst);
+                            out_meta.field_type = Some(MirType::I64);
+                            out_meta.constant_value = match (&meta.constant_value, &idx) {
+                                (
+                                    Some(nu_protocol::Value::List { vals, .. }),
+                                    MirValue::Const(raw_idx),
+                                ) if *raw_idx >= 0 => vals.get(*raw_idx as usize).cloned(),
+                                _ => None,
+                            };
+                            handled_list_get = true;
                         }
-
-                        self.emit(MirInst::ListGet {
-                            dst: result_vreg,
-                            list: input_vreg,
-                            idx: idx.clone(),
-                        });
-
-                        self.reset_call_result_metadata(src_dst);
-                        let out_meta = self.get_or_create_metadata(src_dst);
-                        out_meta.field_type = Some(MirType::I64);
-                        out_meta.constant_value = match (&meta.constant_value, &idx) {
-                            (
-                                Some(nu_protocol::Value::List { vals, .. }),
-                                MirValue::Const(raw_idx),
-                            ) if *raw_idx >= 0 => vals.get(*raw_idx as usize).cloned(),
-                            _ => None,
-                        };
-                        handled_list_get = true;
                     }
-                }
 
-                if handled_list_get {
-                    // Metadata is already updated for stack-backed list access.
-                } else {
-                    let input_reg = input_reg.ok_or_else(|| {
-                        CompileError::UnsupportedInstruction(
-                            "get requires a list value or typed kernel/user pointer input".into(),
-                        )
-                    })?;
-                    let mut base_runtime_ty = self
-                        .typed_value_runtime_type(input_reg, input_vreg)
-                        .ok_or_else(|| {
+                    if handled_list_get {
+                        // Metadata is already updated for stack-backed list access.
+                    } else {
+                        let input_reg = input_reg.ok_or_else(|| {
                             CompileError::UnsupportedInstruction(
                                 "get requires a list value or typed kernel/user pointer input"
                                     .into(),
                             )
                         })?;
-                    if !matches!(base_runtime_ty, MirType::Ptr { .. })
-                        && Self::aggregate_call_value_type(&base_runtime_ty).is_some()
-                    {
-                        input_vreg =
-                            self.materialized_metadata_aggregate_vreg(input_reg, input_vreg)?;
-                        base_runtime_ty = self
+                        let mut base_runtime_ty = self
                             .typed_value_runtime_type(input_reg, input_vreg)
                             .ok_or_else(|| {
                                 CompileError::UnsupportedInstruction(
@@ -2908,26 +2902,40 @@ impl<'a> HirToMirLowering<'a> {
                                         .into(),
                                 )
                             })?;
-                    }
-
-                    match &base_runtime_ty {
-                        MirType::Ptr { .. } => {
-                            let root_ctx_field = self
-                                .get_metadata(input_reg)
-                                .and_then(|meta| meta.root_ctx_field.clone());
-                            self.lower_dynamic_typed_numeric_get(
-                                src_dst,
-                                input_vreg,
-                                &base_runtime_ty,
-                                idx,
-                                root_ctx_field.as_ref(),
-                            )?;
+                        if !matches!(base_runtime_ty, MirType::Ptr { .. })
+                            && Self::aggregate_call_value_type(&base_runtime_ty).is_some()
+                        {
+                            input_vreg =
+                                self.materialized_metadata_aggregate_vreg(input_reg, input_vreg)?;
+                            base_runtime_ty = self
+                                .typed_value_runtime_type(input_reg, input_vreg)
+                                .ok_or_else(|| {
+                                    CompileError::UnsupportedInstruction(
+                                    "get requires a list value or typed kernel/user pointer input"
+                                        .into(),
+                                )
+                                })?;
                         }
-                        _ => {
-                            return Err(CompileError::UnsupportedInstruction(format!(
-                                "get requires a list value or typed pointer input, got {:?}",
-                                base_runtime_ty
-                            )));
+
+                        match &base_runtime_ty {
+                            MirType::Ptr { .. } => {
+                                let root_ctx_field = self
+                                    .get_metadata(input_reg)
+                                    .and_then(|meta| meta.root_ctx_field.clone());
+                                self.lower_dynamic_typed_numeric_get(
+                                    src_dst,
+                                    input_vreg,
+                                    &base_runtime_ty,
+                                    idx,
+                                    root_ctx_field.as_ref(),
+                                )?;
+                            }
+                            _ => {
+                                return Err(CompileError::UnsupportedInstruction(format!(
+                                    "get requires a list value or typed pointer input, got {:?}",
+                                    base_runtime_ty
+                                )));
+                            }
                         }
                     }
                 }
