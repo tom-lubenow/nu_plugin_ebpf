@@ -7,8 +7,8 @@ use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::CtxField;
 use crate::compiler::{
     CompiledFeatureCompatibilityRequirement, ContextFieldCompatibilityRequirement, EbpfProgramType,
-    HelperCompatibilityRequirement, KfuncCompatibilityRequirement, MapKind,
-    MapValueCompatibilityRequirement, ProgramCompatibilityRequirement,
+    GlobalCompatibilityRequirement, HelperCompatibilityRequirement, KfuncCompatibilityRequirement,
+    MapKind, MapValueCompatibilityRequirement, ProgramCompatibilityRequirement,
 };
 use crate::kernel_btf::TracepointContext;
 use crate::program_spec::{IterTargetKind, ProgramSpec};
@@ -1100,6 +1100,36 @@ fn verifier_diff_nu_program_reserved_map_feature_keys(
     )
 }
 
+fn verifier_diff_nu_program_language_feature_keys(
+    programs: &[String],
+) -> Option<Vec<BTreeSet<String>>> {
+    verifier_diff_nu_program_only_feature_keys(
+        "program-language-kernel-features",
+        "program-language-kernel-features coverage",
+        programs,
+    )
+}
+
+fn verifier_diff_nu_program_map_value_feature_keys(
+    programs: &[String],
+) -> Option<Vec<BTreeSet<String>>> {
+    verifier_diff_nu_program_only_feature_keys(
+        "program-map-value-kernel-features",
+        "program-map-value-kernel-features coverage",
+        programs,
+    )
+}
+
+fn verifier_diff_nu_program_global_feature_keys(
+    programs: &[String],
+) -> Option<Vec<BTreeSet<String>>> {
+    verifier_diff_nu_program_only_feature_keys(
+        "program-global-kernel-features",
+        "program-global-kernel-features coverage",
+        programs,
+    )
+}
+
 fn verifier_diff_nu_program_context_field_feature_keys(
     checks: &[(String, String)],
 ) -> Option<Vec<BTreeSet<String>>> {
@@ -1150,6 +1180,33 @@ fn map_kind_feature_keys(kinds: impl IntoIterator<Item = MapKind>) -> BTreeSet<S
     kinds
         .into_iter()
         .map(|kind| kind.compatibility_requirement().key().to_string())
+        .collect()
+}
+
+fn map_value_feature_keys(
+    requirements: impl IntoIterator<Item = MapValueCompatibilityRequirement>,
+) -> BTreeSet<String> {
+    requirements
+        .into_iter()
+        .map(|requirement| requirement.key().to_string())
+        .collect()
+}
+
+fn compiled_feature_keys(
+    requirements: impl IntoIterator<Item = CompiledFeatureCompatibilityRequirement>,
+) -> BTreeSet<String> {
+    requirements
+        .into_iter()
+        .map(|requirement| requirement.key().to_string())
+        .collect()
+}
+
+fn global_feature_keys(
+    requirements: impl IntoIterator<Item = GlobalCompatibilityRequirement>,
+) -> BTreeSet<String> {
+    requirements
+        .into_iter()
+        .map(|requirement| requirement.key().to_string())
         .collect()
 }
 
@@ -1595,6 +1652,80 @@ fn test_verifier_diff_program_surface_scanner_matches_rust_helper_keys() {
 }
 
 #[test]
+fn test_verifier_diff_program_language_scanner_matches_rust_compiled_feature_keys() {
+    struct LanguageScannerCheck {
+        program: &'static str,
+        expected_keys: BTreeSet<String>,
+    }
+
+    let checks = [
+        LanguageScannerCheck {
+            program: r#"{|ctx|
+  # def ignored [] { for ignored in 0..1 { } }
+  let text = "def not_a_function [] { for item in [] { } }"
+  1
+}"#,
+            expected_keys: BTreeSet::new(),
+        },
+        LanguageScannerCheck {
+            program: r#"{|ctx|
+  def make [] { 7 }
+  make
+}"#,
+            expected_keys: compiled_feature_keys([
+                CompiledFeatureCompatibilityRequirement::BpfSubprogramCalls,
+            ]),
+        },
+        LanguageScannerCheck {
+            program: r#"{|ctx|
+  mut sum = 0
+  for i in 0..3 {
+    $sum = ($sum + $i)
+  }
+  $sum
+}"#,
+            expected_keys: compiled_feature_keys([
+                CompiledFeatureCompatibilityRequirement::BoundedLoops,
+            ]),
+        },
+        LanguageScannerCheck {
+            program: r#"{|ctx|
+  def make [] { mut sum = 0; for i in 0..3 { $sum = ($sum + $i) }; $sum }
+  make
+}"#,
+            expected_keys: compiled_feature_keys([
+                CompiledFeatureCompatibilityRequirement::BpfSubprogramCalls,
+                CompiledFeatureCompatibilityRequirement::BoundedLoops,
+            ]),
+        },
+    ];
+
+    let programs = checks
+        .iter()
+        .map(|check| check.program.to_string())
+        .collect::<Vec<_>>();
+    let Some(actual) = verifier_diff_nu_program_language_feature_keys(&programs) else {
+        return;
+    };
+
+    let mut mismatches = Vec::new();
+    for (index, (check, actual_keys)) in checks.iter().zip(actual.iter()).enumerate() {
+        if &check.expected_keys != actual_keys {
+            mismatches.push(format!(
+                "#{} expected {:?} actual {:?}",
+                index, check.expected_keys, actual_keys
+            ));
+        }
+    }
+
+    assert!(
+        mismatches.is_empty(),
+        "scripts/verifier_diff.nu program-language scanner drifted from Rust compiled-feature metadata: {}",
+        mismatches.join(", ")
+    );
+}
+
+#[test]
 fn test_verifier_diff_program_map_scanner_matches_rust_map_kind_keys() {
     struct MapScannerCheck {
         program: &'static str,
@@ -1712,6 +1843,96 @@ fn test_verifier_diff_program_map_scanner_matches_rust_map_kind_keys() {
 }
 
 #[test]
+fn test_verifier_diff_program_map_value_scanner_matches_rust_map_value_keys() {
+    struct MapValueScannerCheck {
+        program: &'static str,
+        expected_keys: BTreeSet<String>,
+    }
+
+    let checks = [
+        MapValueScannerCheck {
+            program: r#"{|ctx|
+  let text = "map-define resources --kind hash --value-type record{lock:bpf_spin_lock}"
+  # map-define resources --kind hash --value-type "record{timer:bpf_timer}"
+  map-define docs --kind hash # --value-type "record{lock:bpf_spin_lock}"
+  0
+}"#,
+            expected_keys: BTreeSet::new(),
+        },
+        MapValueScannerCheck {
+            program: r#"{|ctx|
+  map-define resources --kind hash --value-type "record{lock:bpf_spin_lock,timer:bpf_timer,task:kptr:task_struct,work:bpf_wq,refs:bpf_refcount}"
+  0
+}"#,
+            expected_keys: map_value_feature_keys([
+                MapValueCompatibilityRequirement::BpfSpinLock,
+                MapValueCompatibilityRequirement::BpfTimer,
+                MapValueCompatibilityRequirement::BpfKptr,
+                MapValueCompatibilityRequirement::BpfWorkqueue,
+                MapValueCompatibilityRequirement::BpfRefcount,
+            ]),
+        },
+        MapValueScannerCheck {
+            program: r#"{|ctx|
+  map-define list_items --kind hash --value-type "record{lock:bpf_spin_lock,root:bpf_list_head:node_data:node}"
+  0
+}"#,
+            expected_keys: map_value_feature_keys([
+                MapValueCompatibilityRequirement::BpfSpinLock,
+                MapValueCompatibilityRequirement::BpfListHead,
+                MapValueCompatibilityRequirement::BpfListNode,
+            ]),
+        },
+        MapValueScannerCheck {
+            program: r#"{|ctx|
+  map-define list_items --kind hash --value-type "record{root:bpf_list_head:node_data:node:record{refs:bpf_refcount,cookie:u64}}"
+  0
+}"#,
+            expected_keys: map_value_feature_keys([
+                MapValueCompatibilityRequirement::BpfListHead,
+                MapValueCompatibilityRequirement::BpfListNode,
+                MapValueCompatibilityRequirement::BpfRefcount,
+            ]),
+        },
+        MapValueScannerCheck {
+            program: r#"{|ctx|
+  map-define rb_items --kind hash --value-type "record{lock:bpf_spin_lock,root:bpf_rb_root:node_data:node}"
+  0
+}"#,
+            expected_keys: map_value_feature_keys([
+                MapValueCompatibilityRequirement::BpfSpinLock,
+                MapValueCompatibilityRequirement::BpfRbRoot,
+                MapValueCompatibilityRequirement::BpfRbNode,
+            ]),
+        },
+    ];
+
+    let programs = checks
+        .iter()
+        .map(|check| check.program.to_string())
+        .collect::<Vec<_>>();
+    let Some(actual) = verifier_diff_nu_program_map_value_feature_keys(&programs) else {
+        return;
+    };
+
+    let mut mismatches = Vec::new();
+    for (index, (check, actual_keys)) in checks.iter().zip(actual.iter()).enumerate() {
+        if &check.expected_keys != actual_keys {
+            mismatches.push(format!(
+                "#{} expected {:?} actual {:?}",
+                index, check.expected_keys, actual_keys
+            ));
+        }
+    }
+
+    assert!(
+        mismatches.is_empty(),
+        "scripts/verifier_diff.nu program-map-value scanner drifted from Rust map-value metadata: {}",
+        mismatches.join(", ")
+    );
+}
+
+#[test]
 fn test_verifier_diff_reserved_map_scanner_matches_rust_map_kind_keys() {
     struct ReservedMapScannerCheck {
         program: &'static str,
@@ -1770,6 +1991,100 @@ fn test_verifier_diff_reserved_map_scanner_matches_rust_map_kind_keys() {
     assert!(
         mismatches.is_empty(),
         "scripts/verifier_diff.nu reserved-map scanner drifted from Rust map metadata: {}",
+        mismatches.join(", ")
+    );
+}
+
+#[test]
+fn test_verifier_diff_program_global_scanner_matches_rust_global_keys() {
+    struct GlobalScannerCheck {
+        program: &'static str,
+        expected_keys: BTreeSet<String>,
+    }
+
+    let global_data_sections =
+        global_feature_keys([GlobalCompatibilityRequirement::BpfDataSections]);
+    let checks = [
+        GlobalScannerCheck {
+            program: r#"{|ctx|
+  let text = "global-get seen"
+  # 7 | global-define --type i64 seen
+  let samples = []
+  let payload = 0x[]
+  0
+}"#,
+            expected_keys: BTreeSet::new(),
+        },
+        GlobalScannerCheck {
+            program: r#"{|ctx|
+  let config = { pid: 7 samples: [11 22] }
+  (($config.samples | get 1) + $config.pid) | count
+  0
+}"#,
+            expected_keys: global_data_sections.clone(),
+        },
+        GlobalScannerCheck {
+            program: r#"{|ctx|
+  let payload = 0x[01 02]
+  ($payload | get 0) | count
+  0
+}"#,
+            expected_keys: global_data_sections.clone(),
+        },
+        GlobalScannerCheck {
+            program: r#"{|ctx|
+  let config = { pid: $ctx.pid samples: [11 22] }
+  (($config.samples | get 1) + $config.pid) | count
+  0
+}"#,
+            expected_keys: BTreeSet::new(),
+        },
+        GlobalScannerCheck {
+            program: r#"{|ctx|
+  let seed = 7
+  let config = { pid: $seed samples: [11 22] }
+  (($config.samples | get 1) + $config.pid) | count
+}"#,
+            expected_keys: global_data_sections.clone(),
+        },
+        GlobalScannerCheck {
+            program: r#"{|ctx|
+  7 | global-define --type i64 seen
+  global-get seen
+}"#,
+            expected_keys: global_data_sections.clone(),
+        },
+        GlobalScannerCheck {
+            program: r#"{|ctx|
+  mut state: record<pid: int stats: record<hits: int ok: bool>> = {}
+  ($state.pid + $state.stats.hits) | count
+  0
+}"#,
+            expected_keys: global_data_sections,
+        },
+    ];
+
+    let programs = checks
+        .iter()
+        .map(|check| check.program.to_string())
+        .collect::<Vec<_>>();
+    let Some(actual) = verifier_diff_nu_program_global_feature_keys(&programs) else {
+        return;
+    };
+
+    let mut mismatches = Vec::new();
+    for (index, (check, actual_keys)) in checks.iter().zip(actual.iter()).enumerate() {
+        if &check.expected_keys != actual_keys {
+            mismatches.push(format!(
+                "#{} expected {:?} actual {:?}",
+                index, check.expected_keys, actual_keys
+            ));
+        }
+    }
+
+    assert!(
+        mismatches.is_empty(),
+        "scripts/verifier_diff.nu program-global scanner drifted from Rust global metadata: {}",
         mismatches.join(", ")
     );
 }
