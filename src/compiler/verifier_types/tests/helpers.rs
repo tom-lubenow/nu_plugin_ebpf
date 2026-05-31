@@ -2399,60 +2399,66 @@ fn test_verify_mir_dynptr_data_requires_constant_len() {
 }
 
 #[test]
-fn test_verify_mir_ringbuf_dynptr_reserve_submit_balanced() {
-    let mut func = MirFunction::new();
-    let entry = func.alloc_block();
-    func.entry = entry;
-    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
-    let dynptr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
-    let reserve_ret = func.alloc_vreg();
-    let data_ret = func.alloc_vreg();
-    let submit_ret = func.alloc_vreg();
+fn test_verify_mir_ringbuf_dynptr_reserve_release_balanced() {
+    for release_helper in [
+        BpfHelper::RingbufSubmitDynptr,
+        BpfHelper::RingbufDiscardDynptr,
+    ] {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+        let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let dynptr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+        let reserve_ret = func.alloc_vreg();
+        let data_ret = func.alloc_vreg();
+        let release_ret = func.alloc_vreg();
 
-    func.block_mut(entry)
-        .instructions
-        .push(MirInst::CallHelper {
-            dst: reserve_ret,
-            helper: BpfHelper::RingbufReserveDynptr as u32,
-            args: vec![
-                MirValue::StackSlot(map_slot),
-                MirValue::Const(8),
-                MirValue::Const(0),
-                MirValue::StackSlot(dynptr_slot),
-            ],
-        });
-    func.block_mut(entry)
-        .instructions
-        .push(MirInst::CallHelper {
-            dst: data_ret,
-            helper: BpfHelper::DynptrData as u32,
-            args: vec![
-                MirValue::StackSlot(dynptr_slot),
-                MirValue::Const(0),
-                MirValue::Const(4),
-            ],
-        });
-    func.block_mut(entry)
-        .instructions
-        .push(MirInst::CallHelper {
-            dst: submit_ret,
-            helper: BpfHelper::RingbufSubmitDynptr as u32,
-            args: vec![MirValue::StackSlot(dynptr_slot), MirValue::Const(0)],
-        });
-    func.block_mut(entry).terminator = MirInst::Return { val: None };
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: reserve_ret,
+                helper: BpfHelper::RingbufReserveDynptr as u32,
+                args: vec![
+                    MirValue::StackSlot(map_slot),
+                    MirValue::Const(8),
+                    MirValue::Const(0),
+                    MirValue::StackSlot(dynptr_slot),
+                ],
+            });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: data_ret,
+                helper: BpfHelper::DynptrData as u32,
+                args: vec![
+                    MirValue::StackSlot(dynptr_slot),
+                    MirValue::Const(0),
+                    MirValue::Const(4),
+                ],
+            });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: release_ret,
+                helper: release_helper as u32,
+                args: vec![MirValue::StackSlot(dynptr_slot), MirValue::Const(0)],
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
 
-    let mut types = HashMap::new();
-    types.insert(reserve_ret, MirType::I64);
-    types.insert(
-        data_ret,
-        MirType::Ptr {
-            pointee: Box::new(MirType::U8),
-            address_space: AddressSpace::Map,
-        },
-    );
-    types.insert(submit_ret, MirType::I64);
+        let mut types = HashMap::new();
+        types.insert(reserve_ret, MirType::I64);
+        types.insert(
+            data_ret,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Map,
+            },
+        );
+        types.insert(release_ret, MirType::I64);
 
-    verify_mir(&func, &types).expect("expected balanced ringbuf dynptr lifecycle");
+        verify_mir(&func, &types)
+            .unwrap_or_else(|err| panic!("expected {release_helper:?} lifecycle: {err:?}"));
+    }
 }
 
 #[test]
@@ -2806,96 +2812,106 @@ fn test_verify_mir_ringbuf_dynptr_reserve_rejected_after_mixed_join() {
 }
 
 #[test]
-fn test_verify_mir_ringbuf_dynptr_submit_rejects_non_ringbuf_dynptr() {
-    let mut from_ret = VReg(0);
-    let mut submit_ret = VReg(0);
-    let (func, data, len) = dynptr_guarded_function(1, |func, block, data, _| {
+fn test_verify_mir_ringbuf_dynptr_release_rejects_non_ringbuf_dynptr() {
+    for release_helper in [
+        BpfHelper::RingbufSubmitDynptr,
+        BpfHelper::RingbufDiscardDynptr,
+    ] {
+        let mut from_ret = VReg(0);
+        let mut release_ret = VReg(0);
+        let (func, data, len) = dynptr_guarded_function(1, |func, block, data, _| {
+            let dynptr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+            from_ret = func.alloc_vreg();
+            release_ret = func.alloc_vreg();
+            func.block_mut(block)
+                .instructions
+                .push(MirInst::CallHelper {
+                    dst: from_ret,
+                    helper: BpfHelper::DynptrFromMem as u32,
+                    args: vec![
+                        MirValue::VReg(data),
+                        MirValue::Const(8),
+                        MirValue::Const(0),
+                        MirValue::StackSlot(dynptr_slot),
+                    ],
+                });
+            func.block_mut(block)
+                .instructions
+                .push(MirInst::CallHelper {
+                    dst: release_ret,
+                    helper: release_helper as u32,
+                    args: vec![MirValue::StackSlot(dynptr_slot), MirValue::Const(0)],
+                });
+            func.block_mut(block).terminator = MirInst::Return { val: None };
+        });
+        let types = dynptr_helper_types(
+            data,
+            len,
+            &[(from_ret, MirType::I64), (release_ret, MirType::I64)],
+        );
+
+        let err = verify_mir(&func, &types).expect_err("expected non-ringbuf dynptr release error");
+        assert!(
+            err.iter().any(|e| e
+                .message
+                .contains("requires live ringbuf dynptr reservation")),
+            "unexpected errors for {release_helper:?}: {:?}",
+            err
+        );
+    }
+}
+
+#[test]
+fn test_verify_mir_ringbuf_dynptr_release_rejects_double_release() {
+    for release_helper in [
+        BpfHelper::RingbufSubmitDynptr,
+        BpfHelper::RingbufDiscardDynptr,
+    ] {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+        let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
         let dynptr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
-        from_ret = func.alloc_vreg();
-        submit_ret = func.alloc_vreg();
-        func.block_mut(block)
+        let reserve_ret = func.alloc_vreg();
+        let release_ret0 = func.alloc_vreg();
+        let release_ret1 = func.alloc_vreg();
+
+        func.block_mut(entry)
             .instructions
             .push(MirInst::CallHelper {
-                dst: from_ret,
-                helper: BpfHelper::DynptrFromMem as u32,
+                dst: reserve_ret,
+                helper: BpfHelper::RingbufReserveDynptr as u32,
                 args: vec![
-                    MirValue::VReg(data),
+                    MirValue::StackSlot(map_slot),
                     MirValue::Const(8),
                     MirValue::Const(0),
                     MirValue::StackSlot(dynptr_slot),
                 ],
             });
-        func.block_mut(block)
-            .instructions
-            .push(MirInst::CallHelper {
-                dst: submit_ret,
-                helper: BpfHelper::RingbufSubmitDynptr as u32,
-                args: vec![MirValue::StackSlot(dynptr_slot), MirValue::Const(0)],
-            });
-        func.block_mut(block).terminator = MirInst::Return { val: None };
-    });
-    let types = dynptr_helper_types(
-        data,
-        len,
-        &[(from_ret, MirType::I64), (submit_ret, MirType::I64)],
-    );
+        for dst in [release_ret0, release_ret1] {
+            func.block_mut(entry)
+                .instructions
+                .push(MirInst::CallHelper {
+                    dst,
+                    helper: release_helper as u32,
+                    args: vec![MirValue::StackSlot(dynptr_slot), MirValue::Const(0)],
+                });
+        }
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
 
-    let err = verify_mir(&func, &types).expect_err("expected non-ringbuf dynptr release error");
-    assert!(
-        err.iter().any(|e| e
-            .message
-            .contains("requires live ringbuf dynptr reservation")),
-        "unexpected errors: {:?}",
-        err
-    );
-}
-
-#[test]
-fn test_verify_mir_ringbuf_dynptr_submit_rejects_double_release() {
-    let mut func = MirFunction::new();
-    let entry = func.alloc_block();
-    func.entry = entry;
-    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
-    let dynptr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
-    let reserve_ret = func.alloc_vreg();
-    let submit_ret0 = func.alloc_vreg();
-    let submit_ret1 = func.alloc_vreg();
-
-    func.block_mut(entry)
-        .instructions
-        .push(MirInst::CallHelper {
-            dst: reserve_ret,
-            helper: BpfHelper::RingbufReserveDynptr as u32,
-            args: vec![
-                MirValue::StackSlot(map_slot),
-                MirValue::Const(8),
-                MirValue::Const(0),
-                MirValue::StackSlot(dynptr_slot),
-            ],
-        });
-    for dst in [submit_ret0, submit_ret1] {
-        func.block_mut(entry)
-            .instructions
-            .push(MirInst::CallHelper {
-                dst,
-                helper: BpfHelper::RingbufSubmitDynptr as u32,
-                args: vec![MirValue::StackSlot(dynptr_slot), MirValue::Const(0)],
-            });
+        let mut types = HashMap::new();
+        types.insert(reserve_ret, MirType::I64);
+        types.insert(release_ret0, MirType::I64);
+        types.insert(release_ret1, MirType::I64);
+        let err = verify_mir(&func, &types).expect_err("expected double ringbuf dynptr release");
+        assert!(
+            err.iter().any(|e| e
+                .message
+                .contains("ringbuf dynptr reservation already released")),
+            "unexpected errors for {release_helper:?}: {:?}",
+            err
+        );
     }
-    func.block_mut(entry).terminator = MirInst::Return { val: None };
-
-    let mut types = HashMap::new();
-    types.insert(reserve_ret, MirType::I64);
-    types.insert(submit_ret0, MirType::I64);
-    types.insert(submit_ret1, MirType::I64);
-    let err = verify_mir(&func, &types).expect_err("expected double ringbuf dynptr release");
-    assert!(
-        err.iter().any(|e| e
-            .message
-            .contains("ringbuf dynptr reservation already released")),
-        "unexpected errors: {:?}",
-        err
-    );
 }
 
 #[test]

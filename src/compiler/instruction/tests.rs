@@ -3637,6 +3637,10 @@ fn test_helper_signature_dynptr_helpers() {
     assert_eq!(data.arg_kind(0), HelperArgKind::Pointer);
     assert_eq!(data.ret_kind, HelperRetKind::PointerMaybeNull);
     assert_eq!(
+        BpfHelper::DynptrData.dynptr_arg_role(0),
+        Some(HelperDynptrArgRole::In)
+    );
+    assert_eq!(
         BpfHelper::DynptrData.scalar_arg_known_const_requirement(2),
         Some("helper 'bpf_dynptr_data' arg2 must be known constant")
     );
