@@ -32447,6 +32447,32 @@ const FIXTURES = [
         error_contains: "take count must be non-negative"
     }
     {
+        name: "core-list-reverse"
+        category: "language-core"
+        tags: [aggregate list reverse]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [10 20 30] | reverse | get 0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-list-reverse-after-take"
+        category: "language-core"
+        tags: [aggregate list reverse take]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [10 20 30] | take 2 | reverse | get 0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-drop-default"
         category: "language-core"
         tags: [aggregate list drop]

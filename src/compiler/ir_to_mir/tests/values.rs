@@ -765,6 +765,63 @@ fn test_lower_drop_negative_count_is_rejected() {
 }
 
 #[test]
+fn test_lower_reverse_on_numeric_list_rebuilds_with_descending_constant_indexes() {
+    let reverse_decl = DeclId::new(96);
+    let get_decl = DeclId::new(97);
+    let hir = make_numeric_list_call_then_get_program(reverse_decl, get_decl, None, 0);
+    let decl_names = HashMap::from([
+        (reverse_decl, "reverse".to_string()),
+        (get_decl, "get".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("reverse should lower to a bounded stack-backed numeric list");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+
+    assert!(
+        instructions
+            .iter()
+            .any(|inst| matches!(inst, MirInst::ListNew { max_len: 3, .. })),
+        "expected reverse to allocate a list with the original capacity"
+    );
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::ListGet {
+                idx: MirValue::Const(2),
+                ..
+            }
+        )),
+        "expected reverse to copy the original tail element first"
+    );
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::ListGet {
+                idx: MirValue::Const(0),
+                ..
+            }
+        )),
+        "expected reverse to copy the original head element last"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("reverse followed by get should compile through codegen");
+}
+
+#[test]
 fn test_lower_append_on_numeric_list_rebuilds_with_extra_capacity() {
     let append_decl = DeclId::new(86);
     let get_decl = DeclId::new(87);

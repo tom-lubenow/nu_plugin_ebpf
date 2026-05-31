@@ -291,6 +291,114 @@ impl<'a> HirToMirLowering<'a> {
         Ok(())
     }
 
+    fn lower_stack_list_reverse(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+    ) -> Result<(), CompileError> {
+        let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
+        let input_reg = self
+            .pipeline_input_reg
+            .or(src_dst_had_value.then_some(src_dst));
+
+        if !self.named_flags.is_empty()
+            || !self.named_args.is_empty()
+            || !self.positional_args.is_empty()
+        {
+            return Err(CompileError::UnsupportedInstruction(
+                "reverse does not accept arguments in eBPF".into(),
+            ));
+        }
+
+        let input_meta = input_reg
+            .and_then(|reg| self.get_metadata(reg).cloned())
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "reverse requires a pipeline input with tracked metadata in eBPF".into(),
+                )
+            })?;
+        let Some((_input_slot, max_len)) = input_meta.list_buffer else {
+            return Err(CompileError::UnsupportedInstruction(
+                "reverse requires a stack-backed list input in eBPF".into(),
+            ));
+        };
+
+        let result_vreg = if self.pipeline_input.is_none() && src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+        let (out_slot, out_ty) = self.create_stack_numeric_list_result(result_vreg, max_len);
+
+        if max_len > 0 {
+            let len_vreg = self.func.alloc_vreg();
+            self.emit(MirInst::ListLen {
+                dst: len_vreg,
+                list: input_vreg,
+            });
+            self.vreg_type_hints.insert(len_vreg, MirType::U64);
+
+            let continuation_block = self.func.alloc_block();
+            for output_index in 0..max_len {
+                let source_index = max_len - 1 - output_index;
+                let copy_block = self.func.alloc_block();
+                let next_block = if output_index + 1 == max_len {
+                    continuation_block
+                } else {
+                    self.func.alloc_block()
+                };
+
+                let cond_vreg = self.func.alloc_vreg();
+                self.emit(MirInst::BinOp {
+                    dst: cond_vreg,
+                    op: BinOpKind::Lt,
+                    lhs: MirValue::Const(source_index as i64),
+                    rhs: MirValue::VReg(len_vreg),
+                });
+                self.vreg_type_hints.insert(cond_vreg, MirType::Bool);
+                self.terminate(MirInst::Branch {
+                    cond: cond_vreg,
+                    if_true: copy_block,
+                    if_false: next_block,
+                });
+
+                self.current_block = copy_block;
+                let item_vreg = self.func.alloc_vreg();
+                self.emit(MirInst::ListGet {
+                    dst: item_vreg,
+                    list: input_vreg,
+                    idx: MirValue::Const(source_index as i64),
+                });
+                self.vreg_type_hints.insert(item_vreg, MirType::I64);
+                self.emit(MirInst::ListPush {
+                    list: result_vreg,
+                    item: item_vreg,
+                });
+                self.terminate(MirInst::Jump { target: next_block });
+
+                self.current_block = next_block;
+            }
+        }
+
+        let known_len = Self::numeric_list_known_len(&input_meta).map(|len| len.min(max_len));
+        let constant_value = match input_meta.constant_value {
+            Some(nu_protocol::Value::List { mut vals, .. }) => {
+                vals.reverse();
+                Some(nu_protocol::Value::list(vals, Span::unknown()))
+            }
+            _ => None,
+        };
+
+        self.install_stack_numeric_list_result_metadata(
+            src_dst, out_slot, out_ty, max_len, known_len,
+        );
+        if let Some(value) = constant_value {
+            self.get_or_create_metadata(src_dst).constant_value = Some(value);
+        }
+        Ok(())
+    }
+
     fn install_stack_numeric_list_result_metadata(
         &mut self,
         src_dst: RegId,
@@ -3195,6 +3303,10 @@ impl<'a> HirToMirLowering<'a> {
                     dst_vreg,
                     src_dst_had_value,
                 )?;
+            }
+
+            "reverse" => {
+                self.lower_stack_list_reverse(src_dst, dst_vreg, src_dst_had_value)?;
             }
 
             "append" | "prepend" => {

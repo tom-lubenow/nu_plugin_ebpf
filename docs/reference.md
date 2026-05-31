@@ -827,6 +827,7 @@ eBPF layout and verifier bounds are explicit:
 | `take` | Stack-backed numeric lists with a compile-time non-negative count |
 | `skip` | Stack-backed numeric lists with a compile-time non-negative count |
 | `drop` | Stack-backed numeric lists with a compile-time non-negative count removed from the end |
+| `reverse` | Stack-backed numeric lists, preserving runtime length with descending constant-index loads |
 | `append` / `prepend` | Stack-backed numeric lists with scalar numeric items when the output fits the modeled capacity |
 | `is-empty` | Stack-backed lists, tracked strings, literal null, and literal list constants |
 | `length` | Stack-backed numeric lists plus literal binary and literal null values |
