@@ -738,7 +738,7 @@ Read-only closure captures now lower as real constants for supported types (`int
 
 ## Language Surface Policy
 
-- Prefer ordinary Nushell syntax plus the small first-class eBPF command set (`emit`, `count`, `histogram`, `start-timer`, `stop-timer`, `read-str`, `read-kernel-str`, `adjust-packet`, `adjust-message`, `redirect`, `redirect-map`, `redirect-socket`, and `assign-socket`) whenever the operation has an honest language form. Ordinary Nushell primitives are preferred over helper wrappers too; `random int` lowers to `bpf_get_prandom_u32`.
+- Prefer ordinary Nushell syntax plus the small first-class eBPF command set (`emit`, `count`, `histogram`, `start-timer`, `stop-timer`, `read-str`, `read-kernel-str`, `adjust-packet`, `adjust-message`, `redirect`, `redirect-map`, `redirect-socket`, and `assign-socket`) whenever the operation has an honest language form. Ordinary Nushell primitives are preferred over helper wrappers too; `random int` and the supported stack-list/fixed-record aggregate commands lower directly through the compiler.
 - Keep that permanent first-class surface intentionally small. Those commands should exist because they model real eBPF operations that do not already have a clear Nushell shape, not because every helper needs a bespoke wrapper.
 - Prefer leading typed `mut` bindings for private compiler-managed globals. Use `global-define`, `global-get`, and `global-set` when you truly need an explicit shared name or a source-order-independent declaration.
 - Treat `map-*` and `global-*` as convenience surface around concrete eBPF capabilities, not as a goal to invent a second parallel language when plain Nushell syntax would be clearer. They are justified when they name a real map/global resource directly; `map-define` is specifically the typed resource declaration path for key/value layouts and map capacity that ordinary operations cannot infer. They are not a template for growing new wrappers by default.
@@ -814,14 +814,38 @@ dependency. For example, `assign-socket` reports the target-specific `ctx:sk`
 minimum kernel alongside its `bpf_sk_assign` helper floor, while the row-level
 compatibility floor reports the later of those requirements.
 
-## Helper Commands (inside closures)
+## Ordinary Nushell Primitives (inside closures)
+
+The compiler intentionally supports ordinary Nushell forms before adding new
+helper-style commands. Current aggregate lowering is focused on values whose
+eBPF layout and verifier bounds are explicit:
+
+| Primitive | Supported eBPF subset |
+|-----------|-----------------------|
+| `where` | Stack-backed numeric lists with a closure predicate; scalar pipeline filtering also lowers to an early return when the predicate is false |
+| `each` | Stack-backed numeric lists with a closure transform, preserving runtime list length; scalar pipeline transforms are also supported |
+| `skip` | Stack-backed numeric lists with a compile-time non-negative count |
+| `append` / `prepend` | Stack-backed numeric lists with scalar numeric items when the output fits the modeled capacity |
+| `is-empty` | Stack-backed lists, tracked strings, literal null, and literal list constants |
+| `length` | Stack-backed numeric lists plus literal binary and literal null values |
+| `first` / `last` | Scalar first/last element access for stack-backed numeric lists; counted slice forms are not yet modeled |
+| `get` | Stack-backed numeric-list indexing plus typed kernel/user pointer numeric indexing; list literal indexes may be literal cell paths |
+| `select` / `reject` | Metadata-backed fixed records, materialized into a fresh fixed-layout record |
+| `default` | Compiler-known null/empty scalar replacement and metadata-backed record missing/null field replacement; closure default values and runtime nullable-pointer defaults are rejected |
+| `random int` | BPF pseudo-random integer generation, including the zero-argument form and compile-time bounded ranges covering at most `2^32` values |
+
+These are language primitives in the compiled closure subset, not permanent
+helper wrappers. If a Nushell command would require dynamic allocation,
+unbounded iteration, dynamic dispatch, or a layout the compiler cannot prove,
+it remains outside the eBPF subset until a verifier-friendly lowering exists.
+
+## First-Class, Resource, and Escape-Hatch Commands (inside closures)
 
 | Command | Description |
 |---------|-------------|
 | `emit` | Send value to userspace |
 | `count` | Increment counter by key |
 | `histogram` | Add value to log2 histogram |
-| `random int` | Return a BPF pseudo-random integer using `bpf_get_prandom_u32`; eBPF supports the zero-argument form and compile-time bounded ranges covering at most `2^32` values |
 | `start-timer` | Record start timestamp |
 | `stop-timer` | Calculate elapsed time |
 | `read-str` | Read string from user memory (`--max-len` to cap, default 128) |
