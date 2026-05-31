@@ -14,6 +14,187 @@ const BPF_SK_LOOKUP_F_REPLACE: u64 = 1 << 0;
 const BPF_SK_LOOKUP_F_NO_REUSEPORT: u64 = 1 << 1;
 
 impl<'a> HirToMirLowering<'a> {
+    fn lower_stack_list_append_or_prepend(
+        &mut self,
+        cmd_name: &str,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+    ) -> Result<(), CompileError> {
+        const MAX_STACK_LIST_CAPACITY: usize = 60;
+
+        let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
+        let input_reg = self
+            .pipeline_input_reg
+            .or(src_dst_had_value.then_some(src_dst));
+
+        if !self.named_flags.is_empty() || !self.named_args.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} does not accept named flags or arguments in eBPF"
+            )));
+        }
+
+        if self.positional_args.len() != 1 {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires exactly one positional item argument in eBPF"
+            )));
+        }
+
+        let (item_vreg, item_reg) = self.positional_args[0];
+        let input_meta = input_reg
+            .and_then(|reg| self.get_metadata(reg).cloned())
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "{cmd_name} requires a pipeline input with tracked metadata in eBPF"
+                ))
+            })?;
+        let Some((_input_slot, max_len)) = input_meta.list_buffer else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires a stack-backed list input in eBPF"
+            )));
+        };
+
+        let out_max_len = max_len.checked_add(1).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} would overflow stack-backed numeric list capacity"
+            ))
+        })?;
+        if out_max_len > MAX_STACK_LIST_CAPACITY {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} would exceed stack-backed numeric list capacity {MAX_STACK_LIST_CAPACITY}"
+            )));
+        }
+
+        let result_vreg = if self.pipeline_input.is_none() && src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+        let buffer_size = align_to_eight(8 + out_max_len * 8);
+        let out_ty = MirType::Array {
+            elem: Box::new(MirType::I64),
+            len: out_max_len.saturating_add(1),
+        };
+        let out_slot = self
+            .func
+            .alloc_stack_slot(buffer_size, 8, StackSlotKind::ListBuffer);
+        self.record_list_buffer_slot_type(out_slot, out_max_len);
+        self.emit(MirInst::ListNew {
+            dst: result_vreg,
+            buffer: out_slot,
+            max_len: out_max_len,
+        });
+        self.vreg_type_hints.insert(
+            result_vreg,
+            MirType::Ptr {
+                pointee: Box::new(out_ty.clone()),
+                address_space: AddressSpace::Stack,
+            },
+        );
+
+        if cmd_name == "prepend" {
+            self.emit(MirInst::ListPush {
+                list: result_vreg,
+                item: item_vreg,
+            });
+        }
+
+        if max_len > 0 {
+            let len_vreg = self.func.alloc_vreg();
+            self.emit(MirInst::ListLen {
+                dst: len_vreg,
+                list: input_vreg,
+            });
+            self.vreg_type_hints.insert(len_vreg, MirType::U64);
+
+            let continuation_block = self.func.alloc_block();
+            for source_index in 0..max_len {
+                let copy_block = self.func.alloc_block();
+                let next_block = if source_index + 1 == max_len {
+                    continuation_block
+                } else {
+                    self.func.alloc_block()
+                };
+
+                let cond_vreg = self.func.alloc_vreg();
+                self.emit(MirInst::BinOp {
+                    dst: cond_vreg,
+                    op: BinOpKind::Lt,
+                    lhs: MirValue::Const(source_index as i64),
+                    rhs: MirValue::VReg(len_vreg),
+                });
+                self.vreg_type_hints.insert(cond_vreg, MirType::Bool);
+                self.terminate(MirInst::Branch {
+                    cond: cond_vreg,
+                    if_true: copy_block,
+                    if_false: next_block,
+                });
+
+                self.current_block = copy_block;
+                let copied_item_vreg = self.func.alloc_vreg();
+                self.emit(MirInst::ListGet {
+                    dst: copied_item_vreg,
+                    list: input_vreg,
+                    idx: MirValue::Const(source_index as i64),
+                });
+                self.vreg_type_hints.insert(copied_item_vreg, MirType::I64);
+                self.emit(MirInst::ListPush {
+                    list: result_vreg,
+                    item: copied_item_vreg,
+                });
+                self.terminate(MirInst::Jump { target: next_block });
+
+                self.current_block = next_block;
+            }
+        }
+
+        if cmd_name == "append" {
+            self.emit(MirInst::ListPush {
+                list: result_vreg,
+                item: item_vreg,
+            });
+        }
+
+        self.reset_call_result_metadata(src_dst);
+        let item_constant = self.get_metadata(item_reg).and_then(|meta| {
+            meta.constant_value.clone().or_else(|| {
+                meta.literal_int
+                    .map(|value| nu_protocol::Value::int(value, Span::unknown()))
+            })
+        });
+        let known_len_from_semantics = match input_meta.annotated_semantics {
+            Some(AnnotatedValueSemantics::NumericList { known_len, .. }) => known_len,
+            _ => None,
+        };
+        let known_len_from_constant = match input_meta.constant_value.clone() {
+            Some(nu_protocol::Value::List { ref vals, .. }) => Some(vals.len()),
+            _ => None,
+        };
+
+        let out_meta = self.get_or_create_metadata(src_dst);
+        out_meta.field_type = Some(out_ty);
+        out_meta.list_buffer = Some((out_slot, out_max_len));
+        out_meta.annotated_semantics = Some(AnnotatedValueSemantics::NumericList {
+            max_len: out_max_len,
+            known_len: known_len_from_semantics
+                .or(known_len_from_constant)
+                .map(|known_len| known_len.min(max_len).saturating_add(1).min(out_max_len)),
+        });
+        out_meta.constant_value = match (input_meta.constant_value, item_constant) {
+            (Some(nu_protocol::Value::List { mut vals, .. }), Some(item)) => {
+                if cmd_name == "prepend" {
+                    vals.insert(0, item);
+                } else {
+                    vals.push(item);
+                }
+                Some(nu_protocol::Value::list(vals, Span::unknown()))
+            }
+            _ => None,
+        };
+
+        Ok(())
+    }
+
     pub(super) fn lower_call(
         &mut self,
         decl_id: DeclId,
@@ -2427,6 +2608,15 @@ impl<'a> HirToMirLowering<'a> {
                     )),
                     _ => None,
                 };
+            }
+
+            "append" | "prepend" => {
+                self.lower_stack_list_append_or_prepend(
+                    &cmd_name,
+                    src_dst,
+                    dst_vreg,
+                    src_dst_had_value,
+                )?;
             }
 
             "get" => {

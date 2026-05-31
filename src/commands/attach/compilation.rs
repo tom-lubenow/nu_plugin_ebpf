@@ -35,6 +35,8 @@ const NU_CLOSURE_COMMANDS: &[&str] = &[
     "where",
     "each",
     "skip",
+    "append",
+    "prepend",
     "first",
     "last",
     "get",

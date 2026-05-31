@@ -126,6 +126,66 @@ fn make_numeric_list_skip_then_get_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_numeric_list_item_call_then_get_program(
+    command_decl: DeclId,
+    get_decl: DeclId,
+    item: i64,
+    get_index: i64,
+) -> HirProgram {
+    let mut stmts = vec![HirStmt::LoadValue {
+        dst: RegId::new(0),
+        val: Box::new(Value::list(
+            vec![
+                Value::int(10, Span::test_data()),
+                Value::int(20, Span::test_data()),
+                Value::int(30, Span::test_data()),
+            ],
+            Span::test_data(),
+        )),
+    }];
+    stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(2),
+        lit: HirLiteral::Int(item),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: command_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional: vec![RegId::new(2)],
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(3),
+        lit: HirLiteral::Int(get_index),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: get_decl,
+        src_dst: RegId::new(4),
+        args: HirCallArgs {
+            positional: vec![RegId::new(3)],
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(4) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 5,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 #[test]
 fn test_lower_load_value_duration_as_const() {
     let func = HirFunction {
@@ -388,6 +448,85 @@ fn test_lower_skip_negative_count_is_rejected() {
         err.to_string().contains("skip count must be non-negative"),
         "unexpected error: {err}"
     );
+}
+
+#[test]
+fn test_lower_append_on_numeric_list_rebuilds_with_extra_capacity() {
+    let append_decl = DeclId::new(86);
+    let get_decl = DeclId::new(87);
+    let hir = make_numeric_list_item_call_then_get_program(append_decl, get_decl, 40, 3);
+    let decl_names = HashMap::from([
+        (append_decl, "append".to_string()),
+        (get_decl, "get".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("append should lower on stack-backed numeric lists");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+
+    assert!(
+        instructions
+            .iter()
+            .any(|inst| matches!(inst, MirInst::ListNew { max_len: 4, .. })),
+        "expected append to allocate a four-element result list"
+    );
+    assert!(
+        instructions
+            .iter()
+            .filter(|inst| matches!(inst, MirInst::ListPush { .. }))
+            .count()
+            >= 4,
+        "expected append to copy existing items and push the appended item"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("append followed by get should compile through codegen");
+}
+
+#[test]
+fn test_lower_prepend_on_numeric_list_rebuilds_with_extra_capacity() {
+    let prepend_decl = DeclId::new(88);
+    let get_decl = DeclId::new(89);
+    let hir = make_numeric_list_item_call_then_get_program(prepend_decl, get_decl, 5, 0);
+    let decl_names = HashMap::from([
+        (prepend_decl, "prepend".to_string()),
+        (get_decl, "get".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("prepend should lower on stack-backed numeric lists");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::ListNew { max_len: 4, .. })),
+        "expected prepend to allocate a four-element result list"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("prepend followed by get should compile through codegen");
 }
 
 #[test]
