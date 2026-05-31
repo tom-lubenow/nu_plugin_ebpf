@@ -1,7 +1,7 @@
 use super::{
     ContextFieldDirectStore, ContextFieldIndexedStore, ContextFieldPhysicalStore,
-    ContextFieldStoreTransform, ContextFieldTransformedStore, CtxWriteTarget, EbpfProgramType,
-    ProgramCompatibilityRequirement, ProgramContextFamily,
+    ContextFieldReadTransform, ContextFieldStoreTransform, ContextFieldTransformedStore,
+    CtxWriteTarget, EbpfProgramType, ProgramCompatibilityRequirement, ProgramContextFamily,
 };
 use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::{ContextFieldCompatibilityRequirement, CtxField, CtxStoreTarget};
@@ -1527,6 +1527,115 @@ mod tests {
         }
     }
 
+    fn inverse_store_transform_label(
+        read_transform: Option<ContextFieldReadTransform>,
+    ) -> Option<&'static str> {
+        match read_transform {
+            Some(ContextFieldReadTransform::BigEndianU32ToHost) => Some("host-u32-to-big-endian"),
+            Some(ContextFieldReadTransform::BigEndianU32PortToHost) => {
+                Some("host-port-to-big-endian-u32")
+            }
+            Some(ContextFieldReadTransform::BigEndianU32WordsToHost)
+            | Some(ContextFieldReadTransform::BigEndianU16ToHost)
+            | Some(ContextFieldReadTransform::LircValueMask)
+            | Some(ContextFieldReadTransform::LircModeMask)
+            | Some(ContextFieldReadTransform::CgroupDeviceAccessShift)
+            | Some(ContextFieldReadTransform::CgroupDeviceTypeMask)
+            | None => None,
+        }
+    }
+
+    fn assert_store_shapes_match_read_layouts(spec_source: &str) {
+        let spec = ProgramSpec::parse(spec_source)
+            .unwrap_or_else(|err| panic!("{spec_source} should parse: {err}"));
+        let table = spec.ctx_write_surfaces().unwrap_or(&[]);
+
+        for surface in table {
+            if !surface.is_available(&spec) {
+                continue;
+            }
+
+            let Some(field) = surface.context_field() else {
+                continue;
+            };
+
+            let write = surface.surface(&spec);
+
+            if let Some(offset) = write.direct_store_offset {
+                if let Some(read) = spec.ctx_field_direct_load(&field) {
+                    assert_eq!(
+                        read.offset,
+                        offset,
+                        "{spec_source} ctx.{} direct store offset should match read offset for ctx.{}",
+                        write.field_name,
+                        field.display_name()
+                    );
+                    assert_eq!(
+                        spec.ctx_field_direct_load_transform(&field),
+                        None,
+                        "{spec_source} ctx.{} direct store should only target fields without read-side scalar transforms",
+                        write.field_name
+                    );
+                }
+            }
+
+            if let Some(offset) = write.transformed_store_offset {
+                let read = spec.ctx_field_direct_load(&field).unwrap_or_else(|| {
+                    panic!(
+                        "{spec_source} ctx.{} transformed store should have direct-read metadata for ctx.{}",
+                        write.field_name,
+                        field.display_name()
+                    )
+                });
+                assert_eq!(
+                    read.offset,
+                    offset,
+                    "{spec_source} ctx.{} transformed store offset should match read offset for ctx.{}",
+                    write.field_name,
+                    field.display_name()
+                );
+                assert_eq!(
+                    write.transformed_store_transform,
+                    inverse_store_transform_label(spec.ctx_field_direct_load_transform(&field)),
+                    "{spec_source} ctx.{} transformed store should invert the read transform for ctx.{}",
+                    write.field_name,
+                    field.display_name()
+                );
+            }
+
+            if let Some(offset) = write.indexed_store_base_offset {
+                let read = spec.ctx_field_array_load(&field).unwrap_or_else(|| {
+                    panic!(
+                        "{spec_source} ctx.{} indexed store should have array-read metadata for ctx.{}",
+                        write.field_name,
+                        field.display_name()
+                    )
+                });
+                assert_eq!(
+                    read.base_offset,
+                    offset,
+                    "{spec_source} ctx.{} indexed store base offset should match read base offset for ctx.{}",
+                    write.field_name,
+                    field.display_name()
+                );
+                assert_eq!(
+                    Some(read.count),
+                    write.indexed_store_count,
+                    "{spec_source} ctx.{} indexed store count should match read count for ctx.{}",
+                    write.field_name,
+                    field.display_name()
+                );
+                assert_eq!(
+                    write.indexed_store_convert_to_big_endian,
+                    Some(spec.ctx_field_array_load_transform(&field).is_some()),
+                    "{spec_source} ctx.{} indexed store endian conversion should invert array read transform for ctx.{}",
+                    write.field_name,
+                    field.display_name()
+                );
+            }
+        }
+    }
+
     fn all_context_write_surface_tables() -> [(&'static str, &'static [ContextWriteSurfaceSpec]); 12]
     {
         [
@@ -1810,6 +1919,13 @@ mod tests {
                     "{target:?} should expose exactly one physical store shape"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn test_context_write_store_shapes_match_read_layouts() {
+        for spec_source in REPRESENTATIVE_CONTEXT_WRITE_SPEC_SOURCES {
+            assert_store_shapes_match_read_layouts(spec_source);
         }
     }
 
