@@ -3490,6 +3490,49 @@ fn test_lower_sk_reuseport_data_byte_projection_adds_guarded_packet_load() {
 }
 
 #[test]
+fn test_lower_sk_reuseport_scalar_context_aliases_compile() {
+    for (field_name, expected_field) in [
+        ("packet_len", CtxField::PacketLen),
+        ("len", CtxField::PacketLen),
+        ("eth_protocol", CtxField::EthProtocol),
+        ("protocol", CtxField::Protocol),
+        ("ip_protocol", CtxField::Protocol),
+        ("hash", CtxField::SkbHash),
+        ("bind_inany", CtxField::BindInany),
+        ("socket_cookie", CtxField::SocketCookie),
+    ] {
+        let hir = make_ctx_path_program(CellPath {
+            members: vec![string_member(field_name)],
+        });
+        let probe_ctx = ProbeContext::new(EbpfProgramType::SkReuseport, "select");
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            Some(&probe_ctx),
+            &HashMap::new(),
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("sk_reuseport ctx.{field_name} should lower: {err}"));
+
+        assert!(
+            result.program.main.blocks.iter().any(|block| {
+                block.instructions.iter().any(|inst| {
+                    matches!(
+                        inst,
+                        MirInst::LoadCtxField { field, .. } if field == &expected_field
+                    )
+                })
+            }),
+            "sk_reuseport ctx.{field_name} should load {expected_field:?}"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("sk_reuseport ctx.{field_name} should compile: {err}"));
+    }
+}
+
+#[test]
 fn test_lower_ctx_socket_projection_records_implied_context_compatibility_fields() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("sk"), string_member("mark")],
