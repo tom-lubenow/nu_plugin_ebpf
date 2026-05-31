@@ -48,6 +48,7 @@ const NU_CLOSURE_COMMANDS: &[&str] = &[
     "is-empty",
     "is-not-empty",
     "str length",
+    "str starts-with",
     "length",
     "math max",
     "math min",

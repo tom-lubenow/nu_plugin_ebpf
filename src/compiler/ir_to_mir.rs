@@ -56,6 +56,7 @@ const EMPTY_BINARY_LAYOUT_ERROR: &str = "empty binary constants do not establish
 
 mod call_list_ops;
 mod call_record_ops;
+mod call_string_ops;
 mod call_support;
 mod calls;
 mod closures;

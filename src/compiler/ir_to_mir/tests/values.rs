@@ -529,6 +529,41 @@ fn make_string_pipeline_call_program(decl_id: DeclId, value: &str) -> HirProgram
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_string_arg_pipeline_call_program(decl_id: DeclId, value: &str, arg: &str) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::string(value, Span::test_data())),
+                },
+                HirStmt::LoadValue {
+                    dst: RegId::new(2),
+                    val: Box::new(Value::string(arg, Span::test_data())),
+                },
+                HirStmt::Call {
+                    decl_id,
+                    src_dst: RegId::new(1),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(2)],
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_record_projection_then_field_program(
     command_decl: DeclId,
     fields: &[&str],
@@ -2309,6 +2344,66 @@ fn test_lower_str_length_on_string_copies_tracked_length() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("str length on tracked string should compile through codegen");
+}
+
+#[test]
+fn test_lower_str_starts_with_on_string_uses_bounded_strcmp() {
+    let starts_with_decl = DeclId::new(118);
+    let hir = make_string_arg_pipeline_call_program(starts_with_decl, "abcdef", "abc");
+    let decl_names = HashMap::from([(starts_with_decl, "str starts-with".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str starts-with should lower on tracked strings with literal prefixes");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::StrCmp { len: 3, .. })),
+        "expected str starts-with to lower to a bounded prefix StrCmp"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("str starts-with on tracked strings should compile through codegen");
+}
+
+#[test]
+fn test_lower_str_starts_with_prefix_beyond_capacity_is_false() {
+    let starts_with_decl = DeclId::new(119);
+    let hir = make_string_arg_pipeline_call_program(starts_with_decl, "a", "abcdefghijklmnopqrstu");
+    let decl_names = HashMap::from([(starts_with_decl, "str starts-with".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str starts-with should prove too-long prefixes false");
+
+    assert!(
+        !result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::StrCmp { .. })),
+        "expected over-capacity str starts-with to avoid out-of-slot StrCmp"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("false str starts-with result should compile through codegen");
 }
 
 #[test]

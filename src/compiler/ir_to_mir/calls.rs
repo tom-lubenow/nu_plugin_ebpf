@@ -2749,53 +2749,11 @@ impl<'a> HirToMirLowering<'a> {
             }
 
             "str length" => {
-                let input_reg = self
-                    .pipeline_input_reg
-                    .or(src_dst_had_value.then_some(src_dst));
-                let result_vreg = if src_dst_had_value {
-                    self.assign_fresh_vreg(src_dst)
-                } else {
-                    dst_vreg
-                };
+                self.lower_string_length(src_dst, dst_vreg, src_dst_had_value)?;
+            }
 
-                if !self.named_flags.is_empty()
-                    || !self.named_args.is_empty()
-                    || !self.positional_args.is_empty()
-                {
-                    return Err(CompileError::UnsupportedInstruction(
-                        "str length does not accept arguments in eBPF".into(),
-                    ));
-                }
-
-                let input_meta = input_reg.and_then(|reg| self.get_metadata(reg).cloned());
-                if let Some(len_vreg) = input_meta.as_ref().and_then(|meta| {
-                    meta.string_len_vreg.or_else(|| match &meta.constant_value {
-                        Some(nu_protocol::Value::String { val, .. }) => {
-                            let const_len_vreg = self.func.alloc_vreg();
-                            self.emit(MirInst::Copy {
-                                dst: const_len_vreg,
-                                src: MirValue::Const(val.len() as i64),
-                            });
-                            self.vreg_type_hints.insert(const_len_vreg, MirType::I64);
-                            Some(const_len_vreg)
-                        }
-                        _ => None,
-                    })
-                }) {
-                    self.emit(MirInst::Copy {
-                        dst: result_vreg,
-                        src: MirValue::VReg(len_vreg),
-                    });
-                } else {
-                    return Err(CompileError::UnsupportedInstruction(
-                        "str length requires a tracked string input in eBPF".into(),
-                    ));
-                }
-
-                self.reset_call_result_metadata(src_dst);
-                let out_meta = self.get_or_create_metadata(src_dst);
-                out_meta.field_type = Some(MirType::I64);
-                self.vreg_type_hints.insert(result_vreg, MirType::I64);
+            "str starts-with" => {
+                self.lower_string_starts_with(src_dst, dst_vreg, src_dst_had_value)?;
             }
 
             "math max" | "math min" | "math product" | "math sum" => {

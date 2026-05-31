@@ -33056,6 +33056,32 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-string-starts-with"
+        category: "language-core"
+        tags: [string str starts-with]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "abcdef" | str starts-with "abc"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-string-starts-with-too-long"
+        category: "language-core"
+        tags: [string str starts-with]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "a" | str starts-with "abcdefghijklmnopqrstu"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-null-is-empty"
         category: "language-core"
         tags: ["null" is-empty]
