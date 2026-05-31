@@ -36,6 +36,47 @@ fn test_emit_record_rejects_scalar_for_array_field() {
 }
 
 #[test]
+fn test_emit_record_rejects_user_pointer() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let value = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::EmitRecord {
+            fields: vec![RecordFieldDef {
+                name: "bytes".to_string(),
+                value,
+                ty: MirType::Array {
+                    elem: Box::new(MirType::U8),
+                    len: 16,
+                },
+            }],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        value,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::User,
+        },
+    );
+
+    let err = verify_mir(&func, &types).expect_err("expected record pointer-space error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("emit record expects pointer in [Stack, Map], got User")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_emit_record_rejects_out_of_bounds_array_pointer() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
@@ -94,6 +135,47 @@ fn test_record_store_rejects_scalar_for_array_field() {
     assert!(
         err.iter()
             .any(|e| e.message.contains("record store requires pointer value")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_record_store_rejects_user_pointer() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let value = func.alloc_vreg();
+    let buffer = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::RecordStore {
+            buffer,
+            field_offset: 0,
+            val: MirValue::VReg(value),
+            ty: MirType::Array {
+                elem: Box::new(MirType::U8),
+                len: 16,
+            },
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        value,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::User,
+        },
+    );
+
+    let err = verify_mir(&func, &types).expect_err("expected record pointer-space error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("record store expects pointer in [Stack, Map], got User")),
         "unexpected errors: {:?}",
         err
     );

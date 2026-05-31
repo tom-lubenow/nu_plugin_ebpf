@@ -16,7 +16,7 @@ pub(in crate::compiler::verifier_types) fn require_ptr_with_space(
     }
     match state.get(ptr) {
         VerifierType::Ptr {
-            nullability: Nullability::NonNull,
+            nullability,
             space,
             bounds,
             ringbuf_ref,
@@ -27,34 +27,33 @@ pub(in crate::compiler::verifier_types) fn require_ptr_with_space(
                     "{op} expects pointer in {:?}, got {:?}",
                     allowed, space
                 )));
+                if !matches!(nullability, Nullability::NonNull) {
+                    return None;
+                }
             }
-            Some(VerifierType::Ptr {
-                space,
-                nullability: Nullability::NonNull,
-                bounds,
-                ringbuf_ref,
-                kfunc_ref,
-            })
-        }
-        VerifierType::Ptr {
-            nullability: Nullability::Null,
-            ..
-        } => {
-            errors.push(VerifierTypeError::new(format!(
-                "{op} uses null pointer v{}",
-                ptr.0
-            )));
-            None
-        }
-        VerifierType::Ptr {
-            nullability: Nullability::MaybeNull,
-            ..
-        } => {
-            errors.push(VerifierTypeError::new(format!(
-                "{op} may dereference null pointer v{} (add a null check)",
-                ptr.0
-            )));
-            None
+            match nullability {
+                Nullability::NonNull => Some(VerifierType::Ptr {
+                    space,
+                    nullability: Nullability::NonNull,
+                    bounds,
+                    ringbuf_ref,
+                    kfunc_ref,
+                }),
+                Nullability::Null => {
+                    errors.push(VerifierTypeError::new(format!(
+                        "{op} uses null pointer v{}",
+                        ptr.0
+                    )));
+                    None
+                }
+                Nullability::MaybeNull => {
+                    errors.push(VerifierTypeError::new(format!(
+                        "{op} may dereference null pointer v{} (add a null check)",
+                        ptr.0
+                    )));
+                    None
+                }
+            }
         }
         VerifierType::Uninit => {
             errors.push(VerifierTypeError::new(format!(
