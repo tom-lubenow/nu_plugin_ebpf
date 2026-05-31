@@ -18,6 +18,7 @@ pub(crate) enum ExplicitNullRefKfuncCase {
     TaskExeFile,
     CpumaskCreate,
     CryptoCtxAcquire,
+    ObjNewImpl,
 }
 
 impl ExplicitNullRefKfuncCase {
@@ -27,6 +28,7 @@ impl ExplicitNullRefKfuncCase {
             Self::TaskExeFile => "bpf_get_task_exe_file",
             Self::CpumaskCreate => "bpf_cpumask_create",
             Self::CryptoCtxAcquire => "bpf_crypto_ctx_acquire",
+            Self::ObjNewImpl => "bpf_obj_new_impl",
         }
     }
 
@@ -36,6 +38,7 @@ impl ExplicitNullRefKfuncCase {
             Self::TaskExeFile => "bpf_put_file",
             Self::CpumaskCreate => "bpf_cpumask_release",
             Self::CryptoCtxAcquire => "bpf_crypto_ctx_release",
+            Self::ObjNewImpl => "bpf_obj_drop_impl",
         }
     }
 
@@ -45,13 +48,14 @@ impl ExplicitNullRefKfuncCase {
             Self::TaskExeFile => "file",
             Self::CpumaskCreate => "cpumask",
             Self::CryptoCtxAcquire => "crypto_ctx",
+            Self::ObjNewImpl => "object",
         }
     }
 
     fn param_count(self) -> usize {
         match self {
             Self::TaskExeFile | Self::CryptoCtxAcquire => 2,
-            Self::CgroupFromId | Self::CpumaskCreate => 1,
+            Self::CgroupFromId | Self::CpumaskCreate | Self::ObjNewImpl => 1,
         }
     }
 
@@ -84,6 +88,49 @@ impl ExplicitNullRefKfuncCase {
                 types.insert(crypto_ctx, unknown_kernel_ptr_ty());
                 vec![crypto_ctx]
             }
+            Self::ObjNewImpl => {
+                let type_id = func.alloc_vreg();
+                let meta = func.alloc_vreg();
+                func.block_mut(acquire_path)
+                    .instructions
+                    .push(MirInst::Copy {
+                        dst: type_id,
+                        src: MirValue::Const(1),
+                    });
+                func.block_mut(acquire_path)
+                    .instructions
+                    .push(MirInst::Copy {
+                        dst: meta,
+                        src: MirValue::Const(0),
+                    });
+                types.insert(type_id, MirType::I64);
+                types.insert(meta, MirType::I64);
+                vec![type_id, meta]
+            }
+        }
+    }
+
+    fn push_release_args(
+        self,
+        func: &mut MirFunction,
+        release: BlockId,
+        joined: VReg,
+        types: &mut HashMap<VReg, MirType>,
+    ) -> Vec<VReg> {
+        match self {
+            Self::ObjNewImpl => {
+                let meta = func.alloc_vreg();
+                func.block_mut(release).instructions.push(MirInst::Copy {
+                    dst: meta,
+                    src: MirValue::Const(0),
+                });
+                types.insert(meta, MirType::I64);
+                vec![joined, meta]
+            }
+            Self::CgroupFromId
+            | Self::TaskExeFile
+            | Self::CpumaskCreate
+            | Self::CryptoCtxAcquire => vec![joined],
         }
     }
 }
@@ -160,13 +207,14 @@ pub(crate) fn explicit_null_ref_join_release_mir(
         if_false: done,
     };
 
+    let release_args = case.push_release_args(&mut func, release, joined, &mut types);
     func.block_mut(release)
         .instructions
         .push(MirInst::CallKfunc {
             dst: release_ret,
             kfunc: case.release_kfunc().to_string(),
             btf_id: None,
-            args: vec![joined],
+            args: release_args,
         });
     func.block_mut(release).terminator = MirInst::Return { val: None };
     func.block_mut(done).terminator = MirInst::Return { val: None };

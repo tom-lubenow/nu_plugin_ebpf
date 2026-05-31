@@ -26381,6 +26381,25 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "source-kfunc-obj-drop-accepts-new-or-null-release"
+        category: "helper-state"
+        tags: [kfunc object ref-lifetime phi source accept]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let selector = (helper-call "bpf_get_prandom_u32")'
+            '  let obj = (if $selector == 0 { kfunc-call "bpf_obj_new_impl" 1 0 } else { 0 })'
+            '  if $obj {'
+            '    kfunc-call "bpf_obj_drop_impl" $obj 0'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "source-kfunc-obj-new-rejects-leak"
         category: "helper-state"
         tags: [kfunc object ref-lifetime source reject]
