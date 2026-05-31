@@ -1,4 +1,5 @@
 use super::*;
+use crate::compiler::CompiledFeatureCompatibilityRequirement;
 use crate::compiler::EbpfProgramType;
 use crate::compiler::TypeInference;
 use crate::compiler::compile_mir_to_ebpf_with_hints;
@@ -7592,6 +7593,26 @@ fn test_helper_call_user_ringbuf_drain_closure_lowers_and_compiles() {
             .iter()
             .any(|reloc| reloc.symbol_name == "user_events"),
         "expected user-ringbuf relocation"
+    );
+    assert!(
+        !compiled.subfunction_symbols.is_empty(),
+        "expected callback lowering to emit a BPF subprogram symbol"
+    );
+
+    let program = compiled.into_program(
+        EbpfProgramType::Kprobe,
+        "sys_enter",
+        "main",
+        HashMap::new(),
+        HashMap::new(),
+    );
+    assert_eq!(
+        program.compiled_feature_compatibility_requirements(),
+        vec![CompiledFeatureCompatibilityRequirement::BpfSubprogramCalls]
+    );
+    assert_eq!(
+        program.compiled_feature_compatibility_minimum_kernel(),
+        Some("4.16")
     );
 }
 
