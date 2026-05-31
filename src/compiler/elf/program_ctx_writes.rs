@@ -1410,6 +1410,13 @@ mod tests {
             );
 
             if let Some(expected_field) = expected_field {
+                assert_eq!(
+                    spec.ctx_field_access_error(&expected_field),
+                    None,
+                    "{spec_source} ctx.{} write surface maps to ctx.{}, but that field is not available on the same target",
+                    surface.field_name,
+                    expected_field.display_name()
+                );
                 let requirement =
                     reported
                         .context_field_requirement
