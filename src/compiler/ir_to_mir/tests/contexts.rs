@@ -1772,6 +1772,57 @@ fn assert_guarded_ctx_field_load_compiles_with_floor(
     );
 }
 
+fn assert_guarded_ctx_path_compiles_with_fields(
+    members: Vec<PathMember>,
+    callback_op: i64,
+    expected_fields: &[CtxField],
+    expected_minimum_kernel: &str,
+    context: &str,
+) {
+    let hir = make_guarded_return_ctx_path_program(CellPath { members }, callback_op);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+
+    let mut result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .unwrap_or_else(|err| panic!("{context} should lower: {err}"));
+
+    optimize_with_ssa_hints(
+        &mut result.program.main,
+        Some(&probe_ctx),
+        &mut result.type_hints.main,
+        &result.type_hints.main_stack_slots,
+        &result.type_hints.generic_map_value_types,
+    );
+
+    let compiled =
+        compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{context} should compile: {err}"));
+    for expected_field in expected_fields {
+        assert!(
+            compiled.used_ctx_fields.contains(expected_field),
+            "{context} should preserve {expected_field:?} compatibility metadata"
+        );
+    }
+    let program = compiled.into_program(
+        EbpfProgramType::SockOps,
+        "/sys/fs/cgroup",
+        "main",
+        HashMap::new(),
+        HashMap::new(),
+    );
+    assert_eq!(
+        program.context_field_compatibility_minimum_kernel(),
+        Some(expected_minimum_kernel),
+        "{context} should report its aggregate context-field floor"
+    );
+}
+
 #[test]
 fn test_lower_cgroup_sockopt_ctx_sk_tcp_metric_projection_calls_helper() {
     assert_ctx_sk_helper_projection_lowers(
@@ -6797,6 +6848,17 @@ fn test_lower_sock_ops_data_byte_projection_adds_guarded_packet_load() {
                     ..
                 }
             )))
+    );
+}
+
+#[test]
+fn test_lower_sock_ops_guarded_data_byte_projection_compiles_with_context_metadata() {
+    assert_guarded_ctx_path_compiles_with_fields(
+        vec![string_member("data"), int_member(0)],
+        BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB,
+        &[CtxField::Data, CtxField::DataEnd],
+        "5.10",
+        "guarded sock_ops ctx.data[0] byte projection",
     );
 }
 
