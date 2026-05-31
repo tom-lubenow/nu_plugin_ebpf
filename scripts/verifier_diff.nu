@@ -41832,11 +41832,24 @@ def record-context-wrapper-definitions [source: string] {
                 $returned_names = ($returned_names | append $parsed.name)
             }
 
-            let returned_fields = (
+            mut returned_fields = (
                 (record-literal-context-fields $trimmed [$function.param] $root_aliases $identity_wrappers $root_wrapper_defs)
                 | append (record-literal-spread-context-fields $trimmed $aliases)
                 | append (record-pipeline-flow-context-fields $trimmed [$function.param] $root_aliases $identity_wrappers $root_wrapper_defs $aliases)
             )
+            let invocation = (two-token-invocation $trimmed)
+            if $invocation != null {
+                for wrapper in ($base_wrapper_defs | where {|wrapper| $wrapper.name == $invocation.callee }) {
+                    let root = (context-root-from-value-token $invocation.arg [$function.param] $root_aliases)
+                    if $root == null {
+                        continue
+                    }
+                    $returned_fields = ($returned_fields | append {
+                        field: $wrapper.field
+                        root: (combine-context-roots $root ($wrapper | get -o root | default ""))
+                    })
+                }
+            }
             for field in $returned_fields {
                 if (
                     $wrappers

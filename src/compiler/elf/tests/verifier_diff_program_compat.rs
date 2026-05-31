@@ -1282,6 +1282,7 @@ enum ContextWriteScannerForm {
     RecordWrapper,
     RecordSpread,
     UserFunctionRecordWrapper,
+    NestedUserFunctionRecordWrapper,
     RecordInsert,
     RecordUpdate,
     RecordUpsert,
@@ -1297,13 +1298,14 @@ enum ContextWriteScannerForm {
 }
 
 impl ContextWriteScannerForm {
-    const ALL: [Self; 18] = [
+    const ALL: [Self; 19] = [
         Self::Direct,
         Self::RecordAlias,
         Self::ReturnedContextAlias,
         Self::RecordWrapper,
         Self::RecordSpread,
         Self::UserFunctionRecordWrapper,
+        Self::NestedUserFunctionRecordWrapper,
         Self::RecordInsert,
         Self::RecordUpdate,
         Self::RecordUpsert,
@@ -1326,6 +1328,7 @@ impl ContextWriteScannerForm {
             Self::RecordWrapper => "record-wrapper",
             Self::RecordSpread => "record-spread",
             Self::UserFunctionRecordWrapper => "user-function-record-wrapper",
+            Self::NestedUserFunctionRecordWrapper => "nested-user-function-record-wrapper",
             Self::RecordInsert => "record-insert",
             Self::RecordUpdate => "record-update",
             Self::RecordUpsert => "record-upsert",
@@ -1352,6 +1355,7 @@ impl ContextWriteScannerForm {
             Self::RecordWrapper
             | Self::RecordSpread
             | Self::UserFunctionRecordWrapper
+            | Self::NestedUserFunctionRecordWrapper
             | Self::RecordInsert
             | Self::RecordUpdate
             | Self::RecordUpsert
@@ -1404,6 +1408,9 @@ fn context_write_scanner_source_from_assignments(
         ),
         ContextWriteScannerForm::UserFunctionRecordWrapper => format!(
             "{{|ctx|\n  def wrap [event] {{ {{ event: $event }} }}\n  mut rec = (wrap $ctx)\n{assignments}\n  \"allow\"\n}}"
+        ),
+        ContextWriteScannerForm::NestedUserFunctionRecordWrapper => format!(
+            "{{|ctx|\n  def wrap [event] {{ {{ event: $event }} }}\n  def outer [event] {{ wrap $event }}\n  mut rec = (outer $ctx)\n{assignments}\n  \"allow\"\n}}"
         ),
         ContextWriteScannerForm::RecordInsert => format!(
             "{{|ctx|\n  mut rec = ({{ other: 1 }} | insert event $ctx)\n{assignments}\n  \"allow\"\n}}"
