@@ -9465,6 +9465,60 @@ fn test_lower_tc_ctx_data_byte_assignment_adds_guarded_packet_store() {
 }
 
 #[test]
+fn test_lower_read_only_packet_context_data_byte_assignment_is_rejected() {
+    for (program_type, target, prefix) in [
+        (
+            EbpfProgramType::SocketFilter,
+            "udp4:127.0.0.1:31337",
+            "socket_filter",
+        ),
+        (
+            EbpfProgramType::CgroupSkb,
+            "/sys/fs/cgroup:ingress",
+            "cgroup_skb",
+        ),
+        (
+            EbpfProgramType::FlowDissector,
+            "/proc/self/ns/net",
+            "flow_dissector",
+        ),
+        (EbpfProgramType::LwtIn, "demo-route", "lwt_in"),
+        (EbpfProgramType::LwtOut, "demo-route", "lwt_out"),
+        (EbpfProgramType::LwtSeg6Local, "demo-route", "lwt_seg6local"),
+        (EbpfProgramType::SkReuseport, "select", "sk_reuseport"),
+        (EbpfProgramType::SockOps, "/sys/fs/cgroup", "sock_ops"),
+    ] {
+        let hir = make_ctx_upsert_program(
+            CellPath {
+                members: vec![string_member("data"), int_member(0)],
+            },
+            HirLiteral::Int(42),
+        );
+        let probe_ctx = ProbeContext::new(program_type, target);
+
+        let err = lower_hir_to_mir_with_hints(
+            &hir,
+            Some(&probe_ctx),
+            &HashMap::new(),
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_err();
+
+        let message = err.to_string();
+        assert!(
+            message.contains("direct packet writes are not supported"),
+            "{program_type:?} should reject ctx.data byte assignment with direct packet write diagnostic: {message}"
+        );
+        assert!(
+            message.contains(prefix),
+            "{program_type:?} diagnostic should mention canonical prefix {prefix}: {message}"
+        );
+    }
+}
+
+#[test]
 fn test_lower_bound_tc_ctx_data_byte_assignment_adds_guarded_packet_store() {
     let hir = make_bound_ctx_upsert_program(
         CellPath {

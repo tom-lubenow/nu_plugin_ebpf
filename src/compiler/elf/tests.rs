@@ -857,6 +857,7 @@ fn test_program_type_direct_packet_write_support_follows_program_model() {
     assert!(!EbpfProgramType::SocketFilter.supports_direct_packet_writes());
     assert!(!EbpfProgramType::FlowDissector.supports_direct_packet_writes());
     assert!(!EbpfProgramType::CgroupSkb.supports_direct_packet_writes());
+    assert!(!EbpfProgramType::SkReuseport.supports_direct_packet_writes());
     assert!(!EbpfProgramType::LwtIn.supports_direct_packet_writes());
     assert!(!EbpfProgramType::LwtOut.supports_direct_packet_writes());
     assert!(!EbpfProgramType::LwtSeg6Local.supports_direct_packet_writes());
