@@ -114,6 +114,19 @@ fn test_verify_mir_kfunc_obj_drop_accepts_explicit_null_phi_after_new_join() {
     assert_explicit_null_ref_join_release_accepts(ExplicitNullRefKfuncCase::ObjNewImpl, true);
 }
 
+#[test]
+fn test_verify_mir_kfunc_percpu_obj_drop_accepts_explicit_null_after_new_join() {
+    assert_explicit_null_ref_join_release_accepts(
+        ExplicitNullRefKfuncCase::PerCpuObjNewImpl,
+        false,
+    );
+}
+
+#[test]
+fn test_verify_mir_kfunc_percpu_obj_drop_accepts_explicit_null_phi_after_new_join() {
+    assert_explicit_null_ref_join_release_accepts(ExplicitNullRefKfuncCase::PerCpuObjNewImpl, true);
+}
+
 fn assert_xdp_xfrm_explicit_null_ref_join_release_accepts(use_phi: bool) {
     let (func, types) = xdp_get_xfrm_state_explicit_null_join_mir(use_phi);
     let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");

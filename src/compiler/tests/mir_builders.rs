@@ -19,6 +19,7 @@ pub(crate) enum ExplicitNullRefKfuncCase {
     CpumaskCreate,
     CryptoCtxAcquire,
     ObjNewImpl,
+    PerCpuObjNewImpl,
 }
 
 impl ExplicitNullRefKfuncCase {
@@ -29,6 +30,7 @@ impl ExplicitNullRefKfuncCase {
             Self::CpumaskCreate => "bpf_cpumask_create",
             Self::CryptoCtxAcquire => "bpf_crypto_ctx_acquire",
             Self::ObjNewImpl => "bpf_obj_new_impl",
+            Self::PerCpuObjNewImpl => "bpf_percpu_obj_new_impl",
         }
     }
 
@@ -39,6 +41,7 @@ impl ExplicitNullRefKfuncCase {
             Self::CpumaskCreate => "bpf_cpumask_release",
             Self::CryptoCtxAcquire => "bpf_crypto_ctx_release",
             Self::ObjNewImpl => "bpf_obj_drop_impl",
+            Self::PerCpuObjNewImpl => "bpf_percpu_obj_drop_impl",
         }
     }
 
@@ -49,13 +52,17 @@ impl ExplicitNullRefKfuncCase {
             Self::CpumaskCreate => "cpumask",
             Self::CryptoCtxAcquire => "crypto_ctx",
             Self::ObjNewImpl => "object",
+            Self::PerCpuObjNewImpl => "percpu_object",
         }
     }
 
     fn param_count(self) -> usize {
         match self {
             Self::TaskExeFile | Self::CryptoCtxAcquire => 2,
-            Self::CgroupFromId | Self::CpumaskCreate | Self::ObjNewImpl => 1,
+            Self::CgroupFromId
+            | Self::CpumaskCreate
+            | Self::ObjNewImpl
+            | Self::PerCpuObjNewImpl => 1,
         }
     }
 
@@ -88,7 +95,7 @@ impl ExplicitNullRefKfuncCase {
                 types.insert(crypto_ctx, unknown_kernel_ptr_ty());
                 vec![crypto_ctx]
             }
-            Self::ObjNewImpl => {
+            Self::ObjNewImpl | Self::PerCpuObjNewImpl => {
                 let type_id = func.alloc_vreg();
                 let meta = func.alloc_vreg();
                 func.block_mut(acquire_path)
@@ -118,7 +125,7 @@ impl ExplicitNullRefKfuncCase {
         types: &mut HashMap<VReg, MirType>,
     ) -> Vec<VReg> {
         match self {
-            Self::ObjNewImpl => {
+            Self::ObjNewImpl | Self::PerCpuObjNewImpl => {
                 let meta = func.alloc_vreg();
                 func.block_mut(release).instructions.push(MirInst::Copy {
                     dst: meta,
