@@ -882,7 +882,7 @@ impl<'a> HirToMirLowering<'a> {
                 })?;
                 let map_name = self.literal_string_arg(map_reg, "redirect-map")?;
                 self.validate_generic_map_name(&map_name, "redirect-map")?;
-                let map_kind = self.required_redirect_map_kind_arg("redirect-map")?;
+                let map_kind = self.required_redirect_map_kind_arg("redirect-map", &map_name)?;
                 let key_vreg = self
                     .positional_args
                     .get(1)
@@ -936,7 +936,7 @@ impl<'a> HirToMirLowering<'a> {
                 })?;
                 let map_name = self.literal_string_arg(map_reg, "redirect-socket")?;
                 self.validate_generic_map_name(&map_name, "redirect-socket")?;
-                let map_kind = self.required_socket_map_kind_arg("redirect-socket")?;
+                let map_kind = self.required_socket_map_kind_arg("redirect-socket", &map_name)?;
                 let helper =
                     self.socket_redirect_helper_for_current_program("redirect-socket", map_kind)?;
                 let key_arg = self
@@ -4293,7 +4293,7 @@ impl<'a> HirToMirLowering<'a> {
                     self.required_queue_stack_bloom_map_kind_arg("helper-call", &map_name)?
                 }
                 Some(HelperExplicitMapKindFamily::RedirectMap) => {
-                    self.required_redirect_map_kind_arg("helper-call")?
+                    self.required_redirect_map_kind_arg("helper-call", &map_name)?
                 }
                 Some(HelperExplicitMapKindFamily::PerCpuLookupMap) => {
                     self.required_per_cpu_lookup_map_kind_arg("helper-call")?
@@ -4379,6 +4379,7 @@ impl<'a> HirToMirLowering<'a> {
             name: map_name.clone(),
             kind: map_kind,
         };
+        self.observed_map_refs.insert(map_ref.clone());
         self.emit(MirInst::LoadMapFd {
             dst: map_vreg,
             map: map_ref.clone(),

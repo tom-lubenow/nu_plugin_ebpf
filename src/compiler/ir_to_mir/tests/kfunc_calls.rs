@@ -4808,6 +4808,103 @@ fn test_redirect_socket_intrinsic_lowers_to_msg_redirect_hash_and_compiles() {
 }
 
 #[test]
+fn test_redirect_socket_intrinsic_reuses_observed_map_kind() {
+    let ctx_var = VarId::new(105);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String(b"demo_sockhash".to_vec()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String(b"peer-a".to_vec()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::String(b"sockhash".to_vec()),
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(42),
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1), RegId::new(2)],
+                        named: vec![(b"kind".to_vec(), RegId::new(3))],
+                        ..Default::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::String(b"peer-b".to_vec()),
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(42),
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1), RegId::new(4)],
+                        ..Default::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 5,
+        file_count: 0,
+    };
+
+    let hir_program = HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var));
+    let decl_names = HashMap::from([(DeclId::new(42), "redirect-socket".to_string())]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkMsg, "/sys/fs/bpf/demo_sockhash");
+    let hir_types = infer_hir_types(&hir_program, &decl_names)
+        .expect("redirect-socket intrinsic should type-check on sk_msg");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        Some(&probe_ctx),
+        &decl_names,
+        Some(&hir_types),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("redirect-socket should infer an omitted kind from the prior literal map use");
+
+    let block = result.program.main.block(result.program.main.entry);
+    let sockhash_load_count = block
+        .instructions
+        .iter()
+        .filter(|inst| {
+            matches!(
+                inst,
+                MirInst::LoadMapFd {
+                    map: MapRef { name, kind: MapKind::SockHash },
+                    ..
+                } if name == "demo_sockhash"
+            )
+        })
+        .count();
+    let helper_count = block
+        .instructions
+        .iter()
+        .filter(|inst| {
+            matches!(
+                inst,
+                MirInst::CallHelper { helper, args, .. }
+                    if *helper == BpfHelper::MsgRedirectHash as u32 && args.len() == 4
+            )
+        })
+        .count();
+
+    assert_eq!(sockhash_load_count, 2);
+    assert_eq!(helper_count, 2);
+}
+
+#[test]
 fn test_redirect_socket_intrinsic_rejects_non_socket_redirect_programs() {
     let ctx_var = VarId::new(103);
     let func = HirFunction {
@@ -6512,6 +6609,102 @@ fn test_redirect_map_intrinsic_requires_explicit_kind_and_compiles() {
             .any(|reloc| reloc.symbol_name == "demo_redirect_map"),
         "expected redirect-map relocation"
     );
+}
+
+#[test]
+fn test_redirect_map_intrinsic_reuses_observed_map_kind() {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String(b"demo_redirect_map".to_vec()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(7),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::String(b"devmap-hash".to_vec()),
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(42),
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1), RegId::new(2)],
+                        named: vec![(b"kind".to_vec(), RegId::new(3))],
+                        ..Default::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::Int(8),
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(42),
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1), RegId::new(4)],
+                        ..Default::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 5,
+        file_count: 0,
+    };
+
+    let hir_program = HirProgram::new(func, HashMap::new(), vec![], None);
+    let decl_names = HashMap::from([(DeclId::new(42), "redirect-map".to_string())]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let hir_types = infer_hir_types(&hir_program, &decl_names)
+        .expect("redirect-map intrinsic should type-check");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        Some(&probe_ctx),
+        &decl_names,
+        Some(&hir_types),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("redirect-map should infer an omitted kind from the prior literal map use");
+
+    let block = result.program.main.block(result.program.main.entry);
+    let devmap_load_count = block
+        .instructions
+        .iter()
+        .filter(|inst| {
+            matches!(
+                inst,
+                MirInst::LoadMapFd {
+                    map: MapRef { name, kind: MapKind::DevMapHash },
+                    ..
+                } if name == "demo_redirect_map"
+            )
+        })
+        .count();
+    let helper_count = block
+        .instructions
+        .iter()
+        .filter(|inst| {
+            matches!(
+                inst,
+                MirInst::CallHelper { helper, args, .. }
+                    if *helper == BpfHelper::RedirectMap as u32 && args.len() == 3
+            )
+        })
+        .count();
+
+    assert_eq!(devmap_load_count, 2);
+    assert_eq!(helper_count, 2);
 }
 
 #[test]

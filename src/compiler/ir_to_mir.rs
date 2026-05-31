@@ -392,6 +392,8 @@ pub struct HirToMirLowering<'a> {
     map_max_entries: HashMap<MapRef, u32>,
     /// Source-order map-in-map inner template declarations discovered during lowering
     map_inner_templates: HashMap<MapRef, MapRef>,
+    /// Literal map names whose kind has already been observed during lowering.
+    observed_map_refs: HashSet<MapRef>,
     /// Generic map value schemas declared explicitly with `map-define`
     declared_map_value_types: HashSet<MapRef>,
     /// Map-in-map outers declared explicitly with `map-define --inner-map`
@@ -542,6 +544,7 @@ impl<'a> HirToMirLowering<'a> {
             map_key_types,
             map_max_entries,
             map_inner_templates,
+            observed_map_refs: HashSet::new(),
             map_value_types,
             declared_map_value_types: HashSet::new(),
             declared_map_inner_templates: HashSet::new(),

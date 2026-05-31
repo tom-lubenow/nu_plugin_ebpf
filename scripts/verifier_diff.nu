@@ -9199,6 +9199,17 @@ const PROGRAM_SURFACE_KERNEL_FEATURE_EXPECTATIONS = [
         ]
     }
     {
+        target: "sk_msg:/sys/fs/bpf/demo_sockmap"
+        program: [
+            '{|ctx|'
+            '  redirect-socket hash_peers 0 --kind sockhash'
+            '  redirect-socket hash_peers 1'
+            '  "pass"'
+            '}'
+        ]
+        feature_keys: ["helper:bpf_msg_redirect_hash"]
+    }
+    {
         target: "sk_skb:/sys/fs/bpf/demo_sockmap"
         program: [
             '{|ctx|'
@@ -9413,6 +9424,17 @@ const PROGRAM_SURFACE_KERNEL_FEATURE_EXPECTATIONS = [
         program: [
             '{|ctx|'
             '  $ctx.task | map-get task_state --kind task-storage --init { hits: 0 }'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["helper:bpf_task_storage_get"]
+    }
+    {
+        target: "fentry:security_file_open"
+        program: [
+            '{|ctx|'
+            '  map-define task_state --kind task-storage --value-type "record{hits:u64}"'
+            '  $ctx.task | map-get task_state --init { hits: 0 }'
             '  0'
             '}'
         ]
@@ -43656,6 +43678,7 @@ def program-surface-kernel-features [source: string target] {
     let context_names = (program-context-variable-names $source)
     mut record_context_aliases = []
     mut record_context_aliases_loaded = false
+    mut map_kind_bindings = []
     let target_uses_skb_cgroup_helper = (
         ($target_text | str starts-with "tc_action:")
         or ($target_text | str starts-with "tc:")
@@ -43749,7 +43772,8 @@ def program-surface-kernel-features [source: string target] {
             ($target_text | str starts-with "sock_ops:")
             and (line-assigns-record-context-field? $trimmed $record_context_aliases ["cb_flags"] [""])
         )
-        let map_kind = (source-line-map-kind $trimmed "hash")
+        let inferred_map_kind = (source-line-effective-map-kind $trimmed $map_kind_bindings)
+        let map_kind = if $inferred_map_kind == null { "hash" } else { $inferred_map_kind }
         if (line-invokes-command? $trimmed "map-get") and (generic-map-lookup-kind? $map_kind) {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_MAP_LOOKUP_ELEM])
         }
@@ -43892,6 +43916,7 @@ def program-surface-kernel-features [source: string target] {
                 $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_REDIRECT])
             }
         }
+        $map_kind_bindings = (update-map-kind-bindings-for-line $map_kind_bindings $trimmed)
     }
 
     $features

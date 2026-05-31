@@ -830,6 +830,9 @@ impl<'a> HirToMirLowering<'a> {
             Self::push_declared_map_ref_for_name(&mut refs, map_name, outer);
             Self::push_declared_map_ref_for_name(&mut refs, map_name, inner);
         }
+        for map_ref in &self.observed_map_refs {
+            Self::push_declared_map_ref_for_name(&mut refs, map_name, map_ref);
+        }
         refs.sort_by(|a, b| {
             a.kind
                 .to_string()
@@ -1223,24 +1226,33 @@ impl<'a> HirToMirLowering<'a> {
     pub(super) fn required_redirect_map_kind_arg(
         &self,
         context: &str,
+        map_name: &str,
     ) -> Result<MapKind, CompileError> {
-        let Some((_, reg)) = self.named_args.get("kind") else {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "{context} requires --kind devmap, --kind devmap-hash, --kind cpumap, or --kind xskmap"
-            )));
+        let map_kind = if let Some((_, reg)) = self.named_args.get("kind") {
+            let kind = self.literal_string_arg(*reg, &format!("{context} --kind"))?;
+            let map_kind = Self::parse_generic_map_kind(&kind).ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "{context} --kind must be one of: devmap, devmap-hash, cpumap, xskmap"
+                ))
+            })?;
+            self.validate_explicit_map_kind_matches_declaration(context, map_name, map_kind)?;
+            map_kind
+        } else {
+            self.declared_map_kind_for_name(context, map_name)?
+                .ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "{context} requires --kind devmap, --kind devmap-hash, --kind cpumap, or --kind xskmap"
+                    ))
+                })?
         };
-        let kind = self.literal_string_arg(*reg, &format!("{context} --kind"))?;
-        match Self::parse_generic_map_kind(&kind) {
-            Some(MapKind::DevMap) => Ok(MapKind::DevMap),
-            Some(MapKind::DevMapHash) => Ok(MapKind::DevMapHash),
-            Some(MapKind::CpuMap) => Ok(MapKind::CpuMap),
-            Some(MapKind::XskMap) => Ok(MapKind::XskMap),
-            Some(other) => Err(CompileError::UnsupportedInstruction(format!(
+        match map_kind {
+            MapKind::DevMap => Ok(MapKind::DevMap),
+            MapKind::DevMapHash => Ok(MapKind::DevMapHash),
+            MapKind::CpuMap => Ok(MapKind::CpuMap),
+            MapKind::XskMap => Ok(MapKind::XskMap),
+            other => Err(CompileError::UnsupportedInstruction(format!(
                 "{context} requires --kind devmap, --kind devmap-hash, --kind cpumap, or --kind xskmap, got {}",
                 other
-            ))),
-            None => Err(CompileError::UnsupportedInstruction(format!(
-                "{context} --kind must be one of: devmap, devmap-hash, cpumap, xskmap"
             ))),
         }
     }
@@ -1298,28 +1310,30 @@ impl<'a> HirToMirLowering<'a> {
     pub(super) fn required_socket_map_kind_arg(
         &self,
         context: &str,
+        map_name: &str,
     ) -> Result<MapKind, CompileError> {
-        let Some((_, reg)) = self.named_args.get("kind") else {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "{context} requires --kind sockmap, --kind sockhash, or --kind reuseport-sockarray"
-            )));
+        let map_kind = if let Some((_, reg)) = self.named_args.get("kind") {
+            let kind = self.literal_string_arg(*reg, &format!("{context} --kind"))?;
+            let map_kind = Self::parse_generic_map_kind(&kind).ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "{context} --kind must be one of: sockmap, sockhash, reuseport-sockarray"
+                ))
+            })?;
+            self.validate_explicit_map_kind_matches_declaration(context, map_name, map_kind)?;
+            map_kind
+        } else {
+            self.declared_map_kind_for_name(context, map_name)?
+                .ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "{context} requires --kind sockmap, --kind sockhash, or --kind reuseport-sockarray"
+                    ))
+                })?
         };
-        let kind = self.literal_string_arg(*reg, &format!("{context} --kind"))?;
-        match Self::parse_generic_map_kind(&kind) {
-            Some(map_kind)
-                if matches!(
-                    map_kind,
-                    MapKind::SockMap | MapKind::SockHash | MapKind::ReuseportSockArray
-                ) =>
-            {
-                Ok(map_kind)
-            }
-            Some(other) => Err(CompileError::UnsupportedInstruction(format!(
+        match map_kind {
+            MapKind::SockMap | MapKind::SockHash | MapKind::ReuseportSockArray => Ok(map_kind),
+            other => Err(CompileError::UnsupportedInstruction(format!(
                 "{context} requires --kind sockmap, --kind sockhash, or --kind reuseport-sockarray, got {}",
                 other
-            ))),
-            None => Err(CompileError::UnsupportedInstruction(format!(
-                "{context} --kind must be one of: sockmap, sockhash, reuseport-sockarray"
             ))),
         }
     }
