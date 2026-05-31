@@ -16876,6 +16876,26 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "dynptr-kfunc-from-xdp-returned-raw-context"
+        category: "helper-state"
+        tags: [kfunc dynptr xdp accept user-function source metadata]
+        requires: [kernel-btf]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  def get_ctx [event] { $event }'
+            '  let raw_ctx = (get_ctx $ctx)'
+            '  let d = "0123456789abcdef"'
+            '  kfunc-call "bpf_dynptr_from_xdp" $raw_ctx 0 $d'
+            '  let size = (kfunc-call "bpf_dynptr_size" $d)'
+            '  $size | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "dynptr-kfunc-from-xdp-rejects-reinitialize"
         category: "helper-state"
         tags: [kfunc dynptr xdp reject]
@@ -16997,6 +17017,26 @@ const FIXTURES = [
             '    0'
             '  }'
             '  init $ctx'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "dynptr-kfunc-from-skb-returned-raw-context"
+        category: "helper-state"
+        tags: [kfunc dynptr skb tc accept user-function source metadata]
+        requires: [kernel-btf]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  def get_ctx [event] { $event }'
+            '  let raw_ctx = (get_ctx $ctx)'
+            '  let d = "0123456789abcdef"'
+            '  kfunc-call "bpf_dynptr_from_skb" $raw_ctx 0 $d'
+            '  let size = (kfunc-call "bpf_dynptr_size" $d)'
+            '  $size | count'
             '  0'
             '}'
         ]
@@ -20652,6 +20692,24 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "source-kfunc-sock-addr-set-sun-path-returned-raw-context"
+        category: "kfunc"
+        tags: [cgroup-sock-addr kfunc unix source accept user-function metadata]
+        requires: [cgroup-v2 kernel-btf]
+        target: "cgroup_sock_addr:/sys/fs/cgroup:connect_unix"
+        program: [
+            '{|ctx|'
+            '  def get_ctx [event] { $event }'
+            '  let raw_ctx = (get_ctx $ctx)'
+            '  let path = "/tmp/nu-ebpf.sock"'
+            '  kfunc-call "bpf_sock_addr_set_sun_path" $raw_ctx $path 17'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "source-kfunc-sock-addr-set-sun-path-rejects-socket-arg"
         category: "kfunc"
         tags: [cgroup-sock-addr kfunc unix source reject]
@@ -22348,6 +22406,23 @@ const FIXTURES = [
             '    0'
             '  }'
             '  enable $ctx'
+            '  1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "sock-ops-enable-tx-tstamp-returned-raw-context"
+        category: "kfunc"
+        tags: [sock-ops kfunc timestamp source metadata user-function]
+        requires: [cgroup-v2 kernel-btf]
+        target: "sock_ops:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  def get_ctx [event] { $event }'
+            '  let raw_ctx = (get_ctx $ctx)'
+            '  kfunc-call "bpf_sock_ops_enable_tx_tstamp" $raw_ctx 0'
             '  1'
             '}'
         ]
