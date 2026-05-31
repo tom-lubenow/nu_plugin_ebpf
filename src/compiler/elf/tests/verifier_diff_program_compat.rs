@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::process::{Command, Output};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::compiler::instruction::BpfHelper;
@@ -12,6 +13,8 @@ use crate::compiler::{
 };
 use crate::kernel_btf::TracepointContext;
 use crate::program_spec::{IterTargetKind, ProgramSpec};
+
+static NU_SCRIPT_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 const REPRESENTATIVE_CONTEXT_FIELD_SPEC_SOURCES: &[&str] = &[
     "raw_tracepoint:sys_enter",
@@ -95,10 +98,12 @@ fn run_nu_script(script: &str, label: &str) -> Option<Output> {
         .duration_since(UNIX_EPOCH)
         .expect("system time should be after UNIX_EPOCH")
         .as_nanos();
+    let sequence = NU_SCRIPT_COUNTER.fetch_add(1, Ordering::Relaxed);
     let script_path = std::env::temp_dir().join(format!(
-        "nu_plugin_ebpf_verifier_diff_{}_{}.nu",
+        "nu_plugin_ebpf_verifier_diff_{}_{}_{}.nu",
         std::process::id(),
-        unique
+        unique,
+        sequence
     ));
     let verifier_diff_path =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/verifier_diff.nu");
@@ -1509,6 +1514,38 @@ fn test_verifier_diff_multi_param_user_function_read_scanner_preserves_metadata(
 }
 
 #[test]
+fn test_verifier_diff_multi_param_user_function_get_read_scanner_preserves_metadata() {
+    let target = "kprobe:ksys_read";
+    let program = r#"{|ctx|
+  def read_pid [ignored event] { $event | get pid }
+  read_pid 0 $ctx
+  0
+}"#;
+    let Some(actual) = verifier_diff_nu_program_context_field_feature_keys(&[(
+        target.to_string(),
+        program.to_string(),
+    )]) else {
+        return;
+    };
+    let spec = ProgramSpec::parse(target)
+        .unwrap_or_else(|err| panic!("representative context field target should parse: {err}"));
+    let expected = BTreeSet::from([
+        ContextFieldCompatibilityRequirement::for_field_on_program_spec(&CtxField::Pid, &spec)
+            .expect("ctx.pid should carry source-backed context metadata")
+            .key(),
+        BpfHelper::GetCurrentPidTgid
+            .compatibility_requirement()
+            .expect("ctx.pid backing helper should carry compatibility metadata")
+            .key(),
+    ]);
+
+    assert_eq!(
+        actual[0], expected,
+        "multi-parameter user functions should preserve get-pipeline context metadata"
+    );
+}
+
+#[test]
 fn test_verifier_diff_multi_param_user_function_root_scanner_preserves_metadata() {
     let target = "sk_lookup:/proc/self/ns/net";
     let program = r#"{|ctx|
@@ -1541,6 +1578,42 @@ fn test_verifier_diff_multi_param_user_function_root_scanner_preserves_metadata(
     assert_eq!(
         actual[0], expected,
         "multi-parameter user functions should preserve returned context-root metadata"
+    );
+}
+
+#[test]
+fn test_verifier_diff_multi_param_user_function_get_root_scanner_preserves_metadata() {
+    let target = "sk_lookup:/proc/self/ns/net";
+    let program = r#"{|ctx|
+  def get_sk [ignored event] { $event | get sk }
+  let sk = (get_sk 0 $ctx)
+  $sk.family
+  0
+}"#;
+    let Some(actual) = verifier_diff_nu_program_context_field_feature_keys(&[(
+        target.to_string(),
+        program.to_string(),
+    )]) else {
+        return;
+    };
+    let spec = ProgramSpec::parse(target)
+        .unwrap_or_else(|err| panic!("representative context field target should parse: {err}"));
+    let expected = BTreeSet::from([
+        ContextFieldCompatibilityRequirement::for_field_on_program_spec(&CtxField::Socket, &spec)
+            .expect("ctx.sk should carry source-backed context metadata")
+            .key(),
+        ContextFieldCompatibilityRequirement::for_field_on_program_spec(&CtxField::Family, &spec)
+            .expect("ctx.sk.family should carry source-backed field metadata")
+            .key(),
+        BpfHelper::ProbeReadKernel
+            .compatibility_requirement()
+            .expect("ctx.sk.family projection helper should carry compatibility metadata")
+            .key(),
+    ]);
+
+    assert_eq!(
+        actual[0], expected,
+        "multi-parameter user functions should preserve get-pipeline returned-root metadata"
     );
 }
 

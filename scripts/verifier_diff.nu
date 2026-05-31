@@ -42253,17 +42253,21 @@ def multi-param-context-root-wrapper-definitions [source: string] {
 
         let returned = ($return_lines | last)
         for param in ($function.params | enumerate) {
-            let root = (context-root-from-value-token $returned [$param.item] [])
+            mut root = (context-root-from-get-pipeline $returned [$param.item] [])
+            if $root == null {
+                $root = (context-root-from-value-token $returned [$param.item] [])
+            }
             if $root == null {
                 continue
             }
+            let final_root = $root
             if (
                 $wrappers
                 | any {|wrapper|
                     (
                         $wrapper.name == $function.name
                         and $wrapper.param_index == $param.index
-                        and (($wrapper | get -o root | default "") == $root)
+                        and (($wrapper | get -o root | default "") == $final_root)
                     )
                 }
             ) {
@@ -42273,7 +42277,7 @@ def multi-param-context-root-wrapper-definitions [source: string] {
             $wrappers = ($wrappers | append {
                 name: $function.name
                 param_index: $param.index
-                root: $root
+                root: $final_root
             })
         }
     }
@@ -42376,6 +42380,77 @@ def multi-param-function-context-field-accesses [source: string] {
                         param_index: $param.index
                         raw_access: $raw_tail
                     })
+                }
+
+                for candidate in (record-get-candidate-lines $line) {
+                    let segments = (split-pipeline-segments ($candidate | str trim))
+                    if ($segments | length) < 2 {
+                        continue
+                    }
+
+                    mut input = (($segments | first) | str trim)
+                    if ($input | str contains "=") {
+                        $input = (($input | split row "=" | last) | str trim)
+                    }
+                    mut root = null
+
+                    for segment in ($segments | skip 1) {
+                        let parsed = (get-command-field-tail $segment)
+                        if $parsed == null {
+                            continue
+                        }
+
+                        if $root == null {
+                            $root = (context-root-from-get-input $input [$param.item] [])
+                            if $root == null {
+                                continue
+                            }
+                        }
+
+                        let field_path = (normalize-context-path-token $parsed.field)
+                        if $field_path != "" {
+                            let raw_access = if $root == "" { $field_path } else { $"($root).($field_path)" }
+                            if not (
+                                $accesses
+                                | any {|access|
+                                    (
+                                        $access.name == $function.name
+                                        and $access.param_index == $param.index
+                                        and $access.raw_access == $raw_access
+                                    )
+                                }
+                            ) {
+                                $accesses = ($accesses | append {
+                                    name: $function.name
+                                    param_index: $param.index
+                                    raw_access: $raw_access
+                                })
+                            }
+                            $root = $raw_access
+                        }
+
+                        let tail_path = (get-segment-cell-path-tail $parsed.tail)
+                        if $tail_path != "" {
+                            let raw_access = if $root == "" { $tail_path } else { $"($root).($tail_path)" }
+                            if not (
+                                $accesses
+                                | any {|access|
+                                    (
+                                        $access.name == $function.name
+                                        and $access.param_index == $param.index
+                                        and $access.raw_access == $raw_access
+                                    )
+                                }
+                            ) {
+                                $accesses = ($accesses | append {
+                                    name: $function.name
+                                    param_index: $param.index
+                                    raw_access: $raw_access
+                                })
+                            }
+                            $root = $raw_access
+                        }
+                    }
                 }
             }
         }
