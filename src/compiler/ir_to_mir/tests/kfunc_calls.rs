@@ -978,7 +978,7 @@ fn test_helper_call_timer_set_callback_closure_lowers_to_callback_subprogram() {
 }
 
 #[test]
-fn test_helper_call_timer_init_start_cancel_projected_map_timer_field_lowers() {
+fn test_helper_call_timer_init_reuses_observed_map_kind_for_projected_timer_field() {
     use nu_protocol::ast::CellPath;
 
     let main = HirFunction {
@@ -1038,7 +1038,6 @@ fn test_helper_call_timer_init_start_cancel_projected_map_timer_field_lowers() {
                             RegId::new(1),
                             RegId::new(7),
                         ],
-                        named: vec![(b"kind".to_vec(), RegId::new(3))],
                         ..Default::default()
                     },
                 },
@@ -1794,7 +1793,7 @@ fn test_kfunc_call_bpf_wq_set_callback_lowers_callback_subprogram() {
 }
 
 #[test]
-fn test_helper_call_for_each_map_elem_closure_lowers_to_callback_subprogram() {
+fn test_helper_call_for_each_map_elem_reuses_declared_map_kind_for_callback_subprogram() {
     let closure_block_id = nu_protocol::BlockId::new(7);
     let closure = HirFunction {
         blocks: vec![HirBlock {
@@ -1837,10 +1836,6 @@ fn test_helper_call_for_each_map_elem_closure_lowers_to_callback_subprogram() {
                     dst: RegId::new(5),
                     lit: HirLiteral::Int(0),
                 },
-                HirStmt::LoadLiteral {
-                    dst: RegId::new(6),
-                    lit: HirLiteral::String(b"array".to_vec()),
-                },
                 HirStmt::Call {
                     decl_id: DeclId::new(42),
                     src_dst: RegId::new(0),
@@ -1852,7 +1847,6 @@ fn test_helper_call_for_each_map_elem_closure_lowers_to_callback_subprogram() {
                             RegId::new(4),
                             RegId::new(5),
                         ],
-                        named: vec![(b"kind".to_vec(), RegId::new(6))],
                         ..Default::default()
                     },
                 },
@@ -1863,7 +1857,7 @@ fn test_helper_call_for_each_map_elem_closure_lowers_to_callback_subprogram() {
         spans: vec![],
         ast: vec![],
         comments: vec![],
-        register_count: 7,
+        register_count: 6,
         file_count: 0,
     };
 
@@ -7470,7 +7464,7 @@ fn test_helper_call_map_push_literal_queue_lowers_and_compiles() {
 }
 
 #[test]
-fn test_helper_call_map_lookup_percpu_literal_lowers_and_compiles() {
+fn test_helper_call_map_lookup_percpu_reuses_observed_map_kind_and_compiles() {
     let func = HirFunction {
         blocks: vec![HirBlock {
             id: HirBlockId(0),
@@ -7509,6 +7503,19 @@ fn test_helper_call_map_lookup_percpu_literal_lowers_and_compiles() {
                         ..Default::default()
                     },
                 },
+                HirStmt::Call {
+                    decl_id: DeclId::new(42),
+                    src_dst: RegId::new(7),
+                    args: HirCallArgs {
+                        positional: vec![
+                            RegId::new(1),
+                            RegId::new(2),
+                            RegId::new(3),
+                            RegId::new(4),
+                        ],
+                        ..Default::default()
+                    },
+                },
                 HirStmt::LoadLiteral {
                     dst: RegId::new(0),
                     lit: HirLiteral::Int(0),
@@ -7520,7 +7527,7 @@ fn test_helper_call_map_lookup_percpu_literal_lowers_and_compiles() {
         spans: vec![],
         ast: vec![],
         comments: vec![],
-        register_count: 7,
+        register_count: 8,
         file_count: 0,
     };
 
@@ -7549,14 +7556,21 @@ fn test_helper_call_map_lookup_percpu_literal_lowers_and_compiles() {
             ..
         } if name == "demo_percpu_hash"
     )));
-    assert!(block.instructions.iter().any(|inst| matches!(
-        inst,
-        MirInst::CallHelper {
-            helper,
-            args,
-            ..
-        } if *helper == BpfHelper::MapLookupPercpuElem as u32 && args.len() == 3
-    )));
+    assert_eq!(
+        block
+            .instructions
+            .iter()
+            .filter(|inst| matches!(
+                inst,
+                MirInst::CallHelper {
+                    helper,
+                    args,
+                    ..
+                } if *helper == BpfHelper::MapLookupPercpuElem as u32 && args.len() == 3
+            ))
+            .count(),
+        2
+    );
 
     optimize_with_ssa_hints(
         &mut result.program.main,

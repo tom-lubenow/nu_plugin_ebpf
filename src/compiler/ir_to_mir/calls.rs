@@ -4296,13 +4296,13 @@ impl<'a> HirToMirLowering<'a> {
                     self.required_redirect_map_kind_arg("helper-call", &map_name)?
                 }
                 Some(HelperExplicitMapKindFamily::PerCpuLookupMap) => {
-                    self.required_per_cpu_lookup_map_kind_arg("helper-call")?
+                    self.required_per_cpu_lookup_map_kind_arg("helper-call", &map_name)?
                 }
                 Some(HelperExplicitMapKindFamily::ForEachMapElem) => {
-                    self.for_each_map_elem_kind_arg("helper-call")?
+                    self.for_each_map_elem_kind_arg("helper-call", &map_name)?
                 }
                 Some(HelperExplicitMapKindFamily::TimerMap) => {
-                    self.required_timer_map_kind_arg("helper-call")?
+                    self.required_timer_map_kind_arg("helper-call", &map_name)?
                 }
                 None => {
                     return Err(CompileError::UnsupportedInstruction(format!(

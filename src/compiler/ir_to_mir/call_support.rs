@@ -931,33 +931,41 @@ impl<'a> HirToMirLowering<'a> {
     pub(super) fn for_each_map_elem_kind_arg(
         &self,
         context: &str,
+        map_name: &str,
     ) -> Result<MapKind, CompileError> {
-        let Some((_, reg)) = self.named_args.get("kind") else {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "{context} requires --kind hash, array, lru-hash, per-cpu-hash, per-cpu-array, or lru-per-cpu-hash for bpf_for_each_map_elem"
-            )));
+        let map_kind = if let Some((_, reg)) = self.named_args.get("kind") {
+            let kind = self.literal_string_arg(*reg, &format!("{context} --kind"))?;
+            let map_kind = Self::parse_generic_map_kind(&kind).ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "{context} --kind must name a recognized map family; bpf_for_each_map_elem supports hash, array, lru-hash, per-cpu-hash, per-cpu-array, and lru-per-cpu-hash"
+                ))
+            })?;
+            self.validate_explicit_map_kind_matches_declaration(context, map_name, map_kind)?;
+            map_kind
+        } else {
+            self.declared_map_kind_for_name(context, map_name)?
+                .ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "{context} requires --kind hash, array, lru-hash, per-cpu-hash, per-cpu-array, or lru-per-cpu-hash for bpf_for_each_map_elem"
+                    ))
+                })?
         };
-        let kind = self.literal_string_arg(*reg, &format!("{context} --kind"))?;
-        match Self::parse_generic_map_kind(&kind) {
-            Some(
-                kind @ (
-                    MapKind::Hash
-                    | MapKind::PerCpuHash
-                    | MapKind::LruHash
-                    | MapKind::LruPerCpuHash
-                    | MapKind::Array
-                    | MapKind::PerCpuArray
-                ),
-            ) => Ok(kind),
-            Some(map_kind) => Err(Self::reserved_special_map_kind_error(context, &kind, map_kind)
-                .unwrap_or_else(|| {
+        match map_kind {
+            kind @ (MapKind::Hash
+            | MapKind::PerCpuHash
+            | MapKind::LruHash
+            | MapKind::LruPerCpuHash
+            | MapKind::Array
+            | MapKind::PerCpuArray) => Ok(kind),
+            map_kind => {
+                let kind = map_kind.to_string();
+                Err(Self::reserved_special_map_kind_error(context, &kind, map_kind)
+                    .unwrap_or_else(|| {
                     CompileError::UnsupportedInstruction(format!(
                         "{context} --kind {kind} is not supported by bpf_for_each_map_elem; supported kinds are hash, array, lru-hash, per-cpu-hash, per-cpu-array, and lru-per-cpu-hash"
                     ))
-                })),
-            None => Err(CompileError::UnsupportedInstruction(format!(
-                "{context} --kind must name a recognized map family; bpf_for_each_map_elem supports hash, array, lru-hash, per-cpu-hash, per-cpu-array, and lru-per-cpu-hash"
-            ))),
+                }))
+            }
         }
     }
 
@@ -1260,23 +1268,32 @@ impl<'a> HirToMirLowering<'a> {
     pub(super) fn required_per_cpu_lookup_map_kind_arg(
         &self,
         context: &str,
+        map_name: &str,
     ) -> Result<MapKind, CompileError> {
-        let Some((_, reg)) = self.named_args.get("kind") else {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "{context} requires --kind per-cpu-hash, --kind per-cpu-array, or --kind lru-per-cpu-hash"
-            )));
+        let map_kind = if let Some((_, reg)) = self.named_args.get("kind") {
+            let kind = self.literal_string_arg(*reg, &format!("{context} --kind"))?;
+            let map_kind = Self::parse_generic_map_kind(&kind).ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "{context} --kind must be one of: per-cpu-hash, per-cpu-array, lru-per-cpu-hash"
+                ))
+            })?;
+            self.validate_explicit_map_kind_matches_declaration(context, map_name, map_kind)?;
+            map_kind
+        } else {
+            self.declared_map_kind_for_name(context, map_name)?
+                .ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "{context} requires --kind per-cpu-hash, --kind per-cpu-array, or --kind lru-per-cpu-hash"
+                    ))
+                })?
         };
-        let kind = self.literal_string_arg(*reg, &format!("{context} --kind"))?;
-        match Self::parse_generic_map_kind(&kind) {
-            Some(MapKind::PerCpuHash) => Ok(MapKind::PerCpuHash),
-            Some(MapKind::PerCpuArray) => Ok(MapKind::PerCpuArray),
-            Some(MapKind::LruPerCpuHash) => Ok(MapKind::LruPerCpuHash),
-            Some(other) => Err(CompileError::UnsupportedInstruction(format!(
+        match map_kind {
+            MapKind::PerCpuHash => Ok(MapKind::PerCpuHash),
+            MapKind::PerCpuArray => Ok(MapKind::PerCpuArray),
+            MapKind::LruPerCpuHash => Ok(MapKind::LruPerCpuHash),
+            other => Err(CompileError::UnsupportedInstruction(format!(
                 "{context} requires --kind per-cpu-hash, --kind per-cpu-array, or --kind lru-per-cpu-hash, got {}",
                 other
-            ))),
-            None => Err(CompileError::UnsupportedInstruction(format!(
-                "{context} --kind must be one of: per-cpu-hash, per-cpu-array, lru-per-cpu-hash"
             ))),
         }
     }
@@ -1284,26 +1301,38 @@ impl<'a> HirToMirLowering<'a> {
     pub(super) fn required_timer_map_kind_arg(
         &self,
         context: &str,
+        map_name: &str,
     ) -> Result<MapKind, CompileError> {
-        let Some((_, reg)) = self.named_args.get("kind") else {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "{context} requires --kind hash, --kind array, or --kind lru-hash for bpf_timer_init"
-            )));
+        let map_kind = if let Some((_, reg)) = self.named_args.get("kind") {
+            let kind = self.literal_string_arg(*reg, &format!("{context} --kind"))?;
+            let map_kind = Self::parse_generic_map_kind(&kind).ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "{context} --kind must be one of: hash, array, lru-hash"
+                ))
+            })?;
+            self.validate_explicit_map_kind_matches_declaration(context, map_name, map_kind)?;
+            map_kind
+        } else {
+            self.declared_map_kind_for_name(context, map_name)?
+                .ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "{context} requires --kind hash, --kind array, or --kind lru-hash for bpf_timer_init"
+                    ))
+                })?
         };
-        let kind = self.literal_string_arg(*reg, &format!("{context} --kind"))?;
-        match Self::parse_generic_map_kind(&kind) {
-            Some(MapKind::Hash) => Ok(MapKind::Hash),
-            Some(MapKind::Array) => Ok(MapKind::Array),
-            Some(MapKind::LruHash) => Ok(MapKind::LruHash),
-            Some(map_kind) => Err(Self::reserved_special_map_kind_error(context, &kind, map_kind)
-                .unwrap_or_else(|| {
+        match map_kind {
+            MapKind::Hash => Ok(MapKind::Hash),
+            MapKind::Array => Ok(MapKind::Array),
+            MapKind::LruHash => Ok(MapKind::LruHash),
+            map_kind => {
+                let kind = map_kind.to_string();
+                Err(Self::reserved_special_map_kind_error(context, &kind, map_kind)
+                    .unwrap_or_else(|| {
                     CompileError::UnsupportedInstruction(format!(
                         "{context} --kind {kind} is not supported by bpf_timer_init; supported kinds are hash, array, and lru-hash"
                     ))
-                })),
-            None => Err(CompileError::UnsupportedInstruction(format!(
-                "{context} --kind must be one of: hash, array, lru-hash"
-            ))),
+                }))
+            }
         }
     }
 
