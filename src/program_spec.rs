@@ -4472,6 +4472,66 @@ mod tests {
     }
 
     #[test]
+    fn test_program_spec_compatibility_requirement_corpus_covers_all_registry_requirements() {
+        let mut spec_texts = EbpfProgramType::supported_program_types()
+            .iter()
+            .map(|program_type| {
+                format!(
+                    "{}:{}",
+                    program_type.canonical_prefix(),
+                    ProgramSpec::representative_target_for_program_type(*program_type)
+                )
+            })
+            .collect::<Vec<_>>();
+        spec_texts.extend(
+            [
+                "fentry.s:do_sys_openat2",
+                "fexit.s:do_sys_openat2",
+                "fmod_ret.s:bpf_modify_return_test",
+                "lsm.s:file_open",
+                "uprobe.s:/bin/bash:main",
+                "uretprobe.s:/bin/bash:main",
+                "uprobe.multi.s:/bin/bash:read*",
+                "uretprobe.multi.s:/bin/bash:read*",
+                "xdp:lo:drv",
+                "xdp:lo:hw",
+                "xdp:lo:skb:frags",
+                "xdp:devmap",
+                "xdp:cpumap",
+                "netfilter:ipv4:pre_routing:defrag",
+                "lwt_seg6local:demo-route",
+                "sk_reuseport:migrate",
+                "cgroup_sock_addr:/sys/fs/cgroup:connect_unix",
+                "struct_ops:sched_ext_ops",
+                "struct_ops:hid_bpf_ops",
+                "struct_ops:Qdisc_ops",
+                "struct_ops:sched_ext_ops.init",
+            ]
+            .into_iter()
+            .map(str::to_string),
+        );
+        spec_texts.extend(
+            IterTargetKind::all()
+                .iter()
+                .map(|kind| format!("iter:{}", kind.key())),
+        );
+
+        let mut covered = HashSet::new();
+        for spec_text in spec_texts {
+            let spec = ProgramSpec::parse(&spec_text)
+                .unwrap_or_else(|err| panic!("{spec_text} should parse: {err}"));
+            covered.extend(spec.compatibility_requirements());
+        }
+
+        for requirement in ProgramCompatibilityRequirement::all() {
+            assert!(
+                covered.contains(requirement),
+                "{requirement:?} should be covered by a modeled ProgramSpec compatibility corpus"
+            );
+        }
+    }
+
+    #[test]
     fn test_program_spec_live_attach_policy_accounts_for_loader_and_safety() {
         let xdp = ProgramSpec::parse("xdp:lo").expect("xdp spec should parse");
         assert_eq!(
