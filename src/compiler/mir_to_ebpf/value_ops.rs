@@ -180,7 +180,9 @@ impl<'a> MirToEbpfCompiler<'a> {
         &mut self,
         dst: VReg,
         lhs: StackSlotId,
+        lhs_offset: usize,
         rhs: StackSlotId,
+        rhs_offset: usize,
         len: usize,
     ) -> Result<(), CompileError> {
         let dst_reg = self.alloc_dst_reg(dst)?;
@@ -189,10 +191,10 @@ impl<'a> MirToEbpfCompiler<'a> {
 
         self.instructions.push(EbpfInsn::mov64_imm(dst_reg, 1));
         for idx in 0..len {
-            let lhs_offset = self.add_i16_offset(lhs_base, idx)?;
-            let rhs_offset = self.add_i16_offset(rhs_base, idx)?;
-            self.emit_load(EbpfReg::R1, EbpfReg::R10, lhs_offset, 1)?;
-            self.emit_load(EbpfReg::R2, EbpfReg::R10, rhs_offset, 1)?;
+            let lhs_load_offset = self.add_i16_offset(lhs_base, lhs_offset.saturating_add(idx))?;
+            let rhs_load_offset = self.add_i16_offset(rhs_base, rhs_offset.saturating_add(idx))?;
+            self.emit_load(EbpfReg::R1, EbpfReg::R10, lhs_load_offset, 1)?;
+            self.emit_load(EbpfReg::R2, EbpfReg::R10, rhs_load_offset, 1)?;
             self.instructions
                 .push(EbpfInsn::jeq_reg(EbpfReg::R1, EbpfReg::R2, 1));
             self.instructions.push(EbpfInsn::mov64_imm(dst_reg, 0));

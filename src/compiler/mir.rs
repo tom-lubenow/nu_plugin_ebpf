@@ -2411,7 +2411,9 @@ pub enum MirInst {
     StrCmp {
         dst: VReg,
         lhs: StackSlotId,
+        lhs_offset: usize,
         rhs: StackSlotId,
+        rhs_offset: usize,
         len: usize,
     },
 

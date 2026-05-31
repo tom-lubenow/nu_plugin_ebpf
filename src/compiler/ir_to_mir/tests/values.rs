@@ -2407,6 +2407,74 @@ fn test_lower_str_starts_with_prefix_beyond_capacity_is_false() {
 }
 
 #[test]
+fn test_lower_str_ends_with_on_known_string_uses_offset_strcmp() {
+    let ends_with_decl = DeclId::new(120);
+    let hir = make_string_arg_pipeline_call_program(ends_with_decl, "abcdef", "def");
+    let decl_names = HashMap::from([(ends_with_decl, "str ends-with".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str ends-with should lower on tracked strings with known lengths");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StrCmp {
+                    lhs_offset: 3,
+                    rhs_offset: 0,
+                    len: 3,
+                    ..
+                }
+            )),
+        "expected str ends-with to compare the suffix at a fixed offset"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("str ends-with on known tracked strings should compile through codegen");
+}
+
+#[test]
+fn test_lower_str_ends_with_suffix_longer_than_known_string_is_false() {
+    let ends_with_decl = DeclId::new(121);
+    let hir = make_string_arg_pipeline_call_program(ends_with_decl, "a", "abcdef");
+    let decl_names = HashMap::from([(ends_with_decl, "str ends-with".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str ends-with should prove impossible suffixes false");
+
+    assert!(
+        !result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::StrCmp { .. })),
+        "expected too-long str ends-with suffix to avoid out-of-slot StrCmp"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("false str ends-with result should compile through codegen");
+}
+
+#[test]
 fn test_lower_is_empty_on_metadata_record_uses_known_field_count() {
     let is_empty_decl = DeclId::new(114);
     let (hir, decl_names) = make_record_empty_predicate_program(is_empty_decl, "is-empty", false);

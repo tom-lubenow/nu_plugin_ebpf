@@ -138,7 +138,9 @@ impl<'a> HirToMirLowering<'a> {
             self.emit(MirInst::StrCmp {
                 dst: result_vreg,
                 lhs: input_slot,
+                lhs_offset: 0,
                 rhs: prefix_slot,
+                rhs_offset: 0,
                 len: prefix_len,
             });
         }
@@ -148,5 +150,114 @@ impl<'a> HirToMirLowering<'a> {
         out_meta.field_type = Some(MirType::Bool);
         self.vreg_type_hints.insert(result_vreg, MirType::Bool);
         Ok(())
+    }
+
+    pub(super) fn lower_string_ends_with(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+    ) -> Result<(), CompileError> {
+        let input_reg = self
+            .pipeline_input_reg
+            .or(src_dst_had_value.then_some(src_dst));
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+
+        if !self.named_flags.is_empty() || !self.named_args.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(
+                "str ends-with does not accept named flags or arguments in eBPF".into(),
+            ));
+        }
+        let (_, suffix_reg) = self.positional_args.first().copied().ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "str ends-with requires a string suffix argument in eBPF".into(),
+            )
+        })?;
+        if self.positional_args.len() != 1 {
+            return Err(CompileError::UnsupportedInstruction(
+                "str ends-with accepts exactly one suffix argument in eBPF".into(),
+            ));
+        }
+
+        let input_meta = input_reg
+            .and_then(|reg| self.get_metadata(reg).cloned())
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "str ends-with requires tracked string input in eBPF".into(),
+                )
+            })?;
+        let Some(input_slot) = input_meta.string_slot else {
+            return Err(CompileError::UnsupportedInstruction(
+                "str ends-with requires tracked string input in eBPF".into(),
+            ));
+        };
+        let input_slot_size = self.stack_slot_size(input_slot).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "str ends-with could not determine input string capacity in eBPF".into(),
+            )
+        })?;
+        let input_len = Self::exact_string_len(&input_meta).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "str ends-with requires a compile-time known input string length in eBPF".into(),
+            )
+        })?;
+
+        let suffix = self.literal_string_arg(suffix_reg, "str ends-with")?;
+        if suffix.as_bytes().contains(&0) {
+            return Err(CompileError::UnsupportedInstruction(
+                "str ends-with does not support NUL bytes in the suffix in eBPF".into(),
+            ));
+        }
+        let suffix_meta = self.get_metadata(suffix_reg).cloned().ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "str ends-with requires a tracked string suffix in eBPF".into(),
+            )
+        })?;
+        let Some(suffix_slot) = suffix_meta.string_slot else {
+            return Err(CompileError::UnsupportedInstruction(
+                "str ends-with requires a tracked string suffix in eBPF".into(),
+            ));
+        };
+        let suffix_len = suffix.len();
+
+        if suffix_len == 0 {
+            self.emit(MirInst::Copy {
+                dst: result_vreg,
+                src: MirValue::Const(1),
+            });
+        } else if suffix_len > input_len || input_len > input_slot_size.saturating_sub(1) {
+            self.emit(MirInst::Copy {
+                dst: result_vreg,
+                src: MirValue::Const(0),
+            });
+        } else {
+            self.emit(MirInst::StrCmp {
+                dst: result_vreg,
+                lhs: input_slot,
+                lhs_offset: input_len - suffix_len,
+                rhs: suffix_slot,
+                rhs_offset: 0,
+                len: suffix_len,
+            });
+        }
+
+        self.reset_call_result_metadata(src_dst);
+        let out_meta = self.get_or_create_metadata(src_dst);
+        out_meta.field_type = Some(MirType::Bool);
+        self.vreg_type_hints.insert(result_vreg, MirType::Bool);
+        Ok(())
+    }
+
+    fn exact_string_len(meta: &RegMetadata) -> Option<usize> {
+        match &meta.constant_value {
+            Some(nu_protocol::Value::String { val, .. }) => Some(val.len()),
+            Some(nu_protocol::Value::Glob { val, .. }) => Some(val.len()),
+            Some(nu_protocol::Value::Binary { val, .. }) => Some(val.len()),
+            _ => meta.literal_string.as_ref().map(|val| val.len()),
+        }
     }
 }

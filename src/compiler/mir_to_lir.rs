@@ -462,11 +462,20 @@ fn lower_inst(
                 max_len: *max_len,
             });
         }
-        MirInst::StrCmp { dst, lhs, rhs, len } => {
+        MirInst::StrCmp {
+            dst,
+            lhs,
+            lhs_offset,
+            rhs,
+            rhs_offset,
+            len,
+        } => {
             out.push(LirInst::StrCmp {
                 dst: *dst,
                 lhs: *lhs,
+                lhs_offset: *lhs_offset,
                 rhs: *rhs,
+                rhs_offset: *rhs_offset,
                 len: *len,
             });
         }

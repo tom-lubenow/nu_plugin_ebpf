@@ -762,7 +762,14 @@ impl<'a> VccLowerer<'a> {
                 let value = self.lower_value(val, out);
                 out.push(VccInst::AssertScalar { value });
             }
-            MirInst::StrCmp { dst, lhs, rhs, len } => {
+            MirInst::StrCmp {
+                dst,
+                lhs,
+                lhs_offset,
+                rhs,
+                rhs_offset,
+                len,
+            } => {
                 if *len > 0 {
                     let lhs_base = self.stack_addr_temp(*lhs, out);
                     let rhs_base = self.stack_addr_temp(*rhs, out);
@@ -772,13 +779,13 @@ impl<'a> VccLowerer<'a> {
                     out.push(VccInst::Load {
                         dst: lhs_tmp,
                         ptr: lhs_base,
-                        offset: last,
+                        offset: (*lhs_offset as i64).saturating_add(last),
                         size: 1,
                     });
                     out.push(VccInst::Load {
                         dst: rhs_tmp,
                         ptr: rhs_base,
-                        offset: last,
+                        offset: (*rhs_offset as i64).saturating_add(last),
                         size: 1,
                     });
                 }

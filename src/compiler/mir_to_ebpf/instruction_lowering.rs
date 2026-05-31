@@ -243,8 +243,15 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.compile_int_to_string_inst(*dst_buffer, *dst_len, *val)?;
             }
 
-            LirInst::StrCmp { dst, lhs, rhs, len } => {
-                self.compile_strcmp_inst(*dst, *lhs, *rhs, *len)?;
+            LirInst::StrCmp {
+                dst,
+                lhs,
+                lhs_offset,
+                rhs,
+                rhs_offset,
+                len,
+            } => {
+                self.compile_strcmp_inst(*dst, *lhs, *lhs_offset, *rhs, *rhs_offset, *len)?;
             }
 
             LirInst::RecordStore {

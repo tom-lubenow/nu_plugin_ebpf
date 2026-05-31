@@ -175,7 +175,9 @@ fn test_strcmp_compiles() {
     func.block_mut(entry).instructions.push(MirInst::StrCmp {
         dst,
         lhs,
+        lhs_offset: 0,
         rhs,
+        rhs_offset: 0,
         len: 8,
     });
     func.block_mut(entry).terminator = MirInst::Return {

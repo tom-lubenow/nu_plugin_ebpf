@@ -33108,6 +33108,32 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-string-ends-with"
+        category: "language-core"
+        tags: [string str ends-with]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "abcdef" | str ends-with "def"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-string-ends-with-too-long"
+        category: "language-core"
+        tags: [string str ends-with]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "a" | str ends-with "abcdef"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-null-is-empty"
         category: "language-core"
         tags: ["null" is-empty]
