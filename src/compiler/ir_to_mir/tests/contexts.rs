@@ -198,6 +198,77 @@ fn make_returned_record_context_upsert_program(
     (hir, user_functions)
 }
 
+fn make_record_spread_context_upsert_program(
+    record_field: &str,
+    path: CellPath,
+    lit: HirLiteral,
+) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let mut members = vec![string_member(record_field)];
+    members.extend(path.members);
+    HirProgram::new(
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(0),
+                        lit: HirLiteral::Record { capacity: 1 },
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::String(record_field.as_bytes().to_vec()),
+                    },
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(2),
+                        var_id: ctx_var,
+                    },
+                    HirStmt::RecordInsert {
+                        src_dst: RegId::new(0),
+                        key: RegId::new(1),
+                        val: RegId::new(2),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(3),
+                        lit: HirLiteral::Record { capacity: 0 },
+                    },
+                    HirStmt::RecordSpread {
+                        src_dst: RegId::new(3),
+                        items: RegId::new(0),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(4),
+                        lit: HirLiteral::CellPath(Box::new(CellPath { members })),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(5),
+                        lit,
+                    },
+                    HirStmt::UpsertCellPath {
+                        src_dst: RegId::new(3),
+                        path: RegId::new(4),
+                        new_value: RegId::new(5),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(6),
+                        lit: HirLiteral::Int(1),
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(6) },
+            }],
+            entry: HirBlockId(0),
+            spans: vec![Span::test_data(); 10],
+            ast: vec![None; 10],
+            comments: vec![],
+            register_count: 7,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        Some(ctx_var),
+    )
+}
+
 #[test]
 fn test_lower_xdp_action_alias_return_to_const() {
     let hir = make_return_literal_program(HirLiteral::String(b"pass".to_vec()));
@@ -1866,6 +1937,63 @@ fn test_lower_record_context_sun_path_assignment_records_kfunc_metadata() {
         .find(|requirement| requirement.name() == "bpf_sock_addr_set_sun_path")
         .expect(
             "record-held ctx.sun_path assignment should report bpf_sock_addr_set_sun_path metadata",
+        );
+    assert_eq!(requirement.minimum_kernel(), "6.7");
+    assert_eq!(program.kfunc_compatibility_minimum_kernel(), Some("6.7"));
+    assert_eq!(program.compatibility_minimum_kernel(), Some("6.7"));
+}
+
+#[test]
+fn test_lower_record_spread_context_sun_path_assignment_records_kfunc_metadata() {
+    let hir = make_record_spread_context_upsert_program(
+        "event",
+        CellPath {
+            members: vec![string_member("sun_path")],
+        },
+        HirLiteral::String(b"/tmp/nu-ebpf.sock".to_vec()),
+    );
+    let probe_ctx = ProbeContext::new(
+        EbpfProgramType::CgroupSockAddr,
+        "/sys/fs/cgroup:connect_unix",
+    );
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("record-spread cgroup_sock_addr ctx.sun_path assignment should lower");
+
+    assert!(result.program.main.blocks.iter().any(|block| {
+        block.instructions.iter().any(|inst| {
+            matches!(
+                inst,
+                MirInst::CallKfunc { kfunc, .. } if kfunc == "bpf_sock_addr_set_sun_path"
+            )
+        })
+    }));
+
+    let compiled =
+        compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+            .expect("record-spread cgroup_sock_addr ctx.sun_path assignment should compile");
+    assert!(compiled.used_kfuncs.contains("bpf_sock_addr_set_sun_path"));
+
+    let program = compiled.into_program(
+        EbpfProgramType::CgroupSockAddr,
+        "/sys/fs/cgroup:connect_unix",
+        "main",
+        HashMap::new(),
+        HashMap::new(),
+    );
+    let requirement = program
+        .kfunc_compatibility_requirements()
+        .into_iter()
+        .find(|requirement| requirement.name() == "bpf_sock_addr_set_sun_path")
+        .expect(
+            "record-spread ctx.sun_path assignment should report bpf_sock_addr_set_sun_path metadata",
         );
     assert_eq!(requirement.minimum_kernel(), "6.7");
     assert_eq!(program.kfunc_compatibility_minimum_kernel(), Some("6.7"));
@@ -5065,6 +5193,53 @@ fn test_lower_returned_record_context_sock_ops_cb_flags_assignment_preserves_met
         Some(&result.type_hints),
     )
     .expect("user-function returned record-held sock_ops ctx.cb_flags assignment should compile");
+    assert!(compiled.used_ctx_fields.contains(&CtxField::SockOpsCbFlags));
+}
+
+#[test]
+fn test_lower_record_spread_context_sock_ops_cb_flags_assignment_preserves_metadata() {
+    let hir = make_record_spread_context_upsert_program(
+        "event",
+        CellPath {
+            members: vec![string_member("cb_flags")],
+        },
+        HirLiteral::Int(7),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("record-spread sock_ops ctx.cb_flags assignment should lower");
+
+    assert!(
+        result
+            .type_hints
+            .used_ctx_fields
+            .contains(&CtxField::SockOpsCbFlags),
+        "record-spread ctx.cb_flags assignment should preserve context compatibility metadata"
+    );
+    assert!(result.program.main.blocks.iter().any(|block| {
+        block.instructions.iter().any(|inst| {
+            matches!(
+                inst,
+                MirInst::StoreCtxField {
+                    target: CtxStoreTarget::SockOpsCbFlags,
+                    ty: MirType::U32,
+                    ..
+                }
+            )
+        })
+    }));
+
+    let compiled =
+        compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+            .expect("record-spread sock_ops ctx.cb_flags assignment should compile");
     assert!(compiled.used_ctx_fields.contains(&CtxField::SockOpsCbFlags));
 }
 
