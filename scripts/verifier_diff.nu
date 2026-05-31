@@ -42298,6 +42298,8 @@ def multi-param-context-root-wrapper-definitions [source: string] {
 
 def multi-param-record-wrapper-definitions [source: string] {
     mut wrappers = []
+    let identity_wrappers = (identity-wrapper-definitions $source)
+    let root_wrapper_defs = (context-root-wrapper-definitions $source)
 
     for function in (positional-user-functions $source) {
         if ($function.params | length) <= 1 {
@@ -42311,7 +42313,7 @@ def multi-param-record-wrapper-definitions [source: string] {
             }
 
             for param in ($function.params | enumerate) {
-                for field in (record-literal-context-fields $trimmed [$param.item] [] [] []) {
+                for field in (record-literal-context-fields $trimmed [$param.item] [] $identity_wrappers $root_wrapper_defs) {
                     if (
                         $wrappers
                         | any {|wrapper|
