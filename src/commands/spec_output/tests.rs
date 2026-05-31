@@ -825,19 +825,99 @@ fn test_context_field_compatibility_metadata_invariants() {
     for spec_text in CONTEXT_FIELD_SPEC_SOURCES {
         let spec = ProgramSpec::parse(spec_text)
             .unwrap_or_else(|err| panic!("{spec_text} should parse: {err}"));
+        let entries = spec.program_type().ctx_field_name_entries();
 
         for field in spec_context_fields(&spec, false) {
-            if field.requirement_key.is_some() {
-                assert!(
-                    field.minimum_kernel.is_some(),
-                    "{spec_text} ctx.{} should report a context-field minimum kernel",
-                    field.field
+            let entry = entries
+                .iter()
+                .find(|entry| entry.field.display_name() == field.field)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "{spec_text} ctx.{} should map back to a modeled context field",
+                        field.field
+                    )
+                });
+            let context_requirement =
+                ContextFieldCompatibilityRequirement::for_field_on_program_spec(
+                    &entry.field,
+                    &spec,
                 );
-                assert!(
-                    field.minimum_kernel_source.is_some(),
-                    "{spec_text} ctx.{} should report a context-field minimum kernel source",
-                    field.field
-                );
+            match context_requirement {
+                Some(requirement) => {
+                    assert_eq!(
+                        field.requirement_key.as_deref(),
+                        Some(requirement.key().as_str()),
+                        "{spec_text} ctx.{} should report the exact context-field requirement key",
+                        field.field
+                    );
+                    assert_eq!(
+                        field.minimum_kernel,
+                        Some(requirement.minimum_kernel()),
+                        "{spec_text} ctx.{} should report the exact context-field minimum kernel",
+                        field.field
+                    );
+                    assert_eq!(
+                        field.minimum_kernel_source,
+                        Some(requirement.minimum_kernel_source()),
+                        "{spec_text} ctx.{} should report the exact context-field minimum kernel source",
+                        field.field
+                    );
+                }
+                None => {
+                    assert_eq!(
+                        field.requirement_key, None,
+                        "{spec_text} ctx.{} should not report a context-field requirement key",
+                        field.field
+                    );
+                    assert_eq!(
+                        field.minimum_kernel, None,
+                        "{spec_text} ctx.{} should not report a context-field minimum kernel",
+                        field.field
+                    );
+                    assert_eq!(
+                        field.minimum_kernel_source, None,
+                        "{spec_text} ctx.{} should not report a context-field minimum kernel source",
+                        field.field
+                    );
+                }
+            }
+
+            match ctx_field_backing_helper(&entry.field) {
+                Some(helper) => {
+                    let requirement =
+                        HelperCompatibilityRequirement::for_helper(helper).unwrap_or_else(|| {
+                            panic!(
+                                "{spec_text} ctx.{} backing helper {} should expose compatibility metadata",
+                                field.field,
+                                helper.name()
+                            )
+                        });
+                    assert_eq!(field.backing_helper, Some(helper.name()));
+                    assert_eq!(
+                        field.backing_helper_requirement_key.as_deref(),
+                        Some(requirement.key().as_str()),
+                        "{spec_text} ctx.{} should report the exact backing-helper requirement key",
+                        field.field
+                    );
+                    assert_eq!(
+                        field.backing_helper_minimum_kernel,
+                        Some(requirement.minimum_kernel()),
+                        "{spec_text} ctx.{} should report the exact backing-helper minimum kernel",
+                        field.field
+                    );
+                    assert_eq!(
+                        field.backing_helper_minimum_kernel_source,
+                        Some(requirement.minimum_kernel_source()),
+                        "{spec_text} ctx.{} should report the exact backing-helper source",
+                        field.field
+                    );
+                }
+                None => {
+                    assert_eq!(field.backing_helper, None);
+                    assert_eq!(field.backing_helper_requirement_key, None);
+                    assert_eq!(field.backing_helper_minimum_kernel, None);
+                    assert_eq!(field.backing_helper_minimum_kernel_source, None);
+                }
             }
 
             let component_floors = [field.minimum_kernel, field.backing_helper_minimum_kernel];
@@ -864,6 +944,17 @@ fn test_context_field_compatibility_metadata_invariants() {
                         field.field
                     );
                 }
+            } else {
+                assert!(
+                    field.compatibility_minimum_kernel.is_none(),
+                    "{spec_text} ctx.{} should not report an aggregate compatibility minimum without component floors",
+                    field.field
+                );
+                assert!(
+                    field.compatibility_minimum_kernel_source.is_none(),
+                    "{spec_text} ctx.{} should not report an aggregate compatibility source without component floors",
+                    field.field
+                );
             }
         }
     }
