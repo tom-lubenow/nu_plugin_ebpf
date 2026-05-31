@@ -5990,6 +5990,28 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         target: "tc:lo:ingress"
         program: [
             '{|ctx|'
+            '  let rec = ({ ok: true } | insert socket ($ctx | get sk))'
+            '  $rec | get socket | get family | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:sk" "ctx:family" "helper:bpf_probe_read_kernel"]
+    }
+    {
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let rec = ({ socket: ($ctx | get sk) } | rename sock)'
+            '  $rec | get sock | get family | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:sk" "ctx:family" "helper:bpf_probe_read_kernel"]
+    }
+    {
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
             '  $ctx | get packet_len | count'
             '  0'
             '}'
@@ -8581,6 +8603,17 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
             '  def get_data [event] { $event | get data }'
             '  mut data = (get_data $ctx)'
             '  $data.0 = 42'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:data"]
+    }
+    {
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  mut rec = ({ ok: true } | upsert data ($ctx | get data))'
+            '  $rec.data.0 = 42'
             '  0'
             '}'
         ]
@@ -18699,6 +18732,36 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "tc-record-pipeline-insert-context-get-root"
+        category: "context-surface"
+        tags: [tc context socket record pipeline insert get source metadata]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let rec = ({ ok: true } | insert socket ($ctx | get sk))'
+            '  $rec | get socket | get family | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tc-record-pipeline-rename-context-get-root"
+        category: "context-surface"
+        tags: [tc context socket record pipeline rename get source metadata]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let rec = ({ socket: ($ctx | get sk) } | rename sock)'
+            '  $rec | get sock | get family | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "tc-context-get-scalar"
         category: "context-surface"
         tags: [tc context get source metadata]
@@ -18984,6 +19047,22 @@ const FIXTURES = [
             '{|ctx|'
             '  mut data = ($ctx | get data)'
             '  $data.0 = 42'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tc-record-pipeline-upsert-get-packet-data-write"
+        category: "context-surface"
+        tags: [tc context packet writable record pipeline upsert get source metadata]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  mut rec = ({ ok: true } | upsert data ($ctx | get data))'
+            '  $rec.data.0 = 42'
             '  0'
             '}'
         ]
@@ -39371,6 +39450,69 @@ def trim-simple-parentheses [text: string] {
     $value
 }
 
+def split-pipeline-segments [raw: string] {
+    let text = (trim-simple-parentheses ($raw | str trim))
+    mut segments = []
+    mut current = ""
+    mut paren_depth = 0
+    mut brace_depth = 0
+    mut bracket_depth = 0
+    mut in_single = false
+    mut in_double = false
+
+    for ch in ($text | split chars) {
+        if ($ch == "'" and (not $in_double)) {
+            $in_single = not $in_single
+            $current = $"($current)($ch)"
+            continue
+        }
+        if ($ch == '"' and (not $in_single)) {
+            $in_double = not $in_double
+            $current = $"($current)($ch)"
+            continue
+        }
+
+        if (
+            $ch == "|"
+            and (not $in_single)
+            and (not $in_double)
+            and $paren_depth == 0
+            and $brace_depth == 0
+            and $bracket_depth == 0
+        ) {
+            $segments = ($segments | append ($current | str trim))
+            $current = ""
+            continue
+        }
+
+        if (not $in_single) and (not $in_double) {
+            if $ch == "(" {
+                $paren_depth = $paren_depth + 1
+            } else if $ch == ")" {
+                if $paren_depth > 0 {
+                    $paren_depth = $paren_depth - 1
+                }
+            } else if $ch == "{" {
+                $brace_depth = $brace_depth + 1
+            } else if $ch == "}" {
+                if $brace_depth > 0 {
+                    $brace_depth = $brace_depth - 1
+                }
+            } else if $ch == "[" {
+                $bracket_depth = $bracket_depth + 1
+            } else if $ch == "]" {
+                if $bracket_depth > 0 {
+                    $bracket_depth = $bracket_depth - 1
+                }
+            }
+        }
+
+        $current = $"($current)($ch)"
+    }
+
+    $segments | append ($current | str trim)
+}
+
 def declaration-binding-name [raw_name: string] {
     $raw_name
     | str trim
@@ -40150,9 +40292,7 @@ def record-default-field-value [tail: string] {
 
 def record-pipeline-input-token [raw: string] {
     let input = (
-        $raw
-        | str trim
-        | split row "|"
+        split-pipeline-segments $raw
         | first
         | str trim
     )
@@ -40472,7 +40612,7 @@ def upsert-record-field-order [order field_name: string] {
 }
 
 def record-pipeline-flow-context-fields [raw: string context_names bound_aliases identity_wrappers root_wrapper_defs aliases] {
-    let parts = ($raw | str trim | split row "|")
+    let parts = (split-pipeline-segments $raw)
     if ($parts | length) <= 1 {
         return []
     }
