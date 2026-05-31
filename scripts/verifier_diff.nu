@@ -6054,6 +6054,35 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
     {
         target: "tc:lo:ingress"
         program: [
+            '{|ctx|'
+            '  def read_packet [event] {'
+            '    $event | get packet_len | count'
+            '    0'
+            '  }'
+            '  read_packet $ctx'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:packet_len"]
+    }
+    {
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  def read_family [event] {'
+            '    let sk = ($event | get sk)'
+            '    $sk | get family | count'
+            '    0'
+            '  }'
+            '  read_family $ctx'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:family" "ctx:sk" "helper:bpf_probe_read_kernel"]
+    }
+    {
+        target: "tc:lo:ingress"
+        program: [
             '{|ctx| $ctx | get sk | get family | count; 0}'
         ]
         feature_keys: ["ctx:family" "ctx:sk" "helper:bpf_probe_read_kernel"]
@@ -18650,6 +18679,43 @@ const FIXTURES = [
             '{|ctx|'
             '  def wrap [c] { { socket: ($c | get sk) } }'
             '  wrap $ctx | get socket | get family | count'
+            '  "ok"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tc-user-function-context-get-scalar"
+        category: "context-surface"
+        tags: [tc context user-function get source metadata]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  def read_packet [event] {'
+            '    $event | get packet_len | count'
+            '    0'
+            '  }'
+            '  read_packet $ctx'
+            '  "ok"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tc-user-function-context-get-bound-socket"
+        category: "context-surface"
+        tags: [tc context socket user-function get alias source metadata]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  def read_family [event] {'
+            '    let sk = ($event | get sk)'
+            '    $sk | get family | count'
+            '    0'
+            '  }'
+            '  read_family $ctx'
             '  "ok"'
             '}'
         ]
@@ -40699,6 +40765,24 @@ def function-context-root-aliases [body param: string identity_wrappers root_wra
     $aliases
 }
 
+def append-function-context-field-access [accesses function_name: string raw_access: string] {
+    let field = (normalize-context-field-token $raw_access)
+    if $field == "" {
+        return $accesses
+    }
+    if (
+        $accesses
+        | any {|access| $access.name == $function_name and $access.raw_access == $raw_access }
+    ) {
+        return $accesses
+    }
+
+    $accesses | append {
+        name: $function_name
+        raw_access: $raw_access
+    }
+}
+
 def function-context-field-accesses [function identity_wrappers root_wrapper_defs] {
     mut accesses = []
     let param = $function.param
@@ -40724,14 +40808,47 @@ def function-context-field-accesses [function identity_wrappers root_wrapper_def
                 if $field == "" {
                     continue
                 }
-                if not (
-                    $accesses
-                    | any {|access| $access.name == $function.name and $access.raw_access == $raw_access }
-                ) {
-                    $accesses = ($accesses | append {
-                        name: $function.name
-                        raw_access: $raw_access
-                    })
+                $accesses = (append-function-context-field-access $accesses $function.name $raw_access)
+            }
+        }
+
+        for candidate in (record-get-candidate-lines $line) {
+            let segments = (($candidate | str trim) | split row "|")
+            if ($segments | length) < 2 {
+                continue
+            }
+
+            mut input = (($segments | first) | str trim)
+            if ($input | str contains "=") {
+                $input = (($input | split row "=" | last) | str trim)
+            }
+            mut root = null
+
+            for segment in ($segments | skip 1) {
+                let parsed = (get-command-field-tail $segment)
+                if $parsed == null {
+                    continue
+                }
+
+                if $root == null {
+                    $root = (context-root-from-get-input $input [$param] $aliases)
+                    if $root == null {
+                        continue
+                    }
+                }
+
+                let field_path = (normalize-context-path-token $parsed.field)
+                if $field_path != "" {
+                    let raw_access = if $root == "" { $field_path } else { $"($root).($field_path)" }
+                    $accesses = (append-function-context-field-access $accesses $function.name $raw_access)
+                    $root = $raw_access
+                }
+
+                let tail_path = (get-segment-cell-path-tail $parsed.tail)
+                if $tail_path != "" {
+                    let raw_access = if $root == "" { $tail_path } else { $"($root).($tail_path)" }
+                    $accesses = (append-function-context-field-access $accesses $function.name $raw_access)
+                    $root = $raw_access
                 }
             }
         }
