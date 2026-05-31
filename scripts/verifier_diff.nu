@@ -6009,6 +6009,17 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
     {
         target: "tc:lo:ingress"
         program: [
+            '{|ctx|'
+            '  let sk = ($ctx | get sk)'
+            '  $sk.family | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:family" "ctx:sk" "helper:bpf_probe_read_kernel"]
+    }
+    {
+        target: "tc:lo:ingress"
+        program: [
             '{|ctx| $ctx | get sk | get family | count; 0}'
         ]
         feature_keys: ["ctx:family" "ctx:sk" "helper:bpf_probe_read_kernel"]
@@ -18544,6 +18555,21 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  $ctx | get sk | get family | count'
+            '  "ok"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tc-context-get-socket-bound-root"
+        category: "context-surface"
+        tags: [tc context socket get alias source metadata]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let sk = ($ctx | get sk)'
+            '  $sk.family | count'
             '  "ok"'
             '}'
         ]
@@ -39128,6 +39154,11 @@ def context-root-binding [line: string context_names bound_aliases identity_wrap
             return { name: $assignment.name root: $direct_root }
         }
 
+        let get_root = (context-root-from-get-pipeline $rhs $context_names $bound_aliases)
+        if $get_root != null and $get_root != "" {
+            return { name: $assignment.name root: $get_root }
+        }
+
         let invocation = (two-token-invocation $rhs)
         if $invocation != null {
             if $invocation.callee in $identity_wrappers {
@@ -39400,6 +39431,11 @@ def context-root-from-record-value-token [raw_value: string context_names bound_
         return $direct_root
     }
 
+    let get_root = (context-root-from-get-pipeline $raw_value $context_names $bound_aliases)
+    if $get_root != null {
+        return $get_root
+    }
+
     let invocation = (two-token-invocation (trim-simple-parentheses ($raw_value | str trim)))
     if $invocation != null and $invocation.callee in $identity_wrappers {
         return (context-root-from-value-token $invocation.arg $context_names $bound_aliases)
@@ -39556,6 +39592,50 @@ def combine-context-roots [base: string wrapper: string] {
     }
 
     $"($base).($wrapper)"
+}
+
+def context-root-from-get-pipeline [raw: string context_names bound_aliases] {
+    let trimmed = (trim-simple-parentheses ($raw | str trim))
+    if (not ($trimmed | str contains "get")) or (not ($trimmed | str contains "|")) {
+        return null
+    }
+
+    let segments = ($trimmed | split row "|")
+    if ($segments | length) < 2 {
+        return null
+    }
+
+    mut root = (
+        context-root-from-value-token
+            (($segments | first) | str trim)
+            $context_names
+            $bound_aliases
+    )
+    if $root == null {
+        return null
+    }
+
+    mut saw_get = false
+    for segment in ($segments | skip 1) {
+        let parsed = (get-command-field-tail $segment)
+        if $parsed == null {
+            return null
+        }
+
+        let field_path = (normalize-context-path-token $parsed.field)
+        if $field_path == "" {
+            return null
+        }
+        $root = if $root == "" { $field_path } else { $"($root).($field_path)" }
+        $saw_get = true
+
+        let tail_path = (get-segment-cell-path-tail $parsed.tail)
+        if $tail_path != "" {
+            $root = if $root == "" { $tail_path } else { $"($root).($tail_path)" }
+        }
+    }
+
+    if $saw_get { $root } else { null }
 }
 
 def record-wrapper-context-bindings [line: string context_names bound_aliases wrapper_defs] {
@@ -41023,6 +41103,28 @@ def source-has-context-root-projection? [source: string context_names] {
                 if (context-projection-root? $root) {
                     return true
                 }
+            }
+        }
+    }
+
+    if ($source | str contains "get") and ($source | str contains "|") {
+        let aliases = (program-bound-context-root-aliases-base $source $context_names)
+        if not ($aliases | is-empty) {
+            return true
+        }
+
+        for line in (record-get-candidate-lines $source) {
+            let segments = (($line | str trim) | split row "|")
+            if ($segments | length) < 2 {
+                continue
+            }
+
+            mut input = (($segments | first) | str trim)
+            if ($input | str contains "=") {
+                $input = (($input | split row "=" | last) | str trim)
+            }
+            if (context-root-from-get-input $input $context_names $aliases) != null {
+                return true
             }
         }
     }
