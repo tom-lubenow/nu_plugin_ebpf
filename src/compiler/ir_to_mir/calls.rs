@@ -2736,8 +2736,8 @@ impl<'a> HirToMirLowering<'a> {
                 self.vreg_type_hints.insert(result_vreg, MirType::I64);
             }
 
-            "math sum" => {
-                self.lower_stack_list_math_sum(src_dst, dst_vreg, src_dst_had_value)?;
+            "math max" | "math min" | "math product" | "math sum" => {
+                self.lower_stack_list_math_reduce(&cmd_name, src_dst, dst_vreg, src_dst_had_value)?;
             }
 
             "select" | "reject" => {

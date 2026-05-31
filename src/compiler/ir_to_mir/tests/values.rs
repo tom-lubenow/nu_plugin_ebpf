@@ -2180,6 +2180,49 @@ fn test_lower_math_sum_on_empty_numeric_list_is_rejected() {
 }
 
 #[test]
+fn test_lower_math_product_min_max_on_numeric_lists() {
+    for (offset, command_name, expected_op) in [
+        (0, "math product", BinOpKind::Mul),
+        (1, "math min", BinOpKind::Lt),
+        (2, "math max", BinOpKind::Gt),
+    ] {
+        let decl = DeclId::new(108 + offset);
+        let hir = make_numeric_list_pipeline_call_program(decl, None);
+        let decl_names = HashMap::from([(decl, command_name.to_string())]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("{command_name} should lower on numeric lists: {err}"));
+        let instructions = result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .collect::<Vec<_>>();
+
+        assert!(
+            instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op,
+                    ..
+                } if *op == expected_op
+            )),
+            "expected {command_name} to lower with {expected_op:?}"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{command_name} should compile through codegen: {err}"));
+    }
+}
+
+#[test]
 fn test_lower_length_on_null_returns_zero() {
     let length_decl = DeclId::new(105);
     let func = HirFunction {
