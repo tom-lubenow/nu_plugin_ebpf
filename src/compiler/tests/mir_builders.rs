@@ -17,6 +17,7 @@ pub(crate) enum ExplicitNullRefKfuncCase {
     CgroupFromId,
     TaskExeFile,
     CpumaskCreate,
+    CryptoCtxAcquire,
 }
 
 impl ExplicitNullRefKfuncCase {
@@ -25,6 +26,7 @@ impl ExplicitNullRefKfuncCase {
             Self::CgroupFromId => "bpf_cgroup_from_id",
             Self::TaskExeFile => "bpf_get_task_exe_file",
             Self::CpumaskCreate => "bpf_cpumask_create",
+            Self::CryptoCtxAcquire => "bpf_crypto_ctx_acquire",
         }
     }
 
@@ -33,6 +35,7 @@ impl ExplicitNullRefKfuncCase {
             Self::CgroupFromId => "bpf_cgroup_release",
             Self::TaskExeFile => "bpf_put_file",
             Self::CpumaskCreate => "bpf_cpumask_release",
+            Self::CryptoCtxAcquire => "bpf_crypto_ctx_release",
         }
     }
 
@@ -41,6 +44,14 @@ impl ExplicitNullRefKfuncCase {
             Self::CgroupFromId => "cgroup",
             Self::TaskExeFile => "file",
             Self::CpumaskCreate => "cpumask",
+            Self::CryptoCtxAcquire => "crypto_ctx",
+        }
+    }
+
+    fn param_count(self) -> usize {
+        match self {
+            Self::TaskExeFile | Self::CryptoCtxAcquire => 2,
+            Self::CgroupFromId | Self::CpumaskCreate => 1,
         }
     }
 
@@ -68,6 +79,11 @@ impl ExplicitNullRefKfuncCase {
                 vec![task]
             }
             Self::CpumaskCreate => vec![],
+            Self::CryptoCtxAcquire => {
+                let crypto_ctx = func.alloc_vreg();
+                types.insert(crypto_ctx, unknown_kernel_ptr_ty());
+                vec![crypto_ctx]
+            }
         }
     }
 }
@@ -95,11 +111,7 @@ pub(crate) fn explicit_null_ref_join_release_mir(
     let release_cond = func.alloc_vreg();
     let release_ret = func.alloc_vreg();
 
-    func.param_count = if matches!(case, ExplicitNullRefKfuncCase::TaskExeFile) {
-        2
-    } else {
-        1
-    };
+    func.param_count = case.param_count();
 
     func.block_mut(entry).instructions.push(MirInst::BinOp {
         dst: select_cond,

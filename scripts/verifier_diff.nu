@@ -28747,6 +28747,30 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "source-kfunc-crypto-ctx-release-accepts-create-or-null-release"
+        category: "helper-state"
+        tags: [kfunc crypto ref-lifetime phi source accept]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define crypto_params --kind array --value-type "bytes:512" --max-entries 1'
+            '  let params = (0 | map-get crypto_params --kind array)'
+            '  let err = "00000000"'
+            '  if $params {'
+            '    let selector = (helper-call "bpf_get_prandom_u32")'
+            '    let crypto = (if $selector == 0 { kfunc-call "bpf_crypto_ctx_create" $params 408 $err } else { 0 })'
+            '    if $crypto {'
+            '      $crypto | kfunc-call "bpf_crypto_ctx_release"'
+            '    }'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "source-kfunc-crypto-ctx-create-record-field-err"
         category: "helper-state"
         tags: [kfunc crypto ref-lifetime record source accept]

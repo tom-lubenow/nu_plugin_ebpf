@@ -91,6 +91,19 @@ fn test_kfunc_cpumask_release_accepts_explicit_null_phi_after_acquire_join() {
     assert_explicit_null_ref_join_release_accepts(ExplicitNullRefKfuncCase::CpumaskCreate, true);
 }
 
+#[test]
+fn test_kfunc_crypto_ctx_release_accepts_explicit_null_after_acquire_join() {
+    assert_explicit_null_ref_join_release_accepts(
+        ExplicitNullRefKfuncCase::CryptoCtxAcquire,
+        false,
+    );
+}
+
+#[test]
+fn test_kfunc_crypto_ctx_release_accepts_explicit_null_phi_after_acquire_join() {
+    assert_explicit_null_ref_join_release_accepts(ExplicitNullRefKfuncCase::CryptoCtxAcquire, true);
+}
+
 fn assert_xdp_xfrm_explicit_null_ref_join_release_accepts(use_phi: bool) {
     let (func, types) = xdp_get_xfrm_state_explicit_null_join_mir(use_phi);
     let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
