@@ -9,8 +9,10 @@ pub(super) fn apply_copy_inst(
     state: &mut VerifierState,
 ) {
     let ty = match src {
-        MirValue::Const(0) => typed_null_copy_type(dst, types, state)
-            .unwrap_or_else(|| value_type(src, state, slot_sizes)),
+        MirValue::Const(0) | MirValue::VReg(_) if value_is_known_zero(src, state) => {
+            typed_null_copy_type(dst, types, state)
+                .unwrap_or_else(|| value_type(src, state, slot_sizes))
+        }
         _ => value_type(src, state, slot_sizes),
     };
     let range = value_range(src, state);
@@ -125,6 +127,16 @@ pub(super) fn apply_phi_edge_inst(
     }
     if let Some(guard) = src_guard {
         state.set_guard(dst, guard);
+    }
+}
+
+fn value_is_known_zero(src: &MirValue, state: &VerifierState) -> bool {
+    match src {
+        MirValue::Const(0) => true,
+        MirValue::VReg(vreg) => {
+            matches!(state.get_range(*vreg), ValueRange::Known { min: 0, max: 0 })
+        }
+        _ => false,
     }
 }
 
