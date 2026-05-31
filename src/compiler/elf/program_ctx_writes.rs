@@ -1330,7 +1330,7 @@ mod tests {
         surfaces: &[ContextWriteSurfaceSpec],
     ) {
         for surface in surfaces {
-            let Some(field) = surface.field.as_ref() else {
+            let Some(field) = surface.context_field() else {
                 continue;
             };
             assert_eq!(
