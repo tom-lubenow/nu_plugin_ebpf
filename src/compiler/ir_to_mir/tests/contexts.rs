@@ -1482,6 +1482,57 @@ fn assert_ctx_sk_helper_projection_lowers(
     assert_eq!(requirement.minimum_kernel(), "5.1");
 }
 
+fn assert_ctx_field_load_compiles_with_floor(
+    program_type: EbpfProgramType,
+    target: &str,
+    field_name: &str,
+    expected_field: CtxField,
+    expected_minimum_kernel: &str,
+) {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member(field_name)],
+    });
+    let probe_ctx = ProbeContext::new(program_type, target);
+    let program_label = program_type.canonical_prefix();
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .unwrap_or_else(|err| panic!("{program_label} ctx.{field_name} should lower: {err}"));
+
+    assert!(
+        result.program.main.blocks.iter().any(|block| {
+            block.instructions.iter().any(|inst| {
+                matches!(
+                    inst,
+                    MirInst::LoadCtxField { field, .. } if field == &expected_field
+                )
+            })
+        }),
+        "{program_label} ctx.{field_name} should load {expected_field:?}"
+    );
+
+    let compiled =
+        compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{program_label} ctx.{field_name} should compile: {err}"));
+    assert!(
+        compiled.used_ctx_fields.contains(&expected_field),
+        "{program_label} ctx.{field_name} should preserve {expected_field:?} compatibility metadata"
+    );
+    let program =
+        compiled.into_program(program_type, target, "main", HashMap::new(), HashMap::new());
+    assert_eq!(
+        program.context_field_compatibility_minimum_kernel(),
+        Some(expected_minimum_kernel),
+        "{program_label} ctx.{field_name} should report its context-field floor"
+    );
+}
+
 #[test]
 fn test_lower_cgroup_sockopt_ctx_sk_tcp_metric_projection_calls_helper() {
     assert_ctx_sk_helper_projection_lowers(
@@ -3501,53 +3552,12 @@ fn test_lower_sk_reuseport_scalar_context_aliases_compile() {
         ("bind_inany", CtxField::BindInany, "4.19"),
         ("socket_cookie", CtxField::SocketCookie, "4.12"),
     ] {
-        let hir = make_ctx_path_program(CellPath {
-            members: vec![string_member(field_name)],
-        });
-        let probe_ctx = ProbeContext::new(EbpfProgramType::SkReuseport, "select");
-
-        let result = lower_hir_to_mir_with_hints(
-            &hir,
-            Some(&probe_ctx),
-            &HashMap::new(),
-            None,
-            &HashMap::new(),
-            &HashMap::new(),
-        )
-        .unwrap_or_else(|err| panic!("sk_reuseport ctx.{field_name} should lower: {err}"));
-
-        assert!(
-            result.program.main.blocks.iter().any(|block| {
-                block.instructions.iter().any(|inst| {
-                    matches!(
-                        inst,
-                        MirInst::LoadCtxField { field, .. } if field == &expected_field
-                    )
-                })
-            }),
-            "sk_reuseport ctx.{field_name} should load {expected_field:?}"
-        );
-        let compiled = compile_mir_to_ebpf_with_hints(
-            &result.program,
-            Some(&probe_ctx),
-            Some(&result.type_hints),
-        )
-        .unwrap_or_else(|err| panic!("sk_reuseport ctx.{field_name} should compile: {err}"));
-        assert!(
-            compiled.used_ctx_fields.contains(&expected_field),
-            "sk_reuseport ctx.{field_name} should preserve {expected_field:?} compatibility metadata"
-        );
-        let program = compiled.into_program(
+        assert_ctx_field_load_compiles_with_floor(
             EbpfProgramType::SkReuseport,
             "select",
-            "main",
-            HashMap::new(),
-            HashMap::new(),
-        );
-        assert_eq!(
-            program.context_field_compatibility_minimum_kernel(),
-            Some(expected_minimum_kernel),
-            "sk_reuseport ctx.{field_name} should report its context-field floor"
+            field_name,
+            expected_field,
+            expected_minimum_kernel,
         );
     }
 }
@@ -5148,54 +5158,12 @@ fn test_lower_netfilter_scalar_context_aliases_compile() {
         ("pf", CtxField::NetfilterProtocolFamily),
         ("protocol_family", CtxField::NetfilterProtocolFamily),
     ] {
-        let hir = make_ctx_path_program(CellPath {
-            members: vec![string_member(field_name)],
-        });
-        let probe_ctx = ProbeContext::new(EbpfProgramType::Netfilter, "ipv4:pre_routing");
-
-        let result = lower_hir_to_mir_with_hints(
-            &hir,
-            Some(&probe_ctx),
-            &HashMap::new(),
-            None,
-            &HashMap::new(),
-            &HashMap::new(),
-        )
-        .unwrap_or_else(|err| panic!("netfilter ctx.{field_name} should lower: {err}"));
-
-        assert!(
-            result.program.main.blocks.iter().any(|block| {
-                block.instructions.iter().any(|inst| {
-                    matches!(
-                        inst,
-                        MirInst::LoadCtxField { field, .. } if field == &expected_field
-                    )
-                })
-            }),
-            "netfilter ctx.{field_name} should load {expected_field:?}"
-        );
-
-        let compiled = compile_mir_to_ebpf_with_hints(
-            &result.program,
-            Some(&probe_ctx),
-            Some(&result.type_hints),
-        )
-        .unwrap_or_else(|err| panic!("netfilter ctx.{field_name} should compile: {err}"));
-        assert!(
-            compiled.used_ctx_fields.contains(&expected_field),
-            "netfilter ctx.{field_name} should preserve {expected_field:?} compatibility metadata"
-        );
-        let program = compiled.into_program(
+        assert_ctx_field_load_compiles_with_floor(
             EbpfProgramType::Netfilter,
             "ipv4:pre_routing",
-            "main",
-            HashMap::new(),
-            HashMap::new(),
-        );
-        assert_eq!(
-            program.context_field_compatibility_minimum_kernel(),
-            Some("6.4"),
-            "netfilter ctx.{field_name} should report the netfilter context-field floor"
+            field_name,
+            expected_field,
+            "6.4",
         );
     }
 }
@@ -5279,30 +5247,21 @@ fn test_lower_sk_lookup_ctx_cookie_field() {
 }
 
 #[test]
-fn test_lower_lirc_mode2_ctx_value_field() {
-    let hir = make_ctx_path_program(CellPath {
-        members: vec![string_member("value")],
-    });
-    let probe_ctx = ProbeContext::new(EbpfProgramType::LircMode2, "/dev/lirc0");
-
-    let result = lower_hir_to_mir_with_hints(
-        &hir,
-        Some(&probe_ctx),
-        &HashMap::new(),
-        None,
-        &HashMap::new(),
-        &HashMap::new(),
-    )
-    .expect("lirc_mode2 ctx.value should lower");
-
-    let block = result.program.main.block(result.program.main.entry);
-    assert!(block.instructions.iter().any(|inst| matches!(
-        inst,
-        MirInst::LoadCtxField {
-            field: CtxField::LircValue,
-            ..
-        }
-    )));
+fn test_lower_lirc_mode2_scalar_context_aliases_compile() {
+    for (field_name, expected_field) in [
+        ("sample", CtxField::LircSample),
+        ("raw", CtxField::LircSample),
+        ("value", CtxField::LircValue),
+        ("mode", CtxField::LircMode),
+    ] {
+        assert_ctx_field_load_compiles_with_floor(
+            EbpfProgramType::LircMode2,
+            "/dev/lirc0",
+            field_name,
+            expected_field,
+            "4.18",
+        );
+    }
 }
 
 #[test]
@@ -8744,57 +8703,12 @@ fn test_lower_perf_event_direct_context_fields_compile() {
         ("sample_period", CtxField::PerfSamplePeriod, "4.9"),
         ("addr", CtxField::PerfAddr, "5.0"),
     ] {
-        let hir = make_ctx_path_program(CellPath {
-            members: vec![string_member(field_name)],
-        });
-        let probe_ctx = ProbeContext::new(
+        assert_ctx_field_load_compiles_with_floor(
             EbpfProgramType::PerfEvent,
             "software:cpu-clock:period=100000",
-        );
-
-        let result = lower_hir_to_mir_with_hints(
-            &hir,
-            Some(&probe_ctx),
-            &HashMap::new(),
-            None,
-            &HashMap::new(),
-            &HashMap::new(),
-        )
-        .unwrap_or_else(|err| panic!("perf_event ctx.{field_name} should lower: {err}"));
-
-        assert!(
-            result.program.main.blocks.iter().any(|block| {
-                block.instructions.iter().any(|inst| {
-                    matches!(
-                        inst,
-                        MirInst::LoadCtxField { field, .. } if field == &expected_field
-                    )
-                })
-            }),
-            "perf_event ctx.{field_name} should load {expected_field:?}"
-        );
-
-        let compiled = compile_mir_to_ebpf_with_hints(
-            &result.program,
-            Some(&probe_ctx),
-            Some(&result.type_hints),
-        )
-        .unwrap_or_else(|err| panic!("perf_event ctx.{field_name} should compile: {err}"));
-        assert!(
-            compiled.used_ctx_fields.contains(&expected_field),
-            "perf_event ctx.{field_name} should preserve {expected_field:?} compatibility metadata"
-        );
-        let program = compiled.into_program(
-            EbpfProgramType::PerfEvent,
-            "software:cpu-clock:period=100000",
-            "main",
-            HashMap::new(),
-            HashMap::new(),
-        );
-        assert_eq!(
-            program.context_field_compatibility_minimum_kernel(),
-            Some(expected_floor),
-            "perf_event ctx.{field_name} should report its direct context-field floor"
+            field_name,
+            expected_field,
+            expected_floor,
         );
     }
 }
@@ -8861,32 +8775,20 @@ fn test_lower_socket_filter_ctx_mark_field() {
 
 #[test]
 fn test_lower_cgroup_device_ctx_access_type_field() {
-    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupDevice, "/sys/fs/cgroup");
-
     for (field_name, expected_field) in [
         ("access_type", CtxField::DeviceAccessType),
         ("device_access", CtxField::DeviceAccess),
         ("device_type", CtxField::DeviceType),
+        ("major", CtxField::DeviceMajor),
+        ("minor", CtxField::DeviceMinor),
     ] {
-        let hir = make_ctx_path_program(CellPath {
-            members: vec![string_member(field_name)],
-        });
-
-        let result = lower_hir_to_mir_with_hints(
-            &hir,
-            Some(&probe_ctx),
-            &HashMap::new(),
-            None,
-            &HashMap::new(),
-            &HashMap::new(),
-        )
-        .unwrap_or_else(|err| panic!("cgroup_device ctx.{field_name} should lower: {err}"));
-
-        let block = result.program.main.block(result.program.main.entry);
-        assert!(block.instructions.iter().any(|inst| matches!(
-            inst,
-            MirInst::LoadCtxField { field, .. } if field == &expected_field
-        )));
+        assert_ctx_field_load_compiles_with_floor(
+            EbpfProgramType::CgroupDevice,
+            "/sys/fs/cgroup",
+            field_name,
+            expected_field,
+            "4.15",
+        );
     }
 }
 
