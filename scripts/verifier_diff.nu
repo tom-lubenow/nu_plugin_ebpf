@@ -32487,6 +32487,45 @@ const FIXTURES = [
         error_contains: "append would exceed stack-backed numeric list capacity 60"
     }
     {
+        name: "core-list-is-empty"
+        category: "language-core"
+        tags: [aggregate list is-empty]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [] | is-empty'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-string-is-empty"
+        category: "language-core"
+        tags: [string is-empty]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "" | is-empty'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-null-is-empty"
+        category: "language-core"
+        tags: ["null" is-empty]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  null | is-empty'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-upsert-local"
         category: "language-core"
         tags: [aggregate list upsert local]

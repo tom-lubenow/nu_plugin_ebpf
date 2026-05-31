@@ -186,6 +186,36 @@ fn make_numeric_list_item_call_then_get_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_string_pipeline_call_program(decl_id: DeclId, value: &str) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::string(value, Span::test_data())),
+                },
+                HirStmt::Call {
+                    decl_id,
+                    src_dst: RegId::new(1),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 2,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 #[test]
 fn test_lower_load_value_duration_as_const() {
     let func = HirFunction {
@@ -527,6 +557,87 @@ fn test_lower_prepend_on_numeric_list_rebuilds_with_extra_capacity() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("prepend followed by get should compile through codegen");
+}
+
+#[test]
+fn test_lower_is_empty_on_numeric_list_compares_length_to_zero() {
+    let is_empty_decl = DeclId::new(90);
+    let hir = make_numeric_list_pipeline_call_program(is_empty_decl, None);
+    let decl_names = HashMap::from([(is_empty_decl, "is-empty".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("is-empty should lower on stack-backed numeric lists");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+
+    assert!(
+        instructions
+            .iter()
+            .any(|inst| matches!(inst, MirInst::ListLen { .. })),
+        "expected is-empty to inspect the list length"
+    );
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::Eq,
+                rhs: MirValue::Const(0),
+                ..
+            }
+        )),
+        "expected is-empty to compare length to zero"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("is-empty on stack-backed numeric list should compile through codegen");
+}
+
+#[test]
+fn test_lower_is_empty_on_string_compares_length_to_zero() {
+    let is_empty_decl = DeclId::new(91);
+    let hir = make_string_pipeline_call_program(is_empty_decl, "");
+    let decl_names = HashMap::from([(is_empty_decl, "is-empty".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("is-empty should lower on tracked strings");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op: BinOpKind::Eq,
+                    rhs: MirValue::Const(0),
+                    ..
+                }
+            )),
+        "expected is-empty to compare string length to zero"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("is-empty on tracked string should compile through codegen");
 }
 
 #[test]
