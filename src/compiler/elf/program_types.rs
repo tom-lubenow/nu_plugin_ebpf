@@ -24,7 +24,34 @@ pub enum ProgramContextFamily {
     Iter,
 }
 
+const PROGRAM_CONTEXT_FAMILIES: &[ProgramContextFamily] = &[
+    ProgramContextFamily::Probe,
+    ProgramContextFamily::PerfEvent,
+    ProgramContextFamily::Xdp,
+    ProgramContextFamily::SkBuffPacket,
+    ProgramContextFamily::SkLookup,
+    ProgramContextFamily::FlowDissector,
+    ProgramContextFamily::Netfilter,
+    ProgramContextFamily::SkReuseport,
+    ProgramContextFamily::SkMsg,
+    ProgramContextFamily::SockOps,
+    ProgramContextFamily::CgroupSock,
+    ProgramContextFamily::CgroupSysctl,
+    ProgramContextFamily::CgroupSockopt,
+    ProgramContextFamily::CgroupSockAddr,
+    ProgramContextFamily::CgroupDevice,
+    ProgramContextFamily::LircMode2,
+    ProgramContextFamily::StructOps,
+    ProgramContextFamily::Extension,
+    ProgramContextFamily::Syscall,
+    ProgramContextFamily::Iter,
+];
+
 impl ProgramContextFamily {
+    pub fn all() -> &'static [Self] {
+        PROGRAM_CONTEXT_FAMILIES
+    }
+
     pub fn key(self) -> &'static str {
         match self {
             Self::Probe => "probe",
@@ -1618,28 +1645,7 @@ mod tests {
             .collect::<HashSet<_>>();
         let mut registry_attach_kinds = HashSet::new();
 
-        for family in [
-            ProgramContextFamily::Probe,
-            ProgramContextFamily::PerfEvent,
-            ProgramContextFamily::Xdp,
-            ProgramContextFamily::SkBuffPacket,
-            ProgramContextFamily::SkLookup,
-            ProgramContextFamily::FlowDissector,
-            ProgramContextFamily::Netfilter,
-            ProgramContextFamily::SkReuseport,
-            ProgramContextFamily::SkMsg,
-            ProgramContextFamily::SockOps,
-            ProgramContextFamily::CgroupSock,
-            ProgramContextFamily::CgroupSysctl,
-            ProgramContextFamily::CgroupSockopt,
-            ProgramContextFamily::CgroupSockAddr,
-            ProgramContextFamily::CgroupDevice,
-            ProgramContextFamily::LircMode2,
-            ProgramContextFamily::StructOps,
-            ProgramContextFamily::Extension,
-            ProgramContextFamily::Syscall,
-            ProgramContextFamily::Iter,
-        ] {
+        for family in ProgramContextFamily::all() {
             assert!(
                 context_family_keys.insert(family.key()),
                 "program context family key repeats for {family:?}"
