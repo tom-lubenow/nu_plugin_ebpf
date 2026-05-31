@@ -102,6 +102,51 @@ fn make_returned_context_upsert_program(
     (hir, user_functions)
 }
 
+fn make_ctx_pipeline_get_chain_program(paths: Vec<CellPath>, get_decl: DeclId) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let mut stmts = vec![HirStmt::LoadVariable {
+        dst: RegId::new(0),
+        var_id: ctx_var,
+    }];
+    let mut input = RegId::new(0);
+    for path in paths {
+        stmts.push(HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: HirLiteral::CellPath(Box::new(path)),
+        });
+        stmts.push(HirStmt::Call {
+            decl_id: get_decl,
+            src_dst: RegId::new(2),
+            args: HirCallArgs {
+                pipeline_input: Some(input),
+                positional: vec![RegId::new(1)],
+                ..HirCallArgs::default()
+            },
+        });
+        input = RegId::new(2);
+    }
+
+    let stmt_count = stmts.len();
+    HirProgram::new(
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts,
+                terminator: HirTerminator::Return { src: input },
+            }],
+            entry: HirBlockId(0),
+            spans: vec![Span::test_data(); stmt_count],
+            ast: vec![None; stmt_count],
+            comments: vec![],
+            register_count: 3,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        Some(ctx_var),
+    )
+}
+
 fn make_returned_record_context_upsert_program(
     record_field: &str,
     path: CellPath,
@@ -674,6 +719,117 @@ fn test_lower_bound_cgroup_skb_ctx_sk_cgroup_id_projection_calls_helper() {
                 } if *helper == BpfHelper::SkCgroupId as u32 && args.len() == 1
             )))
     );
+}
+
+#[test]
+fn test_lower_context_pipeline_get_scalar_field_projection() {
+    let get_decl = DeclId::new(42);
+    let hir = make_ctx_pipeline_get_chain_program(
+        vec![CellPath {
+            members: vec![string_member("packet_len")],
+        }],
+        get_decl,
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let decl_names = HashMap::from([(get_decl, "get".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("ctx | get packet_len should lower");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .any(|block| block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::LoadCtxField {
+                    field: CtxField::PacketLen,
+                    ..
+                }
+            )))
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+        .expect("ctx | get packet_len should compile");
+}
+
+#[test]
+fn test_lower_context_pipeline_get_nested_socket_projection() {
+    let get_decl = DeclId::new(42);
+    let hir = make_ctx_pipeline_get_chain_program(
+        vec![
+            CellPath {
+                members: vec![string_member("sk")],
+            },
+            CellPath {
+                members: vec![string_member("family")],
+            },
+        ],
+        get_decl,
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let decl_names = HashMap::from([(get_decl, "get".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("ctx | get sk | get family should lower");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .any(|block| block.instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::LoadCtxField {
+                    field: CtxField::Socket,
+                    ..
+                }
+            )))
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+        .expect("ctx | get sk | get family should compile");
+}
+
+#[test]
+fn test_lower_context_pipeline_get_cell_path_socket_projection() {
+    let get_decl = DeclId::new(42);
+    let hir = make_ctx_pipeline_get_chain_program(
+        vec![CellPath {
+            members: vec![string_member("sk"), string_member("family")],
+        }],
+        get_decl,
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let decl_names = HashMap::from([(get_decl, "get".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("ctx | get sk.family should lower");
+
+    compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+        .expect("ctx | get sk.family should compile");
 }
 
 #[test]

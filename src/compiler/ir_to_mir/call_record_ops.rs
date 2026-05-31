@@ -77,6 +77,48 @@ impl<'a> HirToMirLowering<'a> {
         Ok(())
     }
 
+    pub(super) fn field_path_arg(
+        &self,
+        reg: RegId,
+        context: &str,
+    ) -> Result<Option<CellPath>, CompileError> {
+        let Some(meta) = self.get_metadata(reg) else {
+            return Ok(None);
+        };
+
+        let path = meta.cell_path.as_ref().or_else(|| {
+            meta.constant_value.as_ref().and_then(|value| match value {
+                nu_protocol::Value::CellPath { val, .. } => Some(val),
+                _ => None,
+            })
+        });
+        if let Some(path) = path {
+            return match path.members.first() {
+                Some(PathMember::String { .. }) => Ok(Some(path.clone())),
+                Some(PathMember::Int { .. }) => Ok(None),
+                None => Err(CompileError::UnsupportedInstruction(format!(
+                    "{context} does not support empty cell paths in eBPF"
+                ))),
+            };
+        }
+
+        let name = meta
+            .literal_string
+            .clone()
+            .or_else(|| match meta.constant_value.as_ref() {
+                Some(nu_protocol::Value::String { val, .. }) => Some(val.clone()),
+                _ => None,
+            });
+        Ok(name.map(|name| CellPath {
+            members: vec![PathMember::string(
+                name,
+                false,
+                Casing::Sensitive,
+                Span::unknown(),
+            )],
+        }))
+    }
+
     fn top_level_field_name_arg(&self, reg: RegId, context: &str) -> Result<String, CompileError> {
         let Some(meta) = self.get_metadata(reg) else {
             return Err(CompileError::UnsupportedInstruction(format!(

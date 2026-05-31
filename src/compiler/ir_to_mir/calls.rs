@@ -14,6 +14,85 @@ const BPF_SK_LOOKUP_F_REPLACE: u64 = 1 << 0;
 const BPF_SK_LOOKUP_F_NO_REUSEPORT: u64 = 1 << 1;
 
 impl<'a> HirToMirLowering<'a> {
+    fn lower_synthetic_follow_cell_path(
+        &mut self,
+        src_dst: RegId,
+        path: CellPath,
+    ) -> Result<(), CompileError> {
+        const SYNTHETIC_GET_PATH_REG: u32 = u32::MAX;
+
+        let path_reg = RegId::new(SYNTHETIC_GET_PATH_REG);
+        let old_meta = self.reg_metadata.insert(
+            path_reg.get(),
+            RegMetadata {
+                cell_path: Some(path),
+                ..Default::default()
+            },
+        );
+        let result = self.lower_follow_cell_path(src_dst, path_reg);
+        if let Some(old_meta) = old_meta {
+            self.reg_metadata.insert(path_reg.get(), old_meta);
+        } else {
+            self.reg_metadata.remove(&path_reg.get());
+        }
+        result
+    }
+
+    fn lower_field_path_get(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+        input_reg: RegId,
+        input_vreg: VReg,
+        input_meta: Option<RegMetadata>,
+        path: CellPath,
+    ) -> Result<(), CompileError> {
+        if input_meta.as_ref().is_some_and(|meta| meta.is_context) {
+            let result_vreg = if src_dst_had_value {
+                self.assign_fresh_vreg(src_dst)
+            } else {
+                dst_vreg
+            };
+            self.reg_map.insert(src_dst.get(), result_vreg);
+            let mut meta = input_meta.unwrap_or_default();
+            meta.is_context = true;
+            meta.record_fields.clear();
+            self.reg_metadata.insert(src_dst.get(), meta);
+            return self.lower_synthetic_follow_cell_path(src_dst, path);
+        }
+
+        let base_runtime_ty = self
+            .typed_value_runtime_type(input_reg, input_vreg)
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "get FIELD requires record, context, or typed pointer input in eBPF".into(),
+                )
+            })?;
+        if !matches!(base_runtime_ty, MirType::Ptr { .. })
+            && Self::aggregate_call_value_type(&base_runtime_ty).is_none()
+        {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "get FIELD requires record, context, or typed pointer input in eBPF, got {:?}",
+                base_runtime_ty
+            )));
+        }
+
+        self.reg_map.insert(src_dst.get(), input_vreg);
+        if let Some(meta) = input_meta {
+            self.reg_metadata.insert(src_dst.get(), meta);
+        } else {
+            self.reg_metadata.insert(
+                src_dst.get(),
+                RegMetadata {
+                    field_type: Some(base_runtime_ty),
+                    ..Default::default()
+                },
+            );
+        }
+        self.lower_synthetic_follow_cell_path(src_dst, path)
+    }
+
     fn lower_stack_list_append_or_prepend(
         &mut self,
         cmd_name: &str,
@@ -2832,6 +2911,11 @@ impl<'a> HirToMirLowering<'a> {
                         "get does not accept named flags or arguments in eBPF".into(),
                     ));
                 }
+                if self.positional_args.len() != 1 {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "get accepts exactly one positional argument in eBPF".into(),
+                    ));
+                }
 
                 let input_reg = self
                     .pipeline_input_reg
@@ -2843,6 +2927,27 @@ impl<'a> HirToMirLowering<'a> {
                 {
                     self.lower_metadata_record_get(src_dst, dst_vreg, src_dst_had_value)?;
                 } else {
+                    let (_, arg_reg) = self.positional_args[0];
+                    if let Some(path) = self.field_path_arg(arg_reg, "get")? {
+                        let input_reg = input_reg.ok_or_else(|| {
+                            CompileError::UnsupportedInstruction(
+                                "get FIELD requires record, context, or typed pointer input in eBPF"
+                                    .into(),
+                            )
+                        })?;
+                        let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
+                        self.lower_field_path_get(
+                            src_dst,
+                            dst_vreg,
+                            src_dst_had_value,
+                            input_reg,
+                            input_vreg,
+                            input_meta,
+                            path,
+                        )?;
+                        return Ok(());
+                    }
+
                     let mut input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
                     let result_vreg = if src_dst_had_value {
                         self.assign_fresh_vreg(src_dst)
@@ -2855,11 +2960,6 @@ impl<'a> HirToMirLowering<'a> {
                                 "get requires a numeric positional index argument".into(),
                             )
                         })?;
-                    if self.positional_args.len() != 1 {
-                        return Err(CompileError::UnsupportedInstruction(
-                            "get accepts exactly one positional index argument in eBPF".into(),
-                        ));
-                    }
 
                     let idx = self
                         .get_metadata(idx_reg)

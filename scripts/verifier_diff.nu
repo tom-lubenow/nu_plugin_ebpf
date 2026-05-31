@@ -5987,6 +5987,43 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         feature_keys: ["ctx:family" "ctx:sk" "helper:bpf_probe_read_kernel"]
     }
     {
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  $ctx | get packet_len | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:packet_len"]
+    }
+    {
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  $ctx | get sk | get family | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:family" "ctx:sk" "helper:bpf_probe_read_kernel"]
+    }
+    {
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx| $ctx | get sk | get family | count; 0}'
+        ]
+        feature_keys: ["ctx:family" "ctx:sk" "helper:bpf_probe_read_kernel"]
+    }
+    {
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  $ctx | get sk.family | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:family" "ctx:sk" "helper:bpf_probe_read_kernel"]
+    }
+    {
         target: "raw_tracepoint:sys_enter"
         program: [
             '{|event|'
@@ -18479,6 +18516,34 @@ const FIXTURES = [
             '{|ctx|'
             '  def wrap [sock] { { socket: $sock } }'
             '  wrap $ctx.sk | get socket | get family | count'
+            '  "ok"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tc-context-get-scalar"
+        category: "context-surface"
+        tags: [tc context get source metadata]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  $ctx | get packet_len | count'
+            '  "ok"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tc-context-get-socket-chain"
+        category: "context-surface"
+        tags: [tc context socket get source metadata]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  $ctx | get sk | get family | count'
             '  "ok"'
             '}'
         ]
@@ -40697,6 +40762,16 @@ def get-command-field-tail [segment: string] {
     }
 }
 
+def context-root-from-get-input [input: string context_names bound_aliases] {
+    let normalized_input = (trim-simple-parentheses ($input | str trim))
+    let root = (context-root-from-value-token $normalized_input $context_names $bound_aliases)
+    if $root != null {
+        return $root
+    }
+
+    null
+}
+
 def get-segment-cell-path-tail [tail: string] {
     let parsed = (
         $tail
@@ -40708,6 +40783,80 @@ def get-segment-cell-path-tail [tail: string] {
     }
 
     normalize-context-path-token (($parsed | first).path)
+}
+
+def strip-leading-closure-header [line: string] {
+    let trimmed = ($line | str trim)
+    if not ($trimmed | str starts-with "{|") {
+        return $trimmed
+    }
+
+    let parts = (($trimmed | str substring 2..) | split row "|")
+    if ($parts | length) < 2 {
+        return $trimmed
+    }
+
+    $parts | skip 1 | str join "|" | str trim
+}
+
+def context-get-projection-kernel-features [source: string target context_names] {
+    if (not ($source | str contains "get")) or (not ($source | str contains "|")) {
+        return []
+    }
+    let candidate_lines = (record-get-candidate-lines $source)
+    if ($candidate_lines | is-empty) {
+        return []
+    }
+
+    mut features = []
+    let bound_aliases = (program-bound-context-root-aliases $source $context_names)
+
+    for line in $candidate_lines {
+        let trimmed = ($line | str trim)
+        let segments = ($trimmed | split row "|")
+
+        mut input = (($segments | first) | str trim)
+        if ($input | str contains "=") {
+            $input = (($input | split row "=" | last) | str trim)
+        }
+        mut root = null
+
+        for segment in ($segments | skip 1) {
+            let parsed = (get-command-field-tail $segment)
+            if $parsed == null {
+                continue
+            }
+
+            if $root == null {
+                $root = (context-root-from-get-input $input $context_names $bound_aliases)
+                if $root == null {
+                    continue
+                }
+            }
+
+            let field_path = (normalize-context-path-token $parsed.field)
+            if $field_path != "" {
+                $features = (
+                    append-missing-kernel-features
+                        $features
+                        (context-access-kernel-features-from-root-path $root $field_path $target)
+                )
+                $root = if $root == "" { $field_path } else { $"($root).($field_path)" }
+            }
+
+            let tail_path = (get-segment-cell-path-tail $parsed.tail)
+            if $tail_path != "" {
+                $features = (
+                    append-missing-kernel-features
+                        $features
+                        (context-access-kernel-features-from-root-path $root $tail_path $target)
+                )
+                $root = if $root == "" { $tail_path } else { $"($root).($tail_path)" }
+            }
+        }
+    }
+
+    $features
 }
 
 def context-access-kernel-features-from-root-path [root path: string target] {
@@ -40734,14 +40883,15 @@ def record-get-candidate-lines [source: string] {
         if $trimmed == "" or ($trimmed | str starts-with "#") {
             continue
         }
-        if (not ($trimmed | str contains "get")) or (not ($trimmed | str contains "|")) {
+        let pipeline_line = (strip-leading-closure-header $trimmed)
+        if (not ($pipeline_line | str contains "get")) or (not ($pipeline_line | str contains "|")) {
             continue
         }
-        if not (line-invokes-command? $trimmed "get") {
+        if not (line-invokes-command? $pipeline_line "get") {
             continue
         }
 
-        let segments = ($trimmed | split row "|")
+        let segments = ($pipeline_line | split row "|")
         if ($segments | length) < 2 {
             continue
         }
@@ -40758,7 +40908,7 @@ def record-get-candidate-lines [source: string] {
             or ($normalized_input | str starts-with "({")
             or not ((two-token-invocation $normalized_input) == null)
         ) {
-            $candidates = ($candidates | append $trimmed)
+            $candidates = ($candidates | append $pipeline_line)
         }
     }
 
@@ -41439,6 +41589,7 @@ def program-context-field-kernel-features [source: string target] {
     $features = (append-missing-kernel-features $features (user-function-context-field-kernel-features $source $target $context_names))
     $features = (append-missing-kernel-features $features (bound-context-projection-kernel-features $source $target $context_names))
     $features = (append-missing-kernel-features $features (record-context-projection-kernel-features $source $target $context_names))
+    $features = (append-missing-kernel-features $features (context-get-projection-kernel-features $source $target $context_names))
     $features = (append-missing-kernel-features $features (record-get-projection-kernel-features $source $target $context_names))
 
     $features
