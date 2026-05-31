@@ -6363,6 +6363,23 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         feature_keys: ["ctx:family" "ctx:sk" "helper:bpf_probe_read_kernel"]
     }
     {
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  def wrap_socket [sock] { { socket: $sock } }'
+            '  def wrap_event [event] {'
+            '    let sock = $event.sk'
+            '    let base = (wrap_socket $sock)'
+            '    { ok: true, ...$base }'
+            '  }'
+            '  let rec = (wrap_event $ctx)'
+            '  $rec.socket.family | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:family" "ctx:sk" "helper:bpf_probe_read_kernel"]
+    }
+    {
         target: "cgroup_sockopt:/sys/fs/cgroup:get"
         program: [
             '{|ctx|'
@@ -32842,6 +32859,26 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-user-function-nested-record-context-spread"
+        category: "language-core"
+        tags: [user-function record context spread nested source metadata accept]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  def wrap [x] { { k: $x } }'
+            '  def outer [x] {'
+            '    let base = (wrap $x)'
+            '    { ok: true, ...$base }'
+            '  }'
+            '  let rec = (outer $ctx)'
+            '  $rec.k.pid | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-context-emit-rejects-pointer-escape"
         category: "language-core"
         tags: [context emit reject]
@@ -37198,6 +37235,7 @@ def one-param-user-functions [source: string] {
 def record-context-wrapper-definitions [source: string] {
     mut wrappers = []
     let identity_wrappers = (identity-wrapper-definitions $source)
+    let base_wrapper_defs = (record-wrapper-definitions $source)
 
     for function in (one-param-user-functions $source) {
         mut aliases = []
@@ -37210,6 +37248,7 @@ def record-context-wrapper-definitions [source: string] {
             let trimmed = ($line | str trim)
             let bindings = (
                 (record-context-bindings $line [$function.param] $root_aliases $identity_wrappers)
+                | append (record-wrapper-context-bindings $line [$function.param] $root_aliases $base_wrapper_defs)
                 | append (record-upsert-context-bindings $line [$function.param] $root_aliases)
                 | append (record-spread-context-bindings $line $aliases)
             )
