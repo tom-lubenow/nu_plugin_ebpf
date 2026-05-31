@@ -10662,6 +10662,7 @@ fn test_lower_record_context_assignment_records_context_compatibility_fields() {
 fn test_lower_cgroup_sock_addr_alias_assignments_record_context_compatibility_fields() {
     fn assert_alias_assignment_metadata(
         hir: HirProgram,
+        user_functions: HashMap<DeclId, HirFunction>,
         target: &'static str,
         field: CtxField,
         minimum_kernel: &'static str,
@@ -10673,7 +10674,7 @@ fn test_lower_cgroup_sock_addr_alias_assignments_record_context_compatibility_fi
             Some(&probe_ctx),
             &HashMap::new(),
             None,
-            &HashMap::new(),
+            &user_functions,
             &HashMap::new(),
         )
         .unwrap_or_else(|err| panic!("{label} should lower: {err}"));
@@ -10760,17 +10761,56 @@ fn test_lower_cgroup_sock_addr_alias_assignments_record_context_compatibility_fi
     ] {
         assert_alias_assignment_metadata(
             make_ctx_upsert_program(path.clone(), lit.clone()),
+            HashMap::new(),
             target,
             field.clone(),
             minimum_kernel,
             "direct cgroup_sock_addr tuple-alias assignment",
         );
+        let (hir, user_functions) = make_returned_context_upsert_program(path.clone(), lit.clone());
         assert_alias_assignment_metadata(
-            make_record_context_upsert_program("event", path, lit),
+            hir,
+            user_functions,
+            target,
+            field.clone(),
+            minimum_kernel,
+            "returned cgroup_sock_addr tuple-alias assignment",
+        );
+        assert_alias_assignment_metadata(
+            make_record_context_upsert_program("event", path.clone(), lit.clone()),
+            HashMap::new(),
+            target,
+            field.clone(),
+            minimum_kernel,
+            "record-held cgroup_sock_addr tuple-alias assignment",
+        );
+        let (hir, user_functions) =
+            make_returned_record_context_upsert_program("event", path.clone(), lit.clone());
+        assert_alias_assignment_metadata(
+            hir,
+            user_functions,
+            target,
+            field.clone(),
+            minimum_kernel,
+            "returned record-held cgroup_sock_addr tuple-alias assignment",
+        );
+        assert_alias_assignment_metadata(
+            make_record_spread_context_upsert_program("event", path.clone(), lit.clone()),
+            HashMap::new(),
+            target,
+            field.clone(),
+            minimum_kernel,
+            "record-spread cgroup_sock_addr tuple-alias assignment",
+        );
+        let (hir, user_functions) =
+            make_nested_returned_record_spread_context_upsert_program("event", path, lit);
+        assert_alias_assignment_metadata(
+            hir,
+            user_functions,
             target,
             field,
             minimum_kernel,
-            "record-held cgroup_sock_addr tuple-alias assignment",
+            "nested returned record-spread cgroup_sock_addr tuple-alias assignment",
         );
     }
 }
