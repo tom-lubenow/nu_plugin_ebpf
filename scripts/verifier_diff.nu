@@ -40279,9 +40279,9 @@ def program-context-variable-names [source: string] {
     $names
 }
 
-def context-root-from-wrapper-invocation [invocation context_names bound_aliases root_wrapper_defs] {
+def context-root-from-wrapper-invocation [invocation context_names bound_aliases identity_wrappers root_wrapper_defs] {
     for wrapper in ($root_wrapper_defs | where {|wrapper| $wrapper.name == $invocation.callee }) {
-        let root = (context-root-from-argument-token $invocation.arg $context_names $bound_aliases)
+        let root = (context-root-from-argument-token $invocation.arg $context_names $bound_aliases $identity_wrappers)
         if $root == null {
             continue
         }
@@ -40292,7 +40292,7 @@ def context-root-from-wrapper-invocation [invocation context_names bound_aliases
     null
 }
 
-def context-root-from-multi-param-wrapper-invocation [raw_value: string context_names bound_aliases wrapper_defs] {
+def context-root-from-multi-param-wrapper-invocation [raw_value: string context_names bound_aliases identity_wrappers wrapper_defs] {
     let trimmed = (trim-simple-parentheses ($raw_value | str trim))
     let callee = (
         $trimmed
@@ -40316,7 +40316,7 @@ def context-root-from-multi-param-wrapper-invocation [raw_value: string context_
             continue
         }
 
-        let root = (context-root-from-argument-token $arg $context_names $bound_aliases)
+        let root = (context-root-from-argument-token $arg $context_names $bound_aliases $identity_wrappers)
         if $root == null {
             continue
         }
@@ -40361,6 +40361,7 @@ def context-root-binding [line: string context_names bound_aliases identity_wrap
                     $invocation
                     $context_names
                     $bound_aliases
+                    $identity_wrappers
                     $root_wrapper_defs
             )
             if $wrapper_root != null {
@@ -40373,6 +40374,7 @@ def context-root-binding [line: string context_names bound_aliases identity_wrap
                 $rhs
                 $context_names
                 $bound_aliases
+                $identity_wrappers
                 $multi_param_root_wrapper_defs
         )
         if $multi_param_wrapper_root != null {
@@ -40511,6 +40513,7 @@ def context-root-from-record-get [input: string get_field: string record_aliases
                     $wrapper
                     $context_names
                     $bound_aliases
+                    $identity_wrappers
             )
             if $root == null {
                 continue
@@ -40686,6 +40689,7 @@ def context-root-from-record-value-token [raw_value: string context_names bound_
                 $invocation
                 $context_names
                 $bound_aliases
+                $identity_wrappers
                 $root_wrapper_defs
         )
     }
@@ -40819,10 +40823,10 @@ def record-wrapper-definitions [source: string] {
     $wrappers
 }
 
-def context-root-from-record-wrapper-invocation [invocation wrapper context_names bound_aliases] {
+def context-root-from-record-wrapper-invocation [invocation wrapper context_names bound_aliases identity_wrappers] {
     let param_index = ($wrapper | get -o param_index)
     if $param_index == null {
-        return (context-root-from-argument-token $invocation.arg $context_names $bound_aliases)
+        return (context-root-from-argument-token $invocation.arg $context_names $bound_aliases $identity_wrappers)
     }
 
     let args = (command-tail-positional-args $invocation.arg)
@@ -40831,7 +40835,7 @@ def context-root-from-record-wrapper-invocation [invocation wrapper context_name
         return null
     }
 
-    context-root-from-argument-token $arg $context_names $bound_aliases
+    context-root-from-argument-token $arg $context_names $bound_aliases $identity_wrappers
 }
 
 def context-root-from-value-token [raw_value: string context_names bound_aliases] {
@@ -40880,10 +40884,16 @@ def context-root-from-value-token [raw_value: string context_names bound_aliases
     null
 }
 
-def context-root-from-argument-token [raw_value: string context_names bound_aliases] {
+def context-root-from-argument-token [raw_value: string context_names bound_aliases identity_wrappers] {
     mut root = (context-root-from-get-pipeline $raw_value $context_names $bound_aliases)
     if $root == null {
         $root = (context-root-from-value-token $raw_value $context_names $bound_aliases)
+    }
+    if $root == null {
+        let invocation = (two-token-invocation (trim-simple-parentheses ($raw_value | str trim)))
+        if $invocation != null and $invocation.callee in $identity_wrappers {
+            $root = (context-root-from-argument-token $invocation.arg $context_names $bound_aliases $identity_wrappers)
+        }
     }
 
     $root
@@ -40944,7 +40954,7 @@ def context-root-from-get-pipeline [raw: string context_names bound_aliases] {
     if $saw_get { $root } else { null }
 }
 
-def record-wrapper-context-bindings [line: string context_names bound_aliases wrapper_defs] {
+def record-wrapper-context-bindings [line: string context_names bound_aliases identity_wrappers wrapper_defs] {
     mut bindings = []
     for assignment in (declaration-assignments $line) {
         let rhs = (declaration-rhs-token $assignment)
@@ -40960,6 +40970,7 @@ def record-wrapper-context-bindings [line: string context_names bound_aliases wr
                     $wrapper
                     $context_names
                     $bound_aliases
+                    $identity_wrappers
             )
             if $root == null {
                 continue
@@ -41770,7 +41781,7 @@ def function-return-context-root [function identity_wrappers root_wrapper_defs] 
         }
     }
 
-    context-root-from-wrapper-invocation $invocation [$param] $aliases $root_wrapper_defs
+    context-root-from-wrapper-invocation $invocation [$param] $aliases $identity_wrappers $root_wrapper_defs
 }
 
 def context-root-wrapper-definitions [source: string] {
@@ -41886,7 +41897,7 @@ def record-context-wrapper-definitions [source: string] {
             let trimmed = ($line | str trim)
             let bindings = (
                 (record-context-bindings $line [$function.param] $root_aliases $identity_wrappers $root_wrapper_defs)
-                | append (record-wrapper-context-bindings $line [$function.param] $root_aliases $base_wrapper_defs)
+                | append (record-wrapper-context-bindings $line [$function.param] $root_aliases $identity_wrappers $base_wrapper_defs)
                 | append (record-upsert-context-bindings $line [$function.param] $root_aliases)
                 | append (record-pipeline-flow-context-bindings $line [$function.param] $root_aliases $identity_wrappers $root_wrapper_defs $aliases)
                 | append (record-spread-context-bindings $line $aliases)
@@ -42020,6 +42031,7 @@ def function-context-root-aliases [body param: string identity_wrappers root_wra
                             $invocation
                             [$param]
                             $aliases
+                            $identity_wrappers
                             $root_wrapper_defs
                     )
                 }
@@ -42535,6 +42547,7 @@ def multi-param-user-function-context-field-kernel-features [source: string targ
     }
 
     let bound_aliases = (program-bound-context-root-aliases $source $context_names)
+    let identity_wrappers = (identity-wrapper-definitions $source)
 
     for line in ($source | lines) {
         let trimmed = ($line | str trim)
@@ -42550,7 +42563,7 @@ def multi-param-user-function-context-field-kernel-features [source: string targ
                     continue
                 }
 
-                let root = (context-root-from-argument-token $arg $context_names $bound_aliases)
+                let root = (context-root-from-argument-token $arg $context_names $bound_aliases $identity_wrappers)
                 if $root == null {
                     continue
                 }
@@ -42672,7 +42685,7 @@ def program-record-context-aliases [source: string context_names] {
         for line in ($source | lines) {
             let bindings = (
                 (record-context-bindings $line $context_names $bound_aliases $identity_wrappers $root_wrapper_defs)
-                | append (record-wrapper-context-bindings $line $context_names $bound_aliases $wrapper_defs)
+                | append (record-wrapper-context-bindings $line $context_names $bound_aliases $identity_wrappers $wrapper_defs)
                 | append (record-upsert-context-bindings $line $context_names $bound_aliases)
                 | append (record-pipeline-flow-context-bindings $line $context_names $bound_aliases $identity_wrappers $root_wrapper_defs $aliases)
                 | append (record-spread-context-bindings $line $aliases)
