@@ -42011,18 +42011,7 @@ def function-context-root-aliases [body param: string identity_wrappers root_wra
     for line in $body {
         for assignment in (declaration-assignments $line) {
             let rhs = (declaration-rhs-token $assignment)
-            mut root = (context-root-from-value-token $rhs [$param] $aliases)
-            if $root == null {
-                $root = (context-root-from-get-pipeline $rhs [$param] $aliases)
-            }
-            if $root == null {
-                let invocation = (two-token-invocation $rhs)
-                if $invocation != null {
-                    if $invocation.callee in $identity_wrappers {
-                        $root = (context-root-from-value-token $invocation.arg [$param] $aliases)
-                    }
-                }
-            }
+            mut root = (context-root-from-argument-token $rhs [$param] $aliases $identity_wrappers)
             if $root == null {
                 let invocation = (two-token-invocation $rhs)
                 if $invocation != null {
@@ -42425,6 +42414,8 @@ def command-tail-positional-args [raw_tail: string] {
 
 def multi-param-function-context-field-accesses [source: string] {
     mut accesses = []
+    let identity_wrappers = (identity-wrapper-definitions $source)
+    let root_wrapper_defs = (context-root-wrapper-definitions $source)
 
     for function in (positional-user-functions $source) {
         if ($function.params | length) <= 1 {
@@ -42432,30 +42423,46 @@ def multi-param-function-context-field-accesses [source: string] {
         }
 
         for param in ($function.params | enumerate) {
-            let prefix = $"$($param.item)."
+            let aliases = (
+                function-context-root-aliases
+                    $function.body
+                    $param.item
+                    $identity_wrappers
+                    $root_wrapper_defs
+            )
+            let roots = ([{ name: $param.item root: "" }] | append $aliases)
             for line in $function.body {
-                for raw_tail in (marker-tails-outside-simple-string $line $prefix) {
-                    let field = (normalize-context-field-token $raw_tail)
-                    if $field == "" {
-                        continue
-                    }
-                    if (
-                        $accesses
-                        | any {|access|
-                            (
-                                $access.name == $function.name
-                                and $access.param_index == $param.index
-                                and $access.raw_access == $raw_tail
-                            )
+                for root_info in $roots {
+                    let prefix = $"$($root_info.name)."
+                    for raw_tail in (marker-tails-outside-simple-string $line $prefix) {
+                        let root_path = ($root_info | get -o root | default "")
+                        let raw_access = if $root_path == "" {
+                            $raw_tail
+                        } else {
+                            $"($root_path).($raw_tail)"
                         }
-                    ) {
-                        continue
+                        let field = (normalize-context-field-token $raw_access)
+                        if $field == "" {
+                            continue
+                        }
+                        if (
+                            $accesses
+                            | any {|access|
+                                (
+                                    $access.name == $function.name
+                                    and $access.param_index == $param.index
+                                    and $access.raw_access == $raw_access
+                                )
+                            }
+                        ) {
+                            continue
+                        }
+                        $accesses = ($accesses | append {
+                            name: $function.name
+                            param_index: $param.index
+                            raw_access: $raw_access
+                        })
                     }
-                    $accesses = ($accesses | append {
-                        name: $function.name
-                        param_index: $param.index
-                        raw_access: $raw_tail
-                    })
                 }
 
                 for candidate in (record-get-candidate-lines $line) {
@@ -42477,7 +42484,7 @@ def multi-param-function-context-field-accesses [source: string] {
                         }
 
                         if $root == null {
-                            $root = (context-root-from-get-input $input [$param.item] [])
+                            $root = (context-root-from-get-input $input [$param.item] $aliases)
                             if $root == null {
                                 continue
                             }
