@@ -6449,6 +6449,17 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         target: "tc:lo:ingress"
         program: [
             '{|ctx|'
+            '  let rec = ({ ok: true } | default $ctx.sk socket)'
+            '  $rec.socket.family | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:family" "ctx:sk" "helper:bpf_probe_read_kernel"]
+    }
+    {
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
             '  def wrap [sock] { { ok: true } | upsert socket $sock }'
             '  let rec = (wrap $ctx.sk)'
             '  $rec.socket.family | count'
@@ -18319,6 +18330,21 @@ const FIXTURES = [
             '{|ctx|'
             '  let rec = ({ socket: $ctx.sk, keep: 1 } | merge { ok: true } | select socket ok | reject ok | rename sock)'
             '  $rec.sock.family | count'
+            '  "ok"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tc-record-socket-context-default-field"
+        category: "context-surface"
+        tags: [tc context socket record default source metadata]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let rec = ({ ok: true } | default $ctx.sk socket)'
+            '  $rec.socket.family | count'
             '  "ok"'
             '}'
         ]
@@ -39187,6 +39213,35 @@ def record-command-field-value [tail: string] {
     }
 }
 
+def record-default-field-value [tail: string] {
+    let parts = (
+        $tail
+        | str trim
+        | split row " "
+        | each {|part| $part | str trim }
+        | where {|part| $part != "" }
+    )
+    if ($parts | length) < 2 {
+        return null
+    }
+
+    let field = (normalize-context-path-token ($parts | last))
+    let value = (
+        $parts
+        | first (($parts | length) - 1)
+        | str join " "
+        | str trim
+    )
+    if $field == "" or $value == "" {
+        return null
+    }
+
+    {
+        field: $field
+        value: $value
+    }
+}
+
 def record-pipeline-input-token [raw: string] {
     let input = (
         $raw
@@ -39233,6 +39288,26 @@ def record-literal-field-names [raw: string] {
     for parsed in (
         $inner
         | parse --regex '(?P<field>[A-Za-z_][A-Za-z0-9_-]*)\s*:'
+    ) {
+        if $parsed.field not-in $names {
+            $names = ($names | append $parsed.field)
+        }
+    }
+
+    $names
+}
+
+def record-literal-null-field-names [raw: string] {
+    let trimmed = ($raw | str trim)
+    if not (($trimmed | str starts-with "{") and ($trimmed | str ends-with "}")) {
+        return []
+    }
+
+    mut names = []
+    let inner = ($trimmed | str substring 1..-2)
+    for parsed in (
+        $inner
+        | parse --regex '(?P<field>[A-Za-z_][A-Za-z0-9_-]*)\s*:\s*null(?:\s|,|$)'
     ) {
         if $parsed.field not-in $names {
             $names = ($names | append $parsed.field)
@@ -39310,8 +39385,34 @@ def record-pipeline-input-field-order [raw: string] {
     null
 }
 
+def record-pipeline-input-null-fields [raw: string] {
+    let input = (record-pipeline-input-token $raw)
+    let literal_nulls = (record-literal-null-field-names $input)
+    if not ($literal_nulls | is-empty) {
+        return $literal_nulls
+    }
+
+    []
+}
+
 def remove-record-context-field [fields field_name: string] {
     $fields | where {|field| $field.field != $field_name }
+}
+
+def remove-field-name [fields field_name: string] {
+    $fields | where {|field| $field != $field_name }
+}
+
+def append-field-name [fields field_name: string] {
+    if $field_name in $fields {
+        return $fields
+    }
+
+    $fields | append $field_name
+}
+
+def value-token-null? [raw: string] {
+    (normalize-context-path-token (trim-simple-parentheses ($raw | str trim))) == "null"
 }
 
 def append-record-context-field [fields field_name: string root: string] {
@@ -39331,6 +39432,10 @@ def replace-record-context-field [fields field_name: string root] {
     }
 
     $next
+}
+
+def has-record-context-field? [fields field_name: string] {
+    $fields | any {|field| $field.field == $field_name }
 }
 
 def record-field-index [order field_name: string] {
@@ -39433,6 +39538,7 @@ def record-pipeline-flow-context-fields [raw: string context_names bound_aliases
             $aliases
     )
     mut field_order = (record-pipeline-input-field-order $raw)
+    mut null_fields = (record-pipeline-input-null-fields $raw)
 
     for segment in ($parts | skip 1) {
         let trimmed = ($segment | str trim)
@@ -39458,6 +39564,11 @@ def record-pipeline-flow-context-fields [raw: string context_names bound_aliases
             )
             $fields = (replace-record-context-field $fields $field_value.field $root)
             $field_order = (upsert-record-field-order $field_order $field_value.field)
+            $null_fields = if (value-token-null? $field_value.value) {
+                append-field-name $null_fields $field_value.field
+            } else {
+                remove-field-name $null_fields $field_value.field
+            }
         }
 
         if ($trimmed | str starts-with "merge ") {
@@ -39469,6 +39580,7 @@ def record-pipeline-flow-context-fields [raw: string context_names bound_aliases
             let merge_fields = (record-literal-field-names $merge_arg)
             for field in $merge_fields {
                 $fields = (remove-record-context-field $fields $field)
+                $null_fields = (remove-field-name $null_fields $field)
             }
             $fields = (unique-record-context-fields (
                 $fields
@@ -39481,6 +39593,9 @@ def record-pipeline-flow-context-fields [raw: string context_names bound_aliases
                         $root_wrapper_defs
                 )
             ))
+            for field in (record-literal-null-field-names $merge_arg) {
+                $null_fields = (append-field-name $null_fields $field)
+            }
             $field_order = (merge-record-field-order $field_order $merge_fields)
         }
 
@@ -39488,11 +39603,13 @@ def record-pipeline-flow-context-fields [raw: string context_names bound_aliases
             let selected = (record-field-name-list ($trimmed | str substring 6..))
             $fields = ($fields | where {|field| $field.field in $selected })
             $field_order = $selected
+            $null_fields = ($null_fields | where {|field| $field in $selected })
         }
 
         if ($trimmed | str starts-with "reject ") {
             let rejected = (record-field-name-list ($trimmed | str substring 6..))
             $fields = ($fields | where {|field| $field.field not-in $rejected })
+            $null_fields = ($null_fields | where {|field| $field not-in $rejected })
             if $field_order != null {
                 $field_order = ($field_order | where {|field| $field not-in $rejected })
             }
@@ -39501,7 +39618,40 @@ def record-pipeline-flow-context-fields [raw: string context_names bound_aliases
         if ($trimmed | str starts-with "rename ") {
             let rename_names = (record-field-name-list ($trimmed | str substring 6..))
             $fields = (rename-record-context-fields $fields $field_order $rename_names)
+            $null_fields = (rename-record-field-order $null_fields $rename_names)
             $field_order = (rename-record-field-order $field_order $rename_names)
+        }
+
+        if ($trimmed | str starts-with "default ") {
+            let field_value = (record-default-field-value ($trimmed | str substring 7..))
+            if $field_value == null {
+                continue
+            }
+
+            let field_exists = ($field_order != null and $field_value.field in $field_order)
+            let can_fill_field = (
+                not (has-record-context-field? $fields $field_value.field)
+                and (not $field_exists or $field_value.field in $null_fields)
+            )
+            if not $can_fill_field {
+                continue
+            }
+
+            let root = (
+                context-root-from-record-value-token
+                    $field_value.value
+                    $context_names
+                    $bound_aliases
+                    $identity_wrappers
+                    $root_wrapper_defs
+            )
+            $fields = (replace-record-context-field $fields $field_value.field $root)
+            $field_order = (upsert-record-field-order $field_order $field_value.field)
+            $null_fields = if (value-token-null? $field_value.value) {
+                append-field-name $null_fields $field_value.field
+            } else {
+                remove-field-name $null_fields $field_value.field
+            }
         }
     }
 
