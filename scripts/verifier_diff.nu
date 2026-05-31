@@ -32644,6 +32644,58 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-list-any"
+        category: "language-core"
+        tags: [aggregate list any closure]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [10 20 30] | any {|x| $x > 15 }'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-list-all"
+        category: "language-core"
+        tags: [aggregate list all closure]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [10 20 30] | all {|x| $x > 5 }'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-list-any-empty"
+        category: "language-core"
+        tags: [aggregate list any closure empty]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [] | any {|x| $x > 15 }'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-list-all-empty"
+        category: "language-core"
+        tags: [aggregate list all closure empty]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [] | all {|x| $x > 15 }'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-append-capacity-reject"
         category: "language-core"
         tags: [aggregate list append reject]

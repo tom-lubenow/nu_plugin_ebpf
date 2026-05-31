@@ -1,10 +1,11 @@
 use super::*;
-use crate::compiler::compile_mir_to_ebpf_with_hints;
 use crate::compiler::hir::{
     HirBlock, HirBlockId, HirFunction, HirLiteral, HirProgram, HirStmt, HirTerminator,
 };
 use crate::compiler::mir::AddressSpace;
-use nu_protocol::ast::{CellPath, PathMember};
+use crate::compiler::passes::optimize_with_ssa_hints;
+use crate::compiler::{EbpfProgramType, compile_mir_to_ebpf_with_hints};
+use nu_protocol::ast::{CellPath, Comparison, Operator, PathMember};
 use nu_protocol::casing::Casing;
 use nu_protocol::{DeclId, IN_VARIABLE_ID, Record, RegId, Span, Value, VarId};
 use std::collections::HashMap;
@@ -184,6 +185,187 @@ fn make_numeric_list_item_call_then_get_program(
         file_count: 0,
     };
     HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_numeric_list_predicate_call_program(
+    command_decl: DeclId,
+    command_name: &str,
+    values: &[i64],
+    threshold: i64,
+) -> (HirProgram, HashMap<DeclId, String>) {
+    let closure_block_id = nu_protocol::BlockId::new(1);
+    let list_values = values
+        .iter()
+        .map(|value| Value::int(*value, Span::test_data()))
+        .collect::<Vec<_>>();
+    let main = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::list(list_values, Span::test_data())),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Closure(closure_block_id),
+                },
+                HirStmt::Call {
+                    decl_id: command_decl,
+                    src_dst: RegId::new(1),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(2)],
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+    let closure = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: IN_VARIABLE_ID,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(threshold),
+                },
+                HirStmt::BinaryOp {
+                    lhs_dst: RegId::new(0),
+                    op: Operator::Comparison(Comparison::GreaterThan),
+                    rhs: RegId::new(1),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 2,
+        file_count: 0,
+    };
+    (
+        HirProgram::new(
+            main,
+            HashMap::from([(closure_block_id, closure)]),
+            Vec::new(),
+            None,
+        ),
+        HashMap::from([(command_decl, command_name.to_string())]),
+    )
+}
+
+fn make_numeric_list_in_place_predicate_call_program(
+    command_decl: DeclId,
+    command_name: &str,
+    threshold: i64,
+) -> (HirProgram, HashMap<DeclId, String>) {
+    let closure_block_id = nu_protocol::BlockId::new(1);
+    let main = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::List { capacity: 3 },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(10),
+                },
+                HirStmt::ListPush {
+                    src_dst: RegId::new(0),
+                    item: RegId::new(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(20),
+                },
+                HirStmt::ListPush {
+                    src_dst: RegId::new(0),
+                    item: RegId::new(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(30),
+                },
+                HirStmt::ListPush {
+                    src_dst: RegId::new(0),
+                    item: RegId::new(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Closure(closure_block_id),
+                },
+                HirStmt::Call {
+                    decl_id: command_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 2,
+        file_count: 0,
+    };
+    let closure = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: VarId::new(80),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(threshold),
+                },
+                HirStmt::BinaryOp {
+                    lhs_dst: RegId::new(0),
+                    op: Operator::Comparison(Comparison::GreaterThan),
+                    rhs: RegId::new(1),
+                },
+                HirStmt::Span {
+                    src_dst: RegId::new(0),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 2,
+        file_count: 0,
+    };
+    (
+        HirProgram::new(
+            main,
+            HashMap::from([(closure_block_id, closure)]),
+            Vec::new(),
+            None,
+        ),
+        HashMap::from([(command_decl, command_name.to_string())]),
+    )
 }
 
 fn make_string_pipeline_call_program(decl_id: DeclId, value: &str) -> HirProgram {
@@ -1371,6 +1553,192 @@ fn test_lower_where_on_numeric_list_filters_with_runtime_length_guard() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("where followed by get should compile through codegen");
+}
+
+#[test]
+fn test_lower_any_on_numeric_list_short_circuits_to_true() {
+    let any_decl = DeclId::new(117);
+    let (hir, decl_names) =
+        make_numeric_list_predicate_call_program(any_decl, "any", &[10, 20, 30], 15);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("any should lower on stack-backed numeric lists");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+
+    assert!(
+        instructions
+            .iter()
+            .any(|inst| matches!(inst, MirInst::ListLen { .. })),
+        "expected any to inspect the input list runtime length"
+    );
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::Gt,
+                ..
+            }
+        )),
+        "expected any to inline the closure predicate"
+    );
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::Copy {
+                src: MirValue::Const(1),
+                ..
+            }
+        )),
+        "expected any to assign true in the short-circuit path"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("any should compile through codegen");
+}
+
+#[test]
+fn test_lower_any_on_in_place_numeric_list_writes_fresh_scalar_result() {
+    let any_decl = DeclId::new(120);
+    let (hir, decl_names) = make_numeric_list_in_place_predicate_call_program(any_decl, "any", 15);
+
+    let hir_types = crate::compiler::hir_type_infer::infer_hir_types(&hir, &decl_names)
+        .expect("source-like any HIR should type-check");
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+    let mut result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        Some(&hir_types),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("any should lower when the source IR reuses the list register as src_dst");
+
+    let return_vreg = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .find_map(|block| match block.terminator {
+            MirInst::Return {
+                val: Some(MirValue::VReg(vreg)),
+            } => Some(vreg),
+            _ => None,
+        })
+        .expect("expected scalar any result to be returned");
+    assert_eq!(
+        result.type_hints.main.get(&return_vreg),
+        Some(&MirType::Bool),
+        "expected in-place any lowering to return the fresh boolean result vreg"
+    );
+    optimize_with_ssa_hints(
+        &mut result.program.main,
+        Some(&probe_ctx),
+        &mut result.type_hints.main,
+        &result.type_hints.main_stack_slots,
+        &result.type_hints.generic_map_value_types,
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+        .expect("optimized in-place any should compile through codegen");
+}
+
+#[test]
+fn test_lower_all_on_numeric_list_short_circuits_to_false() {
+    let all_decl = DeclId::new(118);
+    let (hir, decl_names) =
+        make_numeric_list_predicate_call_program(all_decl, "all", &[10, 20, 30], 15);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("all should lower on stack-backed numeric lists");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+
+    assert!(
+        instructions
+            .iter()
+            .filter(|inst| matches!(inst, MirInst::ListGet { .. }))
+            .count()
+            >= 3,
+        "expected all to unroll capacity slots with constant-index reads"
+    );
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::Copy {
+                src: MirValue::Const(0),
+                ..
+            }
+        )),
+        "expected all to assign false in the short-circuit path"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("all should compile through codegen");
+}
+
+#[test]
+fn test_lower_all_on_empty_numeric_list_uses_true_identity() {
+    let all_decl = DeclId::new(119);
+    let (hir, decl_names) = make_numeric_list_predicate_call_program(all_decl, "all", &[], 0);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("all should lower on empty stack-backed numeric lists");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::Copy {
+                src: MirValue::Const(1),
+                ..
+            }
+        )),
+        "expected all over an empty list to use true as the identity"
+    );
+    assert!(
+        instructions
+            .iter()
+            .all(|inst| !matches!(inst, MirInst::ListGet { .. })),
+        "expected empty all lowering not to read list elements"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("empty all should compile through codegen");
 }
 
 #[test]

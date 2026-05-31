@@ -2563,6 +2563,10 @@ impl<'a> HirToMirLowering<'a> {
                 }
             }
 
+            "all" | "any" => {
+                self.lower_stack_list_all_or_any(&cmd_name, src_dst, dst_vreg, src_dst_had_value)?;
+            }
+
             "take" | "skip" | "drop" => {
                 self.lower_stack_list_take_skip_or_drop(
                     &cmd_name,

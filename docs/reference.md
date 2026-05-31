@@ -824,6 +824,7 @@ eBPF layout and verifier bounds are explicit:
 |-----------|-----------------------|
 | `where` | Stack-backed numeric lists with a closure predicate; scalar pipeline filtering also lowers to an early return when the predicate is false |
 | `each` | Stack-backed numeric lists with a closure transform, preserving runtime list length; scalar pipeline transforms are also supported |
+| `all` / `any` | Stack-backed numeric lists with a closure predicate, verifier-bounded constant-index reads, and Nushell empty-list identities |
 | `take` | Stack-backed numeric lists with a compile-time non-negative count |
 | `skip` | Stack-backed numeric lists with a compile-time non-negative count |
 | `drop` | Stack-backed numeric lists with a compile-time non-negative count removed from the end |

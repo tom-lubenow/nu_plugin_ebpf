@@ -34,6 +34,8 @@ use crate::kernel_btf::TrampolineFieldSelector;
 const NU_CLOSURE_COMMANDS: &[&str] = &[
     "where",
     "each",
+    "all",
+    "any",
     "take",
     "skip",
     "drop",
@@ -1710,7 +1712,6 @@ pub(super) fn compile_closure_with_context(
             &type_hints.generic_map_value_types,
         );
     }
-
     let compile_result = compile_mir_to_ebpf_with_hints_and_globals(
         &mir_program,
         Some(probe_context),
