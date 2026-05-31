@@ -40160,7 +40160,7 @@ def context-root-from-get-pipeline [raw: string context_names bound_aliases] {
         return null
     }
 
-    let segments = ($trimmed | split row "|")
+    let segments = (split-pipeline-segments $trimmed)
     if ($segments | length) < 2 {
         return null
     }
@@ -41204,7 +41204,7 @@ def function-context-field-accesses [function identity_wrappers root_wrapper_def
         }
 
         for candidate in (record-get-candidate-lines $line) {
-            let segments = (($candidate | str trim) | split row "|")
+            let segments = (split-pipeline-segments ($candidate | str trim))
             if ($segments | length) < 2 {
                 continue
             }
@@ -41513,7 +41513,7 @@ def context-get-projection-kernel-features [source: string target context_names]
 
     for line in $candidate_lines {
         let trimmed = ($line | str trim)
-        let segments = ($trimmed | split row "|")
+        let segments = (split-pipeline-segments $trimmed)
 
         mut input = (($segments | first) | str trim)
         if ($input | str contains "=") {
@@ -41591,7 +41591,7 @@ def record-get-candidate-lines [source: string] {
             continue
         }
 
-        let segments = ($pipeline_line | split row "|")
+        let segments = (split-pipeline-segments $pipeline_line)
         if ($segments | length) < 2 {
             continue
         }
@@ -41636,7 +41636,7 @@ def record-get-projection-kernel-features [source: string target context_names] 
 
     for line in $candidate_lines {
         let trimmed = ($line | str trim)
-        let segments = ($trimmed | split row "|")
+        let segments = (split-pipeline-segments $trimmed)
 
         mut input = (($segments | first) | str trim)
         if ($input | str contains "=") {
@@ -41734,7 +41734,7 @@ def source-has-context-root-projection? [source: string context_names] {
         }
 
         for line in (record-get-candidate-lines $source) {
-            let segments = (($line | str trim) | split row "|")
+            let segments = (split-pipeline-segments ($line | str trim))
             if ($segments | length) < 2 {
                 continue
             }
