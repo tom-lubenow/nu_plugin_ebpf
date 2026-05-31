@@ -57,6 +57,38 @@ const REPRESENTATIVE_CONTEXT_FIELD_SPEC_SOURCES: &[&str] = &[
     "iter:unix",
 ];
 
+const REPRESENTATIVE_CONTEXT_WRITE_SPEC_SOURCES: &[&str] = &[
+    "socket_filter:udp4:127.0.0.1:31337",
+    "tc:lo:ingress",
+    "tc:lo:egress",
+    "tcx:lo:ingress",
+    "tcx:lo:egress",
+    "netkit:lo:primary",
+    "netkit:lo:peer",
+    "tc_action:diff-action",
+    "sk_skb:/sys/fs/bpf/demo_sockmap",
+    "sk_skb_parser:/sys/fs/bpf/demo_sockmap",
+    "lwt_in:demo-route",
+    "lwt_out:demo-route",
+    "lwt_xmit:demo-route",
+    "lwt_seg6local:demo-route",
+    "cgroup_skb:/sys/fs/cgroup:ingress",
+    "cgroup_skb:/sys/fs/cgroup:egress",
+    "cgroup_sock:/sys/fs/cgroup:sock_create",
+    "cgroup_sock:/sys/fs/cgroup:post_bind4",
+    "cgroup_sysctl:/sys/fs/cgroup",
+    "sock_ops:/sys/fs/cgroup",
+    "cgroup_sockopt:/sys/fs/cgroup:get",
+    "cgroup_sockopt:/sys/fs/cgroup:set",
+    "cgroup_sock_addr:/sys/fs/cgroup:connect4",
+    "cgroup_sock_addr:/sys/fs/cgroup:connect6",
+    "cgroup_sock_addr:/sys/fs/cgroup:sendmsg4",
+    "cgroup_sock_addr:/sys/fs/cgroup:sendmsg6",
+    "cgroup_sock_addr:/sys/fs/cgroup:connect_unix",
+    "sk_lookup:/proc/self/ns/net",
+    "flow_dissector:/proc/self/ns/net",
+];
+
 fn run_nu_script(script: &str, label: &str) -> Option<Output> {
     let unique = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -884,6 +916,109 @@ $targets
     Some(keys_by_target)
 }
 
+fn verifier_diff_nu_program_feature_keys(
+    function_name: &str,
+    label: &str,
+    checks: &[(String, String)],
+) -> Option<Vec<BTreeSet<String>>> {
+    let check_rows = checks
+        .iter()
+        .map(|(target, program)| format!("    {{ target: {:?} program: {:?} }}", target, program))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let script = format!(
+        r#"source scripts/verifier_diff.nu
+let checks = [
+{check_rows}
+]
+$checks
+| enumerate
+| each {{|row|
+    let check = $row.item
+    {{
+        index: $row.index
+        keys: (
+            {function_name} $check.program $check.target
+            | each {{|feature| $feature.key }}
+            | sort
+        )
+    }}
+}}
+| to json"#
+    );
+
+    let output = run_nu_script(&script, label)?;
+    assert!(
+        output.status.success(),
+        "verifier_diff.nu {function_name} failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let actual: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .unwrap_or_else(|_| panic!("verifier_diff.nu {function_name} should emit JSON"));
+    let actual = actual
+        .as_array()
+        .unwrap_or_else(|| panic!("verifier_diff.nu {function_name} output should be a JSON list"));
+    assert_eq!(
+        actual.len(),
+        checks.len(),
+        "verifier_diff.nu {function_name} should return one result per checked program"
+    );
+
+    let mut keys_by_check = vec![BTreeSet::new(); checks.len()];
+    for value in actual {
+        let index = value
+            .get("index")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or_else(|| {
+                panic!("verifier_diff.nu {function_name} result should include index")
+            }) as usize;
+        assert!(
+            index < checks.len(),
+            "verifier_diff.nu {function_name} index should refer to a checked program"
+        );
+        let keys = value
+            .get("keys")
+            .and_then(serde_json::Value::as_array)
+            .unwrap_or_else(|| {
+                panic!("verifier_diff.nu {function_name} result should include keys")
+            });
+        keys_by_check[index] = keys
+            .iter()
+            .map(|key| {
+                key.as_str()
+                    .unwrap_or_else(|| {
+                        panic!("verifier_diff.nu {function_name} keys should be strings")
+                    })
+                    .to_string()
+            })
+            .collect();
+    }
+
+    Some(keys_by_check)
+}
+
+fn verifier_diff_nu_program_context_field_feature_keys(
+    checks: &[(String, String)],
+) -> Option<Vec<BTreeSet<String>>> {
+    verifier_diff_nu_program_feature_keys(
+        "program-context-field-kernel-features",
+        "program-context-field-kernel-features write coverage",
+        checks,
+    )
+}
+
+fn verifier_diff_nu_program_kfunc_feature_keys(
+    checks: &[(String, String)],
+) -> Option<Vec<BTreeSet<String>>> {
+    verifier_diff_nu_program_feature_keys(
+        "program-kfunc-kernel-features",
+        "program-kfunc-kernel-features write coverage",
+        checks,
+    )
+}
+
 fn verifier_diff_nu_program_kfunc_feature_records(
     checks: &[(String, String)],
 ) -> Option<Vec<VerifierDiffFeatureRecord>> {
@@ -1125,6 +1260,142 @@ fn test_verifier_diff_context_field_feature_metadata_covers_representative_rust_
     assert!(
         mismatches.is_empty(),
         "scripts/verifier_diff.nu context-field scanner drifted from Rust metadata: {}",
+        mismatches.join(", ")
+    );
+}
+
+fn context_write_scanner_source(field_name: &str, indexed: bool) -> String {
+    let assignment = if field_name == "flow_keys" {
+        format!("  $event.{field_name}.ip_proto = 6")
+    } else if indexed {
+        format!("  $event.{field_name}.0 = 42")
+    } else if matches!(field_name, "new_value" | "sysctl_new_value" | "sun_path") {
+        format!("  $event.{field_name} = \"1\"")
+    } else {
+        format!("  $event.{field_name} = 1")
+    };
+
+    format!("{{|ctx|\n  mut event = $ctx\n{assignment}\n  \"allow\"\n}}")
+}
+
+#[test]
+fn test_verifier_diff_context_write_scanner_covers_rust_write_surfaces() {
+    #[derive(Clone)]
+    struct ExpectedWriteFeature {
+        target: String,
+        field_name: &'static str,
+        program: String,
+        expected_keys: BTreeSet<String>,
+    }
+
+    let mut expected = Vec::new();
+
+    for spec_text in REPRESENTATIVE_CONTEXT_WRITE_SPEC_SOURCES {
+        let spec = ProgramSpec::parse(spec_text).unwrap_or_else(|err| {
+            panic!("representative context write target {spec_text} should parse: {err}")
+        });
+        for surface in spec.ctx_write_surfaces_for_spec() {
+            let Some(requirement) = surface.context_field_requirement.as_ref() else {
+                continue;
+            };
+            expected.push(ExpectedWriteFeature {
+                target: (*spec_text).to_string(),
+                field_name: surface.field_name,
+                program: context_write_scanner_source(surface.field_name, surface.indexed),
+                expected_keys: BTreeSet::from([requirement.key()]),
+            });
+        }
+    }
+
+    let checks = expected
+        .iter()
+        .map(|check| (check.target.clone(), check.program.clone()))
+        .collect::<Vec<_>>();
+    let Some(actual) = verifier_diff_nu_program_context_field_feature_keys(&checks) else {
+        return;
+    };
+
+    let mut mismatches = Vec::new();
+    for (check, actual_keys) in expected.iter().zip(actual.iter()) {
+        if actual_keys != &check.expected_keys {
+            mismatches.push(format!(
+                "{} ctx.{} expected {:?} actual {:?}",
+                check.target, check.field_name, check.expected_keys, actual_keys
+            ));
+        }
+    }
+
+    assert!(
+        mismatches.is_empty(),
+        "scripts/verifier_diff.nu context write scanner drifted from Rust write surfaces: {}",
+        mismatches.join(", ")
+    );
+}
+
+#[test]
+fn test_verifier_diff_context_kfunc_write_scanner_covers_rust_write_surfaces() {
+    #[derive(Clone)]
+    struct ExpectedKfuncWriteFeature {
+        target: String,
+        field_name: &'static str,
+        kfunc: &'static str,
+        program: String,
+        expected_keys: BTreeSet<String>,
+    }
+
+    let mut expected = Vec::new();
+
+    for spec_text in REPRESENTATIVE_CONTEXT_WRITE_SPEC_SOURCES {
+        let spec = ProgramSpec::parse(spec_text).unwrap_or_else(|err| {
+            panic!("representative context write target {spec_text} should parse: {err}")
+        });
+        for surface in spec.ctx_write_surfaces_for_spec() {
+            let Some(kfunc) = surface.kfunc else {
+                continue;
+            };
+            let requirement = spec
+                .kfunc_compatibility_requirement_for_name(kfunc)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "{spec_text} ctx.{} should expose Rust metadata for {kfunc}",
+                        surface.field_name
+                    )
+                });
+            expected.push(ExpectedKfuncWriteFeature {
+                target: (*spec_text).to_string(),
+                field_name: surface.field_name,
+                kfunc,
+                program: context_write_scanner_source(surface.field_name, surface.indexed),
+                expected_keys: BTreeSet::from([requirement.key()]),
+            });
+        }
+    }
+
+    let checks = expected
+        .iter()
+        .map(|check| (check.target.clone(), check.program.clone()))
+        .collect::<Vec<_>>();
+    let Some(actual) = verifier_diff_nu_program_kfunc_feature_keys(&checks) else {
+        return;
+    };
+
+    let mut mismatches = Vec::new();
+    for (check, actual_keys) in expected.iter().zip(actual.iter()) {
+        if actual_keys != &check.expected_keys {
+            mismatches.push(format!(
+                "{} ctx.{} {} expected {:?} actual {:?}",
+                check.target, check.field_name, check.kfunc, check.expected_keys, actual_keys
+            ));
+        }
+    }
+
+    assert!(
+        !expected.is_empty(),
+        "expected at least one kfunc-backed context write surface"
+    );
+    assert!(
+        mismatches.is_empty(),
+        "scripts/verifier_diff.nu kfunc-backed context write scanner drifted from Rust write surfaces: {}",
         mismatches.join(", ")
     );
 }
