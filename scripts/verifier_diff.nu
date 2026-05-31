@@ -38976,6 +38976,16 @@ def context-variable-binding [line: string context_names identity_wrappers] {
     null
 }
 
+def source-may-bind-derived-context-variable? [source: string] {
+    (
+        ($source | str contains "def ")
+        or ($source | str contains " get ")
+        or ($source | str contains "| get")
+        or (($source | str contains "= $") and ($source | str contains "."))
+        or (($source | str contains "= ($") and ($source | str contains "."))
+    )
+}
+
 def program-context-variable-names [source: string] {
     mut names = ["ctx"]
     mut found_closure = false
@@ -39021,9 +39031,11 @@ def program-context-variable-names [source: string] {
         }
     }
 
-    for alias in (program-bound-context-root-aliases $source $names) {
-        if (($alias | get -o root | default "") == "") {
-            $names = (append-unique-name $names $alias.name)
+    if (source-may-bind-derived-context-variable? $source) {
+        for alias in (program-bound-context-root-aliases $source $names) {
+            if (($alias | get -o root | default "") == "") {
+                $names = (append-unique-name $names $alias.name)
+            }
         }
     }
 
