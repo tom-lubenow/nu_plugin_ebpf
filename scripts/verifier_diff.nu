@@ -5991,6 +5991,21 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         feature_keys: ["ctx:pid" "helper:bpf_get_current_pid_tgid"]
     }
     {
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  def passthrough [event] {'
+            '    let actual = $event'
+            '    $actual'
+            '  }'
+            '  let event = (passthrough $ctx)'
+            '  $event.pid | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:pid" "helper:bpf_get_current_pid_tgid"]
+    }
+    {
         target: "kretprobe:ksys_read"
         program: [
             '{|ctx|'
@@ -37979,10 +37994,7 @@ def source-has-context-root-projection? [source: string context_names] {
     }
 
     if ($source | str contains "def ") {
-        let root_wrappers = (
-            context-root-wrapper-definitions $source
-            | where {|wrapper| (($wrapper | get -o root | default "") != "") }
-        )
+        let root_wrappers = (context-root-wrapper-definitions $source)
         if not ($root_wrappers | is-empty) {
             return true
         }
@@ -38009,7 +38021,11 @@ def bound-context-projection-kernel-features [source: string target context_name
         for alias in $aliases {
             let prefix = $"$($alias.name)."
             for raw_tail in (marker-tails-outside-simple-string $line $prefix) {
-                let raw_access = $"($alias.root).($raw_tail)"
+                let raw_access = if $alias.root == "" {
+                    $raw_tail
+                } else {
+                    $"($alias.root).($raw_tail)"
+                }
                 $features = (
                     append-missing-kernel-features
                         $features
