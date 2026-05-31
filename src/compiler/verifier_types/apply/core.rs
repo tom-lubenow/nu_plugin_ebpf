@@ -80,6 +80,54 @@ pub(super) fn apply_copy_inst(
     }
 }
 
+pub(super) fn apply_phi_edge_inst(
+    dst: VReg,
+    src: VReg,
+    types: &HashMap<VReg, MirType>,
+    state: &mut VerifierState,
+) {
+    let src_ty = state.get(src);
+    let ty =
+        phi_edge_type_with_null_hint(src_ty, state.get_range(src), dst, types).unwrap_or(src_ty);
+    let range = state.get_range(src);
+    let src_ctx_field = state.ctx_field_source(src).cloned();
+    let src_map_fd = state.map_fd_source(src).cloned();
+    let src_map_value_source = state.map_value_source(src).cloned();
+    let src_map_value_ambiguous = state.map_value_source_is_ambiguous(src);
+    let src_guard = state.guard(src);
+    let src_non_zero = state.is_non_zero(src);
+    let src_not_equal = state.not_equal_consts(src).to_vec();
+    let src_released_kfunc_ref = state.is_released_kfunc_ref(src);
+    let src_scalar_alias = matches!(ty, VerifierType::Scalar | VerifierType::Bool).then_some(src);
+
+    state.set_with_range(dst, ty, range);
+    if let Some(src_vreg) = src_scalar_alias {
+        state.set_scalar_alias(dst, src_vreg);
+    }
+    if src_released_kfunc_ref {
+        state.mark_released_kfunc_ref(dst);
+        return;
+    }
+    state.set_ctx_field_source(dst, src_ctx_field);
+    if let Some(map) = src_map_fd {
+        state.set_map_fd_source(dst, &map);
+    }
+    if src_map_value_ambiguous {
+        state.set_ambiguous_map_lookup_source(dst);
+    } else if let Some(source) = src_map_value_source {
+        state.set_map_lookup_source(dst, &source.map, source.key);
+    }
+    if src_non_zero {
+        state.set_non_zero(dst, true);
+    }
+    for excluded in src_not_equal {
+        state.set_not_equal_const(dst, excluded);
+    }
+    if let Some(guard) = src_guard {
+        state.set_guard(dst, guard);
+    }
+}
+
 fn typed_null_copy_type(
     dst: VReg,
     types: &HashMap<VReg, MirType>,
@@ -104,6 +152,33 @@ fn typed_null_copy_type(
             _ => None,
         },
     }
+}
+
+fn phi_edge_type_with_null_hint(
+    src_ty: VerifierType,
+    src_range: ValueRange,
+    dst: VReg,
+    types: &HashMap<VReg, MirType>,
+) -> Option<VerifierType> {
+    if !matches!(src_ty, VerifierType::Scalar | VerifierType::Bool)
+        || !matches!(src_range, ValueRange::Known { min: 0, max: 0 })
+    {
+        return None;
+    }
+    let VerifierType::Ptr { space, .. } = types
+        .get(&dst)
+        .map(verifier_type_from_mir)
+        .unwrap_or(VerifierType::Unknown)
+    else {
+        return None;
+    };
+    Some(VerifierType::Ptr {
+        space,
+        nullability: Nullability::Null,
+        bounds: None,
+        ringbuf_ref: None,
+        kfunc_ref: None,
+    })
 }
 
 pub(super) fn apply_binop_inst(
@@ -278,7 +353,7 @@ pub(super) fn apply_phi_inst(
         .map(verifier_type_from_mir)
         .unwrap_or(VerifierType::Scalar);
     let range = range_for_phi(args, state);
-    let mut ty = ptr_type_for_phi(args, state).unwrap_or(ty);
+    let mut ty = ptr_type_for_phi_with_hint(args, state, ty).unwrap_or(ty);
     if let Some(Some(source)) = &merged_ctx_field {
         ty = ctx_field_phi_type(dst, ty, source);
     }
@@ -327,6 +402,40 @@ pub(super) fn apply_phi_inst(
     if let Some(guard) = phi_guard {
         state.set_guard(dst, guard);
     }
+}
+
+fn ptr_type_for_phi_with_hint(
+    args: &[(BlockId, VReg)],
+    state: &VerifierState,
+    dst_ty: VerifierType,
+) -> Option<VerifierType> {
+    let dst_null_ptr = match dst_ty {
+        VerifierType::Ptr { space, .. } => Some(VerifierType::Ptr {
+            space,
+            nullability: Nullability::Null,
+            bounds: None,
+            ringbuf_ref: None,
+            kfunc_ref: None,
+        }),
+        _ => None,
+    };
+    let mut merged: Option<VerifierType> = None;
+    for (_, vreg) in args {
+        let ty = match state.get(*vreg) {
+            ty @ VerifierType::Ptr { .. } => ty,
+            VerifierType::Scalar | VerifierType::Bool
+                if matches!(state.get_range(*vreg), ValueRange::Known { min: 0, max: 0 }) =>
+            {
+                dst_null_ptr?
+            }
+            _ => return None,
+        };
+        merged = Some(match merged {
+            None => ty,
+            Some(existing) => join_type(existing, ty),
+        });
+    }
+    merged
 }
 
 fn scalar_alias_root_for_phi(

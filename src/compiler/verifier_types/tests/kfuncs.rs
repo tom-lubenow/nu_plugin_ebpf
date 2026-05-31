@@ -13823,6 +13823,203 @@ fn test_kfunc_task_release_rejects_mixed_reference_kinds_after_join() {
 }
 
 #[test]
+fn test_kfunc_task_release_accepts_explicit_null_after_acquire_join() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let acquire_path = func.alloc_block();
+    let null_path = func.alloc_block();
+    let join = func.alloc_block();
+    let release = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let selector = func.alloc_vreg();
+    let select_cond = func.alloc_vreg();
+    let pid = func.alloc_vreg();
+    let task = func.alloc_vreg();
+    let release_cond = func.alloc_vreg();
+    let release_ret = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: select_cond,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(selector),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: select_cond,
+        if_true: acquire_path,
+        if_false: null_path,
+    };
+
+    func.block_mut(acquire_path)
+        .instructions
+        .push(MirInst::Copy {
+            dst: pid,
+            src: MirValue::Const(123),
+        });
+    func.block_mut(acquire_path)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: task,
+            kfunc: "bpf_task_from_pid".to_string(),
+            btf_id: None,
+            args: vec![pid],
+        });
+    func.block_mut(acquire_path).terminator = MirInst::Jump { target: join };
+
+    func.block_mut(null_path).instructions.push(MirInst::Copy {
+        dst: task,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(null_path).terminator = MirInst::Jump { target: join };
+
+    func.block_mut(join).instructions.push(MirInst::BinOp {
+        dst: release_cond,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(task),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(join).terminator = MirInst::Branch {
+        cond: release_cond,
+        if_true: release,
+        if_false: done,
+    };
+
+    func.block_mut(release)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: release_ret,
+            kfunc: "bpf_task_release".to_string(),
+            btf_id: None,
+            args: vec![task],
+        });
+    func.block_mut(release).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(selector, MirType::I64);
+    types.insert(select_cond, MirType::Bool);
+    types.insert(pid, MirType::I64);
+    types.insert(
+        task,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(release_cond, MirType::Bool);
+    types.insert(release_ret, MirType::I64);
+
+    verify_mir(&func, &types)
+        .expect("explicit null/ref join should preserve kfunc ref identity until null guard");
+}
+
+#[test]
+fn test_kfunc_task_release_accepts_explicit_null_phi_after_acquire_join() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let acquire_path = func.alloc_block();
+    let null_path = func.alloc_block();
+    let join = func.alloc_block();
+    let release = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let selector = func.alloc_vreg();
+    let select_cond = func.alloc_vreg();
+    let pid = func.alloc_vreg();
+    let acquired = func.alloc_vreg();
+    let null_task = func.alloc_vreg();
+    let task = func.alloc_vreg();
+    let release_cond = func.alloc_vreg();
+    let release_ret = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: select_cond,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(selector),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: select_cond,
+        if_true: acquire_path,
+        if_false: null_path,
+    };
+
+    func.block_mut(acquire_path)
+        .instructions
+        .push(MirInst::Copy {
+            dst: pid,
+            src: MirValue::Const(123),
+        });
+    func.block_mut(acquire_path)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: acquired,
+            kfunc: "bpf_task_from_pid".to_string(),
+            btf_id: None,
+            args: vec![pid],
+        });
+    func.block_mut(acquire_path).terminator = MirInst::Jump { target: join };
+
+    func.block_mut(null_path).instructions.push(MirInst::Copy {
+        dst: null_task,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(null_path).terminator = MirInst::Jump { target: join };
+
+    func.block_mut(join).instructions.push(MirInst::Phi {
+        dst: task,
+        args: vec![(acquire_path, acquired), (null_path, null_task)],
+    });
+    func.block_mut(join).instructions.push(MirInst::BinOp {
+        dst: release_cond,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(task),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(join).terminator = MirInst::Branch {
+        cond: release_cond,
+        if_true: release,
+        if_false: done,
+    };
+
+    func.block_mut(release)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: release_ret,
+            kfunc: "bpf_task_release".to_string(),
+            btf_id: None,
+            args: vec![task],
+        });
+    func.block_mut(release).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(selector, MirType::I64);
+    types.insert(select_cond, MirType::Bool);
+    types.insert(pid, MirType::I64);
+    types.insert(null_task, MirType::I64);
+    for reg in [acquired, task] {
+        types.insert(
+            reg,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+    }
+    types.insert(release_cond, MirType::Bool);
+    types.insert(release_ret, MirType::I64);
+
+    verify_mir(&func, &types)
+        .expect("explicit null/ref phi should preserve kfunc ref identity until null guard");
+}
+
+#[test]
 fn test_kfunc_task_release_rejected_after_partial_acquire_join() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

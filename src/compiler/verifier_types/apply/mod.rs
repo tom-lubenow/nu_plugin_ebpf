@@ -23,6 +23,15 @@ pub(super) fn check_uses_initialized(
     flow::check_uses_initialized(inst, state, errors);
 }
 
+pub(super) fn apply_phi_edge_inst(
+    dst: VReg,
+    src: VReg,
+    types: &HashMap<VReg, MirType>,
+    state: &mut VerifierState,
+) {
+    core::apply_phi_edge_inst(dst, src, types, state);
+}
+
 pub(super) fn apply_inst(
     inst: &MirInst,
     types: &HashMap<VReg, MirType>,

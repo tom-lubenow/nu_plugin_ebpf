@@ -49,6 +49,9 @@ impl BranchOptimization {
         for block in &func.blocks {
             if block.instructions.is_empty() {
                 if let MirInst::Jump { target } = &block.terminator {
+                    if target_phi_mentions_predecessor(func, *target, block.id) {
+                        continue;
+                    }
                     jump_targets.insert(block.id, *target);
                 }
             }
@@ -153,6 +156,18 @@ impl BranchOptimization {
             _ => false,
         }
     }
+}
+
+fn target_phi_mentions_predecessor(func: &MirFunction, target: BlockId, pred: BlockId) -> bool {
+    let Some(target_block) = func.blocks.iter().find(|block| block.id == target) else {
+        return false;
+    };
+    target_block.instructions.iter().any(|inst| {
+        matches!(
+            inst,
+            MirInst::Phi { args, .. } if args.iter().any(|(block, _)| *block == pred)
+        )
+    })
 }
 
 #[cfg(test)]

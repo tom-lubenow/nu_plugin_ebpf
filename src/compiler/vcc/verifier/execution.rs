@@ -1382,9 +1382,14 @@ impl VccVerifier {
             }
             VccInst::Phi { dst, args } => {
                 let mut merged: Option<VccValueType> = None;
+                let dst_ptr_hint = state.reg_type(*dst).ok().and_then(|ty| match ty {
+                    VccValueType::Ptr(info) => Some(info),
+                    _ => None,
+                });
                 for (_, reg) in args {
                     match state.reg_type(*reg) {
                         Ok(ty) => {
+                            let ty = Self::phi_arg_type_with_pointer_null_hint(ty, dst_ptr_hint);
                             merged = Some(match merged {
                                 None => ty,
                                 Some(existing) => state.merge_types(existing, ty),
@@ -2563,6 +2568,35 @@ impl VccVerifier {
             });
         }
         root
+    }
+
+    fn phi_arg_type_with_pointer_null_hint(
+        ty: VccValueType,
+        dst_ptr_hint: Option<VccPointerInfo>,
+    ) -> VccValueType {
+        if matches!(
+            ty,
+            VccValueType::Scalar {
+                range: Some(VccRange { min: 0, max: 0 })
+            }
+        ) && let Some(info) = dst_ptr_hint
+        {
+            return VccValueType::Ptr(VccPointerInfo {
+                space: info.space,
+                nullability: VccNullability::Null,
+                bounds: None,
+                packet_root: None,
+                packet_root_field: None,
+                packet_ctx_field: None,
+                packet_end: false,
+                map_root: None,
+                context_buffer_root: None,
+                context_buffer_end: false,
+                ringbuf_ref: None,
+                kfunc_ref: None,
+            });
+        }
+        ty
     }
 
     fn allowed_returned_kfunc_ref(

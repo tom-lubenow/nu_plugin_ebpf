@@ -98,21 +98,3 @@ pub(in crate::compiler::verifier_types) fn clamp_i128_to_i64(value: i128) -> i64
         value as i64
     }
 }
-
-pub(in crate::compiler::verifier_types) fn ptr_type_for_phi(
-    args: &[(BlockId, VReg)],
-    state: &VerifierState,
-) -> Option<VerifierType> {
-    let mut merged: Option<VerifierType> = None;
-    for (_, vreg) in args {
-        let ty = state.get(*vreg);
-        if !matches!(ty, VerifierType::Ptr { .. }) {
-            return None;
-        }
-        merged = Some(match merged {
-            None => ty,
-            Some(existing) => join_type(existing, ty),
-        });
-    }
-    merged
-}

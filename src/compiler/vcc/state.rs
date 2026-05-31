@@ -1457,6 +1457,11 @@ impl VccState {
                 ctx_field_sources.insert(reg, source);
             }
         }
+        for (reg, source) in &ctx_field_sources {
+            if let Some(ty) = merged.get(reg).copied() {
+                merged.insert(*reg, Self::join_context_field_pointer_type(*reg, ty, source));
+            }
+        }
         let mut map_lookup_source_regs: HashSet<VccReg> =
             self.map_lookup_sources.keys().copied().collect();
         map_lookup_source_regs.extend(other.map_lookup_sources.keys().copied());
@@ -1475,11 +1480,16 @@ impl VccState {
                 ambiguous_map_lookup_sources.insert(reg);
                 continue;
             }
+            let same_lookup = |left: &VccMapLookupSource, right: &VccMapLookupSource| {
+                left.map == right.map
+                    && (self.map_lookup_keys_may_alias(left.key, right.key)
+                        || other.map_lookup_keys_may_alias(left.key, right.key))
+            };
             let merged = match (
                 self.map_lookup_sources.get(&reg),
                 other.map_lookup_sources.get(&reg),
             ) {
-                (Some(left), Some(right)) if left == right => Some(left.clone()),
+                (Some(left), Some(right)) if same_lookup(left, right) => Some(left.clone()),
                 (Some(_), Some(_)) => {
                     ambiguous_map_lookup_sources.insert(reg);
                     None
@@ -2092,6 +2102,14 @@ impl VccState {
 
     fn merge_ptr_types(&self, lhs: VccPointerInfo, rhs: VccPointerInfo) -> Option<VccPointerInfo> {
         if lhs.space != rhs.space {
+            if Self::kernel_spaces_compatible(lhs.space, rhs.space) {
+                if lhs.nullability == VccNullability::Null {
+                    return Some(self.merge_null_wildcard_ptr(rhs, lhs));
+                }
+                if rhs.nullability == VccNullability::Null {
+                    return Some(self.merge_null_wildcard_ptr(lhs, rhs));
+                }
+            }
             if lhs.space == VccAddrSpace::Unknown && lhs.nullability == VccNullability::Null {
                 return Some(self.merge_null_wildcard_ptr(rhs, lhs));
             }
@@ -2138,14 +2156,18 @@ impl VccState {
             }
             _ => None,
         };
-        let ringbuf_ref = match (lhs.ringbuf_ref, rhs.ringbuf_ref) {
-            (Some(a), Some(b)) if a == b => Some(a),
-            _ => None,
-        };
-        let kfunc_ref = match (lhs.kfunc_ref, rhs.kfunc_ref) {
-            (Some(a), Some(b)) if a == b => Some(a),
-            _ => None,
-        };
+        let ringbuf_ref = Self::join_resource_ref_through_null(
+            lhs.ringbuf_ref,
+            lhs.nullability,
+            rhs.ringbuf_ref,
+            rhs.nullability,
+        );
+        let kfunc_ref = Self::join_resource_ref_through_null(
+            lhs.kfunc_ref,
+            lhs.nullability,
+            rhs.kfunc_ref,
+            rhs.nullability,
+        );
         let nullability = Self::join_nullability(lhs.nullability, rhs.nullability);
         Some(VccPointerInfo {
             space: lhs.space,
@@ -2188,14 +2210,18 @@ impl VccState {
         concrete: VccPointerInfo,
         null_ptr: VccPointerInfo,
     ) -> VccPointerInfo {
-        let ringbuf_ref = match (concrete.ringbuf_ref, null_ptr.ringbuf_ref) {
-            (Some(a), Some(b)) if a == b => Some(a),
-            _ => None,
-        };
-        let kfunc_ref = match (concrete.kfunc_ref, null_ptr.kfunc_ref) {
-            (Some(a), Some(b)) if a == b => Some(a),
-            _ => None,
-        };
+        let ringbuf_ref = Self::join_resource_ref_through_null(
+            concrete.ringbuf_ref,
+            concrete.nullability,
+            null_ptr.ringbuf_ref,
+            null_ptr.nullability,
+        );
+        let kfunc_ref = Self::join_resource_ref_through_null(
+            concrete.kfunc_ref,
+            concrete.nullability,
+            null_ptr.kfunc_ref,
+            null_ptr.nullability,
+        );
         VccPointerInfo {
             space: concrete.space,
             nullability: Self::join_nullability(concrete.nullability, null_ptr.nullability),
@@ -2217,6 +2243,89 @@ impl VccState {
             ptr.space,
             VccAddrSpace::Stack(StackSlotId(slot)) if slot == u32::MAX
         ) && ptr.nullability == VccNullability::Null
+    }
+
+    fn kernel_spaces_compatible(lhs: VccAddrSpace, rhs: VccAddrSpace) -> bool {
+        matches!(
+            (lhs, rhs),
+            (VccAddrSpace::Kernel, VccAddrSpace::KernelBtf)
+                | (VccAddrSpace::KernelBtf, VccAddrSpace::Kernel)
+        )
+    }
+
+    fn join_resource_ref_through_null<T: Copy + Eq>(
+        lhs_ref: Option<T>,
+        lhs_nullability: VccNullability,
+        rhs_ref: Option<T>,
+        rhs_nullability: VccNullability,
+    ) -> Option<T> {
+        match (lhs_ref, rhs_ref) {
+            (Some(a), Some(b)) if a == b => Some(a),
+            (Some(a), None) if rhs_nullability == VccNullability::Null => Some(a),
+            (None, Some(b)) if lhs_nullability == VccNullability::Null => Some(b),
+            _ => None,
+        }
+    }
+
+    fn join_context_field_pointer_type(
+        reg: VccReg,
+        ty: VccValueType,
+        field: &CtxField,
+    ) -> VccValueType {
+        let VccValueType::Ptr(mut info) = ty else {
+            return ty;
+        };
+        match field {
+            CtxField::Data if info.space == VccAddrSpace::Packet => {
+                if info.bounds.is_none() {
+                    info.bounds = Some(VccBounds {
+                        min: 0,
+                        max: 0,
+                        limit: UNKNOWN_PACKET_LIMIT,
+                    });
+                }
+                info.packet_root = Some(reg);
+                info.packet_root_field = Some(VccPacketCtxField::Data);
+                info.packet_ctx_field = Some(VccPacketCtxField::Data);
+                info.packet_end = false;
+            }
+            CtxField::DataMeta if info.space == VccAddrSpace::Packet => {
+                if info.bounds.is_none() {
+                    info.bounds = Some(VccBounds {
+                        min: 0,
+                        max: 0,
+                        limit: UNKNOWN_PACKET_LIMIT,
+                    });
+                }
+                info.packet_root = Some(reg);
+                info.packet_root_field = Some(VccPacketCtxField::DataMeta);
+                info.packet_ctx_field = Some(VccPacketCtxField::DataMeta);
+                info.packet_end = false;
+            }
+            CtxField::DataEnd if info.space == VccAddrSpace::Packet => {
+                info.packet_root = None;
+                info.packet_root_field = None;
+                info.packet_ctx_field = Some(VccPacketCtxField::DataEnd);
+                info.packet_end = true;
+            }
+            CtxField::SockoptOptval if info.space == VccAddrSpace::Kernel => {
+                if info.bounds.is_none() {
+                    info.bounds = Some(VccBounds {
+                        min: 0,
+                        max: 0,
+                        limit: UNKNOWN_CONTEXT_BUFFER_LIMIT,
+                    });
+                }
+                info.context_buffer_root = Some(reg);
+                info.context_buffer_end = false;
+            }
+            CtxField::SockoptOptvalEnd if info.space == VccAddrSpace::Kernel => {
+                info.context_buffer_root = None;
+                info.context_buffer_end = true;
+            }
+            _ => {}
+        }
+        VccValueType::Ptr(info)
     }
 }
 

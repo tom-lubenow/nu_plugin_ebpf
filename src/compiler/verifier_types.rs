@@ -53,7 +53,7 @@ mod ops;
 mod ranges;
 mod refinement;
 
-use apply::{apply_inst, check_uses_initialized};
+use apply::{apply_inst, apply_phi_edge_inst, check_uses_initialized};
 use calls::*;
 pub use driver::verify_mir;
 #[cfg(test)]

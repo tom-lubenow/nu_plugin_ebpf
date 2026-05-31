@@ -133,15 +133,25 @@ impl VerifierState {
             };
             ctx_field_sources.push(merged);
         }
+        for (idx, source) in ctx_field_sources.iter().enumerate() {
+            if let Some(source) = source {
+                regs[idx] =
+                    Self::join_context_field_pointer_type(VReg(idx as u32), regs[idx], source);
+            }
+        }
         let mut map_lookup_sources = Vec::with_capacity(self.map_lookup_sources.len());
         let mut ambiguous_map_lookup_sources =
             Vec::with_capacity(self.ambiguous_map_lookup_sources.len());
         for i in 0..self.map_lookup_sources.len() {
             let left_ambiguous = self.ambiguous_map_lookup_sources[i];
             let right_ambiguous = other.ambiguous_map_lookup_sources[i];
+            let same_lookup = |left: &MapLookupSource, right: &MapLookupSource| {
+                left.map == right.map
+                    && self.join_map_lookup_keys_may_alias(other, left.key, right.key)
+            };
             let merged = match (&self.map_lookup_sources[i], &other.map_lookup_sources[i]) {
                 _ if left_ambiguous || right_ambiguous => None,
-                (Some(left), Some(right)) if left == right => Some(left.clone()),
+                (Some(left), Some(right)) if same_lookup(left, right) => Some(left.clone()),
                 (Some(_), Some(_)) => None,
                 (Some(left), None) if matches!(other.regs[i], VerifierType::Uninit) => {
                     Some(left.clone())
@@ -155,7 +165,7 @@ impl VerifierState {
                 || right_ambiguous
                 || matches!(
                     (&self.map_lookup_sources[i], &other.map_lookup_sources[i]),
-                    (Some(left), Some(right)) if left != right
+                    (Some(left), Some(right)) if !same_lookup(left, right)
                 );
             map_lookup_sources.push(merged);
             ambiguous_map_lookup_sources.push(ambiguous);
@@ -387,6 +397,86 @@ impl VerifierState {
             reachable: true,
             guards,
         }
+    }
+
+    fn join_context_field_pointer_type(
+        reg: VReg,
+        ty: VerifierType,
+        field: &CtxField,
+    ) -> VerifierType {
+        let VerifierType::Ptr {
+            space,
+            nullability,
+            bounds,
+            ringbuf_ref,
+            kfunc_ref,
+        } = ty
+        else {
+            return ty;
+        };
+
+        let bounds = match (field, space, bounds) {
+            (CtxField::Data | CtxField::DataMeta, AddressSpace::Packet, None) => Some(
+                PtrBounds::new(PtrOrigin::Packet(reg), 0, 0, UNKNOWN_PACKET_LIMIT),
+            ),
+            (CtxField::SockoptOptval, AddressSpace::Kernel, None) => Some(PtrBounds::new(
+                PtrOrigin::ContextBuffer(reg),
+                0,
+                0,
+                UNKNOWN_CONTEXT_BUFFER_LIMIT,
+            )),
+            _ => bounds,
+        };
+
+        VerifierType::Ptr {
+            space,
+            nullability,
+            bounds,
+            ringbuf_ref,
+            kfunc_ref,
+        }
+    }
+
+    fn join_map_lookup_keys_may_alias(&self, other: &VerifierState, lhs: VReg, rhs: VReg) -> bool {
+        self.map_lookup_keys_may_alias(lhs, rhs)
+            || other.map_lookup_keys_may_alias(lhs, rhs)
+            || self.scalar_alias_root(lhs) == other.scalar_alias_root(rhs)
+            || other.scalar_alias_root(lhs) == self.scalar_alias_root(rhs)
+            || Self::same_known_const_range(self.get_range(lhs), other.get_range(rhs))
+            || Self::same_known_const_range(other.get_range(lhs), self.get_range(rhs))
+            || Self::ctx_field_values_may_alias_across(self, lhs, other, rhs)
+            || Self::ctx_field_values_may_alias_across(other, lhs, self, rhs)
+    }
+
+    fn same_known_const_range(lhs: ValueRange, rhs: ValueRange) -> bool {
+        matches!(
+            (lhs, rhs),
+            (
+                ValueRange::Known { min: lhs_min, max: lhs_max },
+                ValueRange::Known { min: rhs_min, max: rhs_max },
+            ) if lhs_min == lhs_max && rhs_min == rhs_max && lhs_min == rhs_min
+        )
+    }
+
+    fn ctx_field_values_may_alias_across(
+        lhs_state: &VerifierState,
+        lhs: VReg,
+        rhs_state: &VerifierState,
+        rhs: VReg,
+    ) -> bool {
+        let Some(lhs_field) = lhs_state.ctx_field_source(lhs) else {
+            return false;
+        };
+        if rhs_state.ctx_field_source(rhs) != Some(lhs_field) {
+            return false;
+        }
+        matches!(
+            (lhs_state.get(lhs), rhs_state.get(rhs)),
+            (
+                VerifierType::Scalar | VerifierType::Bool,
+                VerifierType::Scalar | VerifierType::Bool,
+            )
+        )
     }
 }
 

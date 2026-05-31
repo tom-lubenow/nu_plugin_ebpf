@@ -493,10 +493,20 @@ impl<'a> HirToMirLowering<'a> {
             self.func.entry = entry;
         }
 
+        let predecessors = Self::hir_predecessors(hir);
+        let mut exit_reg_maps: HashMap<HirBlockId, HashMap<u32, VReg>> = HashMap::new();
+        let mut exit_reg_metadata: HashMap<HirBlockId, HashMap<u32, RegMetadata>> = HashMap::new();
+
         for block in &hir.blocks {
             self.current_block = *self.hir_block_map.get(&block.id).ok_or_else(|| {
                 CompileError::UnsupportedInstruction("HIR block mapping missing".into())
             })?;
+            self.prepare_hir_block_entry(
+                block.id,
+                &predecessors,
+                &exit_reg_maps,
+                &exit_reg_metadata,
+            )?;
             self.prune_completed_loop_contexts_for_current_block();
 
             if let Some(inits) = self.loop_body_inits.remove(&self.current_block) {
@@ -547,6 +557,13 @@ impl<'a> HirToMirLowering<'a> {
                 self.lower_stmt(stmt)?;
             }
             if self.current_block_has_real_terminator() {
+                Self::record_hir_block_exit(
+                    block.id,
+                    &self.reg_map,
+                    &self.reg_metadata,
+                    &mut exit_reg_maps,
+                    &mut exit_reg_metadata,
+                );
                 continue;
             }
             if let HirTerminator::Goto { target } | HirTerminator::Jump { target } =
@@ -557,6 +574,13 @@ impl<'a> HirToMirLowering<'a> {
                 self.note_return_seed(seed);
                 let val = Some(value);
                 self.terminate(MirInst::Return { val });
+                Self::record_hir_block_exit(
+                    block.id,
+                    &self.reg_map,
+                    &self.reg_metadata,
+                    &mut exit_reg_maps,
+                    &mut exit_reg_metadata,
+                );
                 continue;
             }
             if let HirTerminator::BranchIf {
@@ -587,6 +611,13 @@ impl<'a> HirToMirLowering<'a> {
                     if_true,
                     if_false,
                 });
+                Self::record_hir_block_exit(
+                    block.id,
+                    &self.reg_map,
+                    &self.reg_metadata,
+                    &mut exit_reg_maps,
+                    &mut exit_reg_metadata,
+                );
                 continue;
             }
             if let HirTerminator::Iterate {
@@ -649,6 +680,13 @@ impl<'a> HirToMirLowering<'a> {
                         counter_vreg,
                         step: range.step,
                     });
+                    Self::record_hir_block_exit(
+                        block.id,
+                        &self.reg_map,
+                        &self.reg_metadata,
+                        &mut exit_reg_maps,
+                        &mut exit_reg_metadata,
+                    );
                     continue;
                 }
 
@@ -718,6 +756,13 @@ impl<'a> HirToMirLowering<'a> {
                         counter_vreg,
                         step: 1,
                     });
+                    Self::record_hir_block_exit(
+                        block.id,
+                        &self.reg_map,
+                        &self.reg_metadata,
+                        &mut exit_reg_maps,
+                        &mut exit_reg_metadata,
+                    );
                     continue;
                 }
 
@@ -728,6 +773,13 @@ impl<'a> HirToMirLowering<'a> {
                     exit_block,
                     !cleanup_return_exit,
                 )? {
+                    Self::record_hir_block_exit(
+                        block.id,
+                        &self.reg_map,
+                        &self.reg_metadata,
+                        &mut exit_reg_maps,
+                        &mut exit_reg_metadata,
+                    );
                     continue;
                 }
 
@@ -737,9 +789,182 @@ impl<'a> HirToMirLowering<'a> {
                 ));
             }
             self.lower_terminator(&block.terminator)?;
+            Self::record_hir_block_exit(
+                block.id,
+                &self.reg_map,
+                &self.reg_metadata,
+                &mut exit_reg_maps,
+                &mut exit_reg_metadata,
+            );
         }
 
         Ok(())
+    }
+
+    fn hir_predecessors(hir: &HirFunction) -> HashMap<HirBlockId, Vec<HirBlockId>> {
+        let mut predecessors: HashMap<HirBlockId, Vec<HirBlockId>> = HashMap::new();
+        for block in &hir.blocks {
+            for target in Self::hir_successors(&block.terminator) {
+                predecessors.entry(target).or_default().push(block.id);
+            }
+        }
+        predecessors
+    }
+
+    fn hir_successors(terminator: &HirTerminator) -> Vec<HirBlockId> {
+        match terminator {
+            HirTerminator::Goto { target } | HirTerminator::Jump { target } => vec![*target],
+            HirTerminator::BranchIf {
+                if_true, if_false, ..
+            }
+            | HirTerminator::BranchIfEmpty {
+                if_true, if_false, ..
+            }
+            | HirTerminator::Match {
+                if_true, if_false, ..
+            } => vec![*if_true, *if_false],
+            HirTerminator::Iterate { body, end, .. } => vec![*body, *end],
+            HirTerminator::Return { .. }
+            | HirTerminator::ReturnEarly { .. }
+            | HirTerminator::Unreachable => Vec::new(),
+        }
+    }
+
+    fn prepare_hir_block_entry(
+        &mut self,
+        block_id: HirBlockId,
+        predecessors: &HashMap<HirBlockId, Vec<HirBlockId>>,
+        exit_reg_maps: &HashMap<HirBlockId, HashMap<u32, VReg>>,
+        exit_reg_metadata: &HashMap<HirBlockId, HashMap<u32, RegMetadata>>,
+    ) -> Result<(), CompileError> {
+        let Some(preds) = predecessors.get(&block_id) else {
+            return Ok(());
+        };
+        let available: Vec<_> = preds
+            .iter()
+            .filter_map(|pred| exit_reg_maps.get(pred).map(|reg_map| (*pred, reg_map)))
+            .collect();
+        if available.is_empty() {
+            return Ok(());
+        }
+        if available.len() == 1 || available.len() < preds.len() {
+            let (pred, reg_map) = available[0];
+            self.reg_map = reg_map.clone();
+            self.reg_metadata = exit_reg_metadata.get(&pred).cloned().unwrap_or_default();
+            return Ok(());
+        }
+
+        let mut reg_ids = HashSet::new();
+        for (_, reg_map) in &available {
+            reg_ids.extend(reg_map.keys().copied());
+        }
+
+        let mut merged_reg_map = HashMap::new();
+        let mut merged_metadata = HashMap::new();
+        for reg_id in reg_ids {
+            let mut incoming = Vec::new();
+            let mut missing = false;
+            for (pred, reg_map) in &available {
+                let Some(vreg) = reg_map.get(&reg_id).copied() else {
+                    missing = true;
+                    break;
+                };
+                let pred_block = *self.hir_block_map.get(pred).ok_or_else(|| {
+                    CompileError::UnsupportedInstruction("HIR block mapping missing".into())
+                })?;
+                incoming.push((*pred, pred_block, vreg));
+            }
+            if missing || incoming.is_empty() {
+                continue;
+            }
+
+            let first = incoming[0].2;
+            if incoming.iter().all(|(_, _, vreg)| *vreg == first) {
+                merged_reg_map.insert(reg_id, first);
+                if let Some(meta) = available
+                    .iter()
+                    .find_map(|(pred, _)| exit_reg_metadata.get(pred)?.get(&reg_id).cloned())
+                {
+                    merged_metadata.insert(reg_id, meta);
+                }
+                continue;
+            }
+
+            let dst = self.func.alloc_vreg();
+            let dst_hint = self
+                .phi_type_hint_for_incoming(&incoming)
+                .or_else(|| self.current_type_hints.get(&reg_id).cloned());
+            for (pred, pred_block, src) in &incoming {
+                let src = if dst_hint
+                    .as_ref()
+                    .is_some_and(|hint| matches!(hint, MirType::Ptr { .. }))
+                    && !self
+                        .vreg_type_hints
+                        .get(src)
+                        .is_some_and(|hint| matches!(hint, MirType::Ptr { .. }))
+                    && exit_reg_metadata
+                        .get(pred)
+                        .and_then(|metadata| metadata.get(&reg_id))
+                        .is_some_and(Self::metadata_is_zero)
+                {
+                    MirValue::Const(0)
+                } else {
+                    MirValue::VReg(*src)
+                };
+                self.func
+                    .block_mut(*pred_block)
+                    .instructions
+                    .push(MirInst::Copy { dst, src });
+            }
+            if let Some(hint) = dst_hint {
+                self.vreg_type_hints.insert(dst, hint);
+            }
+            merged_reg_map.insert(reg_id, dst);
+        }
+
+        self.reg_map = merged_reg_map;
+        self.reg_metadata = merged_metadata;
+        Ok(())
+    }
+
+    fn phi_type_hint_for_incoming(
+        &self,
+        incoming: &[(HirBlockId, BlockId, VReg)],
+    ) -> Option<MirType> {
+        let mut fallback = None;
+        for (_, _, vreg) in incoming {
+            let Some(hint) = self.vreg_type_hints.get(vreg).cloned() else {
+                continue;
+            };
+            if matches!(hint, MirType::Ptr { .. }) {
+                return Some(hint);
+            }
+            fallback.get_or_insert(hint);
+        }
+        fallback
+    }
+
+    fn record_hir_block_exit(
+        block_id: HirBlockId,
+        reg_map: &HashMap<u32, VReg>,
+        reg_metadata: &HashMap<u32, RegMetadata>,
+        exit_reg_maps: &mut HashMap<HirBlockId, HashMap<u32, VReg>>,
+        exit_reg_metadata: &mut HashMap<HirBlockId, HashMap<u32, RegMetadata>>,
+    ) {
+        exit_reg_maps.insert(block_id, reg_map.clone());
+        exit_reg_metadata.insert(block_id, reg_metadata.clone());
+    }
+
+    fn metadata_is_zero(meta: &RegMetadata) -> bool {
+        if meta.literal_int == Some(0) {
+            return true;
+        }
+        match meta.constant_value.as_ref() {
+            Some(Value::Int { val, .. }) => *val == 0,
+            Some(Value::Filesize { val, .. }) => val.get() == 0,
+            Some(Value::Duration { val, .. }) => *val == 0,
+            _ => false,
+        }
     }
 
     fn is_compile_time_only_typed_global_define_value(

@@ -255,6 +255,9 @@ fn verify_mir_with_subfunction_summaries_impl(
         let block = func.block(block_id);
 
         for inst in &block.instructions {
+            if matches!(inst, MirInst::Phi { .. }) {
+                continue;
+            }
             check_uses_initialized(inst, &state, &mut errors);
             apply_inst(
                 inst,
@@ -272,7 +275,16 @@ fn verify_mir_with_subfunction_summaries_impl(
 
         match &block.terminator {
             MirInst::Jump { target } => {
-                propagate_state(*target, &state, &mut in_states, &mut worklist);
+                propagate_state(
+                    block_id,
+                    *target,
+                    func,
+                    types,
+                    &state,
+                    &mut errors,
+                    &mut in_states,
+                    &mut worklist,
+                );
             }
             MirInst::Branch {
                 cond,
@@ -294,8 +306,26 @@ fn verify_mir_with_subfunction_summaries_impl(
                     .or_else(|| direct_branch_guard(*cond, cond_ty));
                 let true_state = refine_on_branch(&state, guard, true);
                 let false_state = refine_on_branch(&state, guard, false);
-                propagate_state(*if_true, &true_state, &mut in_states, &mut worklist);
-                propagate_state(*if_false, &false_state, &mut in_states, &mut worklist);
+                propagate_state(
+                    block_id,
+                    *if_true,
+                    func,
+                    types,
+                    &true_state,
+                    &mut errors,
+                    &mut in_states,
+                    &mut worklist,
+                );
+                propagate_state(
+                    block_id,
+                    *if_false,
+                    func,
+                    types,
+                    &false_state,
+                    &mut errors,
+                    &mut in_states,
+                    &mut worklist,
+                );
             }
             MirInst::LoopHeader { body, exit, .. } => {
                 let mut body_state = state.clone();
@@ -309,11 +339,38 @@ fn verify_mir_with_subfunction_summaries_impl(
                     &mut body_state,
                     &mut errors,
                 );
-                propagate_state(*body, &body_state, &mut in_states, &mut worklist);
-                propagate_state(*exit, &state, &mut in_states, &mut worklist);
+                propagate_state(
+                    block_id,
+                    *body,
+                    func,
+                    types,
+                    &body_state,
+                    &mut errors,
+                    &mut in_states,
+                    &mut worklist,
+                );
+                propagate_state(
+                    block_id,
+                    *exit,
+                    func,
+                    types,
+                    &state,
+                    &mut errors,
+                    &mut in_states,
+                    &mut worklist,
+                );
             }
             MirInst::LoopBack { header, .. } => {
-                propagate_state(*header, &state, &mut in_states, &mut worklist);
+                propagate_state(
+                    block_id,
+                    *header,
+                    func,
+                    types,
+                    &state,
+                    &mut errors,
+                    &mut in_states,
+                    &mut worklist,
+                );
             }
             MirInst::Return { val } => {
                 let returned_ringbuf_ref =
@@ -794,22 +851,28 @@ fn direct_branch_guard(cond: VReg, cond_ty: VerifierType) -> Option<Guard> {
 }
 
 fn propagate_state(
+    pred: BlockId,
     block: BlockId,
+    func: &MirFunction,
+    types: &HashMap<VReg, MirType>,
     state: &VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
     in_states: &mut HashMap<BlockId, VerifierState>,
     worklist: &mut VecDeque<BlockId>,
 ) {
     if !state.is_reachable() {
         return;
     }
+    let mut state = state.clone();
+    apply_incoming_phi_edges(pred, block, func, types, &mut state, errors);
 
     let updated = match in_states.get(&block) {
         None => {
-            in_states.insert(block, state.clone());
+            in_states.insert(block, state);
             true
         }
         Some(existing) => {
-            let merged = existing.join(state);
+            let merged = existing.join(&state);
             if !merged.equivalent(existing) {
                 in_states.insert(block, merged);
                 true
@@ -821,5 +884,35 @@ fn propagate_state(
 
     if updated {
         worklist.push_back(block);
+    }
+}
+
+fn apply_incoming_phi_edges(
+    pred: BlockId,
+    block: BlockId,
+    func: &MirFunction,
+    types: &HashMap<VReg, MirType>,
+    state: &mut VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    for inst in &func.block(block).instructions {
+        let MirInst::Phi { dst, args } = inst else {
+            continue;
+        };
+        let Some((_, src)) = args.iter().find(|(arg_block, _)| *arg_block == pred) else {
+            errors.push(VerifierTypeError::new(format!(
+                "phi for v{} in block {} has no incoming value from predecessor {}",
+                dst.0, block.0, pred.0
+            )));
+            continue;
+        };
+        if matches!(state.get(*src), VerifierType::Uninit) {
+            errors.push(VerifierTypeError::new(format!(
+                "use of uninitialized v{} in phi for v{}",
+                src.0, dst.0
+            )));
+            continue;
+        }
+        apply_phi_edge_inst(*dst, *src, types, state);
     }
 }

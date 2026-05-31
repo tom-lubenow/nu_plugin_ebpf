@@ -25990,9 +25990,9 @@ const FIXTURES = [
         error_contains: "unreleased kfunc reference at function exit"
     }
     {
-        name: "source-kfunc-task-release-rejects-partial-acquire-release"
+        name: "source-kfunc-task-release-accepts-acquire-or-null-release"
         category: "helper-state"
-        tags: [kfunc ref-lifetime phi source reject]
+        tags: [kfunc ref-lifetime phi source accept]
         requires: [kernel-btf]
         target: "raw_tracepoint:sys_enter"
         program: [
@@ -26005,9 +26005,8 @@ const FIXTURES = [
             '  0'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "unreleased kfunc reference at function exit"
+        local: "accept"
+        kernel: "accept"
     }
     {
         name: "source-kfunc-xdp-xfrm-state-rejects-wrong-pointer-pointee"

@@ -37,6 +37,9 @@ impl VccVerifier {
             }
             let block = func.block(block_id);
             for inst in &block.instructions {
+                if matches!(inst, VccInst::Phi { .. }) {
+                    continue;
+                }
                 self.verify_inst(inst, &mut state);
             }
             self.verify_terminator(&block.terminator, &mut state);
@@ -44,7 +47,9 @@ impl VccVerifier {
             match &block.terminator {
                 VccTerminator::Jump { target } => {
                     self.propagate_state(
+                        block_id,
                         *target,
+                        func,
                         &state,
                         &mut in_states,
                         &mut worklist,
@@ -58,14 +63,18 @@ impl VccVerifier {
                 } => {
                     let (true_state, false_state) = self.refine_branch_states(*cond, &state);
                     self.propagate_state(
+                        block_id,
                         *if_true,
+                        func,
                         &true_state,
                         &mut in_states,
                         &mut worklist,
                         &mut update_counts,
                     );
                     self.propagate_state(
+                        block_id,
                         *if_false,
+                        func,
                         &false_state,
                         &mut in_states,
                         &mut worklist,
@@ -85,7 +94,9 @@ impl VccVerifier {
 
     fn propagate_state(
         &mut self,
+        pred: VccBlockId,
         block: VccBlockId,
+        func: &VccFunction,
         state: &VccState,
         in_states: &mut HashMap<VccBlockId, VccState>,
         worklist: &mut VecDeque<VccBlockId>,
@@ -94,10 +105,12 @@ impl VccVerifier {
         if !state.is_reachable() {
             return;
         }
+        let mut state = state.clone();
+        self.apply_incoming_phi_edges(pred, block, func, &mut state);
         let existing = in_states.get(&block).cloned();
         let mut next_state = match existing.as_ref() {
-            None => state.clone(),
-            Some(existing) => existing.merge_with(state),
+            None => state,
+            Some(existing) => existing.merge_with(&state),
         };
 
         let updates = update_counts.get(&block).copied().unwrap_or(0);
@@ -117,4 +130,34 @@ impl VccVerifier {
         }
     }
 
+    fn apply_incoming_phi_edges(
+        &mut self,
+        pred: VccBlockId,
+        block: VccBlockId,
+        func: &VccFunction,
+        state: &mut VccState,
+    ) {
+        for inst in &func.block(block).instructions {
+            let VccInst::Phi { dst, args } = inst else {
+                continue;
+            };
+            let Some((_, src)) = args.iter().find(|(arg_block, _)| *arg_block == pred) else {
+                self.errors.push(VccError::new(
+                    VccErrorKind::UseOfUninitializedReg(*dst),
+                    format!(
+                        "phi for r{} in block {} has no incoming value from predecessor {}",
+                        dst.0, block.0, pred.0
+                    ),
+                ));
+                continue;
+            };
+            self.verify_inst(
+                &VccInst::Copy {
+                    dst: *dst,
+                    src: VccValue::Reg(*src),
+                },
+                state,
+            );
+        }
+    }
 }

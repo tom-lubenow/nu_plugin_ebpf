@@ -32,8 +32,8 @@ pub(in crate::compiler::verifier_types) fn join_type(
             }
             let nullability = join_nullability(na, nb);
             let bounds = join_bounds(ba, bb);
-            let ringbuf_ref = join_ringbuf_ref(ra, rb);
-            let kfunc_ref = join_kfunc_ref(ka, kb);
+            let ringbuf_ref = join_resource_ref_through_null(ra, na, rb, nb);
+            let kfunc_ref = join_resource_ref_through_null(ka, na, kb, nb);
             Ptr {
                 space: sa,
                 nullability,
@@ -102,20 +102,16 @@ fn join_bounds(a: Option<PtrBounds>, b: Option<PtrBounds>) -> Option<PtrBounds> 
     }
 }
 
-fn join_ringbuf_ref(a: Option<VReg>, b: Option<VReg>) -> Option<VReg> {
+fn join_resource_ref_through_null(
+    a: Option<VReg>,
+    a_nullability: Nullability,
+    b: Option<VReg>,
+    b_nullability: Nullability,
+) -> Option<VReg> {
     match (a, b) {
         (Some(a), Some(b)) if a == b => Some(a),
-        (Some(_), Some(_)) => None,
-        (None, None) => None,
-        _ => None,
-    }
-}
-
-fn join_kfunc_ref(a: Option<VReg>, b: Option<VReg>) -> Option<VReg> {
-    match (a, b) {
-        (Some(a), Some(b)) if a == b => Some(a),
-        (Some(_), Some(_)) => None,
-        (None, None) => None,
+        (Some(a), None) if b_nullability == Nullability::Null => Some(a),
+        (None, Some(b)) if a_nullability == Nullability::Null => Some(b),
         _ => None,
     }
 }
