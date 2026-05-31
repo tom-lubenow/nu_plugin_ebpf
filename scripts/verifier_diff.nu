@@ -41524,6 +41524,93 @@ def identity-wrapper-definitions [source: string] {
     $identities
 }
 
+def function-record-context-aliases [body param: string identity_wrappers root_wrapper_defs root_aliases] {
+    mut aliases = []
+
+    for line in $body {
+        let bindings = (
+            (record-context-bindings $line [$param] $root_aliases $identity_wrappers $root_wrapper_defs)
+            | append (record-upsert-context-bindings $line [$param] $root_aliases)
+            | append (record-pipeline-flow-context-bindings $line [$param] $root_aliases $identity_wrappers $root_wrapper_defs $aliases)
+            | append (record-spread-context-bindings $line $aliases)
+        )
+        for binding in $bindings {
+            if (
+                $aliases
+                | any {|alias|
+                    (
+                        $alias.name == $binding.name
+                        and $alias.field == $binding.field
+                        and (($alias | get -o root | default "") == ($binding | get -o root | default ""))
+                    )
+                }
+            ) {
+                continue
+            }
+            $aliases = ($aliases | append $binding)
+        }
+    }
+
+    $aliases
+}
+
+def context-root-from-returned-record-get-pipeline [returned: string record_aliases param: string root_aliases identity_wrappers root_wrapper_defs] {
+    let segments = (split-pipeline-segments $returned)
+    if ($segments | length) < 2 {
+        return null
+    }
+
+    let input = (($segments | first) | str trim)
+    mut roots = []
+    mut prefix_segments = []
+
+    for segment in ($segments | skip 1) {
+        let parsed = (get-command-field-tail $segment)
+        if $parsed == null {
+            if ($roots | is-empty) {
+                $prefix_segments = ($prefix_segments | append ($segment | str trim))
+            }
+            continue
+        }
+
+        mut root = (
+            context-root-from-record-get
+                $input
+                $parsed.field
+                $record_aliases
+                []
+                [$param]
+                $root_aliases
+                $identity_wrappers
+                $root_wrapper_defs
+        )
+        if $root == null {
+            $root = (
+                context-root-from-record-pipeline-get
+                    $input
+                    $prefix_segments
+                    $parsed.field
+                    $record_aliases
+                    [$param]
+                    $root_aliases
+                    $identity_wrappers
+                    $root_wrapper_defs
+            )
+        }
+        if $root == null {
+            continue
+        }
+
+        $roots = ($roots | append $root)
+    }
+
+    if ($roots | length) == 1 {
+        return ($roots | first)
+    }
+
+    null
+}
+
 def function-return-context-root [function identity_wrappers root_wrapper_defs] {
     let param = $function.param
     let aliases = (
@@ -41532,6 +41619,14 @@ def function-return-context-root [function identity_wrappers root_wrapper_defs] 
             $param
             $identity_wrappers
             $root_wrapper_defs
+    )
+    let record_aliases = (
+        function-record-context-aliases
+            $function.body
+            $param
+            $identity_wrappers
+            $root_wrapper_defs
+            $aliases
     )
     let return_lines = (
         $function.body
@@ -41553,6 +41648,19 @@ def function-return-context-root [function identity_wrappers root_wrapper_defs] 
         let root = (context-root-from-get-pipeline $returned [$param] $aliases)
         if $root != null {
             return $root
+        }
+
+        let record_root = (
+            context-root-from-returned-record-get-pipeline
+                $returned
+                $record_aliases
+                $param
+                $aliases
+                $identity_wrappers
+                $root_wrapper_defs
+        )
+        if $record_root != null {
+            return $record_root
         }
 
         return null
