@@ -7784,7 +7784,7 @@ fn test_helper_call_map_lookup_percpu_literal_requires_kind() {
 }
 
 #[test]
-fn test_map_contains_bloom_filter_lowers_and_compiles() {
+fn test_map_contains_bloom_filter_reuses_declared_map_kind_and_compiles() {
     let func = HirFunction {
         blocks: vec![HirBlock {
             id: HirBlockId(0),
@@ -7801,12 +7801,27 @@ fn test_map_contains_bloom_filter_lowers_and_compiles() {
                     dst: RegId::new(2),
                     lit: HirLiteral::String(b"bloom-filter".to_vec()),
                 },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::String(b"int".to_vec()),
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(41),
+                    src_dst: RegId::new(4),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        named: vec![
+                            (b"kind".to_vec(), RegId::new(2)),
+                            (b"value-type".to_vec(), RegId::new(3)),
+                        ],
+                        ..Default::default()
+                    },
+                },
                 HirStmt::Call {
                     decl_id: DeclId::new(42),
                     src_dst: RegId::new(0),
                     args: HirCallArgs {
                         positional: vec![RegId::new(1)],
-                        named: vec![(b"kind".to_vec(), RegId::new(2))],
                         ..Default::default()
                     },
                 },
@@ -7817,12 +7832,13 @@ fn test_map_contains_bloom_filter_lowers_and_compiles() {
         spans: vec![],
         ast: vec![],
         comments: vec![],
-        register_count: 3,
+        register_count: 5,
         file_count: 0,
     };
 
     let hir_program = HirProgram::new(func, HashMap::new(), vec![], None);
     let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(41), "map-define".to_string());
     decl_names.insert(DeclId::new(42), "map-contains".to_string());
     let hir_types =
         infer_hir_types(&hir_program, &decl_names).expect("map-contains should type-check");
