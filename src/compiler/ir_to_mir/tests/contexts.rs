@@ -204,6 +204,74 @@ fn make_bound_ctx_pipeline_get_program(
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
+fn make_bound_ctx_pipeline_get_upsert_program(
+    binding: CellPath,
+    access: CellPath,
+    lit: HirLiteral,
+    return_lit: HirLiteral,
+    get_decl: DeclId,
+) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let local_var = VarId::new(1);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(binding)),
+                },
+                HirStmt::Call {
+                    decl_id: get_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        positional: vec![RegId::new(1)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::StoreVariable {
+                    var_id: local_var,
+                    src: RegId::new(2),
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: local_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::CellPath(Box::new(access)),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit,
+                },
+                HirStmt::UpsertCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(3),
+                    new_value: RegId::new(4),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(5),
+                    lit: return_lit,
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(5) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 9],
+        ast: vec![None; 9],
+        comments: vec![],
+        register_count: 6,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
 fn make_returned_record_context_upsert_program(
     record_field: &str,
     path: CellPath,
@@ -4496,6 +4564,57 @@ fn test_lower_bound_flow_dissector_flow_keys_scalar_assignment() {
 }
 
 #[test]
+fn test_lower_pipeline_get_bound_flow_dissector_flow_keys_scalar_assignment() {
+    let get_decl = DeclId::new(42);
+    let hir = make_bound_ctx_pipeline_get_upsert_program(
+        CellPath {
+            members: vec![string_member("flow_keys")],
+        },
+        CellPath {
+            members: vec![string_member("ip_proto")],
+        },
+        HirLiteral::Int(17),
+        HirLiteral::Int(1),
+        get_decl,
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::FlowDissector, "/proc/self/ns/net");
+    let decl_names = HashMap::from([(get_decl, "get".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("pipeline get-bound flow_dissector ctx.flow_keys assignment should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::FlowKeys,
+            ..
+        }
+    )));
+
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::Store {
+            offset: 9,
+            ty: MirType::U8,
+            ..
+        }
+    )));
+
+    let compiled =
+        compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+            .expect("pipeline get-bound flow_dissector ctx.flow_keys assignment should compile");
+    assert!(compiled.used_ctx_fields.contains(&CtxField::FlowKeys));
+}
+
+#[test]
 fn test_lower_flow_dissector_flow_keys_root_assignment_rejected() {
     let hir = make_ctx_upsert_program(
         CellPath {
@@ -8554,6 +8673,75 @@ fn test_lower_bound_cgroup_sockopt_ctx_optval_byte_assignment() {
 }
 
 #[test]
+fn test_lower_pipeline_get_bound_cgroup_sockopt_ctx_optval_byte_assignment() {
+    let get_decl = DeclId::new(42);
+    let hir = make_bound_ctx_pipeline_get_upsert_program(
+        CellPath {
+            members: vec![string_member("optval")],
+        },
+        CellPath {
+            members: vec![int_member(2)],
+        },
+        HirLiteral::Int(42),
+        HirLiteral::String(b"allow".to_vec()),
+        get_decl,
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get");
+    let decl_names = HashMap::from([(get_decl, "get".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("pipeline get-bound cgroup_sockopt ctx.optval byte assignment should lower");
+
+    let blocks = &result.program.main.blocks;
+    assert!(
+        blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::LoadCtxField {
+                    field: CtxField::SockoptOptval,
+                    ..
+                }
+            )),
+        "expected pipeline get-bound ctx.optval alias to originate from the context field"
+    );
+    assert!(
+        blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::LoadCtxField {
+                    field: CtxField::SockoptOptvalEnd,
+                    ..
+                }
+            )),
+        "expected pipeline get-bound ctx.optval byte write to guard against optval_end"
+    );
+    assert!(
+        blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Store {
+                    ty: MirType::U8,
+                    ..
+                }
+            )),
+        "expected pipeline get-bound ctx.optval byte write to emit a guarded u8 store"
+    );
+}
+
+#[test]
 fn test_compile_tc_phi_joined_ctx_data_get_count_program() {
     let ctx_var = VarId::new(0);
     let selector_var = VarId::new(1);
@@ -8907,6 +9095,75 @@ fn test_lower_bound_tc_ctx_data_byte_assignment_adds_guarded_packet_store() {
                 }
             )),
         "expected bound ctx.data byte write to emit a guarded u8 store"
+    );
+}
+
+#[test]
+fn test_lower_pipeline_get_bound_tc_ctx_data_byte_assignment_adds_guarded_packet_store() {
+    let get_decl = DeclId::new(42);
+    let hir = make_bound_ctx_pipeline_get_upsert_program(
+        CellPath {
+            members: vec![string_member("data")],
+        },
+        CellPath {
+            members: vec![int_member(0)],
+        },
+        HirLiteral::Int(42),
+        HirLiteral::Int(1),
+        get_decl,
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let decl_names = HashMap::from([(get_decl, "get".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("pipeline get-bound tc ctx.data byte assignment should lower");
+
+    let blocks = &result.program.main.blocks;
+    assert!(
+        blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::LoadCtxField {
+                    field: CtxField::Data,
+                    ..
+                }
+            )),
+        "expected pipeline get-bound ctx.data alias to originate from the context field"
+    );
+    assert!(
+        blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::LoadCtxField {
+                    field: CtxField::DataEnd,
+                    ..
+                }
+            )),
+        "expected pipeline get-bound ctx.data byte write to guard against data_end"
+    );
+    assert!(
+        blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Store {
+                    ty: MirType::U8,
+                    ..
+                }
+            )),
+        "expected pipeline get-bound ctx.data byte write to emit a guarded u8 store"
     );
 }
 
@@ -9335,6 +9592,75 @@ fn test_lower_bound_xdp_ctx_data_meta_byte_assignment_uses_data_guard() {
                 }
             )),
         "expected bound ctx.data_meta byte write to guard against data"
+    );
+    assert!(
+        !blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::LoadCtxField {
+                    field: CtxField::DataEnd,
+                    ..
+                }
+            )),
+        "ctx.data_meta writes should use ctx.data as the guard, not ctx.data_end"
+    );
+}
+
+#[test]
+fn test_lower_pipeline_get_bound_xdp_ctx_data_meta_byte_assignment_uses_data_guard() {
+    let get_decl = DeclId::new(42);
+    let hir = make_bound_ctx_pipeline_get_upsert_program(
+        CellPath {
+            members: vec![string_member("data_meta")],
+        },
+        CellPath {
+            members: vec![int_member(0)],
+        },
+        HirLiteral::Int(7),
+        HirLiteral::Int(1),
+        get_decl,
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let decl_names = HashMap::from([(get_decl, "get".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("pipeline get-bound xdp ctx.data_meta byte assignment should lower");
+
+    let blocks = &result.program.main.blocks;
+    assert!(
+        blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::LoadCtxField {
+                    field: CtxField::DataMeta,
+                    ..
+                }
+            )),
+        "expected pipeline get-bound ctx.data_meta alias to originate from the context field"
+    );
+    assert!(
+        blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::LoadCtxField {
+                    field: CtxField::Data,
+                    ..
+                }
+            )),
+        "expected pipeline get-bound ctx.data_meta byte write to guard against data"
     );
     assert!(
         !blocks
