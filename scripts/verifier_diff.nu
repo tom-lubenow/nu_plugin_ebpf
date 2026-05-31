@@ -5942,6 +5942,18 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         feature_keys: ["ctx:sk"]
     }
     {
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let rec = { socket: $ctx.sk }'
+            '  let sk = ($rec | get socket)'
+            '  $sk.family | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:family" "ctx:sk" "helper:bpf_probe_read_kernel"]
+    }
+    {
         target: "raw_tracepoint:sys_enter"
         program: [
             '{|event|'
@@ -18373,6 +18385,22 @@ const FIXTURES = [
             '  let base = { socket: $ctx.sk }'
             '  let rec = ({ ...$base } | rename sock)'
             '  $rec.sock.family | count'
+            '  "ok"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tc-record-socket-context-get-root"
+        category: "context-surface"
+        tags: [tc context socket record get source metadata]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let rec = { socket: $ctx.sk }'
+            '  let sk = ($rec | get socket)'
+            '  $sk.family | count'
             '  "ok"'
             '}'
         ]
@@ -38983,7 +39011,81 @@ def context-root-binding [line: string context_names bound_aliases identity_wrap
     null
 }
 
-def program-bound-context-root-aliases [source: string context_names] {
+def context-root-record-extraction-binding [line: string record_aliases context_names bound_aliases identity_wrappers root_wrapper_defs] {
+    for assignment in (declaration-assignments $line) {
+        let rhs = (declaration-rhs-token $assignment)
+
+        for parsed in (
+            $rhs
+            | parse --regex '^\$(?P<record>[A-Za-z_][A-Za-z0-9_-]*)\.(?P<field>[A-Za-z_][A-Za-z0-9_-]*)$'
+        ) {
+            for alias in (
+                $record_aliases
+                | where {|alias| $alias.name == $parsed.record and $alias.field == $parsed.field }
+            ) {
+                return {
+                    name: $assignment.name
+                    root: ($alias | get -o root | default "")
+                }
+            }
+        }
+
+        let input = (record-pipeline-input-token $rhs)
+        let get_fields = (
+            command-invocation-tails $rhs "get"
+            | each {|tail| normalize-context-path-token $tail }
+            | where {|field| $field != "" }
+        )
+        if ($get_fields | length) != 1 {
+            continue
+        }
+        let get_field = ($get_fields | first)
+
+        for parsed in (
+            $input
+            | parse --regex '^\$(?P<record>[A-Za-z_][A-Za-z0-9_-]*)$'
+        ) {
+            for alias in (
+                $record_aliases
+                | where {|alias| $alias.name == $parsed.record and $alias.field == $get_field }
+            ) {
+                return {
+                    name: $assignment.name
+                    root: ($alias | get -o root | default "")
+                }
+            }
+        }
+
+        for field in (
+            record-literal-context-fields
+                $input
+                $context_names
+                $bound_aliases
+                $identity_wrappers
+                $root_wrapper_defs
+        ) {
+            if $field.field == $get_field {
+                return {
+                    name: $assignment.name
+                    root: ($field | get -o root | default "")
+                }
+            }
+        }
+
+        for field in (record-literal-spread-context-fields $input $record_aliases) {
+            if $field.field == $get_field {
+                return {
+                    name: $assignment.name
+                    root: ($field | get -o root | default "")
+                }
+            }
+        }
+    }
+
+    null
+}
+
+def program-bound-context-root-aliases-base [source: string context_names] {
     mut aliases = []
     let identity_wrappers = (identity-wrapper-definitions $source)
     let root_wrapper_defs = (context-root-wrapper-definitions $source)
@@ -39011,6 +39113,55 @@ def program-bound-context-root-aliases [source: string context_names] {
                     if $alias.name == $binding.name { $binding } else { $alias }
                 }
             )
+        }
+    }
+
+    $aliases
+}
+
+def program-bound-context-root-aliases [source: string context_names] {
+    mut aliases = (program-bound-context-root-aliases-base $source $context_names)
+    let identity_wrappers = (identity-wrapper-definitions $source)
+    let root_wrapper_defs = (context-root-wrapper-definitions $source)
+    let record_aliases = (program-record-context-aliases $source $context_names)
+    mut changed = true
+
+    loop {
+        if not $changed {
+            break
+        }
+        $changed = false
+
+        for line in ($source | lines) {
+            let binding = (
+                context-root-record-extraction-binding
+                    $line
+                    $record_aliases
+                    $context_names
+                    $aliases
+                    $identity_wrappers
+                    $root_wrapper_defs
+            )
+            if $binding == null {
+                continue
+            }
+
+            let existing = ($aliases | where {|alias| $alias.name == $binding.name })
+            if ($existing | is-empty) {
+                $aliases = ($aliases | append $binding)
+                $changed = true
+            } else {
+                let current = ($existing | first)
+                if (($current | get -o root | default "") != ($binding | get -o root | default "")) {
+                    $aliases = (
+                        $aliases
+                        | each {|alias|
+                            if $alias.name == $binding.name { $binding } else { $alias }
+                        }
+                    )
+                    $changed = true
+                }
+            }
         }
     }
 
@@ -40253,7 +40404,7 @@ def user-function-context-field-kernel-features [source: string target context_n
 
 def program-record-context-aliases [source: string context_names] {
     mut aliases = []
-    let bound_aliases = (program-bound-context-root-aliases $source $context_names)
+    let bound_aliases = (program-bound-context-root-aliases-base $source $context_names)
     let identity_wrappers = (identity-wrapper-definitions $source)
     let root_wrapper_defs = (context-root-wrapper-definitions $source)
     let wrapper_defs = (
