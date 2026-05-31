@@ -974,6 +974,36 @@ fn test_spec_context_projections_report_helper_metadata_invariants() {
 }
 
 #[test]
+fn test_context_abi_load_fields_report_source_backed_minimums() {
+    for spec_text in CONTEXT_FIELD_SPEC_SOURCES {
+        let spec = ProgramSpec::parse(spec_text)
+            .unwrap_or_else(|err| panic!("{spec_text} should parse: {err}"));
+
+        for field in spec_context_fields(&spec, false) {
+            let Some(load_kind) = field.load_kind else {
+                continue;
+            };
+
+            assert!(
+                field.requirement_key.is_some(),
+                "{spec_text} ctx.{} has {load_kind} load metadata but no requirement key",
+                field.field
+            );
+            assert!(
+                field.minimum_kernel.is_some(),
+                "{spec_text} ctx.{} has {load_kind} load metadata but no source-backed minimum kernel",
+                field.field
+            );
+            assert!(
+                field.minimum_kernel_source.is_some(),
+                "{spec_text} ctx.{} has {load_kind} load metadata but no source-backed minimum kernel source",
+                field.field
+            );
+        }
+    }
+}
+
+#[test]
 fn test_spec_context_fields_include_load_guards() {
     let spec = ProgramSpec::parse("sock_ops:/sys/fs/cgroup").expect("sock_ops spec should parse");
     let fields = spec_context_fields(&spec, false);
