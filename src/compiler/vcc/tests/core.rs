@@ -2258,6 +2258,55 @@ fn test_verify_mir_map_lookup_direct_pointer_branch_then_load_ok() {
 }
 
 #[test]
+fn test_verify_mir_map_lookup_not_pointer_branch_then_load_ok() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let null_block = func.alloc_block();
+    let load_block = func.alloc_block();
+    func.entry = entry;
+
+    let key = func.alloc_vreg();
+    let ptr = func.alloc_vreg();
+    let is_null = func.alloc_vreg();
+    let load_dst = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: key,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::MapLookup {
+        dst: ptr,
+        map: MapRef {
+            name: "test".to_string(),
+            kind: MapKind::Hash,
+        },
+        key,
+    });
+    func.block_mut(entry).instructions.push(MirInst::UnaryOp {
+        dst: is_null,
+        op: UnaryOpKind::Not,
+        src: MirValue::VReg(ptr),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: is_null,
+        if_true: null_block,
+        if_false: load_block,
+    };
+
+    func.block_mut(null_block).terminator = MirInst::Return { val: None };
+    func.block_mut(load_block).instructions.push(MirInst::Load {
+        dst: load_dst,
+        ptr,
+        offset: 0,
+        ty: MirType::I64,
+    });
+    func.block_mut(load_block).terminator = MirInst::Return { val: None };
+
+    let types = map_lookup_types(&func, ptr);
+    verify_mir(&func, &types).expect("expected negated pointer branch to refine false path");
+}
+
+#[test]
 fn test_verify_mir_map_value_bounds() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
