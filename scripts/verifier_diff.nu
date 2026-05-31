@@ -37824,6 +37824,30 @@ def line-declares-readonly-aggregate-constant? [line: string context_names conte
     false
 }
 
+def line-declares-aggregate-literal? [line: string] {
+    let trimmed = ($line | str trim)
+    if not (line-invokes-command? $trimmed "let") {
+        return false
+    }
+
+    for assignment in (declaration-assignments $trimmed) {
+        let aggregate_rhs = (trim-simple-parentheses (declaration-rhs-token $assignment))
+        let compact = ($aggregate_rhs | str replace --all " " "")
+
+        if (($compact | str starts-with "{") and $compact != "{}") {
+            return true
+        }
+        if (($compact | str starts-with "[") and $compact != "[]") {
+            return true
+        }
+        if (($compact | str starts-with "0x[") and $compact != "0x[]") {
+            return true
+        }
+    }
+
+    false
+}
+
 def line-declares-aggregate-literal-with-variable? [line: string] {
     let trimmed = ($line | str trim)
     if not (line-invokes-command? $trimmed "let") {
@@ -37868,10 +37892,7 @@ def line-declares-annotated-mut-global? [line: string] {
 }
 
 def program-global-kernel-features [source: string] {
-    let context_names = (program-context-variable-names $source)
-    let context_root_aliases = (program-bound-context-root-aliases $source $context_names)
-    mut context_aliases = $context_root_aliases
-    mut record_context_aliases_loaded = false
+    mut variable_aggregate_lines = []
 
     for line in ($source | lines) {
         let trimmed = ($line | str trim)
@@ -37887,21 +37908,40 @@ def program-global-kernel-features [source: string] {
             return [$KERNEL_FEATURE_GLOBAL_DATA_SECTIONS]
         }
 
+        if not (line-declares-aggregate-literal? $trimmed) {
+            continue
+        }
+
+        if not (line-declares-aggregate-literal-with-variable? $trimmed) {
+            return [$KERNEL_FEATURE_GLOBAL_DATA_SECTIONS]
+        }
+
+        $variable_aggregate_lines = ($variable_aggregate_lines | append $trimmed)
+    }
+
+    if ($variable_aggregate_lines | is-empty) {
+        return []
+    }
+
+    let context_names = (program-context-variable-names $source)
+    let context_root_aliases = (program-bound-context-root-aliases $source $context_names)
+    mut context_aliases = $context_root_aliases
+    mut record_context_aliases_loaded = false
+
+    for trimmed in $variable_aggregate_lines {
         if not (line-declares-readonly-aggregate-constant? $trimmed $context_names $context_aliases) {
             continue
         }
 
-        if (line-declares-aggregate-literal-with-variable? $trimmed) {
-            if not $record_context_aliases_loaded {
-                $context_aliases = (
-                    $context_aliases
-                    | append (program-record-context-aliases $source $context_names)
-                )
-                $record_context_aliases_loaded = true
-            }
-            if not (line-declares-readonly-aggregate-constant? $trimmed $context_names $context_aliases) {
-                continue
-            }
+        if not $record_context_aliases_loaded {
+            $context_aliases = (
+                $context_aliases
+                | append (program-record-context-aliases $source $context_names)
+            )
+            $record_context_aliases_loaded = true
+        }
+        if not (line-declares-readonly-aggregate-constant? $trimmed $context_names $context_aliases) {
+            continue
         }
 
         return [$KERNEL_FEATURE_GLOBAL_DATA_SECTIONS]
