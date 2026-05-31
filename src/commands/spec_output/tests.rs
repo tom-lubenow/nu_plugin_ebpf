@@ -945,6 +945,73 @@ fn test_context_field_compatibility_metadata_invariants() {
                 }
             }
 
+            let direct_load = spec.ctx_field_direct_load(&entry.field);
+            let array_load = spec.ctx_field_array_load(&entry.field);
+            let nested_load = spec.ctx_field_nested_load(&entry.field);
+            let expected_load_kind = if direct_load.is_some() {
+                Some("direct")
+            } else if array_load.is_some() {
+                Some("array")
+            } else if nested_load.is_some() {
+                Some("nested")
+            } else {
+                None
+            };
+            assert_eq!(
+                field.load_kind, expected_load_kind,
+                "{spec_text} ctx.{} should report the ProgramSpec load kind",
+                field.field
+            );
+            assert_eq!(
+                field.direct_load_width,
+                direct_load.map(|load| context_field_direct_load_width_label(load.width)),
+                "{spec_text} ctx.{} should report the ProgramSpec direct-load width",
+                field.field
+            );
+            assert_eq!(
+                field.direct_load_offset,
+                direct_load.map(|load| load.offset),
+                "{spec_text} ctx.{} should report the ProgramSpec direct-load offset",
+                field.field
+            );
+            assert_eq!(
+                field.array_load_base_offset,
+                array_load.map(|load| load.base_offset),
+                "{spec_text} ctx.{} should report the ProgramSpec array-load base offset",
+                field.field
+            );
+            assert_eq!(
+                field.array_load_count,
+                array_load.map(|load| load.count),
+                "{spec_text} ctx.{} should report the ProgramSpec array-load count",
+                field.field
+            );
+            assert_eq!(
+                field.array_load_normalize_big_endian,
+                array_load.map(|load| load.normalize_big_endian),
+                "{spec_text} ctx.{} should report the ProgramSpec array-load endian normalization",
+                field.field
+            );
+            assert_eq!(
+                field.nested_load_pointer_offset,
+                nested_load.map(|load| load.pointer_offset),
+                "{spec_text} ctx.{} should report the ProgramSpec nested-load pointer offset",
+                field.field
+            );
+            assert_eq!(
+                field.nested_load_width,
+                nested_load
+                    .map(|load| context_field_direct_load_width_label(load.field_load.width)),
+                "{spec_text} ctx.{} should report the ProgramSpec nested-load width",
+                field.field
+            );
+            assert_eq!(
+                field.nested_load_field_offset,
+                nested_load.map(|load| load.field_load.offset),
+                "{spec_text} ctx.{} should report the ProgramSpec nested-load field offset",
+                field.field
+            );
+
             let component_floors = [field.minimum_kernel, field.backing_helper_minimum_kernel];
             if component_floors.iter().any(Option::is_some) {
                 let compatibility_minimum =
