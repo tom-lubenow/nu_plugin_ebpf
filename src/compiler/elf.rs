@@ -2878,6 +2878,17 @@ impl ContextFieldArrayLoad {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum ContextFieldReadTransform {
+    BigEndianU16ToHost,
+    BigEndianU32ToHost,
+    BigEndianU32PortToHost,
+    LircValueMask,
+    LircModeMask,
+    CgroupDeviceAccessShift,
+    CgroupDeviceTypeMask,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct ContextFieldDirectStore {
     pub(crate) offset: i16,
 }

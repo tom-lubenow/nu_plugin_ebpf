@@ -98,6 +98,29 @@ fn field_absent(fields: &[SpecContextField], field_name: &str) {
     );
 }
 
+fn context_field_record(spec_text: &str, field_name: &str) -> Value {
+    let spec = ProgramSpec::parse(spec_text).expect("program spec should parse");
+    let record = spec_record(spec_text.to_string(), spec, Span::test_data(), false)
+        .into_record()
+        .expect("spec output should be a record");
+    record
+        .get("context_fields")
+        .expect("context fields should be present")
+        .as_list()
+        .expect("context fields should be a list")
+        .iter()
+        .find(|field| {
+            field
+                .as_record()
+                .ok()
+                .and_then(|record| record.get("field"))
+                .and_then(|field| field.as_str().ok())
+                .is_some_and(|candidate| candidate == field_name)
+        })
+        .unwrap_or_else(|| panic!("expected ctx.{field_name} in spec context fields"))
+        .clone()
+}
+
 fn context_write<'a>(writes: &'a [SpecContextWrite], field_name: &str) -> &'a SpecContextWrite {
     writes
         .iter()
@@ -988,6 +1011,14 @@ fn test_context_field_compatibility_metadata_invariants() {
                 field.field
             );
             assert_eq!(
+                field.direct_load_transform,
+                direct_load
+                    .and_then(|_| spec.ctx_field_direct_load_transform(&entry.field))
+                    .map(context_field_read_transform_label),
+                "{spec_text} ctx.{} should report the ProgramSpec direct-load read transform",
+                field.field
+            );
+            assert_eq!(
                 field.array_load_base_offset,
                 array_load.map(|load| load.base_offset),
                 "{spec_text} ctx.{} should report the ProgramSpec array-load base offset",
@@ -1187,6 +1218,10 @@ fn test_spec_context_fields_include_context_load_metadata() {
     assert_eq!(eth_protocol.load_kind, Some("direct"));
     assert_eq!(eth_protocol.direct_load_width, Some("u16"));
     assert_eq!(eth_protocol.direct_load_offset, Some(16));
+    assert_eq!(
+        eth_protocol.direct_load_transform,
+        Some("big-endian-u16-to-host")
+    );
 
     let cb = field(&fields, "cb");
     assert_eq!(cb.load_kind, Some("array"));
@@ -1221,6 +1256,52 @@ fn test_spec_context_fields_include_context_load_metadata() {
     assert_eq!(pf.nested_load_pointer_offset, Some(0));
     assert_eq!(pf.nested_load_width, Some("u8"));
     assert_eq!(pf.nested_load_field_offset, Some(1));
+
+    let spec = ProgramSpec::parse("lirc_mode2:/dev/lirc0").expect("lirc_mode2 spec should parse");
+    let fields = spec_context_fields(&spec, false);
+    let value = field(&fields, "value");
+    assert_eq!(value.load_kind, Some("direct"));
+    assert_eq!(value.direct_load_width, Some("u32"));
+    assert_eq!(value.direct_load_offset, Some(0));
+    assert_eq!(value.direct_load_transform, Some("low-24-bits"));
+    let mode = field(&fields, "mode");
+    assert_eq!(mode.direct_load_transform, Some("high-byte-mask"));
+
+    let spec = ProgramSpec::parse("cgroup_device:/sys/fs/cgroup")
+        .expect("cgroup_device spec should parse");
+    let fields = spec_context_fields(&spec, false);
+    let device_access = field(&fields, "device_access");
+    assert_eq!(device_access.load_kind, Some("direct"));
+    assert_eq!(device_access.direct_load_width, Some("u32"));
+    assert_eq!(device_access.direct_load_offset, Some(0));
+    assert_eq!(
+        device_access.direct_load_transform,
+        Some("access-type-high-16-bits")
+    );
+    let device_type = field(&fields, "device_type");
+    assert_eq!(
+        device_type.direct_load_transform,
+        Some("access-type-low-16-bits")
+    );
+
+    let spec = ProgramSpec::parse("cgroup_sock_addr:/sys/fs/cgroup:connect4")
+        .expect("cgroup_sock_addr connect4 spec should parse");
+    let fields = spec_context_fields(&spec, false);
+    let remote_ip4 = field(&fields, "remote_ip4");
+    assert_eq!(remote_ip4.load_kind, Some("direct"));
+    assert_eq!(remote_ip4.direct_load_width, Some("u32"));
+    assert_eq!(remote_ip4.direct_load_offset, Some(4));
+    assert_eq!(
+        remote_ip4.direct_load_transform,
+        Some("big-endian-u32-to-host")
+    );
+    let remote_port = field(&fields, "remote_port");
+    assert_eq!(remote_port.load_kind, Some("direct"));
+    assert_eq!(remote_port.direct_load_offset, Some(24));
+    assert_eq!(
+        remote_port.direct_load_transform,
+        Some("big-endian-u32-port-to-host")
+    );
 }
 
 #[test]
@@ -2069,6 +2150,35 @@ fn test_spec_record_context_fields_include_minimum_kernel_metadata() {
             .as_str()
             .expect("minimum kernel source should be a string")
             .contains("/v4.8/")
+    );
+}
+
+#[test]
+fn test_spec_record_context_fields_include_direct_load_transform_metadata() {
+    let eth_protocol = context_field_record("tc:lo:ingress", "eth_protocol");
+    let eth_protocol = eth_protocol
+        .as_record()
+        .expect("ctx.eth_protocol should be a record");
+    assert_eq!(
+        eth_protocol
+            .get("direct_load_transform")
+            .expect("direct load transform should be present")
+            .as_str()
+            .expect("direct load transform should be a string"),
+        "big-endian-u16-to-host"
+    );
+
+    let device_access = context_field_record("cgroup_device:/sys/fs/cgroup", "device_access");
+    let device_access = device_access
+        .as_record()
+        .expect("ctx.device_access should be a record");
+    assert_eq!(
+        device_access
+            .get("direct_load_transform")
+            .expect("direct load transform should be present")
+            .as_str()
+            .expect("direct load transform should be a string"),
+        "access-type-high-16-bits"
     );
 }
 

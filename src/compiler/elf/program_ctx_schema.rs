@@ -6,8 +6,9 @@ use super::program_ctx_access::{
     ITER_UDP_TARGETS, ITER_UNIX_TARGETS,
 };
 use super::{
-    ContextFieldArrayLoad, ContextFieldDirectLoad, ContextFieldNestedLoad, CtxField,
-    EbpfProgramType, IngressIfindexContextLayout, PacketContextKind, SocketContextLayout,
+    ContextFieldArrayLoad, ContextFieldDirectLoad, ContextFieldNestedLoad,
+    ContextFieldReadTransform, CtxField, EbpfProgramType, IngressIfindexContextLayout,
+    PacketContextKind, SocketContextLayout,
 };
 use crate::compiler::ctx_field_schema::{
     ContextFieldLoadGuard, ContextFieldProjectionSpec, ContextFieldTypeSpec,
@@ -397,6 +398,19 @@ impl PacketContextKind {
             _ => None,
         }
     }
+
+    pub(crate) fn ctx_field_direct_load_transform(
+        self,
+        field: &CtxField,
+    ) -> Option<ContextFieldReadTransform> {
+        match (self, field) {
+            (Self::SkBuff, CtxField::EthProtocol | CtxField::VlanProto)
+            | (Self::SkReuseport, CtxField::EthProtocol) => {
+                Some(ContextFieldReadTransform::BigEndianU16ToHost)
+            }
+            _ => None,
+        }
+    }
 }
 
 impl SocketContextLayout {
@@ -499,6 +513,34 @@ impl SocketContextLayout {
             }
             (Self::SockOps, CtxField::LocalIp6) => {
                 Some(ContextFieldArrayLoad::u32_words(48, 4, true))
+            }
+            _ => None,
+        }
+    }
+
+    pub(crate) fn ctx_field_direct_load_transform(
+        self,
+        field: &CtxField,
+    ) -> Option<ContextFieldReadTransform> {
+        match (self, field) {
+            (Self::SockAddr, CtxField::UserIp4 | CtxField::MsgSrcIp4) => {
+                Some(ContextFieldReadTransform::BigEndianU32ToHost)
+            }
+            (Self::SockAddr, CtxField::UserPort) => {
+                Some(ContextFieldReadTransform::BigEndianU32PortToHost)
+            }
+            (Self::SkBuff, CtxField::Protocol) => {
+                Some(ContextFieldReadTransform::BigEndianU16ToHost)
+            }
+            (
+                Self::CgroupSock | Self::SockOps | Self::SkMsg | Self::SkBuff | Self::SkLookup,
+                CtxField::RemoteIp4 | CtxField::LocalIp4,
+            ) => Some(ContextFieldReadTransform::BigEndianU32ToHost),
+            (Self::CgroupSock | Self::SockOps | Self::SkLookup, CtxField::RemotePort) => {
+                Some(ContextFieldReadTransform::BigEndianU16ToHost)
+            }
+            (Self::SkMsg | Self::SkBuff, CtxField::RemotePort) => {
+                Some(ContextFieldReadTransform::BigEndianU32ToHost)
             }
             _ => None,
         }
@@ -675,6 +717,24 @@ impl EbpfProgramType {
         layout.ctx_field_array_load(field)
     }
 
+    pub(crate) fn socket_ctx_field_direct_load_transform(
+        &self,
+        field: &CtxField,
+    ) -> Option<ContextFieldReadTransform> {
+        let layout = match field {
+            CtxField::Protocol => self.protocol_context_layout(),
+            CtxField::UserIp4 | CtxField::UserPort | CtxField::MsgSrcIp4 => {
+                self.socket_family_context_layout()
+            }
+            CtxField::RemoteIp4 | CtxField::RemotePort | CtxField::LocalIp4 => {
+                self.socket_tuple_context_layout()
+            }
+            _ => None,
+        }?;
+
+        layout.ctx_field_direct_load_transform(field)
+    }
+
     pub(crate) fn ctx_field_direct_load(&self, field: &CtxField) -> Option<ContextFieldDirectLoad> {
         if let Some(load) = self.socket_ctx_field_direct_load(field) {
             return Some(load);
@@ -803,6 +863,34 @@ impl EbpfProgramType {
     fn packet_ctx_field_array_load(&self, field: &CtxField) -> Option<ContextFieldArrayLoad> {
         self.packet_context_kind()?.ctx_field_array_load(field)
     }
+
+    pub(crate) fn ctx_field_direct_load_transform(
+        &self,
+        field: &CtxField,
+    ) -> Option<ContextFieldReadTransform> {
+        if let Some(transform) = self.socket_ctx_field_direct_load_transform(field) {
+            return Some(transform);
+        }
+        if let Some(kind) = self.packet_context_kind()
+            && let Some(transform) = kind.ctx_field_direct_load_transform(field)
+        {
+            return Some(transform);
+        }
+
+        match (self, field) {
+            (Self::LircMode2, CtxField::LircValue) => {
+                Some(ContextFieldReadTransform::LircValueMask)
+            }
+            (Self::LircMode2, CtxField::LircMode) => Some(ContextFieldReadTransform::LircModeMask),
+            (Self::CgroupDevice, CtxField::DeviceAccess) => {
+                Some(ContextFieldReadTransform::CgroupDeviceAccessShift)
+            }
+            (Self::CgroupDevice, CtxField::DeviceType) => {
+                Some(ContextFieldReadTransform::CgroupDeviceTypeMask)
+            }
+            _ => None,
+        }
+    }
 }
 
 impl ProgramSpec {
@@ -847,20 +935,34 @@ impl ProgramSpec {
     }
 
     pub(crate) fn ctx_field_type_spec(&self, field: &CtxField) -> Option<ContextFieldTypeSpec> {
-        self.ctx_field_access_error(field)
-            .is_none()
-            .then(|| program_type_ctx_field_type_spec(self.program_type(), field))
-            .flatten()
+        if self.ctx_field_access_error(field).is_some() {
+            return None;
+        }
+
+        if let Some(alias_field) = self.cgroup_sock_addr_tuple_alias_field(field)
+            && &alias_field != field
+        {
+            return self.ctx_field_type_spec(&alias_field);
+        }
+
+        program_type_ctx_field_type_spec(self.program_type(), field)
     }
 
     pub(crate) fn ctx_field_projection_spec(
         &self,
         field: &CtxField,
     ) -> Option<ContextFieldProjectionSpec> {
-        self.ctx_field_access_error(field)
-            .is_none()
-            .then(|| program_type_ctx_field_projection_spec(self.program_type(), field))
-            .flatten()
+        if self.ctx_field_access_error(field).is_some() {
+            return None;
+        }
+
+        if let Some(alias_field) = self.cgroup_sock_addr_tuple_alias_field(field)
+            && &alias_field != field
+        {
+            return self.ctx_field_projection_spec(&alias_field);
+        }
+
+        program_type_ctx_field_projection_spec(self.program_type(), field)
     }
 
     pub(crate) fn ctx_field_load_guard(&self, field: &CtxField) -> Option<ContextFieldLoadGuard> {
@@ -956,6 +1058,12 @@ impl ProgramSpec {
             return None;
         }
 
+        if let Some(alias_field) = self.cgroup_sock_addr_tuple_alias_field(field)
+            && &alias_field != field
+        {
+            return self.ctx_field_direct_load(&alias_field);
+        }
+
         self.iter_ctx_field_direct_load(field)
             .or_else(|| self.program_type().ctx_field_direct_load(field))
     }
@@ -963,6 +1071,12 @@ impl ProgramSpec {
     pub(crate) fn ctx_field_array_load(&self, field: &CtxField) -> Option<ContextFieldArrayLoad> {
         if self.ctx_field_access_error(field).is_some() {
             return None;
+        }
+
+        if let Some(alias_field) = self.cgroup_sock_addr_tuple_alias_field(field)
+            && &alias_field != field
+        {
+            return self.ctx_field_array_load(&alias_field);
         }
 
         self.program_type().ctx_field_array_load(field)
@@ -974,6 +1088,23 @@ impl ProgramSpec {
         }
 
         self.program_type().ctx_field_nested_load(field)
+    }
+
+    pub(crate) fn ctx_field_direct_load_transform(
+        &self,
+        field: &CtxField,
+    ) -> Option<ContextFieldReadTransform> {
+        if self.ctx_field_access_error(field).is_some() {
+            return None;
+        }
+
+        if let Some(alias_field) = self.cgroup_sock_addr_tuple_alias_field(field)
+            && &alias_field != field
+        {
+            return self.ctx_field_direct_load_transform(&alias_field);
+        }
+
+        self.program_type().ctx_field_direct_load_transform(field)
     }
 }
 
@@ -1277,6 +1408,26 @@ mod tests {
                 Some(ContextFieldDirectLoad::u64(64)),
             ),
             (
+                "cgroup_sock_addr:/sys/fs/cgroup:connect4",
+                CtxField::RemoteIp4,
+                Some(ContextFieldDirectLoad::u32(4)),
+            ),
+            (
+                "cgroup_sock_addr:/sys/fs/cgroup:connect4",
+                CtxField::RemotePort,
+                Some(ContextFieldDirectLoad::u32(24)),
+            ),
+            (
+                "cgroup_sock_addr:/sys/fs/cgroup:sendmsg4",
+                CtxField::LocalIp4,
+                Some(ContextFieldDirectLoad::u32(40)),
+            ),
+            (
+                "cgroup_sock_addr:/sys/fs/cgroup:bind4",
+                CtxField::LocalPort,
+                Some(ContextFieldDirectLoad::u32(24)),
+            ),
+            (
                 "cgroup_sockopt:/sys/fs/cgroup:get",
                 CtxField::Socket,
                 Some(ContextFieldDirectLoad::u64(0)),
@@ -1489,6 +1640,81 @@ mod tests {
         ] {
             let spec = ProgramSpec::parse(spec).expect("program spec should parse");
             assert_eq!(spec.ctx_field_direct_load(&field), expected);
+        }
+    }
+
+    #[test]
+    fn test_context_direct_load_transform_metadata_tracks_semantic_normalization() {
+        for (spec, field, expected) in [
+            (
+                "tc:lo:ingress",
+                CtxField::EthProtocol,
+                Some(ContextFieldReadTransform::BigEndianU16ToHost),
+            ),
+            (
+                "tc:lo:ingress",
+                CtxField::VlanProto,
+                Some(ContextFieldReadTransform::BigEndianU16ToHost),
+            ),
+            (
+                "socket_filter:tcp4:127.0.0.1:80",
+                CtxField::Protocol,
+                Some(ContextFieldReadTransform::BigEndianU16ToHost),
+            ),
+            (
+                "sk_lookup:/proc/self/ns/net",
+                CtxField::RemoteIp4,
+                Some(ContextFieldReadTransform::BigEndianU32ToHost),
+            ),
+            (
+                "sk_lookup:/proc/self/ns/net",
+                CtxField::RemotePort,
+                Some(ContextFieldReadTransform::BigEndianU16ToHost),
+            ),
+            (
+                "sk_msg:/sys/fs/bpf/demo",
+                CtxField::RemotePort,
+                Some(ContextFieldReadTransform::BigEndianU32ToHost),
+            ),
+            (
+                "cgroup_sock_addr:/sys/fs/cgroup:connect4",
+                CtxField::RemoteIp4,
+                Some(ContextFieldReadTransform::BigEndianU32ToHost),
+            ),
+            (
+                "cgroup_sock_addr:/sys/fs/cgroup:connect4",
+                CtxField::RemotePort,
+                Some(ContextFieldReadTransform::BigEndianU32PortToHost),
+            ),
+            (
+                "lirc_mode2:/dev/lirc0",
+                CtxField::LircValue,
+                Some(ContextFieldReadTransform::LircValueMask),
+            ),
+            (
+                "lirc_mode2:/dev/lirc0",
+                CtxField::LircMode,
+                Some(ContextFieldReadTransform::LircModeMask),
+            ),
+            (
+                "cgroup_device:/sys/fs/cgroup",
+                CtxField::DeviceAccess,
+                Some(ContextFieldReadTransform::CgroupDeviceAccessShift),
+            ),
+            (
+                "cgroup_device:/sys/fs/cgroup",
+                CtxField::DeviceType,
+                Some(ContextFieldReadTransform::CgroupDeviceTypeMask),
+            ),
+            ("xdp:lo", CtxField::Data, None),
+            (
+                "cgroup_sock:/sys/fs/cgroup:post_bind4",
+                CtxField::LocalPort,
+                None,
+            ),
+        ] {
+            let spec = ProgramSpec::parse(spec).expect("program spec should parse");
+            assert_eq!(spec.ctx_field_direct_load_transform(&field), expected);
         }
     }
 
@@ -1749,6 +1975,16 @@ mod tests {
             (
                 "cgroup_sock_addr:/sys/fs/cgroup:sendmsg6",
                 CtxField::MsgSrcIp6,
+                Some(ContextFieldArrayLoad::u32_words(44, 4, false)),
+            ),
+            (
+                "cgroup_sock_addr:/sys/fs/cgroup:connect6",
+                CtxField::RemoteIp6,
+                Some(ContextFieldArrayLoad::u32_words(8, 4, false)),
+            ),
+            (
+                "cgroup_sock_addr:/sys/fs/cgroup:sendmsg6",
+                CtxField::LocalIp6,
                 Some(ContextFieldArrayLoad::u32_words(44, 4, false)),
             ),
             (

@@ -1463,12 +1463,17 @@ impl<'a> HirToMirLowering<'a> {
             self.vreg_type_hints.insert(dst_vreg, runtime_ty);
         }
 
+        let ctx_field_normalization_source = self
+            .probe_ctx
+            .and_then(|ctx| ctx.parsed_program_spec())
+            .and_then(|spec| spec.cgroup_sock_addr_tuple_alias_field(&ctx_field))
+            .unwrap_or_else(|| ctx_field.clone());
         if matches!(
-            ctx_field,
+            ctx_field_normalization_source,
             CtxField::UserIp4 | CtxField::UserPort | CtxField::MsgSrcIp4
         ) {
             self.emit_packet_big_endian_scalar_normalize(dst_vreg, &MirType::U32)?;
-            if matches!(ctx_field, CtxField::UserPort) {
+            if matches!(ctx_field_normalization_source, CtxField::UserPort) {
                 let shift_16 = self.large_const_operand(&MirType::U32, 16);
                 self.emit(MirInst::BinOp {
                     dst: dst_vreg,

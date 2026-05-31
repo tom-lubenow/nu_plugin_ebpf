@@ -10,9 +10,9 @@ use crate::compiler::mir::{AddressSpace, CtxField, MirType, StructField};
 use crate::compiler::packet_layout::PacketHeaderKind;
 use crate::compiler::{
     BpfHelper, ContextFieldCompatibilityRequirement, ContextFieldDirectLoadWidth,
-    ContextFieldLoadGuard, HelperCompatibilityRequirement, MapKind, PacketContextKind,
-    ProbeContext, ProgramCompatibilityRequirement, ProgramIntrinsic, ProgramValueAccess,
-    SockOpsCallbackGuard, bpf_flow_keys_projection_member_aliases,
+    ContextFieldLoadGuard, ContextFieldReadTransform, HelperCompatibilityRequirement, MapKind,
+    PacketContextKind, ProbeContext, ProgramCompatibilityRequirement, ProgramIntrinsic,
+    ProgramValueAccess, SockOpsCallbackGuard, bpf_flow_keys_projection_member_aliases,
     bpf_sock_projection_member_aliases, ctx_field_backing_helper,
     ctx_field_for_bpf_sock_projection_member, synthetic_bpf_sock_type, synthetic_bpf_tcp_sock_type,
 };
@@ -47,6 +47,7 @@ struct SpecContextField {
     load_kind: Option<&'static str>,
     direct_load_width: Option<&'static str>,
     direct_load_offset: Option<i16>,
+    direct_load_transform: Option<&'static str>,
     array_load_base_offset: Option<i16>,
     array_load_count: Option<usize>,
     array_load_normalize_big_endian: Option<bool>,
@@ -332,6 +333,19 @@ fn context_field_direct_load_width_label(width: ContextFieldDirectLoadWidth) -> 
         ContextFieldDirectLoadWidth::U16 => "u16",
         ContextFieldDirectLoadWidth::U32 => "u32",
         ContextFieldDirectLoadWidth::U64 => "u64",
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn context_field_read_transform_label(transform: ContextFieldReadTransform) -> &'static str {
+    match transform {
+        ContextFieldReadTransform::BigEndianU16ToHost => "big-endian-u16-to-host",
+        ContextFieldReadTransform::BigEndianU32ToHost => "big-endian-u32-to-host",
+        ContextFieldReadTransform::BigEndianU32PortToHost => "big-endian-u32-port-to-host",
+        ContextFieldReadTransform::LircValueMask => "low-24-bits",
+        ContextFieldReadTransform::LircModeMask => "high-byte-mask",
+        ContextFieldReadTransform::CgroupDeviceAccessShift => "access-type-high-16-bits",
+        ContextFieldReadTransform::CgroupDeviceTypeMask => "access-type-low-16-bits",
     }
 }
 
@@ -776,6 +790,8 @@ fn spec_context_fields(
                 backing_helper,
             );
             let direct_load = spec.ctx_field_direct_load(&entry.field);
+            let direct_load_transform =
+                direct_load.and_then(|_| spec.ctx_field_direct_load_transform(&entry.field));
             let array_load = spec.ctx_field_array_load(&entry.field);
             let nested_load = spec.ctx_field_nested_load(&entry.field);
             let load_kind = if direct_load.is_some() {
@@ -833,6 +849,8 @@ fn spec_context_fields(
                     direct_load_width: direct_load
                         .map(|load| context_field_direct_load_width_label(load.width)),
                     direct_load_offset: direct_load.map(|load| load.offset),
+                    direct_load_transform: direct_load_transform
+                        .map(context_field_read_transform_label),
                     array_load_base_offset: array_load.map(|load| load.base_offset),
                     array_load_count: array_load.map(|load| load.count),
                     array_load_normalize_big_endian: array_load
@@ -888,6 +906,7 @@ fn context_field_records(
                     "load_kind" => optional_static_str(field.load_kind, span),
                     "direct_load_width" => optional_static_str(field.direct_load_width, span),
                     "direct_load_offset" => optional_i16(field.direct_load_offset, span),
+                    "direct_load_transform" => optional_static_str(field.direct_load_transform, span),
                     "array_load_base_offset" => optional_i16(field.array_load_base_offset, span),
                     "array_load_count" => optional_usize(field.array_load_count, span),
                     "array_load_normalize_big_endian" => optional_bool(field.array_load_normalize_big_endian, span),

@@ -4761,6 +4761,130 @@ fn test_lower_cgroup_sock_addr_ctx_user_ip6_index_assignment() {
 }
 
 #[test]
+fn test_lower_cgroup_sock_addr_remote_ip4_alias_read_normalizes_to_host_order() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("remote_ip4")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:connect4");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("cgroup_sock_addr ctx.remote_ip4 should lower");
+
+    let instructions: Vec<_> = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect();
+    assert!(instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::RemoteIp4,
+            ..
+        }
+    )));
+    assert!(instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::BinOp {
+            op: BinOpKind::Shl,
+            rhs: MirValue::Const(24),
+            ..
+        }
+    )));
+}
+
+#[test]
+fn test_lower_cgroup_sock_addr_remote_port_alias_read_extracts_host_order_port() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("remote_port")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:connect4");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("cgroup_sock_addr ctx.remote_port should lower");
+
+    let instructions: Vec<_> = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect();
+    assert!(instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::RemotePort,
+            ..
+        }
+    )));
+    assert!(instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::BinOp {
+            op: BinOpKind::Shr,
+            rhs: MirValue::Const(16),
+            ..
+        }
+    )));
+}
+
+#[test]
+fn test_lower_cgroup_sock_addr_remote_ip6_alias_read_normalizes_words() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("remote_ip6")],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:connect6");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("cgroup_sock_addr ctx.remote_ip6 should lower");
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::LoadCtxField {
+            field: CtxField::RemoteIp6,
+            slot: Some(_),
+            ..
+        }
+    )));
+    let store_count = block
+        .instructions
+        .iter()
+        .filter(|inst| {
+            matches!(
+                inst,
+                MirInst::Store {
+                    ty: MirType::U32,
+                    ..
+                }
+            )
+        })
+        .count();
+    assert_eq!(store_count, 4);
+}
+
+#[test]
 fn test_lower_cgroup_sock_addr_ctx_msg_src_ip4_assignment() {
     let ctx_var = VarId::new(0);
     let func = HirFunction {

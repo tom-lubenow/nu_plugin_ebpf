@@ -55,7 +55,6 @@ pub(crate) use ctx_field_schema::{
     ctx_field_backing_helper, ctx_field_for_bpf_sock_projection_member,
 };
 pub(crate) use ctx_field_schema::{synthetic_bpf_sock_type, synthetic_bpf_tcp_sock_type};
-pub(crate) use elf::ContextFieldDirectLoadWidth;
 pub use elf::{
     BpfFieldType, BpfMapDef, BssGlobal, CompiledFeatureCompatibilityRequirement,
     CompiledStructOpsCallback, CounterKeySchema, CounterKeySchemaField, DataGlobal, EbpfMap,
@@ -67,6 +66,7 @@ pub use elf::{
     ProgramValueAccess, ReadonlyGlobal, SchemaField, StructOpsCallbackSlot, StructOpsCallbackSpec,
     StructOpsObjectSpec, StructOpsValueField, SymbolRelocation,
 };
+pub(crate) use elf::{ContextFieldDirectLoadWidth, ContextFieldReadTransform};
 pub use hir::{
     HirProgram, extract_call_decl_ids, extract_closure_block_ids, infer_ctx_param, lower_ir_to_hir,
 };
