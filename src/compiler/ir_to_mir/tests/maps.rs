@@ -2430,6 +2430,56 @@ fn test_lower_map_push_respects_bloom_filter_kind() {
 }
 
 #[test]
+fn test_map_push_infers_prior_map_define_kind_when_kind_is_omitted() {
+    let map_push_decl = DeclId::new(42);
+    let (mut hir, mut decl_names) = map_define_with_value_type_hir("recent_pids", "queue", "int");
+    decl_names.insert(map_push_decl, "map-push".to_string());
+
+    let block = &mut hir.main.blocks[0];
+    block.stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(4),
+        lit: HirLiteral::Int(99),
+    });
+    block.stmts.push(HirStmt::Call {
+        decl_id: map_push_decl,
+        src_dst: RegId::new(4),
+        args: HirCallArgs {
+            positional: vec![RegId::new(0)],
+            pipeline_input: Some(RegId::new(4)),
+            ..HirCallArgs::default()
+        },
+    });
+    block.terminator = HirTerminator::Return { src: RegId::new(4) };
+    hir.main.register_count = 5;
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("map-push should infer the declared queue map kind");
+
+    let push = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .find_map(|inst| match inst {
+            MirInst::MapPush { map, flags, .. } if map.name == "recent_pids" => {
+                Some((map.kind, *flags))
+            }
+            _ => None,
+        })
+        .expect("expected generic map push");
+    assert_eq!(push, (MapKind::Queue, 0));
+}
+
+#[test]
 fn test_lower_map_push_rejects_live_src_dst_without_pipeline_input() {
     let map_push_decl = DeclId::new(42);
     let decl_names = HashMap::from([(map_push_decl, "map-push".to_string())]);
