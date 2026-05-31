@@ -2585,7 +2585,13 @@ impl<'a> HirToMirLowering<'a> {
                 )?;
             }
 
-            "is-empty" => {
+            "is-empty" | "is-not-empty" => {
+                let want_non_empty = cmd_name == "is-not-empty";
+                let empty_cmp_op = if want_non_empty {
+                    BinOpKind::Ne
+                } else {
+                    BinOpKind::Eq
+                };
                 let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
                 let input_reg = self
                     .pipeline_input_reg
@@ -2600,9 +2606,9 @@ impl<'a> HirToMirLowering<'a> {
                     || !self.named_args.is_empty()
                     || !self.positional_args.is_empty()
                 {
-                    return Err(CompileError::UnsupportedInstruction(
-                        "is-empty does not accept arguments in eBPF".into(),
-                    ));
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{cmd_name} does not accept arguments in eBPF"
+                    )));
                 }
 
                 let input_meta = input_reg.and_then(|reg| self.get_metadata(reg).cloned());
@@ -2619,7 +2625,7 @@ impl<'a> HirToMirLowering<'a> {
                     self.vreg_type_hints.insert(len_vreg, MirType::U64);
                     self.emit(MirInst::BinOp {
                         dst: result_vreg,
-                        op: BinOpKind::Eq,
+                        op: empty_cmp_op,
                         lhs: MirValue::VReg(len_vreg),
                         rhs: MirValue::Const(0),
                     });
@@ -2639,26 +2645,30 @@ impl<'a> HirToMirLowering<'a> {
                 }) {
                     self.emit(MirInst::BinOp {
                         dst: result_vreg,
-                        op: BinOpKind::Eq,
+                        op: empty_cmp_op,
                         lhs: MirValue::VReg(len_vreg),
                         rhs: MirValue::Const(0),
                     });
                 } else if let Some(empty) = input_meta.as_ref().and_then(|meta| {
-                    meta.constant_value.as_ref().and_then(|value| match value {
-                        nu_protocol::Value::Nothing { .. } => Some(true),
-                        nu_protocol::Value::List { vals, .. } => Some(vals.is_empty()),
-                        _ => None,
-                    })
+                    if !meta.record_fields.is_empty() {
+                        Some(false)
+                    } else {
+                        meta.constant_value.as_ref().and_then(|value| match value {
+                            nu_protocol::Value::Record { val, .. } => Some(val.is_empty()),
+                            nu_protocol::Value::Nothing { .. } => Some(true),
+                            nu_protocol::Value::List { vals, .. } => Some(vals.is_empty()),
+                            _ => None,
+                        })
+                    }
                 }) {
                     self.emit(MirInst::Copy {
                         dst: result_vreg,
-                        src: MirValue::Const(if empty { 1 } else { 0 }),
+                        src: MirValue::Const(if empty ^ want_non_empty { 1 } else { 0 }),
                     });
                 } else {
-                    return Err(CompileError::UnsupportedInstruction(
-                        "is-empty requires a stack-backed list, tracked string, or literal null input in eBPF"
-                            .into(),
-                    ));
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{cmd_name} requires a stack-backed list, tracked string, metadata-backed record, or literal null input in eBPF"
+                    )));
                 }
 
                 self.reset_call_result_metadata(src_dst);

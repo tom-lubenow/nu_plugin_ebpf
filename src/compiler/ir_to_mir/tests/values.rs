@@ -466,6 +466,48 @@ fn make_record_values_then_get_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_record_empty_predicate_program(
+    decl_id: DeclId,
+    command_name: &str,
+    empty_record: bool,
+) -> (HirProgram, HashMap<DeclId, String>) {
+    let mut record = Record::new();
+    if !empty_record {
+        record.push("pid", Value::int(7, Span::test_data()));
+    }
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::record(record, Span::test_data())),
+                },
+                HirStmt::Call {
+                    decl_id,
+                    src_dst: RegId::new(1),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 2,
+        file_count: 0,
+    };
+    (
+        HirProgram::new(func, HashMap::new(), vec![], None),
+        HashMap::from([(decl_id, command_name.to_string())]),
+    )
+}
+
 #[test]
 fn test_lower_load_value_duration_as_const() {
     let func = HirFunction {
@@ -1410,6 +1452,114 @@ fn test_lower_is_empty_on_string_compares_length_to_zero() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("is-empty on tracked string should compile through codegen");
+}
+
+#[test]
+fn test_lower_is_empty_on_metadata_record_uses_known_field_count() {
+    let is_empty_decl = DeclId::new(114);
+    let (hir, decl_names) = make_record_empty_predicate_program(is_empty_decl, "is-empty", false);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("is-empty should lower on metadata-backed records");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Copy {
+                    src: MirValue::Const(0),
+                    ..
+                }
+            )),
+        "expected non-empty metadata record to lower to false"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("is-empty on metadata-backed record should compile through codegen");
+}
+
+#[test]
+fn test_lower_is_not_empty_on_metadata_record_uses_known_field_count() {
+    let is_not_empty_decl = DeclId::new(115);
+    let (hir, decl_names) =
+        make_record_empty_predicate_program(is_not_empty_decl, "is-not-empty", true);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("is-not-empty should lower on metadata-backed records");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Copy {
+                    src: MirValue::Const(0),
+                    ..
+                }
+            )),
+        "expected empty metadata record to lower to false for is-not-empty"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("is-not-empty on metadata-backed record should compile through codegen");
+}
+
+#[test]
+fn test_lower_is_not_empty_on_numeric_list_compares_length_to_zero() {
+    let is_not_empty_decl = DeclId::new(116);
+    let hir = make_numeric_list_pipeline_call_program(is_not_empty_decl, None);
+    let decl_names = HashMap::from([(is_not_empty_decl, "is-not-empty".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("is-not-empty should lower on stack-backed numeric lists");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op: BinOpKind::Ne,
+                    rhs: MirValue::Const(0),
+                    ..
+                }
+            )),
+        "expected is-not-empty to compare length != zero"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("is-not-empty on stack-backed numeric list should compile through codegen");
 }
 
 #[test]
