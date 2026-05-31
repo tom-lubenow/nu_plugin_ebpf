@@ -1703,6 +1703,11 @@ mod tests {
             ),
             (
                 "sk_reuseport:select",
+                CtxField::Data,
+                Some(ContextFieldDirectLoad::u64(0)),
+            ),
+            (
+                "sk_reuseport:select",
                 CtxField::DataEnd,
                 Some(ContextFieldDirectLoad::u64(8)),
             ),

@@ -3423,6 +3423,73 @@ fn test_lower_sk_reuseport_migrating_socket_remote_alias_field() {
 }
 
 #[test]
+fn test_lower_sk_reuseport_data_byte_projection_adds_guarded_packet_load() {
+    let hir = make_ctx_path_program(CellPath {
+        members: vec![string_member("data"), int_member(0)],
+    });
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkReuseport, "select");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("sk_reuseport ctx.data byte projection should lower");
+
+    let blocks = &result.program.main.blocks;
+    assert!(blocks.iter().any(|block| {
+        block.instructions.iter().any(|inst| {
+            matches!(
+                inst,
+                MirInst::LoadCtxField {
+                    field: CtxField::Data,
+                    ..
+                }
+            )
+        })
+    }));
+    assert!(blocks.iter().any(|block| {
+        block.instructions.iter().any(|inst| {
+            matches!(
+                inst,
+                MirInst::LoadCtxField {
+                    field: CtxField::DataEnd,
+                    ..
+                }
+            )
+        })
+    }));
+    assert!(blocks.iter().any(|block| {
+        block.instructions.iter().any(|inst| {
+            matches!(
+                inst,
+                MirInst::BinOp {
+                    op: BinOpKind::Le,
+                    ..
+                }
+            )
+        })
+    }));
+    assert!(blocks.iter().any(|block| {
+        block.instructions.iter().any(|inst| {
+            matches!(
+                inst,
+                MirInst::Load {
+                    ty: MirType::U8,
+                    ..
+                }
+            )
+        })
+    }));
+
+    compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+        .expect("sk_reuseport ctx.data byte projection should compile");
+}
+
+#[test]
 fn test_lower_ctx_socket_projection_records_implied_context_compatibility_fields() {
     let hir = make_ctx_path_program(CellPath {
         members: vec![string_member("sk"), string_member("mark")],
