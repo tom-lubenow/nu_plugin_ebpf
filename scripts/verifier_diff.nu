@@ -5965,6 +5965,17 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         feature_keys: ["ctx:family" "ctx:sk" "helper:bpf_probe_read_kernel"]
     }
     {
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let rec = { ok: true, socket: $ctx.sk }'
+            '  $rec | rename keep sock | get sock | get family | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:family" "ctx:sk" "helper:bpf_probe_read_kernel"]
+    }
+    {
         target: "raw_tracepoint:sys_enter"
         program: [
             '{|event|'
@@ -18427,6 +18438,21 @@ const FIXTURES = [
             '{|ctx|'
             '  let rec = { socket: $ctx.sk }'
             '  $rec | get socket | get family | count'
+            '  "ok"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tc-record-socket-context-rename-get-chain"
+        category: "context-surface"
+        tags: [tc context socket record rename get source metadata]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let rec = { ok: true, socket: $ctx.sk }'
+            '  $rec | rename keep sock | get sock | get family | count'
             '  "ok"'
             '}'
         ]
@@ -39134,6 +39160,34 @@ def context-root-from-record-get [input: string get_field: string record_aliases
     null
 }
 
+def context-root-from-record-pipeline-get [input: string prefix_segments get_field: string record_aliases context_names bound_aliases identity_wrappers root_wrapper_defs] {
+    if ($prefix_segments | is-empty) {
+        return null
+    }
+
+    let raw = (
+        [$input]
+        | append $prefix_segments
+        | str join " | "
+    )
+    let field_name = (normalize-context-path-token $get_field)
+    for field in (
+        record-pipeline-flow-context-fields
+            $raw
+            $context_names
+            $bound_aliases
+            $identity_wrappers
+            $root_wrapper_defs
+            $record_aliases
+    ) {
+        if $field.field == $field_name {
+            return ($field | get -o root | default "")
+        }
+    }
+
+    null
+}
+
 def program-bound-context-root-aliases-base [source: string context_names] {
     mut aliases = []
     let identity_wrappers = (identity-wrapper-definitions $source)
@@ -39275,9 +39329,11 @@ def record-literal-context-fields [raw: string context_names bound_aliases ident
 def record-context-bindings [line: string context_names bound_aliases identity_wrappers root_wrapper_defs] {
     mut bindings = []
     for assignment in (declaration-assignments $line) {
+        let rhs = (declaration-rhs-token $assignment)
+        let order = (record-literal-field-names $rhs)
         for field in (
             record-literal-context-fields
-                (declaration-rhs-token $assignment)
+                $rhs
                 $context_names
                 $bound_aliases
                 $identity_wrappers
@@ -39287,6 +39343,7 @@ def record-context-bindings [line: string context_names bound_aliases identity_w
                 name: $assignment.name
                 field: $field.field
                 root: $field.root
+                order: $order
             })
         }
     }
@@ -39639,6 +39696,18 @@ def record-pipeline-input-field-order [raw: string aliases] {
     }
     if ($literal_order | is-empty) and not ($spread_order | is-empty) {
         return $spread_order
+    }
+
+    for parsed in (
+        $input
+        | parse --regex '^\$(?P<name>[A-Za-z_][A-Za-z0-9_-]*)$'
+    ) {
+        for alias in ($aliases | where {|alias| $alias.name == $parsed.name }) {
+            let order = ($alias | get -o order | default [])
+            if not ($order | is-empty) {
+                return $order
+            }
+        }
     }
 
     null
@@ -40661,10 +40730,14 @@ def record-get-projection-kernel-features [source: string target context_names] 
             $input = (($input | split row "=" | last) | str trim)
         }
         mut root = null
+        mut prefix_segments = []
 
         for segment in ($segments | skip 1) {
             let parsed = (get-command-field-tail $segment)
             if $parsed == null {
+                if $root == null {
+                    $prefix_segments = ($prefix_segments | append ($segment | str trim))
+                }
                 continue
             }
 
@@ -40679,6 +40752,19 @@ def record-get-projection-kernel-features [source: string target context_names] 
                         $identity_wrappers
                         $root_wrapper_defs
                 )
+                if $root == null {
+                    $root = (
+                        context-root-from-record-pipeline-get
+                            $input
+                            $prefix_segments
+                            $parsed.field
+                            $record_aliases
+                            $context_names
+                            $bound_aliases
+                            $identity_wrappers
+                            $root_wrapper_defs
+                    )
+                }
                 if $root == null {
                     continue
                 }
