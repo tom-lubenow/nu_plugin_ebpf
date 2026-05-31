@@ -28152,9 +28152,9 @@ const FIXTURES = [
         error_contains: "unreleased kfunc reference at function exit"
     }
     {
-        name: "source-helper-sk-release-rejects-partial-lookup-release"
+        name: "source-helper-sk-release-accepts-lookup-or-null-release"
         category: "helper-state"
-        tags: [helper-call socket ref-lifetime phi source reject]
+        tags: [helper-call socket ref-lifetime phi source accept]
         requires: [loopback-interface]
         target: "xdp:lo"
         program: [
@@ -28168,9 +28168,8 @@ const FIXTURES = [
             '  "pass"'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "unreleased kfunc reference at function exit"
+        local: "accept"
+        kernel: "accept"
     }
     {
         name: "source-helper-sk-release-rejects-unchecked-null"

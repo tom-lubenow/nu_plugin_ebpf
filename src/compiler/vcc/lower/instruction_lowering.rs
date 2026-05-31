@@ -143,6 +143,106 @@ impl<'a> VccLowerer<'a> {
             .unwrap_or(MapLookupPhiSource::None)
     }
 
+    fn ptr_info_for_phi(&self, dst: VReg, args: &[(BlockId, VReg)]) -> Option<VccPointerInfo> {
+        let dst_hint = self.types.get(&dst).and_then(ptr_info_from_mir);
+        let mut merged = None;
+        let mut saw_scalar_null_candidate = false;
+        for (_, vreg) in args {
+            let reg = VccReg(vreg.0);
+            let candidate = self
+                .ptr_regs
+                .get(&reg)
+                .copied()
+                .or_else(|| self.types.get(vreg).and_then(ptr_info_from_mir));
+            let Some(candidate) = candidate else {
+                if dst_hint.is_some()
+                    && self.types.get(vreg).is_some_and(|ty| {
+                        matches!(
+                            vcc_type_from_mir(ty).class(),
+                            VccTypeClass::Scalar | VccTypeClass::Bool
+                        )
+                    })
+                {
+                    saw_scalar_null_candidate = true;
+                    continue;
+                }
+                return None;
+            };
+            merged = Some(match merged {
+                None => candidate,
+                Some(existing) => Self::merge_ptr_info_for_phi(existing, candidate)?,
+            });
+        }
+        let mut merged = merged?;
+        if saw_scalar_null_candidate {
+            merged.nullability = VccNullability::MaybeNull;
+        }
+        Some(merged)
+    }
+
+    fn merge_ptr_info_for_phi(
+        lhs: VccPointerInfo,
+        rhs: VccPointerInfo,
+    ) -> Option<VccPointerInfo> {
+        if lhs.space != rhs.space && !Self::kernel_spaces_compatible(lhs.space, rhs.space) {
+            return None;
+        }
+        Some(VccPointerInfo {
+            space: if lhs.space == rhs.space {
+                lhs.space
+            } else if lhs.space == VccAddrSpace::KernelBtf || rhs.space == VccAddrSpace::KernelBtf {
+                VccAddrSpace::KernelBtf
+            } else {
+                lhs.space
+            },
+            nullability: Self::join_nullability_for_phi(lhs.nullability, rhs.nullability),
+            bounds: (lhs.bounds == rhs.bounds).then_some(lhs.bounds).flatten(),
+            packet_root: (lhs.packet_root == rhs.packet_root)
+                .then_some(lhs.packet_root)
+                .flatten(),
+            packet_root_field: (lhs.packet_root_field == rhs.packet_root_field)
+                .then_some(lhs.packet_root_field)
+                .flatten(),
+            packet_ctx_field: (lhs.packet_ctx_field == rhs.packet_ctx_field)
+                .then_some(lhs.packet_ctx_field)
+                .flatten(),
+            packet_end: lhs.packet_end && rhs.packet_end,
+            map_root: (lhs.map_root == rhs.map_root).then_some(lhs.map_root).flatten(),
+            context_buffer_root: (lhs.context_buffer_root == rhs.context_buffer_root)
+                .then_some(lhs.context_buffer_root)
+                .flatten(),
+            context_buffer_end: lhs.context_buffer_end && rhs.context_buffer_end,
+            ringbuf_ref: Self::join_ref_for_phi(lhs.ringbuf_ref, rhs.ringbuf_ref),
+            kfunc_ref: Self::join_ref_for_phi(lhs.kfunc_ref, rhs.kfunc_ref),
+        })
+    }
+
+    fn kernel_spaces_compatible(lhs: VccAddrSpace, rhs: VccAddrSpace) -> bool {
+        matches!(
+            (lhs, rhs),
+            (VccAddrSpace::Kernel, VccAddrSpace::KernelBtf)
+                | (VccAddrSpace::KernelBtf, VccAddrSpace::Kernel)
+        )
+    }
+
+    fn join_nullability_for_phi(
+        lhs: VccNullability,
+        rhs: VccNullability,
+    ) -> VccNullability {
+        match (lhs, rhs) {
+            (VccNullability::NonNull, VccNullability::NonNull) => VccNullability::NonNull,
+            (VccNullability::Null, VccNullability::Null) => VccNullability::Null,
+            _ => VccNullability::MaybeNull,
+        }
+    }
+
+    fn join_ref_for_phi<T: Copy + Eq>(lhs: Option<T>, rhs: Option<T>) -> Option<T> {
+        match (lhs, rhs) {
+            (Some(lhs), Some(rhs)) if lhs == rhs => Some(lhs),
+            _ => None,
+        }
+    }
+
     fn scalar_alias_root_for_reg(&self, reg: VccReg) -> VccReg {
         self.scalar_alias_regs.get(&reg).copied().unwrap_or(reg)
     }
@@ -434,6 +534,7 @@ impl<'a> VccLowerer<'a> {
                     .vreg_is_scalar_aliasable(*dst)
                     .then(|| self.scalar_alias_root_for_phi(args))
                     .flatten();
+                let ptr_info = self.ptr_info_for_phi(*dst, args);
                 let map_lookup_source = self.map_lookup_source_for_phi(args);
                 let map_fd_source = self.map_fd_source_for_phi(args);
                 let vcc_args = args
@@ -444,6 +545,11 @@ impl<'a> VccLowerer<'a> {
                     dst: VccReg(dst.0),
                     args: vcc_args,
                 });
+                if let Some(info) = ptr_info {
+                    self.ptr_regs.insert(VccReg(dst.0), info);
+                } else {
+                    self.ptr_regs.remove(&VccReg(dst.0));
+                }
                 if let Some(root) = scalar_alias_root {
                     if root != VccReg(dst.0) {
                         out.push(VccInst::ScalarAlias {
