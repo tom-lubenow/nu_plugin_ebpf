@@ -109,6 +109,73 @@ fn test_lower_mutated_captured_int_variable_uses_data_global() {
 }
 
 #[test]
+fn test_lower_mutated_captured_bool_variable_uses_data_global() {
+    let capture_var = VarId::new(117);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: capture_var,
+                },
+                HirStmt::StoreVariable {
+                    var_id: capture_var,
+                    src: RegId::new(0),
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(1),
+                    var_id: capture_var,
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 2,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(
+        func,
+        HashMap::new(),
+        vec![(capture_var, Value::bool(true, Span::test_data()))],
+        None,
+    );
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("mutated captured bool should lower through a writable global");
+
+    assert_eq!(result.data_globals.len(), 1);
+    assert_eq!(result.bss_globals.len(), 0);
+    assert_eq!(result.data_globals[0].data, vec![1]);
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Store {
+                    ty: MirType::Bool,
+                    ..
+                }
+            )),
+        "expected mutable captured bool lowering to emit a bool store to the writable global"
+    );
+}
+
+#[test]
 fn test_lower_mutated_zero_captured_int_variable_uses_bss_global() {
     let capture_var = VarId::new(18);
     let func = HirFunction {
@@ -530,7 +597,7 @@ fn test_lower_mutated_captured_heterogeneous_list_variable_is_rejected() {
     assert!(
         err.to_string()
             .contains(
-                "mutable captured globals currently only support numeric scalar values, strings, fixed binary values, numeric constant lists, homogeneous fixed arrays of scalar/string/binary/record constants with fixed-layout fields, and representable constant records"
+                "mutable captured globals currently only support bool and numeric scalar values, strings, fixed binary values, numeric constant lists, homogeneous fixed arrays of scalar/string/binary/record constants with fixed-layout fields, and representable constant records"
             )
     );
 }
