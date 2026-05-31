@@ -1000,6 +1000,106 @@ $checks
     Some(keys_by_check)
 }
 
+fn verifier_diff_nu_program_only_feature_keys(
+    function_name: &str,
+    label: &str,
+    programs: &[String],
+) -> Option<Vec<BTreeSet<String>>> {
+    let program_rows = programs
+        .iter()
+        .map(|program| format!("    {program:?}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let script = format!(
+        r#"source scripts/verifier_diff.nu
+let programs = [
+{program_rows}
+]
+$programs
+| enumerate
+| each {{|row|
+    {{
+        index: $row.index
+        keys: (
+            {function_name} $row.item
+            | each {{|feature| $feature.key }}
+            | sort
+        )
+    }}
+}}
+| to json"#
+    );
+
+    let output = run_nu_script(&script, label)?;
+    assert!(
+        output.status.success(),
+        "verifier_diff.nu {function_name} failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let actual: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .unwrap_or_else(|_| panic!("verifier_diff.nu {function_name} should emit JSON"));
+    let actual = actual
+        .as_array()
+        .unwrap_or_else(|| panic!("verifier_diff.nu {function_name} output should be a JSON list"));
+    assert_eq!(
+        actual.len(),
+        programs.len(),
+        "verifier_diff.nu {function_name} should return one result per checked program"
+    );
+
+    let mut keys_by_program = vec![BTreeSet::new(); programs.len()];
+    for value in actual {
+        let index = value
+            .get("index")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or_else(|| {
+                panic!("verifier_diff.nu {function_name} result should include index")
+            }) as usize;
+        assert!(
+            index < programs.len(),
+            "verifier_diff.nu {function_name} index should refer to a checked program"
+        );
+        let keys = value
+            .get("keys")
+            .and_then(serde_json::Value::as_array)
+            .unwrap_or_else(|| {
+                panic!("verifier_diff.nu {function_name} result should include keys")
+            });
+        keys_by_program[index] = keys
+            .iter()
+            .map(|key| {
+                key.as_str()
+                    .unwrap_or_else(|| {
+                        panic!("verifier_diff.nu {function_name} keys should be strings")
+                    })
+                    .to_string()
+            })
+            .collect();
+    }
+
+    Some(keys_by_program)
+}
+
+fn verifier_diff_nu_program_map_feature_keys(programs: &[String]) -> Option<Vec<BTreeSet<String>>> {
+    verifier_diff_nu_program_only_feature_keys(
+        "program-map-kernel-features",
+        "program-map-kernel-features coverage",
+        programs,
+    )
+}
+
+fn verifier_diff_nu_program_reserved_map_feature_keys(
+    programs: &[String],
+) -> Option<Vec<BTreeSet<String>>> {
+    verifier_diff_nu_program_only_feature_keys(
+        "program-reserved-map-kernel-features",
+        "program-reserved-map-kernel-features coverage",
+        programs,
+    )
+}
+
 fn verifier_diff_nu_program_context_field_feature_keys(
     checks: &[(String, String)],
 ) -> Option<Vec<BTreeSet<String>>> {
@@ -1043,6 +1143,13 @@ fn helper_feature_keys(helpers: impl IntoIterator<Item = BpfHelper>) -> BTreeSet
                 })
                 .key()
         })
+        .collect()
+}
+
+fn map_kind_feature_keys(kinds: impl IntoIterator<Item = MapKind>) -> BTreeSet<String> {
+    kinds
+        .into_iter()
+        .map(|kind| kind.compatibility_requirement().key().to_string())
         .collect()
 }
 
@@ -1483,6 +1590,186 @@ fn test_verifier_diff_program_surface_scanner_matches_rust_helper_keys() {
     assert!(
         mismatches.is_empty(),
         "scripts/verifier_diff.nu program-surface scanner drifted from Rust helper metadata: {}",
+        mismatches.join(", ")
+    );
+}
+
+#[test]
+fn test_verifier_diff_program_map_scanner_matches_rust_map_kind_keys() {
+    struct MapScannerCheck {
+        program: &'static str,
+        expected_keys: BTreeSet<String>,
+    }
+
+    let checks = [
+        MapScannerCheck {
+            program: r#"{|ctx|
+  let text = "helper-call \"bpf_ringbuf_query\" custom_ringbuf 0"
+  # helper-call "bpf_redirect_map" redirects 0 0 --kind devmap-hash
+  let docs = "redirect-map tx_ports 0 --kind devmap"
+  let more_docs = "map-define xsks --kind xskmap"
+  let ignored = 0 # | helper-call "bpf_map_lookup_percpu_elem" values key 0 --kind lru-per-cpu-hash
+  let more_ignored = 0 # | map-get values --kind queue
+  0
+}"#,
+            expected_keys: BTreeSet::new(),
+        },
+        MapScannerCheck {
+            program: r#"{|ctx|
+  let entry = ($ctx.pid | map-get default_counts)
+  if $entry { 1 | map-put default_counts $ctx.pid }
+  $ctx.pid | map-delete default_counts
+  0
+}"#,
+            expected_keys: map_kind_feature_keys([MapKind::Hash]),
+        },
+        MapScannerCheck {
+            program: r#"{|ctx|
+  map-define array_counts --kind array --key-type u32 --value-type u64
+  let entry = ($ctx.pid | map-get array_counts)
+  1 | map-put array_counts $ctx.pid
+  0
+}"#,
+            expected_keys: map_kind_feature_keys([MapKind::Array]),
+        },
+        MapScannerCheck {
+            program: r#"{|ctx|
+  let entry = ($ctx.pid | map-get lru_counts --kind lru-hash)
+  if $entry { 1 | map-put lru_counts $ctx.pid }
+  0
+}"#,
+            expected_keys: map_kind_feature_keys([MapKind::LruHash]),
+        },
+        MapScannerCheck {
+            program: r#"{|ctx|
+  map-define pending --kind queue --value-type u64
+  1 | map-push pending
+  map-peek pending
+  map-pop pending
+  0
+}"#,
+            expected_keys: map_kind_feature_keys([MapKind::Queue]),
+        },
+        MapScannerCheck {
+            program: r#"{|ctx|
+  redirect-map tx_ports 0 --kind devmap
+  redirect-map tx_ports 1
+  redirect-socket peers 0 --kind sockhash
+  redirect-socket peers 1
+  0
+}"#,
+            expected_keys: map_kind_feature_keys([MapKind::DevMap, MapKind::SockHash]),
+        },
+        MapScannerCheck {
+            program: r#"{|ctx|
+  helper-call "bpf_ringbuf_query" custom_ringbuf 0
+  helper-call "bpf_get_stackid" $ctx custom_stacks 0
+  helper-call "bpf_sk_redirect_hash" $ctx socket_hash 0 0
+  helper-call "bpf_sk_storage_get" socket_storage $ctx.sk 0 0
+  helper-call "bpf_map_push_elem" queue_or_bloom 1 0 --kind bloom-filter
+  0
+}"#,
+            expected_keys: map_kind_feature_keys([
+                MapKind::RingBuf,
+                MapKind::StackTrace,
+                MapKind::SockHash,
+                MapKind::SkStorage,
+                MapKind::BloomFilter,
+            ]),
+        },
+        MapScannerCheck {
+            program: r#"{|ctx|
+  tail-call progs 0
+  0
+}"#,
+            expected_keys: map_kind_feature_keys([MapKind::ProgArray]),
+        },
+    ];
+
+    let programs = checks
+        .iter()
+        .map(|check| check.program.to_string())
+        .collect::<Vec<_>>();
+    let Some(actual) = verifier_diff_nu_program_map_feature_keys(&programs) else {
+        return;
+    };
+
+    let mut mismatches = Vec::new();
+    for (index, (check, actual_keys)) in checks.iter().zip(actual.iter()).enumerate() {
+        if &check.expected_keys != actual_keys {
+            mismatches.push(format!(
+                "#{} expected {:?} actual {:?}",
+                index, check.expected_keys, actual_keys
+            ));
+        }
+    }
+
+    assert!(
+        mismatches.is_empty(),
+        "scripts/verifier_diff.nu program-map scanner drifted from Rust map metadata: {}",
+        mismatches.join(", ")
+    );
+}
+
+#[test]
+fn test_verifier_diff_reserved_map_scanner_matches_rust_map_kind_keys() {
+    struct ReservedMapScannerCheck {
+        program: &'static str,
+        expected_keys: BTreeSet<String>,
+    }
+
+    let checks = [
+        ReservedMapScannerCheck {
+            program: r#"{|ctx|
+  let text = "helper-call \"bpf_user_ringbuf_drain\" user_events"
+  # helper-call "bpf_perf_event_read" perf_events 0
+  let docs = "1 | emit"
+  let more_docs = "2 | count"
+  let ignored = 0 # | helper-call "bpf_get_stackid" $ctx kstacks 0
+  0
+}"#,
+            expected_keys: BTreeSet::new(),
+        },
+        ReservedMapScannerCheck {
+            program: r#"{|ctx|
+  1 | emit
+  2 | count
+  helper-call "bpf_user_ringbuf_drain" user_events {|dyn cb| 0 } "ctx" 0
+  helper-call "bpf_perf_event_read" perf_events 0
+  helper-call "bpf_get_stackid" $ctx kstacks 0
+  0
+}"#,
+            expected_keys: map_kind_feature_keys([
+                MapKind::RingBuf,
+                MapKind::Hash,
+                MapKind::UserRingBuf,
+                MapKind::PerfEventArray,
+                MapKind::StackTrace,
+            ]),
+        },
+    ];
+
+    let programs = checks
+        .iter()
+        .map(|check| check.program.to_string())
+        .collect::<Vec<_>>();
+    let Some(actual) = verifier_diff_nu_program_reserved_map_feature_keys(&programs) else {
+        return;
+    };
+
+    let mut mismatches = Vec::new();
+    for (index, (check, actual_keys)) in checks.iter().zip(actual.iter()).enumerate() {
+        if &check.expected_keys != actual_keys {
+            mismatches.push(format!(
+                "#{} expected {:?} actual {:?}",
+                index, check.expected_keys, actual_keys
+            ));
+        }
+    }
+
+    assert!(
+        mismatches.is_empty(),
+        "scripts/verifier_diff.nu reserved-map scanner drifted from Rust map metadata: {}",
         mismatches.join(", ")
     );
 }
