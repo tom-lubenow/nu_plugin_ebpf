@@ -848,7 +848,7 @@ eBPF layout and verifier bounds are explicit:
 | `length` | Stack-backed numeric lists plus literal binary and literal null values |
 | `math sum` / `math product` / `math min` / `math max` | Stack-backed numeric lists with known non-empty length; empty-list input is rejected to match Nushell semantics |
 | `first` / `last` | Scalar first/last element access for stack-backed numeric lists; counted forms rebuild bounded prefix/suffix stack-list slices |
-| `get` | Stack-backed numeric-list indexing, top-level metadata-backed fixed-record field projection, and typed kernel/user pointer numeric indexing; list literal indexes may be literal cell paths |
+| `get` | Stack-backed numeric-list indexing, top-level metadata-backed fixed-record field projection, typed context / BTF-backed pointer field projection with compiler-visible field paths such as `$ctx | get sk | get family`, and typed kernel/user pointer numeric indexing; list literal indexes may be literal cell paths |
 | `select` / `reject` | Metadata-backed fixed records, materialized into a fresh fixed-layout record |
 | `rename` | Positional top-level field renames for metadata-backed fixed records; `--column` and `--block` are not yet modeled |
 | `merge` | Metadata-backed fixed records with one metadata-backed record argument, preserving Nushell overwrite and append field semantics |
