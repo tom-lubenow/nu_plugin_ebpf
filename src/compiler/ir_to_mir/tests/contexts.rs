@@ -3491,15 +3491,15 @@ fn test_lower_sk_reuseport_data_byte_projection_adds_guarded_packet_load() {
 
 #[test]
 fn test_lower_sk_reuseport_scalar_context_aliases_compile() {
-    for (field_name, expected_field) in [
-        ("packet_len", CtxField::PacketLen),
-        ("len", CtxField::PacketLen),
-        ("eth_protocol", CtxField::EthProtocol),
-        ("protocol", CtxField::Protocol),
-        ("ip_protocol", CtxField::Protocol),
-        ("hash", CtxField::SkbHash),
-        ("bind_inany", CtxField::BindInany),
-        ("socket_cookie", CtxField::SocketCookie),
+    for (field_name, expected_field, expected_minimum_kernel) in [
+        ("packet_len", CtxField::PacketLen, "4.19"),
+        ("len", CtxField::PacketLen, "4.19"),
+        ("eth_protocol", CtxField::EthProtocol, "4.19"),
+        ("protocol", CtxField::Protocol, "4.19"),
+        ("ip_protocol", CtxField::Protocol, "4.19"),
+        ("hash", CtxField::SkbHash, "4.19"),
+        ("bind_inany", CtxField::BindInany, "4.19"),
+        ("socket_cookie", CtxField::SocketCookie, "4.12"),
     ] {
         let hir = make_ctx_path_program(CellPath {
             members: vec![string_member(field_name)],
@@ -3527,8 +3527,28 @@ fn test_lower_sk_reuseport_scalar_context_aliases_compile() {
             }),
             "sk_reuseport ctx.{field_name} should load {expected_field:?}"
         );
-        compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
-            .unwrap_or_else(|err| panic!("sk_reuseport ctx.{field_name} should compile: {err}"));
+        let compiled = compile_mir_to_ebpf_with_hints(
+            &result.program,
+            Some(&probe_ctx),
+            Some(&result.type_hints),
+        )
+        .unwrap_or_else(|err| panic!("sk_reuseport ctx.{field_name} should compile: {err}"));
+        assert!(
+            compiled.used_ctx_fields.contains(&expected_field),
+            "sk_reuseport ctx.{field_name} should preserve {expected_field:?} compatibility metadata"
+        );
+        let program = compiled.into_program(
+            EbpfProgramType::SkReuseport,
+            "select",
+            "main",
+            HashMap::new(),
+            HashMap::new(),
+        );
+        assert_eq!(
+            program.context_field_compatibility_minimum_kernel(),
+            Some(expected_minimum_kernel),
+            "sk_reuseport ctx.{field_name} should report its context-field floor"
+        );
     }
 }
 
