@@ -26241,6 +26241,26 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "source-kfunc-xdp-xfrm-state-release-accepts-acquire-or-null-release"
+        category: "helper-state"
+        tags: [kfunc btf xdp ref-lifetime phi source accept]
+        requires: [kernel-btf]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  let selector = (helper-call "bpf_get_prandom_u32")'
+            '  let opts = { error: 0, netns_id: -1, mark: 0, daddr: [0 0 0 0], spi: 0, proto: 50, family: 2 }'
+            '  let state = (if $selector == 0 { kfunc-call "bpf_xdp_get_xfrm_state" $ctx $opts 32 } else { 0 })'
+            '  if $state {'
+            '    kfunc-call "bpf_xdp_xfrm_state_release" $state'
+            '  }'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "source-kfunc-xdp-xfrm-state-copied-raw-context-release"
         category: "helper-state"
         tags: [kfunc btf xdp ref-lifetime source accept context-alias]

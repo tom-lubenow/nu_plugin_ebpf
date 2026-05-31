@@ -3,6 +3,7 @@ use crate::compiler::mir::StructField;
 use crate::compiler::subfn_summaries::infer_subfunction_summaries;
 use crate::compiler::test_mir_builders::{
     ExplicitNullRefKfuncCase, explicit_null_ref_join_release_mir,
+    xdp_get_xfrm_state_explicit_null_join_mir,
 };
 use crate::compiler::{EbpfProgramType, ProbeContext};
 
@@ -88,6 +89,25 @@ fn test_verify_mir_kfunc_cpumask_release_accepts_explicit_null_after_acquire_joi
 #[test]
 fn test_verify_mir_kfunc_cpumask_release_accepts_explicit_null_phi_after_acquire_join() {
     assert_explicit_null_ref_join_release_accepts(ExplicitNullRefKfuncCase::CpumaskCreate, true);
+}
+
+fn assert_xdp_xfrm_explicit_null_ref_join_release_accepts(use_phi: bool) {
+    let (func, types) = xdp_get_xfrm_state_explicit_null_join_mir(use_phi);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+
+    verify_mir_for_probe_context(&func, &types, &probe_ctx).unwrap_or_else(|err| {
+        panic!("expected explicit null/xfrm_state ref join to preserve release identity: {err:?}")
+    });
+}
+
+#[test]
+fn test_verify_mir_xdp_get_xfrm_state_release_accepts_explicit_null_after_acquire_join() {
+    assert_xdp_xfrm_explicit_null_ref_join_release_accepts(false);
+}
+
+#[test]
+fn test_verify_mir_xdp_get_xfrm_state_release_accepts_explicit_null_phi_after_acquire_join() {
+    assert_xdp_xfrm_explicit_null_ref_join_release_accepts(true);
 }
 
 fn graph_value_with_lock_and_root_ty() -> MirType {

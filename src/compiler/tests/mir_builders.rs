@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 
 use crate::compiler::mir::{
-    AddressSpace, BinOpKind, BlockId, MirFunction, MirInst, MirType, MirValue, VReg,
+    AddressSpace, BinOpKind, BlockId, CtxField, MirFunction, MirInst, MirType, MirValue,
+    StackSlotKind, VReg,
 };
 
 pub(crate) fn unknown_kernel_ptr_ty() -> MirType {
@@ -162,6 +163,136 @@ pub(crate) fn explicit_null_ref_join_release_mir(
     types.insert(select_cond, MirType::Bool);
     types.insert(acquired, unknown_kernel_ptr_ty());
     if use_phi {
+        types.insert(joined, unknown_kernel_ptr_ty());
+    }
+    types.insert(release_cond, MirType::Bool);
+    types.insert(release_ret, MirType::I64);
+
+    (func, types)
+}
+
+pub(crate) fn xdp_get_xfrm_state_explicit_null_join_mir(
+    use_phi: bool,
+) -> (MirFunction, HashMap<VReg, MirType>) {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let acquire_path = func.alloc_block();
+    let null_path = func.alloc_block();
+    let join = func.alloc_block();
+    let release = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let selector = func.alloc_vreg();
+    let select_cond = func.alloc_vreg();
+    let ctx = func.alloc_vreg();
+    let opts = func.alloc_vreg();
+    let size = func.alloc_vreg();
+    let acquired = func.alloc_vreg();
+    let null_ref = use_phi.then(|| func.alloc_vreg());
+    let joined = if use_phi { func.alloc_vreg() } else { acquired };
+    let release_cond = func.alloc_vreg();
+    let release_ret = func.alloc_vreg();
+    let opts_slot = func.alloc_stack_slot(32, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: select_cond,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(selector),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: select_cond,
+        if_true: acquire_path,
+        if_false: null_path,
+    };
+
+    func.block_mut(acquire_path)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(acquire_path)
+        .instructions
+        .push(MirInst::Copy {
+            dst: opts,
+            src: MirValue::StackSlot(opts_slot),
+        });
+    func.block_mut(acquire_path)
+        .instructions
+        .push(MirInst::Copy {
+            dst: size,
+            src: MirValue::Const(32),
+        });
+    func.block_mut(acquire_path)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: acquired,
+            kfunc: "bpf_xdp_get_xfrm_state".to_string(),
+            btf_id: None,
+            args: vec![ctx, opts, size],
+        });
+    func.block_mut(acquire_path).terminator = MirInst::Jump { target: join };
+
+    func.block_mut(null_path).instructions.push(MirInst::Copy {
+        dst: null_ref.unwrap_or(joined),
+        src: MirValue::Const(0),
+    });
+    func.block_mut(null_path).terminator = MirInst::Jump { target: join };
+
+    if let Some(null_ref) = null_ref {
+        func.block_mut(join).instructions.push(MirInst::Phi {
+            dst: joined,
+            args: vec![(acquire_path, acquired), (null_path, null_ref)],
+        });
+    }
+    func.block_mut(join).instructions.push(MirInst::BinOp {
+        dst: release_cond,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(joined),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(join).terminator = MirInst::Branch {
+        cond: release_cond,
+        if_true: release,
+        if_false: done,
+    };
+
+    func.block_mut(release)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: release_ret,
+            kfunc: "bpf_xdp_xfrm_state_release".to_string(),
+            btf_id: None,
+            args: vec![joined],
+        });
+    func.block_mut(release).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(selector, MirType::I64);
+    types.insert(select_cond, MirType::Bool);
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(
+        opts,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(size, MirType::I64);
+    types.insert(acquired, unknown_kernel_ptr_ty());
+    if let Some(null_ref) = null_ref {
+        types.insert(null_ref, MirType::I64);
         types.insert(joined, unknown_kernel_ptr_ty());
     }
     types.insert(release_cond, MirType::Bool);

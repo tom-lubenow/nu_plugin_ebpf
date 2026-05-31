@@ -36,6 +36,7 @@ pub mod passes;
 pub mod reg_info;
 mod subfn_summaries;
 #[cfg(test)]
+#[path = "tests/mir_builders.rs"]
 pub(crate) mod test_mir_builders;
 mod type_hints;
 pub mod type_infer;
