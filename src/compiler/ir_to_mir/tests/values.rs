@@ -157,6 +157,107 @@ fn make_numeric_list_call_then_get_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_numeric_list_call_then_length_program(
+    command_decl: DeclId,
+    length_decl: DeclId,
+    count: Option<i64>,
+) -> HirProgram {
+    let mut stmts = vec![HirStmt::LoadValue {
+        dst: RegId::new(0),
+        val: Box::new(Value::list(
+            vec![
+                Value::int(10, Span::test_data()),
+                Value::int(20, Span::test_data()),
+                Value::int(30, Span::test_data()),
+            ],
+            Span::test_data(),
+        )),
+    }];
+    let command_positional = if let Some(count) = count {
+        stmts.push(HirStmt::LoadLiteral {
+            dst: RegId::new(2),
+            lit: HirLiteral::Int(count),
+        });
+        vec![RegId::new(2)]
+    } else {
+        Vec::new()
+    };
+    stmts.push(HirStmt::Call {
+        decl_id: command_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional: command_positional,
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: length_decl,
+        src_dst: RegId::new(3),
+        args: HirCallArgs {
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(3) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 4,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_numeric_list_get_program(get_decl: DeclId, get_index: i64) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::list(
+                        vec![
+                            Value::int(10, Span::test_data()),
+                            Value::int(20, Span::test_data()),
+                            Value::int(30, Span::test_data()),
+                        ],
+                        Span::test_data(),
+                    )),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(get_index),
+                },
+                HirStmt::Call {
+                    decl_id: get_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(2) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_numeric_list_item_call_then_get_program(
     command_decl: DeclId,
     get_decl: DeclId,
@@ -1028,6 +1129,51 @@ fn test_lower_last_negative_count_is_rejected() {
 }
 
 #[test]
+fn test_lower_get_negative_index_on_numeric_list_is_rejected() {
+    let get_decl = DeclId::new(86);
+    let hir = make_numeric_list_get_program(get_decl, -1);
+    let decl_names = HashMap::from([(get_decl, "get".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("negative get index should be rejected for stack-backed numeric lists");
+
+    assert!(
+        err.to_string().contains("get index must be non-negative"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_get_out_of_bounds_index_on_numeric_list_is_rejected() {
+    let get_decl = DeclId::new(87);
+    let hir = make_numeric_list_get_program(get_decl, 3);
+    let decl_names = HashMap::from([(get_decl, "get".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("known out-of-bounds get should be rejected for stack-backed numeric lists");
+
+    assert!(
+        err.to_string()
+            .contains("get index 3 is out of bounds for stack-backed numeric list"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn test_lower_skip_default_on_numeric_list_rebuilds_tail() {
     let skip_decl = DeclId::new(81);
     let get_decl = DeclId::new(82);
@@ -1087,11 +1233,11 @@ fn test_lower_skip_default_on_numeric_list_rebuilds_tail() {
 #[test]
 fn test_lower_skip_count_beyond_numeric_list_capacity_returns_empty_list() {
     let skip_decl = DeclId::new(83);
-    let get_decl = DeclId::new(84);
-    let hir = make_numeric_list_call_then_get_program(skip_decl, get_decl, Some(4), 0);
+    let length_decl = DeclId::new(84);
+    let hir = make_numeric_list_call_then_length_program(skip_decl, length_decl, Some(4));
     let decl_names = HashMap::from([
         (skip_decl, "skip".to_string()),
-        (get_decl, "get".to_string()),
+        (length_decl, "length".to_string()),
     ]);
 
     let result = lower_hir_to_mir_with_hints(
@@ -1115,7 +1261,7 @@ fn test_lower_skip_count_beyond_numeric_list_capacity_returns_empty_list() {
         "expected oversized skip to allocate an empty list"
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
-        .expect("empty skip result followed by get should compile through codegen");
+        .expect("empty skip result followed by length should compile through codegen");
 }
 
 #[test]
@@ -1304,11 +1450,11 @@ fn test_lower_drop_default_on_numeric_list_rebuilds_prefix() {
 #[test]
 fn test_lower_drop_count_beyond_numeric_list_capacity_returns_empty_list() {
     let drop_decl = DeclId::new(93);
-    let get_decl = DeclId::new(94);
-    let hir = make_numeric_list_call_then_get_program(drop_decl, get_decl, Some(4), 0);
+    let length_decl = DeclId::new(94);
+    let hir = make_numeric_list_call_then_length_program(drop_decl, length_decl, Some(4));
     let decl_names = HashMap::from([
         (drop_decl, "drop".to_string()),
-        (get_decl, "get".to_string()),
+        (length_decl, "length".to_string()),
     ]);
 
     let result = lower_hir_to_mir_with_hints(
@@ -1332,7 +1478,7 @@ fn test_lower_drop_count_beyond_numeric_list_capacity_returns_empty_list() {
         "expected oversized drop to allocate an empty list"
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
-        .expect("empty drop result followed by get should compile through codegen");
+        .expect("empty drop result followed by length should compile through codegen");
 }
 
 #[test]

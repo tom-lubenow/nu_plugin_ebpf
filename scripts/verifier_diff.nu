@@ -32448,6 +32448,35 @@ const FIXTURES = [
         error_contains: "last count must be non-negative"
     }
     {
+        name: "core-list-get-negative-index-reject"
+        category: "language-core"
+        tags: [aggregate list get reject]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let i = -1'
+            '  [10 20 30] | get $i'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "get index must be non-negative"
+    }
+    {
+        name: "core-list-get-out-of-bounds-reject"
+        category: "language-core"
+        tags: [aggregate list get reject]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [10 20 30] | get 3'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "get index 3 is out of bounds"
+    }
+    {
         name: "core-list-take-count"
         category: "language-core"
         tags: [aggregate list take]
@@ -32731,7 +32760,7 @@ const FIXTURES = [
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  [10 20 30] | skip 4 | get 0'
+            '  [10 20 30] | skip 4 | length'
             '}'
         ]
         local: "accept"

@@ -2831,15 +2831,50 @@ impl<'a> HirToMirLowering<'a> {
                 let input_meta = input_reg.and_then(|reg| self.get_metadata(reg).cloned());
                 let mut handled_list_get = false;
                 if let Some(meta) = input_meta {
-                    if meta.list_buffer.is_some() {
+                    if let Some((_slot, max_len)) = meta.list_buffer {
+                        if let MirValue::Const(raw_idx) = &idx {
+                            let raw_idx = *raw_idx;
+                            if raw_idx < 0 {
+                                return Err(CompileError::UnsupportedInstruction(
+                                    "get index must be non-negative for stack-backed numeric lists in eBPF"
+                                        .into(),
+                                ));
+                            }
+                            let idx_usize = usize::try_from(raw_idx).map_err(|_| {
+                                CompileError::UnsupportedInstruction(
+                                    "get index is too large for stack-backed numeric list lowering"
+                                        .into(),
+                                )
+                            })?;
+                            if let Some(known_len) = Self::numeric_list_known_len(&meta) {
+                                if idx_usize >= known_len {
+                                    return Err(CompileError::UnsupportedInstruction(format!(
+                                        "get index {raw_idx} is out of bounds for stack-backed numeric list with known length {known_len} in eBPF"
+                                    )));
+                                }
+                            } else if idx_usize >= max_len {
+                                return Err(CompileError::UnsupportedInstruction(format!(
+                                    "get index {raw_idx} is out of bounds for stack-backed numeric list capacity {max_len} in eBPF"
+                                )));
+                            }
+                        }
+
                         self.emit(MirInst::ListGet {
                             dst: result_vreg,
                             list: input_vreg,
                             idx: idx.clone(),
                         });
 
+                        self.reset_call_result_metadata(src_dst);
                         let out_meta = self.get_or_create_metadata(src_dst);
                         out_meta.field_type = Some(MirType::I64);
+                        out_meta.constant_value = match (&meta.constant_value, &idx) {
+                            (
+                                Some(nu_protocol::Value::List { vals, .. }),
+                                MirValue::Const(raw_idx),
+                            ) if *raw_idx >= 0 => vals.get(*raw_idx as usize).cloned(),
+                            _ => None,
+                        };
                         handled_list_get = true;
                     }
                 }
