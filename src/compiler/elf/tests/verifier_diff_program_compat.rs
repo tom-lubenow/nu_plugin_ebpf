@@ -1305,27 +1305,29 @@ impl ContextWriteScannerForm {
             Self::RecordDefault => "record-default",
         }
     }
+
+    fn root(self) -> &'static str {
+        match self {
+            Self::Direct => "$ctx",
+            Self::RecordAlias | Self::ReturnedContextAlias => "$event",
+            Self::RecordWrapper
+            | Self::RecordSpread
+            | Self::UserFunctionRecordWrapper
+            | Self::RecordSelect
+            | Self::RecordReject
+            | Self::RecordMerge
+            | Self::RecordDefault => "$rec.event",
+            Self::RecordRename => "$rec.alias",
+        }
+    }
 }
 
-fn context_write_scanner_source(
+fn context_write_scanner_assignment(
     field_name: &str,
     indexed: bool,
     form: ContextWriteScannerForm,
 ) -> String {
-    let root = match form {
-        ContextWriteScannerForm::Direct => "$ctx",
-        ContextWriteScannerForm::RecordAlias | ContextWriteScannerForm::ReturnedContextAlias => {
-            "$event"
-        }
-        ContextWriteScannerForm::RecordWrapper
-        | ContextWriteScannerForm::RecordSpread
-        | ContextWriteScannerForm::UserFunctionRecordWrapper
-        | ContextWriteScannerForm::RecordSelect
-        | ContextWriteScannerForm::RecordReject
-        | ContextWriteScannerForm::RecordMerge
-        | ContextWriteScannerForm::RecordDefault => "$rec.event",
-        ContextWriteScannerForm::RecordRename => "$rec.alias",
-    };
+    let root = form.root();
     let assignment = if field_name == "flow_keys" {
         format!("  {root}.{field_name}.ip_proto = 6")
     } else if indexed {
@@ -1336,39 +1338,58 @@ fn context_write_scanner_source(
         format!("  {root}.{field_name} = 1")
     };
 
+    assignment
+}
+
+fn context_write_scanner_source_from_assignments(
+    assignments: &[String],
+    form: ContextWriteScannerForm,
+) -> String {
+    let assignments = assignments.join("\n");
     match form {
-        ContextWriteScannerForm::Direct => format!("{{|ctx|\n{assignment}\n  \"allow\"\n}}"),
+        ContextWriteScannerForm::Direct => format!("{{|ctx|\n{assignments}\n  \"allow\"\n}}"),
         ContextWriteScannerForm::RecordAlias => {
-            format!("{{|ctx|\n  mut event = $ctx\n{assignment}\n  \"allow\"\n}}")
+            format!("{{|ctx|\n  mut event = $ctx\n{assignments}\n  \"allow\"\n}}")
         }
         ContextWriteScannerForm::ReturnedContextAlias => format!(
-            "{{|ctx|\n  def id [event] {{ $event }}\n  mut event = (id $ctx)\n{assignment}\n  \"allow\"\n}}"
+            "{{|ctx|\n  def id [event] {{ $event }}\n  mut event = (id $ctx)\n{assignments}\n  \"allow\"\n}}"
         ),
         ContextWriteScannerForm::RecordWrapper => {
-            format!("{{|ctx|\n  mut rec = {{ event: $ctx }}\n{assignment}\n  \"allow\"\n}}")
+            format!("{{|ctx|\n  mut rec = {{ event: $ctx }}\n{assignments}\n  \"allow\"\n}}")
         }
         ContextWriteScannerForm::RecordSpread => format!(
-            "{{|ctx|\n  let base = {{ event: $ctx }}\n  mut rec = {{ ok: true, ...$base }}\n{assignment}\n  \"allow\"\n}}"
+            "{{|ctx|\n  let base = {{ event: $ctx }}\n  mut rec = {{ ok: true, ...$base }}\n{assignments}\n  \"allow\"\n}}"
         ),
         ContextWriteScannerForm::UserFunctionRecordWrapper => format!(
-            "{{|ctx|\n  def wrap [event] {{ {{ event: $event }} }}\n  mut rec = (wrap $ctx)\n{assignment}\n  \"allow\"\n}}"
+            "{{|ctx|\n  def wrap [event] {{ {{ event: $event }} }}\n  mut rec = (wrap $ctx)\n{assignments}\n  \"allow\"\n}}"
         ),
         ContextWriteScannerForm::RecordSelect => format!(
-            "{{|ctx|\n  mut rec = ({{ event: $ctx, other: 1 }} | select event)\n{assignment}\n  \"allow\"\n}}"
+            "{{|ctx|\n  mut rec = ({{ event: $ctx, other: 1 }} | select event)\n{assignments}\n  \"allow\"\n}}"
         ),
         ContextWriteScannerForm::RecordReject => format!(
-            "{{|ctx|\n  mut rec = ({{ event: $ctx, other: 1 }} | reject other)\n{assignment}\n  \"allow\"\n}}"
+            "{{|ctx|\n  mut rec = ({{ event: $ctx, other: 1 }} | reject other)\n{assignments}\n  \"allow\"\n}}"
         ),
         ContextWriteScannerForm::RecordRename => format!(
-            "{{|ctx|\n  mut rec = ({{ event: $ctx }} | rename alias)\n{assignment}\n  \"allow\"\n}}"
+            "{{|ctx|\n  mut rec = ({{ event: $ctx }} | rename alias)\n{assignments}\n  \"allow\"\n}}"
         ),
         ContextWriteScannerForm::RecordMerge => format!(
-            "{{|ctx|\n  mut rec = ({{ other: 1 }} | merge {{ event: $ctx }})\n{assignment}\n  \"allow\"\n}}"
+            "{{|ctx|\n  mut rec = ({{ other: 1 }} | merge {{ event: $ctx }})\n{assignments}\n  \"allow\"\n}}"
         ),
         ContextWriteScannerForm::RecordDefault => format!(
-            "{{|ctx|\n  mut rec = ({{ }} | default $ctx event)\n{assignment}\n  \"allow\"\n}}"
+            "{{|ctx|\n  mut rec = ({{ }} | default $ctx event)\n{assignments}\n  \"allow\"\n}}"
         ),
     }
+}
+
+fn context_write_scanner_source(
+    field_name: &str,
+    indexed: bool,
+    form: ContextWriteScannerForm,
+) -> String {
+    context_write_scanner_source_from_assignments(
+        &[context_write_scanner_assignment(field_name, indexed, form)],
+        form,
+    )
 }
 
 #[test]
@@ -1376,8 +1397,8 @@ fn test_verifier_diff_context_write_scanner_covers_rust_write_surfaces() {
     #[derive(Clone)]
     struct ExpectedWriteFeature {
         target: String,
-        field_name: &'static str,
         form: &'static str,
+        field_names: Vec<&'static str>,
         program: String,
         expected_keys: BTreeSet<String>,
     }
@@ -1388,33 +1409,44 @@ fn test_verifier_diff_context_write_scanner_covers_rust_write_surfaces() {
         let spec = ProgramSpec::parse(spec_text).unwrap_or_else(|err| {
             panic!("representative context write target {spec_text} should parse: {err}")
         });
-        for surface in spec.ctx_write_surfaces_for_spec() {
-            let Some(requirement) = surface.context_field_requirement.as_ref() else {
-                continue;
-            };
-            for form in [
-                ContextWriteScannerForm::Direct,
-                ContextWriteScannerForm::RecordAlias,
-                ContextWriteScannerForm::ReturnedContextAlias,
-                ContextWriteScannerForm::RecordWrapper,
-                ContextWriteScannerForm::RecordSpread,
-                ContextWriteScannerForm::UserFunctionRecordWrapper,
-                ContextWriteScannerForm::RecordSelect,
-                ContextWriteScannerForm::RecordReject,
-                ContextWriteScannerForm::RecordRename,
-                ContextWriteScannerForm::RecordMerge,
-                ContextWriteScannerForm::RecordDefault,
-            ] {
+        let write_surfaces = spec.ctx_write_surfaces_for_spec();
+        for form in [
+            ContextWriteScannerForm::Direct,
+            ContextWriteScannerForm::RecordAlias,
+            ContextWriteScannerForm::ReturnedContextAlias,
+            ContextWriteScannerForm::RecordWrapper,
+            ContextWriteScannerForm::RecordSpread,
+            ContextWriteScannerForm::UserFunctionRecordWrapper,
+            ContextWriteScannerForm::RecordSelect,
+            ContextWriteScannerForm::RecordReject,
+            ContextWriteScannerForm::RecordRename,
+            ContextWriteScannerForm::RecordMerge,
+            ContextWriteScannerForm::RecordDefault,
+        ] {
+            let mut assignments = Vec::new();
+            let mut field_names = Vec::new();
+            let mut expected_keys = BTreeSet::new();
+
+            for surface in &write_surfaces {
+                let Some(requirement) = surface.context_field_requirement.as_ref() else {
+                    continue;
+                };
+                assignments.push(context_write_scanner_assignment(
+                    surface.field_name,
+                    surface.indexed,
+                    form,
+                ));
+                field_names.push(surface.field_name);
+                expected_keys.insert(requirement.key());
+            }
+
+            if !expected_keys.is_empty() {
                 expected.push(ExpectedWriteFeature {
                     target: (*spec_text).to_string(),
-                    field_name: surface.field_name,
                     form: form.label(),
-                    program: context_write_scanner_source(
-                        surface.field_name,
-                        surface.indexed,
-                        form,
-                    ),
-                    expected_keys: BTreeSet::from([requirement.key()]),
+                    field_names,
+                    program: context_write_scanner_source_from_assignments(&assignments, form),
+                    expected_keys,
                 });
             }
         }
@@ -1432,8 +1464,8 @@ fn test_verifier_diff_context_write_scanner_covers_rust_write_surfaces() {
     for (check, actual_keys) in expected.iter().zip(actual.iter()) {
         if actual_keys != &check.expected_keys {
             mismatches.push(format!(
-                "{} {} ctx.{} expected {:?} actual {:?}",
-                check.target, check.form, check.field_name, check.expected_keys, actual_keys
+                "{} {} ctx.{:?} expected {:?} actual {:?}",
+                check.target, check.form, check.field_names, check.expected_keys, actual_keys
             ));
         }
     }
