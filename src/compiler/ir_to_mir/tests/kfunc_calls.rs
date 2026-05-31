@@ -4899,6 +4899,119 @@ fn test_redirect_socket_intrinsic_reuses_observed_map_kind() {
 }
 
 #[test]
+fn test_redirect_socket_intrinsic_reuses_raw_helper_fixed_map_kind() {
+    let ctx_var = VarId::new(106);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String(b"bpf_msg_redirect_hash".to_vec()),
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(2),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::String(b"demo_sockhash".to_vec()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::String(b"peer-a".to_vec()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(5),
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(42),
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![
+                            RegId::new(1),
+                            RegId::new(2),
+                            RegId::new(3),
+                            RegId::new(4),
+                            RegId::new(5),
+                        ],
+                        ..Default::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(6),
+                    lit: HirLiteral::String(b"peer-b".to_vec()),
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(43),
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(3), RegId::new(6)],
+                        ..Default::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 7,
+        file_count: 0,
+    };
+
+    let hir_program = HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var));
+    let decl_names = HashMap::from([
+        (DeclId::new(42), "helper-call".to_string()),
+        (DeclId::new(43), "redirect-socket".to_string()),
+    ]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkMsg, "/sys/fs/bpf/demo_sockhash");
+    let hir_types = infer_hir_types(&hir_program, &decl_names)
+        .expect("raw sockhash helper plus redirect-socket should type-check on sk_msg");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        Some(&probe_ctx),
+        &decl_names,
+        Some(&hir_types),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("redirect-socket should infer an omitted kind from the prior raw helper map use");
+
+    let block = result.program.main.block(result.program.main.entry);
+    let sockhash_load_count = block
+        .instructions
+        .iter()
+        .filter(|inst| {
+            matches!(
+                inst,
+                MirInst::LoadMapFd {
+                    map: MapRef { name, kind: MapKind::SockHash },
+                    ..
+                } if name == "demo_sockhash"
+            )
+        })
+        .count();
+    let helper_count = block
+        .instructions
+        .iter()
+        .filter(|inst| {
+            matches!(
+                inst,
+                MirInst::CallHelper { helper, args, .. }
+                    if *helper == BpfHelper::MsgRedirectHash as u32 && args.len() == 4
+            )
+        })
+        .count();
+
+    assert_eq!(sockhash_load_count, 2);
+    assert_eq!(helper_count, 2);
+}
+
+#[test]
 fn test_redirect_socket_intrinsic_rejects_non_socket_redirect_programs() {
     let ctx_var = VarId::new(103);
     let func = HirFunction {

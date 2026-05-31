@@ -5083,46 +5083,46 @@ const MAP_VALUE_KERNEL_FEATURES = [
 ]
 
 const HELPER_CALL_EXPLICIT_MAP_KIND_FEATURES = [
-    { helper: "bpf_map_push_elem", kinds: ["queue" "stack" "bloom-filter"] }
-    { helper: "bpf_map_peek_elem", kinds: ["queue" "stack" "bloom-filter"] }
-    { helper: "bpf_map_pop_elem", kinds: ["queue" "stack"] }
-    { helper: "bpf_redirect_map", kinds: ["devmap" "devmap-hash" "cpumap" "xskmap"] }
-    { helper: "bpf_map_lookup_percpu_elem", kinds: ["per-cpu-hash" "per-cpu-array" "lru-per-cpu-hash"] }
-    { helper: "bpf_for_each_map_elem", kinds: ["hash" "array" "lru-hash" "per-cpu-hash" "per-cpu-array" "lru-per-cpu-hash"] }
-    { helper: "bpf_timer_init", kinds: ["hash" "array" "lru-hash"] }
+    { helper: "bpf_map_push_elem", map_arg: 0, kinds: ["queue" "stack" "bloom-filter"] }
+    { helper: "bpf_map_peek_elem", map_arg: 0, kinds: ["queue" "stack" "bloom-filter"] }
+    { helper: "bpf_map_pop_elem", map_arg: 0, kinds: ["queue" "stack"] }
+    { helper: "bpf_redirect_map", map_arg: 0, kinds: ["devmap" "devmap-hash" "cpumap" "xskmap"] }
+    { helper: "bpf_map_lookup_percpu_elem", map_arg: 0, kinds: ["per-cpu-hash" "per-cpu-array" "lru-per-cpu-hash"] }
+    { helper: "bpf_for_each_map_elem", map_arg: 0, kinds: ["hash" "array" "lru-hash" "per-cpu-hash" "per-cpu-array" "lru-per-cpu-hash"] }
+    { helper: "bpf_timer_init", map_arg: 1, kinds: ["hash" "array" "lru-hash"] }
 ]
 
 const HELPER_CALL_FIXED_MAP_KIND_FEATURES = [
-    { helper: "bpf_tail_call", kind: "prog-array" }
-    { helper: "bpf_perf_event_output", kind: "perf-event-array" }
-    { helper: "bpf_skb_output", kind: "perf-event-array" }
-    { helper: "bpf_xdp_output", kind: "perf-event-array" }
-    { helper: "bpf_perf_event_read", kind: "perf-event-array" }
-    { helper: "bpf_perf_event_read_value", kind: "perf-event-array" }
-    { helper: "bpf_get_stackid", kind: "stack-trace" }
-    { helper: "bpf_skb_under_cgroup", kind: "cgroup-array" }
-    { helper: "bpf_current_task_under_cgroup", kind: "cgroup-array" }
-    { helper: "bpf_ringbuf_output", kind: "ringbuf" }
-    { helper: "bpf_ringbuf_reserve", kind: "ringbuf" }
-    { helper: "bpf_ringbuf_reserve_dynptr", kind: "ringbuf" }
-    { helper: "bpf_ringbuf_query", kind: "ringbuf" }
-    { helper: "bpf_user_ringbuf_drain", kind: "user-ringbuf" }
-    { helper: "bpf_sk_redirect_map", kind: "sockmap" }
-    { helper: "bpf_sock_map_update", kind: "sockmap" }
-    { helper: "bpf_msg_redirect_map", kind: "sockmap" }
-    { helper: "bpf_sock_hash_update", kind: "sockhash" }
-    { helper: "bpf_msg_redirect_hash", kind: "sockhash" }
-    { helper: "bpf_sk_redirect_hash", kind: "sockhash" }
-    { helper: "bpf_sk_select_reuseport", kind: "reuseport-sockarray" }
-    { helper: "bpf_sk_storage_get", kind: "sk-storage" }
-    { helper: "bpf_sk_storage_delete", kind: "sk-storage" }
-    { helper: "bpf_task_storage_get", kind: "task-storage" }
-    { helper: "bpf_task_storage_delete", kind: "task-storage" }
-    { helper: "bpf_inode_storage_get", kind: "inode-storage" }
-    { helper: "bpf_inode_storage_delete", kind: "inode-storage" }
-    { helper: "bpf_cgrp_storage_get", kind: "cgrp-storage" }
-    { helper: "bpf_cgrp_storage_delete", kind: "cgrp-storage" }
-    { helper: "bpf_get_local_storage", kind: "deprecated-cgroup-storage" }
+    { helper: "bpf_tail_call", map_arg: 1, kind: "prog-array" }
+    { helper: "bpf_perf_event_output", map_arg: 1, kind: "perf-event-array" }
+    { helper: "bpf_skb_output", map_arg: 1, kind: "perf-event-array" }
+    { helper: "bpf_xdp_output", map_arg: 1, kind: "perf-event-array" }
+    { helper: "bpf_perf_event_read", map_arg: 0, kind: "perf-event-array" }
+    { helper: "bpf_perf_event_read_value", map_arg: 0, kind: "perf-event-array" }
+    { helper: "bpf_get_stackid", map_arg: 1, kind: "stack-trace" }
+    { helper: "bpf_skb_under_cgroup", map_arg: 1, kind: "cgroup-array" }
+    { helper: "bpf_current_task_under_cgroup", map_arg: 0, kind: "cgroup-array" }
+    { helper: "bpf_ringbuf_output", map_arg: 0, kind: "ringbuf" }
+    { helper: "bpf_ringbuf_reserve", map_arg: 0, kind: "ringbuf" }
+    { helper: "bpf_ringbuf_reserve_dynptr", map_arg: 0, kind: "ringbuf" }
+    { helper: "bpf_ringbuf_query", map_arg: 0, kind: "ringbuf" }
+    { helper: "bpf_user_ringbuf_drain", map_arg: 0, kind: "user-ringbuf" }
+    { helper: "bpf_sk_redirect_map", map_arg: 1, kind: "sockmap" }
+    { helper: "bpf_sock_map_update", map_arg: 1, kind: "sockmap" }
+    { helper: "bpf_msg_redirect_map", map_arg: 1, kind: "sockmap" }
+    { helper: "bpf_sock_hash_update", map_arg: 1, kind: "sockhash" }
+    { helper: "bpf_msg_redirect_hash", map_arg: 1, kind: "sockhash" }
+    { helper: "bpf_sk_redirect_hash", map_arg: 1, kind: "sockhash" }
+    { helper: "bpf_sk_select_reuseport", map_arg: 1, kind: "reuseport-sockarray" }
+    { helper: "bpf_sk_storage_get", map_arg: 0, kind: "sk-storage" }
+    { helper: "bpf_sk_storage_delete", map_arg: 0, kind: "sk-storage" }
+    { helper: "bpf_task_storage_get", map_arg: 0, kind: "task-storage" }
+    { helper: "bpf_task_storage_delete", map_arg: 0, kind: "task-storage" }
+    { helper: "bpf_inode_storage_get", map_arg: 0, kind: "inode-storage" }
+    { helper: "bpf_inode_storage_delete", map_arg: 0, kind: "inode-storage" }
+    { helper: "bpf_cgrp_storage_get", map_arg: 0, kind: "cgrp-storage" }
+    { helper: "bpf_cgrp_storage_delete", map_arg: 0, kind: "cgrp-storage" }
+    { helper: "bpf_get_local_storage", map_arg: 0, kind: "deprecated-cgroup-storage" }
 ]
 
 const BPF_HELPER_KERNEL_FLOORS_BY_MAX_ID = [
@@ -9204,6 +9204,17 @@ const PROGRAM_SURFACE_KERNEL_FEATURE_EXPECTATIONS = [
             '{|ctx|'
             '  redirect-socket hash_peers 0 --kind sockhash'
             '  redirect-socket hash_peers 1'
+            '  "pass"'
+            '}'
+        ]
+        feature_keys: ["helper:bpf_msg_redirect_hash"]
+    }
+    {
+        target: "sk_msg:/sys/fs/bpf/demo_sockmap"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_msg_redirect_hash" $ctx hash_peers "peer-a" 0'
+            '  redirect-socket hash_peers "peer-b"'
             '  "pass"'
             '}'
         ]
@@ -38191,39 +38202,83 @@ def source-line-helper-call-name [line: string] {
     normalize-helper-name-token $raw_helper
 }
 
-def helper-call-fixed-map-kind-kernel-feature [line: string] {
+def helper-call-map-kind-entry [line: string] {
     let helper_name = (source-line-helper-call-name $line)
     if $helper_name == null {
         return null
     }
 
-    let matches = ($HELPER_CALL_FIXED_MAP_KIND_FEATURES | where {|entry| $entry.helper == $helper_name })
-    if ($matches | is-empty) {
-        return null
+    let fixed_matches = ($HELPER_CALL_FIXED_MAP_KIND_FEATURES | where {|entry| $entry.helper == $helper_name })
+    if not ($fixed_matches | is-empty) {
+        return ($fixed_matches | first)
     }
 
-    let kind = ($matches | first | get kind)
-    map-kind-kernel-feature $kind
+    let explicit_matches = ($HELPER_CALL_EXPLICIT_MAP_KIND_FEATURES | where {|entry| $entry.helper == $helper_name })
+    if not ($explicit_matches | is-empty) {
+        return ($explicit_matches | first)
+    }
+
+    null
 }
 
-def helper-call-explicit-map-kind-kernel-feature [line: string] {
-    if ((command-invocation-tails $line "helper-call") | is-empty) or not (line-contains-code-marker? $line "--kind ") {
+def source-line-helper-call-map-name [line: string entry] {
+    let tails = (command-invocation-tails $line "helper-call")
+    if ($tails | is-empty) {
         return null
     }
 
-    let helper_name = (source-line-helper-call-name $line)
-    if $helper_name == null {
+    let tokens = (
+        ($tails | first)
+        | str trim
+        | split row " "
+        | each {|token| $token | str trim }
+        | where {|token| $token != "" }
+    )
+    let arg_idx = (($entry | get map_arg) + 1)
+    if $arg_idx >= ($tokens | length) {
         return null
     }
 
-    let matches = ($HELPER_CALL_EXPLICIT_MAP_KIND_FEATURES | where {|entry| $entry.helper == $helper_name })
-    if ($matches | is-empty) {
+    let name = (normalize-map-name-token ($tokens | get $arg_idx))
+    if $name == "" or ($name | str starts-with "$") {
+        null
+    } else {
+        $name
+    }
+}
+
+def helper-call-effective-map-kind [line: string bindings] {
+    let entry = (helper-call-map-kind-entry $line)
+    if $entry == null {
         return null
     }
 
-    let kind = (source-line-map-kind $line "")
-    let supported_kinds = ($matches | first | get kinds)
-    if $kind not-in $supported_kinds {
+    let fixed_kind = ($entry | get -o kind)
+    if $fixed_kind != null and $fixed_kind != "" {
+        return $fixed_kind
+    }
+
+    let supported_kinds = ($entry | get -o kinds | default [])
+    let explicit_kind = (source-line-map-kind $line "")
+    if $explicit_kind != "" {
+        if $explicit_kind in $supported_kinds {
+            return $explicit_kind
+        }
+        return null
+    }
+
+    let map_name = (source-line-helper-call-map-name $line $entry)
+    let inferred_kind = (map-kind-binding $bindings $map_name)
+    if $inferred_kind != null and ($inferred_kind in $supported_kinds) {
+        return $inferred_kind
+    }
+
+    null
+}
+
+def helper-call-map-kind-kernel-feature [line: string bindings] {
+    let kind = (helper-call-effective-map-kind $line $bindings)
+    if $kind == null or $kind == "" {
         return null
     }
 
@@ -38350,6 +38405,17 @@ def update-map-kind-bindings-for-line [bindings line: string] {
     }
 
     let kind = (source-line-effective-map-kind $line $bindings)
+    bind-map-kind $bindings $name $kind
+}
+
+def update-helper-call-map-kind-bindings-for-line [bindings line: string] {
+    let entry = (helper-call-map-kind-entry $line)
+    if $entry == null {
+        return $bindings
+    }
+
+    let name = (source-line-helper-call-map-name $line $entry)
+    let kind = (helper-call-effective-map-kind $line $bindings)
     bind-map-kind $bindings $name $kind
 }
 
@@ -43191,14 +43257,11 @@ def program-map-kernel-features [source: string] {
         }
 
         if (line-invokes-command? $trimmed "helper-call") {
-            let fixed_feature = (helper-call-fixed-map-kind-kernel-feature $trimmed)
-            if $fixed_feature != null {
-                $features = (append-missing-kernel-features $features [$fixed_feature])
-            }
-            let feature = (helper-call-explicit-map-kind-kernel-feature $trimmed)
+            let feature = (helper-call-map-kind-kernel-feature $trimmed $map_kind_bindings)
             if $feature != null {
                 $features = (append-missing-kernel-features $features [$feature])
             }
+            $map_kind_bindings = (update-helper-call-map-kind-bindings-for-line $map_kind_bindings $trimmed)
             continue
         }
 
@@ -43728,6 +43791,11 @@ def program-surface-kernel-features [source: string target] {
     }
     for line in ($source | lines) {
         if (line-invokes-command? $line "helper-call") {
+            $map_kind_bindings = (
+                update-helper-call-map-kind-bindings-for-line
+                    $map_kind_bindings
+                    ($line | str trim)
+            )
             continue
         }
 
