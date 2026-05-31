@@ -2003,6 +2003,15 @@ fn test_verifier_diff_program_surface_scanner_matches_rust_helper_keys() {
             ]),
         },
         SurfaceScannerCheck {
+            target: "sk_msg:/sys/fs/bpf/demo_sockmap",
+            program: r#"{|ctx|
+  helper-call "bpf_msg_redirect_hash" $ctx hash_peers "peer-a" 0
+  redirect-socket hash_peers "peer-b"
+  0
+}"#,
+            expected_keys: helper_feature_keys([BpfHelper::MsgRedirectHash]),
+        },
+        SurfaceScannerCheck {
             target: "sk_skb:/sys/fs/bpf/demo_sockmap",
             program: r#"{|ctx|
   redirect-socket peers 0 --kind sockmap
