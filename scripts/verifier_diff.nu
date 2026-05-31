@@ -24030,6 +24030,26 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "iter-task-user-function-returned-btf-root-fields"
+        category: "context-surface"
+        tags: [iter context user-function alias btf kernel-btf source metadata]
+        requires: [kernel-btf]
+        target: "iter:task"
+        program: [
+            '{|ctx|'
+            '  def get_meta [event] { $event.iter_meta }'
+            '  def get_task [event] { $event.iter_task }'
+            '  let meta = (get_meta $ctx)'
+            '  let task = (get_task $ctx)'
+            '  $meta.seq_num | count'
+            '  if $task { $task.pid | count }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "iter-task-file-context"
         category: "context-surface"
         tags: [iter context]

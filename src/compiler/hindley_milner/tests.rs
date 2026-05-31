@@ -73,6 +73,63 @@ fn test_unify_array_length_mismatch() {
 }
 
 #[test]
+fn test_unify_kernel_btf_opaque_struct_with_resolved_same_name() {
+    let placeholder = HMType::Struct {
+        name: Some("task_struct".to_string()),
+        kernel_btf_type_id: None,
+        fields: vec![(
+            "__opaque".to_string(),
+            HMType::Array {
+                elem: Box::new(HMType::U8),
+                len: 1,
+            },
+        )],
+    };
+    let resolved = HMType::Struct {
+        name: Some("task_struct".to_string()),
+        kernel_btf_type_id: Some(42),
+        fields: vec![(
+            "__opaque".to_string(),
+            HMType::Array {
+                elem: Box::new(HMType::U8),
+                len: 4096,
+            },
+        )],
+    };
+
+    assert!(unify(&placeholder, &resolved).is_ok());
+    assert!(unify(&resolved, &placeholder).is_ok());
+}
+
+#[test]
+fn test_unify_kernel_btf_rejects_different_concrete_type_ids() {
+    let lhs = HMType::Struct {
+        name: Some("task_struct".to_string()),
+        kernel_btf_type_id: Some(42),
+        fields: vec![(
+            "__opaque".to_string(),
+            HMType::Array {
+                elem: Box::new(HMType::U8),
+                len: 4096,
+            },
+        )],
+    };
+    let rhs = HMType::Struct {
+        name: Some("task_struct".to_string()),
+        kernel_btf_type_id: Some(43),
+        fields: vec![(
+            "__opaque".to_string(),
+            HMType::Array {
+                elem: Box::new(HMType::U8),
+                len: 4096,
+            },
+        )],
+    };
+
+    assert!(unify(&lhs, &rhs).is_err());
+}
+
+#[test]
 fn test_unify_type_mismatch() {
     let result = unify(&HMType::I64, &HMType::Bool);
     // Note: currently integers unify with each other, but Bool is special

@@ -402,6 +402,31 @@ impl<'a> TypeInference<'a> {
         }
     }
 
+    fn hinted_function_return_type(&self, func: &MirFunction) -> Option<HMType> {
+        let hints = self.type_hints?;
+        let mut hinted_return: Option<&MirType> = None;
+        for block in &func.blocks {
+            let MirInst::Return { val } = &block.terminator else {
+                continue;
+            };
+            let Some(MirValue::VReg(vreg)) = val else {
+                return None;
+            };
+            let hint = hints.get(vreg)?;
+            if !Self::mir_type_carries_non_hm_layout(hint) {
+                return None;
+            }
+            if let Some(existing) = hinted_return {
+                if existing != hint {
+                    return None;
+                }
+            } else {
+                hinted_return = Some(hint);
+            }
+        }
+        hinted_return.map(HMType::from_mir_type)
+    }
+
     pub(super) fn scheme_for_function(
         &self,
         func: &MirFunction,
@@ -410,7 +435,9 @@ impl<'a> TypeInference<'a> {
         let args: Vec<HMType> = (0..func.param_count)
             .map(|i| self.hm_type_for_vreg(VReg(i as u32)))
             .collect();
-        let ret = self.hm_return_type();
+        let ret = self
+            .hinted_function_return_type(func)
+            .unwrap_or_else(|| self.hm_return_type());
         let ty = HMType::Fn {
             args,
             ret: Box::new(ret),

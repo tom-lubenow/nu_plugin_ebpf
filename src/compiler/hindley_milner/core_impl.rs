@@ -12,6 +12,14 @@ impl fmt::Display for TypeVar {
     }
 }
 
+fn is_opaque_struct_fields(fields: &[(String, HMType)]) -> bool {
+    matches!(
+        fields,
+        [(name, HMType::Array { elem, .. })]
+            if name == "__opaque" && matches!(elem.as_ref(), HMType::U8)
+    )
+}
+
 impl HMType {
     /// Check if this type contains a type variable
     pub fn contains_var(&self, var: TypeVar) -> bool {
@@ -450,12 +458,19 @@ pub fn unify(t1: &HMType, t2: &HMType) -> Result<Substitution, UnifyError> {
                     format!("struct names don't match: {:?} vs {:?}", n1, n2),
                 ));
             }
-            if b1 != b2 {
+            if let (Some(lhs), Some(rhs)) = (b1, b2)
+                && lhs != rhs
+            {
                 return Err(UnifyError::new(
                     t1.clone(),
                     t2.clone(),
                     format!("kernel BTF type ids don't match: {:?} vs {:?}", b1, b2),
                 ));
+            }
+            if (b1.is_some() || b2.is_some())
+                && (is_opaque_struct_fields(f1) || is_opaque_struct_fields(f2))
+            {
+                return Ok(Substitution::new());
             }
             if f1.len() != f2.len() {
                 return Err(UnifyError::new(
