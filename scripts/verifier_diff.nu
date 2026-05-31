@@ -6818,6 +6818,17 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         target: "cgroup_sockopt:/sys/fs/cgroup:get"
         program: [
             '{|ctx|'
+            '  mut rec = { optval: ($ctx | get optval) }'
+            '  $rec.optval.2 = 42'
+            '  "allow"'
+            '}'
+        ]
+        feature_keys: ["ctx:optval"]
+    }
+    {
+        target: "cgroup_sockopt:/sys/fs/cgroup:get"
+        program: [
+            '{|ctx|'
             '  def wrap [optval] { { optval: $optval } }'
             '  let optval = $ctx.optval'
             '  mut rec = (wrap $optval)'
@@ -8214,6 +8225,17 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         target: "flow_dissector:/proc/self/ns/net"
         program: [
             '{|ctx|'
+            '  mut rec = { keys: ($ctx | get flow_keys) }'
+            '  $rec.keys.ip_proto = 6'
+            '  "parsed"'
+            '}'
+        ]
+        feature_keys: ["ctx:flow_keys"]
+    }
+    {
+        target: "flow_dissector:/proc/self/ns/net"
+        program: [
+            '{|ctx|'
             '  let base = { keys: $ctx.flow_keys }'
             '  mut rec = { ok: true, ...$base }'
             '  $rec.keys.ip_proto = 6'
@@ -8667,6 +8689,17 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         target: "tc:lo:ingress"
         program: [
             '{|ctx|'
+            '  mut rec = { data: ($ctx | get data) }'
+            '  $rec.data.0 = 42'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:data"]
+    }
+    {
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
             '  let base = { data: $ctx.data }'
             '  mut rec = { ok: true, ...$base }'
             '  $rec.data.0 = 42'
@@ -8693,6 +8726,17 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         program: [
             '{|ctx|'
             '  mut rec = { meta: $ctx.data_meta }'
+            '  $rec.meta.0 = 7'
+            '  "pass"'
+            '}'
+        ]
+        feature_keys: ["ctx:data_meta"]
+    }
+    {
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  mut rec = { meta: ($ctx | get data_meta) }'
             '  $rec.meta.0 = 7'
             '  "pass"'
             '}'
@@ -19233,6 +19277,22 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "tc-record-get-packet-data-write"
+        category: "context-surface"
+        tags: [tc context packet writable record get source metadata]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  mut rec = { data: ($ctx | get data) }'
+            '  $rec.data.0 = 42'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "tc-record-spread-packet-data-write"
         category: "context-surface"
         tags: [tc context packet writable record spread source metadata]
@@ -19276,6 +19336,22 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  mut rec = { meta: $ctx.data_meta }'
+            '  $rec.meta.0 = 7'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "xdp-record-get-data-meta-write"
+        category: "context-surface"
+        tags: [xdp context packet writable record get source metadata]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  mut rec = { meta: ($ctx | get data_meta) }'
             '  $rec.meta.0 = 7'
             '  "pass"'
             '}'
@@ -21809,6 +21885,22 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "flow-dissector-record-get-flow-key-write-context"
+        category: "context-surface"
+        tags: [flow-dissector context writable record get source metadata]
+        requires: [netns-self]
+        target: "flow_dissector:/proc/self/ns/net"
+        program: [
+            '{|ctx|'
+            '  mut rec = { keys: ($ctx | get flow_keys) }'
+            '  $rec.keys.ip_proto = 6'
+            '  "parsed"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "flow-dissector-record-spread-flow-key-write-context"
         category: "context-surface"
         tags: [flow-dissector context writable record spread source metadata]
@@ -22289,6 +22381,22 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  mut rec = { optval: $ctx.optval }'
+            '  $rec.optval.2 = 42'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "cgroup-sockopt-optval-record-get-byte-write"
+        category: "context-surface"
+        tags: [cgroup-sockopt context writable record get source metadata]
+        requires: [cgroup-v2]
+        target: "cgroup_sockopt:/sys/fs/cgroup:get"
+        program: [
+            '{|ctx|'
+            '  mut rec = { optval: ($ctx | get optval) }'
             '  $rec.optval.2 = 42'
             '  "allow"'
             '}'
