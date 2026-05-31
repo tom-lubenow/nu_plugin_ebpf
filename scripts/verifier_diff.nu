@@ -32568,6 +32568,60 @@ const FIXTURES = [
         error_contains: "cannot find record field 'cpu'"
     }
     {
+        name: "core-null-default"
+        category: "language-core"
+        tags: ["null" default]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  null | default 9'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-record-default-missing-field"
+        category: "language-core"
+        tags: [aggregate record default]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let rec = ({ pid: 7 } | default 2 cpu)'
+            '  $rec.cpu'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-record-default-null-field"
+        category: "language-core"
+        tags: [aggregate record default "null"]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let rec = ({ pid: null cpu: 2 } | default 7 pid)'
+            '  $rec.pid'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-string-default-empty"
+        category: "language-core"
+        tags: [string default empty]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "" | default --empty "x" | is-empty'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-upsert-local"
         category: "language-core"
         tags: [aggregate list upsert local]

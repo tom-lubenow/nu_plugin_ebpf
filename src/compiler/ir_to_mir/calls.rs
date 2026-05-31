@@ -14,6 +14,52 @@ const BPF_SK_LOOKUP_F_REPLACE: u64 = 1 << 0;
 const BPF_SK_LOOKUP_F_NO_REUSEPORT: u64 = 1 << 1;
 
 impl<'a> HirToMirLowering<'a> {
+    fn default_should_replace_value(value: &nu_protocol::Value, replace_empty: bool) -> bool {
+        match value {
+            nu_protocol::Value::Nothing { .. } => true,
+            nu_protocol::Value::String { val, .. } => replace_empty && val.is_empty(),
+            nu_protocol::Value::Binary { val, .. } => replace_empty && val.is_empty(),
+            nu_protocol::Value::List { vals, .. } => replace_empty && vals.is_empty(),
+            nu_protocol::Value::Record { val, .. } => replace_empty && val.is_empty(),
+            _ => false,
+        }
+    }
+
+    fn emit_metadata_record_result(
+        &mut self,
+        src_dst: RegId,
+        result_vreg: VReg,
+        mut projected_meta: RegMetadata,
+    ) -> Result<(), CompileError> {
+        projected_meta.is_context = false;
+        projected_meta.field_type = Self::metadata_record_layout(&projected_meta);
+        projected_meta.annotated_semantics = Self::metadata_record_semantics(&projected_meta);
+        projected_meta.source_var = None;
+
+        let out_meta = if let Some((record_vreg, mut materialized_meta)) =
+            self.materialize_metadata_record_value(&projected_meta)?
+        {
+            self.emit(MirInst::Copy {
+                dst: result_vreg,
+                src: MirValue::VReg(record_vreg),
+            });
+            if let Some(record_ty) = self.vreg_type_hints.get(&record_vreg).cloned() {
+                self.vreg_type_hints.insert(result_vreg, record_ty);
+            }
+            materialized_meta.source_var = None;
+            materialized_meta
+        } else {
+            self.emit(MirInst::Copy {
+                dst: result_vreg,
+                src: MirValue::Const(0),
+            });
+            projected_meta
+        };
+        self.reg_metadata.insert(src_dst.get(), out_meta);
+
+        Ok(())
+    }
+
     fn top_level_field_name_arg(&self, reg: RegId, context: &str) -> Result<String, CompileError> {
         let Some(meta) = self.get_metadata(reg) else {
             return Err(CompileError::UnsupportedInstruction(format!(
@@ -154,38 +200,196 @@ impl<'a> HirToMirLowering<'a> {
         } else {
             dst_vreg
         };
-        let mut projected_meta = RegMetadata {
-            is_context: false,
+        let projected_meta = RegMetadata {
             record_fields: selected_fields,
             constant_value,
-            source_var: None,
             ..Default::default()
         };
-        projected_meta.field_type = Self::metadata_record_layout(&projected_meta);
-        projected_meta.annotated_semantics = Self::metadata_record_semantics(&projected_meta);
-
-        let out_meta = if let Some((record_vreg, mut materialized_meta)) =
-            self.materialize_metadata_record_value(&projected_meta)?
-        {
-            self.emit(MirInst::Copy {
-                dst: result_vreg,
-                src: MirValue::VReg(record_vreg),
-            });
-            if let Some(record_ty) = self.vreg_type_hints.get(&record_vreg).cloned() {
-                self.vreg_type_hints.insert(result_vreg, record_ty);
-            }
-            materialized_meta.source_var = None;
-            materialized_meta
-        } else {
-            self.emit(MirInst::Copy {
-                dst: result_vreg,
-                src: MirValue::Const(0),
-            });
-            projected_meta
-        };
-        self.reg_metadata.insert(src_dst.get(), out_meta);
+        self.emit_metadata_record_result(src_dst, result_vreg, projected_meta)?;
 
         Ok(())
+    }
+
+    fn lower_default(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+    ) -> Result<(), CompileError> {
+        let replace_empty = match self.named_flags.as_slice() {
+            [] => false,
+            [flag] if flag == "empty" => true,
+            _ => {
+                return Err(CompileError::UnsupportedInstruction(
+                    "default accepts only the --empty flag in eBPF".into(),
+                ));
+            }
+        };
+        self.require_only_named_args("default", &[])?;
+
+        let (default_vreg, default_reg) =
+            self.positional_args.first().copied().ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "default requires a default value positional argument in eBPF".into(),
+                )
+            })?;
+        if self
+            .get_metadata(default_reg)
+            .is_some_and(|meta| meta.closure_block_id.is_some())
+        {
+            return Err(CompileError::UnsupportedInstruction(
+                "default closure values are not supported in eBPF".into(),
+            ));
+        }
+
+        let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
+        let input_reg = self
+            .pipeline_input_reg
+            .or(src_dst_had_value.then_some(src_dst))
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "default requires pipeline input in eBPF".into(),
+                )
+            })?;
+        let input_meta = self.get_metadata(input_reg).cloned();
+
+        let mut column_names = Vec::new();
+        for (_, reg) in self.positional_args.iter().skip(1) {
+            let name = self.top_level_field_name_arg(*reg, "default")?;
+            if !column_names.contains(&name) {
+                column_names.push(name);
+            }
+        }
+
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+
+        if column_names.is_empty() {
+            let should_replace = input_meta
+                .as_ref()
+                .and_then(|meta| meta.constant_value.as_ref())
+                .is_some_and(|value| Self::default_should_replace_value(value, replace_empty));
+            if replace_empty
+                && input_meta
+                    .as_ref()
+                    .and_then(|meta| meta.constant_value.as_ref())
+                    .is_none()
+            {
+                return Err(CompileError::UnsupportedInstruction(
+                    "default --empty requires compiler-known empty state in eBPF".into(),
+                ));
+            }
+            let selected_vreg = if should_replace {
+                default_vreg
+            } else {
+                let input_ty = self.typed_value_runtime_type(input_reg, input_vreg);
+                if matches!(
+                    input_ty,
+                    Some(MirType::Ptr {
+                        address_space: AddressSpace::Map | AddressSpace::Kernel,
+                        ..
+                    })
+                ) && input_meta
+                    .as_ref()
+                    .and_then(|meta| meta.constant_value.as_ref())
+                    .is_none()
+                {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "default on runtime nullable pointer inputs requires an explicit null branch in eBPF"
+                            .into(),
+                    ));
+                }
+                input_vreg
+            };
+            let selected_reg = if should_replace {
+                default_reg
+            } else {
+                input_reg
+            };
+            self.emit(MirInst::Copy {
+                dst: result_vreg,
+                src: MirValue::VReg(selected_vreg),
+            });
+            self.propagate_passthrough_reg_metadata(
+                src_dst,
+                result_vreg,
+                selected_reg,
+                selected_vreg,
+            );
+            return Ok(());
+        }
+
+        let input_meta = input_meta.ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "default column fill requires record input with compiler-known fields in eBPF"
+                    .into(),
+            )
+        })?;
+        let input_is_known_empty_record = matches!(
+            input_meta.constant_value.as_ref(),
+            Some(nu_protocol::Value::Record { val, .. }) if val.is_empty()
+        );
+        if input_meta.record_fields.is_empty() && !input_is_known_empty_record {
+            return Err(CompileError::UnsupportedInstruction(
+                "default column fill requires record input with compiler-known fields in eBPF"
+                    .into(),
+            ));
+        }
+
+        let mut fields = input_meta.record_fields.clone();
+        for name in &column_names {
+            let existing_index = fields.iter().position(|field| field.name == *name);
+            let replace_existing = input_meta
+                .constant_value
+                .as_ref()
+                .and_then(|value| match value {
+                    nu_protocol::Value::Record { val, .. } => val.get(name),
+                    _ => None,
+                })
+                .is_some_and(|value| Self::default_should_replace_value(value, replace_empty));
+            if let Some(index) = existing_index {
+                if replace_existing {
+                    fields[index] = self.record_field_from_value(name.clone(), default_reg)?;
+                }
+            } else {
+                fields.push(self.record_field_from_value(name.clone(), default_reg)?);
+            }
+        }
+
+        let default_constant = self
+            .get_metadata(default_reg)
+            .and_then(|meta| meta.constant_value.clone());
+        let constant_value = match input_meta.constant_value.clone() {
+            Some(nu_protocol::Value::Record { val, .. }) => {
+                let mut record = val.into_owned();
+                let mut fully_known = true;
+                for name in &column_names {
+                    let should_replace = record
+                        .get(name)
+                        .map(|value| Self::default_should_replace_value(value, replace_empty))
+                        .unwrap_or(true);
+                    if should_replace {
+                        if let Some(value) = default_constant.clone() {
+                            record.insert(name.clone(), value);
+                        } else {
+                            fully_known = false;
+                        }
+                    }
+                }
+                fully_known.then(|| nu_protocol::Value::record(record, Span::unknown()))
+            }
+            _ => None,
+        };
+
+        let projected_meta = RegMetadata {
+            record_fields: fields,
+            constant_value,
+            ..Default::default()
+        };
+        self.emit_metadata_record_result(src_dst, result_vreg, projected_meta)
     }
 
     fn lower_stack_list_append_or_prepend(
@@ -2882,6 +3086,10 @@ impl<'a> HirToMirLowering<'a> {
                     dst_vreg,
                     src_dst_had_value,
                 )?;
+            }
+
+            "default" => {
+                self.lower_default(src_dst, dst_vreg, src_dst_had_value)?;
             }
 
             "get" => {

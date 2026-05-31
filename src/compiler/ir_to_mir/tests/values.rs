@@ -800,6 +800,258 @@ fn test_lower_select_missing_metadata_record_field_is_rejected() {
 }
 
 #[test]
+fn test_lower_default_replaces_literal_null() {
+    let default_decl = DeclId::new(95);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Nothing,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(9),
+                },
+                HirStmt::Call {
+                    decl_id: default_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(2) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+    let decl_names = HashMap::from([(default_decl, "default".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("default should replace literal null");
+
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("default replacing literal null should compile through codegen");
+}
+
+#[test]
+fn test_lower_default_adds_missing_metadata_record_field() {
+    let default_decl = DeclId::new(96);
+    let mut rec = Record::new();
+    rec.push("pid", Value::int(7, Span::test_data()));
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::record(rec, Span::test_data())),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(2),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![string_member("cpu")],
+                    })),
+                },
+                HirStmt::Call {
+                    decl_id: default_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1), RegId::new(2)],
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![string_member("cpu")],
+                    })),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(3),
+                    path: RegId::new(4),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(3) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 5,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+    let decl_names = HashMap::from([(default_decl, "default".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("default should add missing record fields");
+
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("default-added record field projection should compile through codegen");
+}
+
+#[test]
+fn test_lower_default_replaces_null_metadata_record_field() {
+    let default_decl = DeclId::new(97);
+    let mut rec = Record::new();
+    rec.push("pid", Value::nothing(Span::test_data()));
+    rec.push("cpu", Value::int(2, Span::test_data()));
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::record(rec, Span::test_data())),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(7),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String(b"pid".to_vec()),
+                },
+                HirStmt::Call {
+                    decl_id: default_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1), RegId::new(2)],
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![string_member("pid")],
+                    })),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(3),
+                    path: RegId::new(4),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(3) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 5,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+    let decl_names = HashMap::from([(default_decl, "default".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("default should replace constant null record fields");
+
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("default-replaced record field projection should compile through codegen");
+}
+
+#[test]
+fn test_lower_default_empty_flag_replaces_literal_empty_string() {
+    let default_decl = DeclId::new(98);
+    let is_empty_decl = DeclId::new(99);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::String(Vec::new()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String(b"x".to_vec()),
+                },
+                HirStmt::Call {
+                    decl_id: default_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        pipeline_input: Some(RegId::new(0)),
+                        flags: vec![b"empty".to_vec()],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: is_empty_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(2)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(3) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 4,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+    let decl_names = HashMap::from([
+        (default_decl, "default".to_string()),
+        (is_empty_decl, "is-empty".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("default --empty should replace known empty strings");
+
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("default --empty replacing a known empty string should compile through codegen");
+}
+
+#[test]
 fn test_lower_load_value_string_can_drive_map_get_name() {
     let map_get_decl = DeclId::new(77);
     let func = HirFunction {
