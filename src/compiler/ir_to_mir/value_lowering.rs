@@ -808,7 +808,7 @@ impl<'a> HirToMirLowering<'a> {
         meta.field_type = Some(MirType::I64);
     }
 
-    fn lower_string_like_literal(
+    pub(super) fn lower_string_like_literal(
         &mut self,
         dst: RegId,
         dst_vreg: VReg,

@@ -33186,6 +33186,32 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-string-replace"
+        category: "language-core"
+        tags: [string str replace]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "abcabc" | str replace "ab" "XY" | str starts-with "XYc"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-string-replace-missing"
+        category: "language-core"
+        tags: [string str replace]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "abc" | str replace "zz" "XY" | str starts-with "abc"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-null-is-empty"
         category: "language-core"
         tags: ["null" is-empty]

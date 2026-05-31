@@ -564,6 +564,65 @@ fn make_string_arg_pipeline_call_program(decl_id: DeclId, value: &str, arg: &str
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_str_replace_then_starts_with_program(
+    replace_decl: DeclId,
+    starts_with_decl: DeclId,
+    value: &str,
+    find: &str,
+    replacement: &str,
+    prefix: &str,
+) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::string(value, Span::test_data())),
+                },
+                HirStmt::LoadValue {
+                    dst: RegId::new(2),
+                    val: Box::new(Value::string(find, Span::test_data())),
+                },
+                HirStmt::LoadValue {
+                    dst: RegId::new(3),
+                    val: Box::new(Value::string(replacement, Span::test_data())),
+                },
+                HirStmt::Call {
+                    decl_id: replace_decl,
+                    src_dst: RegId::new(1),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(2), RegId::new(3)],
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadValue {
+                    dst: RegId::new(4),
+                    val: Box::new(Value::string(prefix, Span::test_data())),
+                },
+                HirStmt::Call {
+                    decl_id: starts_with_decl,
+                    src_dst: RegId::new(5),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(4)],
+                        pipeline_input: Some(RegId::new(1)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(5) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 6,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_record_projection_then_field_program(
     command_decl: DeclId,
     fields: &[&str],
@@ -2646,6 +2705,100 @@ fn test_lower_str_index_of_missing_substring_returns_minus_one() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("missing str index-of result should compile through codegen");
+}
+
+#[test]
+fn test_lower_str_replace_on_known_string_materializes_replaced_literal() {
+    let replace_decl = DeclId::new(126);
+    let starts_with_decl = DeclId::new(128);
+    let hir = make_str_replace_then_starts_with_program(
+        replace_decl,
+        starts_with_decl,
+        "abcabc",
+        "ab",
+        "XY",
+        "XYc",
+    );
+    let decl_names = HashMap::from([
+        (replace_decl, "str replace".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str replace should lower for compile-time known string input");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"XYcabc\0")
+            )),
+        "expected str replace to materialize the first substring replacement"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("str replace result consumed by str starts-with should compile through codegen");
+}
+
+#[test]
+fn test_lower_str_replace_missing_pattern_materializes_original_literal() {
+    let replace_decl = DeclId::new(127);
+    let starts_with_decl = DeclId::new(129);
+    let hir = make_str_replace_then_starts_with_program(
+        replace_decl,
+        starts_with_decl,
+        "abc",
+        "zz",
+        "XY",
+        "abc",
+    );
+    let decl_names = HashMap::from([
+        (replace_decl, "str replace".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str replace should preserve known strings when the pattern is missing");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"abc\0")
+            )),
+        "expected str replace with a missing pattern to materialize the original string"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("missing-pattern str replace result consumed by str starts-with should compile through codegen");
 }
 
 #[test]
