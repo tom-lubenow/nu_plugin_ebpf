@@ -61,6 +61,71 @@ fn make_numeric_list_pipeline_call_program(decl_id: DeclId, count: Option<i64>) 
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_numeric_list_skip_then_get_program(
+    skip_decl: DeclId,
+    get_decl: DeclId,
+    count: Option<i64>,
+    get_index: i64,
+) -> HirProgram {
+    let mut stmts = vec![HirStmt::LoadValue {
+        dst: RegId::new(0),
+        val: Box::new(Value::list(
+            vec![
+                Value::int(10, Span::test_data()),
+                Value::int(20, Span::test_data()),
+                Value::int(30, Span::test_data()),
+            ],
+            Span::test_data(),
+        )),
+    }];
+    let skip_positional = if let Some(count) = count {
+        stmts.push(HirStmt::LoadLiteral {
+            dst: RegId::new(2),
+            lit: HirLiteral::Int(count),
+        });
+        vec![RegId::new(2)]
+    } else {
+        Vec::new()
+    };
+    stmts.push(HirStmt::Call {
+        decl_id: skip_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional: skip_positional,
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(3),
+        lit: HirLiteral::Int(get_index),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: get_decl,
+        src_dst: RegId::new(4),
+        args: HirCallArgs {
+            positional: vec![RegId::new(3)],
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(4) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 5,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 #[test]
 fn test_lower_load_value_duration_as_const() {
     let func = HirFunction {
@@ -208,6 +273,119 @@ fn test_lower_first_count_slice_is_rejected() {
 
     assert!(
         err.to_string().contains("would produce a list slice"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_skip_default_on_numeric_list_rebuilds_tail() {
+    let skip_decl = DeclId::new(81);
+    let get_decl = DeclId::new(82);
+    let hir = make_numeric_list_skip_then_get_program(skip_decl, get_decl, None, 0);
+    let decl_names = HashMap::from([
+        (skip_decl, "skip".to_string()),
+        (get_decl, "get".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bare skip should lower as skip 1 on stack-backed numeric lists");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+
+    assert!(
+        instructions
+            .iter()
+            .any(|inst| matches!(inst, MirInst::ListNew { max_len: 2, .. })),
+        "expected skip to allocate a two-element tail list"
+    );
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::ListGet {
+                idx: MirValue::Const(1),
+                ..
+            }
+        )),
+        "expected skip to copy the original element at index 1"
+    );
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::ListGet {
+                idx: MirValue::Const(2),
+                ..
+            }
+        )),
+        "expected skip to copy the original element at index 2"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("skip tail followed by get should compile through codegen");
+}
+
+#[test]
+fn test_lower_skip_count_beyond_numeric_list_capacity_returns_empty_list() {
+    let skip_decl = DeclId::new(83);
+    let get_decl = DeclId::new(84);
+    let hir = make_numeric_list_skip_then_get_program(skip_decl, get_decl, Some(4), 0);
+    let decl_names = HashMap::from([
+        (skip_decl, "skip".to_string()),
+        (get_decl, "get".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("oversized skip should lower to an empty stack-backed numeric list");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::ListNew { max_len: 0, .. })),
+        "expected oversized skip to allocate an empty list"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("empty skip result followed by get should compile through codegen");
+}
+
+#[test]
+fn test_lower_skip_negative_count_is_rejected() {
+    let skip_decl = DeclId::new(85);
+    let hir = make_numeric_list_pipeline_call_program(skip_decl, Some(-1));
+    let decl_names = HashMap::from([(skip_decl, "skip".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("negative skip should be rejected rather than silently miscompiled");
+
+    assert!(
+        err.to_string().contains("skip count must be non-negative"),
         "unexpected error: {err}"
     );
 }
