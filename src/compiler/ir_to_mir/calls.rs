@@ -101,7 +101,7 @@ impl<'a> HirToMirLowering<'a> {
         })
     }
 
-    fn lower_stack_list_take_or_skip(
+    fn lower_stack_list_take_skip_or_drop(
         &mut self,
         cmd_name: &str,
         src_dst: RegId,
@@ -120,19 +120,19 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         let raw_count = match cmd_name {
-            "skip" => {
+            "skip" | "drop" => {
                 if self.positional_args.len() > 1 {
-                    return Err(CompileError::UnsupportedInstruction(
-                        "skip accepts at most one positional count argument in eBPF".into(),
-                    ));
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{cmd_name} accepts at most one positional count argument in eBPF"
+                    )));
                 }
                 if let Some((_, count_reg)) = self.positional_args.first() {
                     self.get_metadata(*count_reg)
                         .and_then(|m| m.literal_int)
                         .ok_or_else(|| {
-                            CompileError::UnsupportedInstruction(
-                                "skip count must be a compile-time integer literal in eBPF".into(),
-                            )
+                            CompileError::UnsupportedInstruction(format!(
+                                "{cmd_name} count must be a compile-time integer literal in eBPF"
+                            ))
                         })?
                 } else {
                     1
@@ -184,12 +184,21 @@ impl<'a> HirToMirLowering<'a> {
             )));
         };
 
-        let (source_start, source_end, out_max_len) = if cmd_name == "take" {
-            let take_count = count.min(max_len);
-            (0, take_count, take_count)
-        } else {
-            let skip_count = count.min(max_len);
-            (skip_count, max_len, max_len.saturating_sub(skip_count))
+        let (source_start, source_end, out_max_len, guard_tail_drop) = match cmd_name {
+            "take" => {
+                let take_count = count.min(max_len);
+                (0, take_count, take_count, 0)
+            }
+            "skip" => {
+                let skip_count = count.min(max_len);
+                (skip_count, max_len, max_len.saturating_sub(skip_count), 0)
+            }
+            "drop" => {
+                let drop_count = count.min(max_len);
+                let out_max_len = max_len.saturating_sub(drop_count);
+                (0, out_max_len, out_max_len, drop_count)
+            }
+            _ => unreachable!("validated stack list slice command"),
         };
         let result_vreg = if self.pipeline_input.is_none() && src_dst_had_value {
             self.assign_fresh_vreg(src_dst)
@@ -216,10 +225,11 @@ impl<'a> HirToMirLowering<'a> {
                 };
 
                 let cond_vreg = self.func.alloc_vreg();
+                let guard_index = source_index.saturating_add(guard_tail_drop);
                 self.emit(MirInst::BinOp {
                     dst: cond_vreg,
                     op: BinOpKind::Lt,
-                    lhs: MirValue::Const(source_index as i64),
+                    lhs: MirValue::Const(guard_index as i64),
                     rhs: MirValue::VReg(len_vreg),
                 });
                 self.vreg_type_hints.insert(cond_vreg, MirType::Bool);
@@ -247,19 +257,21 @@ impl<'a> HirToMirLowering<'a> {
             }
         }
 
-        let known_len = Self::numeric_list_known_len(&input_meta).map(|known_len| {
-            if cmd_name == "take" {
-                known_len.min(count).min(out_max_len)
-            } else {
-                known_len.saturating_sub(count).min(out_max_len)
-            }
+        let known_len = Self::numeric_list_known_len(&input_meta).map(|known_len| match cmd_name {
+            "take" => known_len.min(count).min(out_max_len),
+            "skip" | "drop" => known_len.saturating_sub(count).min(out_max_len),
+            _ => unreachable!("validated stack list slice command"),
         });
         let constant_value = match input_meta.constant_value {
             Some(nu_protocol::Value::List { vals, .. }) => {
-                let vals = if cmd_name == "take" {
-                    vals.into_iter().take(count).collect::<Vec<_>>()
-                } else {
-                    vals.into_iter().skip(count).collect::<Vec<_>>()
+                let vals = match cmd_name {
+                    "take" => vals.into_iter().take(count).collect::<Vec<_>>(),
+                    "skip" => vals.into_iter().skip(count).collect::<Vec<_>>(),
+                    "drop" => {
+                        let keep_len = vals.len().saturating_sub(count);
+                        vals.into_iter().take(keep_len).collect::<Vec<_>>()
+                    }
+                    _ => unreachable!("validated stack list slice command"),
                 };
                 Some(nu_protocol::Value::list(vals, Span::unknown()))
             }
@@ -3176,8 +3188,8 @@ impl<'a> HirToMirLowering<'a> {
                 }
             }
 
-            "take" | "skip" => {
-                self.lower_stack_list_take_or_skip(
+            "take" | "skip" | "drop" => {
+                self.lower_stack_list_take_skip_or_drop(
                     &cmd_name,
                     src_dst,
                     dst_vreg,

@@ -661,6 +661,110 @@ fn test_lower_take_negative_count_is_rejected() {
 }
 
 #[test]
+fn test_lower_drop_default_on_numeric_list_rebuilds_prefix() {
+    let drop_decl = DeclId::new(91);
+    let get_decl = DeclId::new(92);
+    let hir = make_numeric_list_call_then_get_program(drop_decl, get_decl, None, 1);
+    let decl_names = HashMap::from([
+        (drop_decl, "drop".to_string()),
+        (get_decl, "get".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bare drop should lower as drop 1 on stack-backed numeric lists");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+
+    assert!(
+        instructions
+            .iter()
+            .any(|inst| matches!(inst, MirInst::ListNew { max_len: 2, .. })),
+        "expected drop to allocate a two-element prefix list"
+    );
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::Lt,
+                lhs: MirValue::Const(2),
+                ..
+            }
+        )),
+        "expected drop to guard the last copied source index by index + count < runtime length"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("drop prefix followed by get should compile through codegen");
+}
+
+#[test]
+fn test_lower_drop_count_beyond_numeric_list_capacity_returns_empty_list() {
+    let drop_decl = DeclId::new(93);
+    let get_decl = DeclId::new(94);
+    let hir = make_numeric_list_call_then_get_program(drop_decl, get_decl, Some(4), 0);
+    let decl_names = HashMap::from([
+        (drop_decl, "drop".to_string()),
+        (get_decl, "get".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("oversized drop should lower to an empty stack-backed numeric list");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::ListNew { max_len: 0, .. })),
+        "expected oversized drop to allocate an empty list"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("empty drop result followed by get should compile through codegen");
+}
+
+#[test]
+fn test_lower_drop_negative_count_is_rejected() {
+    let drop_decl = DeclId::new(95);
+    let hir = make_numeric_list_pipeline_call_program(drop_decl, Some(-1));
+    let decl_names = HashMap::from([(drop_decl, "drop".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("negative drop should be rejected rather than silently miscompiled");
+
+    assert!(
+        err.to_string().contains("drop count must be non-negative"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn test_lower_append_on_numeric_list_rebuilds_with_extra_capacity() {
     let append_decl = DeclId::new(86);
     let get_decl = DeclId::new(87);

@@ -36,6 +36,7 @@ const NU_CLOSURE_COMMANDS: &[&str] = &[
     "each",
     "take",
     "skip",
+    "drop",
     "append",
     "prepend",
     "is-empty",

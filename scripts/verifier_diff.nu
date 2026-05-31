@@ -32447,6 +32447,72 @@ const FIXTURES = [
         error_contains: "take count must be non-negative"
     }
     {
+        name: "core-list-drop-default"
+        category: "language-core"
+        tags: [aggregate list drop]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [10 20 30] | drop | get 1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-list-drop-count"
+        category: "language-core"
+        tags: [aggregate list drop]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [10 20 30] | drop 2 | get 0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-list-drop-zero-count"
+        category: "language-core"
+        tags: [aggregate list drop]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [10 20 30] | drop 0 | length'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-list-drop-oversized-count"
+        category: "language-core"
+        tags: [aggregate list drop]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [10 20 30] | drop 4 | length'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-list-drop-negative-count-reject"
+        category: "language-core"
+        tags: [aggregate list drop reject]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [10 20 30] | drop -1'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "drop count must be non-negative"
+    }
+    {
         name: "core-list-skip-default"
         category: "language-core"
         tags: [aggregate list skip]
