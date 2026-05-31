@@ -573,6 +573,255 @@ fn make_nested_returned_record_spread_context_upsert_program(
     (hir, user_functions)
 }
 
+#[derive(Clone, Copy)]
+enum ContextRecordTransform {
+    Select,
+    Reject,
+    Rename,
+    Merge,
+    Default,
+}
+
+fn make_transformed_record_context_upsert_program(
+    transform: ContextRecordTransform,
+    command_decl: DeclId,
+) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let mut stmts = Vec::new();
+    let output_field = match transform {
+        ContextRecordTransform::Rename => "alias",
+        _ => "event",
+    };
+
+    match transform {
+        ContextRecordTransform::Select
+        | ContextRecordTransform::Reject
+        | ContextRecordTransform::Rename => {
+            stmts.push(HirStmt::LoadLiteral {
+                dst: RegId::new(0),
+                lit: HirLiteral::Record { capacity: 2 },
+            });
+            stmts.push(HirStmt::LoadLiteral {
+                dst: RegId::new(1),
+                lit: HirLiteral::String(b"event".to_vec()),
+            });
+            stmts.push(HirStmt::LoadVariable {
+                dst: RegId::new(2),
+                var_id: ctx_var,
+            });
+            stmts.push(HirStmt::RecordInsert {
+                src_dst: RegId::new(0),
+                key: RegId::new(1),
+                val: RegId::new(2),
+            });
+
+            if matches!(transform, ContextRecordTransform::Reject) {
+                stmts.push(HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::String(b"other".to_vec()),
+                });
+                stmts.push(HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::Int(7),
+                });
+                stmts.push(HirStmt::RecordInsert {
+                    src_dst: RegId::new(0),
+                    key: RegId::new(3),
+                    val: RegId::new(4),
+                });
+            }
+
+            let arg_name = match transform {
+                ContextRecordTransform::Select => "event",
+                ContextRecordTransform::Reject => "other",
+                ContextRecordTransform::Rename => "alias",
+                _ => unreachable!(),
+            };
+            stmts.push(HirStmt::LoadLiteral {
+                dst: RegId::new(5),
+                lit: HirLiteral::String(arg_name.as_bytes().to_vec()),
+            });
+            stmts.push(HirStmt::Call {
+                decl_id: command_decl,
+                src_dst: RegId::new(8),
+                args: HirCallArgs {
+                    positional: vec![RegId::new(5)],
+                    pipeline_input: Some(RegId::new(0)),
+                    ..HirCallArgs::default()
+                },
+            });
+        }
+        ContextRecordTransform::Merge => {
+            stmts.push(HirStmt::LoadLiteral {
+                dst: RegId::new(0),
+                lit: HirLiteral::Record { capacity: 0 },
+            });
+            stmts.push(HirStmt::LoadLiteral {
+                dst: RegId::new(6),
+                lit: HirLiteral::Record { capacity: 1 },
+            });
+            stmts.push(HirStmt::LoadLiteral {
+                dst: RegId::new(1),
+                lit: HirLiteral::String(b"event".to_vec()),
+            });
+            stmts.push(HirStmt::LoadVariable {
+                dst: RegId::new(2),
+                var_id: ctx_var,
+            });
+            stmts.push(HirStmt::RecordInsert {
+                src_dst: RegId::new(6),
+                key: RegId::new(1),
+                val: RegId::new(2),
+            });
+            stmts.push(HirStmt::Call {
+                decl_id: command_decl,
+                src_dst: RegId::new(8),
+                args: HirCallArgs {
+                    positional: vec![RegId::new(6)],
+                    pipeline_input: Some(RegId::new(0)),
+                    ..HirCallArgs::default()
+                },
+            });
+        }
+        ContextRecordTransform::Default => {
+            stmts.push(HirStmt::LoadLiteral {
+                dst: RegId::new(0),
+                lit: HirLiteral::Record { capacity: 0 },
+            });
+            stmts.push(HirStmt::LoadVariable {
+                dst: RegId::new(2),
+                var_id: ctx_var,
+            });
+            stmts.push(HirStmt::LoadLiteral {
+                dst: RegId::new(5),
+                lit: HirLiteral::String(b"event".to_vec()),
+            });
+            stmts.push(HirStmt::Call {
+                decl_id: command_decl,
+                src_dst: RegId::new(8),
+                args: HirCallArgs {
+                    positional: vec![RegId::new(2), RegId::new(5)],
+                    pipeline_input: Some(RegId::new(0)),
+                    ..HirCallArgs::default()
+                },
+            });
+        }
+    }
+
+    stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(9),
+        lit: HirLiteral::CellPath(Box::new(CellPath {
+            members: vec![string_member(output_field), string_member("new_value")],
+        })),
+    });
+    stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(10),
+        lit: HirLiteral::String(b"1".to_vec()),
+    });
+    stmts.push(HirStmt::UpsertCellPath {
+        src_dst: RegId::new(8),
+        path: RegId::new(9),
+        new_value: RegId::new(10),
+    });
+    stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(11),
+        lit: HirLiteral::Int(1),
+    });
+
+    let stmt_count = stmts.len();
+    HirProgram::new(
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts,
+                terminator: HirTerminator::Return {
+                    src: RegId::new(11),
+                },
+            }],
+            entry: HirBlockId(0),
+            spans: vec![Span::test_data(); stmt_count],
+            ast: vec![None; stmt_count],
+            comments: vec![],
+            register_count: 12,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        Some(ctx_var),
+    )
+}
+
+fn assert_transformed_record_sysctl_new_value_metadata(
+    hir: HirProgram,
+    decl_names: HashMap<DeclId, String>,
+    context: &str,
+) {
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSysctl, "/sys/fs/cgroup");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .unwrap_or_else(|err| panic!("{context} should lower: {err}"));
+
+    assert!(
+        result
+            .type_hints
+            .used_ctx_fields
+            .contains(&CtxField::SysctlNewValue),
+        "{context} should preserve ctx.new_value metadata through lowering"
+    );
+    assert!(
+        result.program.main.blocks.iter().any(|block| {
+            block.instructions.iter().any(|inst| {
+                matches!(
+                    inst,
+                    MirInst::CallHelper {
+                        helper,
+                        args,
+                        ..
+                    } if *helper == BpfHelper::SysctlSetNewValue as u32
+                        && matches!(args.as_slice(), [
+                            MirValue::VReg(_),
+                            MirValue::VReg(_),
+                            MirValue::Const(1),
+                        ])
+                )
+            })
+        }),
+        "{context} should lower record-held ctx.new_value assignment to bpf_sysctl_set_new_value"
+    );
+
+    let compiled =
+        compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{context} should compile: {err}"));
+    let program = compiled.into_program(
+        EbpfProgramType::CgroupSysctl,
+        "/sys/fs/cgroup",
+        "main",
+        HashMap::new(),
+        HashMap::new(),
+    );
+    assert!(
+        program
+            .helper_compatibility_requirements()
+            .into_iter()
+            .any(|requirement| requirement.helper() == BpfHelper::SysctlSetNewValue),
+        "{context} should report bpf_sysctl_set_new_value compatibility metadata"
+    );
+    assert!(
+        program
+            .context_field_compatibility_requirements()
+            .into_iter()
+            .any(|requirement| requirement.field() == &CtxField::SysctlNewValue),
+        "{context} should report sysctl_new_value context compatibility metadata"
+    );
+}
+
 #[test]
 fn test_lower_xdp_action_alias_return_to_const() {
     let hir = make_return_literal_program(HirLiteral::String(b"pass".to_vec()));
@@ -2185,6 +2434,78 @@ fn test_lower_record_context_sysctl_new_value_assignment_preserves_metadata() {
             .into_iter()
             .any(|requirement| requirement.field() == &CtxField::SysctlNewValue),
         "record-held ctx.new_value assignment should report sysctl_new_value context metadata"
+    );
+}
+
+#[test]
+fn test_lower_select_record_context_sysctl_new_value_assignment_preserves_metadata() {
+    let select_decl = DeclId::new(901);
+    let hir =
+        make_transformed_record_context_upsert_program(ContextRecordTransform::Select, select_decl);
+    let decl_names = HashMap::from([(select_decl, "select".to_string())]);
+
+    assert_transformed_record_sysctl_new_value_metadata(
+        hir,
+        decl_names,
+        "select-transformed record-held ctx.new_value assignment",
+    );
+}
+
+#[test]
+fn test_lower_reject_record_context_sysctl_new_value_assignment_preserves_metadata() {
+    let reject_decl = DeclId::new(902);
+    let hir =
+        make_transformed_record_context_upsert_program(ContextRecordTransform::Reject, reject_decl);
+    let decl_names = HashMap::from([(reject_decl, "reject".to_string())]);
+
+    assert_transformed_record_sysctl_new_value_metadata(
+        hir,
+        decl_names,
+        "reject-transformed record-held ctx.new_value assignment",
+    );
+}
+
+#[test]
+fn test_lower_rename_record_context_sysctl_new_value_assignment_preserves_metadata() {
+    let rename_decl = DeclId::new(903);
+    let hir =
+        make_transformed_record_context_upsert_program(ContextRecordTransform::Rename, rename_decl);
+    let decl_names = HashMap::from([(rename_decl, "rename".to_string())]);
+
+    assert_transformed_record_sysctl_new_value_metadata(
+        hir,
+        decl_names,
+        "rename-transformed record-held ctx.new_value assignment",
+    );
+}
+
+#[test]
+fn test_lower_merge_record_context_sysctl_new_value_assignment_preserves_metadata() {
+    let merge_decl = DeclId::new(904);
+    let hir =
+        make_transformed_record_context_upsert_program(ContextRecordTransform::Merge, merge_decl);
+    let decl_names = HashMap::from([(merge_decl, "merge".to_string())]);
+
+    assert_transformed_record_sysctl_new_value_metadata(
+        hir,
+        decl_names,
+        "merge-transformed record-held ctx.new_value assignment",
+    );
+}
+
+#[test]
+fn test_lower_default_record_context_sysctl_new_value_assignment_preserves_metadata() {
+    let default_decl = DeclId::new(905);
+    let hir = make_transformed_record_context_upsert_program(
+        ContextRecordTransform::Default,
+        default_decl,
+    );
+    let decl_names = HashMap::from([(default_decl, "default".to_string())]);
+
+    assert_transformed_record_sysctl_new_value_metadata(
+        hir,
+        decl_names,
+        "default-transformed record-held ctx.new_value assignment",
     );
 }
 
