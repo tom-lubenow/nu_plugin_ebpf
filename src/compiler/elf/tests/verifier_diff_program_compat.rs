@@ -1279,6 +1279,7 @@ enum ContextWriteScannerForm {
     Direct,
     RecordAlias,
     ReturnedContextAlias,
+    RecordWrapper,
 }
 
 impl ContextWriteScannerForm {
@@ -1287,6 +1288,7 @@ impl ContextWriteScannerForm {
             Self::Direct => "direct",
             Self::RecordAlias => "record-alias",
             Self::ReturnedContextAlias => "returned-context-alias",
+            Self::RecordWrapper => "record-wrapper",
         }
     }
 }
@@ -1301,6 +1303,7 @@ fn context_write_scanner_source(
         ContextWriteScannerForm::RecordAlias | ContextWriteScannerForm::ReturnedContextAlias => {
             "$event"
         }
+        ContextWriteScannerForm::RecordWrapper => "$rec.event",
     };
     let assignment = if field_name == "flow_keys" {
         format!("  {root}.{field_name}.ip_proto = 6")
@@ -1320,6 +1323,9 @@ fn context_write_scanner_source(
         ContextWriteScannerForm::ReturnedContextAlias => format!(
             "{{|ctx|\n  def id [event] {{ $event }}\n  mut event = (id $ctx)\n{assignment}\n  \"allow\"\n}}"
         ),
+        ContextWriteScannerForm::RecordWrapper => {
+            format!("{{|ctx|\n  mut rec = {{ event: $ctx }}\n{assignment}\n  \"allow\"\n}}")
+        }
     }
 }
 
@@ -1348,6 +1354,7 @@ fn test_verifier_diff_context_write_scanner_covers_rust_write_surfaces() {
                 ContextWriteScannerForm::Direct,
                 ContextWriteScannerForm::RecordAlias,
                 ContextWriteScannerForm::ReturnedContextAlias,
+                ContextWriteScannerForm::RecordWrapper,
             ] {
                 expected.push(ExpectedWriteFeature {
                     target: (*spec_text).to_string(),
@@ -1423,6 +1430,7 @@ fn test_verifier_diff_context_helper_write_scanner_covers_rust_write_surfaces() 
                 ContextWriteScannerForm::Direct,
                 ContextWriteScannerForm::RecordAlias,
                 ContextWriteScannerForm::ReturnedContextAlias,
+                ContextWriteScannerForm::RecordWrapper,
             ] {
                 expected.push(ExpectedHelperWriteFeature {
                     target: (*spec_text).to_string(),
@@ -1508,6 +1516,7 @@ fn test_verifier_diff_context_kfunc_write_scanner_covers_rust_write_surfaces() {
                 ContextWriteScannerForm::Direct,
                 ContextWriteScannerForm::RecordAlias,
                 ContextWriteScannerForm::ReturnedContextAlias,
+                ContextWriteScannerForm::RecordWrapper,
             ] {
                 expected.push(ExpectedKfuncWriteFeature {
                     target: (*spec_text).to_string(),
