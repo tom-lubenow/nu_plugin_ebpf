@@ -800,6 +800,207 @@ fn make_transformed_record_context_upsert_program(
     )
 }
 
+fn make_record_get_alias_context_upsert_program(get_decl: DeclId) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let rec_var = VarId::new(1);
+    let event_var = VarId::new(2);
+    let stmts = vec![
+        HirStmt::LoadLiteral {
+            dst: RegId::new(0),
+            lit: HirLiteral::Record { capacity: 1 },
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: HirLiteral::String(b"event".to_vec()),
+        },
+        HirStmt::LoadVariable {
+            dst: RegId::new(2),
+            var_id: ctx_var,
+        },
+        HirStmt::RecordInsert {
+            src_dst: RegId::new(0),
+            key: RegId::new(1),
+            val: RegId::new(2),
+        },
+        HirStmt::StoreVariable {
+            var_id: rec_var,
+            src: RegId::new(0),
+        },
+        HirStmt::LoadVariable {
+            dst: RegId::new(3),
+            var_id: rec_var,
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(4),
+            lit: HirLiteral::CellPath(Box::new(CellPath {
+                members: vec![string_member("event")],
+            })),
+        },
+        HirStmt::Call {
+            decl_id: get_decl,
+            src_dst: RegId::new(5),
+            args: HirCallArgs {
+                positional: vec![RegId::new(4)],
+                pipeline_input: Some(RegId::new(3)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::StoreVariable {
+            var_id: event_var,
+            src: RegId::new(5),
+        },
+        HirStmt::LoadVariable {
+            dst: RegId::new(6),
+            var_id: event_var,
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(7),
+            lit: HirLiteral::CellPath(Box::new(CellPath {
+                members: vec![string_member("new_value")],
+            })),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(8),
+            lit: HirLiteral::String(b"1".to_vec()),
+        },
+        HirStmt::UpsertCellPath {
+            src_dst: RegId::new(6),
+            path: RegId::new(7),
+            new_value: RegId::new(8),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(9),
+            lit: HirLiteral::Int(1),
+        },
+    ];
+    HirProgram::new(
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts,
+                terminator: HirTerminator::Return { src: RegId::new(9) },
+            }],
+            entry: HirBlockId(0),
+            spans: vec![Span::test_data(); 14],
+            ast: vec![None; 14],
+            comments: vec![],
+            register_count: 10,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        Some(ctx_var),
+    )
+}
+
+fn make_record_pipeline_get_alias_context_upsert_program(
+    insert_decl: DeclId,
+    get_decl: DeclId,
+) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let event_var = VarId::new(1);
+    let stmts = vec![
+        HirStmt::LoadLiteral {
+            dst: RegId::new(0),
+            lit: HirLiteral::Record { capacity: 1 },
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: HirLiteral::String(b"other".to_vec()),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(2),
+            lit: HirLiteral::Int(1),
+        },
+        HirStmt::RecordInsert {
+            src_dst: RegId::new(0),
+            key: RegId::new(1),
+            val: RegId::new(2),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(3),
+            lit: HirLiteral::CellPath(Box::new(CellPath {
+                members: vec![string_member("event")],
+            })),
+        },
+        HirStmt::LoadVariable {
+            dst: RegId::new(4),
+            var_id: ctx_var,
+        },
+        HirStmt::Call {
+            decl_id: insert_decl,
+            src_dst: RegId::new(5),
+            args: HirCallArgs {
+                positional: vec![RegId::new(3), RegId::new(4)],
+                pipeline_input: Some(RegId::new(0)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(6),
+            lit: HirLiteral::CellPath(Box::new(CellPath {
+                members: vec![string_member("event")],
+            })),
+        },
+        HirStmt::Call {
+            decl_id: get_decl,
+            src_dst: RegId::new(7),
+            args: HirCallArgs {
+                positional: vec![RegId::new(6)],
+                pipeline_input: Some(RegId::new(5)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::StoreVariable {
+            var_id: event_var,
+            src: RegId::new(7),
+        },
+        HirStmt::LoadVariable {
+            dst: RegId::new(8),
+            var_id: event_var,
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(9),
+            lit: HirLiteral::CellPath(Box::new(CellPath {
+                members: vec![string_member("new_value")],
+            })),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(10),
+            lit: HirLiteral::String(b"1".to_vec()),
+        },
+        HirStmt::UpsertCellPath {
+            src_dst: RegId::new(8),
+            path: RegId::new(9),
+            new_value: RegId::new(10),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(11),
+            lit: HirLiteral::Int(1),
+        },
+    ];
+    HirProgram::new(
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts,
+                terminator: HirTerminator::Return {
+                    src: RegId::new(11),
+                },
+            }],
+            entry: HirBlockId(0),
+            spans: vec![Span::test_data(); 15],
+            ast: vec![None; 15],
+            comments: vec![],
+            register_count: 12,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        Some(ctx_var),
+    )
+}
+
 fn assert_transformed_record_sysctl_new_value_metadata(
     hir: HirProgram,
     decl_names: HashMap<DeclId, String>,
@@ -2934,6 +3135,36 @@ fn test_lower_upsert_record_context_sysctl_new_value_assignment_preserves_metada
         hir,
         decl_names,
         "upsert-transformed record-held ctx.new_value assignment",
+    );
+}
+
+#[test]
+fn test_lower_record_get_alias_context_sysctl_new_value_assignment_preserves_metadata() {
+    let get_decl = DeclId::new(909);
+    let hir = make_record_get_alias_context_upsert_program(get_decl);
+    let decl_names = HashMap::from([(get_decl, "get".to_string())]);
+
+    assert_transformed_record_sysctl_new_value_metadata(
+        hir,
+        decl_names,
+        "record-get alias ctx.new_value assignment",
+    );
+}
+
+#[test]
+fn test_lower_record_pipeline_get_alias_context_sysctl_new_value_assignment_preserves_metadata() {
+    let insert_decl = DeclId::new(910);
+    let get_decl = DeclId::new(911);
+    let hir = make_record_pipeline_get_alias_context_upsert_program(insert_decl, get_decl);
+    let decl_names = HashMap::from([
+        (insert_decl, "insert".to_string()),
+        (get_decl, "get".to_string()),
+    ]);
+
+    assert_transformed_record_sysctl_new_value_metadata(
+        hir,
+        decl_names,
+        "record-pipeline-get alias ctx.new_value assignment",
     );
 }
 
