@@ -570,6 +570,63 @@ fn test_load_rejects_user_ptr() {
 }
 
 #[test]
+fn test_emit_event_requires_pointer_for_large_payload() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let data = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: data,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::EmitEvent { data, size: 16 });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let err = verify_mir(&func, &HashMap::new()).expect_err("expected pointer error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("emit event requires pointer type")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_emit_event_rejects_user_pointer_even_for_scalar_size() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let data = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::EmitEvent { data, size: 8 });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        data,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::User,
+        },
+    );
+
+    let err = verify_mir(&func, &types).expect_err("expected emit pointer-space error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("emit event expects pointer in [Stack, Map], got User")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_packet_load_with_data_end_guard_passes() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

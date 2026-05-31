@@ -429,7 +429,7 @@ pub(super) fn apply_emit_event_inst(
     }
     require_ptr_with_space(
         data,
-        "emit",
+        "emit event",
         &[AddressSpace::Stack, AddressSpace::Map],
         state,
         errors,
