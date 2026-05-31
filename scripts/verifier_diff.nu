@@ -6012,6 +6012,39 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         target: "tc:lo:ingress"
         program: [
             '{|ctx|'
+            '  let rec = ({ ok: true } | merge { socket: ($ctx | get sk) })'
+            '  $rec | get socket | get family | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:sk" "ctx:family" "helper:bpf_probe_read_kernel"]
+    }
+    {
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let rec = ({ ok: true } | default ($ctx | get sk) socket)'
+            '  $rec | get socket | get family | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:sk" "ctx:family" "helper:bpf_probe_read_kernel"]
+    }
+    {
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let rec = ({ socket: $ctx.sk } | update socket ($ctx | get sk))'
+            '  $rec | get socket | get family | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:sk" "ctx:family" "helper:bpf_probe_read_kernel"]
+    }
+    {
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
             '  $ctx | get packet_len | count'
             '  0'
             '}'
@@ -18755,6 +18788,51 @@ const FIXTURES = [
             '{|ctx|'
             '  let rec = ({ socket: ($ctx | get sk) } | rename sock)'
             '  $rec | get sock | get family | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tc-record-pipeline-merge-context-get-root"
+        category: "context-surface"
+        tags: [tc context socket record pipeline merge get source metadata]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let rec = ({ ok: true } | merge { socket: ($ctx | get sk) })'
+            '  $rec | get socket | get family | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tc-record-pipeline-default-context-get-root"
+        category: "context-surface"
+        tags: [tc context socket record pipeline default get source metadata]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let rec = ({ ok: true } | default ($ctx | get sk) socket)'
+            '  $rec | get socket | get family | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tc-record-pipeline-update-context-get-root"
+        category: "context-surface"
+        tags: [tc context socket record pipeline update get source metadata]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let rec = ({ socket: $ctx.sk } | update socket ($ctx | get sk))'
+            '  $rec | get socket | get family | count'
             '  0'
             '}'
         ]
