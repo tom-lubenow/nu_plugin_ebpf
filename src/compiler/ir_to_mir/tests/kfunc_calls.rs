@@ -2179,6 +2179,139 @@ fn test_helper_call_find_vma_closure_lowers_to_callback_subprogram() {
 #[test]
 fn test_helper_call_bpf_loop_closure_lowers_to_callback_subprogram() {
     let closure_block_id = nu_protocol::BlockId::new(7);
+    let hir_program = bpf_loop_zero_callback_hir_program(closure_block_id);
+    let mut decl_names = HashMap::new();
+    decl_names.insert(DeclId::new(42), "helper-call".to_string());
+
+    let lowering = lower_hir_to_mir_with_hints(
+        &hir_program,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bpf_loop helper-call with closure should lower");
+
+    assert_eq!(lowering.program.subfunctions.len(), 1);
+    assert_eq!(lowering.program.subfunctions[0].param_count, 2);
+    assert_eq!(
+        lowering.program.subfunctions[0].required_return_range,
+        Some(ScalarValueRange::new(0, 1))
+    );
+    assert!(
+        lowering.program.main.blocks.iter().any(|block| block.instructions.iter().any(
+            |inst| matches!(inst, MirInst::LoadSubprogram { subfn, .. } if *subfn == SubfunctionId(0))
+        )),
+        "expected helper-call lowering to materialize the callback subprogram"
+    );
+    assert!(
+        lowering
+            .program
+            .main
+            .blocks
+            .iter()
+            .any(|block| block.instructions.iter().any(|inst| {
+                matches!(
+                    inst,
+                    MirInst::CallHelper { helper, .. } if *helper == BpfHelper::BpfLoop as u32
+                )
+            })),
+        "expected bpf_loop helper call in lowered MIR"
+    );
+
+    compile_mir_to_ebpf_with_hints(&lowering.program, None, Some(&lowering.type_hints))
+        .expect("bpf_loop helper-call closure should compile end-to-end");
+}
+
+#[test]
+fn test_helper_call_bpf_loop_closure_accepts_declared_callback_param_prefix() {
+    let closure_block_id = nu_protocol::BlockId::new(70);
+    let mut hir_program = bpf_loop_zero_callback_hir_program(closure_block_id);
+    hir_program.closure_param_sources.insert(
+        closure_block_id,
+        HirClosureParamSource {
+            params: vec![HirClosureParam {
+                name: "i".to_string(),
+                var_id: Some(VarId::new(10)),
+            }],
+        },
+    );
+    let decl_names = HashMap::from([(DeclId::new(42), "helper-call".to_string())]);
+
+    let lowering = lower_hir_to_mir_with_hints(
+        &hir_program,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bpf_loop helper-call should allow a prefix of callback ABI parameters");
+
+    let callback = &lowering.program.subfunctions[0];
+    assert_eq!(callback.param_count, 2);
+    let callback_hints = &lowering.type_hints.subfunctions[0];
+    assert_eq!(callback_hints.get(&VReg(0)), Some(&MirType::I64));
+    assert!(matches!(
+        callback_hints.get(&VReg(1)),
+        Some(MirType::Ptr {
+            address_space: AddressSpace::Stack,
+            ..
+        })
+    ));
+
+    compile_mir_to_ebpf_with_hints(&lowering.program, None, Some(&lowering.type_hints))
+        .expect("bpf_loop helper-call with declared callback prefix should compile");
+}
+
+#[test]
+fn test_helper_call_bpf_loop_closure_rejects_too_many_declared_callback_params() {
+    let closure_block_id = nu_protocol::BlockId::new(71);
+    let mut hir_program = bpf_loop_zero_callback_hir_program(closure_block_id);
+    hir_program.closure_param_sources.insert(
+        closure_block_id,
+        HirClosureParamSource {
+            params: vec![
+                HirClosureParam {
+                    name: "i".to_string(),
+                    var_id: Some(VarId::new(10)),
+                },
+                HirClosureParam {
+                    name: "ctx".to_string(),
+                    var_id: Some(VarId::new(11)),
+                },
+                HirClosureParam {
+                    name: "extra".to_string(),
+                    var_id: Some(VarId::new(12)),
+                },
+            ],
+        },
+    );
+    let decl_names = HashMap::from([(DeclId::new(42), "helper-call".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir_program,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("bpf_loop helper-call should reject callback params beyond the ABI");
+
+    match err {
+        CompileError::UnsupportedInstruction(msg) => assert!(
+            msg.contains("callback closure for 'bpf_loop_callback_71'")
+                && msg.contains("declares 3 parameters")
+                && msg.contains("callback ABI supplies 2"),
+            "unexpected error: {msg}"
+        ),
+        other => panic!("unexpected error: {other:?}"),
+    }
+}
+
+fn bpf_loop_zero_callback_hir_program(closure_block_id: nu_protocol::BlockId) -> HirProgram {
     let closure = HirFunction {
         blocks: vec![HirBlock {
             id: HirBlockId(0),
@@ -2245,54 +2378,12 @@ fn test_helper_call_bpf_loop_closure_lowers_to_callback_subprogram() {
         file_count: 0,
     };
 
-    let hir_program = HirProgram::new(
+    HirProgram::new(
         main,
         HashMap::from([(closure_block_id, closure)]),
         vec![],
         None,
-    );
-    let mut decl_names = HashMap::new();
-    decl_names.insert(DeclId::new(42), "helper-call".to_string());
-
-    let lowering = lower_hir_to_mir_with_hints(
-        &hir_program,
-        None,
-        &decl_names,
-        None,
-        &HashMap::new(),
-        &HashMap::new(),
     )
-    .expect("bpf_loop helper-call with closure should lower");
-
-    assert_eq!(lowering.program.subfunctions.len(), 1);
-    assert_eq!(lowering.program.subfunctions[0].param_count, 2);
-    assert_eq!(
-        lowering.program.subfunctions[0].required_return_range,
-        Some(ScalarValueRange::new(0, 1))
-    );
-    assert!(
-        lowering.program.main.blocks.iter().any(|block| block.instructions.iter().any(
-            |inst| matches!(inst, MirInst::LoadSubprogram { subfn, .. } if *subfn == SubfunctionId(0))
-        )),
-        "expected helper-call lowering to materialize the callback subprogram"
-    );
-    assert!(
-        lowering
-            .program
-            .main
-            .blocks
-            .iter()
-            .any(|block| block.instructions.iter().any(|inst| {
-                matches!(
-                    inst,
-                    MirInst::CallHelper { helper, .. } if *helper == BpfHelper::BpfLoop as u32
-                )
-            })),
-        "expected bpf_loop helper call in lowered MIR"
-    );
-
-    compile_mir_to_ebpf_with_hints(&lowering.program, None, Some(&lowering.type_hints))
-        .expect("bpf_loop helper-call closure should compile end-to-end");
 }
 
 #[test]
