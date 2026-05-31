@@ -13274,6 +13274,21 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "global-define-type-array-bool-initializer"
+        category: "globals"
+        tags: [globals arrays bool global-define accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  [true false] | global-define --type "array{bool:4}" flags'
+            '  let flags = (global-get flags)'
+            '  if ($flags | get 0) { 1 } else { 0 }'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "global-define-type-array-bytes-initializer"
         category: "globals"
         tags: [globals arrays binary global-define accept]

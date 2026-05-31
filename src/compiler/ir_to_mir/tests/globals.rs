@@ -3410,6 +3410,132 @@ fn test_lower_global_define_type_fixed_array_initializer_uses_named_data_global(
 }
 
 #[test]
+fn test_lower_global_define_type_fixed_array_bool_initializer_uses_named_data_global() {
+    let define_decl = DeclId::new(1085);
+    let global_get_decl = DeclId::new(1086);
+    let count_decl = DeclId::new(1087);
+    let decl_names = HashMap::from([
+        (define_decl, "global-define".to_string()),
+        (global_get_decl, "global-get".to_string()),
+        (count_decl, "count".to_string()),
+    ]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::list(
+                        vec![
+                            Value::bool(true, Span::test_data()),
+                            Value::bool(false, Span::test_data()),
+                        ],
+                        Span::test_data(),
+                    )),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("seen_flags".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String("array{bool:4}".into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        named: vec![(b"type".to_vec(), RegId::new(2))],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: global_get_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![int_member(1)],
+                    })),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(3),
+                    path: RegId::new(4),
+                },
+                HirStmt::Call {
+                    decl_id: count_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs::default(),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(3) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 5,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("global-define --type array{bool:N} with constant input should lower");
+
+    assert_eq!(result.data_globals.len(), 1);
+    assert_eq!(result.bss_globals.len(), 0);
+    assert_eq!(result.data_globals[0].name, "__nu_global_seen_flags");
+    assert_eq!(result.data_globals[0].data, vec![1, 0, 0, 0]);
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Load {
+                    offset: 1,
+                    ty: MirType::Bool,
+                    ..
+                }
+            )),
+        "expected bool fixed-array global element projection to load a bool"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::MapUpdate {
+                    map: MapRef { name, .. },
+                    ..
+                } if name == COUNTER_MAP_NAME
+            )),
+        "expected bool fixed-array global element to be usable as a scalar key"
+    );
+}
+
+#[test]
 fn test_lower_global_define_type_fixed_array_bytes_initializer_uses_named_data_global() {
     let define_decl = DeclId::new(1120);
     let decl_names = HashMap::from([(define_decl, "global-define".to_string())]);
