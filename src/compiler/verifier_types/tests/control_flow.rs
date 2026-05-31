@@ -30,6 +30,61 @@ fn test_branch_rejects_unknown_condition() {
 }
 
 #[test]
+fn test_constant_false_branch_prunes_true_path() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let bad = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+
+    let cond = func.alloc_vreg();
+    let left = func.alloc_vreg();
+    let right = func.alloc_vreg();
+    let invalid_ptr = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let left_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let right_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: cond,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond,
+        if_true: bad,
+        if_false: done,
+    };
+
+    func.block_mut(bad).instructions.push(MirInst::Copy {
+        dst: left,
+        src: MirValue::StackSlot(left_slot),
+    });
+    func.block_mut(bad).instructions.push(MirInst::Copy {
+        dst: right,
+        src: MirValue::StackSlot(right_slot),
+    });
+    func.block_mut(bad).instructions.push(MirInst::BinOp {
+        dst: invalid_ptr,
+        op: BinOpKind::Add,
+        lhs: MirValue::VReg(left),
+        rhs: MirValue::VReg(right),
+    });
+    func.block_mut(bad).instructions.push(MirInst::Load {
+        dst,
+        ptr: invalid_ptr,
+        offset: 0,
+        ty: MirType::I64,
+    });
+    func.block_mut(bad).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(dst, MirType::I64);
+
+    verify_mir(&func, &types).expect("constant-false branch should prune true path");
+}
+
+#[test]
 fn test_branch_on_pointer_refines_non_null_path() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

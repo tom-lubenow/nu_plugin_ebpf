@@ -35,6 +35,50 @@ fn test_stack_pointer_non_null() {
 }
 
 #[test]
+fn test_prunes_impossible_null_branch_for_non_null_stack_pointer() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let bad = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+
+    let slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let ptr = func.alloc_vreg();
+    let cond = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: ptr,
+        src: MirValue::StackSlot(slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: cond,
+        op: BinOpKind::Eq,
+        lhs: MirValue::VReg(ptr),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond,
+        if_true: bad,
+        if_false: done,
+    };
+
+    func.block_mut(bad).instructions.push(MirInst::Load {
+        dst,
+        ptr,
+        offset: 0,
+        ty: MirType::I64,
+    });
+    func.block_mut(bad).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(dst, MirType::I64);
+
+    verify_mir(&func, &types).expect("non-null stack pointer null branch should be pruned");
+}
+
+#[test]
 fn test_stack_load_out_of_bounds() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

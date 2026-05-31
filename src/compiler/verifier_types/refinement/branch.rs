@@ -78,8 +78,19 @@ pub(in crate::compiler::verifier_types) fn refine_on_branch(
                 } else {
                     !true_is_non_zero
                 };
+                let current = next.get_range(reg);
+                let excluded = next.not_equal_consts(reg).to_vec();
+                let effective_op = if wants_non_zero {
+                    BinOpKind::Ne
+                } else {
+                    BinOpKind::Eq
+                };
+                if !range_can_satisfy_const_compare(current, &excluded, effective_op, 0) {
+                    next.mark_unreachable();
+                    return next;
+                }
                 if wants_non_zero {
-                    if let ValueRange::Known { min, max } = next.get_range(reg) {
+                    if let ValueRange::Known { min, max } = current {
                         let new_range = if min == 0 && max > 0 {
                             ValueRange::Known { min: 1, max }
                         } else if max == 0 && min < 0 {
