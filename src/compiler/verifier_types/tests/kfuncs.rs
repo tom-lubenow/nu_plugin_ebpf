@@ -2,8 +2,9 @@ use super::*;
 use crate::compiler::mir::StructField;
 use crate::compiler::subfn_summaries::infer_subfunction_summaries;
 use crate::compiler::test_mir_builders::{
-    ExplicitNullRefKfuncCase, explicit_null_ref_join_release_mir,
-    xdp_get_xfrm_state_explicit_null_join_mir,
+    ExplicitNullRefKfuncCase, copy_from_user_dynptr_join_reinitialize_mir,
+    dynptr_clone_join_reinitialize_mir, explicit_null_ref_join_release_mir,
+    packet_dynptr_kfunc_join_reinitialize_mir, xdp_get_xfrm_state_explicit_null_join_mir,
 };
 use crate::compiler::{EbpfProgramType, ProbeContext};
 
@@ -2126,79 +2127,7 @@ fn test_kfunc_copy_from_user_dynptr_requires_stack_slot_base_dptr() {
 
 #[test]
 fn test_kfunc_copy_from_user_dynptr_rejects_destination_initialized_on_one_path() {
-    let mut func = MirFunction::new();
-    let entry = func.alloc_block();
-    let init_path = func.alloc_block();
-    let skip_init = func.alloc_block();
-    let join = func.alloc_block();
-    func.entry = entry;
-
-    let cond = func.alloc_vreg();
-    let src = func.alloc_vreg();
-    func.param_count = 2;
-    let dptr = func.alloc_vreg();
-    let off = func.alloc_vreg();
-    let size = func.alloc_vreg();
-    let init_ret = func.alloc_vreg();
-    let second_ret = func.alloc_vreg();
-    let dptr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
-
-    func.block_mut(entry).instructions.push(MirInst::Copy {
-        dst: dptr,
-        src: MirValue::StackSlot(dptr_slot),
-    });
-    func.block_mut(entry).instructions.push(MirInst::Copy {
-        dst: off,
-        src: MirValue::Const(0),
-    });
-    func.block_mut(entry).instructions.push(MirInst::Copy {
-        dst: size,
-        src: MirValue::Const(8),
-    });
-    func.block_mut(entry).terminator = MirInst::Branch {
-        cond,
-        if_true: init_path,
-        if_false: skip_init,
-    };
-    func.block_mut(init_path)
-        .instructions
-        .push(MirInst::CallKfunc {
-            dst: init_ret,
-            kfunc: "bpf_copy_from_user_dynptr".to_string(),
-            btf_id: None,
-            args: vec![dptr, off, size, src],
-        });
-    func.block_mut(init_path).terminator = MirInst::Jump { target: join };
-    func.block_mut(skip_init).terminator = MirInst::Jump { target: join };
-    func.block_mut(join).instructions.push(MirInst::CallKfunc {
-        dst: second_ret,
-        kfunc: "bpf_copy_from_user_dynptr".to_string(),
-        btf_id: None,
-        args: vec![dptr, off, size, src],
-    });
-    func.block_mut(join).terminator = MirInst::Return { val: None };
-
-    let mut types = HashMap::new();
-    types.insert(cond, MirType::Bool);
-    types.insert(
-        src,
-        MirType::Ptr {
-            pointee: Box::new(MirType::Unknown),
-            address_space: AddressSpace::User,
-        },
-    );
-    types.insert(
-        dptr,
-        MirType::Ptr {
-            pointee: Box::new(MirType::Unknown),
-            address_space: AddressSpace::Stack,
-        },
-    );
-    types.insert(off, MirType::I64);
-    types.insert(size, MirType::I64);
-    types.insert(init_ret, MirType::I64);
-    types.insert(second_ret, MirType::I64);
-
+    let (func, types) = copy_from_user_dynptr_join_reinitialize_mir();
     let err = verify_mir(&func, &types)
         .expect_err("expected copy_from_user_dynptr reinitialize error at join");
     assert!(
@@ -3437,80 +3366,7 @@ fn test_packet_dynptr_kfuncs_reject_reinitialize() {
 #[test]
 fn test_packet_dynptr_kfuncs_reject_destination_initialized_on_one_path() {
     for kfunc in ["bpf_dynptr_from_xdp", "bpf_dynptr_from_skb"] {
-        let mut func = MirFunction::new();
-        let entry = func.alloc_block();
-        let init_path = func.alloc_block();
-        let skip_init = func.alloc_block();
-        let join = func.alloc_block();
-        func.entry = entry;
-
-        let cond = func.alloc_vreg();
-        func.param_count = 1;
-        let ctx = func.alloc_vreg();
-        let flags = func.alloc_vreg();
-        let dptr = func.alloc_vreg();
-        let init_ret = func.alloc_vreg();
-        let second_ret = func.alloc_vreg();
-        let dptr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
-
-        func.block_mut(entry)
-            .instructions
-            .push(MirInst::LoadCtxField {
-                dst: ctx,
-                field: CtxField::Context,
-                slot: None,
-            });
-        func.block_mut(entry).instructions.push(MirInst::Copy {
-            dst: flags,
-            src: MirValue::Const(0),
-        });
-        func.block_mut(entry).instructions.push(MirInst::Copy {
-            dst: dptr,
-            src: MirValue::StackSlot(dptr_slot),
-        });
-        func.block_mut(entry).terminator = MirInst::Branch {
-            cond,
-            if_true: init_path,
-            if_false: skip_init,
-        };
-        func.block_mut(init_path)
-            .instructions
-            .push(MirInst::CallKfunc {
-                dst: init_ret,
-                kfunc: kfunc.to_string(),
-                btf_id: None,
-                args: vec![ctx, flags, dptr],
-            });
-        func.block_mut(init_path).terminator = MirInst::Jump { target: join };
-        func.block_mut(skip_init).terminator = MirInst::Jump { target: join };
-        func.block_mut(join).instructions.push(MirInst::CallKfunc {
-            dst: second_ret,
-            kfunc: kfunc.to_string(),
-            btf_id: None,
-            args: vec![ctx, flags, dptr],
-        });
-        func.block_mut(join).terminator = MirInst::Return { val: None };
-
-        let mut types = HashMap::new();
-        types.insert(cond, MirType::Bool);
-        types.insert(
-            ctx,
-            MirType::Ptr {
-                pointee: Box::new(MirType::U8),
-                address_space: AddressSpace::Kernel,
-            },
-        );
-        types.insert(flags, MirType::I64);
-        types.insert(
-            dptr,
-            MirType::Ptr {
-                pointee: Box::new(MirType::Unknown),
-                address_space: AddressSpace::Stack,
-            },
-        );
-        types.insert(init_ret, MirType::I64);
-        types.insert(second_ret, MirType::I64);
-
+        let (func, types) = packet_dynptr_kfunc_join_reinitialize_mir(kfunc);
         let err = verify_mir(&func, &types)
             .expect_err("expected packet dynptr constructor reinitialize error at join");
         assert!(
@@ -3701,64 +3557,7 @@ fn test_kfunc_dynptr_clone_requires_initialized_source_stack_slot() {
 
 #[test]
 fn test_kfunc_dynptr_clone_rejects_destination_initialized_on_one_path() {
-    let mut func = MirFunction::new();
-    let entry = func.alloc_block();
-    let init_dst = func.alloc_block();
-    let skip_init = func.alloc_block();
-    let join = func.alloc_block();
-    func.entry = entry;
-
-    let cond = func.alloc_vreg();
-    func.param_count = 1;
-    let src = func.alloc_vreg();
-    let dst = func.alloc_vreg();
-    let init_ret = func.alloc_vreg();
-    let clone_ret = func.alloc_vreg();
-    let src_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
-    let dst_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
-    func.entry_initialized_dynptr_slots.insert(src_slot);
-    func.block_mut(entry).instructions.push(MirInst::Copy {
-        dst: src,
-        src: MirValue::StackSlot(src_slot),
-    });
-    func.block_mut(entry).instructions.push(MirInst::Copy {
-        dst,
-        src: MirValue::StackSlot(dst_slot),
-    });
-    func.block_mut(entry).terminator = MirInst::Branch {
-        cond,
-        if_true: init_dst,
-        if_false: skip_init,
-    };
-    func.block_mut(init_dst)
-        .instructions
-        .push(MirInst::CallKfunc {
-            dst: init_ret,
-            kfunc: "bpf_dynptr_clone".to_string(),
-            btf_id: None,
-            args: vec![src, dst],
-        });
-    func.block_mut(init_dst).terminator = MirInst::Jump { target: join };
-    func.block_mut(skip_init).terminator = MirInst::Jump { target: join };
-    func.block_mut(join).instructions.push(MirInst::CallKfunc {
-        dst: clone_ret,
-        kfunc: "bpf_dynptr_clone".to_string(),
-        btf_id: None,
-        args: vec![src, dst],
-    });
-    func.block_mut(join).terminator = MirInst::Return { val: None };
-
-    let dynptr_ty = MirType::Ptr {
-        pointee: Box::new(MirType::opaque_named_struct("bpf_dynptr")),
-        address_space: AddressSpace::Stack,
-    };
-    let mut types = HashMap::new();
-    types.insert(cond, MirType::Bool);
-    types.insert(src, dynptr_ty.clone());
-    types.insert(dst, dynptr_ty);
-    types.insert(init_ret, MirType::I64);
-    types.insert(clone_ret, MirType::I64);
-
+    let (func, types) = dynptr_clone_join_reinitialize_mir();
     let err = verify_mir(&func, &types)
         .expect_err("expected partially initialized dynptr clone destination error");
     assert!(
