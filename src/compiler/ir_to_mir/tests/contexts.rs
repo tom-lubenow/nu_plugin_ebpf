@@ -13,6 +13,95 @@ use nu_protocol::ast::{CellPath, Comparison, Operator, PathMember};
 use nu_protocol::{DeclId, RegId, VarId};
 use std::collections::{BTreeSet, HashMap};
 
+fn make_returned_context_upsert_program(
+    path: CellPath,
+    lit: HirLiteral,
+) -> (HirProgram, HashMap<DeclId, HirFunction>) {
+    let ctx_var = VarId::new(0);
+    let arg_var = VarId::new(10);
+    let alias_var = VarId::new(11);
+    let decl_id = DeclId::new(1);
+
+    let user_func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: arg_var,
+                },
+                HirStmt::StoreVariable {
+                    var_id: alias_var,
+                    src: RegId::new(0),
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: alias_var,
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![Span::test_data(); 3],
+        ast: vec![None; 3],
+        comments: vec![],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let hir = HirProgram::new(
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(0),
+                        var_id: ctx_var,
+                    },
+                    HirStmt::Call {
+                        decl_id,
+                        src_dst: RegId::new(1),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(0)],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::CellPath(Box::new(path)),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(3),
+                        lit,
+                    },
+                    HirStmt::UpsertCellPath {
+                        src_dst: RegId::new(1),
+                        path: RegId::new(2),
+                        new_value: RegId::new(3),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(4),
+                        lit: HirLiteral::Int(1),
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(4) },
+            }],
+            entry: HirBlockId(0),
+            spans: vec![Span::test_data(); 6],
+            ast: vec![None; 6],
+            comments: vec![],
+            register_count: 5,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        Some(ctx_var),
+    );
+    let mut user_functions = HashMap::new();
+    user_functions.insert(decl_id, user_func);
+    (hir, user_functions)
+}
+
 #[test]
 fn test_lower_xdp_action_alias_return_to_const() {
     let hir = make_return_literal_program(HirLiteral::String(b"pass".to_vec()));
@@ -1325,6 +1414,60 @@ fn test_lower_cgroup_sysctl_ctx_alias_new_value_assignment_preserves_metadata() 
     let compiled =
         compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
             .expect("cgroup_sysctl aliased ctx.new_value assignment should compile");
+    assert!(compiled.used_ctx_fields.contains(&CtxField::SysctlNewValue));
+
+    let program = compiled.into_program(
+        EbpfProgramType::CgroupSysctl,
+        "/sys/fs/cgroup",
+        "main",
+        HashMap::new(),
+        HashMap::new(),
+    );
+    assert!(
+        program
+            .helper_compatibility_requirements()
+            .into_iter()
+            .any(|requirement| requirement.helper() == BpfHelper::SysctlSetNewValue)
+    );
+    assert!(
+        program
+            .context_field_compatibility_requirements()
+            .into_iter()
+            .any(|requirement| requirement.field() == &CtxField::SysctlNewValue)
+    );
+}
+
+#[test]
+fn test_lower_returned_context_sysctl_new_value_assignment_preserves_metadata() {
+    let (hir, user_functions) = make_returned_context_upsert_program(
+        CellPath {
+            members: vec![string_member("new_value")],
+        },
+        HirLiteral::String(b"1".to_vec()),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSysctl, "/sys/fs/cgroup");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &user_functions,
+        &HashMap::new(),
+    )
+    .expect("returned cgroup_sysctl ctx.new_value assignment should lower");
+
+    assert!(
+        result
+            .type_hints
+            .used_ctx_fields
+            .contains(&CtxField::SysctlNewValue),
+        "returned ctx.new_value assignment should preserve context compatibility metadata"
+    );
+
+    let compiled =
+        compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+            .expect("returned cgroup_sysctl ctx.new_value assignment should compile");
     assert!(compiled.used_ctx_fields.contains(&CtxField::SysctlNewValue));
 
     let program = compiled.into_program(
@@ -3951,6 +4094,81 @@ fn test_lower_sk_lookup_ctx_socket_assignment_aliases_call_sk_assign() {
 }
 
 #[test]
+fn test_lower_returned_context_sk_assignment_preserves_metadata() {
+    let (hir, user_functions) = make_returned_context_upsert_program(
+        CellPath {
+            members: vec![string_member("sk")],
+        },
+        HirLiteral::Int(0),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkLookup, "/proc/self/ns/net");
+
+    let mut result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &user_functions,
+        &HashMap::new(),
+    )
+    .expect("returned sk_lookup ctx.sk assignment should lower to bpf_sk_assign");
+
+    assert!(
+        result
+            .type_hints
+            .used_ctx_fields
+            .contains(&CtxField::Socket),
+        "returned ctx.sk assignment should preserve socket context compatibility metadata"
+    );
+    assert!(result.program.main.blocks.iter().any(|block| {
+        block.instructions.iter().any(|inst| {
+            matches!(
+                inst,
+                MirInst::CallHelper {
+                    helper,
+                    args,
+                    ..
+                } if *helper == BpfHelper::SkAssign as u32
+                    && args.len() == 3
+                    && matches!(args.get(2), Some(MirValue::Const(0)))
+            )
+        })
+    }));
+
+    optimize_with_ssa_hints(
+        &mut result.program.main,
+        Some(&probe_ctx),
+        &mut result.type_hints.main,
+        &result.type_hints.main_stack_slots,
+        &result.type_hints.generic_map_value_types,
+    );
+    let compiled =
+        compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+            .expect("returned sk_lookup ctx.sk assignment should compile");
+    assert!(compiled.used_ctx_fields.contains(&CtxField::Socket));
+
+    let program = compiled.into_program(
+        EbpfProgramType::SkLookup,
+        "/proc/self/ns/net",
+        "main",
+        HashMap::new(),
+        HashMap::new(),
+    );
+    assert!(
+        program
+            .helper_compatibility_requirements()
+            .into_iter()
+            .any(|requirement| requirement.helper() == BpfHelper::SkAssign)
+    );
+    assert!(
+        program
+            .context_field_compatibility_requirements()
+            .into_iter()
+            .any(|requirement| requirement.field() == &CtxField::Socket)
+    );
+}
+
+#[test]
 fn test_lower_record_context_sk_assignment_calls_sk_assign() {
     let hir = make_record_context_upsert_program(
         "event",
@@ -4579,6 +4797,70 @@ fn test_lower_sock_ops_ctx_cb_flags_assignment() {
         .find(|requirement| requirement.key() == "ctx:cb_flags")
         .expect("ctx.cb_flags assignment should report ctx.cb_flags metadata");
     assert_eq!(ctx_requirement.minimum_kernel(), "4.16");
+}
+
+#[test]
+fn test_lower_returned_context_sock_ops_cb_flags_assignment_preserves_metadata() {
+    let (hir, user_functions) = make_returned_context_upsert_program(
+        CellPath {
+            members: vec![string_member("cb_flags")],
+        },
+        HirLiteral::Int(7),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &user_functions,
+        &HashMap::new(),
+    )
+    .expect("returned sock_ops ctx.cb_flags assignment should lower");
+
+    assert!(
+        result
+            .type_hints
+            .used_ctx_fields
+            .contains(&CtxField::SockOpsCbFlags),
+        "returned ctx.cb_flags assignment should preserve context compatibility metadata"
+    );
+
+    let block = result.program.main.block(result.program.main.entry);
+    assert!(block.instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::StoreCtxField {
+            target: CtxStoreTarget::SockOpsCbFlags,
+            ty: MirType::U32,
+            ..
+        }
+    )));
+
+    let compiled =
+        compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+            .expect("returned sock_ops ctx.cb_flags assignment should compile");
+    assert!(compiled.used_ctx_fields.contains(&CtxField::SockOpsCbFlags));
+
+    let program = compiled.into_program(
+        EbpfProgramType::SockOps,
+        "/sys/fs/cgroup",
+        "main",
+        HashMap::new(),
+        HashMap::new(),
+    );
+    assert!(
+        program
+            .helper_compatibility_requirements()
+            .into_iter()
+            .any(|requirement| requirement.helper() == BpfHelper::SockOpsCbFlagsSet)
+    );
+    assert!(
+        program
+            .context_field_compatibility_requirements()
+            .into_iter()
+            .any(|requirement| requirement.field() == &CtxField::SockOpsCbFlags)
+    );
 }
 
 #[test]

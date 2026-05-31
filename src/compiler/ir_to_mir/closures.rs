@@ -1103,8 +1103,12 @@ impl<'a> HirToMirLowering<'a> {
             // Inside BPF subfunctions, context-valued user parameters are real
             // ABI arguments. The top-level ambient context remains metadata-only
             // so direct projections can lower through context-specific paths.
+            let mapped_context_vreg = self.var_mappings.get(&var_id).copied().or_else(|| {
+                meta.source_var
+                    .and_then(|source_var| self.var_mappings.get(&source_var).copied())
+            });
             if self.ctx_param.is_none()
-                && let Some(&param_vreg) = self.var_mappings.get(&var_id)
+                && let Some(param_vreg) = mapped_context_vreg
             {
                 self.emit(MirInst::Copy {
                     dst: dst_vreg,
