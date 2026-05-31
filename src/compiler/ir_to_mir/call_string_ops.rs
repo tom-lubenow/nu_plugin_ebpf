@@ -80,11 +80,12 @@ impl<'a> HirToMirLowering<'a> {
             dst_vreg
         };
 
-        if !self.named_flags.is_empty() || !self.named_args.is_empty() {
+        if !self.named_args.is_empty() {
             return Err(CompileError::UnsupportedInstruction(
-                "str starts-with does not accept named flags or arguments in eBPF".into(),
+                "str starts-with does not accept named arguments in eBPF".into(),
             ));
         }
+        let ignore_case = self.string_ignore_case_flag("str starts-with")?;
         let (_, prefix_reg) = self.positional_args.first().copied().ok_or_else(|| {
             CompileError::UnsupportedInstruction(
                 "str starts-with requires a string prefix argument in eBPF".into(),
@@ -120,6 +121,12 @@ impl<'a> HirToMirLowering<'a> {
                 "str starts-with does not support NUL bytes in the prefix in eBPF".into(),
             ));
         }
+        if ignore_case {
+            let input = self.exact_string_input(input_reg, "str starts-with --ignore-case")?;
+            let matches = input.to_lowercase().starts_with(&prefix.to_lowercase());
+            return self.lower_bool_result(src_dst, result_vreg, matches);
+        }
+
         let prefix_meta = self.get_metadata(prefix_reg).cloned().ok_or_else(|| {
             CompileError::UnsupportedInstruction(
                 "str starts-with requires a tracked string prefix in eBPF".into(),
@@ -175,11 +182,12 @@ impl<'a> HirToMirLowering<'a> {
             dst_vreg
         };
 
-        if !self.named_flags.is_empty() || !self.named_args.is_empty() {
+        if !self.named_args.is_empty() {
             return Err(CompileError::UnsupportedInstruction(
-                "str ends-with does not accept named flags or arguments in eBPF".into(),
+                "str ends-with does not accept named arguments in eBPF".into(),
             ));
         }
+        let ignore_case = self.string_ignore_case_flag("str ends-with")?;
         let (_, suffix_reg) = self.positional_args.first().copied().ok_or_else(|| {
             CompileError::UnsupportedInstruction(
                 "str ends-with requires a string suffix argument in eBPF".into(),
@@ -220,6 +228,12 @@ impl<'a> HirToMirLowering<'a> {
                 "str ends-with does not support NUL bytes in the suffix in eBPF".into(),
             ));
         }
+        if ignore_case {
+            let input = self.exact_string_input(input_reg, "str ends-with --ignore-case")?;
+            let matches = input.to_lowercase().ends_with(&suffix.to_lowercase());
+            return self.lower_bool_result(src_dst, result_vreg, matches);
+        }
+
         let suffix_meta = self.get_metadata(suffix_reg).cloned().ok_or_else(|| {
             CompileError::UnsupportedInstruction(
                 "str ends-with requires a tracked string suffix in eBPF".into(),
@@ -275,11 +289,12 @@ impl<'a> HirToMirLowering<'a> {
             dst_vreg
         };
 
-        if !self.named_flags.is_empty() || !self.named_args.is_empty() {
+        if !self.named_args.is_empty() {
             return Err(CompileError::UnsupportedInstruction(
-                "str contains does not accept named flags or arguments in eBPF".into(),
+                "str contains does not accept named arguments in eBPF".into(),
             ));
         }
+        let ignore_case = self.string_ignore_case_flag("str contains")?;
         let (_, needle_reg) = self.positional_args.first().copied().ok_or_else(|| {
             CompileError::UnsupportedInstruction(
                 "str contains requires a string substring argument in eBPF".into(),
@@ -289,6 +304,18 @@ impl<'a> HirToMirLowering<'a> {
             return Err(CompileError::UnsupportedInstruction(
                 "str contains accepts exactly one substring argument in eBPF".into(),
             ));
+        }
+
+        if ignore_case {
+            let input = self.exact_string_input(input_reg, "str contains --ignore-case")?;
+            let needle = self.literal_string_arg(needle_reg, "str contains")?;
+            if needle.as_bytes().contains(&0) {
+                return Err(CompileError::UnsupportedInstruction(
+                    "str contains does not support NUL bytes in the substring in eBPF".into(),
+                ));
+            }
+            let matches = input.to_lowercase().contains(&needle.to_lowercase());
+            return self.lower_bool_result(src_dst, result_vreg, matches);
         }
 
         let operands = self.known_string_search_operands(input_reg, needle_reg, "str contains")?;
@@ -711,6 +738,34 @@ impl<'a> HirToMirLowering<'a> {
             Some(nu_protocol::Value::string(output, Span::unknown())),
         );
         Ok(())
+    }
+
+    fn lower_bool_result(
+        &mut self,
+        src_dst: RegId,
+        result_vreg: VReg,
+        value: bool,
+    ) -> Result<(), CompileError> {
+        self.emit(MirInst::Copy {
+            dst: result_vreg,
+            src: MirValue::Const(if value { 1 } else { 0 }),
+        });
+        self.reset_call_result_metadata(src_dst);
+        let out_meta = self.get_or_create_metadata(src_dst);
+        out_meta.field_type = Some(MirType::Bool);
+        self.vreg_type_hints.insert(result_vreg, MirType::Bool);
+        Ok(())
+    }
+
+    fn string_ignore_case_flag(&self, command: &str) -> Result<bool, CompileError> {
+        for flag in &self.named_flags {
+            if flag != "ignore-case" {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{command} currently supports only --ignore-case as a flag in eBPF"
+                )));
+            }
+        }
+        Ok(self.named_flags.iter().any(|flag| flag == "ignore-case"))
     }
 
     fn capitalize_first_char(input: &str) -> String {

@@ -33108,6 +33108,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-string-starts-with-ignore-case"
+        category: "language-core"
+        tags: [string str starts-with ignore-case]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "AbCd" | str starts-with --ignore-case "ab"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-string-ends-with"
         category: "language-core"
         tags: [string str ends-with]
@@ -33134,6 +33147,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-string-ends-with-ignore-case"
+        category: "language-core"
+        tags: [string str ends-with ignore-case]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "AbCd" | str ends-with --ignore-case "CD"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-string-contains"
         category: "language-core"
         tags: [string str contains]
@@ -33154,6 +33180,19 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  "abcdef" | str contains "zz"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-string-contains-ignore-case"
+        category: "language-core"
+        tags: [string str contains ignore-case]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "AbCd" | str contains --ignore-case "bc"'
             '}'
         ]
         local: "accept"

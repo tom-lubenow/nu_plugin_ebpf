@@ -530,6 +530,15 @@ fn make_string_pipeline_call_program(decl_id: DeclId, value: &str) -> HirProgram
 }
 
 fn make_string_arg_pipeline_call_program(decl_id: DeclId, value: &str, arg: &str) -> HirProgram {
+    make_string_arg_pipeline_call_program_with_flags(decl_id, value, arg, Vec::new())
+}
+
+fn make_string_arg_pipeline_call_program_with_flags(
+    decl_id: DeclId,
+    value: &str,
+    arg: &str,
+    flags: Vec<Vec<u8>>,
+) -> HirProgram {
     let func = HirFunction {
         blocks: vec![HirBlock {
             id: HirBlockId(0),
@@ -548,6 +557,7 @@ fn make_string_arg_pipeline_call_program(decl_id: DeclId, value: &str, arg: &str
                     args: HirCallArgs {
                         positional: vec![RegId::new(2)],
                         pipeline_input: Some(RegId::new(0)),
+                        flags,
                         ..HirCallArgs::default()
                     },
                 },
@@ -2651,6 +2661,57 @@ fn test_lower_str_starts_with_prefix_beyond_capacity_is_false() {
 }
 
 #[test]
+fn test_lower_str_starts_with_ignore_case_on_known_string_materializes_bool() {
+    let starts_with_decl = DeclId::new(150);
+    let hir = make_string_arg_pipeline_call_program_with_flags(
+        starts_with_decl,
+        "AbCd",
+        "ab",
+        vec![b"ignore-case".to_vec()],
+    );
+    let decl_names = HashMap::from([(starts_with_decl, "str starts-with".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str starts-with --ignore-case should lower on compile-time known strings");
+
+    assert!(
+        !result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::StrCmp { .. })),
+        "expected case-insensitive starts-with to materialize a constant bool"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Copy {
+                    src: MirValue::Const(1),
+                    ..
+                }
+            )),
+        "expected case-insensitive starts-with to return true"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("str starts-with --ignore-case constant bool should compile through codegen");
+}
+
+#[test]
 fn test_lower_str_ends_with_on_known_string_uses_offset_strcmp() {
     let ends_with_decl = DeclId::new(120);
     let hir = make_string_arg_pipeline_call_program(ends_with_decl, "abcdef", "def");
@@ -2719,6 +2780,57 @@ fn test_lower_str_ends_with_suffix_longer_than_known_string_is_false() {
 }
 
 #[test]
+fn test_lower_str_ends_with_ignore_case_on_known_string_materializes_bool() {
+    let ends_with_decl = DeclId::new(151);
+    let hir = make_string_arg_pipeline_call_program_with_flags(
+        ends_with_decl,
+        "AbCd",
+        "CD",
+        vec![b"ignore-case".to_vec()],
+    );
+    let decl_names = HashMap::from([(ends_with_decl, "str ends-with".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str ends-with --ignore-case should lower on compile-time known strings");
+
+    assert!(
+        !result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::StrCmp { .. })),
+        "expected case-insensitive ends-with to materialize a constant bool"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Copy {
+                    src: MirValue::Const(1),
+                    ..
+                }
+            )),
+        "expected case-insensitive ends-with to return true"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("str ends-with --ignore-case constant bool should compile through codegen");
+}
+
+#[test]
 fn test_lower_str_contains_on_known_string_uses_offset_strcmps() {
     let contains_decl = DeclId::new(122);
     let hir = make_string_arg_pipeline_call_program(contains_decl, "abcdef", "cd");
@@ -2766,6 +2878,57 @@ fn test_lower_str_contains_on_known_string_uses_offset_strcmps() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("str contains on known tracked strings should compile through codegen");
+}
+
+#[test]
+fn test_lower_str_contains_ignore_case_on_known_string_materializes_bool() {
+    let contains_decl = DeclId::new(152);
+    let hir = make_string_arg_pipeline_call_program_with_flags(
+        contains_decl,
+        "AbCd",
+        "bc",
+        vec![b"ignore-case".to_vec()],
+    );
+    let decl_names = HashMap::from([(contains_decl, "str contains".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str contains --ignore-case should lower on compile-time known strings");
+
+    assert!(
+        !result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::StrCmp { .. })),
+        "expected case-insensitive contains to materialize a constant bool"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Copy {
+                    src: MirValue::Const(1),
+                    ..
+                }
+            )),
+        "expected case-insensitive contains to return true"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("str contains --ignore-case constant bool should compile through codegen");
 }
 
 #[test]
