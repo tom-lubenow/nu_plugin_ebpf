@@ -2493,45 +2493,53 @@ mod tests {
 
     #[test]
     fn test_infer_summary_propagates_nested_ringbuf_dynptr_release_arg() {
-        let mut callee = MirFunction::new();
-        let callee_entry = callee.alloc_block();
-        callee.entry = callee_entry;
-        callee.param_count = 1;
-        callee.vreg_count = 1;
-        let submit_ret = callee.alloc_vreg();
-        callee
-            .block_mut(callee_entry)
-            .instructions
-            .push(MirInst::CallHelper {
-                dst: submit_ret,
-                helper: BpfHelper::RingbufSubmitDynptr as u32,
-                args: vec![MirValue::VReg(VReg(0)), MirValue::Const(0)],
-            });
-        callee.block_mut(callee_entry).terminator = MirInst::Return { val: None };
+        for release_helper in [
+            BpfHelper::RingbufSubmitDynptr,
+            BpfHelper::RingbufDiscardDynptr,
+        ] {
+            let mut callee = MirFunction::new();
+            let callee_entry = callee.alloc_block();
+            callee.entry = callee_entry;
+            callee.param_count = 1;
+            callee.vreg_count = 1;
+            let release_ret = callee.alloc_vreg();
+            callee
+                .block_mut(callee_entry)
+                .instructions
+                .push(MirInst::CallHelper {
+                    dst: release_ret,
+                    helper: release_helper as u32,
+                    args: vec![MirValue::VReg(VReg(0)), MirValue::Const(0)],
+                });
+            callee.block_mut(callee_entry).terminator = MirInst::Return { val: None };
 
-        let mut caller = MirFunction::new();
-        let caller_entry = caller.alloc_block();
-        caller.entry = caller_entry;
-        caller.param_count = 1;
-        caller.vreg_count = 1;
-        let call_ret = caller.alloc_vreg();
-        caller
-            .block_mut(caller_entry)
-            .instructions
-            .push(MirInst::CallSubfn {
-                dst: call_ret,
-                subfn: SubfunctionId(0),
-                args: vec![VReg(0)],
-            });
-        caller.block_mut(caller_entry).terminator = MirInst::Return { val: None };
+            let mut caller = MirFunction::new();
+            let caller_entry = caller.alloc_block();
+            caller.entry = caller_entry;
+            caller.param_count = 1;
+            caller.vreg_count = 1;
+            let call_ret = caller.alloc_vreg();
+            caller
+                .block_mut(caller_entry)
+                .instructions
+                .push(MirInst::CallSubfn {
+                    dst: call_ret,
+                    subfn: SubfunctionId(0),
+                    args: vec![VReg(0)],
+                });
+            caller.block_mut(caller_entry).terminator = MirInst::Return { val: None };
 
-        let summaries = infer_subfunction_summaries(&[callee, caller]);
-        let summary = summaries
-            .get(&SubfunctionId(1))
-            .cloned()
-            .expect("expected summary");
-        assert!(summary.releases_ringbuf_dynptr_arg(0));
-        assert!(!summary.releases_ringbuf_dynptr_arg(1));
+            let summaries = infer_subfunction_summaries(&[callee, caller]);
+            let summary = summaries
+                .get(&SubfunctionId(1))
+                .cloned()
+                .expect("expected summary");
+            assert!(
+                summary.releases_ringbuf_dynptr_arg(0),
+                "{release_helper:?} should propagate through nested summaries"
+            );
+            assert!(!summary.releases_ringbuf_dynptr_arg(1));
+        }
     }
 
     #[test]
@@ -2569,44 +2577,53 @@ mod tests {
 
     #[test]
     fn test_infer_summary_cancels_balanced_ringbuf_dynptr_lifecycle() {
-        let mut subfn = MirFunction::new();
-        let entry = subfn.alloc_block();
-        subfn.entry = entry;
-        subfn.param_count = 1;
-        subfn.vreg_count = 1;
-        let map_slot = subfn.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
-        let reserve_ret = subfn.alloc_vreg();
-        let submit_ret = subfn.alloc_vreg();
-        subfn
-            .block_mut(entry)
-            .instructions
-            .push(MirInst::CallHelper {
-                dst: reserve_ret,
-                helper: BpfHelper::RingbufReserveDynptr as u32,
-                args: vec![
-                    MirValue::StackSlot(map_slot),
-                    MirValue::Const(8),
-                    MirValue::Const(0),
-                    MirValue::VReg(VReg(0)),
-                ],
-            });
-        subfn
-            .block_mut(entry)
-            .instructions
-            .push(MirInst::CallHelper {
-                dst: submit_ret,
-                helper: BpfHelper::RingbufSubmitDynptr as u32,
-                args: vec![MirValue::VReg(VReg(0)), MirValue::Const(0)],
-            });
-        subfn.block_mut(entry).terminator = MirInst::Return { val: None };
+        for release_helper in [
+            BpfHelper::RingbufSubmitDynptr,
+            BpfHelper::RingbufDiscardDynptr,
+        ] {
+            let mut subfn = MirFunction::new();
+            let entry = subfn.alloc_block();
+            subfn.entry = entry;
+            subfn.param_count = 1;
+            subfn.vreg_count = 1;
+            let map_slot = subfn.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+            let reserve_ret = subfn.alloc_vreg();
+            let release_ret = subfn.alloc_vreg();
+            subfn
+                .block_mut(entry)
+                .instructions
+                .push(MirInst::CallHelper {
+                    dst: reserve_ret,
+                    helper: BpfHelper::RingbufReserveDynptr as u32,
+                    args: vec![
+                        MirValue::StackSlot(map_slot),
+                        MirValue::Const(8),
+                        MirValue::Const(0),
+                        MirValue::VReg(VReg(0)),
+                    ],
+                });
+            subfn
+                .block_mut(entry)
+                .instructions
+                .push(MirInst::CallHelper {
+                    dst: release_ret,
+                    helper: release_helper as u32,
+                    args: vec![MirValue::VReg(VReg(0)), MirValue::Const(0)],
+                });
+            subfn.block_mut(entry).terminator = MirInst::Return { val: None };
 
-        let summaries = infer_subfunction_summaries(&[subfn]);
-        let summary = summaries
-            .get(&SubfunctionId(0))
-            .cloned()
-            .expect("expected summary");
-        assert_eq!(summary.ringbuf_dynptr_delta_arg(0), 0);
-        assert!(!summary.releases_ringbuf_dynptr_arg(0));
+            let summaries = infer_subfunction_summaries(&[subfn]);
+            let summary = summaries
+                .get(&SubfunctionId(0))
+                .cloned()
+                .expect("expected summary");
+            assert_eq!(
+                summary.ringbuf_dynptr_delta_arg(0),
+                0,
+                "{release_helper:?} should cancel reserve delta"
+            );
+            assert!(!summary.releases_ringbuf_dynptr_arg(0));
+        }
     }
 
     #[test]
