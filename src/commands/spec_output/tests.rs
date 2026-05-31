@@ -1025,6 +1025,40 @@ fn test_context_field_compatibility_metadata_invariants() {
                 field.field
             );
 
+            let load_guard = spec.ctx_field_load_guard(&entry.field);
+            assert_eq!(
+                field.load_guard,
+                load_guard.map(context_field_load_guard_label),
+                "{spec_text} ctx.{} should report the ProgramSpec load guard",
+                field.field
+            );
+            assert_eq!(
+                field.load_guard_witness,
+                load_guard
+                    .map(ContextFieldLoadGuard::witness_field)
+                    .map(|field| field.display_name()),
+                "{spec_text} ctx.{} should report the ProgramSpec load guard witness field",
+                field.field
+            );
+            assert_eq!(
+                field.load_guard_description,
+                load_guard.map(|guard| guard.error(&entry.field)),
+                "{spec_text} ctx.{} should report the ProgramSpec load guard diagnostic",
+                field.field
+            );
+            if load_guard.is_some() {
+                assert!(
+                    field.load_kind.is_some(),
+                    "{spec_text} ctx.{} should report load-shape metadata when it reports a load guard",
+                    field.field
+                );
+                assert!(
+                    field.requirement_key.is_some(),
+                    "{spec_text} ctx.{} should report a context-field requirement key when it reports a load guard",
+                    field.field
+                );
+            }
+
             let component_floors = [field.minimum_kernel, field.backing_helper_minimum_kernel];
             if component_floors.iter().any(Option::is_some) {
                 let compatibility_minimum =
