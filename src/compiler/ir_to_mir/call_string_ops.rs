@@ -1,5 +1,13 @@
 use super::*;
 
+struct KnownStringSearchOperands {
+    input_slot: StackSlotId,
+    input_slot_size: usize,
+    input_len: usize,
+    needle_slot: StackSlotId,
+    needle_len: usize,
+}
+
 impl<'a> HirToMirLowering<'a> {
     pub(super) fn lower_string_length(
         &mut self,
@@ -283,53 +291,16 @@ impl<'a> HirToMirLowering<'a> {
             ));
         }
 
-        let input_meta = input_reg
-            .and_then(|reg| self.get_metadata(reg).cloned())
-            .ok_or_else(|| {
-                CompileError::UnsupportedInstruction(
-                    "str contains requires tracked string input in eBPF".into(),
-                )
-            })?;
-        let Some(input_slot) = input_meta.string_slot else {
-            return Err(CompileError::UnsupportedInstruction(
-                "str contains requires tracked string input in eBPF".into(),
-            ));
-        };
-        let input_slot_size = self.stack_slot_size(input_slot).ok_or_else(|| {
-            CompileError::UnsupportedInstruction(
-                "str contains could not determine input string capacity in eBPF".into(),
-            )
-        })?;
-        let input_len = Self::exact_string_len(&input_meta).ok_or_else(|| {
-            CompileError::UnsupportedInstruction(
-                "str contains requires a compile-time known input string length in eBPF".into(),
-            )
-        })?;
+        let operands = self.known_string_search_operands(input_reg, needle_reg, "str contains")?;
 
-        let needle = self.literal_string_arg(needle_reg, "str contains")?;
-        if needle.as_bytes().contains(&0) {
-            return Err(CompileError::UnsupportedInstruction(
-                "str contains does not support NUL bytes in the substring in eBPF".into(),
-            ));
-        }
-        let needle_meta = self.get_metadata(needle_reg).cloned().ok_or_else(|| {
-            CompileError::UnsupportedInstruction(
-                "str contains requires a tracked string substring in eBPF".into(),
-            )
-        })?;
-        let Some(needle_slot) = needle_meta.string_slot else {
-            return Err(CompileError::UnsupportedInstruction(
-                "str contains requires a tracked string substring in eBPF".into(),
-            ));
-        };
-        let needle_len = needle.len();
-
-        if needle_len == 0 {
+        if operands.needle_len == 0 {
             self.emit(MirInst::Copy {
                 dst: result_vreg,
                 src: MirValue::Const(1),
             });
-        } else if needle_len > input_len || input_len > input_slot_size.saturating_sub(1) {
+        } else if operands.needle_len > operands.input_len
+            || operands.input_len > operands.input_slot_size.saturating_sub(1)
+        {
             self.emit(MirInst::Copy {
                 dst: result_vreg,
                 src: MirValue::Const(0),
@@ -338,7 +309,7 @@ impl<'a> HirToMirLowering<'a> {
             let found_block = self.func.alloc_block();
             let not_found_block = self.func.alloc_block();
             let continuation_block = self.func.alloc_block();
-            let last_offset = input_len - needle_len;
+            let last_offset = operands.input_len - operands.needle_len;
 
             for offset in 0..=last_offset {
                 let next_block = if offset == last_offset {
@@ -349,11 +320,11 @@ impl<'a> HirToMirLowering<'a> {
                 let candidate_vreg = self.func.alloc_vreg();
                 self.emit(MirInst::StrCmp {
                     dst: candidate_vreg,
-                    lhs: input_slot,
+                    lhs: operands.input_slot,
                     lhs_offset: offset,
-                    rhs: needle_slot,
+                    rhs: operands.needle_slot,
                     rhs_offset: 0,
-                    len: needle_len,
+                    len: operands.needle_len,
                 });
                 self.vreg_type_hints.insert(candidate_vreg, MirType::Bool);
                 self.terminate(MirInst::Branch {
@@ -390,6 +361,165 @@ impl<'a> HirToMirLowering<'a> {
         out_meta.field_type = Some(MirType::Bool);
         self.vreg_type_hints.insert(result_vreg, MirType::Bool);
         Ok(())
+    }
+
+    pub(super) fn lower_string_index_of(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+    ) -> Result<(), CompileError> {
+        let input_reg = self
+            .pipeline_input_reg
+            .or(src_dst_had_value.then_some(src_dst));
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+
+        if !self.named_flags.is_empty() || !self.named_args.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(
+                "str index-of does not accept named flags or arguments in eBPF".into(),
+            ));
+        }
+        let (_, needle_reg) = self.positional_args.first().copied().ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "str index-of requires a string substring argument in eBPF".into(),
+            )
+        })?;
+        if self.positional_args.len() != 1 {
+            return Err(CompileError::UnsupportedInstruction(
+                "str index-of accepts exactly one substring argument in eBPF".into(),
+            ));
+        }
+
+        let operands = self.known_string_search_operands(input_reg, needle_reg, "str index-of")?;
+
+        if operands.needle_len == 0 {
+            self.emit(MirInst::Copy {
+                dst: result_vreg,
+                src: MirValue::Const(0),
+            });
+        } else if operands.needle_len > operands.input_len
+            || operands.input_len > operands.input_slot_size.saturating_sub(1)
+        {
+            self.emit(MirInst::Copy {
+                dst: result_vreg,
+                src: MirValue::Const(-1),
+            });
+        } else {
+            let not_found_block = self.func.alloc_block();
+            let continuation_block = self.func.alloc_block();
+            let last_offset = operands.input_len - operands.needle_len;
+
+            for offset in 0..=last_offset {
+                let found_block = self.func.alloc_block();
+                let next_block = if offset == last_offset {
+                    not_found_block
+                } else {
+                    self.func.alloc_block()
+                };
+                let candidate_vreg = self.func.alloc_vreg();
+                self.emit(MirInst::StrCmp {
+                    dst: candidate_vreg,
+                    lhs: operands.input_slot,
+                    lhs_offset: offset,
+                    rhs: operands.needle_slot,
+                    rhs_offset: 0,
+                    len: operands.needle_len,
+                });
+                self.vreg_type_hints.insert(candidate_vreg, MirType::Bool);
+                self.terminate(MirInst::Branch {
+                    cond: candidate_vreg,
+                    if_true: found_block,
+                    if_false: next_block,
+                });
+
+                self.current_block = found_block;
+                self.emit(MirInst::Copy {
+                    dst: result_vreg,
+                    src: MirValue::Const(offset as i64),
+                });
+                self.terminate(MirInst::Jump {
+                    target: continuation_block,
+                });
+
+                self.current_block = next_block;
+            }
+
+            self.current_block = not_found_block;
+            self.emit(MirInst::Copy {
+                dst: result_vreg,
+                src: MirValue::Const(-1),
+            });
+            self.terminate(MirInst::Jump {
+                target: continuation_block,
+            });
+
+            self.current_block = continuation_block;
+        }
+
+        self.reset_call_result_metadata(src_dst);
+        let out_meta = self.get_or_create_metadata(src_dst);
+        out_meta.field_type = Some(MirType::I64);
+        self.vreg_type_hints.insert(result_vreg, MirType::I64);
+        Ok(())
+    }
+
+    fn known_string_search_operands(
+        &self,
+        input_reg: Option<RegId>,
+        needle_reg: RegId,
+        command: &str,
+    ) -> Result<KnownStringSearchOperands, CompileError> {
+        let input_meta = input_reg
+            .and_then(|reg| self.get_metadata(reg).cloned())
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "{command} requires tracked string input in eBPF"
+                ))
+            })?;
+        let input_slot = input_meta.string_slot.ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "{command} requires tracked string input in eBPF"
+            ))
+        })?;
+        let input_slot_size = self.stack_slot_size(input_slot).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "{command} could not determine input string capacity in eBPF"
+            ))
+        })?;
+        let input_len = Self::exact_string_len(&input_meta).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "{command} requires a compile-time known input string length in eBPF"
+            ))
+        })?;
+
+        let needle = self.literal_string_arg(needle_reg, command)?;
+        if needle.as_bytes().contains(&0) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{command} does not support NUL bytes in the substring in eBPF"
+            )));
+        }
+        let needle_meta = self.get_metadata(needle_reg).cloned().ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "{command} requires a tracked string substring in eBPF"
+            ))
+        })?;
+        let needle_slot = needle_meta.string_slot.ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "{command} requires a tracked string substring in eBPF"
+            ))
+        })?;
+
+        Ok(KnownStringSearchOperands {
+            input_slot,
+            input_slot_size,
+            input_len,
+            needle_slot,
+            needle_len: needle.len(),
+        })
     }
 
     fn exact_string_len(meta: &RegMetadata) -> Option<usize> {

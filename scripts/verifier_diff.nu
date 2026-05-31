@@ -33160,6 +33160,32 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-string-index-of"
+        category: "language-core"
+        tags: [string str index-of]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "ababa" | str index-of "ba"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-string-index-of-missing"
+        category: "language-core"
+        tags: [string str index-of]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "abcdef" | str index-of "zz"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-null-is-empty"
         category: "language-core"
         tags: ["null" is-empty]

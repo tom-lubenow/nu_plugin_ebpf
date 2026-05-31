@@ -2555,6 +2555,100 @@ fn test_lower_str_contains_too_long_substring_is_false() {
 }
 
 #[test]
+fn test_lower_str_index_of_on_known_string_returns_first_offset() {
+    let index_of_decl = DeclId::new(124);
+    let hir = make_string_arg_pipeline_call_program(index_of_decl, "ababa", "ba");
+    let decl_names = HashMap::from([(index_of_decl, "str index-of".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str index-of should lower on tracked strings with known lengths");
+
+    let comparisons = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .filter(|inst| matches!(inst, MirInst::StrCmp { len: 2, .. }))
+        .count();
+    assert_eq!(
+        comparisons, 4,
+        "expected str index-of to test each possible fixed substring offset"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Copy {
+                    src: MirValue::Const(1),
+                    ..
+                }
+            )),
+        "expected str index-of to emit the first matching byte offset"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("str index-of on known tracked strings should compile through codegen");
+}
+
+#[test]
+fn test_lower_str_index_of_missing_substring_returns_minus_one() {
+    let index_of_decl = DeclId::new(125);
+    let hir = make_string_arg_pipeline_call_program(index_of_decl, "a", "abcdef");
+    let decl_names = HashMap::from([(index_of_decl, "str index-of".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str index-of should prove impossible substrings missing");
+
+    assert!(
+        !result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::StrCmp { .. })),
+        "expected too-long str index-of substring to avoid out-of-slot StrCmp"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Copy {
+                    src: MirValue::Const(-1),
+                    ..
+                }
+            )),
+        "expected str index-of to return -1 when the substring cannot match"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("missing str index-of result should compile through codegen");
+}
+
+#[test]
 fn test_lower_is_empty_on_metadata_record_uses_known_field_count() {
     let is_empty_decl = DeclId::new(114);
     let (hir, decl_names) = make_record_empty_predicate_program(is_empty_decl, "is-empty", false);
