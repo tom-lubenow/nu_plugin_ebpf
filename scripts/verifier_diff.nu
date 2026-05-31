@@ -32526,6 +32526,45 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-list-length"
+        category: "language-core"
+        tags: [aggregate list length]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [10 20 30] | length'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-null-length"
+        category: "language-core"
+        tags: ["null" length]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  null | length'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-binary-length"
+        category: "language-core"
+        tags: [binary length]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  0x[01 02 03] | length'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-string-is-empty"
         category: "language-core"
         tags: [string is-empty]

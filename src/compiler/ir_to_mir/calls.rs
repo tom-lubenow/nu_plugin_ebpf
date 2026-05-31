@@ -3251,6 +3251,61 @@ impl<'a> HirToMirLowering<'a> {
                 self.vreg_type_hints.insert(result_vreg, MirType::Bool);
             }
 
+            "length" => {
+                let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
+                let input_reg = self
+                    .pipeline_input_reg
+                    .or(src_dst_had_value.then_some(src_dst));
+                let result_vreg = if src_dst_had_value {
+                    self.assign_fresh_vreg(src_dst)
+                } else {
+                    dst_vreg
+                };
+
+                if !self.named_flags.is_empty()
+                    || !self.named_args.is_empty()
+                    || !self.positional_args.is_empty()
+                {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "length does not accept arguments in eBPF".into(),
+                    ));
+                }
+
+                let input_meta = input_reg.and_then(|reg| self.get_metadata(reg).cloned());
+                if input_meta
+                    .as_ref()
+                    .and_then(|meta| meta.list_buffer)
+                    .is_some()
+                {
+                    self.emit(MirInst::ListLen {
+                        dst: result_vreg,
+                        list: input_vreg,
+                    });
+                } else if let Some(len) = input_meta.as_ref().and_then(|meta| {
+                    meta.constant_value.as_ref().and_then(|value| match value {
+                        nu_protocol::Value::Nothing { .. } => Some(0),
+                        nu_protocol::Value::List { vals, .. } => Some(vals.len()),
+                        nu_protocol::Value::Binary { val, .. } => Some(val.len()),
+                        _ => None,
+                    })
+                }) {
+                    self.emit(MirInst::Copy {
+                        dst: result_vreg,
+                        src: MirValue::Const(len as i64),
+                    });
+                } else {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "length requires a stack-backed list, literal binary, or literal null input in eBPF"
+                            .into(),
+                    ));
+                }
+
+                self.reset_call_result_metadata(src_dst);
+                let out_meta = self.get_or_create_metadata(src_dst);
+                out_meta.field_type = Some(MirType::I64);
+                self.vreg_type_hints.insert(result_vreg, MirType::I64);
+            }
+
             "select" | "reject" => {
                 self.lower_metadata_record_select_or_reject(
                     &cmd_name,
