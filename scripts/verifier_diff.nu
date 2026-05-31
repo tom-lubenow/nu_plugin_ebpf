@@ -32526,6 +32526,48 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-record-select"
+        category: "language-core"
+        tags: [aggregate record select]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let rec = ({ pid: 7 cpu: 2 ok: true } | select cpu pid)'
+            '  $rec.cpu'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-record-reject"
+        category: "language-core"
+        tags: [aggregate record reject]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let rec = ({ pid: 7 cpu: 2 ok: true } | reject pid)'
+            '  $rec.cpu'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-record-select-missing-reject"
+        category: "language-core"
+        tags: [aggregate record select reject]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  { pid: 7 } | select cpu'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "cannot find record field 'cpu'"
+    }
+    {
         name: "core-list-upsert-local"
         category: "language-core"
         tags: [aggregate list upsert local]

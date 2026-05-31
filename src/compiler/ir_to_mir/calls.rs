@@ -14,6 +14,180 @@ const BPF_SK_LOOKUP_F_REPLACE: u64 = 1 << 0;
 const BPF_SK_LOOKUP_F_NO_REUSEPORT: u64 = 1 << 1;
 
 impl<'a> HirToMirLowering<'a> {
+    fn top_level_field_name_arg(&self, reg: RegId, context: &str) -> Result<String, CompileError> {
+        let Some(meta) = self.get_metadata(reg) else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{context} requires compile-time field names in eBPF"
+            )));
+        };
+
+        if let Some(name) = meta.literal_string.clone() {
+            return Ok(name);
+        }
+
+        let path = meta.cell_path.as_ref().or_else(|| {
+            meta.constant_value.as_ref().and_then(|value| match value {
+                nu_protocol::Value::CellPath { val, .. } => Some(val),
+                _ => None,
+            })
+        });
+        if let Some(path) = path {
+            match path.members.as_slice() {
+                [PathMember::String { val, .. }] => return Ok(val.clone()),
+                _ => {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{context} supports only top-level record field names in eBPF"
+                    )));
+                }
+            }
+        }
+
+        if let Some(nu_protocol::Value::String { val, .. }) = meta.constant_value.as_ref() {
+            return Ok(val.clone());
+        }
+
+        Err(CompileError::UnsupportedInstruction(format!(
+            "{context} requires compile-time field names in eBPF"
+        )))
+    }
+
+    fn lower_metadata_record_select_or_reject(
+        &mut self,
+        cmd_name: &str,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+    ) -> Result<(), CompileError> {
+        let input_reg = self
+            .pipeline_input_reg
+            .or(src_dst_had_value.then_some(src_dst));
+
+        if !self.named_flags.is_empty() || !self.named_args.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} does not accept named flags or arguments in eBPF"
+            )));
+        }
+        if self.positional_args.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires at least one record field name in eBPF"
+            )));
+        }
+
+        let mut names = Vec::new();
+        for (_, reg) in &self.positional_args {
+            let name = self.top_level_field_name_arg(*reg, cmd_name)?;
+            if !names.contains(&name) {
+                names.push(name);
+            }
+        }
+
+        let input_meta = input_reg
+            .and_then(|reg| self.get_metadata(reg).cloned())
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "{cmd_name} requires record input with compiler-known fields in eBPF"
+                ))
+            })?;
+        if input_meta.record_fields.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires record input with compiler-known fields in eBPF"
+            )));
+        }
+
+        for name in &names {
+            if !input_meta
+                .record_fields
+                .iter()
+                .any(|field| field.name == *name)
+            {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{cmd_name} cannot find record field '{name}'"
+                )));
+            }
+        }
+
+        let selected_fields = if cmd_name == "select" {
+            names
+                .iter()
+                .filter_map(|name| {
+                    input_meta
+                        .record_fields
+                        .iter()
+                        .find(|field| field.name == *name)
+                        .cloned()
+                })
+                .collect::<Vec<_>>()
+        } else {
+            input_meta
+                .record_fields
+                .iter()
+                .filter(|field| !names.contains(&field.name))
+                .cloned()
+                .collect::<Vec<_>>()
+        };
+
+        let constant_value = match input_meta.constant_value.clone() {
+            Some(nu_protocol::Value::Record { val, .. }) => {
+                let record = val.into_owned();
+                let mut out = nu_protocol::Record::new();
+                if cmd_name == "select" {
+                    for name in &names {
+                        let Some(value) = record.get(name) else {
+                            continue;
+                        };
+                        out.push(name.clone(), value.clone());
+                    }
+                } else {
+                    for (key, value) in record.iter() {
+                        if !names.iter().any(|name| name == key) {
+                            out.push(key, value.clone());
+                        }
+                    }
+                }
+                Some(nu_protocol::Value::record(out, Span::unknown()))
+            }
+            _ => None,
+        };
+
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+        let mut projected_meta = RegMetadata {
+            is_context: false,
+            record_fields: selected_fields,
+            constant_value,
+            source_var: None,
+            ..Default::default()
+        };
+        projected_meta.field_type = Self::metadata_record_layout(&projected_meta);
+        projected_meta.annotated_semantics = Self::metadata_record_semantics(&projected_meta);
+
+        let out_meta = if let Some((record_vreg, mut materialized_meta)) =
+            self.materialize_metadata_record_value(&projected_meta)?
+        {
+            self.emit(MirInst::Copy {
+                dst: result_vreg,
+                src: MirValue::VReg(record_vreg),
+            });
+            if let Some(record_ty) = self.vreg_type_hints.get(&record_vreg).cloned() {
+                self.vreg_type_hints.insert(result_vreg, record_ty);
+            }
+            materialized_meta.source_var = None;
+            materialized_meta
+        } else {
+            self.emit(MirInst::Copy {
+                dst: result_vreg,
+                src: MirValue::Const(0),
+            });
+            projected_meta
+        };
+        self.reg_metadata.insert(src_dst.get(), out_meta);
+
+        Ok(())
+    }
+
     fn lower_stack_list_append_or_prepend(
         &mut self,
         cmd_name: &str,
@@ -2699,6 +2873,15 @@ impl<'a> HirToMirLowering<'a> {
                 let out_meta = self.get_or_create_metadata(src_dst);
                 out_meta.field_type = Some(MirType::Bool);
                 self.vreg_type_hints.insert(result_vreg, MirType::Bool);
+            }
+
+            "select" | "reject" => {
+                self.lower_metadata_record_select_or_reject(
+                    &cmd_name,
+                    src_dst,
+                    dst_vreg,
+                    src_dst_had_value,
+                )?;
             }
 
             "get" => {

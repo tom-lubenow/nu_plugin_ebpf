@@ -216,6 +216,73 @@ fn make_string_pipeline_call_program(decl_id: DeclId, value: &str) -> HirProgram
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_record_projection_then_field_program(
+    command_decl: DeclId,
+    fields: &[&str],
+    field_args_as_cell_paths: bool,
+    return_field: &str,
+) -> HirProgram {
+    let mut rec = Record::new();
+    rec.push("pid", Value::int(7, Span::test_data()));
+    rec.push("cpu", Value::int(2, Span::test_data()));
+    rec.push("ok", Value::bool(true, Span::test_data()));
+
+    let mut stmts = vec![HirStmt::LoadValue {
+        dst: RegId::new(0),
+        val: Box::new(Value::record(rec, Span::test_data())),
+    }];
+    let mut positional = Vec::new();
+    for (idx, field) in fields.iter().enumerate() {
+        let reg = RegId::new((idx + 2) as u32);
+        let lit = if field_args_as_cell_paths {
+            HirLiteral::CellPath(Box::new(CellPath {
+                members: vec![string_member(field)],
+            }))
+        } else {
+            HirLiteral::String(field.as_bytes().to_vec())
+        };
+        stmts.push(HirStmt::LoadLiteral { dst: reg, lit });
+        positional.push(reg);
+    }
+
+    stmts.push(HirStmt::Call {
+        decl_id: command_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional,
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let path_reg = RegId::new((fields.len() + 2) as u32);
+    stmts.push(HirStmt::LoadLiteral {
+        dst: path_reg,
+        lit: HirLiteral::CellPath(Box::new(CellPath {
+            members: vec![string_member(return_field)],
+        })),
+    });
+    stmts.push(HirStmt::FollowCellPath {
+        src_dst: RegId::new(1),
+        path: path_reg,
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: (fields.len() + 3) as u32,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 #[test]
 fn test_lower_load_value_duration_as_const() {
     let func = HirFunction {
@@ -638,6 +705,98 @@ fn test_lower_is_empty_on_string_compares_length_to_zero() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("is-empty on tracked string should compile through codegen");
+}
+
+#[test]
+fn test_lower_select_on_metadata_record_materializes_requested_layout() {
+    let select_decl = DeclId::new(92);
+    let hir = make_record_projection_then_field_program(select_decl, &["cpu", "pid"], true, "pid");
+    let decl_names = HashMap::from([(select_decl, "select".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("select should lower on metadata-backed records");
+    let store_offsets = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .filter_map(|inst| match inst {
+            MirInst::StoreSlot {
+                offset,
+                ty: MirType::I64,
+                ..
+            } => Some(*offset),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    assert!(
+        store_offsets.contains(&0) && store_offsets.contains(&8),
+        "expected select to materialize the projected record layout, got offsets {store_offsets:?}"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("select on metadata-backed record should compile through codegen");
+}
+
+#[test]
+fn test_lower_reject_on_metadata_record_materializes_remaining_layout() {
+    let reject_decl = DeclId::new(93);
+    let hir = make_record_projection_then_field_program(reject_decl, &["pid"], false, "cpu");
+    let decl_names = HashMap::from([(reject_decl, "reject".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("reject should lower on metadata-backed records");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::StoreSlot { offset: 0, .. })),
+        "expected reject to materialize a remaining-field record"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("reject on metadata-backed record should compile through codegen");
+}
+
+#[test]
+fn test_lower_select_missing_metadata_record_field_is_rejected() {
+    let select_decl = DeclId::new(94);
+    let hir = make_record_projection_then_field_program(select_decl, &["missing"], true, "missing");
+    let decl_names = HashMap::from([(select_decl, "select".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("select of a missing metadata-backed record field should be rejected");
+
+    assert!(
+        err.to_string()
+            .contains("cannot find record field 'missing'"),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]
