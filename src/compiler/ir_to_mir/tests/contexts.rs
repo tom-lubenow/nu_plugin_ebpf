@@ -579,6 +579,9 @@ fn make_nested_returned_record_spread_context_upsert_program(
 
 #[derive(Clone, Copy)]
 enum ContextRecordTransform {
+    Insert,
+    Update,
+    Upsert,
     Select,
     Reject,
     Rename,
@@ -598,6 +601,48 @@ fn make_transformed_record_context_upsert_program(
     };
 
     match transform {
+        ContextRecordTransform::Insert
+        | ContextRecordTransform::Update
+        | ContextRecordTransform::Upsert => {
+            stmts.push(HirStmt::LoadLiteral {
+                dst: RegId::new(0),
+                lit: HirLiteral::Record { capacity: 1 },
+            });
+            stmts.push(HirStmt::LoadLiteral {
+                dst: RegId::new(1),
+                lit: HirLiteral::String(if matches!(transform, ContextRecordTransform::Update) {
+                    b"event".to_vec()
+                } else {
+                    b"other".to_vec()
+                }),
+            });
+            stmts.push(HirStmt::LoadLiteral {
+                dst: RegId::new(2),
+                lit: HirLiteral::Int(0),
+            });
+            stmts.push(HirStmt::RecordInsert {
+                src_dst: RegId::new(0),
+                key: RegId::new(1),
+                val: RegId::new(2),
+            });
+            stmts.push(HirStmt::LoadLiteral {
+                dst: RegId::new(5),
+                lit: HirLiteral::String(b"event".to_vec()),
+            });
+            stmts.push(HirStmt::LoadVariable {
+                dst: RegId::new(6),
+                var_id: ctx_var,
+            });
+            stmts.push(HirStmt::Call {
+                decl_id: command_decl,
+                src_dst: RegId::new(8),
+                args: HirCallArgs {
+                    positional: vec![RegId::new(5), RegId::new(6)],
+                    pipeline_input: Some(RegId::new(0)),
+                    ..HirCallArgs::default()
+                },
+            });
+        }
         ContextRecordTransform::Select
         | ContextRecordTransform::Reject
         | ContextRecordTransform::Rename => {
@@ -2847,6 +2892,48 @@ fn test_lower_default_record_context_sysctl_new_value_assignment_preserves_metad
         hir,
         decl_names,
         "default-transformed record-held ctx.new_value assignment",
+    );
+}
+
+#[test]
+fn test_lower_insert_record_context_sysctl_new_value_assignment_preserves_metadata() {
+    let insert_decl = DeclId::new(906);
+    let hir =
+        make_transformed_record_context_upsert_program(ContextRecordTransform::Insert, insert_decl);
+    let decl_names = HashMap::from([(insert_decl, "insert".to_string())]);
+
+    assert_transformed_record_sysctl_new_value_metadata(
+        hir,
+        decl_names,
+        "insert-transformed record-held ctx.new_value assignment",
+    );
+}
+
+#[test]
+fn test_lower_update_record_context_sysctl_new_value_assignment_preserves_metadata() {
+    let update_decl = DeclId::new(907);
+    let hir =
+        make_transformed_record_context_upsert_program(ContextRecordTransform::Update, update_decl);
+    let decl_names = HashMap::from([(update_decl, "update".to_string())]);
+
+    assert_transformed_record_sysctl_new_value_metadata(
+        hir,
+        decl_names,
+        "update-transformed record-held ctx.new_value assignment",
+    );
+}
+
+#[test]
+fn test_lower_upsert_record_context_sysctl_new_value_assignment_preserves_metadata() {
+    let upsert_decl = DeclId::new(908);
+    let hir =
+        make_transformed_record_context_upsert_program(ContextRecordTransform::Upsert, upsert_decl);
+    let decl_names = HashMap::from([(upsert_decl, "upsert".to_string())]);
+
+    assert_transformed_record_sysctl_new_value_metadata(
+        hir,
+        decl_names,
+        "upsert-transformed record-held ctx.new_value assignment",
     );
 }
 

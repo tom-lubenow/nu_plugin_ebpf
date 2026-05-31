@@ -1282,6 +1282,9 @@ enum ContextWriteScannerForm {
     RecordWrapper,
     RecordSpread,
     UserFunctionRecordWrapper,
+    RecordInsert,
+    RecordUpdate,
+    RecordUpsert,
     RecordSelect,
     RecordReject,
     RecordRename,
@@ -1290,6 +1293,23 @@ enum ContextWriteScannerForm {
 }
 
 impl ContextWriteScannerForm {
+    const ALL: [Self; 14] = [
+        Self::Direct,
+        Self::RecordAlias,
+        Self::ReturnedContextAlias,
+        Self::RecordWrapper,
+        Self::RecordSpread,
+        Self::UserFunctionRecordWrapper,
+        Self::RecordInsert,
+        Self::RecordUpdate,
+        Self::RecordUpsert,
+        Self::RecordSelect,
+        Self::RecordReject,
+        Self::RecordRename,
+        Self::RecordMerge,
+        Self::RecordDefault,
+    ];
+
     fn label(self) -> &'static str {
         match self {
             Self::Direct => "direct",
@@ -1298,6 +1318,9 @@ impl ContextWriteScannerForm {
             Self::RecordWrapper => "record-wrapper",
             Self::RecordSpread => "record-spread",
             Self::UserFunctionRecordWrapper => "user-function-record-wrapper",
+            Self::RecordInsert => "record-insert",
+            Self::RecordUpdate => "record-update",
+            Self::RecordUpsert => "record-upsert",
             Self::RecordSelect => "record-select",
             Self::RecordReject => "record-reject",
             Self::RecordRename => "record-rename",
@@ -1313,6 +1336,9 @@ impl ContextWriteScannerForm {
             Self::RecordWrapper
             | Self::RecordSpread
             | Self::UserFunctionRecordWrapper
+            | Self::RecordInsert
+            | Self::RecordUpdate
+            | Self::RecordUpsert
             | Self::RecordSelect
             | Self::RecordReject
             | Self::RecordMerge
@@ -1363,6 +1389,15 @@ fn context_write_scanner_source_from_assignments(
         ContextWriteScannerForm::UserFunctionRecordWrapper => format!(
             "{{|ctx|\n  def wrap [event] {{ {{ event: $event }} }}\n  mut rec = (wrap $ctx)\n{assignments}\n  \"allow\"\n}}"
         ),
+        ContextWriteScannerForm::RecordInsert => format!(
+            "{{|ctx|\n  mut rec = ({{ other: 1 }} | insert event $ctx)\n{assignments}\n  \"allow\"\n}}"
+        ),
+        ContextWriteScannerForm::RecordUpdate => format!(
+            "{{|ctx|\n  mut rec = ({{ event: 0 }} | update event $ctx)\n{assignments}\n  \"allow\"\n}}"
+        ),
+        ContextWriteScannerForm::RecordUpsert => format!(
+            "{{|ctx|\n  mut rec = ({{ other: 1 }} | upsert event $ctx)\n{assignments}\n  \"allow\"\n}}"
+        ),
         ContextWriteScannerForm::RecordSelect => format!(
             "{{|ctx|\n  mut rec = ({{ event: $ctx, other: 1 }} | select event)\n{assignments}\n  \"allow\"\n}}"
         ),
@@ -1410,19 +1445,7 @@ fn test_verifier_diff_context_write_scanner_covers_rust_write_surfaces() {
             panic!("representative context write target {spec_text} should parse: {err}")
         });
         let write_surfaces = spec.ctx_write_surfaces_for_spec();
-        for form in [
-            ContextWriteScannerForm::Direct,
-            ContextWriteScannerForm::RecordAlias,
-            ContextWriteScannerForm::ReturnedContextAlias,
-            ContextWriteScannerForm::RecordWrapper,
-            ContextWriteScannerForm::RecordSpread,
-            ContextWriteScannerForm::UserFunctionRecordWrapper,
-            ContextWriteScannerForm::RecordSelect,
-            ContextWriteScannerForm::RecordReject,
-            ContextWriteScannerForm::RecordRename,
-            ContextWriteScannerForm::RecordMerge,
-            ContextWriteScannerForm::RecordDefault,
-        ] {
+        for form in ContextWriteScannerForm::ALL {
             let mut assignments = Vec::new();
             let mut field_names = Vec::new();
             let mut expected_keys = BTreeSet::new();
@@ -1507,19 +1530,7 @@ fn test_verifier_diff_context_helper_write_scanner_covers_rust_write_surfaces() 
                         helper.name()
                     )
                 });
-            for form in [
-                ContextWriteScannerForm::Direct,
-                ContextWriteScannerForm::RecordAlias,
-                ContextWriteScannerForm::ReturnedContextAlias,
-                ContextWriteScannerForm::RecordWrapper,
-                ContextWriteScannerForm::RecordSpread,
-                ContextWriteScannerForm::UserFunctionRecordWrapper,
-                ContextWriteScannerForm::RecordSelect,
-                ContextWriteScannerForm::RecordReject,
-                ContextWriteScannerForm::RecordRename,
-                ContextWriteScannerForm::RecordMerge,
-                ContextWriteScannerForm::RecordDefault,
-            ] {
+            for form in ContextWriteScannerForm::ALL {
                 expected.push(ExpectedHelperWriteFeature {
                     target: (*spec_text).to_string(),
                     field_name: surface.field_name,
@@ -1600,19 +1611,7 @@ fn test_verifier_diff_context_kfunc_write_scanner_covers_rust_write_surfaces() {
                         surface.field_name
                     )
                 });
-            for form in [
-                ContextWriteScannerForm::Direct,
-                ContextWriteScannerForm::RecordAlias,
-                ContextWriteScannerForm::ReturnedContextAlias,
-                ContextWriteScannerForm::RecordWrapper,
-                ContextWriteScannerForm::RecordSpread,
-                ContextWriteScannerForm::UserFunctionRecordWrapper,
-                ContextWriteScannerForm::RecordSelect,
-                ContextWriteScannerForm::RecordReject,
-                ContextWriteScannerForm::RecordRename,
-                ContextWriteScannerForm::RecordMerge,
-                ContextWriteScannerForm::RecordDefault,
-            ] {
+            for form in ContextWriteScannerForm::ALL {
                 expected.push(ExpectedKfuncWriteFeature {
                     target: (*spec_text).to_string(),
                     field_name: surface.field_name,
