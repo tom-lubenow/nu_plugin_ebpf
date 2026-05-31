@@ -42059,6 +42059,210 @@ def user-function-context-field-accesses [source: string] {
     $accesses
 }
 
+def simple-function-param-names [raw_params: string] {
+    let parts = (
+        $raw_params
+        | split row " "
+        | each {|part| $part | str trim }
+        | where {|part| $part != "" }
+    )
+    if (
+        $parts
+        | any {|part|
+            (
+                ($part | str contains ":")
+                or ($part | str starts-with "-")
+                or ($part | str starts-with "...")
+            )
+        }
+    ) {
+        return []
+    }
+
+    $parts
+    | each {|part|
+        $part
+        | str replace --all "," ""
+        | str replace --all "?" ""
+        | split row ":"
+        | first
+        | str trim
+    }
+    | where {|name| $name != "" and not ($name | str starts-with "-") }
+}
+
+def positional-user-functions [source: string] {
+    mut functions = []
+    mut in_function = false
+    mut current_name = ""
+    mut current_params = []
+    mut current_body = []
+
+    for line in ($source | lines) {
+        let trimmed = ($line | str trim)
+
+        if not $in_function {
+            let one_line = (
+                $line
+                | parse --regex '^\s*def\s+(?P<name>[A-Za-z_][A-Za-z0-9_-]*)\s+\[\s*(?P<params>[^\]]*)\s*\]\s*\{\s*(?P<body>.*?)\s*\}\s*$'
+            )
+            if not ($one_line | is-empty) {
+                let parsed = ($one_line | first)
+                let params = (simple-function-param-names $parsed.params)
+                if not ($params | is-empty) {
+                    $functions = ($functions | append {
+                        name: $parsed.name
+                        params: $params
+                        body: [$parsed.body]
+                    })
+                }
+                continue
+            }
+
+            let header = (
+                $line
+                | parse --regex '^\s*def\s+(?P<name>[A-Za-z_][A-Za-z0-9_-]*)\s+\[\s*(?P<params>[^\]]*)\s*\]\s*\{\s*$'
+            )
+            if not ($header | is-empty) {
+                let parsed = ($header | first)
+                let params = (simple-function-param-names $parsed.params)
+                if ($params | is-empty) {
+                    continue
+                }
+                $in_function = true
+                $current_name = $parsed.name
+                $current_params = $params
+                $current_body = []
+            }
+            continue
+        }
+
+        if $trimmed == "}" {
+            $functions = ($functions | append {
+                name: $current_name
+                params: $current_params
+                body: $current_body
+            })
+            $in_function = false
+            $current_name = ""
+            $current_params = []
+            $current_body = []
+            continue
+        }
+
+        $current_body = ($current_body | append $line)
+    }
+
+    $functions
+}
+
+def command-tail-positional-args [raw_tail: string] {
+    let raw_args = (
+        $raw_tail
+        | str trim
+        | split row ";"
+        | first
+        | str trim
+    )
+    if $raw_args == "" {
+        return []
+    }
+
+    $raw_args
+    | split row " "
+    | each {|part| $part | str trim }
+    | where {|part| $part != "" }
+}
+
+def multi-param-function-context-field-accesses [source: string] {
+    mut accesses = []
+
+    for function in (positional-user-functions $source) {
+        if ($function.params | length) <= 1 {
+            continue
+        }
+
+        for param in ($function.params | enumerate) {
+            let prefix = $"$($param.item)."
+            for line in $function.body {
+                for raw_tail in (marker-tails-outside-simple-string $line $prefix) {
+                    let field = (normalize-context-field-token $raw_tail)
+                    if $field == "" {
+                        continue
+                    }
+                    if (
+                        $accesses
+                        | any {|access|
+                            (
+                                $access.name == $function.name
+                                and $access.param_index == $param.index
+                                and $access.raw_access == $raw_tail
+                            )
+                        }
+                    ) {
+                        continue
+                    }
+                    $accesses = ($accesses | append {
+                        name: $function.name
+                        param_index: $param.index
+                        raw_access: $raw_tail
+                    })
+                }
+            }
+        }
+    }
+
+    $accesses
+}
+
+def multi-param-user-function-context-field-kernel-features [source: string target context_names] {
+    if not ($source | str contains "def ") {
+        return []
+    }
+
+    mut features = []
+    let accesses = (multi-param-function-context-field-accesses $source)
+    if ($accesses | is-empty) {
+        return $features
+    }
+
+    let bound_aliases = (program-bound-context-root-aliases $source $context_names)
+
+    for line in ($source | lines) {
+        let trimmed = ($line | str trim)
+        if $trimmed == "" or ($trimmed | str starts-with "#") or ($trimmed | str starts-with "def ") {
+            continue
+        }
+
+        for access in $accesses {
+            for raw_tail in (command-invocation-tails $trimmed $access.name) {
+                let args = (command-tail-positional-args $raw_tail)
+                let arg = ($args | get -o $access.param_index)
+                if $arg == null {
+                    continue
+                }
+
+                let root = (context-root-from-value-token $arg $context_names $bound_aliases)
+                if $root == null {
+                    continue
+                }
+                let raw_access = if $root == "" {
+                    $access.raw_access
+                } else {
+                    $"($root).($access.raw_access)"
+                }
+                $features = (
+                    append-missing-kernel-features
+                        $features
+                        (context-access-kernel-features $raw_access $target)
+                )
+            }
+        }
+    }
+
+    $features
+}
+
 def context-access-kernel-features [raw_access: string target] {
     mut features = []
     let field = (normalize-context-field-token $raw_access)
@@ -43105,6 +43309,7 @@ def program-context-field-kernel-features [source: string target] {
     }
 
     $features = (append-missing-kernel-features $features (user-function-context-field-kernel-features $source $target $context_names))
+    $features = (append-missing-kernel-features $features (multi-param-user-function-context-field-kernel-features $source $target $context_names))
     $features = (append-missing-kernel-features $features (bound-context-projection-kernel-features $source $target $context_names))
     $features = (append-missing-kernel-features $features (record-context-projection-kernel-features $source $target $context_names))
     $features = (append-missing-kernel-features $features (context-get-projection-kernel-features $source $target $context_names))
