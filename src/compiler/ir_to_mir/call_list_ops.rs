@@ -4,6 +4,7 @@ use crate::compiler::mir::AddressSpace;
 mod dedupe;
 mod math;
 mod predicates;
+mod sort;
 
 impl<'a> HirToMirLowering<'a> {
     pub(super) fn create_stack_numeric_list_result(

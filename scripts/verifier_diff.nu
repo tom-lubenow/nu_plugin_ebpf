@@ -32525,6 +32525,46 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-list-sort"
+        category: "language-core"
+        tags: [aggregate list sort]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [30 10 20] | sort | get 0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-list-sort-reverse"
+        category: "language-core"
+        tags: [aggregate list sort reverse]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [10 30 20] | sort --reverse | get 0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-list-sort-capacity-reject"
+        category: "language-core"
+        tags: [aggregate list sort reject]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16] | sort | length'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "sort supports stack-backed numeric lists with capacity <= 16"
+    }
+    {
         name: "core-list-drop-default"
         category: "language-core"
         tags: [aggregate list drop]

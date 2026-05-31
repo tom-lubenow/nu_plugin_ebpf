@@ -2322,6 +2322,205 @@ fn test_lower_uniq_on_numeric_list_removes_duplicate_values() {
 }
 
 #[test]
+fn test_lower_sort_on_numeric_list_uses_bounded_compare_swaps() {
+    let sort_decl = DeclId::new(121);
+    let get_decl = DeclId::new(122);
+    let hir = HirProgram::new(
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadValue {
+                        dst: RegId::new(0),
+                        val: Box::new(Value::list(
+                            vec![
+                                Value::int(30, Span::test_data()),
+                                Value::int(10, Span::test_data()),
+                                Value::int(20, Span::test_data()),
+                            ],
+                            Span::test_data(),
+                        )),
+                    },
+                    HirStmt::Call {
+                        decl_id: sort_decl,
+                        src_dst: RegId::new(1),
+                        args: HirCallArgs {
+                            pipeline_input: Some(RegId::new(0)),
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::Int(0),
+                    },
+                    HirStmt::Call {
+                        decl_id: get_decl,
+                        src_dst: RegId::new(3),
+                        args: HirCallArgs {
+                            pipeline_input: Some(RegId::new(1)),
+                            positional: vec![RegId::new(2)],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(3) },
+            }],
+            entry: HirBlockId(0),
+            spans: Vec::new(),
+            ast: Vec::new(),
+            comments: Vec::new(),
+            register_count: 4,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        None,
+    );
+    let decl_names = HashMap::from([
+        (sort_decl, "sort".to_string()),
+        (get_decl, "get".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("sort should lower on small stack-backed numeric lists");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::Gt,
+                ..
+            }
+        )),
+        "expected ascending sort to swap when the left value is greater"
+    );
+    assert!(
+        instructions
+            .iter()
+            .filter(|inst| matches!(inst, MirInst::StoreSlot { .. }))
+            .count()
+            >= 2,
+        "expected sort to rewrite stack slots during compare/swap"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("sort followed by get should compile through codegen");
+}
+
+#[test]
+fn test_lower_sort_reverse_on_numeric_list_uses_descending_compare() {
+    let sort_decl = DeclId::new(123);
+    let get_decl = DeclId::new(124);
+    let mut hir = make_numeric_list_call_then_get_program(sort_decl, get_decl, None, 0);
+    let HirStmt::Call { args, .. } = &mut hir.main.blocks[0].stmts[1] else {
+        panic!("expected sort call");
+    };
+    args.flags.push(b"reverse".to_vec());
+    let decl_names = HashMap::from([
+        (sort_decl, "sort".to_string()),
+        (get_decl, "get".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("sort --reverse should lower on small stack-backed numeric lists");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op: BinOpKind::Lt,
+                    ..
+                }
+            )),
+        "expected reverse sort to swap when the left value is smaller"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("sort --reverse followed by get should compile through codegen");
+}
+
+#[test]
+fn test_lower_sort_large_numeric_list_capacity_is_rejected() {
+    let sort_decl = DeclId::new(125);
+    let values = (0..17)
+        .map(|value| Value::int(value, Span::test_data()))
+        .collect::<Vec<_>>();
+    let hir = HirProgram::new(
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadValue {
+                        dst: RegId::new(0),
+                        val: Box::new(Value::list(values, Span::test_data())),
+                    },
+                    HirStmt::Call {
+                        decl_id: sort_decl,
+                        src_dst: RegId::new(1),
+                        args: HirCallArgs {
+                            pipeline_input: Some(RegId::new(0)),
+                            ..HirCallArgs::default()
+                        },
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(1) },
+            }],
+            entry: HirBlockId(0),
+            spans: Vec::new(),
+            ast: Vec::new(),
+            comments: Vec::new(),
+            register_count: 2,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        None,
+    );
+    let decl_names = HashMap::from([(sort_decl, "sort".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("large-capacity sort should be rejected instead of generating huge MIR");
+
+    assert!(
+        err.to_string()
+            .contains("sort supports stack-backed numeric lists with capacity <= 16"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn test_lower_length_on_null_returns_zero() {
     let length_decl = DeclId::new(105);
     let func = HirFunction {

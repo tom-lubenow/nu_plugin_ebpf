@@ -41,6 +41,7 @@ const NU_CLOSURE_COMMANDS: &[&str] = &[
     "drop",
     "reverse",
     "uniq",
+    "sort",
     "append",
     "prepend",
     "is-empty",
