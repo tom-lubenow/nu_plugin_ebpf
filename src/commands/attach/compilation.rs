@@ -43,6 +43,7 @@ const NU_CLOSURE_COMMANDS: &[&str] = &[
     "uniq",
     "sort",
     "compact",
+    "find",
     "append",
     "prepend",
     "is-empty",

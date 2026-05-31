@@ -832,6 +832,7 @@ eBPF layout and verifier bounds are explicit:
 | `uniq` | Stack-backed numeric lists, preserving first occurrences through verifier-bounded duplicate checks |
 | `sort` | Stack-backed numeric lists with capacity <= 16, using bounded compare/swap lowering; `--reverse` is supported |
 | `compact` | Stack-backed numeric lists as an identity operation because numeric-list elements cannot be null or empty; column arguments are not modeled |
+| `find` | Stack-backed numeric lists with one numeric search argument, returning a bounded equality-filtered stack list |
 | `append` / `prepend` | Stack-backed numeric lists with scalar numeric items when the output fits the modeled capacity |
 | `is-empty` / `is-not-empty` | Stack-backed lists, tracked strings, literal null, literal list constants, and metadata-backed fixed records |
 | `str length` | Tracked strings and literal strings, returning the byte length tracked by the string buffer |

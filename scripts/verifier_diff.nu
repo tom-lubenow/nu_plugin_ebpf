@@ -32662,6 +32662,32 @@ const FIXTURES = [
         error_contains: "compact does not accept column arguments"
     }
     {
+        name: "core-list-find"
+        category: "language-core"
+        tags: [aggregate list find]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [10 20 30] | find 20 | get 0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-list-find-missing"
+        category: "language-core"
+        tags: [aggregate list find empty]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [10 20 30] | find 99 | length'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-drop-default"
         category: "language-core"
         tags: [aggregate list drop]

@@ -3093,6 +3093,182 @@ fn test_lower_compact_column_argument_on_numeric_list_is_rejected() {
 }
 
 #[test]
+fn test_lower_find_on_numeric_list_filters_equal_values() {
+    let find_decl = DeclId::new(131);
+    let get_decl = DeclId::new(132);
+    let hir = make_numeric_list_item_call_then_get_program(find_decl, get_decl, 20, 0);
+    let decl_names = HashMap::from([
+        (find_decl, "find".to_string()),
+        (get_decl, "get".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("find should lower on stack-backed numeric lists");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::Eq,
+                ..
+            }
+        )),
+        "expected find to compare list items against the search value"
+    );
+    assert!(
+        instructions
+            .iter()
+            .any(|inst| matches!(inst, MirInst::ListPush { .. })),
+        "expected find to rebuild a filtered stack list"
+    );
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::Lt,
+                ..
+            }
+        )),
+        "expected find to guard each list access with runtime length"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("find followed by get should compile through codegen");
+}
+
+#[test]
+fn test_lower_find_missing_on_numeric_list_returns_empty_list() {
+    let find_decl = DeclId::new(133);
+    let length_decl = DeclId::new(134);
+    let hir = make_numeric_list_call_then_length_program(find_decl, length_decl, Some(99));
+    let decl_names = HashMap::from([
+        (find_decl, "find".to_string()),
+        (length_decl, "length".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("find with no matching constants should lower to an empty stack-backed list");
+
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("find followed by length should compile through codegen");
+}
+
+#[test]
+fn test_lower_find_large_integer_needle_materializes_operand() {
+    let find_decl = DeclId::new(135);
+    let get_decl = DeclId::new(136);
+    let large = 1_i64 << 40;
+    let hir = HirProgram::new(
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadValue {
+                        dst: RegId::new(0),
+                        val: Box::new(Value::list(
+                            vec![
+                                Value::int(large, Span::test_data()),
+                                Value::int(20, Span::test_data()),
+                            ],
+                            Span::test_data(),
+                        )),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::Int(large),
+                    },
+                    HirStmt::Call {
+                        decl_id: find_decl,
+                        src_dst: RegId::new(1),
+                        args: HirCallArgs {
+                            pipeline_input: Some(RegId::new(0)),
+                            positional: vec![RegId::new(2)],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(3),
+                        lit: HirLiteral::Int(0),
+                    },
+                    HirStmt::Call {
+                        decl_id: get_decl,
+                        src_dst: RegId::new(4),
+                        args: HirCallArgs {
+                            pipeline_input: Some(RegId::new(1)),
+                            positional: vec![RegId::new(3)],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(4) },
+            }],
+            entry: HirBlockId(0),
+            spans: Vec::new(),
+            ast: Vec::new(),
+            comments: Vec::new(),
+            register_count: 5,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        None,
+    );
+    let decl_names = HashMap::from([
+        (find_decl, "find".to_string()),
+        (get_decl, "get".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("find should lower large integer needles without truncating immediates");
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op: BinOpKind::Eq,
+                    rhs: MirValue::VReg(_),
+                    ..
+                }
+            )),
+        "expected large find needle to be materialized before equality comparison"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("find with a large integer needle should compile through codegen");
+}
+
+#[test]
 fn test_lower_length_on_null_returns_zero() {
     let length_decl = DeclId::new(105);
     let func = HirFunction {

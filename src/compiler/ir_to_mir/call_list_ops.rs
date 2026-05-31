@@ -3,6 +3,7 @@ use crate::compiler::mir::AddressSpace;
 
 mod compact;
 mod dedupe;
+mod find;
 mod math;
 mod predicates;
 mod sort;
