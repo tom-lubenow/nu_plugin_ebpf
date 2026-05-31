@@ -1274,18 +1274,46 @@ fn test_verifier_diff_context_field_feature_metadata_covers_representative_rust_
     );
 }
 
-fn context_write_scanner_source(field_name: &str, indexed: bool) -> String {
+#[derive(Clone, Copy)]
+enum ContextWriteScannerForm {
+    Direct,
+    RecordAlias,
+}
+
+impl ContextWriteScannerForm {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Direct => "direct",
+            Self::RecordAlias => "record-alias",
+        }
+    }
+}
+
+fn context_write_scanner_source(
+    field_name: &str,
+    indexed: bool,
+    form: ContextWriteScannerForm,
+) -> String {
+    let root = match form {
+        ContextWriteScannerForm::Direct => "$ctx",
+        ContextWriteScannerForm::RecordAlias => "$event",
+    };
     let assignment = if field_name == "flow_keys" {
-        format!("  $event.{field_name}.ip_proto = 6")
+        format!("  {root}.{field_name}.ip_proto = 6")
     } else if indexed {
-        format!("  $event.{field_name}.0 = 42")
+        format!("  {root}.{field_name}.0 = 42")
     } else if matches!(field_name, "new_value" | "sysctl_new_value" | "sun_path") {
-        format!("  $event.{field_name} = \"1\"")
+        format!("  {root}.{field_name} = \"1\"")
     } else {
-        format!("  $event.{field_name} = 1")
+        format!("  {root}.{field_name} = 1")
     };
 
-    format!("{{|ctx|\n  mut event = $ctx\n{assignment}\n  \"allow\"\n}}")
+    match form {
+        ContextWriteScannerForm::Direct => format!("{{|ctx|\n{assignment}\n  \"allow\"\n}}"),
+        ContextWriteScannerForm::RecordAlias => {
+            format!("{{|ctx|\n  mut event = $ctx\n{assignment}\n  \"allow\"\n}}")
+        }
+    }
 }
 
 #[test]
@@ -1294,6 +1322,7 @@ fn test_verifier_diff_context_write_scanner_covers_rust_write_surfaces() {
     struct ExpectedWriteFeature {
         target: String,
         field_name: &'static str,
+        form: &'static str,
         program: String,
         expected_keys: BTreeSet<String>,
     }
@@ -1308,12 +1337,22 @@ fn test_verifier_diff_context_write_scanner_covers_rust_write_surfaces() {
             let Some(requirement) = surface.context_field_requirement.as_ref() else {
                 continue;
             };
-            expected.push(ExpectedWriteFeature {
-                target: (*spec_text).to_string(),
-                field_name: surface.field_name,
-                program: context_write_scanner_source(surface.field_name, surface.indexed),
-                expected_keys: BTreeSet::from([requirement.key()]),
-            });
+            for form in [
+                ContextWriteScannerForm::Direct,
+                ContextWriteScannerForm::RecordAlias,
+            ] {
+                expected.push(ExpectedWriteFeature {
+                    target: (*spec_text).to_string(),
+                    field_name: surface.field_name,
+                    form: form.label(),
+                    program: context_write_scanner_source(
+                        surface.field_name,
+                        surface.indexed,
+                        form,
+                    ),
+                    expected_keys: BTreeSet::from([requirement.key()]),
+                });
+            }
         }
     }
 
@@ -1329,8 +1368,8 @@ fn test_verifier_diff_context_write_scanner_covers_rust_write_surfaces() {
     for (check, actual_keys) in expected.iter().zip(actual.iter()) {
         if actual_keys != &check.expected_keys {
             mismatches.push(format!(
-                "{} ctx.{} expected {:?} actual {:?}",
-                check.target, check.field_name, check.expected_keys, actual_keys
+                "{} {} ctx.{} expected {:?} actual {:?}",
+                check.target, check.form, check.field_name, check.expected_keys, actual_keys
             ));
         }
     }
@@ -1348,6 +1387,7 @@ fn test_verifier_diff_context_helper_write_scanner_covers_rust_write_surfaces() 
     struct ExpectedHelperWriteFeature {
         target: String,
         field_name: &'static str,
+        form: &'static str,
         helper_name: &'static str,
         program: String,
         expected_keys: BTreeSet<String>,
@@ -1371,13 +1411,23 @@ fn test_verifier_diff_context_helper_write_scanner_covers_rust_write_surfaces() 
                         helper.name()
                     )
                 });
-            expected.push(ExpectedHelperWriteFeature {
-                target: (*spec_text).to_string(),
-                field_name: surface.field_name,
-                helper_name: helper.name(),
-                program: context_write_scanner_source(surface.field_name, surface.indexed),
-                expected_keys: BTreeSet::from([requirement.key()]),
-            });
+            for form in [
+                ContextWriteScannerForm::Direct,
+                ContextWriteScannerForm::RecordAlias,
+            ] {
+                expected.push(ExpectedHelperWriteFeature {
+                    target: (*spec_text).to_string(),
+                    field_name: surface.field_name,
+                    form: form.label(),
+                    helper_name: helper.name(),
+                    program: context_write_scanner_source(
+                        surface.field_name,
+                        surface.indexed,
+                        form,
+                    ),
+                    expected_keys: BTreeSet::from([requirement.key()]),
+                });
+            }
         }
     }
 
@@ -1393,8 +1443,13 @@ fn test_verifier_diff_context_helper_write_scanner_covers_rust_write_surfaces() 
     for (check, actual_keys) in expected.iter().zip(actual.iter()) {
         if actual_keys != &check.expected_keys {
             mismatches.push(format!(
-                "{} ctx.{} {} expected {:?} actual {:?}",
-                check.target, check.field_name, check.helper_name, check.expected_keys, actual_keys
+                "{} {} ctx.{} {} expected {:?} actual {:?}",
+                check.target,
+                check.form,
+                check.field_name,
+                check.helper_name,
+                check.expected_keys,
+                actual_keys
             ));
         }
     }
@@ -1416,6 +1471,7 @@ fn test_verifier_diff_context_kfunc_write_scanner_covers_rust_write_surfaces() {
     struct ExpectedKfuncWriteFeature {
         target: String,
         field_name: &'static str,
+        form: &'static str,
         kfunc: &'static str,
         program: String,
         expected_keys: BTreeSet<String>,
@@ -1439,13 +1495,23 @@ fn test_verifier_diff_context_kfunc_write_scanner_covers_rust_write_surfaces() {
                         surface.field_name
                     )
                 });
-            expected.push(ExpectedKfuncWriteFeature {
-                target: (*spec_text).to_string(),
-                field_name: surface.field_name,
-                kfunc,
-                program: context_write_scanner_source(surface.field_name, surface.indexed),
-                expected_keys: BTreeSet::from([requirement.key()]),
-            });
+            for form in [
+                ContextWriteScannerForm::Direct,
+                ContextWriteScannerForm::RecordAlias,
+            ] {
+                expected.push(ExpectedKfuncWriteFeature {
+                    target: (*spec_text).to_string(),
+                    field_name: surface.field_name,
+                    form: form.label(),
+                    kfunc,
+                    program: context_write_scanner_source(
+                        surface.field_name,
+                        surface.indexed,
+                        form,
+                    ),
+                    expected_keys: BTreeSet::from([requirement.key()]),
+                });
+            }
         }
     }
 
@@ -1461,8 +1527,13 @@ fn test_verifier_diff_context_kfunc_write_scanner_covers_rust_write_surfaces() {
     for (check, actual_keys) in expected.iter().zip(actual.iter()) {
         if actual_keys != &check.expected_keys {
             mismatches.push(format!(
-                "{} ctx.{} {} expected {:?} actual {:?}",
-                check.target, check.field_name, check.kfunc, check.expected_keys, actual_keys
+                "{} {} ctx.{} {} expected {:?} actual {:?}",
+                check.target,
+                check.form,
+                check.field_name,
+                check.kfunc,
+                check.expected_keys,
+                actual_keys
             ));
         }
     }
