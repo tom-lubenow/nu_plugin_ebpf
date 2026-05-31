@@ -217,6 +217,60 @@ fn test_verify_mir_kfunc_dynptr_clone_rejects_initialized_destination() {
     );
 }
 
+#[test]
+fn test_verify_mir_kfunc_dynptr_clone_rejects_destination_initialized_on_one_path() {
+    let (mut func, entry) = new_mir_function();
+    let init_dst = func.alloc_block();
+    let skip_init = func.alloc_block();
+    let join = func.alloc_block();
+    let cond = func.alloc_vreg();
+    func.param_count = 1;
+    let src = push_stack_dynptr(&mut func, entry, true);
+    let dst = push_stack_dynptr(&mut func, entry, false);
+    let init_ret = func.alloc_vreg();
+    let clone_ret = func.alloc_vreg();
+
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond,
+        if_true: init_dst,
+        if_false: skip_init,
+    };
+    func.block_mut(init_dst)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: init_ret,
+            kfunc: "bpf_dynptr_clone".to_string(),
+            btf_id: None,
+            args: vec![src, dst],
+        });
+    func.block_mut(init_dst).terminator = MirInst::Jump { target: join };
+    func.block_mut(skip_init).terminator = MirInst::Jump { target: join };
+    func.block_mut(join).instructions.push(MirInst::CallKfunc {
+        dst: clone_ret,
+        kfunc: "bpf_dynptr_clone".to_string(),
+        btf_id: None,
+        args: vec![src, dst],
+    });
+    func.block_mut(join).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(cond, MirType::Bool);
+    types.insert(src, stack_dynptr_ty());
+    types.insert(dst, stack_dynptr_ty());
+    types.insert(init_ret, MirType::I64);
+    types.insert(clone_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types)
+        .expect_err("expected partially initialized clone dst error at join");
+    assert!(
+        err.iter().any(|e| e.message.contains(
+            "kfunc 'bpf_dynptr_clone' arg1 requires uninitialized dynptr stack object slot"
+        )),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
 fn make_ringbuf_dynptr_clone_release_function(
     read_source_after_release: bool,
 ) -> (MirFunction, HashMap<VReg, MirType>) {
