@@ -1151,6 +1151,136 @@ fn test_type_error_find_vma_requires_task_pointer_arg0() {
 }
 
 #[test]
+fn test_infer_find_vma_accepts_null_callback_ctx() {
+    let mut callback = MirFunction::with_name("find_vma_cb");
+    callback.param_count = 3;
+    let callback_entry = callback.alloc_block();
+    callback.entry = callback_entry;
+    callback.block_mut(callback_entry).terminator = MirInst::Return {
+        val: Some(MirValue::Const(0)),
+    };
+
+    let hints = vec![HashMap::from([
+        (VReg(0), MirType::named_kernel_struct_ptr("task_struct")),
+        (VReg(1), MirType::named_kernel_struct_ptr("vm_area_struct")),
+        (
+            VReg(2),
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Stack,
+            },
+        ),
+    ])];
+    let stack_hints = vec![HashMap::new()];
+    let subfn_schemes =
+        infer_subfunction_schemes_with_hints(&[callback], None, Some(&hints), Some(&stack_hints))
+            .expect("expected callback scheme inference to succeed");
+
+    let mut func = make_test_function();
+    let task = func.alloc_vreg();
+    let callback_fn = func.alloc_vreg();
+    let helper_ret = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst: task,
+        helper: BpfHelper::GetCurrentTaskBtf as u32,
+        args: vec![],
+    });
+    block.instructions.push(MirInst::LoadSubprogram {
+        dst: callback_fn,
+        subfn: SubfunctionId(0),
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst: helper_ret,
+        helper: BpfHelper::FindVma as u32,
+        args: vec![
+            MirValue::VReg(task),
+            MirValue::Const(0),
+            MirValue::VReg(callback_fn),
+            MirValue::Const(0),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new_with_env(None, Some(&subfn_schemes), None, None, None);
+    ti.infer(&func)
+        .expect("expected null bpf_find_vma callback_ctx to infer");
+}
+
+#[test]
+fn test_type_error_find_vma_rejects_map_callback_ctx() {
+    let mut callback = MirFunction::with_name("find_vma_cb");
+    callback.param_count = 3;
+    let callback_entry = callback.alloc_block();
+    callback.entry = callback_entry;
+    callback.block_mut(callback_entry).terminator = MirInst::Return {
+        val: Some(MirValue::Const(0)),
+    };
+
+    let hints = vec![HashMap::from([
+        (VReg(0), MirType::named_kernel_struct_ptr("task_struct")),
+        (VReg(1), MirType::named_kernel_struct_ptr("vm_area_struct")),
+        (
+            VReg(2),
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Stack,
+            },
+        ),
+    ])];
+    let stack_hints = vec![HashMap::new()];
+    let subfn_schemes =
+        infer_subfunction_schemes_with_hints(&[callback], None, Some(&hints), Some(&stack_hints))
+            .expect("expected callback scheme inference to succeed");
+
+    let mut func = make_test_function();
+    let task = func.alloc_vreg();
+    let callback_ctx = func.alloc_vreg();
+    let callback_fn = func.alloc_vreg();
+    let helper_ret = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst: task,
+        helper: BpfHelper::GetCurrentTaskBtf as u32,
+        args: vec![],
+    });
+    block.instructions.push(MirInst::LoadSubprogram {
+        dst: callback_fn,
+        subfn: SubfunctionId(0),
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst: helper_ret,
+        helper: BpfHelper::FindVma as u32,
+        args: vec![
+            MirValue::VReg(task),
+            MirValue::Const(0),
+            MirValue::VReg(callback_fn),
+            MirValue::VReg(callback_ctx),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let type_hints = HashMap::from([(
+        callback_ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U64),
+            address_space: AddressSpace::Map,
+        },
+    )]);
+    let mut ti =
+        TypeInference::new_with_env(None, Some(&subfn_schemes), None, Some(&type_hints), None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_find_vma callback_ctx pointer-space error");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper bpf_find_vma callback_ctx expects pointer in [Stack]")
+    }));
+}
+
+#[test]
 fn test_infer_bpf_loop_callback_subprogram_type() {
     let mut callback = MirFunction::with_name("loop_cb");
     callback.param_count = 2;
@@ -1418,6 +1548,84 @@ fn test_type_error_user_ringbuf_drain_rejects_wrong_callback_signature() {
         e.message.contains(
             "helper 'bpf_user_ringbuf_drain' callback must have signature fn(*stack /* dynptr */, *stack) -> scalar",
         )
+    }));
+}
+
+#[test]
+fn test_type_error_user_ringbuf_drain_rejects_map_callback_ctx() {
+    let mut callback = MirFunction::with_name("user_ringbuf_cb");
+    callback.param_count = 2;
+    let callback_entry = callback.alloc_block();
+    callback.entry = callback_entry;
+    callback.block_mut(callback_entry).terminator = MirInst::Return {
+        val: Some(MirValue::Const(0)),
+    };
+
+    let hints = vec![HashMap::from([
+        (
+            VReg(0),
+            MirType::Ptr {
+                pointee: Box::new(MirType::opaque_named_struct("bpf_dynptr")),
+                address_space: AddressSpace::Stack,
+            },
+        ),
+        (
+            VReg(1),
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Stack,
+            },
+        ),
+    ])];
+    let stack_hints = vec![HashMap::new()];
+    let subfn_schemes =
+        infer_subfunction_schemes_with_hints(&[callback], None, Some(&hints), Some(&stack_hints))
+            .expect("expected user_ringbuf_drain callback scheme inference to succeed");
+
+    let mut func = make_test_function();
+    let map = func.alloc_vreg();
+    let callback_ctx = func.alloc_vreg();
+    let callback_fn = func.alloc_vreg();
+    let helper_ret = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadMapFd {
+        dst: map,
+        map: MapRef {
+            name: "events".to_string(),
+            kind: MapKind::UserRingBuf,
+        },
+    });
+    block.instructions.push(MirInst::LoadSubprogram {
+        dst: callback_fn,
+        subfn: SubfunctionId(0),
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst: helper_ret,
+        helper: BpfHelper::UserRingbufDrain as u32,
+        args: vec![
+            MirValue::VReg(map),
+            MirValue::VReg(callback_fn),
+            MirValue::VReg(callback_ctx),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let type_hints = HashMap::from([(
+        callback_ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U64),
+            address_space: AddressSpace::Map,
+        },
+    )]);
+    let mut ti =
+        TypeInference::new_with_env(None, Some(&subfn_schemes), None, Some(&type_hints), None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected user_ringbuf_drain callback_ctx pointer-space error");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper user_ringbuf_drain callback_ctx expects pointer in [Stack]")
     }));
 }
 

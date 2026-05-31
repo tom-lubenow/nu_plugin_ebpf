@@ -633,6 +633,29 @@ impl BpfHelper {
             fixed_size: None,
             size_from_arg: None,
         }];
+        const FIND_VMA_RULES: &[HelperPtrArgRule] = &[HelperPtrArgRule {
+            arg_idx: 3,
+            op: "helper bpf_find_vma callback_ctx",
+            allowed: STACK_ONLY,
+            fixed_size: None,
+            size_from_arg: None,
+        }];
+        const USER_RINGBUF_DRAIN_RULES: &[HelperPtrArgRule] = &[
+            HelperPtrArgRule {
+                arg_idx: 0,
+                op: "helper user_ringbuf_drain map",
+                allowed: STACK_ONLY,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+            HelperPtrArgRule {
+                arg_idx: 2,
+                op: "helper user_ringbuf_drain callback_ctx",
+                allowed: STACK_ONLY,
+                fixed_size: None,
+                size_from_arg: None,
+            },
+        ];
 
         const LOAD_HDR_OPT_RULES: &[HelperPtrArgRule] = &[
             HelperPtrArgRule {
@@ -2350,6 +2373,11 @@ impl BpfHelper {
                 positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },
+            BpfHelper::UserRingbufDrain => HelperSemantics {
+                ptr_arg_rules: USER_RINGBUF_DRAIN_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
             BpfHelper::TailCall => HelperSemantics {
                 ptr_arg_rules: TAIL_CALL_RULES,
                 positive_size_args: &[],
@@ -2574,6 +2602,11 @@ impl BpfHelper {
             },
             BpfHelper::BpfLoop => HelperSemantics {
                 ptr_arg_rules: BPF_LOOP_RULES,
+                positive_size_args: &[],
+                ringbuf_record_arg0: false,
+            },
+            BpfHelper::FindVma => HelperSemantics {
+                ptr_arg_rules: FIND_VMA_RULES,
                 positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },

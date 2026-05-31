@@ -2820,6 +2820,10 @@ fn test_helper_static_null_pointer_contracts() {
         (BpfHelper::CgrpStorageGet, 1),
         (BpfHelper::CgrpStorageGet, 2),
         (BpfHelper::CgrpStorageDelete, 1),
+        (BpfHelper::ForEachMapElem, 2),
+        (BpfHelper::FindVma, 3),
+        (BpfHelper::BpfLoop, 2),
+        (BpfHelper::UserRingbufDrain, 2),
     ] {
         assert!(
             helper.pointer_arg_allows_static_const_zero(arg_idx),
@@ -8058,6 +8062,49 @@ fn test_callback_helper_flag_contracts() {
     assert_eq!(
         BpfHelper::UserRingbufDrain.local_helper_map_arg_index(),
         Some(0)
+    );
+}
+
+#[test]
+fn test_callback_helper_context_pointer_rules() {
+    for (helper, arg_idx, op) in [
+        (
+            BpfHelper::ForEachMapElem,
+            2,
+            "helper bpf_for_each_map_elem callback_ctx",
+        ),
+        (BpfHelper::FindVma, 3, "helper bpf_find_vma callback_ctx"),
+        (BpfHelper::BpfLoop, 2, "helper bpf_loop callback_ctx"),
+        (
+            BpfHelper::UserRingbufDrain,
+            2,
+            "helper user_ringbuf_drain callback_ctx",
+        ),
+    ] {
+        let semantics = helper.semantics();
+        let rule = semantics
+            .ptr_arg_rules
+            .iter()
+            .find(|rule| rule.arg_idx == arg_idx)
+            .unwrap_or_else(|| panic!("{helper:?} arg{arg_idx} should have a pointer rule"));
+        assert_eq!(rule.op, op);
+        assert!(rule.allowed.allow_stack);
+        assert!(!rule.allowed.allow_map);
+        assert!(!rule.allowed.allow_kernel);
+        assert!(!rule.allowed.allow_user);
+    }
+
+    assert!(
+        BpfHelper::UserRingbufDrain
+            .semantics()
+            .ptr_arg_rules
+            .iter()
+            .any(|rule| rule.arg_idx == 0
+                && rule.op == "helper user_ringbuf_drain map"
+                && rule.allowed.allow_stack
+                && !rule.allowed.allow_map
+                && !rule.allowed.allow_kernel
+                && !rule.allowed.allow_user)
     );
 }
 

@@ -1116,6 +1116,10 @@ impl BpfHelper {
                 | (Self::CgrpStorageGet, 1)
                 | (Self::CgrpStorageGet, 2)
                 | (Self::CgrpStorageDelete, 1)
+                | (Self::ForEachMapElem, 2)
+                | (Self::FindVma, 3)
+                | (Self::BpfLoop, 2)
+                | (Self::UserRingbufDrain, 2)
         )
     }
 

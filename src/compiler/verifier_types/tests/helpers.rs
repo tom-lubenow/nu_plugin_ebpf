@@ -1476,6 +1476,343 @@ fn test_verify_mir_find_vma_requires_task_pointer_arg0() {
 }
 
 #[test]
+fn test_verify_mir_find_vma_accepts_null_callback_ctx() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let task = func.alloc_vreg();
+    let callback_fn = func.alloc_vreg();
+    let helper_ret = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: task,
+            helper: BpfHelper::GetCurrentTaskBtf as u32,
+            args: vec![],
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadSubprogram {
+            dst: callback_fn,
+            subfn: SubfunctionId(0),
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: helper_ret,
+            helper: BpfHelper::FindVma as u32,
+            args: vec![
+                MirValue::VReg(task),
+                MirValue::Const(0),
+                MirValue::VReg(callback_fn),
+                MirValue::Const(0),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(task, MirType::named_kernel_struct_ptr("task_struct"));
+    types.insert(
+        callback_fn,
+        MirType::Subprogram {
+            args: vec![
+                MirType::named_kernel_struct_ptr("task_struct"),
+                MirType::named_kernel_struct_ptr("vm_area_struct"),
+                MirType::Ptr {
+                    pointee: Box::new(MirType::U8),
+                    address_space: AddressSpace::Stack,
+                },
+            ],
+            ret: Box::new(MirType::I64),
+        },
+    );
+    types.insert(helper_ret, MirType::I64);
+
+    verify_mir(&func, &types).expect("expected null bpf_find_vma callback_ctx to verify");
+}
+
+#[test]
+fn test_verify_mir_find_vma_rejects_map_callback_ctx() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let callback_loaded = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+
+    let task = func.alloc_vreg();
+    let key = func.alloc_vreg();
+    let callback_ctx = func.alloc_vreg();
+    let callback_ctx_non_null = func.alloc_vreg();
+    let callback_fn = func.alloc_vreg();
+    let helper_ret = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: task,
+            helper: BpfHelper::GetCurrentTaskBtf as u32,
+            args: vec![],
+        });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: key,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::MapLookup {
+        dst: callback_ctx,
+        map: MapRef {
+            name: "callback_ctx_map".to_string(),
+            kind: MapKind::Array,
+        },
+        key,
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: callback_ctx_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(callback_ctx),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: callback_ctx_non_null,
+        if_true: callback_loaded,
+        if_false: done,
+    };
+    func.block_mut(callback_loaded)
+        .instructions
+        .push(MirInst::LoadSubprogram {
+            dst: callback_fn,
+            subfn: SubfunctionId(0),
+        });
+    func.block_mut(callback_loaded)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: helper_ret,
+            helper: BpfHelper::FindVma as u32,
+            args: vec![
+                MirValue::VReg(task),
+                MirValue::Const(0),
+                MirValue::VReg(callback_fn),
+                MirValue::VReg(callback_ctx),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(callback_loaded).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(task, MirType::named_kernel_struct_ptr("task_struct"));
+    types.insert(key, MirType::I64);
+    types.insert(
+        callback_ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U64),
+            address_space: AddressSpace::Map,
+        },
+    );
+    types.insert(callback_ctx_non_null, MirType::Bool);
+    types.insert(
+        callback_fn,
+        MirType::Subprogram {
+            args: vec![
+                MirType::named_kernel_struct_ptr("task_struct"),
+                MirType::named_kernel_struct_ptr("vm_area_struct"),
+                MirType::Ptr {
+                    pointee: Box::new(MirType::U8),
+                    address_space: AddressSpace::Stack,
+                },
+            ],
+            ret: Box::new(MirType::I64),
+        },
+    );
+    types.insert(helper_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected bpf_find_vma callback_ctx error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper bpf_find_vma callback_ctx expects pointer in [Stack]")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_user_ringbuf_drain_rejects_map_callback_ctx() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let callback_loaded = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+
+    let map = func.alloc_vreg();
+    let key = func.alloc_vreg();
+    let callback_ctx = func.alloc_vreg();
+    let callback_ctx_non_null = func.alloc_vreg();
+    let callback_fn = func.alloc_vreg();
+    let helper_ret = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::LoadMapFd {
+        dst: map,
+        map: MapRef {
+            name: "events".to_string(),
+            kind: MapKind::UserRingBuf,
+        },
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: key,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::MapLookup {
+        dst: callback_ctx,
+        map: MapRef {
+            name: "callback_ctx_map".to_string(),
+            kind: MapKind::Array,
+        },
+        key,
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: callback_ctx_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(callback_ctx),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: callback_ctx_non_null,
+        if_true: callback_loaded,
+        if_false: done,
+    };
+    func.block_mut(callback_loaded)
+        .instructions
+        .push(MirInst::LoadSubprogram {
+            dst: callback_fn,
+            subfn: SubfunctionId(0),
+        });
+    func.block_mut(callback_loaded)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: helper_ret,
+            helper: BpfHelper::UserRingbufDrain as u32,
+            args: vec![
+                MirValue::VReg(map),
+                MirValue::VReg(callback_fn),
+                MirValue::VReg(callback_ctx),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(callback_loaded).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        map,
+        MirType::MapRef {
+            key_ty: Box::new(MirType::U32),
+            val_ty: Box::new(MirType::Unknown),
+        },
+    );
+    types.insert(key, MirType::I64);
+    types.insert(
+        callback_ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U64),
+            address_space: AddressSpace::Map,
+        },
+    );
+    types.insert(callback_ctx_non_null, MirType::Bool);
+    types.insert(
+        callback_fn,
+        MirType::Subprogram {
+            args: vec![
+                MirType::Ptr {
+                    pointee: Box::new(MirType::opaque_named_struct("bpf_dynptr")),
+                    address_space: AddressSpace::Stack,
+                },
+                MirType::Ptr {
+                    pointee: Box::new(MirType::U8),
+                    address_space: AddressSpace::Stack,
+                },
+            ],
+            ret: Box::new(MirType::I64),
+        },
+    );
+    types.insert(helper_ret, MirType::I64);
+
+    let err =
+        verify_mir(&func, &types).expect_err("expected user_ringbuf_drain callback_ctx error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper user_ringbuf_drain callback_ctx expects pointer in [Stack]")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_user_ringbuf_drain_accepts_null_callback_ctx() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let map = func.alloc_vreg();
+    let callback_fn = func.alloc_vreg();
+    let helper_ret = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::LoadMapFd {
+        dst: map,
+        map: MapRef {
+            name: "events".to_string(),
+            kind: MapKind::UserRingBuf,
+        },
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadSubprogram {
+            dst: callback_fn,
+            subfn: SubfunctionId(0),
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: helper_ret,
+            helper: BpfHelper::UserRingbufDrain as u32,
+            args: vec![
+                MirValue::VReg(map),
+                MirValue::VReg(callback_fn),
+                MirValue::Const(0),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        map,
+        MirType::MapRef {
+            key_ty: Box::new(MirType::U32),
+            val_ty: Box::new(MirType::Unknown),
+        },
+    );
+    types.insert(
+        callback_fn,
+        MirType::Subprogram {
+            args: vec![
+                MirType::Ptr {
+                    pointee: Box::new(MirType::opaque_named_struct("bpf_dynptr")),
+                    address_space: AddressSpace::Stack,
+                },
+                MirType::Ptr {
+                    pointee: Box::new(MirType::U8),
+                    address_space: AddressSpace::Stack,
+                },
+            ],
+            ret: Box::new(MirType::I64),
+        },
+    );
+    types.insert(helper_ret, MirType::I64);
+
+    verify_mir(&func, &types).expect("expected null user_ringbuf_drain callback_ctx to verify");
+}
+
+#[test]
 fn test_verify_mir_bpf_loop_accepts_modeled_callback_subprogram() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
