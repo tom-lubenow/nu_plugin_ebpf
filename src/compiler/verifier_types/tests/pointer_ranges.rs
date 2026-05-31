@@ -164,6 +164,73 @@ fn test_stack_pointer_offset_in_bounds() {
 }
 
 #[test]
+fn test_rejects_stack_pointer_add_out_of_bounds() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let ptr = func.alloc_vreg();
+    let out = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: ptr,
+        src: MirValue::StackSlot(slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: out,
+        op: BinOpKind::Add,
+        lhs: MirValue::VReg(ptr),
+        rhs: MirValue::Const(16),
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let err = verify_mir(&func, &HashMap::new()).expect_err("expected pointer bounds error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("pointer arithmetic out of bounds")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_rejects_stack_pointer_add_unknown_offset() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let offset = func.alloc_vreg();
+    let slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let ptr = func.alloc_vreg();
+    let out = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: ptr,
+        src: MirValue::StackSlot(slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: out,
+        op: BinOpKind::Add,
+        lhs: MirValue::VReg(ptr),
+        rhs: MirValue::VReg(offset),
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(offset, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected unknown offset error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("requires bounded scalar offset")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_rejects_pointer_pointer_binop() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

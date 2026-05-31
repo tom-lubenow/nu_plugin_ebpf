@@ -21,6 +21,7 @@ pub(super) fn pointer_arith_result(
     rhs: &MirValue,
     state: &VerifierState,
     slot_sizes: &HashMap<StackSlotId, i64>,
+    errors: &mut Vec<VerifierTypeError>,
 ) -> Option<VerifierType> {
     if !matches!(op, BinOpKind::Add | BinOpKind::Sub) {
         return None;
@@ -60,13 +61,29 @@ pub(super) fn pointer_arith_result(
     {
         let bounds = match (bounds, offset_range) {
             (Some(bounds), ValueRange::Known { min, max }) => {
-                let (min_delta, max_delta) = if is_add { (min, max) } else { (-max, -min) };
+                let (min_delta, max_delta) = if is_add {
+                    (min, max)
+                } else {
+                    (max.saturating_neg(), min.saturating_neg())
+                };
+                let new_min = bounds.min().saturating_add(min_delta);
+                let new_max = bounds.max().saturating_add(max_delta);
+                if new_min < 0 || new_max > bounds.limit() {
+                    errors.push(VerifierTypeError::new("pointer arithmetic out of bounds"));
+                    return Some(VerifierType::Unknown);
+                }
                 Some(PtrBounds::new(
                     bounds.origin(),
-                    bounds.min().saturating_add(min_delta),
-                    bounds.max().saturating_add(max_delta),
+                    new_min,
+                    new_max,
                     bounds.limit(),
                 ))
+            }
+            (Some(_), ValueRange::Unknown) => {
+                errors.push(VerifierTypeError::new(
+                    "pointer arithmetic requires bounded scalar offset",
+                ));
+                return Some(VerifierType::Unknown);
             }
             _ => None,
         };

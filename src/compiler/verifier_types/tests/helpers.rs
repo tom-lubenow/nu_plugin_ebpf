@@ -13324,8 +13324,10 @@ fn test_helper_map_lookup_rejects_out_of_bounds_key_pointer() {
 
     let err = verify_mir(&func, &types).expect_err("expected helper key bounds error");
     assert!(
-        err.iter()
-            .any(|e| e.message.contains("helper map_lookup key out of bounds")),
+        err.iter().any(|e| {
+            e.message.contains("helper map_lookup key out of bounds")
+                || e.message.contains("pointer arithmetic out of bounds")
+        }),
         "unexpected errors: {:?}",
         err
     );
@@ -13372,8 +13374,10 @@ fn test_helper_map_lookup_percpu_rejects_out_of_bounds_key_pointer() {
 
     let err = verify_mir(&func, &types).expect_err("expected helper key bounds error");
     assert!(
-        err.iter()
-            .any(|e| e.message.contains("helper map_lookup key out of bounds")),
+        err.iter().any(|e| {
+            e.message.contains("helper map_lookup key out of bounds")
+                || e.message.contains("pointer arithmetic out of bounds")
+        }),
         "unexpected errors: {:?}",
         err
     );

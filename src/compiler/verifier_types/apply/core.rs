@@ -210,7 +210,7 @@ pub(super) fn apply_binop_inst(
         return;
     }
 
-    if let Some(ty) = pointer_arith_result(op, lhs, rhs, state, slot_sizes) {
+    if let Some(ty) = pointer_arith_result(op, lhs, rhs, state, slot_sizes, errors) {
         state.set(dst, ty);
         return;
     }
