@@ -1274,6 +1274,36 @@ fn test_verifier_diff_context_field_feature_metadata_covers_representative_rust_
     );
 }
 
+#[test]
+fn test_verifier_diff_nested_record_wrapper_read_scanner_preserves_metadata() {
+    let target = "kprobe:ksys_read";
+    let program = r#"{|ctx|
+  def wrap [event] { { event: $event } }
+  def outer [event] { wrap $event }
+  let rec = (outer $ctx)
+  $rec.event.pid | count
+  0
+}"#;
+    let Some(actual) = verifier_diff_nu_program_context_field_feature_keys(&[(
+        target.to_string(),
+        program.to_string(),
+    )]) else {
+        return;
+    };
+    let spec = ProgramSpec::parse(target)
+        .unwrap_or_else(|err| panic!("representative context field target should parse: {err}"));
+    let expected =
+        ContextFieldCompatibilityRequirement::for_field_on_program_spec(&CtxField::Pid, &spec)
+            .expect("ctx.pid should carry source-backed context metadata")
+            .key();
+
+    assert!(
+        actual[0].contains(&expected),
+        "nested user-function record wrappers should preserve read-side context metadata; expected {expected}, actual {:?}",
+        actual[0]
+    );
+}
+
 #[derive(Clone, Copy)]
 enum ContextWriteScannerForm {
     Direct,
