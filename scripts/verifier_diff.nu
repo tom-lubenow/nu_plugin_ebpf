@@ -5976,6 +5976,17 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         feature_keys: ["ctx:family" "ctx:sk" "helper:bpf_probe_read_kernel"]
     }
     {
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  def wrap [sock] { { socket: $sock } }'
+            '  wrap $ctx.sk | get socket | get family | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:family" "ctx:sk" "helper:bpf_probe_read_kernel"]
+    }
+    {
         target: "raw_tracepoint:sys_enter"
         program: [
             '{|event|'
@@ -18453,6 +18464,21 @@ const FIXTURES = [
             '{|ctx|'
             '  let rec = { ok: true, socket: $ctx.sk }'
             '  $rec | rename keep sock | get sock | get family | count'
+            '  "ok"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tc-record-socket-context-wrapper-get-chain"
+        category: "context-surface"
+        tags: [tc context socket record wrapper get source metadata]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  def wrap [sock] { { socket: $sock } }'
+            '  wrap $ctx.sk | get socket | get family | count'
             '  "ok"'
             '}'
         ]
@@ -39063,7 +39089,7 @@ def context-root-binding [line: string context_names bound_aliases identity_wrap
     null
 }
 
-def context-root-record-extraction-binding [line: string record_aliases context_names bound_aliases identity_wrappers root_wrapper_defs] {
+def context-root-record-extraction-binding [line: string record_aliases record_wrapper_defs context_names bound_aliases identity_wrappers root_wrapper_defs] {
     for assignment in (declaration-assignments $line) {
         let rhs = (declaration-rhs-token $assignment)
 
@@ -39097,6 +39123,7 @@ def context-root-record-extraction-binding [line: string record_aliases context_
                 $input
                 $get_field
                 $record_aliases
+                $record_wrapper_defs
                 $context_names
                 $bound_aliases
                 $identity_wrappers
@@ -39113,7 +39140,7 @@ def context-root-record-extraction-binding [line: string record_aliases context_
     null
 }
 
-def context-root-from-record-get [input: string get_field: string record_aliases context_names bound_aliases identity_wrappers root_wrapper_defs] {
+def context-root-from-record-get [input: string get_field: string record_aliases record_wrapper_defs context_names bound_aliases identity_wrappers root_wrapper_defs] {
     let field_name = (normalize-context-path-token $get_field)
     if $field_name == "" {
         return null
@@ -39135,6 +39162,20 @@ def context-root-from-record-get [input: string get_field: string record_aliases
             | where {|alias| $alias.name == $parsed.record and $alias.field == $field_name }
         ) {
             return ($alias | get -o root | default "")
+        }
+    }
+
+    let invocation = (two-token-invocation $normalized_input)
+    if $invocation != null {
+        for wrapper in (
+            $record_wrapper_defs
+            | where {|wrapper| $wrapper.name == $invocation.callee and $wrapper.field == $field_name }
+        ) {
+            let root = (context-root-from-value-token $invocation.arg $context_names $bound_aliases)
+            if $root == null {
+                continue
+            }
+            return (combine-context-roots $root ($wrapper | get -o root | default ""))
         }
     }
 
@@ -39227,6 +39268,10 @@ def program-bound-context-root-aliases [source: string context_names] {
     let identity_wrappers = (identity-wrapper-definitions $source)
     let root_wrapper_defs = (context-root-wrapper-definitions $source)
     let record_aliases = (program-record-context-aliases $source $context_names)
+    let record_wrapper_defs = (
+        record-wrapper-definitions $source
+        | append (record-context-wrapper-definitions $source)
+    )
     mut changed = true
 
     loop {
@@ -39240,6 +39285,7 @@ def program-bound-context-root-aliases [source: string context_names] {
                 context-root-record-extraction-binding
                     $line
                     $record_aliases
+                    $record_wrapper_defs
                     $context_names
                     $aliases
                     $identity_wrappers
@@ -40698,6 +40744,7 @@ def record-get-candidate-lines [source: string] {
             or ($normalized_input | str starts-with "($")
             or ($normalized_input | str starts-with "{")
             or ($normalized_input | str starts-with "({")
+            or not ((two-token-invocation $normalized_input) == null)
         ) {
             $candidates = ($candidates | append $trimmed)
         }
@@ -40720,6 +40767,10 @@ def record-get-projection-kernel-features [source: string target context_names] 
     let record_aliases = (program-record-context-aliases $source $context_names)
     let identity_wrappers = (identity-wrapper-definitions $source)
     let root_wrapper_defs = (context-root-wrapper-definitions $source)
+    let record_wrapper_defs = (
+        record-wrapper-definitions $source
+        | append (record-context-wrapper-definitions $source)
+    )
 
     for line in $candidate_lines {
         let trimmed = ($line | str trim)
@@ -40747,6 +40798,7 @@ def record-get-projection-kernel-features [source: string target context_names] 
                         $input
                         $parsed.field
                         $record_aliases
+                        $record_wrapper_defs
                         $context_names
                         $bound_aliases
                         $identity_wrappers
