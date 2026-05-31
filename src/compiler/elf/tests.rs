@@ -1801,28 +1801,7 @@ fn test_program_type_ctx_field_load_guard_follows_context_layout() {
 #[test]
 fn test_program_type_perf_event_ctx_field_support_follows_context_family() {
     let mut context_family_keys = HashSet::new();
-    for family in [
-        ProgramContextFamily::Probe,
-        ProgramContextFamily::PerfEvent,
-        ProgramContextFamily::Xdp,
-        ProgramContextFamily::SkBuffPacket,
-        ProgramContextFamily::SkLookup,
-        ProgramContextFamily::FlowDissector,
-        ProgramContextFamily::Netfilter,
-        ProgramContextFamily::SkReuseport,
-        ProgramContextFamily::SkMsg,
-        ProgramContextFamily::SockOps,
-        ProgramContextFamily::CgroupSock,
-        ProgramContextFamily::CgroupSysctl,
-        ProgramContextFamily::CgroupSockopt,
-        ProgramContextFamily::CgroupSockAddr,
-        ProgramContextFamily::CgroupDevice,
-        ProgramContextFamily::LircMode2,
-        ProgramContextFamily::StructOps,
-        ProgramContextFamily::Extension,
-        ProgramContextFamily::Syscall,
-        ProgramContextFamily::Iter,
-    ] {
+    for family in ProgramContextFamily::all() {
         assert!(
             context_family_keys.insert(family.key()),
             "program context family key repeats for {family:?}"
