@@ -1,4 +1,5 @@
 use super::*;
+use crate::compiler::{EbpfProgramType, ProbeContext};
 
 #[test]
 fn test_helper_kptr_xchg_allows_null_const_arg1() {
@@ -379,6 +380,81 @@ fn test_helper_kptr_xchg_rejects_unchecked_kernel_ptr_arg1() {
         err.iter().any(|e| e
             .message
             .contains("helper kptr_xchg ptr may dereference null pointer")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_helper_kptr_xchg_rejects_flow_keys_context_arg1() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let call = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let dst_ptr = func.alloc_vreg();
+    let src_ptr = func.alloc_vreg();
+    let dst_non_null = func.alloc_vreg();
+    let swapped = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: src_ptr,
+            field: CtxField::FlowKeys,
+            slot: None,
+        });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: dst_non_null,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(dst_ptr),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: dst_non_null,
+        if_true: call,
+        if_false: done,
+    };
+    func.block_mut(call).instructions.push(MirInst::CallHelper {
+        dst: swapped,
+        helper: BpfHelper::KptrXchg as u32,
+        args: vec![MirValue::VReg(dst_ptr), MirValue::VReg(src_ptr)],
+    });
+    func.block_mut(call).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        dst_ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Map,
+        },
+    );
+    types.insert(
+        src_ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Context,
+        },
+    );
+    types.insert(dst_non_null, MirType::Bool);
+    types.insert(
+        swapped,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::FlowDissector, "/proc/self/ns/net");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected kptr_xchg context-pointer rejection");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper kptr_xchg ptr expects pointer in [Kernel], got Context")),
         "unexpected errors: {:?}",
         err
     );
