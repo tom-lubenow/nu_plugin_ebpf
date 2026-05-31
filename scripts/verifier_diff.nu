@@ -40295,7 +40295,38 @@ def context-root-from-wrapper-invocation [invocation context_names bound_aliases
     null
 }
 
-def context-root-binding [line: string context_names bound_aliases identity_wrappers root_wrapper_defs] {
+def context-root-from-multi-param-wrapper-invocation [raw_value: string context_names bound_aliases wrapper_defs] {
+    let trimmed = (trim-simple-parentheses ($raw_value | str trim))
+    let tokens = (
+        $trimmed
+        | split row " "
+        | each {|part| $part | str trim }
+        | where {|part| $part != "" }
+    )
+    if ($tokens | length) < 2 {
+        return null
+    }
+
+    let callee = ($tokens | first)
+    let args = ($tokens | skip 1)
+    for wrapper in ($wrapper_defs | where {|wrapper| $wrapper.name == $callee }) {
+        let arg = ($args | get -o $wrapper.param_index)
+        if $arg == null {
+            continue
+        }
+
+        let root = (context-root-from-value-token $arg $context_names $bound_aliases)
+        if $root == null {
+            continue
+        }
+
+        return (combine-context-roots $root ($wrapper | get -o root | default ""))
+    }
+
+    null
+}
+
+def context-root-binding [line: string context_names bound_aliases identity_wrappers root_wrapper_defs multi_param_root_wrapper_defs] {
     for assignment in (declaration-assignments $line) {
         let rhs = (declaration-rhs-token $assignment)
         let direct_root = (context-root-from-value-token $rhs $context_names $bound_aliases)
@@ -40334,6 +40365,17 @@ def context-root-binding [line: string context_names bound_aliases identity_wrap
             if $wrapper_root != null {
                 return { name: $assignment.name root: $wrapper_root }
             }
+        }
+
+        let multi_param_wrapper_root = (
+            context-root-from-multi-param-wrapper-invocation
+                $rhs
+                $context_names
+                $bound_aliases
+                $multi_param_root_wrapper_defs
+        )
+        if $multi_param_wrapper_root != null {
+            return { name: $assignment.name root: $multi_param_wrapper_root }
         }
 
         for context_name in $context_names {
@@ -40524,6 +40566,7 @@ def program-bound-context-root-aliases-base [source: string context_names] {
     mut aliases = []
     let identity_wrappers = (identity-wrapper-definitions $source)
     let root_wrapper_defs = (context-root-wrapper-definitions $source)
+    let multi_param_root_wrapper_defs = (multi-param-context-root-wrapper-definitions $source)
 
     for line in ($source | lines) {
         let binding = (
@@ -40533,6 +40576,7 @@ def program-bound-context-root-aliases-base [source: string context_names] {
                 $aliases
                 $identity_wrappers
                 $root_wrapper_defs
+                $multi_param_root_wrapper_defs
         )
         if $binding == null {
             continue
@@ -42154,6 +42198,59 @@ def positional-user-functions [source: string] {
     }
 
     $functions
+}
+
+def multi-param-context-root-wrapper-definitions [source: string] {
+    mut wrappers = []
+
+    for function in (positional-user-functions $source) {
+        if ($function.params | length) <= 1 {
+            continue
+        }
+
+        let return_lines = (
+            $function.body
+            | each {|line| $line | str trim }
+            | where {|line|
+                (
+                    $line != ""
+                    and not ($line | str starts-with "#")
+                    and not ($line | str contains "=")
+                )
+            }
+        )
+        if ($return_lines | is-empty) {
+            continue
+        }
+
+        let returned = ($return_lines | last)
+        for param in ($function.params | enumerate) {
+            let root = (context-root-from-value-token $returned [$param.item] [])
+            if $root == null {
+                continue
+            }
+            if (
+                $wrappers
+                | any {|wrapper|
+                    (
+                        $wrapper.name == $function.name
+                        and $wrapper.param_index == $param.index
+                        and (($wrapper | get -o root | default "") == $root)
+                    )
+                }
+            ) {
+                continue
+            }
+
+            $wrappers = ($wrappers | append {
+                name: $function.name
+                param_index: $param.index
+                root: $root
+            })
+        }
+    }
+
+    $wrappers
 }
 
 def command-tail-positional-args [raw_tail: string] {
