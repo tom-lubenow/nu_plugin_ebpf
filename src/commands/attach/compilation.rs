@@ -47,6 +47,7 @@ const NU_CLOSURE_COMMANDS: &[&str] = &[
     "get",
     "select",
     "reject",
+    "rename",
     "insert",
     "update",
     "upsert",

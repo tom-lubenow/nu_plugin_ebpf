@@ -32778,6 +32778,34 @@ const FIXTURES = [
         error_contains: "cannot find record field 'cpu'"
     }
     {
+        name: "core-record-rename-fields"
+        category: "language-core"
+        tags: [aggregate record rename]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let rec = ({ pid: 7 cpu: 2 ok: true } | rename tid core)'
+            '  $rec.tid'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-record-rename-trailing-fields"
+        category: "language-core"
+        tags: [aggregate record rename]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let rec = ({ pid: 7 cpu: 2 ok: true } | rename tid)'
+            '  $rec.cpu'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-record-insert-field"
         category: "language-core"
         tags: [aggregate record insert]

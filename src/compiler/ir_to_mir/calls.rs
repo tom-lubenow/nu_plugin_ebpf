@@ -210,6 +210,71 @@ impl<'a> HirToMirLowering<'a> {
         Ok(())
     }
 
+    fn lower_metadata_record_rename(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+    ) -> Result<(), CompileError> {
+        let input_reg = self
+            .pipeline_input_reg
+            .or(src_dst_had_value.then_some(src_dst));
+
+        if !self.named_flags.is_empty() || !self.named_args.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(
+                "rename --column and --block are not supported in eBPF".into(),
+            ));
+        }
+
+        let mut new_names = Vec::new();
+        for (_, reg) in &self.positional_args {
+            let name = self.top_level_field_name_arg(*reg, "rename")?;
+            new_names.push(name);
+        }
+
+        let input_meta = input_reg
+            .and_then(|reg| self.get_metadata(reg).cloned())
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "rename requires record input with compiler-known fields in eBPF".into(),
+                )
+            })?;
+        if input_meta.record_fields.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(
+                "rename requires record input with compiler-known fields in eBPF".into(),
+            ));
+        }
+
+        let mut renamed_fields = input_meta.record_fields.clone();
+        for (field, name) in renamed_fields.iter_mut().zip(new_names.iter()) {
+            field.name = name.clone();
+        }
+
+        let constant_value = match input_meta.constant_value.clone() {
+            Some(nu_protocol::Value::Record { val, .. }) => {
+                let mut out = nu_protocol::Record::new();
+                for (idx, (key, value)) in val.iter().enumerate() {
+                    let out_key = new_names.get(idx).unwrap_or(key).clone();
+                    out.push(out_key, value.clone());
+                }
+                Some(nu_protocol::Value::record(out, Span::unknown()))
+            }
+            _ => None,
+        };
+
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+        let projected_meta = RegMetadata {
+            record_fields: renamed_fields,
+            constant_value,
+            ..Default::default()
+        };
+        self.emit_metadata_record_result(src_dst, result_vreg, projected_meta)
+    }
+
     fn lower_default(
         &mut self,
         src_dst: RegId,
@@ -3211,6 +3276,10 @@ impl<'a> HirToMirLowering<'a> {
                     dst_vreg,
                     src_dst_had_value,
                 )?;
+            }
+
+            "rename" => {
+                self.lower_metadata_record_rename(src_dst, dst_vreg, src_dst_had_value)?;
             }
 
             "insert" | "update" | "upsert" => {

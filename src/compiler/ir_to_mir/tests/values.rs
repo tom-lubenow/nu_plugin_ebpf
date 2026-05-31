@@ -1541,6 +1541,47 @@ fn test_lower_select_missing_metadata_record_field_is_rejected() {
 }
 
 #[test]
+fn test_lower_rename_metadata_record_fields_by_position() {
+    let rename_decl = DeclId::new(102);
+    let hir =
+        make_record_projection_then_field_program(rename_decl, &["tid", "core"], false, "tid");
+    let decl_names = HashMap::from([(rename_decl, "rename".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("rename should rename metadata-backed record fields by position");
+
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("renamed record field projection should compile through codegen");
+}
+
+#[test]
+fn test_lower_rename_leaves_trailing_metadata_record_fields_unchanged() {
+    let rename_decl = DeclId::new(103);
+    let hir = make_record_projection_then_field_program(rename_decl, &["tid"], false, "cpu");
+    let decl_names = HashMap::from([(rename_decl, "rename".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("rename should leave trailing metadata-backed record fields unchanged");
+
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("trailing field projection after rename should compile through codegen");
+}
+
+#[test]
 fn test_lower_insert_adds_metadata_record_field() {
     let insert_decl = DeclId::new(97);
     let hir = make_record_set_then_field_program(insert_decl, "mem", 9, "mem");

@@ -834,6 +834,7 @@ eBPF layout and verifier bounds are explicit:
 | `first` / `last` | Scalar first/last element access for stack-backed numeric lists; counted slice forms are not yet modeled |
 | `get` | Stack-backed numeric-list indexing plus typed kernel/user pointer numeric indexing; list literal indexes may be literal cell paths |
 | `select` / `reject` | Metadata-backed fixed records, materialized into a fresh fixed-layout record |
+| `rename` | Positional top-level field renames for metadata-backed fixed records; `--column` and `--block` are not yet modeled |
 | `insert` / `update` / `upsert` | Top-level metadata-backed fixed-record fields with non-closure replacement values, preserving Nushell existing/missing-field behavior |
 | `default` | Compiler-known null/empty scalar replacement and metadata-backed record missing/null field replacement; closure default values and runtime nullable-pointer defaults are rejected |
 | `random int` | BPF pseudo-random integer generation, including the zero-argument form and compile-time bounded ranges covering at most `2^32` values |
