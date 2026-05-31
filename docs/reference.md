@@ -627,7 +627,9 @@ ordinary tuple surface where the kernel semantics are clear:
 additionally expose `ctx.local_ip4` / `ctx.local_ip6` over the
 source-address fields. `sendmsg4` / `sendmsg6` still do not expose
 `ctx.local_port`, because the kernel surface does not provide a
-corresponding source-port field there.
+corresponding source-port field there. The `sendmsg*` local-IP aliases
+inherit the `msg_src_ip*` compatibility floor because they write the
+same physical kernel fields.
 
 These mutable kernel fields can be assigned through the same aliases
 after shadowing the closure parameter as mutable, for example
