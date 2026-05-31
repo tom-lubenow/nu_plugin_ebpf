@@ -20484,6 +20484,23 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "cgroup-sock-addr-unix-sun-path-user-function-returned-context-write"
+        category: "context-surface"
+        tags: [cgroup-sock-addr context unix writable kfunc user-function alias source metadata]
+        requires: [cgroup-v2]
+        target: "cgroup_sock_addr:/sys/fs/cgroup:connect_unix"
+        program: [
+            '{|ctx|'
+            '  def get_event [event] { $event }'
+            '  mut event = (get_event $ctx)'
+            '  $event.sun_path = "/tmp/nu-ebpf.sock"'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "cgroup-sock-addr-unix-sun-path-record-write"
         category: "context-surface"
         tags: [cgroup-sock-addr context unix writable kfunc record source metadata]
@@ -21946,6 +21963,23 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "cgroup-sysctl-user-function-returned-context-new-value-write"
+        category: "context-surface"
+        tags: [cgroup-sysctl context writable user-function alias source metadata]
+        requires: [cgroup-v2]
+        target: "cgroup_sysctl:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  def get_event [event] { $event }'
+            '  mut writable = (get_event $ctx)'
+            '  $writable.new_value = "1"'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "cgroup-sysctl-current-value-context"
         category: "context-surface"
         tags: [cgroup-sysctl context helper-backed]
@@ -22086,6 +22120,23 @@ const FIXTURES = [
             '{|ctx|'
             '  mut rec = { event: $ctx }'
             '  $rec.event.cb_flags = 1'
+            '  1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "sock-ops-cb-flags-user-function-returned-context-write"
+        category: "context-surface"
+        tags: [sock-ops context writable user-function alias source metadata]
+        requires: [cgroup-v2]
+        target: "sock_ops:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  def get_event [event] { $event }'
+            '  mut writable = (get_event $ctx)'
+            '  $writable.cb_flags = 1'
             '  1'
             '}'
         ]
