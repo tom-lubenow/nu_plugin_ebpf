@@ -235,22 +235,37 @@ fn scalar_identity_source(
     state: &VerifierState,
     slot_sizes: &HashMap<StackSlotId, i64>,
 ) -> Option<VReg> {
-    let is_scalar = |reg| {
+    fn vreg(value: &MirValue) -> Option<VReg> {
+        match value {
+            MirValue::VReg(reg) => Some(*reg),
+            MirValue::Const(_) | MirValue::StackSlot(_) => None,
+        }
+    }
+
+    fn const_value(value: &MirValue) -> Option<i64> {
+        match value {
+            MirValue::Const(value) => Some(*value),
+            MirValue::VReg(_) | MirValue::StackSlot(_) => None,
+        }
+    }
+
+    let preserved = match (op, vreg(lhs), const_value(lhs), vreg(rhs), const_value(rhs)) {
+        (BinOpKind::Add | BinOpKind::Or | BinOpKind::Xor, Some(reg), _, _, Some(0)) => Some(reg),
+        (BinOpKind::Add | BinOpKind::Or | BinOpKind::Xor, _, Some(0), Some(reg), _) => Some(reg),
+        (BinOpKind::Sub | BinOpKind::Shl | BinOpKind::Shr, Some(reg), _, _, Some(0)) => Some(reg),
+        (BinOpKind::Mul, Some(reg), _, _, Some(1)) => Some(reg),
+        (BinOpKind::Mul, _, Some(1), Some(reg), _) => Some(reg),
+        (BinOpKind::Div, Some(reg), _, _, Some(1)) => Some(reg),
+        _ => None,
+    }?;
+
+    let is_scalar = {
         matches!(
-            value_type(&MirValue::VReg(reg), state, slot_sizes),
+            value_type(&MirValue::VReg(preserved), state, slot_sizes),
             VerifierType::Scalar | VerifierType::Bool
         )
     };
-    match (op, lhs, rhs) {
-        (BinOpKind::Add, MirValue::VReg(reg), MirValue::Const(0))
-        | (BinOpKind::Add, MirValue::Const(0), MirValue::VReg(reg))
-        | (BinOpKind::Sub, MirValue::VReg(reg), MirValue::Const(0))
-            if is_scalar(*reg) =>
-        {
-            Some(*reg)
-        }
-        _ => None,
-    }
+    if is_scalar { Some(preserved) } else { None }
 }
 
 fn released_kfunc_ref_value(value: &MirValue, state: &VerifierState) -> bool {
@@ -549,5 +564,92 @@ fn ctx_field_phi_type(dst: VReg, ty: VerifierType, field: &CtxField) -> Verifier
         bounds,
         ringbuf_ref,
         kfunc_ref,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn scalar_identity_source_for(
+        op: BinOpKind,
+        lhs: MirValue,
+        rhs: MirValue,
+        ty: VerifierType,
+    ) -> Option<VReg> {
+        let mut state = VerifierState::new(1);
+        state.set(VReg(0), ty);
+        scalar_identity_source(op, &lhs, &rhs, &state, &HashMap::new())
+    }
+
+    #[test]
+    fn scalar_identity_source_tracks_exact_scalar_identity_ops() {
+        let reg = MirValue::VReg(VReg(0));
+        let zero = MirValue::Const(0);
+        let one = MirValue::Const(1);
+        let cases = [
+            (BinOpKind::Add, reg.clone(), zero.clone()),
+            (BinOpKind::Add, zero.clone(), reg.clone()),
+            (BinOpKind::Sub, reg.clone(), zero.clone()),
+            (BinOpKind::Or, reg.clone(), zero.clone()),
+            (BinOpKind::Or, zero.clone(), reg.clone()),
+            (BinOpKind::Xor, reg.clone(), zero.clone()),
+            (BinOpKind::Xor, zero.clone(), reg.clone()),
+            (BinOpKind::Mul, reg.clone(), one.clone()),
+            (BinOpKind::Mul, one.clone(), reg.clone()),
+            (BinOpKind::Div, reg.clone(), one.clone()),
+            (BinOpKind::Shl, reg.clone(), zero.clone()),
+            (BinOpKind::Shr, reg, zero),
+        ];
+
+        for (op, lhs, rhs) in cases {
+            assert_eq!(
+                scalar_identity_source_for(op, lhs, rhs, VerifierType::Scalar),
+                Some(VReg(0)),
+                "{op:?} should preserve scalar identity"
+            );
+        }
+    }
+
+    #[test]
+    fn scalar_identity_source_ignores_value_changing_ops() {
+        let reg = MirValue::VReg(VReg(0));
+        let cases = [
+            (BinOpKind::Add, reg.clone(), MirValue::Const(1)),
+            (BinOpKind::Sub, MirValue::Const(0), reg.clone()),
+            (BinOpKind::Mul, reg.clone(), MirValue::Const(2)),
+            (BinOpKind::Div, MirValue::Const(1), reg.clone()),
+            (BinOpKind::Shl, MirValue::Const(0), reg.clone()),
+            (BinOpKind::Shr, MirValue::Const(0), reg),
+        ];
+
+        for (op, lhs, rhs) in cases {
+            assert_eq!(
+                scalar_identity_source_for(op, lhs, rhs, VerifierType::Scalar),
+                None,
+                "{op:?} should not preserve scalar identity"
+            );
+        }
+    }
+
+    #[test]
+    fn scalar_identity_source_ignores_pointer_sources() {
+        let pointer = VerifierType::Ptr {
+            space: AddressSpace::Map,
+            nullability: Nullability::NonNull,
+            bounds: None,
+            ringbuf_ref: None,
+            kfunc_ref: None,
+        };
+
+        assert_eq!(
+            scalar_identity_source_for(
+                BinOpKind::Add,
+                MirValue::VReg(VReg(0)),
+                MirValue::Const(0),
+                pointer,
+            ),
+            None
+        );
     }
 }
