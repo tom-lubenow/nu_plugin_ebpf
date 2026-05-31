@@ -871,50 +871,14 @@ $targets
     );
 
     let output = run_nu_script(&script, "target-kernel-features coverage")?;
-    assert!(
-        output.status.success(),
-        "verifier_diff.nu target-kernel-features failed\nstdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
+    assert_verifier_diff_nu_success(&output, "target-kernel-features");
 
-    let actual: serde_json::Value = serde_json::from_slice(&output.stdout)
-        .expect("verifier_diff.nu target-kernel-features should emit JSON");
-    let actual = actual
-        .as_array()
-        .expect("verifier_diff.nu target-kernel-features output should be a JSON list");
-    assert_eq!(
-        actual.len(),
+    Some(verifier_diff_nu_indexed_feature_keys(
+        &output.stdout,
+        "target-kernel-features",
         targets.len(),
-        "verifier_diff.nu target-kernel-features should return one result per target"
-    );
-
-    let mut keys_by_target = vec![BTreeSet::new(); targets.len()];
-    for value in actual {
-        let index = value
-            .get("index")
-            .and_then(serde_json::Value::as_u64)
-            .expect("verifier_diff.nu target-kernel-features result should include index")
-            as usize;
-        assert!(
-            index < targets.len(),
-            "verifier_diff.nu target-kernel-features index should refer to a checked target"
-        );
-        let keys = value
-            .get("keys")
-            .and_then(serde_json::Value::as_array)
-            .expect("verifier_diff.nu target-kernel-features result should include keys");
-        keys_by_target[index] = keys
-            .iter()
-            .map(|key| {
-                key.as_str()
-                    .expect("verifier_diff.nu target feature keys should be strings")
-                    .to_string()
-            })
-            .collect();
-    }
-
-    Some(keys_by_target)
+        "target",
+    ))
 }
 
 fn verifier_diff_nu_program_feature_keys(
@@ -949,55 +913,14 @@ $checks
     );
 
     let output = run_nu_script(&script, label)?;
-    assert!(
-        output.status.success(),
-        "verifier_diff.nu {function_name} failed\nstdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
+    assert_verifier_diff_nu_success(&output, function_name);
 
-    let actual: serde_json::Value = serde_json::from_slice(&output.stdout)
-        .unwrap_or_else(|_| panic!("verifier_diff.nu {function_name} should emit JSON"));
-    let actual = actual
-        .as_array()
-        .unwrap_or_else(|| panic!("verifier_diff.nu {function_name} output should be a JSON list"));
-    assert_eq!(
-        actual.len(),
+    Some(verifier_diff_nu_indexed_feature_keys(
+        &output.stdout,
+        function_name,
         checks.len(),
-        "verifier_diff.nu {function_name} should return one result per checked program"
-    );
-
-    let mut keys_by_check = vec![BTreeSet::new(); checks.len()];
-    for value in actual {
-        let index = value
-            .get("index")
-            .and_then(serde_json::Value::as_u64)
-            .unwrap_or_else(|| {
-                panic!("verifier_diff.nu {function_name} result should include index")
-            }) as usize;
-        assert!(
-            index < checks.len(),
-            "verifier_diff.nu {function_name} index should refer to a checked program"
-        );
-        let keys = value
-            .get("keys")
-            .and_then(serde_json::Value::as_array)
-            .unwrap_or_else(|| {
-                panic!("verifier_diff.nu {function_name} result should include keys")
-            });
-        keys_by_check[index] = keys
-            .iter()
-            .map(|key| {
-                key.as_str()
-                    .unwrap_or_else(|| {
-                        panic!("verifier_diff.nu {function_name} keys should be strings")
-                    })
-                    .to_string()
-            })
-            .collect();
-    }
-
-    Some(keys_by_check)
+        "checked program",
+    ))
 }
 
 fn verifier_diff_nu_program_only_feature_keys(
@@ -1031,25 +954,43 @@ $programs
     );
 
     let output = run_nu_script(&script, label)?;
+    assert_verifier_diff_nu_success(&output, function_name);
+
+    Some(verifier_diff_nu_indexed_feature_keys(
+        &output.stdout,
+        function_name,
+        programs.len(),
+        "checked program",
+    ))
+}
+
+fn assert_verifier_diff_nu_success(output: &Output, function_name: &str) {
     assert!(
         output.status.success(),
         "verifier_diff.nu {function_name} failed\nstdout:\n{}\nstderr:\n{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
+}
 
-    let actual: serde_json::Value = serde_json::from_slice(&output.stdout)
+fn verifier_diff_nu_indexed_feature_keys(
+    stdout: &[u8],
+    function_name: &str,
+    expected_len: usize,
+    subject: &str,
+) -> Vec<BTreeSet<String>> {
+    let actual: serde_json::Value = serde_json::from_slice(stdout)
         .unwrap_or_else(|_| panic!("verifier_diff.nu {function_name} should emit JSON"));
     let actual = actual
         .as_array()
         .unwrap_or_else(|| panic!("verifier_diff.nu {function_name} output should be a JSON list"));
     assert_eq!(
         actual.len(),
-        programs.len(),
-        "verifier_diff.nu {function_name} should return one result per checked program"
+        expected_len,
+        "verifier_diff.nu {function_name} should return one result per {subject}"
     );
 
-    let mut keys_by_program = vec![BTreeSet::new(); programs.len()];
+    let mut keys_by_index = vec![BTreeSet::new(); expected_len];
     for value in actual {
         let index = value
             .get("index")
@@ -1058,8 +999,8 @@ $programs
                 panic!("verifier_diff.nu {function_name} result should include index")
             }) as usize;
         assert!(
-            index < programs.len(),
-            "verifier_diff.nu {function_name} index should refer to a checked program"
+            index < expected_len,
+            "verifier_diff.nu {function_name} index should refer to a {subject}"
         );
         let keys = value
             .get("keys")
@@ -1067,7 +1008,7 @@ $programs
             .unwrap_or_else(|| {
                 panic!("verifier_diff.nu {function_name} result should include keys")
             });
-        keys_by_program[index] = keys
+        keys_by_index[index] = keys
             .iter()
             .map(|key| {
                 key.as_str()
@@ -1079,7 +1020,7 @@ $programs
             .collect();
     }
 
-    Some(keys_by_program)
+    keys_by_index
 }
 
 fn verifier_diff_nu_program_map_feature_keys(programs: &[String]) -> Option<Vec<BTreeSet<String>>> {
