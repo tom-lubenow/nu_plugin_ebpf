@@ -40504,7 +40504,13 @@ def context-root-from-record-get [input: string get_field: string record_aliases
             $record_wrapper_defs
             | where {|wrapper| $wrapper.name == $invocation.callee and $wrapper.field == $field_name }
         ) {
-            let root = (context-root-from-value-token $invocation.arg $context_names $bound_aliases)
+            let root = (
+                context-root-from-record-wrapper-invocation
+                    $invocation
+                    $wrapper
+                    $context_names
+                    $bound_aliases
+            )
             if $root == null {
                 continue
             }
@@ -40606,6 +40612,7 @@ def program-bound-context-root-aliases [source: string context_names] {
     let record_wrapper_defs = (
         record-wrapper-definitions $source
         | append (record-context-wrapper-definitions $source)
+        | append (multi-param-record-wrapper-definitions $source)
     )
     mut changed = true
 
@@ -40811,6 +40818,21 @@ def record-wrapper-definitions [source: string] {
     $wrappers
 }
 
+def context-root-from-record-wrapper-invocation [invocation wrapper context_names bound_aliases] {
+    let param_index = ($wrapper | get -o param_index)
+    if $param_index == null {
+        return (context-root-from-value-token $invocation.arg $context_names $bound_aliases)
+    }
+
+    let args = (command-tail-positional-args $invocation.arg)
+    let arg = ($args | get -o $param_index)
+    if $arg == null {
+        return null
+    }
+
+    context-root-from-value-token $arg $context_names $bound_aliases
+}
+
 def context-root-from-value-token [raw_value: string context_names bound_aliases] {
     let field_value = (trim-simple-parentheses ($raw_value | str trim))
     for context_name in $context_names {
@@ -40922,7 +40944,13 @@ def record-wrapper-context-bindings [line: string context_names bound_aliases wr
         }
 
         for wrapper in ($wrapper_defs | where {|wrapper| $wrapper.name == $invocation.callee }) {
-            let root = (context-root-from-value-token $invocation.arg $context_names $bound_aliases)
+            let root = (
+                context-root-from-record-wrapper-invocation
+                    $invocation
+                    $wrapper
+                    $context_names
+                    $bound_aliases
+            )
             if $root == null {
                 continue
             }
@@ -42253,6 +42281,50 @@ def multi-param-context-root-wrapper-definitions [source: string] {
     $wrappers
 }
 
+def multi-param-record-wrapper-definitions [source: string] {
+    mut wrappers = []
+
+    for function in (positional-user-functions $source) {
+        if ($function.params | length) <= 1 {
+            continue
+        }
+
+        for line in $function.body {
+            let trimmed = ($line | str trim)
+            if $trimmed == "" or ($trimmed | str starts-with "#") {
+                continue
+            }
+
+            for param in ($function.params | enumerate) {
+                for field in (record-literal-context-fields $trimmed [$param.item] [] [] []) {
+                    if (
+                        $wrappers
+                        | any {|wrapper|
+                            (
+                                $wrapper.name == $function.name
+                                and $wrapper.field == $field.field
+                                and $wrapper.param_index == $param.index
+                                and (($wrapper | get -o root | default "") == ($field | get -o root | default ""))
+                            )
+                        }
+                    ) {
+                        continue
+                    }
+
+                    $wrappers = ($wrappers | append {
+                        name: $function.name
+                        field: $field.field
+                        param_index: $param.index
+                        root: ($field | get -o root | default "")
+                    })
+                }
+            }
+        }
+    }
+
+    $wrappers
+}
+
 def command-tail-positional-args [raw_tail: string] {
     let raw_args = (
         $raw_tail
@@ -42448,6 +42520,7 @@ def program-record-context-aliases [source: string context_names] {
     let wrapper_defs = (
         record-wrapper-definitions $source
         | append (record-context-wrapper-definitions $source)
+        | append (multi-param-record-wrapper-definitions $source)
     )
 
     mut changed = true
@@ -42729,6 +42802,7 @@ def record-get-projection-kernel-features [source: string target context_names] 
     let record_wrapper_defs = (
         record-wrapper-definitions $source
         | append (record-context-wrapper-definitions $source)
+        | append (multi-param-record-wrapper-definitions $source)
     )
 
     for line in $candidate_lines {
