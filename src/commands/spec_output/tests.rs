@@ -5530,19 +5530,141 @@ fn test_context_write_backing_abi_metadata_invariants() {
     for spec_source in CONTEXT_WRITE_SPEC_SOURCES {
         let spec = ProgramSpec::parse(spec_source)
             .unwrap_or_else(|err| panic!("{spec_source} should parse: {err}"));
+        let surfaces = spec.ctx_write_surfaces_for_spec();
+        let writes = spec_context_writes(&spec);
 
-        for write in spec_context_writes(&spec) {
-            if write.context_field_requirement_key.is_some() {
-                assert!(
-                    write.minimum_kernel.is_some(),
-                    "{spec_source} ctx.{} write should report a context-field minimum kernel",
-                    write.field
-                );
-                assert!(
-                    write.minimum_kernel_source.is_some(),
-                    "{spec_source} ctx.{} write should report a context-field minimum kernel source",
-                    write.field
-                );
+        assert_eq!(
+            writes.len(),
+            surfaces.len(),
+            "{spec_source} spec output should report every available context write surface"
+        );
+
+        for (surface, write) in surfaces.iter().zip(writes.iter()) {
+            assert_eq!(write.field, surface.field_name);
+            assert_eq!(write.kind, surface.kind);
+            assert_eq!(write.indexed, surface.indexed);
+            assert_eq!(write.minimum_kernel, surface.minimum_kernel);
+            assert_eq!(write.minimum_kernel_source, surface.minimum_kernel_source);
+
+            match surface.context_field_requirement.as_ref() {
+                Some(requirement) => {
+                    assert_eq!(
+                        write.context_field_requirement_key.as_deref(),
+                        Some(requirement.key().as_str()),
+                        "{spec_source} ctx.{} write should report the exact context-field requirement key",
+                        write.field
+                    );
+                    assert!(
+                        write.minimum_kernel.is_some(),
+                        "{spec_source} ctx.{} write should report a context-field minimum kernel",
+                        write.field
+                    );
+                    assert!(
+                        write.minimum_kernel_source.is_some(),
+                        "{spec_source} ctx.{} write should report a context-field minimum kernel source",
+                        write.field
+                    );
+                }
+                None => {
+                    assert_eq!(
+                        write.context_field_requirement_key, None,
+                        "{spec_source} ctx.{} write should not report a context-field requirement key",
+                        write.field
+                    );
+                    assert_eq!(
+                        write.minimum_kernel, None,
+                        "{spec_source} ctx.{} write should not report a context-field minimum kernel",
+                        write.field
+                    );
+                    assert_eq!(
+                        write.minimum_kernel_source, None,
+                        "{spec_source} ctx.{} write should not report a context-field minimum kernel source",
+                        write.field
+                    );
+                }
+            }
+
+            match surface.helper {
+                Some(helper) => {
+                    let requirement =
+                        HelperCompatibilityRequirement::for_helper(helper).unwrap_or_else(|| {
+                            panic!(
+                                "{spec_source} ctx.{} helper {} should expose compatibility metadata",
+                                write.field,
+                                helper.name()
+                            )
+                        });
+                    assert_eq!(write.helper, Some(helper.name()));
+                    assert_eq!(
+                        write.helper_requirement_key.as_deref(),
+                        Some(requirement.key().as_str()),
+                        "{spec_source} ctx.{} helper-backed write should report the exact helper requirement key",
+                        write.field
+                    );
+                    assert_eq!(
+                        write.helper_minimum_kernel,
+                        Some(requirement.minimum_kernel()),
+                        "{spec_source} ctx.{} helper-backed write should report the exact helper minimum kernel",
+                        write.field
+                    );
+                    assert_eq!(
+                        write.helper_minimum_kernel_source,
+                        Some(requirement.minimum_kernel_source()),
+                        "{spec_source} ctx.{} helper-backed write should report the exact helper source",
+                        write.field
+                    );
+                }
+                None => {
+                    assert_eq!(write.helper, None);
+                    assert_eq!(write.helper_requirement_key, None);
+                    assert_eq!(write.helper_minimum_kernel, None);
+                    assert_eq!(write.helper_minimum_kernel_source, None);
+                }
+            }
+
+            match surface.kfunc {
+                Some(kfunc) => {
+                    let requirement = spec
+                        .kfunc_compatibility_requirement_for_name(kfunc)
+                        .unwrap_or_else(|| {
+                            panic!(
+                                "{spec_source} ctx.{} kfunc {kfunc} should expose compatibility metadata",
+                                write.field
+                            )
+                        });
+                    assert_eq!(write.kfunc, Some(kfunc));
+                    assert_eq!(
+                        write.kfunc_requirement_key.as_deref(),
+                        Some(requirement.key().as_str()),
+                        "{spec_source} ctx.{} kfunc-backed write should report the exact kfunc requirement key",
+                        write.field
+                    );
+                    assert_eq!(
+                        write.kfunc_minimum_kernel,
+                        Some(requirement.minimum_kernel()),
+                        "{spec_source} ctx.{} kfunc-backed write should report the exact kfunc minimum kernel",
+                        write.field
+                    );
+                    assert_eq!(
+                        write.kfunc_minimum_kernel_source,
+                        Some(requirement.minimum_kernel_source()),
+                        "{spec_source} ctx.{} kfunc-backed write should report the exact kfunc source",
+                        write.field
+                    );
+                    assert_eq!(
+                        write.kfunc_maximum_kernel_exclusive,
+                        requirement.maximum_kernel_exclusive(),
+                        "{spec_source} ctx.{} kfunc-backed write should report the exact kfunc upper bound",
+                        write.field
+                    );
+                }
+                None => {
+                    assert_eq!(write.kfunc, None);
+                    assert_eq!(write.kfunc_requirement_key, None);
+                    assert_eq!(write.kfunc_minimum_kernel, None);
+                    assert_eq!(write.kfunc_minimum_kernel_source, None);
+                    assert_eq!(write.kfunc_maximum_kernel_exclusive, None);
+                }
             }
 
             let component_floors = [
@@ -5572,40 +5694,15 @@ fn test_context_write_backing_abi_metadata_invariants() {
                         write.field
                     );
                 }
-            }
-
-            if let Some(helper) = write.helper {
+            } else {
                 assert!(
-                    write.helper_requirement_key.is_some(),
-                    "{spec_source} ctx.{} helper-backed write via {helper} should report a helper requirement key",
+                    write.compatibility_minimum_kernel.is_none(),
+                    "{spec_source} ctx.{} should not report an aggregate compatibility minimum without component floors",
                     write.field
                 );
                 assert!(
-                    write.helper_minimum_kernel.is_some(),
-                    "{spec_source} ctx.{} helper-backed write via {helper} should report a helper minimum kernel",
-                    write.field
-                );
-                assert!(
-                    write.helper_minimum_kernel_source.is_some(),
-                    "{spec_source} ctx.{} helper-backed write via {helper} should report a helper source",
-                    write.field
-                );
-            }
-
-            if let Some(kfunc) = write.kfunc {
-                assert!(
-                    write.kfunc_requirement_key.is_some(),
-                    "{spec_source} ctx.{} kfunc-backed write via {kfunc} should report a kfunc requirement key",
-                    write.field
-                );
-                assert!(
-                    write.kfunc_minimum_kernel.is_some(),
-                    "{spec_source} ctx.{} kfunc-backed write via {kfunc} should report a kfunc minimum kernel",
-                    write.field
-                );
-                assert!(
-                    write.kfunc_minimum_kernel_source.is_some(),
-                    "{spec_source} ctx.{} kfunc-backed write via {kfunc} should report a kfunc source",
+                    write.compatibility_minimum_kernel_source.is_none(),
+                    "{spec_source} ctx.{} should not report an aggregate compatibility source without component floors",
                     write.field
                 );
             }
