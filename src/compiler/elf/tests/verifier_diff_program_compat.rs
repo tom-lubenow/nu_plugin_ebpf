@@ -1280,6 +1280,8 @@ enum ContextWriteScannerForm {
     RecordAlias,
     ReturnedContextAlias,
     RecordWrapper,
+    RecordSpread,
+    UserFunctionRecordWrapper,
 }
 
 impl ContextWriteScannerForm {
@@ -1289,6 +1291,8 @@ impl ContextWriteScannerForm {
             Self::RecordAlias => "record-alias",
             Self::ReturnedContextAlias => "returned-context-alias",
             Self::RecordWrapper => "record-wrapper",
+            Self::RecordSpread => "record-spread",
+            Self::UserFunctionRecordWrapper => "user-function-record-wrapper",
         }
     }
 }
@@ -1303,7 +1307,9 @@ fn context_write_scanner_source(
         ContextWriteScannerForm::RecordAlias | ContextWriteScannerForm::ReturnedContextAlias => {
             "$event"
         }
-        ContextWriteScannerForm::RecordWrapper => "$rec.event",
+        ContextWriteScannerForm::RecordWrapper
+        | ContextWriteScannerForm::RecordSpread
+        | ContextWriteScannerForm::UserFunctionRecordWrapper => "$rec.event",
     };
     let assignment = if field_name == "flow_keys" {
         format!("  {root}.{field_name}.ip_proto = 6")
@@ -1326,6 +1332,12 @@ fn context_write_scanner_source(
         ContextWriteScannerForm::RecordWrapper => {
             format!("{{|ctx|\n  mut rec = {{ event: $ctx }}\n{assignment}\n  \"allow\"\n}}")
         }
+        ContextWriteScannerForm::RecordSpread => format!(
+            "{{|ctx|\n  let base = {{ event: $ctx }}\n  mut rec = {{ ok: true, ...$base }}\n{assignment}\n  \"allow\"\n}}"
+        ),
+        ContextWriteScannerForm::UserFunctionRecordWrapper => format!(
+            "{{|ctx|\n  def wrap [event] {{ {{ event: $event }} }}\n  mut rec = (wrap $ctx)\n{assignment}\n  \"allow\"\n}}"
+        ),
     }
 }
 
@@ -1355,6 +1367,8 @@ fn test_verifier_diff_context_write_scanner_covers_rust_write_surfaces() {
                 ContextWriteScannerForm::RecordAlias,
                 ContextWriteScannerForm::ReturnedContextAlias,
                 ContextWriteScannerForm::RecordWrapper,
+                ContextWriteScannerForm::RecordSpread,
+                ContextWriteScannerForm::UserFunctionRecordWrapper,
             ] {
                 expected.push(ExpectedWriteFeature {
                     target: (*spec_text).to_string(),
@@ -1431,6 +1445,8 @@ fn test_verifier_diff_context_helper_write_scanner_covers_rust_write_surfaces() 
                 ContextWriteScannerForm::RecordAlias,
                 ContextWriteScannerForm::ReturnedContextAlias,
                 ContextWriteScannerForm::RecordWrapper,
+                ContextWriteScannerForm::RecordSpread,
+                ContextWriteScannerForm::UserFunctionRecordWrapper,
             ] {
                 expected.push(ExpectedHelperWriteFeature {
                     target: (*spec_text).to_string(),
@@ -1517,6 +1533,8 @@ fn test_verifier_diff_context_kfunc_write_scanner_covers_rust_write_surfaces() {
                 ContextWriteScannerForm::RecordAlias,
                 ContextWriteScannerForm::ReturnedContextAlias,
                 ContextWriteScannerForm::RecordWrapper,
+                ContextWriteScannerForm::RecordSpread,
+                ContextWriteScannerForm::UserFunctionRecordWrapper,
             ] {
                 expected.push(ExpectedKfuncWriteFeature {
                     target: (*spec_text).to_string(),
