@@ -1924,6 +1924,138 @@ fn test_mod_range_bounds() {
 }
 
 #[test]
+fn test_div_range_in_bounds_allows_ptr_access() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let ptr = func.alloc_vreg();
+    let idx = func.alloc_vreg();
+    let div = func.alloc_vreg();
+    let offset = func.alloc_vreg();
+    let tmp_ptr = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: ptr,
+        src: MirValue::StackSlot(slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: idx,
+        src: MirValue::Const(31),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: div,
+        src: MirValue::Const(8),
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: offset,
+        op: BinOpKind::Div,
+        lhs: MirValue::VReg(idx),
+        rhs: MirValue::VReg(div),
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: tmp_ptr,
+        op: BinOpKind::Add,
+        lhs: MirValue::VReg(ptr),
+        rhs: MirValue::VReg(offset),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Load {
+        dst,
+        ptr: tmp_ptr,
+        offset: 0,
+        ty: MirType::I64,
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::I64),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(
+        tmp_ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::I64),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    verify_mir(&func, &types).expect("expected bounded division offset to pass");
+}
+
+#[test]
+fn test_mod_range_in_bounds_allows_ptr_access() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let slot = func.alloc_stack_slot(4, 1, StackSlotKind::StringBuffer);
+    let ptr = func.alloc_vreg();
+    let idx = func.alloc_vreg();
+    let div = func.alloc_vreg();
+    let offset = func.alloc_vreg();
+    let tmp_ptr = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: ptr,
+        src: MirValue::StackSlot(slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: idx,
+        src: MirValue::Const(31),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: div,
+        src: MirValue::Const(4),
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: offset,
+        op: BinOpKind::Mod,
+        lhs: MirValue::VReg(idx),
+        rhs: MirValue::VReg(div),
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: tmp_ptr,
+        op: BinOpKind::Add,
+        lhs: MirValue::VReg(ptr),
+        rhs: MirValue::VReg(offset),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Load {
+        dst,
+        ptr: tmp_ptr,
+        offset: 0,
+        ty: MirType::I8,
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(
+        tmp_ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(dst, MirType::I8);
+
+    verify_mir(&func, &types).expect("expected bounded modulo offset to pass");
+}
+
+#[test]
 fn test_and_or_xor_range_bounds() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
