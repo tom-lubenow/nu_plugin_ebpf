@@ -8739,33 +8739,64 @@ fn test_lower_fentry_arg_count_ctx_field() {
 
 #[test]
 #[cfg(target_arch = "x86_64")]
-fn test_lower_perf_event_ctx_sample_period_field() {
-    let hir = make_ctx_path_program(CellPath {
-        members: vec![string_member("sample_period")],
-    });
-    let probe_ctx = ProbeContext::new(
-        EbpfProgramType::PerfEvent,
-        "software:cpu-clock:period=100000",
-    );
+fn test_lower_perf_event_direct_context_fields_compile() {
+    for (field_name, expected_field, expected_floor) in [
+        ("sample_period", CtxField::PerfSamplePeriod, "4.9"),
+        ("addr", CtxField::PerfAddr, "5.0"),
+    ] {
+        let hir = make_ctx_path_program(CellPath {
+            members: vec![string_member(field_name)],
+        });
+        let probe_ctx = ProbeContext::new(
+            EbpfProgramType::PerfEvent,
+            "software:cpu-clock:period=100000",
+        );
 
-    let result = lower_hir_to_mir_with_hints(
-        &hir,
-        Some(&probe_ctx),
-        &HashMap::new(),
-        None,
-        &HashMap::new(),
-        &HashMap::new(),
-    )
-    .expect("perf_event ctx.sample_period should lower");
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            Some(&probe_ctx),
+            &HashMap::new(),
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("perf_event ctx.{field_name} should lower: {err}"));
 
-    let block = result.program.main.block(result.program.main.entry);
-    assert!(block.instructions.iter().any(|inst| matches!(
-        inst,
-        MirInst::LoadCtxField {
-            field: CtxField::PerfSamplePeriod,
-            ..
-        }
-    )));
+        assert!(
+            result.program.main.blocks.iter().any(|block| {
+                block.instructions.iter().any(|inst| {
+                    matches!(
+                        inst,
+                        MirInst::LoadCtxField { field, .. } if field == &expected_field
+                    )
+                })
+            }),
+            "perf_event ctx.{field_name} should load {expected_field:?}"
+        );
+
+        let compiled = compile_mir_to_ebpf_with_hints(
+            &result.program,
+            Some(&probe_ctx),
+            Some(&result.type_hints),
+        )
+        .unwrap_or_else(|err| panic!("perf_event ctx.{field_name} should compile: {err}"));
+        assert!(
+            compiled.used_ctx_fields.contains(&expected_field),
+            "perf_event ctx.{field_name} should preserve {expected_field:?} compatibility metadata"
+        );
+        let program = compiled.into_program(
+            EbpfProgramType::PerfEvent,
+            "software:cpu-clock:period=100000",
+            "main",
+            HashMap::new(),
+            HashMap::new(),
+        );
+        assert_eq!(
+            program.context_field_compatibility_minimum_kernel(),
+            Some(expected_floor),
+            "perf_event ctx.{field_name} should report its direct context-field floor"
+        );
+    }
 }
 
 #[test]
