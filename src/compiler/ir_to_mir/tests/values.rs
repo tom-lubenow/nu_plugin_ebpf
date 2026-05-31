@@ -2223,6 +2223,105 @@ fn test_lower_math_product_min_max_on_numeric_lists() {
 }
 
 #[test]
+fn test_lower_uniq_on_numeric_list_removes_duplicate_values() {
+    let uniq_decl = DeclId::new(111);
+    let get_decl = DeclId::new(112);
+    let hir = HirProgram::new(
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadValue {
+                        dst: RegId::new(0),
+                        val: Box::new(Value::list(
+                            vec![
+                                Value::int(10, Span::test_data()),
+                                Value::int(20, Span::test_data()),
+                                Value::int(10, Span::test_data()),
+                                Value::int(30, Span::test_data()),
+                                Value::int(20, Span::test_data()),
+                            ],
+                            Span::test_data(),
+                        )),
+                    },
+                    HirStmt::Call {
+                        decl_id: uniq_decl,
+                        src_dst: RegId::new(1),
+                        args: HirCallArgs {
+                            pipeline_input: Some(RegId::new(0)),
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::Int(2),
+                    },
+                    HirStmt::Call {
+                        decl_id: get_decl,
+                        src_dst: RegId::new(3),
+                        args: HirCallArgs {
+                            pipeline_input: Some(RegId::new(1)),
+                            positional: vec![RegId::new(2)],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(3) },
+            }],
+            entry: HirBlockId(0),
+            spans: Vec::new(),
+            ast: Vec::new(),
+            comments: Vec::new(),
+            register_count: 4,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        None,
+    );
+    let decl_names = HashMap::from([
+        (uniq_decl, "uniq".to_string()),
+        (get_decl, "get".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("uniq should lower on stack-backed numeric lists");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::Eq,
+                ..
+            }
+        )),
+        "expected uniq to compare each item against earlier values"
+    );
+    assert!(
+        instructions
+            .iter()
+            .any(|inst| matches!(inst, MirInst::ListPush { .. })),
+        "expected uniq to rebuild a deduplicated stack list"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("uniq should compile through codegen");
+}
+
+#[test]
 fn test_lower_length_on_null_returns_zero() {
     let length_decl = DeclId::new(105);
     let func = HirFunction {

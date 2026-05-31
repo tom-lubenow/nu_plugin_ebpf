@@ -110,7 +110,7 @@ history and release notes, not here.
   - Long-term first-class commands should stay limited to real eBPF operations that do not have honest Nushell equivalents.
   - Keep `map-*` and `global-*` resource-oriented, not a template for adding helper wrappers.
   - Prefer improving ordinary Nushell constant evaluation, records, lists, cell paths, assignments, bounded loops, and function specialization.
-  - Keep broadening ordinary stack-backed numeric-list and metadata-backed fixed-record commands when they can preserve verifier-friendly bounds and honest fixed layouts; current coverage includes common `where` / `each` / `all` / `any` / `take` / `skip` / `drop` / `reverse` / `get` / `length` / selected non-empty `math` reducers / `is-empty` / `is-not-empty` list paths and `select` / `reject` / `rename` / `merge` / integer-field `values` / `is-empty` / `is-not-empty` / `insert` / `update` / `upsert` / selected `default` record paths.
+  - Keep broadening ordinary stack-backed numeric-list and metadata-backed fixed-record commands when they can preserve verifier-friendly bounds and honest fixed layouts; current coverage includes common `where` / `each` / `all` / `any` / `take` / `skip` / `drop` / `reverse` / `uniq` / `get` / `length` / selected non-empty `math` reducers / `is-empty` / `is-not-empty` list paths and `select` / `reject` / `rename` / `merge` / integer-field `values` / `is-empty` / `is-not-empty` / `insert` / `update` / `upsert` / selected `default` record paths.
 
 - [~] Improve control-flow expressiveness safely.
   - Extend bounded loops and list/array iteration only when the verifier-friendly loop shape remains obvious.

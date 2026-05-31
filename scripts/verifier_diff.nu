@@ -32499,6 +32499,32 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-list-uniq"
+        category: "language-core"
+        tags: [aggregate list uniq]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [10 20 10 30 20] | uniq | get 2'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-list-uniq-empty"
+        category: "language-core"
+        tags: [aggregate list uniq empty]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [] | uniq | length'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-drop-default"
         category: "language-core"
         tags: [aggregate list drop]
