@@ -2142,7 +2142,14 @@ fn set_alias(state: &mut [AliasSource], vreg: VReg, alias: AliasSource) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::compiler::mir::{CtxField, MirFunction, MirInst, MirValue, StackSlotKind};
+    use crate::compiler::mir::{CtxField, MapKind, MirFunction, MirInst, MirValue, StackSlotKind};
+
+    fn test_map(name: &str) -> MapRef {
+        MapRef {
+            name: name.to_string(),
+            kind: MapKind::Hash,
+        }
+    }
 
     #[test]
     fn test_infer_return_summary_for_copied_param() {
@@ -2354,6 +2361,214 @@ mod tests {
         assert_eq!(
             summaries.get(&SubfunctionId(1)),
             Some(&SubfunctionReturnSummary::ReturnsArgChangesPacketData(0))
+        );
+    }
+
+    #[test]
+    fn test_infer_summary_tracks_timer_init_map_fd_requirement() {
+        let mut subfn = MirFunction::new();
+        let entry = subfn.alloc_block();
+        subfn.entry = entry;
+        subfn.param_count = 2;
+        subfn.vreg_count = 2;
+        let ret = subfn.alloc_vreg();
+        subfn
+            .block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: ret,
+                helper: BpfHelper::TimerInit as u32,
+                args: vec![
+                    MirValue::VReg(VReg(0)),
+                    MirValue::VReg(VReg(1)),
+                    MirValue::Const(1),
+                ],
+            });
+        subfn.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let summaries = infer_subfunction_summaries(&[subfn]);
+        let summary = summaries
+            .get(&SubfunctionId(0))
+            .cloned()
+            .expect("expected summary");
+        assert_eq!(
+            summary.map_value_map_fd_requirements(),
+            &[SubfunctionMapValueMapFdRequirement {
+                map_value: SubfunctionMapSource::Arg(0),
+                map_fd: SubfunctionMapSource::Arg(1),
+                call: "helper 'bpf_timer_init'".to_string(),
+            }]
+        );
+    }
+
+    #[test]
+    fn test_infer_summary_tracks_wq_init_map_fd_requirement() {
+        let mut subfn = MirFunction::new();
+        let entry = subfn.alloc_block();
+        subfn.entry = entry;
+        subfn.param_count = 2;
+        subfn.vreg_count = 2;
+        let ret = subfn.alloc_vreg();
+        subfn
+            .block_mut(entry)
+            .instructions
+            .push(MirInst::CallKfunc {
+                dst: ret,
+                kfunc: "bpf_wq_init".to_string(),
+                btf_id: None,
+                args: vec![VReg(0), VReg(1)],
+            });
+        subfn.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let summaries = infer_subfunction_summaries(&[subfn]);
+        let summary = summaries
+            .get(&SubfunctionId(0))
+            .cloned()
+            .expect("expected summary");
+        assert_eq!(
+            summary.map_value_map_fd_requirements(),
+            &[SubfunctionMapValueMapFdRequirement {
+                map_value: SubfunctionMapSource::Arg(0),
+                map_fd: SubfunctionMapSource::Arg(1),
+                call: "kfunc 'bpf_wq_init'".to_string(),
+            }]
+        );
+    }
+
+    #[test]
+    fn test_infer_summary_propagates_nested_timer_init_map_fd_requirement() {
+        let map = test_map("timer_map");
+        let mut callee = MirFunction::new();
+        let callee_entry = callee.alloc_block();
+        callee.entry = callee_entry;
+        callee.param_count = 2;
+        callee.vreg_count = 2;
+        let timer_ret = callee.alloc_vreg();
+        callee
+            .block_mut(callee_entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: timer_ret,
+                helper: BpfHelper::TimerInit as u32,
+                args: vec![
+                    MirValue::VReg(VReg(0)),
+                    MirValue::VReg(VReg(1)),
+                    MirValue::Const(1),
+                ],
+            });
+        callee.block_mut(callee_entry).terminator = MirInst::Return { val: None };
+
+        let mut caller = MirFunction::new();
+        let caller_entry = caller.alloc_block();
+        caller.entry = caller_entry;
+        let key = caller.alloc_vreg();
+        let map_value = caller.alloc_vreg();
+        let map_fd = caller.alloc_vreg();
+        let call_ret = caller.alloc_vreg();
+        caller
+            .block_mut(caller_entry)
+            .instructions
+            .push(MirInst::MapLookup {
+                dst: map_value,
+                map: map.clone(),
+                key,
+            });
+        caller
+            .block_mut(caller_entry)
+            .instructions
+            .push(MirInst::LoadMapFd {
+                dst: map_fd,
+                map: map.clone(),
+            });
+        caller
+            .block_mut(caller_entry)
+            .instructions
+            .push(MirInst::CallSubfn {
+                dst: call_ret,
+                subfn: SubfunctionId(0),
+                args: vec![map_value, map_fd],
+            });
+        caller.block_mut(caller_entry).terminator = MirInst::Return { val: None };
+
+        let summaries = infer_subfunction_summaries(&[callee, caller]);
+        let summary = summaries
+            .get(&SubfunctionId(1))
+            .cloned()
+            .expect("expected caller summary");
+        assert_eq!(
+            summary.map_value_map_fd_requirements(),
+            &[SubfunctionMapValueMapFdRequirement {
+                map_value: SubfunctionMapSource::Map(map.clone()),
+                map_fd: SubfunctionMapSource::Map(map),
+                call: "helper 'bpf_timer_init'".to_string(),
+            }]
+        );
+    }
+
+    #[test]
+    fn test_infer_summary_propagates_nested_wq_init_map_fd_requirement() {
+        let map = test_map("work_items");
+        let mut callee = MirFunction::new();
+        let callee_entry = callee.alloc_block();
+        callee.entry = callee_entry;
+        callee.param_count = 2;
+        callee.vreg_count = 2;
+        let wq_ret = callee.alloc_vreg();
+        callee
+            .block_mut(callee_entry)
+            .instructions
+            .push(MirInst::CallKfunc {
+                dst: wq_ret,
+                kfunc: "bpf_wq_init".to_string(),
+                btf_id: None,
+                args: vec![VReg(0), VReg(1)],
+            });
+        callee.block_mut(callee_entry).terminator = MirInst::Return { val: None };
+
+        let mut caller = MirFunction::new();
+        let caller_entry = caller.alloc_block();
+        caller.entry = caller_entry;
+        let key = caller.alloc_vreg();
+        let map_value = caller.alloc_vreg();
+        let map_fd = caller.alloc_vreg();
+        let call_ret = caller.alloc_vreg();
+        caller
+            .block_mut(caller_entry)
+            .instructions
+            .push(MirInst::MapLookup {
+                dst: map_value,
+                map: map.clone(),
+                key,
+            });
+        caller
+            .block_mut(caller_entry)
+            .instructions
+            .push(MirInst::LoadMapFd {
+                dst: map_fd,
+                map: map.clone(),
+            });
+        caller
+            .block_mut(caller_entry)
+            .instructions
+            .push(MirInst::CallSubfn {
+                dst: call_ret,
+                subfn: SubfunctionId(0),
+                args: vec![map_value, map_fd],
+            });
+        caller.block_mut(caller_entry).terminator = MirInst::Return { val: None };
+
+        let summaries = infer_subfunction_summaries(&[callee, caller]);
+        let summary = summaries
+            .get(&SubfunctionId(1))
+            .cloned()
+            .expect("expected caller summary");
+        assert_eq!(
+            summary.map_value_map_fd_requirements(),
+            &[SubfunctionMapValueMapFdRequirement {
+                map_value: SubfunctionMapSource::Map(map.clone()),
+                map_fd: SubfunctionMapSource::Map(map),
+                call: "kfunc 'bpf_wq_init'".to_string(),
+            }]
         );
     }
 
