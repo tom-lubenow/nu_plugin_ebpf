@@ -8652,6 +8652,21 @@ const PROGRAM_SURFACE_KERNEL_FEATURE_EXPECTATIONS = [
         target: "cgroup_sysctl:/sys/fs/cgroup"
         program: [
             '{|ctx|'
+            '  def passthrough [event] {'
+            '    let actual = $event'
+            '    $actual'
+            '  }'
+            '  mut writable = (passthrough $ctx)'
+            '  $writable.new_value = "1"'
+            '  "allow"'
+            '}'
+        ]
+        feature_keys: ["helper:bpf_sysctl_set_new_value"]
+    }
+    {
+        target: "cgroup_sysctl:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
             '  mut rec = { event: $ctx }'
             '  $rec.event.new_value = "1"'
             '  "allow"'
@@ -8693,6 +8708,21 @@ const PROGRAM_SURFACE_KERNEL_FEATURE_EXPECTATIONS = [
         feature_keys: ["helper:bpf_sk_assign"]
     }
     {
+        target: "tc_action:demo"
+        program: [
+            '{|ctx|'
+            '  def passthrough [event] {'
+            '    let actual = $event'
+            '    $actual'
+            '  }'
+            '  mut event = (passthrough $ctx)'
+            '  $event.sk = 0'
+            '  1'
+            '}'
+        ]
+        feature_keys: ["helper:bpf_sk_assign"]
+    }
+    {
         target: "sock_ops:/sys/fs/cgroup"
         program: [
             '{|event|'
@@ -8708,6 +8738,21 @@ const PROGRAM_SURFACE_KERNEL_FEATURE_EXPECTATIONS = [
             '{|ctx|'
             '  mut rec = { event: $ctx }'
             '  $rec.event.cb_flags = 1'
+            '  1'
+            '}'
+        ]
+        feature_keys: ["helper:bpf_sock_ops_cb_flags_set"]
+    }
+    {
+        target: "sock_ops:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  def passthrough [event] {'
+            '    let actual = $event'
+            '    $actual'
+            '  }'
+            '  mut event = (passthrough $ctx)'
+            '  $event.cb_flags = 1'
             '  1'
             '}'
         ]
@@ -37141,6 +37186,12 @@ def program-context-variable-names [source: string] {
         let binding = (context-variable-binding $line $names $identity_wrappers)
         if $binding != null {
             $names = (append-unique-name $names $binding)
+        }
+    }
+
+    for alias in (program-bound-context-root-aliases $source $names) {
+        if (($alias | get -o root | default "") == "") {
+            $names = (append-unique-name $names $alias.name)
         }
     }
 
