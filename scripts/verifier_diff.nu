@@ -32394,6 +32394,59 @@ const FIXTURES = [
         error_contains: "counted last would produce a list slice"
     }
     {
+        name: "core-list-take-count"
+        category: "language-core"
+        tags: [aggregate list take]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [10 20 30] | take 2 | get 1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-list-take-oversized-count"
+        category: "language-core"
+        tags: [aggregate list take]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [10 20 30] | take 4 | get 2'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-list-take-zero-count"
+        category: "language-core"
+        tags: [aggregate list take]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [10 20 30] | take 0 | length'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-list-take-negative-count-reject"
+        category: "language-core"
+        tags: [aggregate list take reject]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [10 20 30] | take -1'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "take count must be non-negative"
+    }
+    {
         name: "core-list-skip-default"
         category: "language-core"
         tags: [aggregate list skip]

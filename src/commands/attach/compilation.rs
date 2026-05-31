@@ -34,6 +34,7 @@ use crate::kernel_btf::TrampolineFieldSelector;
 const NU_CLOSURE_COMMANDS: &[&str] = &[
     "where",
     "each",
+    "take",
     "skip",
     "append",
     "prepend",

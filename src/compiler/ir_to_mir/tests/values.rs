@@ -61,8 +61,8 @@ fn make_numeric_list_pipeline_call_program(decl_id: DeclId, count: Option<i64>) 
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
-fn make_numeric_list_skip_then_get_program(
-    skip_decl: DeclId,
+fn make_numeric_list_call_then_get_program(
+    command_decl: DeclId,
     get_decl: DeclId,
     count: Option<i64>,
     get_index: i64,
@@ -78,7 +78,7 @@ fn make_numeric_list_skip_then_get_program(
             Span::test_data(),
         )),
     }];
-    let skip_positional = if let Some(count) = count {
+    let command_positional = if let Some(count) = count {
         stmts.push(HirStmt::LoadLiteral {
             dst: RegId::new(2),
             lit: HirLiteral::Int(count),
@@ -88,10 +88,10 @@ fn make_numeric_list_skip_then_get_program(
         Vec::new()
     };
     stmts.push(HirStmt::Call {
-        decl_id: skip_decl,
+        decl_id: command_decl,
         src_dst: RegId::new(1),
         args: HirCallArgs {
-            positional: skip_positional,
+            positional: command_positional,
             pipeline_input: Some(RegId::new(0)),
             ..HirCallArgs::default()
         },
@@ -438,7 +438,7 @@ fn test_lower_first_count_slice_is_rejected() {
 fn test_lower_skip_default_on_numeric_list_rebuilds_tail() {
     let skip_decl = DeclId::new(81);
     let get_decl = DeclId::new(82);
-    let hir = make_numeric_list_skip_then_get_program(skip_decl, get_decl, None, 0);
+    let hir = make_numeric_list_call_then_get_program(skip_decl, get_decl, None, 0);
     let decl_names = HashMap::from([
         (skip_decl, "skip".to_string()),
         (get_decl, "get".to_string()),
@@ -495,7 +495,7 @@ fn test_lower_skip_default_on_numeric_list_rebuilds_tail() {
 fn test_lower_skip_count_beyond_numeric_list_capacity_returns_empty_list() {
     let skip_decl = DeclId::new(83);
     let get_decl = DeclId::new(84);
-    let hir = make_numeric_list_skip_then_get_program(skip_decl, get_decl, Some(4), 0);
+    let hir = make_numeric_list_call_then_get_program(skip_decl, get_decl, Some(4), 0);
     let decl_names = HashMap::from([
         (skip_decl, "skip".to_string()),
         (get_decl, "get".to_string()),
@@ -543,6 +543,119 @@ fn test_lower_skip_negative_count_is_rejected() {
 
     assert!(
         err.to_string().contains("skip count must be non-negative"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_take_count_on_numeric_list_rebuilds_prefix() {
+    let take_decl = DeclId::new(86);
+    let get_decl = DeclId::new(87);
+    let hir = make_numeric_list_call_then_get_program(take_decl, get_decl, Some(2), 1);
+    let decl_names = HashMap::from([
+        (take_decl, "take".to_string()),
+        (get_decl, "get".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("take count should lower to a bounded stack-backed numeric list");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+
+    assert!(
+        instructions
+            .iter()
+            .any(|inst| matches!(inst, MirInst::ListNew { max_len: 2, .. })),
+        "expected take 2 to allocate a two-element prefix list"
+    );
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::ListGet {
+                idx: MirValue::Const(0),
+                ..
+            }
+        )),
+        "expected take to copy the original element at index 0"
+    );
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::ListGet {
+                idx: MirValue::Const(1),
+                ..
+            }
+        )),
+        "expected take to copy the original element at index 1"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("take prefix followed by get should compile through codegen");
+}
+
+#[test]
+fn test_lower_take_count_beyond_numeric_list_capacity_caps_to_input_capacity() {
+    let take_decl = DeclId::new(88);
+    let get_decl = DeclId::new(89);
+    let hir = make_numeric_list_call_then_get_program(take_decl, get_decl, Some(4), 2);
+    let decl_names = HashMap::from([
+        (take_decl, "take".to_string()),
+        (get_decl, "get".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("oversized take should cap to the stack-backed numeric list capacity");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::ListNew { max_len: 3, .. })),
+        "expected oversized take to allocate the original list capacity"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("oversized take followed by get should compile through codegen");
+}
+
+#[test]
+fn test_lower_take_negative_count_is_rejected() {
+    let take_decl = DeclId::new(90);
+    let hir = make_numeric_list_pipeline_call_program(take_decl, Some(-1));
+    let decl_names = HashMap::from([(take_decl, "take".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("negative take should be rejected rather than silently miscompiled");
+
+    assert!(
+        err.to_string().contains("take count must be non-negative"),
         "unexpected error: {err}"
     );
 }

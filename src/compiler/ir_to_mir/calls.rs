@@ -101,6 +101,184 @@ impl<'a> HirToMirLowering<'a> {
         })
     }
 
+    fn lower_stack_list_take_or_skip(
+        &mut self,
+        cmd_name: &str,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+    ) -> Result<(), CompileError> {
+        let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
+        let input_reg = self
+            .pipeline_input_reg
+            .or(src_dst_had_value.then_some(src_dst));
+
+        if !self.named_flags.is_empty() || !self.named_args.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} does not accept named flags or arguments in eBPF"
+            )));
+        }
+
+        let raw_count = match cmd_name {
+            "skip" => {
+                if self.positional_args.len() > 1 {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "skip accepts at most one positional count argument in eBPF".into(),
+                    ));
+                }
+                if let Some((_, count_reg)) = self.positional_args.first() {
+                    self.get_metadata(*count_reg)
+                        .and_then(|m| m.literal_int)
+                        .ok_or_else(|| {
+                            CompileError::UnsupportedInstruction(
+                                "skip count must be a compile-time integer literal in eBPF".into(),
+                            )
+                        })?
+                } else {
+                    1
+                }
+            }
+            "take" => {
+                if self.positional_args.len() != 1 {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "take requires exactly one positional count argument in eBPF".into(),
+                    ));
+                }
+                let (_, count_reg) = self.positional_args[0];
+                self.get_metadata(count_reg)
+                    .and_then(|m| m.literal_int)
+                    .ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "take count must be a compile-time integer literal in eBPF".into(),
+                        )
+                    })?
+            }
+            _ => {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "unsupported stack list slice command '{cmd_name}'"
+                )));
+            }
+        };
+
+        if raw_count < 0 {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} count must be non-negative in eBPF"
+            )));
+        }
+        let count = usize::try_from(raw_count).map_err(|_| {
+            CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} count is too large for eBPF list lowering"
+            ))
+        })?;
+
+        let input_meta = input_reg
+            .and_then(|reg| self.get_metadata(reg).cloned())
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "{cmd_name} requires a pipeline input with tracked metadata in eBPF"
+                ))
+            })?;
+        let Some((_input_slot, max_len)) = input_meta.list_buffer else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires a stack-backed list input in eBPF"
+            )));
+        };
+
+        let (source_start, source_end, out_max_len) = if cmd_name == "take" {
+            let take_count = count.min(max_len);
+            (0, take_count, take_count)
+        } else {
+            let skip_count = count.min(max_len);
+            (skip_count, max_len, max_len.saturating_sub(skip_count))
+        };
+        let result_vreg = if self.pipeline_input.is_none() && src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+        let (out_slot, out_ty) = self.create_stack_numeric_list_result(result_vreg, out_max_len);
+
+        if source_start < source_end {
+            let len_vreg = self.func.alloc_vreg();
+            self.emit(MirInst::ListLen {
+                dst: len_vreg,
+                list: input_vreg,
+            });
+            self.vreg_type_hints.insert(len_vreg, MirType::U64);
+
+            let continuation_block = self.func.alloc_block();
+            for source_index in source_start..source_end {
+                let copy_block = self.func.alloc_block();
+                let next_block = if source_index + 1 == source_end {
+                    continuation_block
+                } else {
+                    self.func.alloc_block()
+                };
+
+                let cond_vreg = self.func.alloc_vreg();
+                self.emit(MirInst::BinOp {
+                    dst: cond_vreg,
+                    op: BinOpKind::Lt,
+                    lhs: MirValue::Const(source_index as i64),
+                    rhs: MirValue::VReg(len_vreg),
+                });
+                self.vreg_type_hints.insert(cond_vreg, MirType::Bool);
+                self.terminate(MirInst::Branch {
+                    cond: cond_vreg,
+                    if_true: copy_block,
+                    if_false: next_block,
+                });
+
+                self.current_block = copy_block;
+                let item_vreg = self.func.alloc_vreg();
+                self.emit(MirInst::ListGet {
+                    dst: item_vreg,
+                    list: input_vreg,
+                    idx: MirValue::Const(source_index as i64),
+                });
+                self.vreg_type_hints.insert(item_vreg, MirType::I64);
+                self.emit(MirInst::ListPush {
+                    list: result_vreg,
+                    item: item_vreg,
+                });
+                self.terminate(MirInst::Jump { target: next_block });
+
+                self.current_block = next_block;
+            }
+        }
+
+        let known_len = Self::numeric_list_known_len(&input_meta).map(|known_len| {
+            if cmd_name == "take" {
+                known_len.min(count).min(out_max_len)
+            } else {
+                known_len.saturating_sub(count).min(out_max_len)
+            }
+        });
+        let constant_value = match input_meta.constant_value {
+            Some(nu_protocol::Value::List { vals, .. }) => {
+                let vals = if cmd_name == "take" {
+                    vals.into_iter().take(count).collect::<Vec<_>>()
+                } else {
+                    vals.into_iter().skip(count).collect::<Vec<_>>()
+                };
+                Some(nu_protocol::Value::list(vals, Span::unknown()))
+            }
+            _ => None,
+        };
+
+        self.install_stack_numeric_list_result_metadata(
+            src_dst,
+            out_slot,
+            out_ty,
+            out_max_len,
+            known_len,
+        );
+        if let Some(value) = constant_value {
+            self.get_or_create_metadata(src_dst).constant_value = Some(value);
+        }
+        Ok(())
+    }
+
     fn install_stack_numeric_list_result_metadata(
         &mut self,
         src_dst: RegId,
@@ -2998,166 +3176,13 @@ impl<'a> HirToMirLowering<'a> {
                 }
             }
 
-            "skip" => {
-                let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
-                let input_reg = self
-                    .pipeline_input_reg
-                    .or(src_dst_had_value.then_some(src_dst));
-
-                if !self.named_flags.is_empty() || !self.named_args.is_empty() {
-                    return Err(CompileError::UnsupportedInstruction(
-                        "skip does not accept named flags or arguments in eBPF".into(),
-                    ));
-                }
-                if self.positional_args.len() > 1 {
-                    return Err(CompileError::UnsupportedInstruction(
-                        "skip accepts at most one positional count argument in eBPF".into(),
-                    ));
-                }
-
-                let skip_count = if let Some((_, count_reg)) = self.positional_args.first() {
-                    self.get_metadata(*count_reg)
-                        .and_then(|m| m.literal_int)
-                        .ok_or_else(|| {
-                            CompileError::UnsupportedInstruction(
-                                "skip count must be a compile-time integer literal in eBPF".into(),
-                            )
-                        })?
-                } else {
-                    1
-                };
-
-                if skip_count < 0 {
-                    return Err(CompileError::UnsupportedInstruction(
-                        "skip count must be non-negative in eBPF".into(),
-                    ));
-                }
-
-                if skip_count == 0 {
-                    self.emit(MirInst::Copy {
-                        dst: dst_vreg,
-                        src: MirValue::VReg(input_vreg),
-                    });
-                    if let Some(reg) = input_reg {
-                        self.propagate_passthrough_reg_metadata(src_dst, dst_vreg, reg, input_vreg);
-                    }
-                    return Ok(());
-                }
-
-                let input_meta = input_reg.and_then(|reg| self.get_metadata(reg).cloned());
-                let Some(input_meta) = input_meta else {
-                    return Err(CompileError::UnsupportedInstruction(
-                        "skip requires a pipeline input with tracked metadata in eBPF".into(),
-                    ));
-                };
-                let Some((_input_slot, max_len)) = input_meta.list_buffer else {
-                    return Err(CompileError::UnsupportedInstruction(
-                        "positive skip requires a stack-backed list input in eBPF".into(),
-                    ));
-                };
-
-                let skip_count = usize::try_from(skip_count).map_err(|_| {
-                    CompileError::UnsupportedInstruction(
-                        "skip count is too large for eBPF list lowering".into(),
-                    )
-                })?;
-                let out_max_len = max_len.saturating_sub(skip_count);
-                let buffer_size = align_to_eight(8 + out_max_len * 8);
-                let out_ty = MirType::Array {
-                    elem: Box::new(MirType::I64),
-                    len: out_max_len.saturating_add(1),
-                };
-                let out_slot =
-                    self.func
-                        .alloc_stack_slot(buffer_size, 8, StackSlotKind::ListBuffer);
-                self.record_list_buffer_slot_type(out_slot, out_max_len);
-                self.emit(MirInst::ListNew {
-                    dst: dst_vreg,
-                    buffer: out_slot,
-                    max_len: out_max_len,
-                });
-                self.vreg_type_hints.insert(
+            "take" | "skip" => {
+                self.lower_stack_list_take_or_skip(
+                    &cmd_name,
+                    src_dst,
                     dst_vreg,
-                    MirType::Ptr {
-                        pointee: Box::new(out_ty.clone()),
-                        address_space: AddressSpace::Stack,
-                    },
-                );
-
-                if skip_count < max_len {
-                    let len_vreg = self.func.alloc_vreg();
-                    self.emit(MirInst::ListLen {
-                        dst: len_vreg,
-                        list: input_vreg,
-                    });
-                    self.vreg_type_hints.insert(len_vreg, MirType::U64);
-
-                    let continuation_block = self.func.alloc_block();
-                    for source_index in skip_count..max_len {
-                        let copy_block = self.func.alloc_block();
-                        let next_block = if source_index + 1 == max_len {
-                            continuation_block
-                        } else {
-                            self.func.alloc_block()
-                        };
-
-                        let cond_vreg = self.func.alloc_vreg();
-                        self.emit(MirInst::BinOp {
-                            dst: cond_vreg,
-                            op: BinOpKind::Lt,
-                            lhs: MirValue::Const(source_index as i64),
-                            rhs: MirValue::VReg(len_vreg),
-                        });
-                        self.vreg_type_hints.insert(cond_vreg, MirType::Bool);
-                        self.terminate(MirInst::Branch {
-                            cond: cond_vreg,
-                            if_true: copy_block,
-                            if_false: next_block,
-                        });
-
-                        self.current_block = copy_block;
-                        let item_vreg = self.func.alloc_vreg();
-                        self.emit(MirInst::ListGet {
-                            dst: item_vreg,
-                            list: input_vreg,
-                            idx: MirValue::Const(source_index as i64),
-                        });
-                        self.vreg_type_hints.insert(item_vreg, MirType::I64);
-                        self.emit(MirInst::ListPush {
-                            list: dst_vreg,
-                            item: item_vreg,
-                        });
-                        self.terminate(MirInst::Jump { target: next_block });
-
-                        self.current_block = next_block;
-                    }
-                }
-
-                self.reset_call_result_metadata(src_dst);
-                let out_meta = self.get_or_create_metadata(src_dst);
-                out_meta.field_type = Some(out_ty);
-                out_meta.list_buffer = Some((out_slot, out_max_len));
-                let known_len_from_semantics = match input_meta.annotated_semantics {
-                    Some(AnnotatedValueSemantics::NumericList { known_len, .. }) => known_len,
-                    _ => None,
-                };
-                let known_len_from_constant = match input_meta.constant_value.clone() {
-                    Some(nu_protocol::Value::List { vals, .. }) => Some(vals.len()),
-                    _ => None,
-                };
-                out_meta.annotated_semantics = Some(AnnotatedValueSemantics::NumericList {
-                    max_len: out_max_len,
-                    known_len: known_len_from_semantics
-                        .or(known_len_from_constant)
-                        .map(|known_len| known_len.saturating_sub(skip_count)),
-                });
-                out_meta.constant_value = match input_meta.constant_value {
-                    Some(nu_protocol::Value::List { vals, .. }) => Some(nu_protocol::Value::list(
-                        vals.into_iter().skip(skip_count).collect::<Vec<_>>(),
-                        Span::unknown(),
-                    )),
-                    _ => None,
-                };
+                    src_dst_had_value,
+                )?;
             }
 
             "append" | "prepend" => {
