@@ -1946,6 +1946,90 @@ fn test_verify_mir_kfunc_copy_from_user_dynptr_requires_stack_slot_base_dptr() {
 }
 
 #[test]
+fn test_verify_mir_kfunc_copy_from_user_dynptr_rejects_destination_initialized_on_one_path() {
+    let (mut func, entry) = new_mir_function();
+    let init_path = func.alloc_block();
+    let skip_init = func.alloc_block();
+    let join = func.alloc_block();
+
+    let cond = func.alloc_vreg();
+    let src = func.alloc_vreg();
+    func.param_count = 2;
+    let dptr = func.alloc_vreg();
+    let off = func.alloc_vreg();
+    let size = func.alloc_vreg();
+    let init_ret = func.alloc_vreg();
+    let second_ret = func.alloc_vreg();
+    let dptr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: dptr,
+        src: MirValue::StackSlot(dptr_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: off,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: size,
+        src: MirValue::Const(8),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond,
+        if_true: init_path,
+        if_false: skip_init,
+    };
+    func.block_mut(init_path)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: init_ret,
+            kfunc: "bpf_copy_from_user_dynptr".to_string(),
+            btf_id: None,
+            args: vec![dptr, off, size, src],
+        });
+    func.block_mut(init_path).terminator = MirInst::Jump { target: join };
+    func.block_mut(skip_init).terminator = MirInst::Jump { target: join };
+    func.block_mut(join).instructions.push(MirInst::CallKfunc {
+        dst: second_ret,
+        kfunc: "bpf_copy_from_user_dynptr".to_string(),
+        btf_id: None,
+        args: vec![dptr, off, size, src],
+    });
+    func.block_mut(join).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(cond, MirType::Bool);
+    types.insert(
+        src,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::User,
+        },
+    );
+    types.insert(
+        dptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(off, MirType::I64);
+    types.insert(size, MirType::I64);
+    types.insert(init_ret, MirType::I64);
+    types.insert(second_ret, MirType::I64);
+
+    let err = verify_mir(&func, &types)
+        .expect_err("expected copy_from_user_dynptr reinitialize error at join");
+    assert!(
+        err.iter().any(|e| e.message.contains(
+            "kfunc 'bpf_copy_from_user_dynptr' arg0 requires uninitialized dynptr stack object slot"
+        )),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_kfunc_copy_from_user_task_dynptr_rejects_cgroup_task_argument() {
     let (mut func, entry) = new_mir_function();
     func.param_count = 1;
