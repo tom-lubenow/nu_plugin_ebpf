@@ -160,7 +160,7 @@ fn test_map_leading_annotated_mut_globals_uses_leading_declaration_order() {
 }
 
 #[test]
-fn test_map_leading_annotated_mut_globals_preserves_null_initializer() {
+fn test_map_leading_annotated_mut_globals_rejects_nushell_parse_invalid_null_initializer() {
     let source = "{|| mut state: record<pid: int ok: bool> = null; $state }";
     let ir_block = IrBlock {
         instructions: vec![
@@ -182,8 +182,48 @@ fn test_map_leading_annotated_mut_globals_preserves_null_initializer() {
         file_count: 0,
     };
 
+    let err = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect_err("source-level null initializer should be rejected by Nushell parsing");
+
+    assert!(
+        err.to_string()
+            .contains("Failed to parse annotated mutable declaration"),
+        "unexpected error: {err}"
+    );
+    assert!(
+        err.help
+            .as_deref()
+            .is_some_and(|help| help.contains("Nushell rejected this typed `mut` declaration")),
+        "unexpected error help: {:?}",
+        err.help
+    );
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_empty_record_zero_initializer() {
+    let source = "{|| mut state: record<pid: int ok: bool> = {}; $state }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
     let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
-        .expect("leading annotated mut null initializer should map cleanly");
+        .expect("empty record initializer should map cleanly");
 
     assert_eq!(globals.len(), 1);
     assert_eq!(globals[0].var_id, VarId::new(11));
@@ -195,8 +235,49 @@ fn test_map_leading_annotated_mut_globals_preserves_null_initializer() {
         ]))
     );
     assert!(
-        matches!(globals[0].initial_value, Value::Nothing { .. }),
-        "expected null initializer to map to Value::Nothing"
+        matches!(globals[0].initial_value, Value::Record { ref val, .. } if val.is_empty()),
+        "expected empty record initializer"
+    );
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_rejects_nushell_parse_invalid_partial_record_initializer()
+{
+    let source = "{|| mut state: record<pid: int ok: bool> = {pid: 7}; $state }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let err = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect_err("partial record initializer should match Nushell parser rejection");
+
+    assert!(
+        err.to_string()
+            .contains("Failed to parse annotated mutable declaration"),
+        "unexpected error: {err}"
+    );
+    assert!(
+        err.help
+            .as_deref()
+            .is_some_and(|help| help.contains("Nushell rejected this typed `mut` declaration")),
+        "unexpected error help: {:?}",
+        err.help
     );
 }
 

@@ -9,8 +9,8 @@ use nu_protocol::engine::{Closure, StateWorkingSet};
 use nu_protocol::eval_const::{eval_constant, eval_constant_with_input};
 use nu_protocol::ir::{Instruction, IrBlock};
 use nu_protocol::{
-    BlockId, DeclId, FromValue, IntoSpanned, LabeledError, PipelineData, Record, Signature, Span,
-    Spanned, Type, Value,
+    BlockId, DeclId, FromValue, IntoSpanned, LabeledError, ParseError, PipelineData, Record,
+    Signature, Span, Spanned, Type, Value,
 };
 
 use super::closure_params::recover_closure_param_sources;
@@ -185,6 +185,28 @@ struct LeadingVariableDeclaration {
     mutable: bool,
     declared_type: Option<Type>,
     initializer: Option<Value>,
+}
+
+fn spans_overlap(left: Span, right: Span) -> bool {
+    if left.is_empty() || right.is_empty() {
+        left.start == right.start
+    } else {
+        left.start < right.end && right.start < left.end
+    }
+}
+
+fn parse_error_in_span(parse_errors: &[ParseError], span: Span) -> Option<&ParseError> {
+    parse_errors
+        .iter()
+        .find(|error| spans_overlap(error.span(), span))
+}
+
+fn annotated_mut_parse_error(error: &ParseError) -> LabeledError {
+    LabeledError::new("Failed to parse annotated mutable declaration")
+        .with_label(error.to_string(), error.span())
+        .with_help(
+            "Nushell rejected this typed `mut` declaration before the eBPF compiler could hoist it; use a type-compatible constant initializer such as `{}` for scalar record zero-init, or use `global-define --type` when no plain Nushell value can express the desired fixed layout",
+        )
 }
 
 pub(super) struct CompiledClosureArtifacts {
@@ -902,6 +924,11 @@ fn parse_leading_variable_declarations(
         }
 
         let initializer = if mutable && declared_type.is_some() {
+            if let Some(parse_error) =
+                parse_error_in_span(&working_set.parse_errors, first.expr.span)
+            {
+                return Err(annotated_mut_parse_error(parse_error));
+            }
             let init_expr = init_expr.ok_or_else(|| {
                 LabeledError::new("Failed to parse annotated mutable declaration")
                     .with_label("Missing initializer", first.expr.span)
