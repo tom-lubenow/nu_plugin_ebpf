@@ -32473,6 +32473,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-list-each"
+        category: "language-core"
+        tags: [aggregate list each closure]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [10 20 30] | each {|x| $x + 1 } | get 1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-append-capacity-reject"
         category: "language-core"
         tags: [aggregate list append reject]

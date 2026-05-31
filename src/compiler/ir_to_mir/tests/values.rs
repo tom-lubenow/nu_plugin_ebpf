@@ -6,7 +6,7 @@ use crate::compiler::hir::{
 use crate::compiler::mir::AddressSpace;
 use nu_protocol::ast::{CellPath, PathMember};
 use nu_protocol::casing::Casing;
-use nu_protocol::{DeclId, Record, RegId, Span, Value, VarId};
+use nu_protocol::{DeclId, IN_VARIABLE_ID, Record, RegId, Span, Value, VarId};
 use std::collections::HashMap;
 
 fn string_member(name: &str) -> PathMember {
@@ -627,8 +627,132 @@ fn test_lower_prepend_on_numeric_list_rebuilds_with_extra_capacity() {
 }
 
 #[test]
+fn test_lower_each_on_numeric_list_guards_runtime_length() {
+    let each_decl = DeclId::new(90);
+    let get_decl = DeclId::new(91);
+    let closure_block_id = nu_protocol::BlockId::new(1);
+
+    let main = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::List { capacity: 3 },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(10),
+                },
+                HirStmt::ListPush {
+                    src_dst: RegId::new(0),
+                    item: RegId::new(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Closure(closure_block_id),
+                },
+                HirStmt::Call {
+                    decl_id: each_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(2)],
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::Call {
+                    decl_id: get_decl,
+                    src_dst: RegId::new(5),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(4)],
+                        pipeline_input: Some(RegId::new(3)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(5) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 6,
+        file_count: 0,
+    };
+    let closure = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::LoadVariable {
+                dst: RegId::new(0),
+                var_id: IN_VARIABLE_ID,
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 1,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(
+        main,
+        HashMap::from([(closure_block_id, closure)]),
+        Vec::new(),
+        None,
+    );
+    let decl_names = HashMap::from([
+        (each_decl, "each".to_string()),
+        (get_decl, "get".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("each should lower on stack-backed numeric lists");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+
+    assert!(
+        instructions
+            .iter()
+            .any(|inst| matches!(inst, MirInst::ListLen { .. })),
+        "expected each to inspect the input list runtime length"
+    );
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::Lt,
+                lhs: MirValue::Const(1),
+                rhs: MirValue::VReg(_),
+                ..
+            }
+        )),
+        "expected each to guard capacity slots against the runtime length"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("each followed by get should compile through codegen");
+}
+
+#[test]
 fn test_lower_is_empty_on_numeric_list_compares_length_to_zero() {
-    let is_empty_decl = DeclId::new(90);
+    let is_empty_decl = DeclId::new(92);
     let hir = make_numeric_list_pipeline_call_program(is_empty_decl, None);
     let decl_names = HashMap::from([(is_empty_decl, "is-empty".to_string())]);
 
@@ -672,7 +796,7 @@ fn test_lower_is_empty_on_numeric_list_compares_length_to_zero() {
 
 #[test]
 fn test_lower_is_empty_on_string_compares_length_to_zero() {
-    let is_empty_decl = DeclId::new(91);
+    let is_empty_decl = DeclId::new(93);
     let hir = make_string_pipeline_call_program(is_empty_decl, "");
     let decl_names = HashMap::from([(is_empty_decl, "is-empty".to_string())]);
 
@@ -709,7 +833,7 @@ fn test_lower_is_empty_on_string_compares_length_to_zero() {
 
 #[test]
 fn test_lower_select_on_metadata_record_materializes_requested_layout() {
-    let select_decl = DeclId::new(92);
+    let select_decl = DeclId::new(94);
     let hir = make_record_projection_then_field_program(select_decl, &["cpu", "pid"], true, "pid");
     let decl_names = HashMap::from([(select_decl, "select".to_string())]);
 
@@ -748,7 +872,7 @@ fn test_lower_select_on_metadata_record_materializes_requested_layout() {
 
 #[test]
 fn test_lower_reject_on_metadata_record_materializes_remaining_layout() {
-    let reject_decl = DeclId::new(93);
+    let reject_decl = DeclId::new(95);
     let hir = make_record_projection_then_field_program(reject_decl, &["pid"], false, "cpu");
     let decl_names = HashMap::from([(reject_decl, "reject".to_string())]);
 
@@ -778,7 +902,7 @@ fn test_lower_reject_on_metadata_record_materializes_remaining_layout() {
 
 #[test]
 fn test_lower_select_missing_metadata_record_field_is_rejected() {
-    let select_decl = DeclId::new(94);
+    let select_decl = DeclId::new(96);
     let hir = make_record_projection_then_field_program(select_decl, &["missing"], true, "missing");
     let decl_names = HashMap::from([(select_decl, "select".to_string())]);
 
@@ -801,7 +925,7 @@ fn test_lower_select_missing_metadata_record_field_is_rejected() {
 
 #[test]
 fn test_lower_default_replaces_literal_null() {
-    let default_decl = DeclId::new(95);
+    let default_decl = DeclId::new(97);
     let func = HirFunction {
         blocks: vec![HirBlock {
             id: HirBlockId(0),
@@ -852,7 +976,7 @@ fn test_lower_default_replaces_literal_null() {
 
 #[test]
 fn test_lower_default_adds_missing_metadata_record_field() {
-    let default_decl = DeclId::new(96);
+    let default_decl = DeclId::new(98);
     let mut rec = Record::new();
     rec.push("pid", Value::int(7, Span::test_data()));
     let func = HirFunction {
@@ -921,7 +1045,7 @@ fn test_lower_default_adds_missing_metadata_record_field() {
 
 #[test]
 fn test_lower_default_replaces_null_metadata_record_field() {
-    let default_decl = DeclId::new(97);
+    let default_decl = DeclId::new(99);
     let mut rec = Record::new();
     rec.push("pid", Value::nothing(Span::test_data()));
     rec.push("cpu", Value::int(2, Span::test_data()));
@@ -989,8 +1113,8 @@ fn test_lower_default_replaces_null_metadata_record_field() {
 
 #[test]
 fn test_lower_default_empty_flag_replaces_literal_empty_string() {
-    let default_decl = DeclId::new(98);
-    let is_empty_decl = DeclId::new(99);
+    let default_decl = DeclId::new(100);
+    let is_empty_decl = DeclId::new(101);
     let func = HirFunction {
         blocks: vec![HirBlock {
             id: HirBlockId(0),
