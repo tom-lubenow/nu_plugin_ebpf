@@ -40372,31 +40372,58 @@ def context-root-record-extraction-binding [line: string record_aliases record_w
             }
         }
 
-        let input = (record-pipeline-input-token $rhs)
-        let get_fields = (
-            command-invocation-tails $rhs "get"
-            | each {|tail| normalize-context-path-token $tail }
-            | where {|field| $field != "" }
-        )
-        if ($get_fields | length) != 1 {
+        let segments = (split-pipeline-segments $rhs)
+        if ($segments | length) < 2 {
             continue
         }
-        let get_field = ($get_fields | first)
-        let root = (
-            context-root-from-record-get
-                $input
-                $get_field
-                $record_aliases
-                $record_wrapper_defs
-                $context_names
-                $bound_aliases
-                $identity_wrappers
-                $root_wrapper_defs
-        )
-        if $root != null {
+        let input = (($segments | first) | str trim)
+        mut roots = []
+        mut prefix_segments = []
+
+        for segment in ($segments | skip 1) {
+            let parsed = (get-command-field-tail $segment)
+            if $parsed == null {
+                if ($roots | is-empty) {
+                    $prefix_segments = ($prefix_segments | append ($segment | str trim))
+                }
+                continue
+            }
+
+            mut root = (
+                context-root-from-record-get
+                    $input
+                    $parsed.field
+                    $record_aliases
+                    $record_wrapper_defs
+                    $context_names
+                    $bound_aliases
+                    $identity_wrappers
+                    $root_wrapper_defs
+            )
+            if $root == null {
+                $root = (
+                    context-root-from-record-pipeline-get
+                        $input
+                        $prefix_segments
+                        $parsed.field
+                        $record_aliases
+                        $context_names
+                        $bound_aliases
+                        $identity_wrappers
+                        $root_wrapper_defs
+                )
+            }
+            if $root == null {
+                continue
+            }
+
+            $roots = ($roots | append $root)
+        }
+
+        if ($roots | length) == 1 {
             return {
                 name: $assignment.name
-                root: $root
+                root: ($roots | first)
             }
         }
     }

@@ -1285,6 +1285,8 @@ enum ContextWriteScannerForm {
     RecordInsert,
     RecordUpdate,
     RecordUpsert,
+    RecordGetAlias,
+    RecordPipelineGetAlias,
     RecordSelect,
     RecordReject,
     RecordRename,
@@ -1293,7 +1295,7 @@ enum ContextWriteScannerForm {
 }
 
 impl ContextWriteScannerForm {
-    const ALL: [Self; 14] = [
+    const ALL: [Self; 16] = [
         Self::Direct,
         Self::RecordAlias,
         Self::ReturnedContextAlias,
@@ -1303,6 +1305,8 @@ impl ContextWriteScannerForm {
         Self::RecordInsert,
         Self::RecordUpdate,
         Self::RecordUpsert,
+        Self::RecordGetAlias,
+        Self::RecordPipelineGetAlias,
         Self::RecordSelect,
         Self::RecordReject,
         Self::RecordRename,
@@ -1321,6 +1325,8 @@ impl ContextWriteScannerForm {
             Self::RecordInsert => "record-insert",
             Self::RecordUpdate => "record-update",
             Self::RecordUpsert => "record-upsert",
+            Self::RecordGetAlias => "record-get-alias",
+            Self::RecordPipelineGetAlias => "record-pipeline-get-alias",
             Self::RecordSelect => "record-select",
             Self::RecordReject => "record-reject",
             Self::RecordRename => "record-rename",
@@ -1333,6 +1339,7 @@ impl ContextWriteScannerForm {
         match self {
             Self::Direct => "$ctx",
             Self::RecordAlias | Self::ReturnedContextAlias => "$event",
+            Self::RecordGetAlias | Self::RecordPipelineGetAlias => "$event",
             Self::RecordWrapper
             | Self::RecordSpread
             | Self::UserFunctionRecordWrapper
@@ -1397,6 +1404,12 @@ fn context_write_scanner_source_from_assignments(
         ),
         ContextWriteScannerForm::RecordUpsert => format!(
             "{{|ctx|\n  mut rec = ({{ other: 1 }} | upsert event $ctx)\n{assignments}\n  \"allow\"\n}}"
+        ),
+        ContextWriteScannerForm::RecordGetAlias => format!(
+            "{{|ctx|\n  let rec = {{ event: $ctx }}\n  mut event = ($rec | get event)\n{assignments}\n  \"allow\"\n}}"
+        ),
+        ContextWriteScannerForm::RecordPipelineGetAlias => format!(
+            "{{|ctx|\n  mut event = ({{ other: 1 }} | insert event $ctx | get event)\n{assignments}\n  \"allow\"\n}}"
         ),
         ContextWriteScannerForm::RecordSelect => format!(
             "{{|ctx|\n  mut rec = ({{ event: $ctx, other: 1 }} | select event)\n{assignments}\n  \"allow\"\n}}"
