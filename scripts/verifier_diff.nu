@@ -18248,6 +18248,23 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "tc-user-function-returned-packet-data-write"
+        category: "context-surface"
+        tags: [tc context packet writable user-function alias source metadata]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  def get_data [event] { $event.data }'
+            '  mut data = (get_data $ctx)'
+            '  $data.0 = 42'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "tc-packet-header-alias-write"
         category: "context-surface"
         tags: [tc context packet writable packet-header alias source metadata]
@@ -18378,6 +18395,23 @@ const FIXTURES = [
             '  let meta = $ctx.data_meta'
             '  mut rec = (wrap $meta)'
             '  $rec.meta.0 = 7'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "xdp-user-function-returned-data-meta-write"
+        category: "context-surface"
+        tags: [xdp context packet writable user-function alias source metadata]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  def get_meta [event] { $event.data_meta }'
+            '  mut meta = (get_meta $ctx)'
+            '  $meta.0 = 7'
             '  "pass"'
             '}'
         ]
