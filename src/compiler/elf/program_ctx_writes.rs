@@ -1538,6 +1538,12 @@ mod tests {
             }
 
             if let Some(kfunc) = surface.kfunc {
+                assert_eq!(
+                    spec.kfunc_call_error(kfunc),
+                    None,
+                    "{spec_source} ctx.{} write surface is backed by kfunc {kfunc}, but that kfunc is not available on the same target",
+                    surface.field_name
+                );
                 let requirement = spec
                     .kfunc_compatibility_requirement_for_name(kfunc)
                     .unwrap_or_else(|| {
