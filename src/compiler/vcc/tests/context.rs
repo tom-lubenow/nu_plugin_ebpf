@@ -1,5 +1,6 @@
 use super::*;
 use crate::compiler::mir::CtxStoreTarget;
+use crate::compiler::subfn_summaries::infer_subfunction_summaries;
 use crate::compiler::{EbpfProgramType, ProbeContext};
 use crate::kernel_btf::KernelBtf;
 
@@ -37,6 +38,23 @@ fn context_u8_ptr() -> MirType {
         pointee: Box::new(MirType::U8),
         address_space: AddressSpace::Context,
     }
+}
+
+fn return_ctx_field_subfunction(field: CtxField) -> MirFunction {
+    let (mut subfn, entry) = new_mir_function();
+    let field_reg = subfn.alloc_vreg();
+    subfn
+        .block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: field_reg,
+            field,
+            slot: None,
+        });
+    subfn.block_mut(entry).terminator = MirInst::Return {
+        val: Some(MirValue::VReg(field_reg)),
+    };
+    subfn
 }
 
 const BPF_SOCK_OPS_RTO_CB: i64 = 8;
@@ -995,6 +1013,41 @@ fn test_verify_mir_for_probe_context_netfilter_state_allows_direct_kernel_pointe
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_returned_netfilter_state_allows_direct_kernel_pointer_load() {
+    let (mut func, entry) = new_mir_function();
+    let state = func.alloc_vreg();
+    let dev = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::CallSubfn {
+        dst: state,
+        subfn: SubfunctionId(0),
+        args: vec![],
+    });
+    func.block_mut(entry).instructions.push(MirInst::Load {
+        dst: dev,
+        ptr: state,
+        offset: 0,
+        ty: MirType::named_kernel_struct_ptr("net_device"),
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(state, MirType::named_kernel_struct_ptr("nf_hook_state"));
+    types.insert(dev, MirType::named_kernel_struct_ptr("net_device"));
+
+    let summaries =
+        infer_subfunction_summaries(&[return_ctx_field_subfunction(CtxField::NetfilterState)]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Netfilter, "ipv4:pre_routing");
+    verify_mir_with_subfunction_summaries_for_probe_context(
+        &func,
+        &types,
+        &summaries,
+        Some(&probe_ctx),
+        None,
+    )
+    .expect("expected returned netfilter ctx.state to carry trusted BTF pointer provenance");
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_flow_keys_allows_direct_context_store() {
     let (mut func, entry) = new_mir_function();
     let flow_keys = func.alloc_vreg();
@@ -1106,6 +1159,65 @@ fn test_verify_mir_for_probe_context_sk_reuseport_socket_is_non_null() {
     let probe_ctx = ProbeContext::new(EbpfProgramType::SkReuseport, "select");
     verify_mir_for_probe_context(&func, &types, &probe_ctx)
         .expect("expected impossible null branch for sk_reuseport ctx.sk to be pruned");
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_returned_sk_reuseport_socket_is_non_null() {
+    let (mut func, entry) = new_mir_function();
+    let bad = func.alloc_block();
+    let done = func.alloc_block();
+    let sk = func.alloc_vreg();
+    let is_null = func.alloc_vreg();
+    let load_dst = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::CallSubfn {
+        dst: sk,
+        subfn: SubfunctionId(0),
+        args: vec![],
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: is_null,
+        op: BinOpKind::Eq,
+        lhs: MirValue::VReg(sk),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: is_null,
+        if_true: bad,
+        if_false: done,
+    };
+
+    // This path is unreachable: sk_reuseport_md.sk is PTR_TO_SOCKET.
+    func.block_mut(bad).instructions.push(MirInst::Load {
+        dst: load_dst,
+        ptr: sk,
+        offset: 0,
+        ty: MirType::U32,
+    });
+    func.block_mut(bad).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        sk,
+        MirType::Ptr {
+            pointee: Box::new(ProbeContext::synthetic_socket_type()),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(is_null, MirType::Bool);
+    types.insert(load_dst, MirType::U32);
+
+    let summaries = infer_subfunction_summaries(&[return_ctx_field_subfunction(CtxField::Socket)]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkReuseport, "sock_map");
+    verify_mir_with_subfunction_summaries_for_probe_context(
+        &func,
+        &types,
+        &summaries,
+        Some(&probe_ctx),
+        None,
+    )
+    .expect("expected returned sk_reuseport ctx.sk null branch to be pruned");
 }
 
 #[test]

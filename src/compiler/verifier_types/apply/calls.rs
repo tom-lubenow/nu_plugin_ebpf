@@ -328,6 +328,7 @@ pub(super) fn apply_call_subfn_inst(
     types: &HashMap<VReg, MirType>,
     slot_sizes: &HashMap<StackSlotId, i64>,
     subfn_summaries: &HashMap<SubfunctionId, SubfunctionSummary>,
+    probe_ctx: Option<&ProbeContext>,
     state: &mut VerifierState,
     errors: &mut Vec<VerifierTypeError>,
 ) {
@@ -451,6 +452,61 @@ pub(super) fn apply_call_subfn_inst(
                 }
             }
             _ => {}
+        }
+        if ProbeContext::resolve_ctx_field_pointer_is_non_null(probe_ctx, field)
+            && let VerifierType::Ptr {
+                space,
+                bounds,
+                ringbuf_ref,
+                kfunc_ref,
+                ..
+            } = ty
+        {
+            ty = VerifierType::Ptr {
+                space,
+                nullability: Nullability::NonNull,
+                bounds,
+                ringbuf_ref,
+                kfunc_ref,
+            };
+        }
+        if ProbeContext::resolve_ctx_field_is_trusted_btf_kernel_pointer(probe_ctx, field)
+            && let VerifierType::Ptr {
+                space: AddressSpace::Kernel,
+                ringbuf_ref,
+                kfunc_ref,
+                ..
+            } = ty
+        {
+            ty = VerifierType::Ptr {
+                space: AddressSpace::Kernel,
+                nullability: Nullability::NonNull,
+                bounds: Some(PtrBounds::new(
+                    PtrOrigin::KernelBtf(dst),
+                    0,
+                    0,
+                    UNKNOWN_KERNEL_BTF_LIMIT,
+                )),
+                ringbuf_ref,
+                kfunc_ref,
+            };
+        }
+        if ProbeContext::resolve_ctx_field_is_raw_context_pointer(probe_ctx, field)
+            && let VerifierType::Ptr {
+                space,
+                bounds,
+                ringbuf_ref,
+                kfunc_ref,
+                ..
+            } = ty
+        {
+            ty = VerifierType::Ptr {
+                space,
+                nullability: Nullability::NonNull,
+                bounds,
+                ringbuf_ref,
+                kfunc_ref,
+            };
         }
         state.set_with_range(dst, ty, ValueRange::Unknown);
         state.set_ctx_field_source(dst, Some(field.clone()));

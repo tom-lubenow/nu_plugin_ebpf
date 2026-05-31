@@ -1667,6 +1667,26 @@ impl<'a> VccLowerer<'a> {
                                 }
                                 _ => {}
                             }
+                            if ProbeContext::resolve_ctx_field_pointer_is_non_null(
+                                self.probe_ctx,
+                                field,
+                            ) {
+                                info.nullability = VccNullability::NonNull;
+                            }
+                            if ProbeContext::resolve_ctx_field_is_trusted_btf_kernel_pointer(
+                                self.probe_ctx,
+                                field,
+                            ) && info.space == VccAddrSpace::Kernel
+                            {
+                                info.space = VccAddrSpace::KernelBtf;
+                                info.nullability = VccNullability::NonNull;
+                            }
+                            if ProbeContext::resolve_ctx_field_is_raw_context_pointer(
+                                self.probe_ctx,
+                                field,
+                            ) {
+                                info.nullability = VccNullability::NonNull;
+                            }
                         }
                         out.push(VccInst::Assume {
                             dst: VccReg(dst.0),

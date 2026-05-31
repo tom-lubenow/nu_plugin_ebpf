@@ -100,6 +100,7 @@ pub(super) fn apply_inst(
                 types,
                 slot_sizes,
                 subfn_summaries,
+                probe_ctx,
                 state,
                 errors,
             );
