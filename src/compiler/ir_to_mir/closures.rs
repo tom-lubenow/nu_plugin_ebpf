@@ -300,6 +300,7 @@ impl<'a> HirToMirLowering<'a> {
                     .annotated_semantics
                     .clone()
                     .or_else(|| Self::metadata_record_semantics(meta)),
+                root_ctx_field: meta.root_ctx_field.clone(),
                 is_context: meta.is_context,
             })
             .or_else(|| {
@@ -307,6 +308,7 @@ impl<'a> HirToMirLowering<'a> {
                     type_hint: Some(ty.clone()),
                     field_type: Some(self.stored_generic_map_value_type(&ty)),
                     annotated_semantics: None,
+                    root_ctx_field: None,
                     is_context: false,
                 })
             });
@@ -673,6 +675,7 @@ impl<'a> HirToMirLowering<'a> {
             let meta = self.get_or_create_metadata(src_dst);
             meta.field_type = seed.field_type;
             meta.annotated_semantics = seed.annotated_semantics;
+            meta.root_ctx_field = seed.root_ctx_field;
             meta.source_var = None;
         }
         Ok(())

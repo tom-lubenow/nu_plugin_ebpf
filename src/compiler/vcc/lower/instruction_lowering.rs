@@ -1612,6 +1612,72 @@ impl<'a> VccLowerer<'a> {
                         });
                         return Ok(());
                     }
+                    if let Some(field) = summary.return_context_field() {
+                        let mut ty = self
+                            .types
+                            .get(dst)
+                            .map(vcc_type_from_mir)
+                            .unwrap_or(VccValueType::Unknown);
+                        if let VccValueType::Ptr(ref mut info) = ty {
+                            match field {
+                                CtxField::Data if info.space == VccAddrSpace::Packet => {
+                                    info.bounds = Some(VccBounds {
+                                        min: 0,
+                                        max: 0,
+                                        limit: UNKNOWN_PACKET_LIMIT,
+                                    });
+                                    info.packet_root = Some(VccReg(dst.0));
+                                    info.packet_root_field = Some(VccPacketCtxField::Data);
+                                    info.packet_ctx_field = Some(VccPacketCtxField::Data);
+                                    info.packet_end = false;
+                                }
+                                CtxField::DataMeta if info.space == VccAddrSpace::Packet => {
+                                    info.bounds = Some(VccBounds {
+                                        min: 0,
+                                        max: 0,
+                                        limit: UNKNOWN_PACKET_LIMIT,
+                                    });
+                                    info.packet_root = Some(VccReg(dst.0));
+                                    info.packet_root_field = Some(VccPacketCtxField::DataMeta);
+                                    info.packet_ctx_field = Some(VccPacketCtxField::DataMeta);
+                                    info.packet_end = false;
+                                }
+                                CtxField::DataEnd if info.space == VccAddrSpace::Packet => {
+                                    info.packet_root = None;
+                                    info.packet_root_field = None;
+                                    info.packet_ctx_field = Some(VccPacketCtxField::DataEnd);
+                                    info.packet_end = true;
+                                }
+                                CtxField::SockoptOptval
+                                    if info.space == VccAddrSpace::Kernel =>
+                                {
+                                    info.bounds = Some(VccBounds {
+                                        min: 0,
+                                        max: 0,
+                                        limit: UNKNOWN_CONTEXT_BUFFER_LIMIT,
+                                    });
+                                    info.context_buffer_root = Some(VccReg(dst.0));
+                                    info.context_buffer_end = false;
+                                }
+                                CtxField::SockoptOptvalEnd
+                                    if info.space == VccAddrSpace::Kernel =>
+                                {
+                                    info.context_buffer_root = None;
+                                    info.context_buffer_end = true;
+                                }
+                                _ => {}
+                            }
+                        }
+                        out.push(VccInst::Assume {
+                            dst: VccReg(dst.0),
+                            ty,
+                            ctx_field_source: Some(field.clone()),
+                        });
+                        if let VccValueType::Ptr(info) = ty {
+                            self.ptr_regs.insert(VccReg(dst.0), info);
+                        }
+                        return Ok(());
+                    }
                 }
                 let ty = self
                     .types

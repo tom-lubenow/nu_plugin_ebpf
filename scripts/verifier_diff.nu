@@ -21159,6 +21159,23 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "cgroup-sockopt-optval-user-function-returned-context-root-byte-write"
+        category: "context-surface"
+        tags: [cgroup-sockopt context writable user-function alias source metadata]
+        requires: [cgroup-v2]
+        target: "cgroup_sockopt:/sys/fs/cgroup:get"
+        program: [
+            '{|ctx|'
+            '  def get_optval [event] { $event.optval }'
+            '  mut optval = (get_optval $ctx)'
+            '  $optval.2 = 42'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "cgroup-sockopt-optval-record-byte-write"
         category: "context-surface"
         tags: [cgroup-sockopt context writable record source metadata]

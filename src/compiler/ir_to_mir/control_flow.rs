@@ -225,6 +225,7 @@ impl<'a> HirToMirLowering<'a> {
                     .annotated_semantics
                     .clone()
                     .or_else(|| Self::metadata_record_semantics(meta)),
+                root_ctx_field: meta.root_ctx_field.clone(),
                 is_context: meta.is_context,
             })
             .or_else(|| {
@@ -232,6 +233,7 @@ impl<'a> HirToMirLowering<'a> {
                     type_hint: Some(ty.clone()),
                     field_type: Some(self.stored_generic_map_value_type(&ty)),
                     annotated_semantics: None,
+                    root_ctx_field: None,
                     is_context: false,
                 })
             })
@@ -452,6 +454,7 @@ impl<'a> HirToMirLowering<'a> {
                     type_hint: self.vreg_type_hints.get(&materialized_vreg).cloned(),
                     field_type: materialized_meta.field_type,
                     annotated_semantics: materialized_meta.annotated_semantics,
+                    root_ctx_field: materialized_meta.root_ctx_field,
                     is_context: false,
                 }),
             ));

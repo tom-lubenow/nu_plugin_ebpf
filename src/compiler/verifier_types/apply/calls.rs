@@ -400,6 +400,63 @@ pub(super) fn apply_call_subfn_inst(
         return;
     }
 
+    if let Some(field) = summary.return_context_field() {
+        let mut ty = types
+            .get(&dst)
+            .map(verifier_type_from_mir)
+            .unwrap_or(VerifierType::Scalar);
+        match field {
+            CtxField::Data | CtxField::DataMeta => {
+                if let VerifierType::Ptr {
+                    space: AddressSpace::Packet,
+                    nullability,
+                    bounds: None,
+                    ..
+                } = ty
+                {
+                    ty = VerifierType::Ptr {
+                        space: AddressSpace::Packet,
+                        nullability,
+                        bounds: Some(PtrBounds::new(
+                            PtrOrigin::Packet(dst),
+                            0,
+                            0,
+                            UNKNOWN_PACKET_LIMIT,
+                        )),
+                        ringbuf_ref: None,
+                        kfunc_ref: None,
+                    };
+                }
+            }
+            CtxField::SockoptOptval => {
+                if let VerifierType::Ptr {
+                    space: AddressSpace::Kernel,
+                    nullability,
+                    bounds: None,
+                    ..
+                } = ty
+                {
+                    ty = VerifierType::Ptr {
+                        space: AddressSpace::Kernel,
+                        nullability,
+                        bounds: Some(PtrBounds::new(
+                            PtrOrigin::ContextBuffer(dst),
+                            0,
+                            0,
+                            UNKNOWN_CONTEXT_BUFFER_LIMIT,
+                        )),
+                        ringbuf_ref: None,
+                        kfunc_ref: None,
+                    };
+                }
+            }
+            _ => {}
+        }
+        state.set_with_range(dst, ty, ValueRange::Unknown);
+        state.set_ctx_field_source(dst, Some(field.clone()));
+        return;
+    }
+
     let ty = types
         .get(&dst)
         .map(verifier_type_from_mir)

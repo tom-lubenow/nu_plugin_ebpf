@@ -8,7 +8,7 @@ use super::instruction::{
     kfunc_unknown_dynptr_copy, kfunc_unknown_stack_object_copy,
     kfunc_unknown_stack_object_lifecycle,
 };
-use super::mir::{BlockId, MapRef, MirFunction, MirInst, MirValue, SubfunctionId, VReg};
+use super::mir::{BlockId, CtxField, MapRef, MirFunction, MirInst, MirValue, SubfunctionId, VReg};
 
 const SUMMARY_ARG_SLOTS: usize = 8;
 
@@ -178,6 +178,7 @@ impl UnknownStackObjectDeltaState {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SubfunctionSummary {
     return_summary: SubfunctionReturnSummary,
+    context_field_return: Option<CtxField>,
     ringbuf_record_return: bool,
     kfunc_ref_return_kind: Option<KfuncRefKind>,
     rcu_read_lock_delta: i8,
@@ -201,6 +202,7 @@ impl SubfunctionSummary {
     pub(crate) fn unknown() -> Self {
         Self {
             return_summary: SubfunctionReturnSummary::Unknown,
+            context_field_return: None,
             ringbuf_record_return: false,
             kfunc_ref_return_kind: None,
             rcu_read_lock_delta: 0,
@@ -223,6 +225,7 @@ impl SubfunctionSummary {
     pub(crate) fn from_return_summary(return_summary: SubfunctionReturnSummary) -> Self {
         Self {
             return_summary,
+            context_field_return: None,
             ringbuf_record_return: false,
             kfunc_ref_return_kind: None,
             rcu_read_lock_delta: 0,
@@ -248,6 +251,10 @@ impl SubfunctionSummary {
 
     pub(crate) const fn return_arg(&self) -> Option<usize> {
         self.return_summary.return_arg()
+    }
+
+    pub(crate) fn return_context_field(&self) -> Option<&CtxField> {
+        self.context_field_return.as_ref()
     }
 
     pub(crate) const fn returns_ringbuf_record(&self) -> bool {
@@ -359,6 +366,7 @@ impl SubfunctionSummary {
 
     fn from_parts(
         return_arg: Option<usize>,
+        context_field_return: Option<CtxField>,
         ringbuf_record_return: bool,
         kfunc_ref_return_kind: Option<KfuncRefKind>,
         rcu_read_lock_delta: i8,
@@ -382,6 +390,7 @@ impl SubfunctionSummary {
     ) -> Self {
         Self {
             return_summary: SubfunctionReturnSummary::from_parts(return_arg, changes_packet_data),
+            context_field_return,
             ringbuf_record_return,
             kfunc_ref_return_kind,
             rcu_read_lock_delta,
@@ -408,10 +417,11 @@ impl From<SubfunctionReturnSummary> for SubfunctionSummary {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum AliasSource {
     Unknown,
     Param(usize),
+    ContextField(CtxField),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -548,7 +558,7 @@ fn summarize_function(
     );
     worklist.push_back(func.entry);
 
-    let mut return_alias: Option<Option<usize>> = None;
+    let mut return_alias: Option<Option<AliasSource>> = None;
     let mut returned_ringbuf_record: Option<bool> = None;
     let mut returned_kfunc_ref: Option<Option<KfuncRefKind>> = None;
     let mut returned_rcu_delta: Option<Option<i8>> = None;
@@ -739,8 +749,19 @@ fn summarize_function(
     let unknown_stack_object_maybe_initialized = returned_unknown_stack_object_maybe_initialized
         .unwrap_or_else(|| std::array::from_fn(|_| None));
 
+    let return_alias = return_alias.flatten();
+    let return_arg = match &return_alias {
+        Some(AliasSource::Param(idx)) => Some(*idx),
+        _ => None,
+    };
+    let context_field_return = match return_alias {
+        Some(AliasSource::ContextField(field)) => Some(field),
+        _ => None,
+    };
+
     SubfunctionSummary::from_parts(
-        return_alias.flatten(),
+        return_arg,
+        context_field_return,
         returned_ringbuf_record.unwrap_or(false),
         returned_kfunc_ref.flatten(),
         returned_rcu_delta.flatten().unwrap_or(0),
@@ -785,10 +806,13 @@ fn merge_alias_states(existing: &mut SummaryState, incoming: &SummaryState) -> b
     for (dst, src) in existing
         .aliases
         .iter_mut()
-        .zip(incoming.aliases.iter().copied())
+        .zip(incoming.aliases.iter().cloned())
     {
-        let merged = match (*dst, src) {
-            (AliasSource::Param(lhs), AliasSource::Param(rhs)) if lhs == rhs => *dst,
+        let merged = match (&*dst, src) {
+            (AliasSource::Param(lhs), AliasSource::Param(rhs)) if *lhs == rhs => dst.clone(),
+            (AliasSource::ContextField(lhs), AliasSource::ContextField(rhs)) if *lhs == rhs => {
+                dst.clone()
+            }
             _ => AliasSource::Unknown,
         };
         if *dst != merged {
@@ -1172,7 +1196,11 @@ fn apply_alias_inst(
                     .copied()
                     .map(|arg| get_alias(&state.aliases, arg))
                     .unwrap_or(AliasSource::Unknown),
-                None => AliasSource::Unknown,
+                None => summary
+                    .return_context_field()
+                    .cloned()
+                    .map(AliasSource::ContextField)
+                    .unwrap_or(AliasSource::Unknown),
             };
             set_alias(&mut state.aliases, *dst, alias);
             let ringbuf_record_source = match summary.return_arg() {
@@ -1290,11 +1318,22 @@ fn apply_alias_inst(
             set_map_fd_source(&mut state.map_fd_sources, *dst, None);
             InstEffects::default()
         }
+        MirInst::LoadCtxField { dst, field, .. } => {
+            set_alias(
+                &mut state.aliases,
+                *dst,
+                AliasSource::ContextField(field.clone()),
+            );
+            set_ringbuf_record_source(&mut state.ringbuf_record_sources, *dst, None);
+            set_kfunc_ref_source(&mut state.kfunc_ref_sources, *dst, None);
+            set_map_value_source(&mut state.map_value_sources, *dst, None);
+            set_map_fd_source(&mut state.map_fd_sources, *dst, None);
+            InstEffects::default()
+        }
         MirInst::BinOp { dst, .. }
         | MirInst::UnaryOp { dst, .. }
         | MirInst::LoadSubprogram { dst, .. }
         | MirInst::MapLookupDynamic { dst, .. }
-        | MirInst::LoadCtxField { dst, .. }
         | MirInst::ListNew { dst, .. }
         | MirInst::ListLen { dst, .. }
         | MirInst::ListGet { dst, .. }
@@ -1600,7 +1639,9 @@ fn map_value_requirement_source_for_mir_value(
 ) -> Option<SummaryMapSource> {
     match alias_for_mir_value(value, &state.aliases, param_stack_aliases) {
         AliasSource::Param(idx) => Some(SummaryMapSource::Param(idx)),
-        AliasSource::Unknown => map_value_source_for_mir_value(value, state),
+        AliasSource::Unknown | AliasSource::ContextField(_) => {
+            map_value_source_for_mir_value(value, state)
+        }
     }
 }
 
@@ -1610,7 +1651,9 @@ fn map_value_requirement_source_for_vreg(
 ) -> Option<SummaryMapSource> {
     match get_alias(&state.aliases, value) {
         AliasSource::Param(idx) => Some(SummaryMapSource::Param(idx)),
-        AliasSource::Unknown => map_value_source_for_vreg(state, value),
+        AliasSource::Unknown | AliasSource::ContextField(_) => {
+            map_value_source_for_vreg(state, value)
+        }
     }
 }
 
@@ -1621,7 +1664,7 @@ fn map_fd_requirement_source_for_mir_value(
 ) -> Option<SummaryMapSource> {
     match alias_for_mir_value(value, &state.aliases, param_stack_aliases) {
         AliasSource::Param(idx) => Some(SummaryMapSource::Param(idx)),
-        AliasSource::Unknown => {
+        AliasSource::Unknown | AliasSource::ContextField(_) => {
             map_fd_source_for_mir_value(value, state).map(SummaryMapSource::Map)
         }
     }
@@ -1633,7 +1676,9 @@ fn map_fd_requirement_source_for_vreg(
 ) -> Option<SummaryMapSource> {
     match get_alias(&state.aliases, value) {
         AliasSource::Param(idx) => Some(SummaryMapSource::Param(idx)),
-        AliasSource::Unknown => map_fd_source_for_vreg(state, value).map(SummaryMapSource::Map),
+        AliasSource::Unknown | AliasSource::ContextField(_) => {
+            map_fd_source_for_vreg(state, value).map(SummaryMapSource::Map)
+        }
     }
 }
 
@@ -1869,7 +1914,7 @@ fn helper_arg_param_alias(
     let arg = args.get(idx)?;
     match alias_for_mir_value(arg, &state.aliases, param_stack_aliases) {
         AliasSource::Param(param_idx) => Some(param_idx),
-        AliasSource::Unknown => None,
+        AliasSource::Unknown | AliasSource::ContextField(_) => None,
     }
 }
 
@@ -1911,13 +1956,11 @@ fn alias_for_value(
     val: Option<&MirValue>,
     state: &[AliasSource],
     param_stack_aliases: &HashMap<super::mir::StackSlotId, usize>,
-) -> Option<usize> {
-    match val {
-        Some(value) => match alias_for_mir_value(value, state, param_stack_aliases) {
-            AliasSource::Param(idx) => Some(idx),
-            AliasSource::Unknown => None,
-        },
-        None => None,
+) -> Option<AliasSource> {
+    let value = val?;
+    match alias_for_mir_value(value, state, param_stack_aliases) {
+        AliasSource::Unknown => None,
+        alias => Some(alias),
     }
 }
 
@@ -2073,7 +2116,7 @@ fn alias_for_mir_value(
 fn get_alias(state: &[AliasSource], vreg: VReg) -> AliasSource {
     state
         .get(vreg.0 as usize)
-        .copied()
+        .cloned()
         .unwrap_or(AliasSource::Unknown)
 }
 
@@ -2086,7 +2129,7 @@ fn set_alias(state: &mut [AliasSource], vreg: VReg, alias: AliasSource) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::compiler::mir::{MirFunction, MirInst, MirValue, StackSlotKind};
+    use crate::compiler::mir::{CtxField, MirFunction, MirInst, MirValue, StackSlotKind};
 
     #[test]
     fn test_infer_return_summary_for_copied_param() {
@@ -2142,6 +2185,57 @@ mod tests {
         assert_eq!(
             summaries.get(&SubfunctionId(1)),
             Some(&SubfunctionReturnSummary::ReturnsArg(0))
+        );
+    }
+
+    #[test]
+    fn test_infer_summary_tracks_context_field_return_through_nested_subfunction_call() {
+        let mut callee = MirFunction::new();
+        let callee_entry = callee.alloc_block();
+        callee.entry = callee_entry;
+        let optval = callee.alloc_vreg();
+        callee
+            .block_mut(callee_entry)
+            .instructions
+            .push(MirInst::LoadCtxField {
+                dst: optval,
+                field: CtxField::SockoptOptval,
+                slot: None,
+            });
+        callee.block_mut(callee_entry).terminator = MirInst::Return {
+            val: Some(MirValue::VReg(optval)),
+        };
+
+        let mut caller = MirFunction::new();
+        let caller_entry = caller.alloc_block();
+        caller.entry = caller_entry;
+        let ret = caller.alloc_vreg();
+        caller
+            .block_mut(caller_entry)
+            .instructions
+            .push(MirInst::CallSubfn {
+                dst: ret,
+                subfn: SubfunctionId(0),
+                args: vec![],
+            });
+        caller.block_mut(caller_entry).terminator = MirInst::Return {
+            val: Some(MirValue::VReg(ret)),
+        };
+
+        let summaries = infer_subfunction_summaries(&[callee, caller]);
+        let callee_summary = summaries
+            .get(&SubfunctionId(0))
+            .expect("expected callee summary");
+        assert_eq!(
+            callee_summary.return_context_field(),
+            Some(&CtxField::SockoptOptval)
+        );
+        let caller_summary = summaries
+            .get(&SubfunctionId(1))
+            .expect("expected caller summary");
+        assert_eq!(
+            caller_summary.return_context_field(),
+            Some(&CtxField::SockoptOptval)
         );
     }
 

@@ -277,6 +277,7 @@ struct SubfunctionReturnSeed {
     type_hint: Option<MirType>,
     field_type: Option<MirType>,
     annotated_semantics: Option<AnnotatedValueSemantics>,
+    root_ctx_field: Option<CtxField>,
     is_context: bool,
 }
 

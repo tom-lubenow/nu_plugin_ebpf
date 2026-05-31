@@ -1562,6 +1562,7 @@ impl<'a> HirToMirLowering<'a> {
             } else {
                 meta.field_type = seed.field_type;
                 meta.annotated_semantics = seed.annotated_semantics;
+                meta.root_ctx_field = seed.root_ctx_field;
             }
             meta.source_var = None;
         }
