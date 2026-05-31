@@ -5909,6 +5909,7 @@ fn test_context_write_records_include_backing_abi_metadata() {
     let sock_ops_writes = spec_context_writes(&sock_ops);
     let reply = context_write(&sock_ops_writes, "reply");
     assert_eq!(reply.kind, "store");
+    assert_eq!(reply.abi_field.as_deref(), Some("reply"));
     assert_eq!(
         reply.context_field_requirement_key.as_deref(),
         Some("ctx:reply")
@@ -5919,6 +5920,7 @@ fn test_context_write_records_include_backing_abi_metadata() {
     let replylong = context_write(&sock_ops_writes, "replylong");
     assert_eq!(replylong.kind, "store");
     assert!(replylong.indexed);
+    assert_eq!(replylong.abi_field.as_deref(), Some("replylong"));
     assert_eq!(
         replylong.context_field_requirement_key.as_deref(),
         Some("ctx:replylong")
@@ -5927,6 +5929,7 @@ fn test_context_write_records_include_backing_abi_metadata() {
 
     let cb_flags = context_write(&sock_ops_writes, "cb_flags");
     assert_eq!(cb_flags.kind, "store");
+    assert_eq!(cb_flags.abi_field.as_deref(), Some("cb_flags"));
     assert_eq!(
         cb_flags.context_field_requirement_key.as_deref(),
         Some("ctx:cb_flags")
@@ -5961,6 +5964,7 @@ fn test_context_write_records_include_backing_abi_metadata() {
     let cgroup_sysctl_writes = spec_context_writes(&cgroup_sysctl);
     let new_value = context_write(&cgroup_sysctl_writes, "new_value");
     assert_eq!(new_value.kind, "sysctl-new-value");
+    assert_eq!(new_value.abi_field.as_deref(), Some("sysctl_new_value"));
     assert_eq!(
         new_value.context_field_requirement_key.as_deref(),
         Some("ctx:sysctl_new_value")
@@ -5977,6 +5981,7 @@ fn test_context_write_records_include_backing_abi_metadata() {
     let tc_ingress_writes = spec_context_writes(&tc_ingress);
     let sk = context_write(&tc_ingress_writes, "sk");
     assert_eq!(sk.kind, "assign-socket");
+    assert_eq!(sk.abi_field.as_deref(), Some("sk"));
     assert_eq!(sk.context_field_requirement_key.as_deref(), Some("ctx:sk"));
     assert_eq!(sk.minimum_kernel, Some("5.1"));
     assert_eq!(sk.helper, Some("bpf_sk_assign"));
@@ -5998,17 +6003,43 @@ fn test_context_write_records_include_backing_abi_metadata() {
     let cgroup_sockopt_writes = spec_context_writes(&cgroup_sockopt_set);
     let optval = context_write(&cgroup_sockopt_writes, "optval");
     assert_eq!(optval.kind, "sockopt-optval-byte");
+    assert_eq!(optval.abi_field.as_deref(), Some("optval"));
     assert_eq!(
         optval.context_field_requirement_key.as_deref(),
         Some("ctx:optval")
     );
     assert_eq!(optval.minimum_kernel, Some("5.3"));
 
+    let connect4 = ProgramSpec::parse("cgroup_sock_addr:/sys/fs/cgroup:connect4")
+        .expect("cgroup_sock_addr connect4 spec should parse");
+    let connect4_writes = spec_context_writes(&connect4);
+    let remote_ip4 = context_write(&connect4_writes, "remote_ip4");
+    assert_eq!(remote_ip4.kind, "store");
+    assert_eq!(remote_ip4.abi_field.as_deref(), Some("user_ip4"));
+    assert_eq!(
+        remote_ip4.context_field_requirement_key.as_deref(),
+        Some("ctx:remote_ip4")
+    );
+    assert_eq!(remote_ip4.transformed_store_offset, Some(4));
+
+    let sendmsg4 = ProgramSpec::parse("cgroup_sock_addr:/sys/fs/cgroup:sendmsg4")
+        .expect("cgroup_sock_addr sendmsg4 spec should parse");
+    let sendmsg4_writes = spec_context_writes(&sendmsg4);
+    let local_ip4 = context_write(&sendmsg4_writes, "local_ip4");
+    assert_eq!(local_ip4.kind, "store");
+    assert_eq!(local_ip4.abi_field.as_deref(), Some("msg_src_ip4"));
+    assert_eq!(
+        local_ip4.context_field_requirement_key.as_deref(),
+        Some("ctx:local_ip4")
+    );
+    assert_eq!(local_ip4.transformed_store_offset, Some(40));
+
     let unix_sock_addr = ProgramSpec::parse("cgroup_sock_addr:/sys/fs/cgroup:connect_unix")
         .expect("cgroup_sock_addr unix spec should parse");
     let unix_sock_addr_writes = spec_context_writes(&unix_sock_addr);
     let sun_path = context_write(&unix_sock_addr_writes, "sun_path");
     assert_eq!(sun_path.kind, "sun-path");
+    assert_eq!(sun_path.abi_field, None);
     assert_eq!(sun_path.context_field_requirement_key, None);
     assert_eq!(sun_path.kfunc, Some("bpf_sock_addr_set_sun_path"));
     assert_eq!(
@@ -6026,6 +6057,7 @@ fn test_context_write_records_include_backing_abi_metadata() {
     let flow_keys = context_write(&flow_dissector_writes, "flow_keys");
     assert_eq!(flow_keys.kind, "context-pointer-scalar-field");
     assert!(!flow_keys.indexed);
+    assert_eq!(flow_keys.abi_field.as_deref(), Some("flow_keys"));
     assert_eq!(
         flow_keys.context_field_requirement_key.as_deref(),
         Some("ctx:flow_keys")
@@ -6054,6 +6086,12 @@ fn test_context_write_backing_abi_metadata_invariants() {
             assert_eq!(write.field, surface.field_name);
             assert_eq!(write.kind, surface.kind);
             assert_eq!(write.indexed, surface.indexed);
+            assert_eq!(
+                write.abi_field,
+                surface.abi_field.as_ref().map(|field| field.display_name()),
+                "{spec_source} ctx.{} write should report the ProgramSpec backing ABI field",
+                write.field
+            );
             assert_eq!(write.minimum_kernel, surface.minimum_kernel);
             assert_eq!(write.minimum_kernel_source, surface.minimum_kernel_source);
             assert_eq!(
@@ -6521,6 +6559,14 @@ fn test_spec_record_context_writes_include_store_shape_metadata() {
         .expect("ctx.reply write should be a record");
     assert_eq!(
         reply
+            .get("abi_field")
+            .expect("ABI field should be present")
+            .as_str()
+            .expect("ABI field should be a string"),
+        "reply"
+    );
+    assert_eq!(
+        reply
             .get("direct_store_offset")
             .expect("direct store offset should be present")
             .as_int()
@@ -6578,6 +6624,14 @@ fn test_spec_record_context_writes_include_store_shape_metadata() {
     let remote_ip4 = remote_ip4
         .as_record()
         .expect("ctx.remote_ip4 write should be a record");
+    assert_eq!(
+        remote_ip4
+            .get("abi_field")
+            .expect("ABI field should be present")
+            .as_str()
+            .expect("ABI field should be a string"),
+        "user_ip4"
+    );
     assert_eq!(
         remote_ip4
             .get("transformed_store_offset")

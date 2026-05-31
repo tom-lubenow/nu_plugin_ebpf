@@ -67,6 +67,7 @@ pub(crate) struct ContextWriteSurface {
     pub(crate) field_name: &'static str,
     pub(crate) kind: &'static str,
     pub(crate) indexed: bool,
+    pub(crate) abi_field: Option<CtxField>,
     pub(crate) direct_store_offset: Option<i16>,
     pub(crate) indexed_store_base_offset: Option<i16>,
     pub(crate) indexed_store_count: Option<usize>,
@@ -397,6 +398,20 @@ impl ContextWriteTargetSpec {
             Self::ContextPointerScalarField(field) => Some(field.clone()),
         }
     }
+
+    fn abi_field(&self, spec: &ProgramSpec, field_name: &str) -> Option<CtxField> {
+        match self {
+            Self::Store(target) => target
+                .representative_store_target(spec, field_name)
+                .and_then(|target| target.ctx_field())
+                .or_else(|| target.context_field()),
+            Self::SysctlNewValue
+            | Self::SockoptOptvalByte
+            | Self::AssignSocket
+            | Self::ContextPointerScalarField(_) => self.context_field(),
+            Self::CgroupSockAddrSunPath => None,
+        }
+    }
 }
 
 impl ContextWriteAvailability {
@@ -637,6 +652,10 @@ impl ContextWriteSurfaceSpec {
             field_name: self.field_name,
             kind: self.target.kind(),
             indexed: self.target.requires_indexed_assignment(),
+            abi_field: self
+                .target
+                .abi_field(spec, self.field_name)
+                .or_else(|| self.field.clone()),
             direct_store_offset,
             indexed_store_base_offset,
             indexed_store_count,
@@ -1560,8 +1579,23 @@ mod tests {
             };
 
             let write = surface.surface(&spec);
+            let expected_abi_field = spec.ctx_field_abi_field(&field);
+
+            if write.kind == "store" {
+                assert!(
+                    write.abi_field.is_some(),
+                    "{spec_source} ctx.{} store write should report a backing ABI field",
+                    write.field_name
+                );
+            }
 
             if let Some(offset) = write.direct_store_offset {
+                assert_eq!(
+                    write.abi_field.as_ref(),
+                    expected_abi_field.as_ref(),
+                    "{spec_source} ctx.{} direct store ABI field should match the resolved backing field",
+                    write.field_name
+                );
                 if let Some(read) = spec.ctx_field_direct_load(&field) {
                     assert_eq!(
                         read.offset,
@@ -1580,6 +1614,12 @@ mod tests {
             }
 
             if let Some(offset) = write.transformed_store_offset {
+                assert_eq!(
+                    write.abi_field.as_ref(),
+                    expected_abi_field.as_ref(),
+                    "{spec_source} ctx.{} transformed store ABI field should match the resolved backing field",
+                    write.field_name
+                );
                 let read = spec.ctx_field_direct_load(&field).unwrap_or_else(|| {
                     panic!(
                         "{spec_source} ctx.{} transformed store should have direct-read metadata for ctx.{}",
@@ -1604,6 +1644,12 @@ mod tests {
             }
 
             if let Some(offset) = write.indexed_store_base_offset {
+                assert_eq!(
+                    write.abi_field.as_ref(),
+                    expected_abi_field.as_ref(),
+                    "{spec_source} ctx.{} indexed store ABI field should match the resolved backing field",
+                    write.field_name
+                );
                 let read = spec.ctx_field_array_load(&field).unwrap_or_else(|| {
                     panic!(
                         "{spec_source} ctx.{} indexed store should have array-read metadata for ctx.{}",
