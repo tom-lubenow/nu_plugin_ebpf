@@ -15935,6 +15935,22 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "source-helper-socket-cookie-accepts-returned-socket-filter-context"
+        category: "helper-state"
+        tags: [helper socket cookie accept user-function source metadata]
+        target: "socket_filter:udp4:127.0.0.1:31337"
+        program: [
+            '{|ctx|'
+            '  def get_ctx [event] { $event }'
+            '  let raw_ctx = (get_ctx $ctx)'
+            '  helper-call "bpf_get_socket_cookie" $raw_ctx'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "source-helper-socket-cookie-accepts-fentry-socket-arg"
         category: "helper-state"
         tags: [helper socket cookie tracing accept source metadata]

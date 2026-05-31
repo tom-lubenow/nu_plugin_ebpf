@@ -1577,6 +1577,13 @@ impl<'a> VccLowerer<'a> {
                     if let Some(idx) = summary.return_arg()
                         && let Some(arg) = args.get(idx)
                     {
+                        if let Some(info) = self.ptr_regs.get(&VccReg(arg.0)).copied() {
+                            self.ptr_regs.insert(VccReg(dst.0), info);
+                        }
+                        if let Some(field) = self.direct_ctx_field_regs.get(&VccReg(arg.0)).cloned()
+                        {
+                            self.direct_ctx_field_regs.insert(VccReg(dst.0), field);
+                        }
                         out.push(VccInst::Copy {
                             dst: VccReg(dst.0),
                             src: VccValue::Reg(VccReg(arg.0)),
@@ -1696,6 +1703,8 @@ impl<'a> VccLowerer<'a> {
                         if let VccValueType::Ptr(info) = ty {
                             self.ptr_regs.insert(VccReg(dst.0), info);
                         }
+                        self.direct_ctx_field_regs
+                            .insert(VccReg(dst.0), field.clone());
                         return Ok(());
                     }
                 }

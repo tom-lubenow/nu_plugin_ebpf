@@ -52,6 +52,7 @@ use super::mir::{
     MirType, MirValue, STRING_COUNTER_MAP_NAME, StackSlotId, StackSlotKind, StringAppendType,
     StructField, SubfunctionId, TIMESTAMP_MAP_NAME, UnaryOpKind, VReg,
 };
+use super::subfn_summaries::SubfunctionSummary;
 use crate::kernel_btf::{KernelBtf, TypeInfo};
 
 mod constraints;
@@ -192,6 +193,8 @@ pub struct TypeInference<'a> {
     substitution: Substitution,
     /// Subfunction type schemes (if any)
     subfn_schemes: Option<&'a SubfnSchemeMap>,
+    /// Subfunction semantic summaries used by post-inference validation.
+    subfn_summaries: Option<&'a HashMap<SubfunctionId, SubfunctionSummary>>,
     /// Type variables for context args (kprobes can be ptr or int)
     ctx_arg_vars: HashMap<usize, TypeVar>,
     /// Type variables for tracepoint fields (field name -> type)
@@ -438,6 +441,7 @@ impl<'a> TypeInference<'a> {
             probe_ctx,
             substitution: Substitution::new(),
             subfn_schemes,
+            subfn_summaries: None,
             ctx_arg_vars: HashMap::new(),
             ctx_tp_vars: HashMap::new(),
             return_var: None,
@@ -445,6 +449,14 @@ impl<'a> TypeInference<'a> {
             type_hints,
             stack_slot_hints,
         }
+    }
+
+    pub(crate) fn with_subfunction_summaries(
+        mut self,
+        subfn_summaries: &'a HashMap<SubfunctionId, SubfunctionSummary>,
+    ) -> Self {
+        self.subfn_summaries = Some(subfn_summaries);
+        self
     }
 
     /// Run type inference on a MIR function

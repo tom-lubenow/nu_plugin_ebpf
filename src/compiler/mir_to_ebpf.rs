@@ -760,7 +760,8 @@ fn verify_mir_program(
             expected_return,
             hints,
             slot_hints,
-        );
+        )
+        .with_subfunction_summaries(&subfn_summaries);
         let types = match type_infer.infer(func) {
             Ok(types) => types,
             Err(errors) => {

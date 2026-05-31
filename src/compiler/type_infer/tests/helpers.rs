@@ -3,6 +3,7 @@ use crate::compiler::EbpfProgramType;
 use crate::compiler::MapRef;
 use crate::compiler::ctx_field_schema::{ctx_field_backing_helper, static_ctx_field_type_spec};
 use crate::compiler::mir::StructField;
+use crate::compiler::subfn_summaries::infer_subfunction_summaries;
 
 const BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB: i64 = 4;
 const BPF_SOCK_OPS_HDR_OPT_LEN_CB: i64 = 14;
@@ -325,6 +326,49 @@ fn test_infer_helper_ctx_argument_from_context_pointer_copy() {
     let types = ti
         .infer(&func)
         .expect("expected copied raw ctx pointer to satisfy helper context argument");
+    assert_eq!(types.get(&dst), Some(&MirType::U64));
+}
+
+#[test]
+fn test_infer_helper_ctx_argument_from_returned_context_pointer() {
+    let mut subfn = make_test_function();
+    let sub_ctx = subfn.alloc_vreg();
+    let sub_block = subfn.block_mut(BlockId(0));
+    sub_block.instructions.push(MirInst::LoadCtxField {
+        dst: sub_ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    sub_block.terminator = MirInst::Return {
+        val: Some(MirValue::VReg(sub_ctx)),
+    };
+
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallSubfn {
+        dst: ctx,
+        subfn: SubfunctionId(0),
+        args: vec![],
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::GetSocketCookie as u32,
+        args: vec![MirValue::VReg(ctx)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SocketFilter, "udp4:127.0.0.1:31337");
+    let subfn_schemes = infer_subfunction_schemes(&[subfn.clone()], Some(probe_ctx.clone()))
+        .expect("expected raw context subfunction scheme");
+    let subfn_summaries = infer_subfunction_summaries(&[subfn]);
+    let mut ti =
+        TypeInference::new_with_env(Some(probe_ctx), Some(&subfn_schemes), None, None, None)
+            .with_subfunction_summaries(&subfn_summaries);
+    let types = ti
+        .infer(&func)
+        .expect("expected returned raw ctx pointer to satisfy helper context argument");
     assert_eq!(types.get(&dst), Some(&MirType::U64));
 }
 

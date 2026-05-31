@@ -1323,6 +1323,51 @@ impl<'a> TypeInference<'a> {
                 self.clear_guard(guards, *dst);
                 reg_sources.insert(*dst, SlotSourceState::Known(source));
             }
+            MirInst::CallSubfn { dst, subfn, args } => {
+                let dst_ty = types.get(dst).cloned().unwrap_or(MirType::Unknown);
+                let summary = self
+                    .subfn_summaries
+                    .and_then(|summaries| summaries.get(subfn));
+                let mut range = summary
+                    .and_then(|summary| summary.return_arg())
+                    .and_then(|idx| args.get(idx))
+                    .map(|arg| {
+                        state
+                            .get(arg.0 as usize)
+                            .copied()
+                            .unwrap_or(ValueRange::Unknown)
+                    })
+                    .unwrap_or_else(|| {
+                        self.scalar_type_range(&dst_ty)
+                            .unwrap_or(ValueRange::Unknown)
+                    });
+                if matches!(dst_ty, MirType::Ptr { .. })
+                    && !matches!(range, ValueRange::Known { min: 0, max: 0 })
+                {
+                    range = ValueRange::Unknown;
+                }
+                self.set_state_range(state, *dst, range);
+                self.observe_range(observed, *dst, range);
+                self.clear_guard(guards, *dst);
+
+                let source = summary.and_then(|summary| {
+                    summary
+                        .return_context_field()
+                        .cloned()
+                        .map(RangeSource::root)
+                        .or_else(|| {
+                            summary
+                                .return_arg()
+                                .and_then(|idx| args.get(idx))
+                                .and_then(|arg| self.reg_known_source(reg_sources, *arg))
+                        })
+                });
+                if let Some(source) = source {
+                    reg_sources.insert(*dst, SlotSourceState::Known(source));
+                } else {
+                    reg_sources.insert(*dst, SlotSourceState::Unknown);
+                }
+            }
             MirInst::ListLen { dst, list } => {
                 let range = list_caps
                     .get(list)

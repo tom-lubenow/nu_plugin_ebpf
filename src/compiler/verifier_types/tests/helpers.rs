@@ -3977,6 +3977,66 @@ fn test_verify_mir_for_probe_context_get_socket_cookie_accepts_socket_filter() {
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_get_socket_cookie_accepts_returned_socket_filter_context() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::CallSubfn {
+        dst: ctx,
+        subfn: SubfunctionId(0),
+        args: vec![],
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::GetSocketCookie as u32,
+            args: vec![MirValue::VReg(ctx)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut subfn = MirFunction::new();
+    let sub_entry = subfn.alloc_block();
+    subfn.entry = sub_entry;
+    let sub_ctx = subfn.alloc_vreg();
+    subfn
+        .block_mut(sub_entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: sub_ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    subfn.block_mut(sub_entry).terminator = MirInst::Return {
+        val: Some(MirValue::VReg(sub_ctx)),
+    };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let summaries = infer_subfunction_summaries(&[subfn]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SocketFilter, "udp4:127.0.0.1:31337");
+    verify_mir_with_subfunction_summaries_for_probe_context(
+        &func,
+        &types,
+        &summaries,
+        Some(&probe_ctx),
+        None,
+    )
+    .expect("expected returned get_socket_cookie socket_filter context to verify");
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_get_socket_cookie_rejects_fentry_context_pointer() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

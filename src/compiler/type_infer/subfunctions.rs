@@ -118,6 +118,8 @@ pub fn infer_subfunction_schemes_with_hints(
     };
 
     let mut schemes: SubfnSchemeMap = HashMap::new();
+    let subfn_summaries =
+        crate::compiler::subfn_summaries::infer_subfunction_summaries(subfunctions);
 
     for idx in order {
         let subfn_id = SubfunctionId(idx as u32);
@@ -125,7 +127,8 @@ pub fn infer_subfunction_schemes_with_hints(
         let hints = type_hints.and_then(|all| all.get(idx));
         let slot_hints = stack_slot_hints.and_then(|all| all.get(idx));
         let mut ti =
-            TypeInference::new_with_env(probe_ctx.clone(), Some(&schemes), None, hints, slot_hints);
+            TypeInference::new_with_env(probe_ctx.clone(), Some(&schemes), None, hints, slot_hints)
+                .with_subfunction_summaries(&subfn_summaries);
         match ti.infer(func) {
             Ok(_) => {
                 let scheme = ti.scheme_for_function(func, Some(&schemes));
