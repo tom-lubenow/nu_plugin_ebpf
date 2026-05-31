@@ -80,19 +80,22 @@ impl<'a> HirToMirLowering<'a> {
                     1
                 }
             }
-            "take" => {
+            "take" | "first" => {
                 if self.positional_args.len() != 1 {
                     return Err(CompileError::UnsupportedInstruction(
-                        "take requires exactly one positional count argument in eBPF".into(),
+                        format!(
+                            "{cmd_name} requires exactly one positional count argument in eBPF"
+                        )
+                        .into(),
                     ));
                 }
                 let (_, count_reg) = self.positional_args[0];
                 self.get_metadata(count_reg)
                     .and_then(|m| m.literal_int)
                     .ok_or_else(|| {
-                        CompileError::UnsupportedInstruction(
-                            "take count must be a compile-time integer literal in eBPF".into(),
-                        )
+                        CompileError::UnsupportedInstruction(format!(
+                            "{cmd_name} count must be a compile-time integer literal in eBPF"
+                        ))
                     })?
             }
             _ => {
@@ -127,7 +130,7 @@ impl<'a> HirToMirLowering<'a> {
         };
 
         let (source_start, source_end, out_max_len, guard_tail_drop) = match cmd_name {
-            "take" => {
+            "take" | "first" => {
                 let take_count = count.min(max_len);
                 (0, take_count, take_count, 0)
             }
@@ -200,14 +203,14 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         let known_len = Self::numeric_list_known_len(&input_meta).map(|known_len| match cmd_name {
-            "take" => known_len.min(count).min(out_max_len),
+            "take" | "first" => known_len.min(count).min(out_max_len),
             "skip" | "drop" => known_len.saturating_sub(count).min(out_max_len),
             _ => unreachable!("validated stack list slice command"),
         });
         let constant_value = match input_meta.constant_value {
             Some(nu_protocol::Value::List { vals, .. }) => {
                 let vals = match cmd_name {
-                    "take" => vals.into_iter().take(count).collect::<Vec<_>>(),
+                    "take" | "first" => vals.into_iter().take(count).collect::<Vec<_>>(),
                     "skip" => vals.into_iter().skip(count).collect::<Vec<_>>(),
                     "drop" => {
                         let keep_len = vals.len().saturating_sub(count);
@@ -334,6 +337,214 @@ impl<'a> HirToMirLowering<'a> {
 
         self.install_stack_numeric_list_result_metadata(
             src_dst, out_slot, out_ty, max_len, known_len,
+        );
+        if let Some(value) = constant_value {
+            self.get_or_create_metadata(src_dst).constant_value = Some(value);
+        }
+        Ok(())
+    }
+
+    pub(super) fn lower_stack_list_last_count(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+    ) -> Result<(), CompileError> {
+        let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
+        let input_reg = self
+            .pipeline_input_reg
+            .or(src_dst_had_value.then_some(src_dst));
+
+        if !self.named_flags.is_empty()
+            || !self.named_args.is_empty()
+            || self.positional_args.len() != 1
+        {
+            return Err(CompileError::UnsupportedInstruction(
+                "last requires exactly one positional count argument in eBPF".into(),
+            ));
+        }
+
+        let (_, count_reg) = self.positional_args[0];
+        let raw_count = self
+            .get_metadata(count_reg)
+            .and_then(|m| m.literal_int)
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "last count must be a compile-time integer literal in eBPF".into(),
+                )
+            })?;
+        if raw_count < 0 {
+            return Err(CompileError::UnsupportedInstruction(
+                "last count must be non-negative in eBPF".into(),
+            ));
+        }
+        let count = usize::try_from(raw_count).map_err(|_| {
+            CompileError::UnsupportedInstruction(
+                "last count is too large for eBPF list lowering".into(),
+            )
+        })?;
+
+        let input_meta = input_reg
+            .and_then(|reg| self.get_metadata(reg).cloned())
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "last requires a stack-backed list input in eBPF".into(),
+                )
+            })?;
+        let Some((_input_slot, max_len)) = input_meta.list_buffer else {
+            return Err(CompileError::UnsupportedInstruction(
+                "last requires a stack-backed list input in eBPF".into(),
+            ));
+        };
+
+        let out_max_len = count.min(max_len);
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+        let temp_vreg = self.func.alloc_vreg();
+        let (out_slot, out_ty) = self.create_stack_numeric_list_result(result_vreg, out_max_len);
+        self.create_stack_numeric_list_result(temp_vreg, out_max_len);
+
+        if max_len > 0 && out_max_len > 0 {
+            let input_len_vreg = self.func.alloc_vreg();
+            self.emit(MirInst::ListLen {
+                dst: input_len_vreg,
+                list: input_vreg,
+            });
+            self.vreg_type_hints.insert(input_len_vreg, MirType::U64);
+
+            let reverse_block = self.func.alloc_block();
+            for source_index in (0..max_len).rev() {
+                let capacity_block = self.func.alloc_block();
+                let push_block = self.func.alloc_block();
+                let next_block = if source_index == 0 {
+                    reverse_block
+                } else {
+                    self.func.alloc_block()
+                };
+
+                let in_bounds_vreg = self.func.alloc_vreg();
+                self.emit(MirInst::BinOp {
+                    dst: in_bounds_vreg,
+                    op: BinOpKind::Lt,
+                    lhs: MirValue::Const(source_index as i64),
+                    rhs: MirValue::VReg(input_len_vreg),
+                });
+                self.vreg_type_hints.insert(in_bounds_vreg, MirType::Bool);
+                self.terminate(MirInst::Branch {
+                    cond: in_bounds_vreg,
+                    if_true: capacity_block,
+                    if_false: next_block,
+                });
+
+                self.current_block = capacity_block;
+                let temp_len_vreg = self.func.alloc_vreg();
+                self.emit(MirInst::ListLen {
+                    dst: temp_len_vreg,
+                    list: temp_vreg,
+                });
+                self.vreg_type_hints.insert(temp_len_vreg, MirType::U64);
+                let has_capacity_vreg = self.func.alloc_vreg();
+                self.emit(MirInst::BinOp {
+                    dst: has_capacity_vreg,
+                    op: BinOpKind::Lt,
+                    lhs: MirValue::VReg(temp_len_vreg),
+                    rhs: MirValue::Const(out_max_len as i64),
+                });
+                self.vreg_type_hints
+                    .insert(has_capacity_vreg, MirType::Bool);
+                self.terminate(MirInst::Branch {
+                    cond: has_capacity_vreg,
+                    if_true: push_block,
+                    if_false: next_block,
+                });
+
+                self.current_block = push_block;
+                let item_vreg = self.func.alloc_vreg();
+                self.emit(MirInst::ListGet {
+                    dst: item_vreg,
+                    list: input_vreg,
+                    idx: MirValue::Const(source_index as i64),
+                });
+                self.vreg_type_hints.insert(item_vreg, MirType::I64);
+                self.emit(MirInst::ListPush {
+                    list: temp_vreg,
+                    item: item_vreg,
+                });
+                self.terminate(MirInst::Jump { target: next_block });
+
+                self.current_block = next_block;
+            }
+
+            let temp_len_vreg = self.func.alloc_vreg();
+            self.emit(MirInst::ListLen {
+                dst: temp_len_vreg,
+                list: temp_vreg,
+            });
+            self.vreg_type_hints.insert(temp_len_vreg, MirType::U64);
+
+            let continuation_block = self.func.alloc_block();
+            for temp_index in (0..out_max_len).rev() {
+                let copy_block = self.func.alloc_block();
+                let next_block = if temp_index == 0 {
+                    continuation_block
+                } else {
+                    self.func.alloc_block()
+                };
+
+                let in_bounds_vreg = self.func.alloc_vreg();
+                self.emit(MirInst::BinOp {
+                    dst: in_bounds_vreg,
+                    op: BinOpKind::Lt,
+                    lhs: MirValue::Const(temp_index as i64),
+                    rhs: MirValue::VReg(temp_len_vreg),
+                });
+                self.vreg_type_hints.insert(in_bounds_vreg, MirType::Bool);
+                self.terminate(MirInst::Branch {
+                    cond: in_bounds_vreg,
+                    if_true: copy_block,
+                    if_false: next_block,
+                });
+
+                self.current_block = copy_block;
+                let item_vreg = self.func.alloc_vreg();
+                self.emit(MirInst::ListGet {
+                    dst: item_vreg,
+                    list: temp_vreg,
+                    idx: MirValue::Const(temp_index as i64),
+                });
+                self.vreg_type_hints.insert(item_vreg, MirType::I64);
+                self.emit(MirInst::ListPush {
+                    list: result_vreg,
+                    item: item_vreg,
+                });
+                self.terminate(MirInst::Jump { target: next_block });
+
+                self.current_block = next_block;
+            }
+            self.current_block = continuation_block;
+        }
+
+        let known_len = Self::numeric_list_known_len(&input_meta).map(|len| len.min(count));
+        let constant_value = match input_meta.constant_value {
+            Some(nu_protocol::Value::List { vals, .. }) => {
+                let start = vals.len().saturating_sub(count);
+                Some(nu_protocol::Value::list(
+                    vals.into_iter().skip(start).collect::<Vec<_>>(),
+                    Span::unknown(),
+                ))
+            }
+            _ => None,
+        };
+
+        self.install_stack_numeric_list_result_metadata(
+            src_dst,
+            out_slot,
+            out_ty,
+            out_max_len,
+            known_len,
         );
         if let Some(value) = constant_value {
             self.get_or_create_metadata(src_dst).constant_value = Some(value);

@@ -832,7 +832,7 @@ eBPF layout and verifier bounds are explicit:
 | `append` / `prepend` | Stack-backed numeric lists with scalar numeric items when the output fits the modeled capacity |
 | `is-empty` / `is-not-empty` | Stack-backed lists, tracked strings, literal null, literal list constants, and metadata-backed fixed records |
 | `length` | Stack-backed numeric lists plus literal binary and literal null values |
-| `first` / `last` | Scalar first/last element access for stack-backed numeric lists; counted slice forms are not yet modeled |
+| `first` / `last` | Scalar first/last element access for stack-backed numeric lists; counted forms rebuild bounded prefix/suffix stack-list slices |
 | `get` | Stack-backed numeric-list indexing plus typed kernel/user pointer numeric indexing; list literal indexes may be literal cell paths |
 | `select` / `reject` | Metadata-backed fixed records, materialized into a fresh fixed-layout record |
 | `rename` | Positional top-level field renames for metadata-backed fixed records; `--column` and `--block` are not yet modeled |

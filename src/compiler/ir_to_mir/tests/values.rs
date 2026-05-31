@@ -820,9 +820,97 @@ fn test_lower_last_on_numeric_list_gets_length_minus_one() {
 }
 
 #[test]
-fn test_lower_first_count_slice_is_rejected() {
+fn test_lower_first_count_on_numeric_list_rebuilds_prefix() {
     let first_decl = DeclId::new(80);
-    let hir = make_numeric_list_pipeline_call_program(first_decl, Some(1));
+    let get_decl = DeclId::new(81);
+    let hir = make_numeric_list_call_then_get_program(first_decl, get_decl, Some(2), 1);
+    let decl_names = HashMap::from([
+        (first_decl, "first".to_string()),
+        (get_decl, "get".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("counted first should lower as a bounded stack-list prefix slice");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+
+    assert!(
+        instructions
+            .iter()
+            .filter(|inst| matches!(inst, MirInst::ListPush { .. }))
+            .count()
+            >= 2,
+        "expected counted first to rebuild the requested prefix"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("counted first should compile through codegen");
+}
+
+#[test]
+fn test_lower_last_count_on_numeric_list_rebuilds_suffix() {
+    let last_decl = DeclId::new(82);
+    let get_decl = DeclId::new(83);
+    let hir = make_numeric_list_call_then_get_program(last_decl, get_decl, Some(2), 0);
+    let decl_names = HashMap::from([
+        (last_decl, "last".to_string()),
+        (get_decl, "get".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("counted last should lower as a bounded stack-list suffix slice");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::ListGet {
+                idx: MirValue::Const(2),
+                ..
+            }
+        )),
+        "expected counted last to inspect the original tail slot"
+    );
+    assert!(
+        instructions
+            .iter()
+            .filter(|inst| matches!(inst, MirInst::ListPush { .. }))
+            .count()
+            >= 2,
+        "expected counted last to rebuild the suffix through bounded list pushes"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("counted last should compile through codegen");
+}
+
+#[test]
+fn test_lower_first_negative_count_is_rejected() {
+    let first_decl = DeclId::new(84);
+    let hir = make_numeric_list_pipeline_call_program(first_decl, Some(-1));
     let decl_names = HashMap::from([(first_decl, "first".to_string())]);
 
     let err = lower_hir_to_mir_with_hints(
@@ -833,10 +921,32 @@ fn test_lower_first_count_slice_is_rejected() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("counted first should be rejected rather than silently miscompiled");
+    .expect_err("negative first count should be rejected");
 
     assert!(
-        err.to_string().contains("would produce a list slice"),
+        err.to_string().contains("first count must be non-negative"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_last_negative_count_is_rejected() {
+    let last_decl = DeclId::new(85);
+    let hir = make_numeric_list_pipeline_call_program(last_decl, Some(-1));
+    let decl_names = HashMap::from([(last_decl, "last".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("negative last count should be rejected");
+
+    assert!(
+        err.to_string().contains("last count must be non-negative"),
         "unexpected error: {err}"
     );
 }

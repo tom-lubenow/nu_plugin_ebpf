@@ -32366,32 +32366,58 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
-        name: "core-list-first-count-slice-reject"
+        name: "core-list-first-count"
+        category: "language-core"
+        tags: [aggregate list first]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [10 20 30] | first 2 | get 1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-list-last-count"
+        category: "language-core"
+        tags: [aggregate list last]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [10 20 30] | last 2 | get 0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-list-first-negative-count-reject"
         category: "language-core"
         tags: [aggregate list first reject]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  [10 20 30] | first 1'
+            '  [10 20 30] | first -1'
             '}'
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "counted first would produce a list slice"
+        error_contains: "first count must be non-negative"
     }
     {
-        name: "core-list-last-count-slice-reject"
+        name: "core-list-last-negative-count-reject"
         category: "language-core"
         tags: [aggregate list last reject]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  [10 20 30] | last 1'
+            '  [10 20 30] | last -1'
             '}'
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "counted last would produce a list slice"
+        error_contains: "last count must be non-negative"
     }
     {
         name: "core-list-take-count"

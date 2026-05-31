@@ -2895,9 +2895,18 @@ impl<'a> HirToMirLowering<'a> {
                 }
 
                 if !self.positional_args.is_empty() {
-                    return Err(CompileError::UnsupportedInstruction(format!(
-                        "counted {cmd_name} would produce a list slice; eBPF currently supports only the scalar `{cmd_name}` form"
-                    )));
+                    if cmd_name == "first" {
+                        self.lower_stack_list_take_skip_or_drop(
+                            &cmd_name,
+                            src_dst,
+                            dst_vreg,
+                            src_dst_had_value,
+                        )?;
+                    } else {
+                        self.lower_stack_list_last_count(src_dst, dst_vreg, src_dst_had_value)?;
+                    }
+                    self.clear_call_state();
+                    return Ok(());
                 }
 
                 let input_meta = input_reg.and_then(|reg| self.get_metadata(reg).cloned());
