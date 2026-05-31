@@ -1799,6 +1799,64 @@ fn test_program_type_ctx_field_load_guard_follows_context_layout() {
     );
 }
 
+fn program_type_has_ctx_field_load(program_type: EbpfProgramType, field: &CtxField) -> bool {
+    program_type.ctx_field_direct_load(field).is_some()
+        || program_type.ctx_field_array_load(field).is_some()
+        || program_type.ctx_field_nested_load(field).is_some()
+}
+
+#[test]
+fn test_sock_ops_load_guard_fields_have_accessible_witness_and_load_metadata() {
+    let ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+    let expected = HashSet::from([
+        CtxField::Data,
+        CtxField::DataEnd,
+        CtxField::PacketLen,
+        CtxField::SockOpsSkbLen,
+        CtxField::SockOpsSkbTcpFlags,
+        CtxField::SockOpsSkbHwtstamp,
+    ]);
+    let mut guarded_fields = HashSet::new();
+
+    for entry in EbpfProgramType::SockOps.ctx_field_name_entries() {
+        if ctx.ctx_field_access_error(&entry.field).is_some() {
+            continue;
+        }
+
+        let Some(guard) = ctx.ctx_field_load_guard(&entry.field) else {
+            continue;
+        };
+        if !guarded_fields.insert(entry.field.clone()) {
+            continue;
+        }
+
+        assert!(
+            program_type_has_ctx_field_load(EbpfProgramType::SockOps, &entry.field),
+            "sock_ops guarded ctx.{} should have load metadata",
+            entry.field.display_name()
+        );
+
+        let witness = guard.witness_field();
+        assert!(
+            ctx.ctx_field_access_error(&witness).is_none(),
+            "sock_ops ctx.{} guard witness ctx.{} should be accessible",
+            entry.field.display_name(),
+            witness.display_name()
+        );
+        assert!(
+            program_type_has_ctx_field_load(EbpfProgramType::SockOps, &witness),
+            "sock_ops ctx.{} guard witness ctx.{} should have load metadata",
+            entry.field.display_name(),
+            witness.display_name()
+        );
+    }
+
+    assert_eq!(
+        guarded_fields, expected,
+        "sock_ops guarded context field set should stay explicit"
+    );
+}
+
 #[test]
 fn test_program_type_perf_event_ctx_field_support_follows_context_family() {
     let mut context_family_keys = HashSet::new();
