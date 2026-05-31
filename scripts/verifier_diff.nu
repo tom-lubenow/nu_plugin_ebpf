@@ -35228,9 +35228,29 @@ def target-context-field-alias-kernel-feature [field: string target] {
             return { matched: true, feature: $KERNEL_FEATURE_CTX_CGROUP_SOCK_ADDR_REMOTE_PORT }
         }
         if $field == "local_ip4" {
+            if ($target_text | str ends-with ":sendmsg4") {
+                return {
+                    matched: true
+                    feature: {
+                        key: "ctx:local_ip4"
+                        min_kernel: ($KERNEL_FEATURE_CTX_CGROUP_SOCK_ADDR_MSG_SRC_IP4 | get min_kernel)
+                        source: ($KERNEL_FEATURE_CTX_CGROUP_SOCK_ADDR_MSG_SRC_IP4 | get source)
+                    }
+                }
+            }
             return { matched: true, feature: $KERNEL_FEATURE_CTX_CGROUP_SOCK_ADDR_LOCAL_IP4 }
         }
         if $field == "local_ip6" {
+            if ($target_text | str ends-with ":sendmsg6") {
+                return {
+                    matched: true
+                    feature: {
+                        key: "ctx:local_ip6"
+                        min_kernel: ($KERNEL_FEATURE_CTX_CGROUP_SOCK_ADDR_MSG_SRC_IP6 | get min_kernel)
+                        source: ($KERNEL_FEATURE_CTX_CGROUP_SOCK_ADDR_MSG_SRC_IP6 | get source)
+                    }
+                }
+            }
             return { matched: true, feature: $KERNEL_FEATURE_CTX_CGROUP_SOCK_ADDR_LOCAL_IP6 }
         }
         if $field == "local_port" {

@@ -143,11 +143,30 @@ impl ContextFieldCompatibilityRequirement {
             }
         }
 
-        Self::for_field_on_program_iter_target(
+        let mut requirement = Self::for_field_on_program_iter_target(
             field,
             Some(spec.program_type()),
             spec.attach_shape().iter_target_kind(),
-        )
+        )?;
+
+        if let Some(alias_field) = spec.cgroup_sock_addr_tuple_alias_field(field)
+            && &alias_field != field
+            && let Some(alias_requirement) = Self::for_field_on_program_iter_target(
+                &alias_field,
+                Some(spec.program_type()),
+                spec.attach_shape().iter_target_kind(),
+            )
+            && Self::kernel_version_cmp(
+                alias_requirement.minimum_kernel,
+                requirement.minimum_kernel,
+            )
+            .is_gt()
+        {
+            requirement.minimum_kernel = alias_requirement.minimum_kernel;
+            requirement.minimum_kernel_source = alias_requirement.minimum_kernel_source;
+        }
+
+        Some(requirement)
     }
 
     fn for_field_on_program_iter_target(

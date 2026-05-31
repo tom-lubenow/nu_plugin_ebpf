@@ -972,6 +972,49 @@ fn test_context_field_compatibility_requirements_are_source_backed() {
         "unresolved or unversioned tracepoint payload fields should stay explicit"
     );
 
+    let sendmsg4_spec =
+        crate::program_spec::ProgramSpec::parse("cgroup_sock_addr:/sys/fs/cgroup:sendmsg4")
+            .expect("sendmsg4 spec should parse");
+    let sendmsg4_local_ip4 = ContextFieldCompatibilityRequirement::for_field_on_program_spec(
+        &CtxField::LocalIp4,
+        &sendmsg4_spec,
+    )
+    .expect("sendmsg4 ctx.local_ip4 should report a compatibility floor");
+    assert_eq!(sendmsg4_local_ip4.key(), "ctx:local_ip4");
+    assert_eq!(sendmsg4_local_ip4.minimum_kernel(), "4.18");
+    assert!(
+        sendmsg4_local_ip4
+            .minimum_kernel_source()
+            .contains("/v4.18/include/uapi/linux/bpf.h")
+    );
+
+    let sendmsg6_spec =
+        crate::program_spec::ProgramSpec::parse("cgroup_sock_addr:/sys/fs/cgroup:sendmsg6")
+            .expect("sendmsg6 spec should parse");
+    let sendmsg6_local_ip6 = ContextFieldCompatibilityRequirement::for_field_on_program_spec(
+        &CtxField::LocalIp6,
+        &sendmsg6_spec,
+    )
+    .expect("sendmsg6 ctx.local_ip6 should report a compatibility floor");
+    assert_eq!(sendmsg6_local_ip6.key(), "ctx:local_ip6");
+    assert_eq!(sendmsg6_local_ip6.minimum_kernel(), "4.18");
+    assert!(
+        sendmsg6_local_ip6
+            .minimum_kernel_source()
+            .contains("/v4.18/include/uapi/linux/bpf.h")
+    );
+
+    let bind6_spec =
+        crate::program_spec::ProgramSpec::parse("cgroup_sock_addr:/sys/fs/cgroup:bind6")
+            .expect("bind6 spec should parse");
+    let bind6_local_ip6 = ContextFieldCompatibilityRequirement::for_field_on_program_spec(
+        &CtxField::LocalIp6,
+        &bind6_spec,
+    )
+    .expect("bind6 ctx.local_ip6 should report a compatibility floor");
+    assert_eq!(bind6_local_ip6.key(), "ctx:local_ip6");
+    assert_eq!(bind6_local_ip6.minimum_kernel(), "4.17");
+
     let requirements = [
         ContextFieldCompatibilityRequirement::for_field(&CtxField::Pid)
             .expect("pid should inherit a helper-backed floor"),

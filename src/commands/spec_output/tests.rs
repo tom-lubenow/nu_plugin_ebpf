@@ -5751,6 +5751,13 @@ fn test_context_write_records_include_store_shape_metadata() {
         .expect("cgroup_sock_addr sendmsg4 spec should parse");
     let sendmsg4_writes = spec_context_writes(&sendmsg4);
     let local_ip4 = context_write(&sendmsg4_writes, "local_ip4");
+    assert_eq!(local_ip4.minimum_kernel, Some("4.18"));
+    assert_eq!(local_ip4.compatibility_minimum_kernel, Some("4.18"));
+    assert!(
+        local_ip4
+            .minimum_kernel_source
+            .is_some_and(|source| source.contains("/v4.18/include/uapi/linux/bpf.h"))
+    );
     assert_eq!(local_ip4.transformed_store_offset, Some(40));
     assert_eq!(
         local_ip4.transformed_store_transform,
@@ -5761,6 +5768,13 @@ fn test_context_write_records_include_store_shape_metadata() {
         .expect("cgroup_sock_addr sendmsg6 spec should parse");
     let sendmsg6_writes = spec_context_writes(&sendmsg6);
     let local_ip6 = context_write(&sendmsg6_writes, "local_ip6");
+    assert_eq!(local_ip6.minimum_kernel, Some("4.18"));
+    assert_eq!(local_ip6.compatibility_minimum_kernel, Some("4.18"));
+    assert!(
+        local_ip6
+            .minimum_kernel_source
+            .is_some_and(|source| source.contains("/v4.18/include/uapi/linux/bpf.h"))
+    );
     assert_eq!(local_ip6.indexed_store_base_offset, Some(44));
     assert_eq!(local_ip6.indexed_store_count, Some(4));
     assert_eq!(local_ip6.indexed_store_convert_to_big_endian, Some(true));
