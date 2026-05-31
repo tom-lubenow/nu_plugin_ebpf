@@ -3130,6 +3130,93 @@ fn test_verify_mir_packet_dynptr_kfuncs_reject_reinitialize() {
 }
 
 #[test]
+fn test_verify_mir_packet_dynptr_kfuncs_reject_destination_initialized_on_one_path() {
+    for kfunc in ["bpf_dynptr_from_xdp", "bpf_dynptr_from_skb"] {
+        let (mut func, entry) = new_mir_function();
+        let init_path = func.alloc_block();
+        let skip_init = func.alloc_block();
+        let join = func.alloc_block();
+
+        let cond = func.alloc_vreg();
+        func.param_count = 1;
+        let ctx = func.alloc_vreg();
+        let flags = func.alloc_vreg();
+        let dptr = func.alloc_vreg();
+        let init_ret = func.alloc_vreg();
+        let second_ret = func.alloc_vreg();
+        let dptr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::LoadCtxField {
+                dst: ctx,
+                field: CtxField::Context,
+                slot: None,
+            });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: flags,
+            src: MirValue::Const(0),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: dptr,
+            src: MirValue::StackSlot(dptr_slot),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond,
+            if_true: init_path,
+            if_false: skip_init,
+        };
+        func.block_mut(init_path)
+            .instructions
+            .push(MirInst::CallKfunc {
+                dst: init_ret,
+                kfunc: kfunc.to_string(),
+                btf_id: None,
+                args: vec![ctx, flags, dptr],
+            });
+        func.block_mut(init_path).terminator = MirInst::Jump { target: join };
+        func.block_mut(skip_init).terminator = MirInst::Jump { target: join };
+        func.block_mut(join).instructions.push(MirInst::CallKfunc {
+            dst: second_ret,
+            kfunc: kfunc.to_string(),
+            btf_id: None,
+            args: vec![ctx, flags, dptr],
+        });
+        func.block_mut(join).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(cond, MirType::Bool);
+        types.insert(
+            ctx,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(flags, MirType::I64);
+        types.insert(
+            dptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        types.insert(init_ret, MirType::I64);
+        types.insert(second_ret, MirType::I64);
+
+        let err = verify_mir(&func, &types)
+            .expect_err("expected packet dynptr constructor reinitialize error at join");
+        assert!(
+            err.iter().any(|e| e.message.contains(&format!(
+                "kfunc '{kfunc}' arg2 requires uninitialized dynptr stack object slot"
+            ))),
+            "unexpected error messages for {kfunc}: {:?}",
+            err
+        );
+    }
+}
+
+#[test]
 fn test_verify_mir_kfunc_dynptr_clone_requires_stack_slot_base_dst() {
     let (mut func, entry) = new_mir_function();
     func.param_count = 1;
