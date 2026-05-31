@@ -469,6 +469,24 @@ const PROGRAM_LANGUAGE_KERNEL_FEATURE_EXPECTATIONS = [
     {
         program: [
             '{|ctx|'
+            '  helper-call "bpf_loop" 4 {|i cb| 0 } "ctx" 0'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["compiled:bpf-subprogram-calls"]
+    }
+    {
+        program: [
+            '{|ctx|'
+            '  kfunc-call "bpf_wq_set_callback_impl" $entry.work {|map key| 0} 0 0'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["compiled:bpf-subprogram-calls"]
+    }
+    {
+        program: [
+            '{|ctx|'
             '  mut sum = 0'
             '  for i in 0..3 {'
             '    $sum = ($sum + $i)'
@@ -44206,11 +44224,27 @@ def line-has-statement-keyword? [line: string keyword: string] {
     not ((command-invocation-tails $line $keyword) | is-empty)
 }
 
+def line-has-callback-subprogram-literal? [line: string] {
+    for command in ["helper-call" "kfunc-call"] {
+        for raw_call in (command-invocation-tails $line $command) {
+            if (line-contains-code-marker? $raw_call "{|") {
+                return true
+            }
+        }
+    }
+
+    false
+}
+
 def program-language-kernel-features [source: string] {
     mut features = []
 
     for line in (source-statement-lines $source) {
         if (line-has-statement-keyword? $line "def") {
+            $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SUBPROGRAM_CALLS])
+        }
+
+        if (line-has-callback-subprogram-literal? $line) {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SUBPROGRAM_CALLS])
         }
 

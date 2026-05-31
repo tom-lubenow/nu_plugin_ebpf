@@ -2435,6 +2435,24 @@ fn test_verifier_diff_program_language_scanner_matches_rust_compiled_feature_key
         },
         LanguageScannerCheck {
             program: r#"{|ctx|
+  helper-call "bpf_loop" 4 {|i cb| 0 } "ctx" 0
+  0
+}"#,
+            expected_keys: compiled_feature_keys([
+                CompiledFeatureCompatibilityRequirement::BpfSubprogramCalls,
+            ]),
+        },
+        LanguageScannerCheck {
+            program: r#"{|ctx|
+  kfunc-call "bpf_wq_set_callback_impl" $entry.work {|map key| 0} 0 0
+  0
+}"#,
+            expected_keys: compiled_feature_keys([
+                CompiledFeatureCompatibilityRequirement::BpfSubprogramCalls,
+            ]),
+        },
+        LanguageScannerCheck {
+            program: r#"{|ctx|
   mut sum = 0
   for i in 0..3 {
     $sum = ($sum + $i)
