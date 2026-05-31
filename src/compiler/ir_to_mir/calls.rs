@@ -60,6 +60,63 @@ impl<'a> HirToMirLowering<'a> {
         Ok(())
     }
 
+    fn create_stack_numeric_list_result(
+        &mut self,
+        dst_vreg: VReg,
+        max_len: usize,
+    ) -> (StackSlotId, MirType) {
+        let out_ty = MirType::Array {
+            elem: Box::new(MirType::I64),
+            len: max_len.saturating_add(1),
+        };
+        let out_slot = self.func.alloc_stack_slot(
+            align_to_eight(8 + max_len * 8),
+            8,
+            StackSlotKind::ListBuffer,
+        );
+        self.record_list_buffer_slot_type(out_slot, max_len);
+        self.emit(MirInst::ListNew {
+            dst: dst_vreg,
+            buffer: out_slot,
+            max_len,
+        });
+        self.vreg_type_hints.insert(
+            dst_vreg,
+            MirType::Ptr {
+                pointee: Box::new(out_ty.clone()),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        (out_slot, out_ty)
+    }
+
+    fn numeric_list_known_len(meta: &RegMetadata) -> Option<usize> {
+        match &meta.annotated_semantics {
+            Some(AnnotatedValueSemantics::NumericList { known_len, .. }) => *known_len,
+            _ => None,
+        }
+        .or_else(|| match &meta.constant_value {
+            Some(nu_protocol::Value::List { vals, .. }) => Some(vals.len()),
+            _ => None,
+        })
+    }
+
+    fn install_stack_numeric_list_result_metadata(
+        &mut self,
+        src_dst: RegId,
+        out_slot: StackSlotId,
+        out_ty: MirType,
+        max_len: usize,
+        known_len: Option<usize>,
+    ) {
+        self.reset_call_result_metadata(src_dst);
+        let out_meta = self.get_or_create_metadata(src_dst);
+        out_meta.list_buffer = Some((out_slot, max_len));
+        out_meta.field_type = Some(out_ty);
+        out_meta.annotated_semantics =
+            Some(AnnotatedValueSemantics::NumericList { max_len, known_len });
+    }
+
     fn top_level_field_name_arg(&self, reg: RegId, context: &str) -> Result<String, CompileError> {
         let Some(meta) = self.get_metadata(reg) else {
             return Err(CompileError::UnsupportedInstruction(format!(
@@ -2713,28 +2770,8 @@ impl<'a> HirToMirLowering<'a> {
                     if let Some(meta) = meta
                         && let Some((_slot, max_len)) = meta.list_buffer
                     {
-                        let out_ty = MirType::Array {
-                            elem: Box::new(MirType::I64),
-                            len: max_len.saturating_add(1),
-                        };
-                        let out_slot = self.func.alloc_stack_slot(
-                            align_to_eight(8 + max_len * 8),
-                            8,
-                            StackSlotKind::ListBuffer,
-                        );
-                        self.record_list_buffer_slot_type(out_slot, max_len);
-                        self.emit(MirInst::ListNew {
-                            dst: dst_vreg,
-                            buffer: out_slot,
-                            max_len,
-                        });
-                        self.vreg_type_hints.insert(
-                            dst_vreg,
-                            MirType::Ptr {
-                                pointee: Box::new(out_ty.clone()),
-                                address_space: AddressSpace::Stack,
-                            },
-                        );
+                        let (out_slot, out_ty) =
+                            self.create_stack_numeric_list_result(dst_vreg, max_len);
 
                         if max_len > 0 {
                             let len_vreg = self.func.alloc_vreg();
@@ -2795,14 +2832,9 @@ impl<'a> HirToMirLowering<'a> {
                             self.current_block = continuation_block;
                         }
 
-                        self.reset_call_result_metadata(src_dst);
-                        let out_meta = self.get_or_create_metadata(src_dst);
-                        out_meta.list_buffer = Some((out_slot, max_len));
-                        out_meta.field_type = Some(out_ty);
-                        out_meta.annotated_semantics = Some(AnnotatedValueSemantics::NumericList {
-                            max_len,
-                            known_len: None,
-                        });
+                        self.install_stack_numeric_list_result_metadata(
+                            src_dst, out_slot, out_ty, max_len, None,
+                        );
                         return Ok(());
                     }
 
@@ -2875,28 +2907,8 @@ impl<'a> HirToMirLowering<'a> {
                     if let Some(meta) = meta {
                         if let Some((_slot, max_len)) = meta.list_buffer {
                             // Create a new list for output
-                            let out_ty = MirType::Array {
-                                elem: Box::new(MirType::I64),
-                                len: max_len.saturating_add(1),
-                            };
-                            let out_slot = self.func.alloc_stack_slot(
-                                align_to_eight(8 + max_len * 8),
-                                8,
-                                StackSlotKind::ListBuffer,
-                            );
-                            self.record_list_buffer_slot_type(out_slot, max_len);
-                            self.emit(MirInst::ListNew {
-                                dst: dst_vreg,
-                                buffer: out_slot,
-                                max_len,
-                            });
-                            self.vreg_type_hints.insert(
-                                dst_vreg,
-                                MirType::Ptr {
-                                    pointee: Box::new(out_ty.clone()),
-                                    address_space: AddressSpace::Stack,
-                                },
-                            );
+                            let (out_slot, out_ty) =
+                                self.create_stack_numeric_list_result(dst_vreg, max_len);
 
                             if max_len > 0 {
                                 let len_vreg = self.func.alloc_vreg();
@@ -2951,25 +2963,13 @@ impl<'a> HirToMirLowering<'a> {
                             }
 
                             // Copy metadata for output list
-                            self.reset_call_result_metadata(src_dst);
-                            let known_len_from_semantics = match meta.annotated_semantics {
-                                Some(AnnotatedValueSemantics::NumericList {
-                                    known_len, ..
-                                }) => known_len,
-                                _ => None,
-                            };
-                            let known_len_from_constant = match meta.constant_value {
-                                Some(nu_protocol::Value::List { vals, .. }) => Some(vals.len()),
-                                _ => None,
-                            };
-                            let out_meta = self.get_or_create_metadata(src_dst);
-                            out_meta.list_buffer = Some((out_slot, max_len));
-                            out_meta.field_type = Some(out_ty);
-                            out_meta.annotated_semantics =
-                                Some(AnnotatedValueSemantics::NumericList {
-                                    max_len,
-                                    known_len: known_len_from_semantics.or(known_len_from_constant),
-                                });
+                            self.install_stack_numeric_list_result_metadata(
+                                src_dst,
+                                out_slot,
+                                out_ty,
+                                max_len,
+                                Self::numeric_list_known_len(&meta),
+                            );
                             return Ok(());
                         }
                     }
