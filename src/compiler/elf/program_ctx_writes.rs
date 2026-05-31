@@ -1517,6 +1517,13 @@ mod tests {
             }
 
             if let Some(helper) = surface.helper {
+                assert_eq!(
+                    spec.helper_call_error(helper),
+                    None,
+                    "{spec_source} ctx.{} write surface is backed by helper {}, but that helper is not available on the same target",
+                    surface.field_name,
+                    helper.name()
+                );
                 assert!(
                     helper.minimum_kernel().is_some(),
                     "{spec_source} ctx.{} helper-backed write should have helper kernel metadata",
