@@ -47,8 +47,9 @@ use crate::compiler::instruction::{
 use crate::compiler::mir::{
     AddressSpace, BYTES_COUNTER_MAP_NAME, BinOpKind, COUNTER_MAP_NAME, CtxField,
     HISTOGRAM_MAP_NAME, KSTACK_MAP_NAME, MapKind, MapOpKind, MapRef, MirFunction, MirInst, MirType,
-    MirValue, RINGBUF_MAP_NAME, STRING_COUNTER_MAP_NAME, StackSlotId, StackSlotKind,
-    StringAppendType, SubfunctionId, TIMESTAMP_MAP_NAME, USTACK_MAP_NAME, UnaryOpKind, VReg,
+    MirValue, RINGBUF_MAP_NAME, STRING_COUNTER_MAP_NAME, ScalarValueRange, StackSlotId,
+    StackSlotKind, StringAppendType, SubfunctionId, TIMESTAMP_MAP_NAME, USTACK_MAP_NAME,
+    UnaryOpKind, VReg,
 };
 use crate::compiler::passes::{ListLowering, MirPass};
 use crate::compiler::type_infer::validate_program_capabilities_for_info;

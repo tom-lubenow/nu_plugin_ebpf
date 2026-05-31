@@ -2534,6 +2534,23 @@ pub struct BasicBlock {
     pub terminator: MirInst,
 }
 
+/// Inclusive scalar value range required for function returns.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScalarValueRange {
+    pub min: i64,
+    pub max: i64,
+}
+
+impl ScalarValueRange {
+    pub const fn new(min: i64, max: i64) -> Self {
+        Self { min, max }
+    }
+
+    pub const fn contains(self, min: i64, max: i64) -> bool {
+        min >= self.min && max <= self.max
+    }
+}
+
 /// A complete MIR function
 #[derive(Debug, Clone)]
 pub struct MirFunction {
@@ -2565,6 +2582,11 @@ pub struct MirFunction {
     /// read aliased parameters back through `LoadGlobal` to preserve non-null
     /// global semantics.
     pub global_param_aliases: HashMap<String, usize>,
+    /// Optional verifier-style scalar return range requirement.
+    ///
+    /// Helper callbacks use this because the kernel interprets callback return
+    /// values as control signals and rejects values outside the helper contract.
+    pub required_return_range: Option<ScalarValueRange>,
 }
 
 /// A complete MIR program (may have subfunctions for BPF-to-BPF calls)

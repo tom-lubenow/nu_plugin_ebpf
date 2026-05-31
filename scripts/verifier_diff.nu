@@ -31123,7 +31123,7 @@ const FIXTURES = [
         target: "raw_tracepoint:sys_enter"
         program: [
             '{|ctx|'
-            '  helper-call "bpf_loop" 4 {|i cb| $i } "ctx" 99'
+            '  helper-call "bpf_loop" 4 {|i cb| 0 } "ctx" 99'
             '  0'
             '}'
         ]
@@ -31138,7 +31138,7 @@ const FIXTURES = [
         target: "raw_tracepoint:sys_enter"
         program: [
             '{|ctx|'
-            '  helper-call "bpf_loop" 8388609 {|i cb| $i } "ctx" 0'
+            '  helper-call "bpf_loop" 8388609 {|i cb| 0 } "ctx" 0'
             '  0'
             '}'
         ]
@@ -31543,7 +31543,10 @@ const FIXTURES = [
         target: "raw_tracepoint:sys_enter"
         program: [
             '{|ctx|'
-            '  helper-call "bpf_loop" 4 {|i cb| $i } "ctx" 0'
+            '  helper-call "bpf_loop" 4 {|i cb|'
+            '    $i | count'
+            '    0'
+            '  } "ctx" 0'
             '  0'
             '}'
         ]
@@ -31557,12 +31560,30 @@ const FIXTURES = [
         target: "raw_tracepoint:sys_enter"
         program: [
             '{|ctx|'
-            '  helper-call "bpf_loop" 4 {|i cb| $cb.count } { count: 9 } 0'
+            '  helper-call "bpf_loop" 4 {|i cb|'
+            '    $cb.count | count'
+            '    0'
+            '  } { count: 9 } 0'
             '  0'
             '}'
         ]
         local: "accept"
         kernel: "accept"
+    }
+    {
+        name: "callback-bpf-loop-rejects-out-of-range-return"
+        category: "callbacks"
+        tags: [helper-call callback bpf-loop return reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_loop" 4 {|i cb| 2 } "ctx" 0'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "callback return"
     }
     {
         name: "callback-bpf-loop-allows-prefix-params"
@@ -31571,7 +31592,10 @@ const FIXTURES = [
         target: "raw_tracepoint:sys_enter"
         program: [
             '{|ctx|'
-            '  helper-call "bpf_loop" 4 {|i| $i } "ctx" 0'
+            '  helper-call "bpf_loop" 4 {|i|'
+            '    $i | count'
+            '    0'
+            '  } "ctx" 0'
             '  0'
             '}'
         ]
@@ -31638,7 +31662,8 @@ const FIXTURES = [
             '{|ctx|'
             '  map-define elems --kind array --value-type "record{seen:u64}"'
             '  helper-call "bpf_for_each_map_elem" elems {|m k v cb|'
-            '    $cb.threshold'
+            '    $cb.threshold | count'
+            '    0'
             '  } { threshold: 7 } 0 --kind array'
             '  0'
             '}'
@@ -31745,7 +31770,8 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  helper-call "bpf_find_vma" $ctx.current_task 0 {|task vma cb|'
-            '    $cb.cookie'
+            '    $cb.cookie | count'
+            '    0'
             '  } { cookie: 11 } 0'
             '  0'
             '}'

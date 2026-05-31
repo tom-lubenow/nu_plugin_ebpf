@@ -366,6 +366,7 @@ impl<'a> HirToMirLowering<'a> {
             block_id,
             &format!("{}_callback_{}", helper.name(), block_id.get()),
             &arg_seeds,
+            helper.callback_return_range_requirement(),
         )?;
         let callback_vreg = self.func.alloc_vreg();
         self.emit(MirInst::LoadSubprogram {
@@ -396,6 +397,7 @@ impl<'a> HirToMirLowering<'a> {
             block_id,
             &format!("{}_callback_{}", kfunc, block_id.get()),
             &arg_seeds,
+            None,
         )?;
         let callback_vreg = self.func.alloc_vreg();
         self.emit(MirInst::LoadSubprogram {

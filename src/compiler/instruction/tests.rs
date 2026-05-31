@@ -8002,6 +8002,26 @@ fn test_callback_helper_signatures_and_names() {
     assert!(BpfHelper::FindVma.supports_modeled_callback_subprogram());
     assert!(BpfHelper::UserRingbufDrain.supports_modeled_callback_subprogram());
     assert!(BpfHelper::TimerSetCallback.supports_modeled_callback_subprogram());
+    assert_eq!(
+        BpfHelper::BpfLoop.callback_return_range_requirement(),
+        Some(crate::compiler::mir::ScalarValueRange::new(0, 1))
+    );
+    assert_eq!(
+        BpfHelper::ForEachMapElem.callback_return_range_requirement(),
+        Some(crate::compiler::mir::ScalarValueRange::new(0, 1))
+    );
+    assert_eq!(
+        BpfHelper::FindVma.callback_return_range_requirement(),
+        Some(crate::compiler::mir::ScalarValueRange::new(0, 1))
+    );
+    assert_eq!(
+        BpfHelper::UserRingbufDrain.callback_return_range_requirement(),
+        Some(crate::compiler::mir::ScalarValueRange::new(0, 1))
+    );
+    assert_eq!(
+        BpfHelper::TimerSetCallback.callback_return_range_requirement(),
+        Some(crate::compiler::mir::ScalarValueRange::new(0, 0))
+    );
 
     assert!(!BpfHelper::TimerInit.supports_local_helper_map_fd(0));
     assert!(BpfHelper::TimerInit.supports_local_helper_map_fd(1));

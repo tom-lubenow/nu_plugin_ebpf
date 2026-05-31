@@ -42,6 +42,7 @@ impl MirFunction {
             param_trusted_btf: HashSet::new(),
             entry_initialized_dynptr_slots: HashSet::new(),
             global_param_aliases: HashMap::new(),
+            required_return_range: None,
         }
     }
 

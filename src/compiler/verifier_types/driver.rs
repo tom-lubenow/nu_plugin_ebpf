@@ -373,6 +373,15 @@ fn verify_mir_with_subfunction_summaries_impl(
                 );
             }
             MirInst::Return { val } => {
+                check_required_return_range(
+                    current_summary,
+                    func,
+                    types,
+                    val.as_ref(),
+                    &state,
+                    &slot_sizes,
+                    &mut errors,
+                );
                 let returned_ringbuf_ref =
                     allowed_returned_ringbuf_ref(current_summary, val.as_ref(), &state);
                 if state.has_live_ringbuf_refs_except(returned_ringbuf_ref) {
@@ -847,6 +856,77 @@ fn direct_branch_guard(cond: VReg, cond_ty: VerifierType) -> Option<Guard> {
             true_is_non_null: true,
         }),
         VerifierType::Uninit | VerifierType::Unknown | VerifierType::StalePacketPtr => None,
+    }
+}
+
+fn return_range_message(func: &MirFunction, required: ScalarValueRange) -> String {
+    let name = func.name.as_deref().unwrap_or("subfunction");
+    if required.min == required.max {
+        format!("callback return for '{}' must be {}", name, required.min)
+    } else {
+        format!(
+            "callback return for '{}' must be in range {}..={}",
+            name, required.min, required.max
+        )
+    }
+}
+
+fn mir_value_type_range(
+    value: Option<&MirValue>,
+    types: &HashMap<VReg, MirType>,
+) -> Option<ValueRange> {
+    match value? {
+        MirValue::Const(value) => Some(ValueRange::Known {
+            min: *value,
+            max: *value,
+        }),
+        MirValue::VReg(vreg) => types
+            .get(vreg)
+            .and_then(MirType::scalar_value_range)
+            .map(|(min, max)| ValueRange::Known { min, max }),
+        MirValue::StackSlot(_) => None,
+    }
+}
+
+fn check_required_return_range(
+    current_summary: Option<&SubfunctionSummary>,
+    func: &MirFunction,
+    types: &HashMap<VReg, MirType>,
+    value: Option<&MirValue>,
+    state: &VerifierState,
+    slot_sizes: &HashMap<StackSlotId, i64>,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    let Some(required) = current_summary.and_then(SubfunctionSummary::required_return_range) else {
+        return;
+    };
+    let message = return_range_message(func, required);
+    let Some(value) = value else {
+        errors.push(VerifierTypeError::new(format!(
+            "{}; missing callback return value",
+            message
+        )));
+        return;
+    };
+    let ty = value_type(value, state, slot_sizes);
+    if !matches!(ty, VerifierType::Scalar | VerifierType::Bool) {
+        errors.push(VerifierTypeError::new(format!(
+            "{}; got non-scalar return",
+            message
+        )));
+        return;
+    }
+    let range = match value_range(value, state) {
+        known @ ValueRange::Known { .. } => known,
+        ValueRange::Unknown => {
+            mir_value_type_range(Some(value), types).unwrap_or(ValueRange::Unknown)
+        }
+    };
+    match range {
+        ValueRange::Known { min, max } if required.contains(min, max) => {}
+        ValueRange::Known { .. } | ValueRange::Unknown => {
+            errors.push(VerifierTypeError::new(message));
+        }
     }
 }
 

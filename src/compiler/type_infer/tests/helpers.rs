@@ -689,6 +689,42 @@ fn test_type_error_timer_set_callback_rejects_wrong_callback_signature() {
 }
 
 #[test]
+fn test_type_error_callback_return_rejects_out_of_range_value() {
+    let mut callback = MirFunction::with_name("bpf_loop_callback_test");
+    callback.required_return_range = Some(crate::compiler::mir::ScalarValueRange::new(0, 1));
+    let entry = callback.alloc_block();
+    callback.entry = entry;
+    callback.block_mut(entry).terminator = MirInst::Return {
+        val: Some(MirValue::Const(2)),
+    };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&callback)
+        .expect_err("expected callback return range error");
+    assert!(
+        errs.iter().any(|e| e.message.contains("callback return")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_infer_callback_return_accepts_allowed_value() {
+    let mut callback = MirFunction::with_name("bpf_loop_callback_test");
+    callback.required_return_range = Some(crate::compiler::mir::ScalarValueRange::new(0, 1));
+    let entry = callback.alloc_block();
+    callback.entry = entry;
+    callback.block_mut(entry).terminator = MirInst::Return {
+        val: Some(MirValue::Const(1)),
+    };
+
+    let mut ti = TypeInference::new(None);
+    ti.infer(&callback)
+        .expect("expected in-range callback return to infer");
+}
+
+#[test]
 fn test_type_error_timer_start_rejects_stack_timer_pointer() {
     let mut func = make_test_function();
     let timer = func.alloc_stack_slot(8, 8, StackSlotKind::Local);

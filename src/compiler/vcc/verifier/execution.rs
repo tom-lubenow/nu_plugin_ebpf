@@ -2399,6 +2399,7 @@ impl VccVerifier {
                 Err(err) => self.errors.push(err),
             },
             VccTerminator::Return { value } => {
+                self.check_required_return_range(*value, state);
                 if let Some(value) = value {
                     if let Err(err) = state.value_type(*value) {
                         self.errors.push(err);
@@ -2484,6 +2485,65 @@ impl VccVerifier {
                     ));
                 }
             }
+        }
+    }
+
+    fn required_return_range_message(required: ScalarValueRange) -> String {
+        if required.min == required.max {
+            format!("callback return must be {}", required.min)
+        } else {
+            format!(
+                "callback return must be in range {}..={}",
+                required.min, required.max
+            )
+        }
+    }
+
+    fn check_required_return_range(&mut self, value: Option<VccValue>, state: &VccState) {
+        let Some(required) = self
+            .current_summary
+            .as_ref()
+            .and_then(|summary| summary.required_return_range())
+        else {
+            return;
+        };
+        let message = Self::required_return_range_message(required);
+        let Some(value) = value else {
+            self.errors.push(VccError::new(
+                VccErrorKind::UnsupportedInstruction,
+                format!("{}; missing callback return value", message),
+            ));
+            return;
+        };
+        let ty = match state.value_type(value) {
+            Ok(ty) => ty,
+            Err(err) => {
+                self.errors.push(err);
+                return;
+            }
+        };
+        if ty.class() != VccTypeClass::Scalar && ty.class() != VccTypeClass::Bool {
+            self.errors.push(VccError::new(
+                VccErrorKind::TypeMismatch {
+                    expected: VccTypeClass::Scalar,
+                    actual: ty.class(),
+                },
+                format!("{}; got non-scalar return", message),
+            ));
+            return;
+        }
+        let Some(range) = state.value_range(value, ty) else {
+            self.errors.push(VccError::new(
+                VccErrorKind::UnsupportedInstruction,
+                message,
+            ));
+            return;
+        };
+        if !required.contains(range.min, range.max) {
+            self.errors.push(VccError::new(
+                VccErrorKind::UnsupportedInstruction,
+                message,
+            ));
         }
     }
 

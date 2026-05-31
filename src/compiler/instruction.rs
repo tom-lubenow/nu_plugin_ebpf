@@ -7,7 +7,7 @@
 //!
 //! Some instructions (like 64-bit immediate loads) use two 64-bit slots.
 
-use crate::compiler::mir::{MapKind, MirType};
+use crate::compiler::mir::{MapKind, MirType, ScalarValueRange};
 
 const STRTOX_BASE_FLAGS: &[i64] = &[0, 8, 10, 16];
 const SKB_GET_TUNNEL_KEY_FLAGS: &[i64] = &[0, 1, 16, 17];
@@ -1018,6 +1018,16 @@ impl BpfHelper {
             Self::UserRingbufDrain => Some(
                 "helper 'bpf_user_ringbuf_drain' callback must have signature fn(*stack /* dynptr */, *stack) -> scalar",
             ),
+            _ => None,
+        }
+    }
+
+    pub const fn callback_return_range_requirement(self) -> Option<ScalarValueRange> {
+        match self {
+            Self::ForEachMapElem | Self::FindVma | Self::BpfLoop | Self::UserRingbufDrain => {
+                Some(ScalarValueRange::new(0, 1))
+            }
+            Self::TimerSetCallback => Some(ScalarValueRange::new(0, 0)),
             _ => None,
         }
     }

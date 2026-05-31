@@ -322,6 +322,68 @@ fn test_verify_mir_timer_set_callback_rejects_wrong_callback_signature() {
 }
 
 #[test]
+fn test_verify_mir_callback_return_rejects_out_of_range_value() {
+    let mut callback = MirFunction::with_name("bpf_loop_callback_test");
+    callback.required_return_range = Some(crate::compiler::mir::ScalarValueRange::new(0, 1));
+    let entry = callback.alloc_block();
+    callback.entry = entry;
+    callback.block_mut(entry).terminator = MirInst::Return {
+        val: Some(MirValue::Const(2)),
+    };
+
+    let summaries = infer_subfunction_summaries(&[callback.clone()]);
+    let current_summary = summaries
+        .get(&SubfunctionId(0))
+        .cloned()
+        .expect("expected callback summary");
+    assert_eq!(
+        current_summary.required_return_range(),
+        Some(crate::compiler::mir::ScalarValueRange::new(0, 1))
+    );
+
+    let err = verify_mir_with_subfunction_summaries_for_probe_context_with_current_summary(
+        &callback,
+        &HashMap::new(),
+        &summaries,
+        Some(current_summary),
+        None,
+        None,
+    )
+    .expect_err("expected callback return range error");
+    assert!(
+        err.iter().any(|e| e.message.contains("callback return")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_callback_return_accepts_allowed_value() {
+    let mut callback = MirFunction::with_name("bpf_loop_callback_test");
+    callback.required_return_range = Some(crate::compiler::mir::ScalarValueRange::new(0, 1));
+    let entry = callback.alloc_block();
+    callback.entry = entry;
+    callback.block_mut(entry).terminator = MirInst::Return {
+        val: Some(MirValue::Const(1)),
+    };
+
+    let summaries = infer_subfunction_summaries(&[callback.clone()]);
+    let current_summary = summaries
+        .get(&SubfunctionId(0))
+        .cloned()
+        .expect("expected callback summary");
+    verify_mir_with_subfunction_summaries_for_probe_context_with_current_summary(
+        &callback,
+        &HashMap::new(),
+        &summaries,
+        Some(current_summary),
+        None,
+        None,
+    )
+    .expect("expected allowed callback return to verify");
+}
+
+#[test]
 fn test_verify_mir_timer_start_rejects_stack_timer_pointer() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

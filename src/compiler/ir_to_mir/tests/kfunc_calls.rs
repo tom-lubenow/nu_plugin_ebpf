@@ -8,7 +8,7 @@ use crate::compiler::hir::{
 };
 use crate::compiler::hir_type_infer::infer_hir_types;
 use crate::compiler::instruction::BpfHelper;
-use crate::compiler::mir::AddressSpace;
+use crate::compiler::mir::{AddressSpace, ScalarValueRange};
 use crate::compiler::passes::optimize_with_ssa_hints;
 use nu_protocol::ast::{CellPath, Comparison, Operator};
 use nu_protocol::{DeclId, RegId, VarId};
@@ -2176,9 +2176,9 @@ fn test_helper_call_bpf_loop_closure_lowers_to_callback_subprogram() {
     let closure = HirFunction {
         blocks: vec![HirBlock {
             id: HirBlockId(0),
-            stmts: vec![HirStmt::LoadVariable {
+            stmts: vec![HirStmt::LoadLiteral {
                 dst: RegId::new(0),
-                var_id: VarId::new(10),
+                lit: HirLiteral::Int(0),
             }],
             terminator: HirTerminator::Return { src: RegId::new(0) },
         }],
@@ -2260,6 +2260,10 @@ fn test_helper_call_bpf_loop_closure_lowers_to_callback_subprogram() {
 
     assert_eq!(lowering.program.subfunctions.len(), 1);
     assert_eq!(lowering.program.subfunctions[0].param_count, 2);
+    assert_eq!(
+        lowering.program.subfunctions[0].required_return_range,
+        Some(ScalarValueRange::new(0, 1))
+    );
     assert!(
         lowering.program.main.blocks.iter().any(|block| block.instructions.iter().any(
             |inst| matches!(inst, MirInst::LoadSubprogram { subfn, .. } if *subfn == SubfunctionId(0))

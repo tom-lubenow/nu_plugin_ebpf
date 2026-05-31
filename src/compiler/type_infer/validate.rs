@@ -60,6 +60,63 @@ impl<'a> TypeInference<'a> {
         helper.callback_subprogram_type_error(arg_idx, arg_ty)
     }
 
+    fn return_range_message(func: &MirFunction, required: ScalarValueRange) -> String {
+        let name = func.name.as_deref().unwrap_or("subfunction");
+        if required.min == required.max {
+            format!("callback return for '{}' must be {}", name, required.min)
+        } else {
+            format!(
+                "callback return for '{}' must be in range {}..={}",
+                name, required.min, required.max
+            )
+        }
+    }
+
+    fn validate_required_return_range(
+        &self,
+        func: &MirFunction,
+        types: &HashMap<VReg, MirType>,
+        value_ranges: &HashMap<VReg, ValueRange>,
+        errors: &mut Vec<TypeError>,
+    ) {
+        let Some(required) = func.required_return_range else {
+            return;
+        };
+        let message = Self::return_range_message(func, required);
+        for block in &func.blocks {
+            let MirInst::Return { val } = &block.terminator else {
+                continue;
+            };
+            let Some(value) = val.as_ref() else {
+                errors.push(TypeError::new(format!(
+                    "{}; missing callback return value",
+                    message
+                )));
+                continue;
+            };
+            let value_ty = self.mir_type_for_value(value, types);
+            if !value_ty.is_scalar_like() {
+                errors.push(TypeError::new(format!(
+                    "{}; got non-scalar return {:?}",
+                    message, value_ty
+                )));
+                continue;
+            }
+            let range = match self.value_range_for(value, value_ranges) {
+                known @ ValueRange::Known { .. } => known,
+                ValueRange::Unset | ValueRange::Unknown => self
+                    .scalar_type_range(&value_ty)
+                    .unwrap_or(ValueRange::Unknown),
+            };
+            match range {
+                ValueRange::Known { min, max } if required.contains(min, max) => {}
+                ValueRange::Known { .. } | ValueRange::Unset | ValueRange::Unknown => {
+                    errors.push(TypeError::new(message.clone()));
+                }
+            }
+        }
+    }
+
     fn value_range_satisfies_only<F>(range: ValueRange, predicate: F) -> bool
     where
         F: Fn(i64) -> bool,
@@ -265,6 +322,7 @@ impl<'a> TypeInference<'a> {
             );
         }
         self.validate_void_call_return_uses(func, &void_returns, errors);
+        self.validate_required_return_range(func, types, &value_ranges, errors);
     }
 
     pub(super) fn validate_inst(

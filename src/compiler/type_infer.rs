@@ -49,8 +49,8 @@ use super::instruction::{
 use super::mir::{
     AddressSpace, BYTES_COUNTER_MAP_NAME, BasicBlock, BinOpKind, BpfGraphRootKind,
     COUNTER_MAP_NAME, CtxField, HISTOGRAM_MAP_NAME, MapKind, MapOpKind, MirFunction, MirInst,
-    MirType, MirValue, STRING_COUNTER_MAP_NAME, StackSlotId, StackSlotKind, StringAppendType,
-    StructField, SubfunctionId, TIMESTAMP_MAP_NAME, UnaryOpKind, VReg,
+    MirType, MirValue, STRING_COUNTER_MAP_NAME, ScalarValueRange, StackSlotId, StackSlotKind,
+    StringAppendType, StructField, SubfunctionId, TIMESTAMP_MAP_NAME, UnaryOpKind, VReg,
 };
 use super::subfn_summaries::SubfunctionSummary;
 use crate::kernel_btf::{KernelBtf, TypeInfo};

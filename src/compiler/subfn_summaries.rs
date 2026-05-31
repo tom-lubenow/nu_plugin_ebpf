@@ -8,7 +8,10 @@ use super::instruction::{
     kfunc_unknown_dynptr_copy, kfunc_unknown_stack_object_copy,
     kfunc_unknown_stack_object_lifecycle,
 };
-use super::mir::{BlockId, CtxField, MapRef, MirFunction, MirInst, MirValue, SubfunctionId, VReg};
+use super::mir::{
+    BlockId, CtxField, MapRef, MirFunction, MirInst, MirValue, ScalarValueRange, SubfunctionId,
+    VReg,
+};
 
 const SUMMARY_ARG_SLOTS: usize = 8;
 
@@ -178,6 +181,7 @@ impl UnknownStackObjectDeltaState {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SubfunctionSummary {
     return_summary: SubfunctionReturnSummary,
+    required_return_range: Option<ScalarValueRange>,
     context_field_return: Option<CtxField>,
     ringbuf_record_return: bool,
     kfunc_ref_return_kind: Option<KfuncRefKind>,
@@ -202,6 +206,7 @@ impl SubfunctionSummary {
     pub(crate) fn unknown() -> Self {
         Self {
             return_summary: SubfunctionReturnSummary::Unknown,
+            required_return_range: None,
             context_field_return: None,
             ringbuf_record_return: false,
             kfunc_ref_return_kind: None,
@@ -225,6 +230,7 @@ impl SubfunctionSummary {
     pub(crate) fn from_return_summary(return_summary: SubfunctionReturnSummary) -> Self {
         Self {
             return_summary,
+            required_return_range: None,
             context_field_return: None,
             ringbuf_record_return: false,
             kfunc_ref_return_kind: None,
@@ -251,6 +257,10 @@ impl SubfunctionSummary {
 
     pub(crate) const fn return_arg(&self) -> Option<usize> {
         self.return_summary.return_arg()
+    }
+
+    pub(crate) const fn required_return_range(&self) -> Option<ScalarValueRange> {
+        self.required_return_range
     }
 
     pub(crate) fn return_context_field(&self) -> Option<&CtxField> {
@@ -366,6 +376,7 @@ impl SubfunctionSummary {
 
     fn from_parts(
         return_arg: Option<usize>,
+        required_return_range: Option<ScalarValueRange>,
         context_field_return: Option<CtxField>,
         ringbuf_record_return: bool,
         kfunc_ref_return_kind: Option<KfuncRefKind>,
@@ -390,6 +401,7 @@ impl SubfunctionSummary {
     ) -> Self {
         Self {
             return_summary: SubfunctionReturnSummary::from_parts(return_arg, changes_packet_data),
+            required_return_range,
             context_field_return,
             ringbuf_record_return,
             kfunc_ref_return_kind,
@@ -761,6 +773,7 @@ fn summarize_function(
 
     SubfunctionSummary::from_parts(
         return_arg,
+        func.required_return_range,
         context_field_return,
         returned_ringbuf_record.unwrap_or(false),
         returned_kfunc_ref.flatten(),

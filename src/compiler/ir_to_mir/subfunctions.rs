@@ -6,6 +6,7 @@ impl<'a> HirToMirLowering<'a> {
         block_id: NuBlockId,
         name: &str,
         arg_seeds: &[SubfunctionArgSeed],
+        required_return_range: Option<ScalarValueRange>,
     ) -> Result<SubfunctionId, CompileError> {
         let hir = self.closure_irs.get(&block_id).ok_or_else(|| {
             CompileError::UnsupportedInstruction(format!("Closure block {:?} not found", block_id))
@@ -31,6 +32,7 @@ impl<'a> HirToMirLowering<'a> {
 
         let mut subfn = MirFunction::with_name(name.to_string());
         subfn.param_count = arg_seeds.len();
+        subfn.required_return_range = required_return_range;
 
         let old_func = std::mem::replace(&mut self.func, subfn);
         let old_reg_map = std::mem::take(&mut self.reg_map);
