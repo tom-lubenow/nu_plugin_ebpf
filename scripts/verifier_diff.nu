@@ -37634,8 +37634,26 @@ def record-context-projection-kernel-features [source: string target context_nam
     $features
 }
 
+def source-has-context-root-projection? [source: string context_names] {
+    for line in ($source | lines) {
+        for context_name in $context_names {
+            for raw_tail in (marker-tails-outside-simple-string $line $"$($context_name).") {
+                let root = (normalize-context-field-token $raw_tail)
+                if (context-projection-root? $root) {
+                    return true
+                }
+            }
+        }
+    }
+
+    false
+}
+
 def bound-context-projection-kernel-features [source: string target context_names] {
     if not ($source | str contains "let") and not ($source | str contains "mut") {
+        return []
+    }
+    if not (source-has-context-root-projection? $source $context_names) {
         return []
     }
 
