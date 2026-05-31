@@ -33277,6 +33277,32 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-string-reverse"
+        category: "language-core"
+        tags: [string str reverse]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "abc" | str reverse | str starts-with "cba"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-string-capitalize"
+        category: "language-core"
+        tags: [string str capitalize]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "abc" | str capitalize | str starts-with "Abc"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-null-is-empty"
         category: "language-core"
         tags: ["null" is-empty]

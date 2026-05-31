@@ -3046,9 +3046,95 @@ fn test_lower_str_upcase_on_known_string_materializes_uppercase_literal() {
 }
 
 #[test]
-fn test_lower_str_substring_on_known_string_materializes_slice_literal() {
-    let substring_decl = DeclId::new(136);
+fn test_lower_str_reverse_on_known_string_materializes_reversed_literal() {
+    let reverse_decl = DeclId::new(136);
     let starts_with_decl = DeclId::new(137);
+    let hir =
+        make_string_command_then_starts_with_program(reverse_decl, starts_with_decl, "abc", "cba");
+    let decl_names = HashMap::from([
+        (reverse_decl, "str reverse".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str reverse should lower for compile-time known string input");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"cba\0")
+            )),
+        "expected str reverse to materialize the reversed string"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("str reverse result consumed by str starts-with should compile through codegen");
+}
+
+#[test]
+fn test_lower_str_capitalize_on_known_string_materializes_capitalized_literal() {
+    let capitalize_decl = DeclId::new(138);
+    let starts_with_decl = DeclId::new(139);
+    let hir = make_string_command_then_starts_with_program(
+        capitalize_decl,
+        starts_with_decl,
+        "abc",
+        "Abc",
+    );
+    let decl_names = HashMap::from([
+        (capitalize_decl, "str capitalize".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str capitalize should lower for compile-time known string input");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"Abc\0")
+            )),
+        "expected str capitalize to materialize the capitalized string"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("str capitalize result consumed by str starts-with should compile through codegen");
+}
+
+#[test]
+fn test_lower_str_substring_on_known_string_materializes_slice_literal() {
+    let substring_decl = DeclId::new(140);
+    let starts_with_decl = DeclId::new(141);
     let hir = make_string_substring_then_starts_with_program(
         substring_decl,
         starts_with_decl,
@@ -3095,8 +3181,8 @@ fn test_lower_str_substring_on_known_string_materializes_slice_literal() {
 
 #[test]
 fn test_lower_str_substring_negative_end_materializes_slice_literal() {
-    let substring_decl = DeclId::new(138);
-    let starts_with_decl = DeclId::new(139);
+    let substring_decl = DeclId::new(142);
+    let starts_with_decl = DeclId::new(143);
     let hir = make_string_substring_then_starts_with_program(
         substring_decl,
         starts_with_decl,

@@ -598,7 +598,7 @@ impl<'a> HirToMirLowering<'a> {
         self.lower_known_string_result(src_dst, result_vreg, output)
     }
 
-    pub(super) fn lower_string_case(
+    pub(super) fn lower_known_string_transform(
         &mut self,
         command: &str,
         src_dst: RegId,
@@ -627,9 +627,11 @@ impl<'a> HirToMirLowering<'a> {
         let output = match command {
             "str downcase" => input.to_lowercase(),
             "str upcase" => input.to_uppercase(),
+            "str reverse" => input.chars().rev().collect(),
+            "str capitalize" => Self::capitalize_first_char(&input),
             _ => {
                 return Err(CompileError::UnsupportedInstruction(format!(
-                    "unsupported string case command '{command}'"
+                    "unsupported string transform command '{command}'"
                 )));
             }
         };
@@ -665,6 +667,17 @@ impl<'a> HirToMirLowering<'a> {
             Some(nu_protocol::Value::string(output, Span::unknown())),
         );
         Ok(())
+    }
+
+    fn capitalize_first_char(input: &str) -> String {
+        let mut chars = input.chars();
+        let Some(first) = chars.next() else {
+            return String::new();
+        };
+
+        let mut output = first.to_uppercase().collect::<String>();
+        output.push_str(chars.as_str());
+        output
     }
 
     fn substring_byte_bounds(range: BoundedRange, len: usize) -> (usize, usize) {

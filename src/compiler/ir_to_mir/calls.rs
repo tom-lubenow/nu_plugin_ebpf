@@ -2784,8 +2784,8 @@ impl<'a> HirToMirLowering<'a> {
                 self.lower_string_trim(src_dst, dst_vreg, src_dst_had_value)?;
             }
 
-            "str downcase" | "str upcase" => {
-                self.lower_string_case(&cmd_name, src_dst, dst_vreg, src_dst_had_value)?;
+            "str downcase" | "str upcase" | "str reverse" | "str capitalize" => {
+                self.lower_known_string_transform(&cmd_name, src_dst, dst_vreg, src_dst_had_value)?;
             }
 
             "math max" | "math min" | "math product" | "math sum" => {

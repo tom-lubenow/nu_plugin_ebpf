@@ -58,6 +58,8 @@ const NU_CLOSURE_COMMANDS: &[&str] = &[
     "str trim",
     "str downcase",
     "str upcase",
+    "str reverse",
+    "str capitalize",
     "length",
     "math max",
     "math min",
