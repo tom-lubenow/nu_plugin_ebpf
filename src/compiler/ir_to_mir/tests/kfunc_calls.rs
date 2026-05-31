@@ -2302,7 +2302,7 @@ fn test_helper_call_bpf_loop_closure_rejects_too_many_declared_callback_params()
 
     match err {
         CompileError::UnsupportedInstruction(msg) => assert!(
-            msg.contains("callback closure for 'bpf_loop_callback_71'")
+            msg.contains("callback closure for helper-call 'bpf_loop' arg1")
                 && msg.contains("declares 3 parameters")
                 && msg.contains("callback ABI supplies 2"),
             "unexpected error: {msg}"

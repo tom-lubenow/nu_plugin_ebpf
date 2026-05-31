@@ -365,6 +365,7 @@ impl<'a> HirToMirLowering<'a> {
         let subfn = self.lower_helper_callback_subfunction(
             block_id,
             &format!("{}_callback_{}", helper.name(), block_id.get()),
+            &format!("helper-call '{}' arg{}", helper.name(), arg_idx),
             &arg_seeds,
             helper.callback_return_range_requirement(),
         )?;
@@ -396,6 +397,7 @@ impl<'a> HirToMirLowering<'a> {
         let subfn = self.lower_helper_callback_subfunction(
             block_id,
             &format!("{}_callback_{}", kfunc, block_id.get()),
+            &format!("kfunc-call '{}' arg{}", kfunc, arg_idx),
             &arg_seeds,
             KfuncSignature::callback_return_range_requirement(kfunc, arg_idx),
         )?;

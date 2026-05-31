@@ -5,6 +5,7 @@ impl<'a> HirToMirLowering<'a> {
         &mut self,
         block_id: NuBlockId,
         name: &str,
+        diagnostic_name: &str,
         arg_seeds: &[SubfunctionArgSeed],
         required_return_range: Option<ScalarValueRange>,
     ) -> Result<SubfunctionId, CompileError> {
@@ -23,8 +24,8 @@ impl<'a> HirToMirLowering<'a> {
             + usize::from(needs_input);
         if declared_params > arg_seeds.len() {
             return Err(CompileError::UnsupportedInstruction(format!(
-                "callback closure for '{}' declares {} parameters, but the callback ABI supplies {}",
-                name,
+                "callback closure for {} declares {} parameters, but the callback ABI supplies {}",
+                diagnostic_name,
                 declared_params,
                 arg_seeds.len()
             )));
