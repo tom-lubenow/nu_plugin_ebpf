@@ -10823,14 +10823,47 @@ fn test_lower_cgroup_sock_addr_unavailable_alias_assignments_keep_source_diagnos
         lit: HirLiteral,
         expected: &'static str,
     ) {
-        for (label, hir) in [
+        let (returned_hir, returned_user_functions) =
+            make_returned_context_upsert_program(path.clone(), lit.clone());
+        let (returned_record_hir, returned_record_user_functions) =
+            make_returned_record_context_upsert_program("event", path.clone(), lit.clone());
+        let (nested_spread_hir, nested_spread_user_functions) =
+            make_nested_returned_record_spread_context_upsert_program(
+                "event",
+                path.clone(),
+                lit.clone(),
+            );
+
+        for (label, hir, user_functions) in [
             (
                 "direct cgroup_sock_addr tuple-alias assignment",
                 make_ctx_upsert_program(path.clone(), lit.clone()),
+                HashMap::new(),
+            ),
+            (
+                "returned cgroup_sock_addr tuple-alias assignment",
+                returned_hir,
+                returned_user_functions,
             ),
             (
                 "record-held cgroup_sock_addr tuple-alias assignment",
                 make_record_context_upsert_program("event", path.clone(), lit.clone()),
+                HashMap::new(),
+            ),
+            (
+                "returned record-held cgroup_sock_addr tuple-alias assignment",
+                returned_record_hir,
+                returned_record_user_functions,
+            ),
+            (
+                "record-spread cgroup_sock_addr tuple-alias assignment",
+                make_record_spread_context_upsert_program("event", path.clone(), lit.clone()),
+                HashMap::new(),
+            ),
+            (
+                "nested returned record-spread cgroup_sock_addr tuple-alias assignment",
+                nested_spread_hir,
+                nested_spread_user_functions,
             ),
         ] {
             let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockAddr, target);
@@ -10839,7 +10872,7 @@ fn test_lower_cgroup_sock_addr_unavailable_alias_assignments_keep_source_diagnos
                 Some(&probe_ctx),
                 &HashMap::new(),
                 None,
-                &HashMap::new(),
+                &user_functions,
                 &HashMap::new(),
             ) {
                 Ok(_) => panic!("{label} on {target} should reject"),
