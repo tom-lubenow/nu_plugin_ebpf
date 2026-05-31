@@ -571,6 +571,7 @@ fn make_str_replace_then_starts_with_program(
     find: &str,
     replacement: &str,
     prefix: &str,
+    flags: Vec<Vec<u8>>,
 ) -> HirProgram {
     let func = HirFunction {
         blocks: vec![HirBlock {
@@ -594,6 +595,7 @@ fn make_str_replace_then_starts_with_program(
                     args: HirCallArgs {
                         positional: vec![RegId::new(2), RegId::new(3)],
                         pipeline_input: Some(RegId::new(0)),
+                        flags,
                         ..HirCallArgs::default()
                     },
                 },
@@ -2839,6 +2841,7 @@ fn test_lower_str_replace_on_known_string_materializes_replaced_literal() {
         "ab",
         "XY",
         "XYc",
+        Vec::new(),
     );
     let decl_names = HashMap::from([
         (replace_decl, "str replace".to_string()),
@@ -2886,6 +2889,7 @@ fn test_lower_str_replace_missing_pattern_materializes_original_literal() {
         "zz",
         "XY",
         "abc",
+        Vec::new(),
     );
     let decl_names = HashMap::from([
         (replace_decl, "str replace".to_string()),
@@ -2920,6 +2924,55 @@ fn test_lower_str_replace_missing_pattern_materializes_original_literal() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("missing-pattern str replace result consumed by str starts-with should compile through codegen");
+}
+
+#[test]
+fn test_lower_str_replace_all_on_known_string_materializes_all_replacements() {
+    let replace_decl = DeclId::new(144);
+    let starts_with_decl = DeclId::new(145);
+    let hir = make_str_replace_then_starts_with_program(
+        replace_decl,
+        starts_with_decl,
+        "abcabc",
+        "ab",
+        "XY",
+        "XYcXYc",
+        vec![b"all".to_vec()],
+    );
+    let decl_names = HashMap::from([
+        (replace_decl, "str replace".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str replace --all should lower for compile-time known string input");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"XYcXYc\0")
+            )),
+        "expected str replace --all to materialize every substring replacement"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "str replace --all result consumed by str starts-with should compile through codegen",
+    );
 }
 
 #[test]

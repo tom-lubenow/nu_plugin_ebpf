@@ -33238,6 +33238,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-string-replace-all"
+        category: "language-core"
+        tags: [string str replace all]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "abcabc" | str replace --all "ab" "XY" | str starts-with "XYcXYc"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-string-trim"
         category: "language-core"
         tags: [string str trim]

@@ -547,9 +547,9 @@ impl<'a> HirToMirLowering<'a> {
             dst_vreg
         };
 
-        if !self.named_flags.is_empty() || !self.named_args.is_empty() {
+        if !self.named_args.is_empty() || self.named_flags.iter().any(|flag| flag != "all") {
             return Err(CompileError::UnsupportedInstruction(
-                "str replace currently supports only the default substring replacement form in eBPF"
+                "str replace currently supports only default substring replacement and --all in eBPF"
                     .into(),
             ));
         }
@@ -564,7 +564,12 @@ impl<'a> HirToMirLowering<'a> {
         let replacement =
             self.literal_string_arg(self.positional_args[1].1, "str replace replacement")?;
 
-        let output = input.replacen(&find, &replacement, 1);
+        let replace_all = self.named_flags.iter().any(|flag| flag == "all");
+        let output = if replace_all {
+            input.replace(&find, &replacement)
+        } else {
+            input.replacen(&find, &replacement, 1)
+        };
         self.lower_known_string_result(src_dst, result_vreg, output)
     }
 
