@@ -849,6 +849,19 @@ fn test_context_field_compatibility_metadata_invariants() {
                         field.field
                     )
                 });
+            let expected_names = entries
+                .iter()
+                .filter(|candidate| {
+                    candidate.field == entry.field
+                        && spec.ctx_field_access_error(&candidate.field).is_none()
+                })
+                .map(|candidate| candidate.name)
+                .collect::<Vec<_>>();
+            assert_eq!(
+                field.names, expected_names,
+                "{spec_text} ctx.{} should report every accessible alias for the canonical field",
+                field.field
+            );
             let context_requirement =
                 ContextFieldCompatibilityRequirement::for_field_on_program_spec(
                     &entry.field,
