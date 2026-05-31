@@ -6829,6 +6829,17 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         target: "cgroup_sockopt:/sys/fs/cgroup:get"
         program: [
             '{|ctx|'
+            '  mut rec = ({ ok: true } | upsert optval ($ctx | get optval))'
+            '  $rec.optval.2 = 42'
+            '  "allow"'
+            '}'
+        ]
+        feature_keys: ["ctx:optval"]
+    }
+    {
+        target: "cgroup_sockopt:/sys/fs/cgroup:get"
+        program: [
+            '{|ctx|'
             '  def wrap [optval] { { optval: $optval } }'
             '  let optval = $ctx.optval'
             '  mut rec = (wrap $optval)'
@@ -8236,6 +8247,17 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         target: "flow_dissector:/proc/self/ns/net"
         program: [
             '{|ctx|'
+            '  mut rec = ({ ok: true } | upsert keys ($ctx | get flow_keys))'
+            '  $rec.keys.ip_proto = 6'
+            '  "parsed"'
+            '}'
+        ]
+        feature_keys: ["ctx:flow_keys"]
+    }
+    {
+        target: "flow_dissector:/proc/self/ns/net"
+        program: [
+            '{|ctx|'
             '  let base = { keys: $ctx.flow_keys }'
             '  mut rec = { ok: true, ...$base }'
             '  $rec.keys.ip_proto = 6'
@@ -8737,6 +8759,17 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         program: [
             '{|ctx|'
             '  mut rec = { meta: ($ctx | get data_meta) }'
+            '  $rec.meta.0 = 7'
+            '  "pass"'
+            '}'
+        ]
+        feature_keys: ["ctx:data_meta"]
+    }
+    {
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  mut rec = ({ ok: true } | upsert meta ($ctx | get data_meta))'
             '  $rec.meta.0 = 7'
             '  "pass"'
             '}'
@@ -19360,6 +19393,22 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "xdp-record-pipeline-upsert-get-data-meta-write"
+        category: "context-surface"
+        tags: [xdp context packet writable record pipeline upsert get source metadata]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  mut rec = ({ ok: true } | upsert meta ($ctx | get data_meta))'
+            '  $rec.meta.0 = 7'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "xdp-bound-get-data-meta-write"
         category: "context-surface"
         tags: [xdp context packet writable alias get source metadata]
@@ -21901,6 +21950,22 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "flow-dissector-record-pipeline-upsert-get-flow-key-write-context"
+        category: "context-surface"
+        tags: [flow-dissector context writable record pipeline upsert get source metadata]
+        requires: [netns-self]
+        target: "flow_dissector:/proc/self/ns/net"
+        program: [
+            '{|ctx|'
+            '  mut rec = ({ ok: true } | upsert keys ($ctx | get flow_keys))'
+            '  $rec.keys.ip_proto = 6'
+            '  "parsed"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "flow-dissector-record-spread-flow-key-write-context"
         category: "context-surface"
         tags: [flow-dissector context writable record spread source metadata]
@@ -22397,6 +22462,22 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  mut rec = { optval: ($ctx | get optval) }'
+            '  $rec.optval.2 = 42'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "cgroup-sockopt-optval-record-pipeline-upsert-get-byte-write"
+        category: "context-surface"
+        tags: [cgroup-sockopt context writable record pipeline upsert get source metadata]
+        requires: [cgroup-v2]
+        target: "cgroup_sockopt:/sys/fs/cgroup:get"
+        program: [
+            '{|ctx|'
+            '  mut rec = ({ ok: true } | upsert optval ($ctx | get optval))'
             '  $rec.optval.2 = 42'
             '  "allow"'
             '}'
