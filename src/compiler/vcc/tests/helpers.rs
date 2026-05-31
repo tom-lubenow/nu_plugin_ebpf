@@ -3771,6 +3771,129 @@ fn test_verify_mir_for_probe_context_kallsyms_lookup_name_requires_zero_flags() 
 }
 
 #[test]
+fn test_verify_mir_helper_map_lookup_requires_null_check() {
+    let (mut func, entry) = new_mir_function();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let key_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let map = func.alloc_vreg();
+    let key = func.alloc_vreg();
+    let ptr = func.alloc_vreg();
+    let load_dst = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: map,
+        src: MirValue::StackSlot(map_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: key,
+        src: MirValue::StackSlot(key_slot),
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: ptr,
+            helper: BpfHelper::MapLookupElem as u32,
+            args: vec![MirValue::VReg(map), MirValue::VReg(key)],
+        });
+    func.block_mut(entry).instructions.push(MirInst::Load {
+        dst: load_dst,
+        ptr,
+        offset: 0,
+        ty: MirType::I64,
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let types = HashMap::from([
+        (
+            ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::I64),
+                address_space: AddressSpace::Map,
+            },
+        ),
+        (load_dst, MirType::I64),
+    ]);
+
+    let err = verify_mir(&func, &types).expect_err("expected map lookup null-check error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("may dereference null")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_helper_map_lookup_null_check_via_copied_cond_ok() {
+    let (mut func, entry) = new_mir_function();
+    let load_block = func.alloc_block();
+    let done = func.alloc_block();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let key_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let map = func.alloc_vreg();
+    let key = func.alloc_vreg();
+    let ptr = func.alloc_vreg();
+    let cond0 = func.alloc_vreg();
+    let cond1 = func.alloc_vreg();
+    let load_dst = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: map,
+        src: MirValue::StackSlot(map_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: key,
+        src: MirValue::StackSlot(key_slot),
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: ptr,
+            helper: BpfHelper::MapLookupElem as u32,
+            args: vec![MirValue::VReg(map), MirValue::VReg(key)],
+        });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: cond0,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(ptr),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: cond1,
+        src: MirValue::VReg(cond0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: cond1,
+        if_true: load_block,
+        if_false: done,
+    };
+
+    func.block_mut(load_block).instructions.push(MirInst::Load {
+        dst: load_dst,
+        ptr,
+        offset: 0,
+        ty: MirType::I64,
+    });
+    func.block_mut(load_block).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let types = HashMap::from([
+        (
+            ptr,
+            MirType::Ptr {
+                pointee: Box::new(MirType::I64),
+                address_space: AddressSpace::Map,
+            },
+        ),
+        (cond0, MirType::Bool),
+        (cond1, MirType::Bool),
+        (load_dst, MirType::I64),
+    ]);
+
+    verify_mir(&func, &types).expect("expected copied null-check guard to pass");
+}
+
+#[test]
 fn test_verify_mir_helper_map_lookup_rejects_out_of_bounds_key_pointer() {
     let (mut func, entry) = new_mir_function();
     let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
