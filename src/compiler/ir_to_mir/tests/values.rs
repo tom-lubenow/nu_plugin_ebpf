@@ -5,7 +5,7 @@ use crate::compiler::hir::{
 use crate::compiler::mir::AddressSpace;
 use crate::compiler::passes::optimize_with_ssa_hints;
 use crate::compiler::{EbpfProgramType, compile_mir_to_ebpf_with_hints};
-use nu_protocol::ast::{CellPath, Comparison, Operator, PathMember};
+use nu_protocol::ast::{CellPath, Comparison, Operator, PathMember, RangeInclusion};
 use nu_protocol::casing::Casing;
 use nu_protocol::{DeclId, IN_VARIABLE_ID, Record, RegId, Span, Value, VarId};
 use std::collections::HashMap;
@@ -666,6 +666,79 @@ fn make_string_command_then_starts_with_program(
         ast: Vec::new(),
         comments: Vec::new(),
         register_count: 4,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_string_substring_then_starts_with_program(
+    substring_decl: DeclId,
+    starts_with_decl: DeclId,
+    value: &str,
+    start: i64,
+    end: i64,
+    inclusion: RangeInclusion,
+    prefix: &str,
+) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::string(value, Span::test_data())),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(start),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::Int(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::Int(end),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(5),
+                    lit: HirLiteral::Range {
+                        start: RegId::new(2),
+                        step: RegId::new(3),
+                        end: RegId::new(4),
+                        inclusion,
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: substring_decl,
+                    src_dst: RegId::new(1),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(5)],
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadValue {
+                    dst: RegId::new(6),
+                    val: Box::new(Value::string(prefix, Span::test_data())),
+                },
+                HirStmt::Call {
+                    decl_id: starts_with_decl,
+                    src_dst: RegId::new(7),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(6)],
+                        pipeline_input: Some(RegId::new(1)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(7) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 8,
         file_count: 0,
     };
     HirProgram::new(func, HashMap::new(), vec![], None)
@@ -2970,6 +3043,102 @@ fn test_lower_str_upcase_on_known_string_materializes_uppercase_literal() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("str upcase result consumed by str starts-with should compile through codegen");
+}
+
+#[test]
+fn test_lower_str_substring_on_known_string_materializes_slice_literal() {
+    let substring_decl = DeclId::new(136);
+    let starts_with_decl = DeclId::new(137);
+    let hir = make_string_substring_then_starts_with_program(
+        substring_decl,
+        starts_with_decl,
+        "abcdef",
+        1,
+        3,
+        RangeInclusion::Inclusive,
+        "bcd",
+    );
+    let decl_names = HashMap::from([
+        (substring_decl, "str substring".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str substring should lower for compile-time known string input and range");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"bcd\0")
+            )),
+        "expected str substring to materialize the sliced string"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("str substring result consumed by str starts-with should compile through codegen");
+}
+
+#[test]
+fn test_lower_str_substring_negative_end_materializes_slice_literal() {
+    let substring_decl = DeclId::new(138);
+    let starts_with_decl = DeclId::new(139);
+    let hir = make_string_substring_then_starts_with_program(
+        substring_decl,
+        starts_with_decl,
+        "abcdef",
+        1,
+        -2,
+        RangeInclusion::Inclusive,
+        "bcde",
+    );
+    let decl_names = HashMap::from([
+        (substring_decl, "str substring".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str substring should support compile-time known negative end indexes");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"bcde\0")
+            )),
+        "expected str substring to materialize the negative-end sliced string"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("str substring result consumed by str starts-with should compile through codegen");
 }
 
 #[test]

@@ -840,6 +840,7 @@ eBPF layout and verifier bounds are explicit:
 | `str ends-with` | Tracked strings with a compile-time known input length and literal suffix, lowered as a fixed-offset stack-buffer suffix comparison |
 | `str contains` | Tracked strings with a compile-time known input length and literal substring, lowered as bounded fixed-offset stack-buffer comparisons |
 | `str index-of` | Tracked strings with a compile-time known input length and literal substring, returning the first byte index or `-1` through bounded fixed-offset comparisons |
+| `str substring` | Compile-time known string input with one compile-time known explicit unit-step range argument, using default UTF-8 byte indexes |
 | `str replace` | Compile-time known string input with literal find/replacement arguments in the default first-substring replacement mode |
 | `str trim` | Compile-time known string input in the default whitespace-both-sides trim mode |
 | `str downcase` / `str upcase` | Compile-time known string input in the default whole-string case-conversion mode |

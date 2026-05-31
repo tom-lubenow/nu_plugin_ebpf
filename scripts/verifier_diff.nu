@@ -33186,6 +33186,32 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-string-substring"
+        category: "language-core"
+        tags: [string str substring]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "abcdef" | str substring 1..3 | str starts-with "bcd"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-string-substring-negative-end"
+        category: "language-core"
+        tags: [string str substring]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "abcdef" | str substring 1..-2 | str starts-with "bcde"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-string-replace"
         category: "language-core"
         tags: [string str replace]

@@ -467,6 +467,71 @@ impl<'a> HirToMirLowering<'a> {
         Ok(())
     }
 
+    pub(super) fn lower_string_substring(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+    ) -> Result<(), CompileError> {
+        let input_reg = self
+            .pipeline_input_reg
+            .or(src_dst_had_value.then_some(src_dst));
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+
+        if !self.named_args.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(
+                "str substring does not accept named arguments in eBPF".into(),
+            ));
+        }
+        if self
+            .named_flags
+            .iter()
+            .any(|flag| flag.as_str() != "utf-8-bytes")
+        {
+            return Err(CompileError::UnsupportedInstruction(
+                "str substring currently supports only the default UTF-8 byte indexing mode in eBPF"
+                    .into(),
+            ));
+        }
+        if self.positional_args.len() != 1 {
+            return Err(CompileError::UnsupportedInstruction(
+                "str substring requires exactly one explicit range argument in eBPF".into(),
+            ));
+        }
+
+        let input = self.exact_string_input(input_reg, "str substring")?;
+        let range_reg = self.positional_args[0].1;
+        let range = self
+            .get_metadata(range_reg)
+            .and_then(|meta| meta.bounded_range)
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "str substring requires a compile-time known range argument in eBPF".into(),
+                )
+            })?;
+        if range.step != 1 {
+            return Err(CompileError::UnsupportedInstruction(
+                "str substring currently supports only default unit-step ranges in eBPF".into(),
+            ));
+        }
+
+        let (start, end) = Self::substring_byte_bounds(range, input.len());
+        let bytes = input.as_bytes().get(start..end).ok_or_else(|| {
+            CompileError::UnsupportedInstruction("invalid substring bounds".into())
+        })?;
+        let output = String::from_utf8(bytes.to_vec()).map_err(|_| {
+            CompileError::UnsupportedInstruction(
+                "str substring byte bounds must preserve valid UTF-8 in eBPF".into(),
+            )
+        })?;
+
+        self.lower_known_string_result(src_dst, result_vreg, output)
+    }
+
     pub(super) fn lower_string_replace(
         &mut self,
         src_dst: RegId,
@@ -600,6 +665,36 @@ impl<'a> HirToMirLowering<'a> {
             Some(nu_protocol::Value::string(output, Span::unknown())),
         );
         Ok(())
+    }
+
+    fn substring_byte_bounds(range: BoundedRange, len: usize) -> (usize, usize) {
+        let len = len as i64;
+        let start = Self::substring_start_bound(range.start, len);
+        let end = Self::substring_end_bound(range.end, range.inclusive, len).max(start);
+        (start as usize, end as usize)
+    }
+
+    fn substring_start_bound(index: i64, len: i64) -> i64 {
+        let raw = if index < 0 {
+            len.saturating_add(index)
+        } else {
+            index
+        };
+        raw.clamp(0, len)
+    }
+
+    fn substring_end_bound(index: i64, inclusive: bool, len: i64) -> i64 {
+        let raw = if index < 0 {
+            len.saturating_add(index)
+        } else {
+            index
+        };
+        let exclusive = if inclusive {
+            raw.saturating_add(1)
+        } else {
+            raw
+        };
+        exclusive.clamp(0, len)
     }
 
     fn known_string_search_operands(

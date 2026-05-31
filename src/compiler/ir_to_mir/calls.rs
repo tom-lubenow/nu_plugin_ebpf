@@ -2772,6 +2772,10 @@ impl<'a> HirToMirLowering<'a> {
                 self.lower_string_index_of(src_dst, dst_vreg, src_dst_had_value)?;
             }
 
+            "str substring" => {
+                self.lower_string_substring(src_dst, dst_vreg, src_dst_had_value)?;
+            }
+
             "str replace" => {
                 self.lower_string_replace(src_dst, dst_vreg, src_dst_had_value)?;
             }
