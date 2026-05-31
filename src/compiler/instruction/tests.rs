@@ -150,6 +150,10 @@ fn test_kfunc_bpf_wq_set_callback_requires_wq_callback_signature() {
         KfuncSignature::callback_subprogram_type_error("bpf_wq_set_callback_impl", 1, &good),
         None
     );
+    assert_eq!(
+        KfuncSignature::callback_return_range_requirement("bpf_wq_set_callback_impl", 1),
+        Some(ScalarValueRange::new(i32::MIN as i64, i32::MAX as i64))
+    );
 }
 
 #[test]

@@ -1054,6 +1054,9 @@ impl KfuncSignature {
     ) -> Option<ScalarValueRange> {
         match (kfunc, arg_idx) {
             ("bpf_rbtree_add_impl", 2) => Some(ScalarValueRange::new(0, 1)),
+            ("bpf_wq_set_callback_impl", 1) => {
+                Some(ScalarValueRange::new(i32::MIN as i64, i32::MAX as i64))
+            }
             _ => None,
         }
     }

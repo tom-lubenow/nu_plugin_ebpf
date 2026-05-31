@@ -949,6 +949,10 @@ fn test_helper_call_timer_set_callback_closure_lowers_to_callback_subprogram() {
     assert!(callback.param_non_null.contains(&1));
     assert!(callback.param_non_null.contains(&2));
     assert!(callback.param_trusted_btf.contains(&0));
+    assert_eq!(
+        callback.required_return_range,
+        Some(ScalarValueRange::new(0, 0))
+    );
 
     let callback_hints = &result.type_hints.subfunctions[0];
     assert_eq!(
@@ -1748,6 +1752,10 @@ fn test_kfunc_call_bpf_wq_set_callback_lowers_callback_subprogram() {
     assert!(callback.param_non_null.contains(&1));
     assert!(callback.param_non_null.contains(&2));
     assert!(callback.param_trusted_btf.contains(&0));
+    assert_eq!(
+        callback.required_return_range,
+        Some(ScalarValueRange::new(i32::MIN as i64, i32::MAX as i64))
+    );
 
     let callback_hints = &result.type_hints.subfunctions[0];
     assert!(

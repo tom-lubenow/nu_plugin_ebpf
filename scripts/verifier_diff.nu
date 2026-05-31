@@ -24954,6 +24954,26 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "bpf-wq-set-callback-rejects-out-of-i32-return"
+        category: "helper-state"
+        tags: [bpf_wq kfunc-call callback return reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define work_items --kind array --value-type "record{work:bpf_wq,cookie:u64}" --max-entries 1'
+            '  let entry = (0 | map-get work_items --kind array)'
+            '  if $entry {'
+            '    kfunc-call "bpf_wq_init" $entry.work work_items 0'
+            '    kfunc-call "bpf_wq_set_callback_impl" $entry.work {|map key work| 2147483648} 0 0'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "callback return"
+    }
+    {
         name: "bpf-wq-kfunc-set-callback-rejects-extra-declared-param"
         category: "helper-state"
         tags: [bpf_wq kfunc-call callback reject]
