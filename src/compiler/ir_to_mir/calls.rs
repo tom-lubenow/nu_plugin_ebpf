@@ -2735,6 +2735,10 @@ impl<'a> HirToMirLowering<'a> {
                 self.lower_metadata_record_rename(src_dst, dst_vreg, src_dst_had_value)?;
             }
 
+            "merge" => {
+                self.lower_metadata_record_merge(src_dst, dst_vreg, src_dst_had_value)?;
+            }
+
             "insert" | "update" | "upsert" => {
                 self.lower_metadata_record_insert_update_or_upsert(
                     &cmd_name,

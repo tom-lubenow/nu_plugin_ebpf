@@ -263,6 +263,103 @@ impl<'a> HirToMirLowering<'a> {
         self.emit_metadata_record_result(src_dst, result_vreg, projected_meta)
     }
 
+    pub(super) fn lower_metadata_record_merge(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+    ) -> Result<(), CompileError> {
+        let input_reg = self
+            .pipeline_input_reg
+            .or(src_dst_had_value.then_some(src_dst));
+
+        if !self.named_flags.is_empty() || !self.named_args.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(
+                "merge does not accept named flags or arguments in eBPF".into(),
+            ));
+        }
+        if self.positional_args.len() != 1 {
+            return Err(CompileError::UnsupportedInstruction(
+                "merge requires exactly one record argument in eBPF".into(),
+            ));
+        }
+
+        let (_, merge_reg) = self.positional_args[0];
+        let input_meta = input_reg
+            .and_then(|reg| self.get_metadata(reg).cloned())
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "merge requires record input with compiler-known fields in eBPF".into(),
+                )
+            })?;
+        let merge_meta = self.get_metadata(merge_reg).cloned().ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "merge requires a record argument with compiler-known fields in eBPF".into(),
+            )
+        })?;
+
+        let input_is_known_empty_record = matches!(
+            input_meta.constant_value.as_ref(),
+            Some(nu_protocol::Value::Record { val, .. }) if val.is_empty()
+        );
+        if input_meta.record_fields.is_empty() && !input_is_known_empty_record {
+            return Err(CompileError::UnsupportedInstruction(
+                "merge requires record input with compiler-known fields in eBPF".into(),
+            ));
+        }
+
+        let merge_is_known_empty_record = matches!(
+            merge_meta.constant_value.as_ref(),
+            Some(nu_protocol::Value::Record { val, .. }) if val.is_empty()
+        );
+        if merge_meta.record_fields.is_empty() && !merge_is_known_empty_record {
+            return Err(CompileError::UnsupportedInstruction(
+                "merge requires a record argument with compiler-known fields in eBPF".into(),
+            ));
+        }
+
+        let mut fields = input_meta.record_fields.clone();
+        for merge_field in &merge_meta.record_fields {
+            if let Some(index) = fields
+                .iter()
+                .position(|field| field.name == merge_field.name)
+            {
+                fields[index] = merge_field.clone();
+            } else {
+                fields.push(merge_field.clone());
+            }
+        }
+
+        let constant_value = match (
+            input_meta.constant_value.clone(),
+            merge_meta.constant_value.clone(),
+        ) {
+            (
+                Some(nu_protocol::Value::Record { val: input, .. }),
+                Some(nu_protocol::Value::Record { val: merge, .. }),
+            ) => {
+                let mut record = input.into_owned();
+                for (key, value) in merge.iter() {
+                    record.insert(key.clone(), value.clone());
+                }
+                Some(nu_protocol::Value::record(record, Span::unknown()))
+            }
+            _ => None,
+        };
+
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+        let projected_meta = RegMetadata {
+            record_fields: fields,
+            constant_value,
+            ..Default::default()
+        };
+        self.emit_metadata_record_result(src_dst, result_vreg, projected_meta)
+    }
+
     pub(super) fn lower_default(
         &mut self,
         src_dst: RegId,

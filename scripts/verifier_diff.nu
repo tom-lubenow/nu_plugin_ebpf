@@ -32806,6 +32806,48 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-record-merge-add-field"
+        category: "language-core"
+        tags: [aggregate record merge]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let rec = ({ pid: 7 cpu: 2 } | merge { mem: 9 })'
+            '  $rec.mem'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-record-merge-overwrite-field"
+        category: "language-core"
+        tags: [aggregate record merge]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let rec = ({ pid: 7 cpu: 2 } | merge { pid: 9 mem: 4 })'
+            '  $rec.pid'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-record-merge-non-record-reject"
+        category: "language-core"
+        tags: [aggregate record merge reject]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  { pid: 7 cpu: 2 } | merge $ctx.pid'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "merge requires a record argument with compiler-known fields"
+    }
+    {
         name: "core-record-insert-field"
         category: "language-core"
         tags: [aggregate record insert]

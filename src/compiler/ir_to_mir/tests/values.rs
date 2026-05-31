@@ -348,6 +348,67 @@ fn make_record_set_then_field_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_record_merge_then_field_program(
+    command_decl: DeclId,
+    merge_fields: &[(&str, i64)],
+    return_field: &str,
+) -> HirProgram {
+    let mut input = Record::new();
+    input.push("pid", Value::int(7, Span::test_data()));
+    input.push("cpu", Value::int(2, Span::test_data()));
+
+    let mut merge = Record::new();
+    for (name, value) in merge_fields {
+        merge.push(*name, Value::int(*value, Span::test_data()));
+    }
+
+    let path_reg = RegId::new(3);
+    let stmts = vec![
+        HirStmt::LoadValue {
+            dst: RegId::new(0),
+            val: Box::new(Value::record(input, Span::test_data())),
+        },
+        HirStmt::LoadValue {
+            dst: RegId::new(2),
+            val: Box::new(Value::record(merge, Span::test_data())),
+        },
+        HirStmt::Call {
+            decl_id: command_decl,
+            src_dst: RegId::new(1),
+            args: HirCallArgs {
+                positional: vec![RegId::new(2)],
+                pipeline_input: Some(RegId::new(0)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::LoadLiteral {
+            dst: path_reg,
+            lit: HirLiteral::CellPath(Box::new(CellPath {
+                members: vec![string_member(return_field)],
+            })),
+        },
+        HirStmt::FollowCellPath {
+            src_dst: RegId::new(1),
+            path: path_reg,
+        },
+    ];
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 4,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 #[test]
 fn test_lower_load_value_duration_as_const() {
     let func = HirFunction {
@@ -1579,6 +1640,103 @@ fn test_lower_rename_leaves_trailing_metadata_record_fields_unchanged() {
 
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("trailing field projection after rename should compile through codegen");
+}
+
+#[test]
+fn test_lower_merge_overwrites_metadata_record_field() {
+    let merge_decl = DeclId::new(107);
+    let hir = make_record_merge_then_field_program(merge_decl, &[("pid", 9), ("mem", 4)], "pid");
+    let decl_names = HashMap::from([(merge_decl, "merge".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("merge should replace matching metadata-backed record fields");
+
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("merged replacement record field projection should compile through codegen");
+}
+
+#[test]
+fn test_lower_merge_adds_metadata_record_field() {
+    let merge_decl = DeclId::new(108);
+    let hir = make_record_merge_then_field_program(merge_decl, &[("mem", 4)], "mem");
+    let decl_names = HashMap::from([(merge_decl, "merge".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("merge should append missing metadata-backed record fields");
+
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("merged added record field projection should compile through codegen");
+}
+
+#[test]
+fn test_lower_merge_rejects_non_record_argument() {
+    let merge_decl = DeclId::new(109);
+    let mut input = Record::new();
+    input.push("pid", Value::int(7, Span::test_data()));
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::record(input, Span::test_data())),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(9),
+                },
+                HirStmt::Call {
+                    decl_id: merge_decl,
+                    src_dst: RegId::new(1),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(2)],
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+    let decl_names = HashMap::from([(merge_decl, "merge".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("merge of a non-record argument should be rejected");
+
+    assert!(
+        err.to_string()
+            .contains("merge requires a record argument with compiler-known fields"),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]
