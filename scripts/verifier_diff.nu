@@ -25460,6 +25460,25 @@ const FIXTURES = [
         error_contains: "declares 4 parameters, but the callback ABI supplies 3"
     }
     {
+        name: "timer-callback-rejects-nonzero-return"
+        category: "helper-state"
+        tags: [timer callback return reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define timers --kind array --value-type "record{timer:bpf_timer,cookie:u64}"'
+            '  let entry = (0 | map-get timers --kind array)'
+            '  if $entry {'
+            '    helper-call "bpf_timer_set_callback" $entry.timer {|timer key val| 1}'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "callback return"
+    }
+    {
         name: "timer-init-rejects-invalid-clock-flags"
         category: "helper-state"
         tags: [timer helper-call flags reject]
@@ -31699,6 +31718,22 @@ const FIXTURES = [
         error_contains: "declares 5 parameters, but the callback ABI supplies 4"
     }
     {
+        name: "callback-for-each-map-elem-rejects-out-of-range-return"
+        category: "callbacks"
+        tags: [helper-call callback map array return reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define elems --kind array --value-type "record{seen:u64}"'
+            '  helper-call "bpf_for_each_map_elem" elems {|m k v cb| 2 } "ctx" 0 --kind array'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "callback return"
+    }
+    {
         name: "callback-for-each-map-elem-record-context"
         category: "callbacks"
         tags: [helper-call callback map array record]
@@ -31788,6 +31823,22 @@ const FIXTURES = [
         local: "reject"
         kernel: "skip"
         error_contains: "declares 4 parameters, but the callback ABI supplies 3"
+    }
+    {
+        name: "callback-find-vma-rejects-out-of-range-return"
+        category: "callbacks"
+        tags: [helper-call callback btf kernel-btf return reject]
+        requires: [kernel-btf]
+        target: "kprobe:tcp_connect"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_find_vma" $ctx.current_task 0 {|task vma cb| 2 } "ctx" 0'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "callback return"
     }
     {
         name: "callback-find-vma-rejects-non-task-pointer"
@@ -31922,6 +31973,21 @@ const FIXTURES = [
         local: "reject"
         kernel: "skip"
         error_contains: "declares 3 parameters, but the callback ABI supplies 2"
+    }
+    {
+        name: "callback-user-ringbuf-drain-rejects-out-of-range-return"
+        category: "callbacks"
+        tags: [helper-call callback dynptr user-ringbuf return reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_user_ringbuf_drain" user_events {|dyn cb| 2 } "ctx" 0'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "callback return"
     }
     {
         name: "callback-user-ringbuf-drain-record-context"
