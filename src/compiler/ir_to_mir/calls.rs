@@ -2679,7 +2679,19 @@ impl<'a> HirToMirLowering<'a> {
                 // where { condition } - filter pipeline by condition
                 // Get the pipeline input (value to filter)
                 let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
-                let input_reg = self.pipeline_input_reg;
+                let input_reg = self
+                    .pipeline_input_reg
+                    .or(src_dst_had_value.then_some(src_dst));
+                if !self.named_flags.is_empty() || !self.named_args.is_empty() {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "where does not accept named flags or arguments in eBPF".into(),
+                    ));
+                }
+                if self.positional_args.len() != 1 {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "where requires exactly one closure argument in eBPF".into(),
+                    ));
+                }
 
                 // Get the closure block ID from positional args
                 let closure_block_id = self
@@ -2696,6 +2708,104 @@ impl<'a> HirToMirLowering<'a> {
                             block_id.get()
                         ))
                     })?;
+
+                    let meta = input_reg.and_then(|reg| self.get_metadata(reg).cloned());
+                    if let Some(meta) = meta
+                        && let Some((_slot, max_len)) = meta.list_buffer
+                    {
+                        let out_ty = MirType::Array {
+                            elem: Box::new(MirType::I64),
+                            len: max_len.saturating_add(1),
+                        };
+                        let out_slot = self.func.alloc_stack_slot(
+                            align_to_eight(8 + max_len * 8),
+                            8,
+                            StackSlotKind::ListBuffer,
+                        );
+                        self.record_list_buffer_slot_type(out_slot, max_len);
+                        self.emit(MirInst::ListNew {
+                            dst: dst_vreg,
+                            buffer: out_slot,
+                            max_len,
+                        });
+                        self.vreg_type_hints.insert(
+                            dst_vreg,
+                            MirType::Ptr {
+                                pointee: Box::new(out_ty.clone()),
+                                address_space: AddressSpace::Stack,
+                            },
+                        );
+
+                        if max_len > 0 {
+                            let len_vreg = self.func.alloc_vreg();
+                            self.emit(MirInst::ListLen {
+                                dst: len_vreg,
+                                list: input_vreg,
+                            });
+                            self.vreg_type_hints.insert(len_vreg, MirType::U64);
+                            let continuation_block = self.func.alloc_block();
+                            for i in 0..max_len {
+                                let predicate_block = self.func.alloc_block();
+                                let next_block = if i + 1 == max_len {
+                                    continuation_block
+                                } else {
+                                    self.func.alloc_block()
+                                };
+                                let in_bounds_vreg = self.func.alloc_vreg();
+                                self.emit(MirInst::BinOp {
+                                    dst: in_bounds_vreg,
+                                    op: BinOpKind::Lt,
+                                    lhs: MirValue::Const(i as i64),
+                                    rhs: MirValue::VReg(len_vreg),
+                                });
+                                self.vreg_type_hints.insert(in_bounds_vreg, MirType::Bool);
+                                self.terminate(MirInst::Branch {
+                                    cond: in_bounds_vreg,
+                                    if_true: predicate_block,
+                                    if_false: next_block,
+                                });
+
+                                self.current_block = predicate_block;
+                                let elem_vreg = self.func.alloc_vreg();
+                                self.emit(MirInst::ListGet {
+                                    dst: elem_vreg,
+                                    list: input_vreg,
+                                    idx: MirValue::Const(i as i64),
+                                });
+                                self.vreg_type_hints.insert(elem_vreg, MirType::I64);
+
+                                let predicate =
+                                    self.inline_closure_with_in(block_id, closure_ir, elem_vreg)?;
+                                let push_block = self.func.alloc_block();
+                                self.terminate(MirInst::Branch {
+                                    cond: predicate,
+                                    if_true: push_block,
+                                    if_false: next_block,
+                                });
+
+                                self.current_block = push_block;
+                                self.emit(MirInst::ListPush {
+                                    list: dst_vreg,
+                                    item: elem_vreg,
+                                });
+                                self.terminate(MirInst::Jump { target: next_block });
+
+                                self.current_block = next_block;
+                            }
+                            self.current_block = continuation_block;
+                        }
+
+                        self.reset_call_result_metadata(src_dst);
+                        let out_meta = self.get_or_create_metadata(src_dst);
+                        out_meta.list_buffer = Some((out_slot, max_len));
+                        out_meta.field_type = Some(out_ty);
+                        out_meta.annotated_semantics = Some(AnnotatedValueSemantics::NumericList {
+                            max_len,
+                            known_len: None,
+                        });
+                        return Ok(());
+                    }
+
                     let result_vreg =
                         self.inline_closure_with_in(block_id, closure_ir, input_vreg)?;
 
