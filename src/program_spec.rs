@@ -4682,6 +4682,156 @@ mod tests {
         );
     }
 
+    fn expected_external_alpha_status_for_lane(
+        lane: ProgramCompatibilityTestLane,
+    ) -> ProgramExternalAlphaStatus {
+        match lane {
+            ProgramCompatibilityTestLane::HostSafe => ProgramExternalAlphaStatus::LiveSupported,
+            ProgramCompatibilityTestLane::HostGated => ProgramExternalAlphaStatus::HostGated,
+            ProgramCompatibilityTestLane::DryRun => ProgramExternalAlphaStatus::DryRunOnly,
+            ProgramCompatibilityTestLane::VmOnly => ProgramExternalAlphaStatus::VmOnly,
+        }
+    }
+
+    #[test]
+    fn test_program_spec_live_attach_policy_invariants_cover_modeled_targets() {
+        let mut spec_texts = EbpfProgramType::supported_program_types()
+            .iter()
+            .map(|program_type| {
+                format!(
+                    "{}:{}",
+                    program_type.canonical_prefix(),
+                    ProgramSpec::representative_target_for_program_type(*program_type)
+                )
+            })
+            .collect::<Vec<_>>();
+        spec_texts.extend(
+            [
+                "xdp:devmap",
+                "xdp:cpumap",
+                "xdp:lo:drv",
+                "xdp:lo:hw",
+                "xdp:lo:skb:frags",
+                "cgroup_sock_addr:/sys/fs/cgroup:connect_unix",
+                "cgroup_sock_addr:/sys/fs/cgroup:sendmsg_unix",
+                "cgroup_sock_addr:/sys/fs/cgroup:recvmsg_unix",
+                "struct_ops:sched_ext_ops",
+                "struct_ops:hid_bpf_ops",
+                "struct_ops:Qdisc_ops",
+                "struct_ops:demo_ops",
+                "struct_ops:sched_ext_ops.init",
+                "struct_ops:sched_ext_ops.dispatch",
+            ]
+            .into_iter()
+            .map(str::to_string),
+        );
+
+        let mut seen_unsupported_reasons = Vec::new();
+        let mut seen_opt_in_reasons = Vec::new();
+        for spec_text in spec_texts {
+            let spec = ProgramSpec::parse(&spec_text)
+                .unwrap_or_else(|err| panic!("{spec_text} should parse: {err}"));
+            let policy = spec.live_attach_policy();
+
+            match policy.status() {
+                ProgramLiveAttachStatus::Unsupported => {
+                    assert!(!policy.loader_supported, "{spec_text}");
+                    assert!(!policy.default_allowed, "{spec_text}");
+                    assert!(!policy.requires_opt_in, "{spec_text}");
+                    let reason = policy
+                        .unsupported_reason
+                        .unwrap_or_else(|| panic!("{spec_text} should explain unsupported attach"));
+                    assert_eq!(policy.opt_in_reason, None, "{spec_text}");
+                    assert_eq!(policy.note, Some(reason.note()), "{spec_text}");
+                    assert_eq!(
+                        spec.live_attach_default_test_lane(),
+                        ProgramCompatibilityTestLane::DryRun,
+                        "{spec_text}"
+                    );
+                    assert_eq!(
+                        spec.external_alpha_status(),
+                        ProgramExternalAlphaStatus::DryRunOnly,
+                        "{spec_text}"
+                    );
+                    if !seen_unsupported_reasons.contains(&reason) {
+                        seen_unsupported_reasons.push(reason);
+                    }
+                }
+                ProgramLiveAttachStatus::RequiresOptIn => {
+                    assert!(policy.loader_supported, "{spec_text}");
+                    assert!(!policy.default_allowed, "{spec_text}");
+                    assert!(policy.requires_opt_in, "{spec_text}");
+                    assert_eq!(policy.unsupported_reason, None, "{spec_text}");
+                    let reason = policy
+                        .opt_in_reason
+                        .unwrap_or_else(|| panic!("{spec_text} should explain unsafe opt-in"));
+                    assert_eq!(policy.note, Some(reason.note()), "{spec_text}");
+                    assert_eq!(
+                        spec.live_attach_default_test_lane(),
+                        spec.compatibility_default_test_lane()
+                            .max(ProgramCompatibilityTestLane::VmOnly),
+                        "{spec_text}"
+                    );
+                    assert_eq!(
+                        spec.external_alpha_status(),
+                        ProgramExternalAlphaStatus::UnsafeOptIn,
+                        "{spec_text}"
+                    );
+                    if !seen_opt_in_reasons.contains(&reason) {
+                        seen_opt_in_reasons.push(reason);
+                    }
+                }
+                ProgramLiveAttachStatus::DefaultAllowed => {
+                    assert!(policy.loader_supported, "{spec_text}");
+                    assert!(policy.default_allowed, "{spec_text}");
+                    assert!(!policy.requires_opt_in, "{spec_text}");
+                    assert_eq!(policy.unsupported_reason, None, "{spec_text}");
+                    assert_eq!(policy.opt_in_reason, None, "{spec_text}");
+                    assert_eq!(policy.note, None, "{spec_text}");
+                    let lane = spec.live_attach_default_test_lane();
+                    assert_eq!(lane, spec.compatibility_default_test_lane(), "{spec_text}");
+                    assert_eq!(
+                        spec.external_alpha_status(),
+                        expected_external_alpha_status_for_lane(lane),
+                        "{spec_text}"
+                    );
+                }
+            }
+        }
+
+        for attach_kind in ProgramAttachKind::all() {
+            if let Some(reason) = attach_kind.unsupported_live_attach_reason() {
+                assert!(
+                    seen_unsupported_reasons.contains(&reason),
+                    "{} unsupported live-attach reason {:?} should be covered by a modeled spec",
+                    attach_kind,
+                    reason
+                );
+            }
+        }
+        for reason in [
+            ProgramLiveAttachUnsupportedReason::XdpMapProgram,
+            ProgramLiveAttachUnsupportedReason::CgroupSockAddrUnix,
+            ProgramLiveAttachUnsupportedReason::StructOpsCallback,
+        ] {
+            assert!(
+                seen_unsupported_reasons.contains(&reason),
+                "special-case unsupported live-attach reason {reason:?} should be covered"
+            );
+        }
+        for reason in [
+            ProgramLiveAttachOptInReason::UnclassifiedStructOps,
+            ProgramLiveAttachOptInReason::SchedExt,
+            ProgramLiveAttachOptInReason::HidBpf,
+            ProgramLiveAttachOptInReason::Qdisc,
+        ] {
+            assert!(
+                seen_opt_in_reasons.contains(&reason),
+                "unsafe live-attach opt-in reason {reason:?} should be covered"
+            );
+        }
+    }
+
     #[test]
     fn test_program_spec_modeled_metadata_accessors() {
         let tracepoint = ProgramSpec::parse("tracepoint:syscalls/sys_enter_openat")
