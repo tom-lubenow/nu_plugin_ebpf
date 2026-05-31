@@ -5954,6 +5954,17 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         feature_keys: ["ctx:family" "ctx:sk" "helper:bpf_probe_read_kernel"]
     }
     {
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let rec = { socket: $ctx.sk }'
+            '  $rec | get socket | get family | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:family" "ctx:sk" "helper:bpf_probe_read_kernel"]
+    }
+    {
         target: "raw_tracepoint:sys_enter"
         program: [
             '{|event|'
@@ -18401,6 +18412,21 @@ const FIXTURES = [
             '  let rec = { socket: $ctx.sk }'
             '  let sk = ($rec | get socket)'
             '  $sk.family | count'
+            '  "ok"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "tc-record-socket-context-get-chain"
+        category: "context-surface"
+        tags: [tc context socket record get source metadata]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let rec = { socket: $ctx.sk }'
+            '  $rec | get socket | get family | count'
             '  "ok"'
             '}'
         ]
@@ -39040,45 +39066,68 @@ def context-root-record-extraction-binding [line: string record_aliases context_
             continue
         }
         let get_field = ($get_fields | first)
-
-        for parsed in (
-            $input
-            | parse --regex '^\$(?P<record>[A-Za-z_][A-Za-z0-9_-]*)$'
-        ) {
-            for alias in (
-                $record_aliases
-                | where {|alias| $alias.name == $parsed.record and $alias.field == $get_field }
-            ) {
-                return {
-                    name: $assignment.name
-                    root: ($alias | get -o root | default "")
-                }
-            }
-        }
-
-        for field in (
-            record-literal-context-fields
+        let root = (
+            context-root-from-record-get
                 $input
+                $get_field
+                $record_aliases
                 $context_names
                 $bound_aliases
                 $identity_wrappers
                 $root_wrapper_defs
-        ) {
-            if $field.field == $get_field {
-                return {
-                    name: $assignment.name
-                    root: ($field | get -o root | default "")
-                }
+        )
+        if $root != null {
+            return {
+                name: $assignment.name
+                root: $root
             }
         }
+    }
 
-        for field in (record-literal-spread-context-fields $input $record_aliases) {
-            if $field.field == $get_field {
-                return {
-                    name: $assignment.name
-                    root: ($field | get -o root | default "")
-                }
-            }
+    null
+}
+
+def context-root-from-record-get [input: string get_field: string record_aliases context_names bound_aliases identity_wrappers root_wrapper_defs] {
+    let field_name = (normalize-context-path-token $get_field)
+    if $field_name == "" {
+        return null
+    }
+    let normalized_input = (trim-simple-parentheses ($input | str trim))
+    let variable_input = (
+        $normalized_input
+        | str replace --all "(" ""
+        | str replace --all ")" ""
+        | str trim
+    )
+
+    for parsed in (
+        $variable_input
+        | parse --regex '^\$(?P<record>[A-Za-z_][A-Za-z0-9_-]*)$'
+    ) {
+        for alias in (
+            $record_aliases
+            | where {|alias| $alias.name == $parsed.record and $alias.field == $field_name }
+        ) {
+            return ($alias | get -o root | default "")
+        }
+    }
+
+    for field in (
+        record-literal-context-fields
+            $normalized_input
+            $context_names
+            $bound_aliases
+            $identity_wrappers
+            $root_wrapper_defs
+    ) {
+        if $field.field == $field_name {
+            return ($field | get -o root | default "")
+        }
+    }
+
+    for field in (record-literal-spread-context-fields $normalized_input $record_aliases) {
+        if $field.field == $field_name {
+            return ($field | get -o root | default "")
         }
     }
 
@@ -40504,6 +40553,168 @@ def record-context-projection-kernel-features [source: string target context_nam
     $features
 }
 
+def get-command-field-tail [segment: string] {
+    let parsed = (
+        $segment
+        | str trim
+        | parse --regex '^get\s+(?P<field>[A-Za-z_][A-Za-z0-9_-]*)(?P<tail>.*)$'
+    )
+    if ($parsed | is-empty) {
+        return null
+    }
+
+    let row = ($parsed | first)
+    {
+        field: ($row.field | str trim)
+        tail: ($row.tail | str trim)
+    }
+}
+
+def get-segment-cell-path-tail [tail: string] {
+    let parsed = (
+        $tail
+        | str trim
+        | parse --regex '^[\)\s]*\.(?P<path>[A-Za-z_][A-Za-z0-9_.-]*)'
+    )
+    if ($parsed | is-empty) {
+        return ""
+    }
+
+    normalize-context-path-token (($parsed | first).path)
+}
+
+def context-access-kernel-features-from-root-path [root path: string target] {
+    let normalized_path = (normalize-context-path-token $path)
+    let raw_access = if $normalized_path == "" {
+        $root
+    } else if $root == "" {
+        $normalized_path
+    } else {
+        $"($root).($normalized_path)"
+    }
+    if $raw_access == "" {
+        return []
+    }
+
+    context-access-kernel-features $raw_access $target
+}
+
+def record-get-candidate-lines [source: string] {
+    mut candidates = []
+
+    for line in ($source | lines) {
+        let trimmed = ($line | str trim)
+        if $trimmed == "" or ($trimmed | str starts-with "#") {
+            continue
+        }
+        if (not ($trimmed | str contains "get")) or (not ($trimmed | str contains "|")) {
+            continue
+        }
+        if not (line-invokes-command? $trimmed "get") {
+            continue
+        }
+
+        let segments = ($trimmed | split row "|")
+        if ($segments | length) < 2 {
+            continue
+        }
+
+        mut input = (($segments | first) | str trim)
+        if ($input | str contains "=") {
+            $input = (($input | split row "=" | last) | str trim)
+        }
+        let normalized_input = (trim-simple-parentheses $input)
+        if (
+            ($normalized_input | str starts-with "$")
+            or ($normalized_input | str starts-with "($")
+            or ($normalized_input | str starts-with "{")
+            or ($normalized_input | str starts-with "({")
+        ) {
+            $candidates = ($candidates | append $trimmed)
+        }
+    }
+
+    $candidates
+}
+
+def record-get-projection-kernel-features [source: string target context_names] {
+    if (not ($source | str contains "get")) or (not ($source | str contains "|")) {
+        return []
+    }
+    let candidate_lines = (record-get-candidate-lines $source)
+    if ($candidate_lines | is-empty) {
+        return []
+    }
+
+    mut features = []
+    let bound_aliases = (program-bound-context-root-aliases $source $context_names)
+    let record_aliases = (program-record-context-aliases $source $context_names)
+    let identity_wrappers = (identity-wrapper-definitions $source)
+    let root_wrapper_defs = (context-root-wrapper-definitions $source)
+
+    for line in $candidate_lines {
+        let trimmed = ($line | str trim)
+        let segments = ($trimmed | split row "|")
+
+        mut input = (($segments | first) | str trim)
+        if ($input | str contains "=") {
+            $input = (($input | split row "=" | last) | str trim)
+        }
+        mut root = null
+
+        for segment in ($segments | skip 1) {
+            let parsed = (get-command-field-tail $segment)
+            if $parsed == null {
+                continue
+            }
+
+            if $root == null {
+                $root = (
+                    context-root-from-record-get
+                        $input
+                        $parsed.field
+                        $record_aliases
+                        $context_names
+                        $bound_aliases
+                        $identity_wrappers
+                        $root_wrapper_defs
+                )
+                if $root == null {
+                    continue
+                }
+
+                $features = (
+                    append-missing-kernel-features
+                        $features
+                        (context-access-kernel-features-from-root-path $root "" $target)
+                )
+            } else {
+                $features = (
+                    append-missing-kernel-features
+                        $features
+                        (context-access-kernel-features-from-root-path $root $parsed.field $target)
+                )
+                let field_path = (normalize-context-path-token $parsed.field)
+                if $field_path != "" {
+                    $root = if $root == "" { $field_path } else { $"($root).($field_path)" }
+                }
+            }
+
+            let tail_path = (get-segment-cell-path-tail $parsed.tail)
+            if $tail_path != "" {
+                $features = (
+                    append-missing-kernel-features
+                        $features
+                        (context-access-kernel-features-from-root-path $root $tail_path $target)
+                )
+                $root = if $root == "" { $tail_path } else { $"($root).($tail_path)" }
+            }
+        }
+    }
+
+    $features
+}
+
 def source-has-context-root-projection? [source: string context_names] {
     for line in ($source | lines) {
         for context_name in $context_names {
@@ -41078,6 +41289,7 @@ def program-context-field-kernel-features [source: string target] {
     $features = (append-missing-kernel-features $features (user-function-context-field-kernel-features $source $target $context_names))
     $features = (append-missing-kernel-features $features (bound-context-projection-kernel-features $source $target $context_names))
     $features = (append-missing-kernel-features $features (record-context-projection-kernel-features $source $target $context_names))
+    $features = (append-missing-kernel-features $features (record-get-projection-kernel-features $source $target $context_names))
 
     $features
 }
