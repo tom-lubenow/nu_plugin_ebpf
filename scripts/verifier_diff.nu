@@ -33212,6 +33212,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-string-trim"
+        category: "language-core"
+        tags: [string str trim]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "  abc  " | str trim | str starts-with "abc"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-null-is-empty"
         category: "language-core"
         tags: ["null" is-empty]

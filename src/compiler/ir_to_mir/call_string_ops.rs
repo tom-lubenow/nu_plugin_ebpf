@@ -516,6 +516,49 @@ impl<'a> HirToMirLowering<'a> {
         Ok(())
     }
 
+    pub(super) fn lower_string_trim(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+    ) -> Result<(), CompileError> {
+        let input_reg = self
+            .pipeline_input_reg
+            .or(src_dst_had_value.then_some(src_dst));
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+
+        if !self.named_flags.is_empty()
+            || !self.named_args.is_empty()
+            || !self.positional_args.is_empty()
+        {
+            return Err(CompileError::UnsupportedInstruction(
+                "str trim currently supports only the default no-argument form in eBPF".into(),
+            ));
+        }
+
+        let input = input_reg
+            .and_then(|reg| self.get_metadata(reg).cloned())
+            .and_then(|meta| Self::exact_string_value(&meta))
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "str trim requires compile-time known string input in eBPF".into(),
+                )
+            })?;
+
+        let output = input.trim().to_string();
+        self.reset_call_result_metadata(src_dst);
+        self.lower_string_like_literal(src_dst, result_vreg, output.as_bytes())?;
+        self.set_reg_constant_value(
+            src_dst,
+            Some(nu_protocol::Value::string(output, Span::unknown())),
+        );
+        Ok(())
+    }
+
     fn known_string_search_operands(
         &self,
         input_reg: Option<RegId>,
