@@ -33264,6 +33264,32 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-string-trim-left"
+        category: "language-core"
+        tags: [string str trim]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "  abc  " | str trim --left | str starts-with "abc  "'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-string-trim-right-char"
+        category: "language-core"
+        tags: [string str trim char]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "xxabcxx" | str trim --right --char "x" | str starts-with "xxabc"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-string-downcase"
         category: "language-core"
         tags: [string str downcase]

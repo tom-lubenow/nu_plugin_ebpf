@@ -588,18 +588,57 @@ impl<'a> HirToMirLowering<'a> {
             dst_vreg
         };
 
-        if !self.named_flags.is_empty()
-            || !self.named_args.is_empty()
-            || !self.positional_args.is_empty()
+        if !self.positional_args.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(
+                "str trim does not support cell-path arguments in eBPF".into(),
+            ));
+        }
+        if self
+            .named_flags
+            .iter()
+            .any(|flag| flag != "left" && flag != "right")
         {
             return Err(CompileError::UnsupportedInstruction(
-                "str trim currently supports only the default no-argument form in eBPF".into(),
+                "str trim currently supports only --left, --right, and --char in eBPF".into(),
             ));
+        }
+        for key in self.named_args.keys() {
+            if key != "char" {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "str trim does not support named argument --{key} in eBPF"
+                )));
+            }
         }
 
         let input = self.exact_string_input(input_reg, "str trim")?;
+        let trim_char = if let Some((_, char_reg)) = self.named_args.get("char").copied() {
+            let raw = self.literal_string_arg(char_reg, "str trim --char")?;
+            let mut chars = raw.chars();
+            let Some(ch) = chars.next() else {
+                return Err(CompileError::UnsupportedInstruction(
+                    "str trim --char requires exactly one character in eBPF".into(),
+                ));
+            };
+            if chars.next().is_some() {
+                return Err(CompileError::UnsupportedInstruction(
+                    "str trim --char requires exactly one character in eBPF".into(),
+                ));
+            }
+            Some(ch)
+        } else {
+            None
+        };
 
-        let output = input.trim().to_string();
+        let trim_left = self.named_flags.iter().any(|flag| flag == "left");
+        let trim_right = self.named_flags.iter().any(|flag| flag == "right");
+        let output = match (trim_char, trim_left, trim_right) {
+            (Some(ch), true, false) => input.trim_start_matches(ch).to_string(),
+            (Some(ch), false, true) => input.trim_end_matches(ch).to_string(),
+            (Some(ch), _, _) => input.trim_matches(ch).to_string(),
+            (None, true, false) => input.trim_start().to_string(),
+            (None, false, true) => input.trim_end().to_string(),
+            (None, _, _) => input.trim().to_string(),
+        };
         self.lower_known_string_result(src_dst, result_vreg, output)
     }
 

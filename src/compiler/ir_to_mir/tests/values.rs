@@ -673,6 +673,68 @@ fn make_string_command_then_starts_with_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_str_trim_then_starts_with_program(
+    trim_decl: DeclId,
+    starts_with_decl: DeclId,
+    value: &str,
+    prefix: &str,
+    flags: Vec<Vec<u8>>,
+    trim_char: Option<&str>,
+) -> HirProgram {
+    let mut stmts = vec![HirStmt::LoadValue {
+        dst: RegId::new(0),
+        val: Box::new(Value::string(value, Span::test_data())),
+    }];
+    let named = if let Some(trim_char) = trim_char {
+        stmts.push(HirStmt::LoadValue {
+            dst: RegId::new(2),
+            val: Box::new(Value::string(trim_char, Span::test_data())),
+        });
+        vec![(b"char".to_vec(), RegId::new(2))]
+    } else {
+        Vec::new()
+    };
+
+    stmts.push(HirStmt::Call {
+        decl_id: trim_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            named,
+            flags,
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::LoadValue {
+        dst: RegId::new(3),
+        val: Box::new(Value::string(prefix, Span::test_data())),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: starts_with_decl,
+        src_dst: RegId::new(4),
+        args: HirCallArgs {
+            positional: vec![RegId::new(3)],
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(4) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 5,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_string_substring_then_starts_with_program(
     substring_decl: DeclId,
     starts_with_decl: DeclId,
@@ -3014,6 +3076,102 @@ fn test_lower_str_trim_on_known_string_materializes_trimmed_literal() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("str trim result consumed by str starts-with should compile through codegen");
+}
+
+#[test]
+fn test_lower_str_trim_left_on_known_string_materializes_left_trimmed_literal() {
+    let trim_decl = DeclId::new(146);
+    let starts_with_decl = DeclId::new(147);
+    let hir = make_str_trim_then_starts_with_program(
+        trim_decl,
+        starts_with_decl,
+        "  abc  ",
+        "abc  ",
+        vec![b"left".to_vec()],
+        None,
+    );
+    let decl_names = HashMap::from([
+        (trim_decl, "str trim".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str trim --left should lower for compile-time known string input");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"abc  \0")
+            )),
+        "expected str trim --left to materialize the left-trimmed string"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "str trim --left result consumed by str starts-with should compile through codegen",
+    );
+}
+
+#[test]
+fn test_lower_str_trim_right_char_on_known_string_materializes_trimmed_literal() {
+    let trim_decl = DeclId::new(148);
+    let starts_with_decl = DeclId::new(149);
+    let hir = make_str_trim_then_starts_with_program(
+        trim_decl,
+        starts_with_decl,
+        "xxabcxx",
+        "xxabc",
+        vec![b"right".to_vec()],
+        Some("x"),
+    );
+    let decl_names = HashMap::from([
+        (trim_decl, "str trim".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str trim --right --char should lower for compile-time known string input");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"xxabc\0")
+            )),
+        "expected str trim --right --char to materialize the trimmed string"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "str trim --right --char result consumed by str starts-with should compile through codegen",
+    );
 }
 
 #[test]
