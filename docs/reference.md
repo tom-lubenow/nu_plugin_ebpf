@@ -345,8 +345,9 @@ example `mut ctx = $ctx; $ctx.data.0 = 0xff`, `mut ctx = $ctx;
 $ctx.data.u16be.6 = 0x86dd`, or `mut ctx = $ctx;
 $ctx.data.eth.ethertype = 0x86dd`; bound packet-pointer aliases such as
 `mut data = $ctx.data; $data.0 = 0xff`, pipeline `get` roots such as
-`mut data = ($ctx | get data); $data.0 = 0xff`, and record-held aliases such as
-`mut rec = { data: $ctx.data }; $rec.data.0 = 0xff` use the same
+`mut data = ($ctx | get data); $data.0 = 0xff`, record-held aliases such as
+`mut rec = { data: $ctx.data }; $rec.data.0 = 0xff`, and record pipelines such as
+`mut rec = ({ ok: true } | upsert data ($ctx | get data)); $rec.data.0 = 0xff` use the same
 guarded write path. Those lower to guarded packet
 stores and automatically normalize big-endian packet scalars back to
 network byte order. Other packet families remain read-only for direct

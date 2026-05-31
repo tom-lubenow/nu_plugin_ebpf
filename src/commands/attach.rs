@@ -200,6 +200,7 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.data.eth.payload.ipv4.payload.icmp.type } - Step through IPv4 and read the ICMP type byte
     {|ctx| $ctx.data.eth.payload.ipv6.payload.icmpv6.code } - Step through IPv6 and read the ICMPv6 code byte
     {|ctx| $ctx.data.eth.payload.ipv4.payload.tcp.payload.0 } - Step through variable IPv4/TCP headers and read the first TCP payload byte
+    {|ctx| mut data = ($ctx | get data); $data.0 = 0xff; 'ok' } - Rewrite a packet byte through a get-derived packet pointer alias
     Packet metadata extras:
     {|ctx| $ctx.data_meta } - Get the packet metadata pointer on xdp, tc_action, tc, tcx, and netkit
     {|ctx| ($ctx.data_meta | get 0) } - Read the first metadata byte with an auto-generated `ctx.data` guard
@@ -724,6 +725,7 @@ Context parameter syntax (recommended):
     {|ctx| mut ctx = $ctx; $ctx.optname = 2; 'allow' } - Override the socket-option name on `cgroup_sockopt:set`
     {|ctx| mut ctx = $ctx; $ctx.optlen = 8; 'allow' } - Override the socket-option length through ordinary assignment
     {|ctx| mut ctx = $ctx; $ctx.optval.0 = 1; 'allow' } - Rewrite a byte in the sockopt buffer through a fixed cell path
+    {|ctx| mut optval = ($ctx | get optval); $optval.0 = 1; 'allow' } - Rewrite a byte through a get-derived sockopt pointer alias
     Note: cgroup_sockopt closures can return `allow` or `deny` instead of
     raw `1`/`0` result codes. `optval` / `optval_end` are surfaced as kernel
     pointers, so existing pointer reads like `($ctx.optval | get 0)` or
@@ -815,7 +817,8 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.flow_keys.flow_label } - Get the IPv6 flow label
     `mut ctx = $ctx; $ctx.flow_keys.ip_proto = 6` writes a scalar
     dissected-flow key. Bound flow-key pointers can be written too, for
-    example `mut keys = $ctx.flow_keys; $keys.ipv6_dst.3 = 1`.
+    example `mut keys = $ctx.flow_keys; $keys.ipv6_dst.3 = 1` or
+    `mut keys = ($ctx | get flow_keys); $keys.ipv6_dst.3 = 1`.
     Note: `flow_dissector:/proc/self/ns/net` emits a `flow_dissector`
     section. Current Aya loader support is compile/dry-run only, so live
     attach returns a clear unsupported error instead of attempting to load
