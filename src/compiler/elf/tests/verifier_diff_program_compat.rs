@@ -6,8 +6,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::compiler::mir::CtxField;
 use crate::compiler::{
     CompiledFeatureCompatibilityRequirement, ContextFieldCompatibilityRequirement, EbpfProgramType,
-    KfuncCompatibilityRequirement, MapKind, MapValueCompatibilityRequirement,
-    ProgramCompatibilityRequirement,
+    HelperCompatibilityRequirement, KfuncCompatibilityRequirement, MapKind,
+    MapValueCompatibilityRequirement, ProgramCompatibilityRequirement,
 };
 use crate::kernel_btf::TracepointContext;
 use crate::program_spec::{IterTargetKind, ProgramSpec};
@@ -1019,6 +1019,16 @@ fn verifier_diff_nu_program_kfunc_feature_keys(
     )
 }
 
+fn verifier_diff_nu_program_surface_feature_keys(
+    checks: &[(String, String)],
+) -> Option<Vec<BTreeSet<String>>> {
+    verifier_diff_nu_program_feature_keys(
+        "program-surface-kernel-features",
+        "program-surface-kernel-features write coverage",
+        checks,
+    )
+}
+
 fn verifier_diff_nu_program_kfunc_feature_records(
     checks: &[(String, String)],
 ) -> Option<Vec<VerifierDiffFeatureRecord>> {
@@ -1328,6 +1338,74 @@ fn test_verifier_diff_context_write_scanner_covers_rust_write_surfaces() {
     assert!(
         mismatches.is_empty(),
         "scripts/verifier_diff.nu context write scanner drifted from Rust write surfaces: {}",
+        mismatches.join(", ")
+    );
+}
+
+#[test]
+fn test_verifier_diff_context_helper_write_scanner_covers_rust_write_surfaces() {
+    #[derive(Clone)]
+    struct ExpectedHelperWriteFeature {
+        target: String,
+        field_name: &'static str,
+        helper_name: &'static str,
+        program: String,
+        expected_keys: BTreeSet<String>,
+    }
+
+    let mut expected = Vec::new();
+
+    for spec_text in REPRESENTATIVE_CONTEXT_WRITE_SPEC_SOURCES {
+        let spec = ProgramSpec::parse(spec_text).unwrap_or_else(|err| {
+            panic!("representative context write target {spec_text} should parse: {err}")
+        });
+        for surface in spec.ctx_write_surfaces_for_spec() {
+            let Some(helper) = surface.helper else {
+                continue;
+            };
+            let requirement =
+                HelperCompatibilityRequirement::for_helper(helper).unwrap_or_else(|| {
+                    panic!(
+                        "{spec_text} ctx.{} helper {} should expose Rust metadata",
+                        surface.field_name,
+                        helper.name()
+                    )
+                });
+            expected.push(ExpectedHelperWriteFeature {
+                target: (*spec_text).to_string(),
+                field_name: surface.field_name,
+                helper_name: helper.name(),
+                program: context_write_scanner_source(surface.field_name, surface.indexed),
+                expected_keys: BTreeSet::from([requirement.key()]),
+            });
+        }
+    }
+
+    let checks = expected
+        .iter()
+        .map(|check| (check.target.clone(), check.program.clone()))
+        .collect::<Vec<_>>();
+    let Some(actual) = verifier_diff_nu_program_surface_feature_keys(&checks) else {
+        return;
+    };
+
+    let mut mismatches = Vec::new();
+    for (check, actual_keys) in expected.iter().zip(actual.iter()) {
+        if actual_keys != &check.expected_keys {
+            mismatches.push(format!(
+                "{} ctx.{} {} expected {:?} actual {:?}",
+                check.target, check.field_name, check.helper_name, check.expected_keys, actual_keys
+            ));
+        }
+    }
+
+    assert!(
+        !expected.is_empty(),
+        "expected at least one helper-backed context write surface"
+    );
+    assert!(
+        mismatches.is_empty(),
+        "scripts/verifier_diff.nu helper-backed context write scanner drifted from Rust write surfaces: {}",
         mismatches.join(", ")
     );
 }
