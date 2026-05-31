@@ -2,7 +2,7 @@ use super::*;
 use crate::compiler::ProgramIntrinsic;
 use crate::compiler::elf::{MessageAdjustMode, PacketAdjustMode};
 use crate::compiler::instruction::{
-    BpfHelper, HelperArgKind, HelperSignature, kfunc_pointer_arg_fixed_size,
+    BpfHelper, HelperArgKind, HelperSignature, KfuncSignature, kfunc_pointer_arg_fixed_size,
     kfunc_pointer_arg_requires_kernel, kfunc_pointer_arg_requires_stack_slot_base,
 };
 use crate::compiler::mir::{AddressSpace, MapOpKind};
@@ -397,7 +397,7 @@ impl<'a> HirToMirLowering<'a> {
             block_id,
             &format!("{}_callback_{}", kfunc, block_id.get()),
             &arg_seeds,
-            None,
+            KfuncSignature::callback_return_range_requirement(kfunc, arg_idx),
         )?;
         let callback_vreg = self.func.alloc_vreg();
         self.emit(MirInst::LoadSubprogram {

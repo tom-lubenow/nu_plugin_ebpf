@@ -1048,6 +1048,16 @@ impl KfuncSignature {
         }
     }
 
+    pub fn callback_return_range_requirement(
+        kfunc: &str,
+        arg_idx: usize,
+    ) -> Option<ScalarValueRange> {
+        match (kfunc, arg_idx) {
+            ("bpf_rbtree_add_impl", 2) => Some(ScalarValueRange::new(0, 1)),
+            _ => None,
+        }
+    }
+
     pub fn callback_subprogram_type_error(
         kfunc: &str,
         arg_idx: usize,

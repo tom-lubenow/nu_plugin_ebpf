@@ -225,6 +225,10 @@ fn test_kfunc_rbtree_add_callback_closure_lowers_to_rb_node_params() {
     assert_eq!(callback.param_count, 2);
     assert!(callback.param_non_null.contains(&0));
     assert!(callback.param_non_null.contains(&1));
+    assert_eq!(
+        callback.required_return_range,
+        Some(ScalarValueRange::new(0, 1))
+    );
 
     let callback_hints = &result.type_hints.subfunctions[0];
     assert!(

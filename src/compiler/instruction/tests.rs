@@ -107,6 +107,14 @@ fn test_kfunc_rbtree_add_callback_requires_rb_node_pointers() {
         KfuncSignature::callback_subprogram_type_error("bpf_rbtree_add_impl", 2, &good),
         None
     );
+    assert_eq!(
+        KfuncSignature::callback_return_range_requirement("bpf_rbtree_add_impl", 2),
+        Some(ScalarValueRange::new(0, 1))
+    );
+    assert_eq!(
+        KfuncSignature::callback_return_range_requirement("bpf_rbtree_add_impl", 1),
+        None
+    );
 }
 
 #[test]
