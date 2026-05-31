@@ -25912,6 +25912,50 @@ const FIXTURES = [
         error_contains: "kfunc 'bpf_iter_kmem_cache_destroy' requires a matching bpf_iter_kmem_cache_new"
     }
     {
+        name: "source-kfunc-iter-kmem-cache-rejects-reinit-after-conditional-new"
+        category: "helper-state"
+        tags: [kfunc iter ref-lifetime branch source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let iter = "0123456789abcdef"'
+            '  let selector = (helper-call "bpf_get_prandom_u32")'
+            '  if $selector == 0 {'
+            '    kfunc-call "bpf_iter_kmem_cache_new" $iter'
+            '  }'
+            '  kfunc-call "bpf_iter_kmem_cache_new" $iter'
+            '  kfunc-call "bpf_iter_kmem_cache_destroy" $iter'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "requires uninitialized bpf_iter_kmem_cache stack object slot"
+    }
+    {
+        name: "source-kfunc-iter-kmem-cache-accepts-reinit-after-conditional-balanced-lifecycle"
+        category: "helper-state"
+        tags: [kfunc iter ref-lifetime branch source accept]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let iter = "0123456789abcdef"'
+            '  let selector = (helper-call "bpf_get_prandom_u32")'
+            '  if $selector == 0 {'
+            '    kfunc-call "bpf_iter_kmem_cache_new" $iter'
+            '    kfunc-call "bpf_iter_kmem_cache_destroy" $iter'
+            '  }'
+            '  kfunc-call "bpf_iter_kmem_cache_new" $iter'
+            '  kfunc-call "bpf_iter_kmem_cache_destroy" $iter'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "source-kfunc-task-ref-release"
         category: "helper-state"
         tags: [kfunc ref-lifetime source accept]
