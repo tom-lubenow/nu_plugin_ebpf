@@ -54,6 +54,7 @@ const STRING_APPEND_COPY_CAP: usize = 64;
 const MAX_INT_STRING_LEN: usize = 20;
 const EMPTY_BINARY_LAYOUT_ERROR: &str = "empty binary constants do not establish a fixed byte-buffer layout; use a non-empty binary initializer or an explicit bytes:N/binary:N type spec";
 
+mod call_list_ops;
 mod call_support;
 mod calls;
 mod closures;
