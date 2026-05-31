@@ -2029,7 +2029,7 @@ impl ProgramSpec {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::compiler::ctx_field_schema::static_ctx_field_type_spec;
+    use crate::compiler::ctx_field_schema::{ctx_field_backing_helper, static_ctx_field_type_spec};
     use crate::compiler::instruction::BpfHelper;
     use std::collections::HashSet;
 
@@ -2515,6 +2515,31 @@ mod tests {
                     program_type.helper_call_error(helper).is_none(),
                     "{program_type:?} ctx.task access should stay aligned with {helper:?} helper policy"
                 );
+            }
+        }
+    }
+
+    #[test]
+    fn test_helper_backed_context_surfaces_match_helper_policy() {
+        for (fields, _) in BASE_CONTEXT_FIELD_ACCESS_SURFACES {
+            for field in *fields {
+                let Some(helper) = ctx_field_backing_helper(field) else {
+                    continue;
+                };
+
+                for program_type in EbpfProgramType::supported_program_types() {
+                    if program_type.base_ctx_field_access_error(field).is_some() {
+                        continue;
+                    }
+
+                    assert_eq!(
+                        program_type.helper_call_error(helper),
+                        None,
+                        "{program_type:?} exposes ctx.{} backed by helper {}, but the helper is not allowed",
+                        field.display_name(),
+                        helper.name()
+                    );
+                }
             }
         }
     }
