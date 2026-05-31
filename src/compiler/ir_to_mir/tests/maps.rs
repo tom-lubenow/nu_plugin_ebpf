@@ -2746,6 +2746,126 @@ fn test_lower_map_push_fixed_record_array_source_list_builder_skips_runtime_list
     );
 }
 
+fn declared_queue_map_take_hir(
+    map_take_decl: DeclId,
+    command: &str,
+) -> (HirProgram, HashMap<DeclId, String>) {
+    let (mut hir, mut decl_names) = map_define_with_value_type_hir("recent_pids", "queue", "int");
+    decl_names.insert(map_take_decl, command.to_string());
+
+    let block = &mut hir.main.blocks[0];
+    block.stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(4),
+        lit: HirLiteral::Int(0),
+    });
+    block.stmts.push(HirStmt::Call {
+        decl_id: map_take_decl,
+        src_dst: RegId::new(4),
+        args: HirCallArgs {
+            positional: vec![RegId::new(0)],
+            ..HirCallArgs::default()
+        },
+    });
+    block.terminator = HirTerminator::Return { src: RegId::new(4) };
+    hir.main.register_count = 5;
+
+    (hir, decl_names)
+}
+
+#[test]
+fn test_map_peek_infers_prior_map_define_kind_when_kind_is_omitted() {
+    let (hir, decl_names) = declared_queue_map_take_hir(DeclId::new(43), "map-peek");
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("map-peek should infer the declared queue map kind");
+
+    let map_ref = MapRef {
+        name: "recent_pids".to_string(),
+        kind: MapKind::Queue,
+    };
+    assert_eq!(
+        result.generic_map_value_types.get(&map_ref),
+        Some(&MirType::I64)
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::LoadMapFd { map, .. } if map == &map_ref))
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::CallHelper { helper, args, .. }
+                    if *helper == BpfHelper::MapPeekElem as u32 && args.len() == 2
+            ))
+    );
+}
+
+#[test]
+fn test_map_pop_infers_prior_map_define_kind_when_kind_is_omitted() {
+    let (hir, decl_names) = declared_queue_map_take_hir(DeclId::new(43), "map-pop");
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("map-pop should infer the declared queue map kind");
+
+    let map_ref = MapRef {
+        name: "recent_pids".to_string(),
+        kind: MapKind::Queue,
+    };
+    assert_eq!(
+        result.generic_map_value_types.get(&map_ref),
+        Some(&MirType::I64)
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::LoadMapFd { map, .. } if map == &map_ref))
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::CallHelper { helper, args, .. }
+                    if *helper == BpfHelper::MapPopElem as u32 && args.len() == 2
+            ))
+    );
+}
+
 #[test]
 fn test_lower_map_peek_uses_prior_queue_schema() {
     let hir = make_map_peek_program(Some(DeclId::new(42)), DeclId::new(43), "queue");
