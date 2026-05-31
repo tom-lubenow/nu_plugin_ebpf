@@ -392,11 +392,31 @@ fn graph_lock_root_repeated_lookup_ctx_field_key_function() -> (MirFunction, Has
     )
 }
 
+fn graph_lock_root_repeated_lookup_noop_key_function() -> (MirFunction, HashMap<VReg, MirType>) {
+    graph_lock_root_repeated_lookup_for_kfunc(
+        RepeatedLookupKeyMode::NoopDynamic,
+        "bpf_list_front",
+        MirType::bpf_list_head_root_struct("node_data", "node"),
+        MirType::bpf_list_node_struct(),
+    )
+}
+
+fn graph_lock_root_repeated_lookup_offset_key_function() -> (MirFunction, HashMap<VReg, MirType>) {
+    graph_lock_root_repeated_lookup_for_kfunc(
+        RepeatedLookupKeyMode::OffsetDynamic,
+        "bpf_list_front",
+        MirType::bpf_list_head_root_struct("node_data", "node"),
+        MirType::bpf_list_node_struct(),
+    )
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum RepeatedLookupKeyMode {
     SameConst,
     CopiedDynamic,
     PhiCopiedDynamic,
+    NoopDynamic,
+    OffsetDynamic,
     SameCtxFieldReload,
     DifferentConst,
 }
@@ -468,6 +488,24 @@ fn graph_lock_root_repeated_lookup_for_kfunc(
         func.block_mut(entry).instructions.push(MirInst::Copy {
             dst: root_key,
             src: MirValue::VReg(key),
+        });
+        entry
+    } else if key_mode == RepeatedLookupKeyMode::NoopDynamic {
+        func.param_count = 1;
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: root_key,
+            op: BinOpKind::Add,
+            lhs: MirValue::VReg(key),
+            rhs: MirValue::Const(0),
+        });
+        entry
+    } else if key_mode == RepeatedLookupKeyMode::OffsetDynamic {
+        func.param_count = 1;
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: root_key,
+            op: BinOpKind::Add,
+            lhs: MirValue::VReg(key),
+            rhs: MirValue::Const(1),
         });
         entry
     } else if key_mode == RepeatedLookupKeyMode::SameCtxFieldReload {
@@ -1298,6 +1336,27 @@ fn test_kfunc_list_front_accepts_copied_dynamic_key_repeated_map_lookup_bpf_spin
     let (func, types) = graph_lock_root_repeated_lookup_copied_key_function();
 
     verify_mir(&func, &types).expect("copied dynamic map key graph lock/root should verify");
+}
+
+#[test]
+fn test_kfunc_list_front_accepts_noop_dynamic_key_repeated_map_lookup_bpf_spin_lock() {
+    let (func, types) = graph_lock_root_repeated_lookup_noop_key_function();
+
+    verify_mir(&func, &types).expect("noop dynamic map key graph lock/root should verify");
+}
+
+#[test]
+fn test_kfunc_list_front_rejects_offset_dynamic_key_repeated_map_lookup_bpf_spin_lock() {
+    let (func, types) = graph_lock_root_repeated_lookup_offset_key_function();
+
+    let err = verify_mir(&func, &types).expect_err("expected offset-key graph lock/root error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("requires bpf_spin_lock from the same map value")),
+        "unexpected errors: {:?}",
+        err
+    );
 }
 
 #[test]

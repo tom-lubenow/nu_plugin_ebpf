@@ -223,6 +223,34 @@ pub(super) fn apply_binop_inst(
 
     let range = range_for_binop(op, lhs, rhs, state);
     state.set_with_range(dst, VerifierType::Scalar, range);
+    if let Some(src) = scalar_identity_source(op, lhs, rhs, state, slot_sizes) {
+        state.set_scalar_alias(dst, src);
+    }
+}
+
+fn scalar_identity_source(
+    op: BinOpKind,
+    lhs: &MirValue,
+    rhs: &MirValue,
+    state: &VerifierState,
+    slot_sizes: &HashMap<StackSlotId, i64>,
+) -> Option<VReg> {
+    let is_scalar = |reg| {
+        matches!(
+            value_type(&MirValue::VReg(reg), state, slot_sizes),
+            VerifierType::Scalar | VerifierType::Bool
+        )
+    };
+    match (op, lhs, rhs) {
+        (BinOpKind::Add, MirValue::VReg(reg), MirValue::Const(0))
+        | (BinOpKind::Add, MirValue::Const(0), MirValue::VReg(reg))
+        | (BinOpKind::Sub, MirValue::VReg(reg), MirValue::Const(0))
+            if is_scalar(*reg) =>
+        {
+            Some(*reg)
+        }
+        _ => None,
+    }
 }
 
 fn released_kfunc_ref_value(value: &MirValue, state: &VerifierState) -> bool {
