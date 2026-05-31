@@ -242,9 +242,8 @@ fn split_top_level_colon_parts<'a>(
     Ok(parts)
 }
 
-fn named_global_scalar_constant_i64(value: &Value) -> Option<i64> {
+fn named_global_numeric_constant_i64(value: &Value) -> Option<i64> {
     match value {
-        Value::Bool { val, .. } => Some(if *val { 1 } else { 0 }),
         Value::Int { val, .. } => Some(*val),
         Value::Filesize { val, .. } => Some(val.get()),
         Value::Duration { val, .. } => Some(*val),
@@ -1020,7 +1019,7 @@ impl ParsedNamedGlobalType {
         };
 
         let encoded_i64 = |type_name: &str| {
-            named_global_scalar_constant_i64(value).ok_or_else(|| integer_error(type_name))
+            named_global_numeric_constant_i64(value).ok_or_else(|| integer_error(type_name))
         };
 
         match &self.shape {
@@ -1152,7 +1151,10 @@ impl ParsedNamedGlobalType {
                         spec, path_suffix
                     )));
                 };
-                if !crate::compiler::hir::supports_numeric_constant_list(value) {
+                if !vals
+                    .iter()
+                    .all(|item| named_global_numeric_constant_i64(item).is_some())
+                {
                     return Err(CompileError::UnsupportedInstruction(format!(
                         "global type spec '{}' initializer{} requires a numeric constant list",
                         spec, path_suffix
@@ -1171,16 +1173,15 @@ impl ParsedNamedGlobalType {
                 let mut data = vec![0u8; (max_len.saturating_add(1)) * std::mem::size_of::<i64>()];
                 data[..8].copy_from_slice(&(vals.len() as u64).to_le_bytes());
                 for (idx, item) in vals.iter().enumerate() {
-                    let Some((_ty, item_data)) =
-                        HirToMirLowering::scalar_constant_rodata_repr(item)
-                    else {
+                    let Some(encoded) = named_global_numeric_constant_i64(item) else {
                         return Err(CompileError::UnsupportedInstruction(format!(
                             "global type spec '{}' initializer{} requires a numeric constant list",
                             spec, path_suffix
                         )));
                     };
                     let start = (idx + 1) * std::mem::size_of::<i64>();
-                    data[start..start + std::mem::size_of::<i64>()].copy_from_slice(&item_data);
+                    data[start..start + std::mem::size_of::<i64>()]
+                        .copy_from_slice(&encoded.to_le_bytes());
                 }
                 Ok(data)
             }

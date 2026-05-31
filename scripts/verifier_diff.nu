@@ -13140,6 +13140,21 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "global-define-type-int-bool-initializer-rejects"
+        category: "globals"
+        tags: [globals scalar bool global-define reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  true | global-define --type int state'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "global type spec 'int' initializer requires a i64-compatible constant"
+    }
+    {
         name: "global-define-type-list-int-initializer"
         category: "globals"
         tags: [globals list global-define accept]
@@ -13154,6 +13169,21 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
+    }
+    {
+        name: "global-define-type-list-int-bool-item-rejects"
+        category: "globals"
+        tags: [globals list bool global-define reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  [true] | global-define --type "list:int:4" samples'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "global type spec 'list:int:4' initializer requires a numeric constant list"
     }
     {
         name: "global-define-type-bound-list-int-initializer"

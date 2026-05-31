@@ -2569,6 +2569,65 @@ fn test_lower_global_define_type_bool_with_constant_not_initializer_uses_named_d
 }
 
 #[test]
+fn test_lower_global_define_type_int_rejects_bool_initializer() {
+    let define_decl = DeclId::new(1098);
+    let decl_names = HashMap::from([(define_decl, "global-define".to_string())]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Bool(true),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("state".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String("int".into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        named: vec![(b"type".to_vec(), RegId::new(2))],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("global-define --type int should reject bool input");
+
+    assert!(
+        err.to_string()
+            .contains("global type spec 'int' initializer requires a i64-compatible constant"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn test_lower_global_define_type_record_rejects_reserved_padding_field_names() {
     let define_decl = DeclId::new(1075);
     let decl_names = HashMap::from([(define_decl, "global-define".to_string())]);
@@ -3063,6 +3122,68 @@ fn test_lower_global_define_type_list_from_metadata_builder_uses_named_data_glob
     assert_eq!(result.bss_globals.len(), 0);
     assert_eq!(result.data_globals[0].name, "__nu_global_samples");
     assert_eq!(result.data_globals[0].data, expected);
+}
+
+#[test]
+fn test_lower_global_define_type_list_int_rejects_bool_items() {
+    let define_decl = DeclId::new(1099);
+    let decl_names = HashMap::from([(define_decl, "global-define".to_string())]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::list(
+                        vec![Value::bool(true, Span::test_data())],
+                        Span::test_data(),
+                    )),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("samples".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String("list:int:4".into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        named: vec![(b"type".to_vec(), RegId::new(2))],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("global-define --type list:int:N should reject bool items");
+
+    assert!(
+        err.to_string()
+            .contains("global type spec 'list:int:4' initializer requires a numeric constant list"),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]
