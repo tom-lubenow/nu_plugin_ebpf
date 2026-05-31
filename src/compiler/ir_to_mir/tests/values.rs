@@ -1,4 +1,5 @@
 use super::*;
+use crate::compiler::compile_mir_to_ebpf_with_hints;
 use crate::compiler::hir::{
     HirBlock, HirBlockId, HirFunction, HirLiteral, HirProgram, HirStmt, HirTerminator,
 };
@@ -10,6 +11,54 @@ use std::collections::HashMap;
 
 fn string_member(name: &str) -> PathMember {
     PathMember::test_string(name.to_string(), false, Casing::Sensitive)
+}
+
+fn make_numeric_list_pipeline_call_program(decl_id: DeclId, count: Option<i64>) -> HirProgram {
+    let mut stmts = vec![HirStmt::LoadValue {
+        dst: RegId::new(0),
+        val: Box::new(Value::list(
+            vec![
+                Value::int(10, Span::test_data()),
+                Value::int(20, Span::test_data()),
+                Value::int(30, Span::test_data()),
+            ],
+            Span::test_data(),
+        )),
+    }];
+    let positional = if let Some(count) = count {
+        stmts.push(HirStmt::LoadLiteral {
+            dst: RegId::new(2),
+            lit: HirLiteral::Int(count),
+        });
+        vec![RegId::new(2)]
+    } else {
+        Vec::new()
+    };
+
+    stmts.push(HirStmt::Call {
+        decl_id,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional,
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
 #[test]
@@ -49,6 +98,118 @@ fn test_lower_load_value_duration_as_const() {
             ..
         }]
     ));
+}
+
+#[test]
+fn test_lower_first_on_numeric_list_gets_first_element() {
+    let first_decl = DeclId::new(78);
+    let hir = make_numeric_list_pipeline_call_program(first_decl, None);
+    let decl_names = HashMap::from([(first_decl, "first".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("first should lower on stack-backed numeric lists");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::ListGet {
+                    idx: MirValue::Const(0),
+                    ..
+                }
+            )),
+        "expected first to lower through ListGet at index 0"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("first on stack-backed numeric list should compile through codegen");
+}
+
+#[test]
+fn test_lower_last_on_numeric_list_gets_length_minus_one() {
+    let last_decl = DeclId::new(79);
+    let hir = make_numeric_list_pipeline_call_program(last_decl, None);
+    let decl_names = HashMap::from([(last_decl, "last".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("last should lower on stack-backed numeric lists");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+
+    assert!(
+        instructions
+            .iter()
+            .any(|inst| matches!(inst, MirInst::ListLen { .. })),
+        "expected last to compute the list length"
+    );
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::Sub,
+                rhs: MirValue::Const(1),
+                ..
+            }
+        )),
+        "expected last to subtract one from the list length"
+    );
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::ListGet {
+                idx: MirValue::VReg(_),
+                ..
+            }
+        )),
+        "expected last to lower through dynamic ListGet"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("last on stack-backed numeric list should compile through codegen");
+}
+
+#[test]
+fn test_lower_first_count_slice_is_rejected() {
+    let first_decl = DeclId::new(80);
+    let hir = make_numeric_list_pipeline_call_program(first_decl, Some(1));
+    let decl_names = HashMap::from([(first_decl, "first".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("counted first should be rejected rather than silently miscompiled");
+
+    assert!(
+        err.to_string().contains("would produce a list slice"),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]

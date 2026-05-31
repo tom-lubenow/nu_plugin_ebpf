@@ -271,8 +271,6 @@ impl ListLowering {
                                 let idx_ge_zero = func.alloc_vreg();
                                 let idx_lt_len = func.alloc_vreg();
                                 let idx_lt_cap = func.alloc_vreg();
-                                let cond_tmp = func.alloc_vreg();
-                                let cond = func.alloc_vreg();
                                 let base_ptr = func.alloc_vreg();
                                 let offset_mul = func.alloc_vreg();
                                 let offset_add = func.alloc_vreg();
@@ -284,8 +282,6 @@ impl ListLowering {
                                     hints.insert(idx_ge_zero, MirType::Bool);
                                     hints.insert(idx_lt_len, MirType::Bool);
                                     hints.insert(idx_lt_cap, MirType::Bool);
-                                    hints.insert(cond_tmp, MirType::Bool);
-                                    hints.insert(cond, MirType::Bool);
                                     hints.insert(base_ptr, Self::list_ptr_type(meta.max_len));
                                     hints.insert(offset_mul, MirType::I64);
                                     hints.insert(offset_add, MirType::I64);
@@ -294,6 +290,8 @@ impl ListLowering {
                                 }
 
                                 let cont_id = Self::split_block_at(func, block_id, idx);
+                                let check_len = func.alloc_block();
+                                let check_cap = func.alloc_block();
                                 let in_bounds = func.alloc_block();
                                 let out_bounds = func.alloc_block();
 
@@ -317,32 +315,38 @@ impl ListLowering {
                                         lhs: MirValue::VReg(idx_vreg),
                                         rhs: MirValue::Const(0),
                                     });
+                                    block.terminator = MirInst::Branch {
+                                        cond: idx_ge_zero,
+                                        if_true: check_len,
+                                        if_false: out_bounds,
+                                    };
+                                }
+
+                                {
+                                    let block = func.block_mut(check_len);
                                     block.instructions.push(MirInst::BinOp {
                                         dst: idx_lt_len,
                                         op: BinOpKind::Lt,
                                         lhs: MirValue::VReg(idx_vreg),
                                         rhs: MirValue::VReg(len_vreg),
                                     });
+                                    block.terminator = MirInst::Branch {
+                                        cond: idx_lt_len,
+                                        if_true: check_cap,
+                                        if_false: out_bounds,
+                                    };
+                                }
+
+                                {
+                                    let block = func.block_mut(check_cap);
                                     block.instructions.push(MirInst::BinOp {
                                         dst: idx_lt_cap,
                                         op: BinOpKind::Lt,
                                         lhs: MirValue::VReg(idx_vreg),
                                         rhs: MirValue::Const(meta.max_len as i64),
                                     });
-                                    block.instructions.push(MirInst::BinOp {
-                                        dst: cond_tmp,
-                                        op: BinOpKind::And,
-                                        lhs: MirValue::VReg(idx_ge_zero),
-                                        rhs: MirValue::VReg(idx_lt_len),
-                                    });
-                                    block.instructions.push(MirInst::BinOp {
-                                        dst: cond,
-                                        op: BinOpKind::And,
-                                        lhs: MirValue::VReg(cond_tmp),
-                                        rhs: MirValue::VReg(idx_lt_cap),
-                                    });
                                     block.terminator = MirInst::Branch {
-                                        cond,
+                                        cond: idx_lt_cap,
                                         if_true: in_bounds,
                                         if_false: out_bounds,
                                     };
@@ -399,8 +403,6 @@ impl ListLowering {
                                 let idx_ge_zero = func.alloc_vreg();
                                 let idx_lt_len = func.alloc_vreg();
                                 let idx_lt_cap = func.alloc_vreg();
-                                let cond_tmp = func.alloc_vreg();
-                                let cond = func.alloc_vreg();
                                 let base_ptr = func.alloc_vreg();
                                 let offset_mul = func.alloc_vreg();
                                 let offset_add = func.alloc_vreg();
@@ -411,8 +413,6 @@ impl ListLowering {
                                     hints.insert(idx_ge_zero, MirType::Bool);
                                     hints.insert(idx_lt_len, MirType::Bool);
                                     hints.insert(idx_lt_cap, MirType::Bool);
-                                    hints.insert(cond_tmp, MirType::Bool);
-                                    hints.insert(cond, MirType::Bool);
                                     hints.insert(base_ptr, Self::list_ptr_type(meta.max_len));
                                     hints.insert(offset_mul, MirType::I64);
                                     hints.insert(offset_add, MirType::I64);
@@ -421,6 +421,8 @@ impl ListLowering {
                                 }
 
                                 let cont_id = Self::split_block_at(func, block_id, idx);
+                                let check_len = func.alloc_block();
+                                let check_cap = func.alloc_block();
                                 let in_bounds = func.alloc_block();
                                 let out_bounds = func.alloc_block();
 
@@ -438,32 +440,38 @@ impl ListLowering {
                                         lhs: MirValue::VReg(idx_vreg),
                                         rhs: MirValue::Const(0),
                                     });
+                                    block.terminator = MirInst::Branch {
+                                        cond: idx_ge_zero,
+                                        if_true: check_len,
+                                        if_false: out_bounds,
+                                    };
+                                }
+
+                                {
+                                    let block = func.block_mut(check_len);
                                     block.instructions.push(MirInst::BinOp {
                                         dst: idx_lt_len,
                                         op: BinOpKind::Lt,
                                         lhs: MirValue::VReg(idx_vreg),
                                         rhs: MirValue::VReg(len_vreg),
                                     });
+                                    block.terminator = MirInst::Branch {
+                                        cond: idx_lt_len,
+                                        if_true: check_cap,
+                                        if_false: out_bounds,
+                                    };
+                                }
+
+                                {
+                                    let block = func.block_mut(check_cap);
                                     block.instructions.push(MirInst::BinOp {
                                         dst: idx_lt_cap,
                                         op: BinOpKind::Lt,
                                         lhs: MirValue::VReg(idx_vreg),
                                         rhs: MirValue::Const(meta.max_len as i64),
                                     });
-                                    block.instructions.push(MirInst::BinOp {
-                                        dst: cond_tmp,
-                                        op: BinOpKind::And,
-                                        lhs: MirValue::VReg(idx_ge_zero),
-                                        rhs: MirValue::VReg(idx_lt_len),
-                                    });
-                                    block.instructions.push(MirInst::BinOp {
-                                        dst: cond,
-                                        op: BinOpKind::And,
-                                        lhs: MirValue::VReg(cond_tmp),
-                                        rhs: MirValue::VReg(idx_lt_cap),
-                                    });
                                     block.terminator = MirInst::Branch {
-                                        cond,
+                                        cond: idx_lt_cap,
                                         if_true: in_bounds,
                                         if_false: out_bounds,
                                     };

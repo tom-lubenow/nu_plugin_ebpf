@@ -2443,42 +2443,67 @@ impl<'a> HirToMirLowering<'a> {
 
             "first" | "last" => {
                 let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
-                let input_reg = self.pipeline_input_reg;
+                let input_reg = self
+                    .pipeline_input_reg
+                    .or(src_dst_had_value.then_some(src_dst));
 
-                let take_count = self
-                    .positional_args
-                    .first()
-                    .and_then(|(_, reg)| self.get_metadata(*reg))
-                    .and_then(|m| m.literal_int)
-                    .unwrap_or(1);
-
-                if take_count <= 0 {
-                    self.emit(MirInst::Copy {
-                        dst: dst_vreg,
-                        src: MirValue::Const(0),
-                    });
-                    return Ok(());
+                if !self.named_flags.is_empty() || !self.named_args.is_empty() {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{cmd_name} does not accept named flags or arguments in eBPF"
+                    )));
                 }
 
-                if cmd_name == "first" {
-                    // Just pass the first element through
+                if !self.positional_args.is_empty() {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "counted {cmd_name} would produce a list slice; eBPF currently supports only the scalar `{cmd_name}` form"
+                    )));
+                }
+
+                let input_meta = input_reg.and_then(|reg| self.get_metadata(reg).cloned());
+                if input_meta
+                    .as_ref()
+                    .and_then(|meta| meta.list_buffer)
+                    .is_some()
+                {
+                    let idx = if cmd_name == "first" {
+                        MirValue::Const(0)
+                    } else {
+                        let len_vreg = self.func.alloc_vreg();
+                        let idx_vreg = self.func.alloc_vreg();
+                        self.emit(MirInst::ListLen {
+                            dst: len_vreg,
+                            list: input_vreg,
+                        });
+                        self.vreg_type_hints.insert(len_vreg, MirType::U64);
+                        self.emit(MirInst::BinOp {
+                            dst: idx_vreg,
+                            op: BinOpKind::Sub,
+                            lhs: MirValue::VReg(len_vreg),
+                            rhs: MirValue::Const(1),
+                        });
+                        self.vreg_type_hints.insert(idx_vreg, MirType::U64);
+                        MirValue::VReg(idx_vreg)
+                    };
+
+                    self.emit(MirInst::ListGet {
+                        dst: dst_vreg,
+                        list: input_vreg,
+                        idx,
+                    });
+                    self.reset_call_result_metadata(src_dst);
+                    let out_meta = self.get_or_create_metadata(src_dst);
+                    out_meta.field_type = Some(MirType::I64);
+                    self.vreg_type_hints.insert(dst_vreg, MirType::I64);
+                } else if let Some(reg) = input_reg {
                     self.emit(MirInst::Copy {
                         dst: dst_vreg,
                         src: MirValue::VReg(input_vreg),
                     });
-                    if let Some(reg) = input_reg {
-                        self.propagate_passthrough_reg_metadata(src_dst, dst_vreg, reg, input_vreg);
-                    }
+                    self.propagate_passthrough_reg_metadata(src_dst, dst_vreg, reg, input_vreg);
                 } else {
-                    // For 'last', we need to loop to the end (not practical in eBPF)
-                    // So we'll just return the input value for now
-                    self.emit(MirInst::Copy {
-                        dst: dst_vreg,
-                        src: MirValue::VReg(input_vreg),
-                    });
-                    if let Some(reg) = input_reg {
-                        self.propagate_passthrough_reg_metadata(src_dst, dst_vreg, reg, input_vreg);
-                    }
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{cmd_name} requires a pipeline input in eBPF"
+                    )));
                 }
             }
 
