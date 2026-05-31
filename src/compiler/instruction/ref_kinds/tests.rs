@@ -1793,34 +1793,129 @@ fn test_infer_unknown_stack_object_init_arg_from_named_out_fallback_requires_uni
 
 #[test]
 fn test_known_dynptr_kfunc_args_are_modeled() {
-    assert_eq!(
-        kfunc_unknown_dynptr_args("bpf_dynptr_size"),
-        vec![KfuncUnknownDynptrArg {
-            arg_idx: 0,
-            role: KfuncUnknownDynptrArgRole::In,
-        }]
-    );
-    assert_eq!(
-        kfunc_unknown_dynptr_args("bpf_copy_from_user_dynptr"),
-        vec![KfuncUnknownDynptrArg {
-            arg_idx: 0,
-            role: KfuncUnknownDynptrArgRole::Out,
-        }]
-    );
-    assert_eq!(
-        kfunc_unknown_dynptr_args("bpf_dynptr_from_xdp"),
-        vec![KfuncUnknownDynptrArg {
-            arg_idx: 2,
-            role: KfuncUnknownDynptrArgRole::Out,
-        }]
-    );
-    assert_eq!(
-        kfunc_unknown_dynptr_args("bpf_dynptr_from_skb"),
-        vec![KfuncUnknownDynptrArg {
-            arg_idx: 2,
-            role: KfuncUnknownDynptrArgRole::Out,
-        }]
-    );
+    use KfuncUnknownDynptrArgRole::{In, Out};
+
+    let cases: &[(&str, &[KfuncUnknownDynptrArg])] = &[
+        (
+            "bpf_copy_from_user_dynptr",
+            &[KfuncUnknownDynptrArg {
+                arg_idx: 0,
+                role: Out,
+            }],
+        ),
+        (
+            "bpf_copy_from_user_task_dynptr",
+            &[KfuncUnknownDynptrArg {
+                arg_idx: 0,
+                role: Out,
+            }],
+        ),
+        (
+            "bpf_copy_from_user_task_str_dynptr",
+            &[KfuncUnknownDynptrArg {
+                arg_idx: 0,
+                role: Out,
+            }],
+        ),
+        (
+            "bpf_dynptr_from_xdp",
+            &[KfuncUnknownDynptrArg {
+                arg_idx: 2,
+                role: Out,
+            }],
+        ),
+        (
+            "bpf_dynptr_from_skb",
+            &[KfuncUnknownDynptrArg {
+                arg_idx: 2,
+                role: Out,
+            }],
+        ),
+        (
+            "bpf_dynptr_adjust",
+            &[KfuncUnknownDynptrArg {
+                arg_idx: 0,
+                role: In,
+            }],
+        ),
+        (
+            "bpf_dynptr_size",
+            &[KfuncUnknownDynptrArg {
+                arg_idx: 0,
+                role: In,
+            }],
+        ),
+        (
+            "bpf_dynptr_is_null",
+            &[KfuncUnknownDynptrArg {
+                arg_idx: 0,
+                role: In,
+            }],
+        ),
+        (
+            "bpf_dynptr_is_rdonly",
+            &[KfuncUnknownDynptrArg {
+                arg_idx: 0,
+                role: In,
+            }],
+        ),
+        (
+            "bpf_dynptr_memset",
+            &[KfuncUnknownDynptrArg {
+                arg_idx: 0,
+                role: In,
+            }],
+        ),
+        (
+            "bpf_dynptr_slice",
+            &[KfuncUnknownDynptrArg {
+                arg_idx: 0,
+                role: In,
+            }],
+        ),
+        (
+            "bpf_dynptr_slice_rdwr",
+            &[KfuncUnknownDynptrArg {
+                arg_idx: 0,
+                role: In,
+            }],
+        ),
+        (
+            "bpf_dynptr_clone",
+            &[
+                KfuncUnknownDynptrArg {
+                    arg_idx: 0,
+                    role: In,
+                },
+                KfuncUnknownDynptrArg {
+                    arg_idx: 1,
+                    role: Out,
+                },
+            ],
+        ),
+        (
+            "bpf_dynptr_copy",
+            &[
+                KfuncUnknownDynptrArg {
+                    arg_idx: 0,
+                    role: In,
+                },
+                KfuncUnknownDynptrArg {
+                    arg_idx: 2,
+                    role: In,
+                },
+            ],
+        ),
+    ];
+
+    for (kfunc, expected) in cases {
+        assert_eq!(
+            kfunc_unknown_dynptr_args(kfunc),
+            *expected,
+            "{kfunc} dynptr args should stay modeled"
+        );
+    }
+
     assert_eq!(
         kfunc_unknown_dynptr_copy("bpf_dynptr_clone"),
         vec![KfuncUnknownDynptrCopy {

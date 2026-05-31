@@ -49,6 +49,7 @@ fn test_verify_mir_kfunc_dynptr_common_ops_accept_initialized_stack_slot() {
         ("bpf_dynptr_is_null", &[], MirType::I64),
         ("bpf_dynptr_is_rdonly", &[], MirType::I64),
         ("bpf_dynptr_memset", &[0, 0, 4], MirType::I64),
+        ("bpf_dynptr_slice", &[0, 0, 4], kernel_ptr_ty()),
         ("bpf_dynptr_slice_rdwr", &[0, 0, 4], kernel_ptr_ty()),
     ];
 
@@ -87,6 +88,7 @@ fn test_verify_mir_kfunc_dynptr_common_ops_reject_uninitialized_stack_slot() {
         ("bpf_dynptr_is_null", &[]),
         ("bpf_dynptr_is_rdonly", &[]),
         ("bpf_dynptr_memset", &[0, 0, 4]),
+        ("bpf_dynptr_slice", &[0, 0, 4]),
         ("bpf_dynptr_slice_rdwr", &[0, 0, 4]),
     ];
 
