@@ -1192,6 +1192,53 @@ fn make_string_list_builder_join_then_starts_with_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_string_list_builder_pipeline_call_program(decl_id: DeclId, values: &[&str]) -> HirProgram {
+    let value_count = values.len();
+    let value_count_u32 = u32::try_from(value_count).expect("test string-list length fits in u32");
+    let mut stmts = vec![HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List {
+            capacity: value_count,
+        },
+    }];
+
+    for (index, value) in values.iter().enumerate() {
+        let item_reg = RegId::new(u32::try_from(index).expect("test index fits in u32") + 2);
+        stmts.push(HirStmt::LoadValue {
+            dst: item_reg,
+            val: Box::new(Value::string(*value, Span::test_data())),
+        });
+        stmts.push(HirStmt::ListPush {
+            src_dst: RegId::new(0),
+            item: item_reg,
+        });
+    }
+
+    stmts.push(HirStmt::Call {
+        decl_id,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: value_count_u32 + 2,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_string_command_then_get_field_program(
     command_decl: DeclId,
     get_decl: DeclId,
@@ -3181,6 +3228,98 @@ fn test_lower_is_empty_on_string_compares_length_to_zero() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("is-empty on tracked string should compile through codegen");
+}
+
+#[test]
+fn test_lower_is_empty_on_string_list_builder_uses_constant_length() {
+    let is_empty_decl = DeclId::new(273);
+    let hir = make_string_list_builder_pipeline_call_program(is_empty_decl, &["ab"]);
+    let decl_names = HashMap::from([(is_empty_decl, "is-empty".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("is-empty should consume compile-time string-list builders");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Copy {
+                    src: MirValue::Const(0),
+                    ..
+                }
+            )),
+        "expected is-empty on a non-empty string-list builder to materialize false"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .all(|inst| !matches!(inst, MirInst::ListLen { .. })),
+        "expected compile-time string-list is-empty not to inspect a runtime list"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("is-empty string-list builder result should compile through codegen");
+}
+
+#[test]
+fn test_lower_is_not_empty_on_string_list_builder_uses_constant_length() {
+    let is_not_empty_decl = DeclId::new(271);
+    let hir = make_string_list_builder_pipeline_call_program(is_not_empty_decl, &["ab", "cd"]);
+    let decl_names = HashMap::from([(is_not_empty_decl, "is-not-empty".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("is-not-empty should consume compile-time string-list builders");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Copy {
+                    src: MirValue::Const(1),
+                    ..
+                }
+            )),
+        "expected is-not-empty on a non-empty string-list builder to materialize true"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .all(|inst| !matches!(inst, MirInst::ListLen { .. })),
+        "expected compile-time string-list is-not-empty not to inspect a runtime list"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("is-not-empty string-list builder result should compile through codegen");
 }
 
 #[test]
@@ -5623,6 +5762,52 @@ fn test_lower_length_on_numeric_list_reads_runtime_length() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("length on stack-backed numeric list should compile through codegen");
+}
+
+#[test]
+fn test_lower_length_on_string_list_builder_uses_constant_length() {
+    let length_decl = DeclId::new(272);
+    let hir = make_string_list_builder_pipeline_call_program(length_decl, &["ab", "cd", "ef"]);
+    let decl_names = HashMap::from([(length_decl, "length".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("length should consume compile-time string-list builders");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Copy {
+                    src: MirValue::Const(3),
+                    ..
+                }
+            )),
+        "expected length on a string-list builder to materialize the item count"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .all(|inst| !matches!(inst, MirInst::ListLen { .. })),
+        "expected compile-time string-list length not to inspect a runtime list"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("length string-list builder result should compile through codegen");
 }
 
 #[test]

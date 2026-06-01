@@ -34931,6 +34931,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-string-list-length"
+        category: "language-core"
+        tags: [string list length]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ["ab" "cd" "ef"] | length'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-math-sum"
         category: "language-core"
         tags: [aggregate list math sum]
@@ -35927,6 +35940,32 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  {} | is-empty'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-string-list-is-empty"
+        category: "language-core"
+        tags: [string list is-empty]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ["ab"] | is-empty'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-string-list-is-not-empty"
+        category: "language-core"
+        tags: [string list is-not-empty]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ["ab" "cd"] | is-not-empty'
             '}'
         ]
         local: "accept"

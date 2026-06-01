@@ -299,6 +299,8 @@ pub enum FixedLayoutValueConsumer {
     MapContainsProbe,
     BytesCollect,
     StrJoin,
+    Length,
+    EmptyPredicate,
 }
 
 pub fn compile_time_value_flows_to_fixed_layout_consumer(
@@ -476,6 +478,8 @@ pub fn compile_time_value_flows_to_fixed_layout_aggregate_consumer(
         FixedLayoutValueConsumer::MapContainsProbe,
         FixedLayoutValueConsumer::BytesCollect,
         FixedLayoutValueConsumer::StrJoin,
+        FixedLayoutValueConsumer::Length,
+        FixedLayoutValueConsumer::EmptyPredicate,
     ]
     .into_iter()
     .any(|consumer| {
@@ -620,6 +624,24 @@ fn compile_time_value_consumer_matches(
             decl_name == Some("str join")
                 && call_args_tracked_only_in_pipeline(src_dst, args, tracked_regs)
                 && args.positional.len() <= 1
+                && args.rest.is_empty()
+                && args.named.is_empty()
+                && args.flags.is_empty()
+                && args.parser_info.is_empty()
+        }
+        FixedLayoutValueConsumer::Length => {
+            decl_name == Some("length")
+                && call_args_tracked_only_in_pipeline(src_dst, args, tracked_regs)
+                && args.positional.is_empty()
+                && args.rest.is_empty()
+                && args.named.is_empty()
+                && args.flags.is_empty()
+                && args.parser_info.is_empty()
+        }
+        FixedLayoutValueConsumer::EmptyPredicate => {
+            matches!(decl_name, Some("is-empty" | "is-not-empty"))
+                && call_args_tracked_only_in_pipeline(src_dst, args, tracked_regs)
+                && args.positional.is_empty()
                 && args.rest.is_empty()
                 && args.named.is_empty()
                 && args.flags.is_empty()

@@ -1025,6 +1025,9 @@ impl<'a> HirToMirLowering<'a> {
 
         self.clear_source_var(src_dst);
         self.set_reg_constant_value(src_dst, constant_value);
+        if let Some(meta) = self.reg_metadata.get_mut(&src_dst.get()) {
+            meta.list_buffer = None;
+        }
         Ok(())
     }
 
@@ -1058,6 +1061,9 @@ impl<'a> HirToMirLowering<'a> {
 
         self.clear_source_var(src_dst);
         self.set_reg_constant_value(src_dst, constant_value);
+        if let Some(meta) = self.reg_metadata.get_mut(&src_dst.get()) {
+            meta.list_buffer = None;
+        }
         Ok(())
     }
 

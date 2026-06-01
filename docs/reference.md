@@ -882,7 +882,7 @@ eBPF layout and verifier bounds are explicit:
 | `str trim` | Compile-time known string input in default, `--left`, `--right`, and single-character `--char` trim modes |
 | `str downcase` / `str upcase` | Compile-time known string input in the default whole-string case-conversion mode |
 | `str reverse` / `str capitalize` | Compile-time known string input in the default whole-string transform mode |
-| `length` | Stack-backed numeric lists plus literal binary and literal null values |
+| `length` | Stack-backed numeric lists, compile-time known list constants, literal binary, and literal null values |
 | `math sum` / `math product` / `math min` / `math max` | Stack-backed numeric lists with known non-empty length; empty-list input is rejected to match Nushell semantics |
 | `math abs` | Compile-time known integer or integer-list input, rejecting the unrepresentable `i64::MIN` absolute value |
 | `first` / `last` | Scalar first/last element access for stack-backed numeric lists; counted forms rebuild bounded prefix/suffix stack-list slices |

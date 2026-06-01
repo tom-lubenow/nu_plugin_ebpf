@@ -279,6 +279,67 @@ fn test_list_push_string_item_allowed_for_str_join() {
     infer_hir(&program, &decl_names).expect("str join should allow compile-time string lists");
 }
 
+fn assert_list_push_string_item_allowed_for_pipeline_command(decl_id: DeclId, decl_name: &str) {
+    let mut func = HirFunction {
+        blocks: Vec::new(),
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+
+    let mut block = HirBlock {
+        id: HirBlockId(0),
+        stmts: Vec::new(),
+        terminator: HirTerminator::Return { src: RegId::new(2) },
+    };
+
+    block.stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List { capacity: 1 },
+    });
+    block.stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(1),
+        lit: HirLiteral::String(b"ab".to_vec()),
+    });
+    block.stmts.push(HirStmt::ListPush {
+        src_dst: RegId::new(0),
+        item: RegId::new(1),
+    });
+    block.stmts.push(HirStmt::Call {
+        decl_id,
+        src_dst: RegId::new(2),
+        args: HirCallArgs {
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    func.blocks.push(block);
+
+    let program = HirProgram::new(func, HashMap::new(), Vec::new(), None);
+    let decl_names = HashMap::from([(decl_id, decl_name.to_string())]);
+    infer_hir(&program, &decl_names)
+        .unwrap_or_else(|_| panic!("{decl_name} should allow compile-time string lists"));
+}
+
+#[test]
+fn test_list_push_string_item_allowed_for_length() {
+    assert_list_push_string_item_allowed_for_pipeline_command(DeclId::new(51), "length");
+}
+
+#[test]
+fn test_list_push_string_item_allowed_for_is_empty() {
+    assert_list_push_string_item_allowed_for_pipeline_command(DeclId::new(52), "is-empty");
+}
+
+#[test]
+fn test_list_push_string_item_allowed_for_is_not_empty() {
+    assert_list_push_string_item_allowed_for_pipeline_command(DeclId::new(53), "is-not-empty");
+}
+
 #[test]
 fn test_list_push_record_item_allowed_for_typed_global_array_initializer() {
     let define_decl = DeclId::new(42);
