@@ -848,6 +848,16 @@ fn compile_time_value_consumer_matches(
                                 matches!(flag.as_slice(), b"code-points" | b"grapheme-clusters")
                             })
                     }
+                    "split words" => {
+                        args.positional.is_empty()
+                            && args
+                                .named
+                                .iter()
+                                .all(|(name, _)| name.as_slice() == b"min-word-length")
+                            && args.flags.iter().all(|flag| {
+                                matches!(flag.as_slice(), b"utf-8-bytes" | b"grapheme-clusters")
+                            })
+                    }
                     "str downcase"
                     | "str upcase"
                     | "str reverse"

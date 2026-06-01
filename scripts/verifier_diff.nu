@@ -36037,6 +36037,32 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-string-split-words-join"
+        category: "language-core"
+        tags: [string split words join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "hello, to the world!" | split words | str join "-" | str starts-with "hello-to-the-world"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-string-split-words-min-utf8-join"
+        category: "language-core"
+        tags: [string split words min utf8 join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "a é ee" | split words --min-word-length 2 --utf-8-bytes | str join "-" | str starts-with "é-ee"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-string-split-row-join"
         category: "language-core"
         tags: [string split row join]

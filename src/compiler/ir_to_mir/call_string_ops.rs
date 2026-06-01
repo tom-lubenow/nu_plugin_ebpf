@@ -727,6 +727,124 @@ impl<'a> HirToMirLowering<'a> {
         self.lower_known_string_list_result(src_dst, result_vreg, output)
     }
 
+    pub(super) fn lower_split_words(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+    ) -> Result<(), CompileError> {
+        let input_reg = self
+            .pipeline_input_reg
+            .or(src_dst_had_value.then_some(src_dst));
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+
+        if !self.positional_args.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(
+                "split words does not accept positional arguments in eBPF".into(),
+            ));
+        }
+        for key in self.named_args.keys() {
+            if key != "min-word-length" {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "split words does not support named argument --{key} in eBPF"
+                )));
+            }
+        }
+
+        let mut use_utf8_bytes = false;
+        let mut use_grapheme_clusters = false;
+        for flag in &self.named_flags {
+            match flag.as_str() {
+                "utf-8-bytes" => use_utf8_bytes = true,
+                "grapheme-clusters" => use_grapheme_clusters = true,
+                _ => {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "split words currently supports only --utf-8-bytes and --grapheme-clusters flags in eBPF"
+                            .into(),
+                    ));
+                }
+            }
+        }
+        if use_utf8_bytes && use_grapheme_clusters {
+            return Err(CompileError::UnsupportedInstruction(
+                "split words accepts either --utf-8-bytes or --grapheme-clusters, not both, in eBPF"
+                    .into(),
+            ));
+        }
+
+        let min_word_len = if let Some((_, min_word_len_reg)) =
+            self.named_args.get("min-word-length").copied()
+        {
+            let raw = self
+                    .get_metadata(min_word_len_reg)
+                    .and_then(|meta| {
+                        meta.literal_int
+                            .or_else(|| match meta.constant_value.as_ref() {
+                                Some(nu_protocol::Value::Int { val, .. }) => Some(*val),
+                                _ => None,
+                            })
+                    })
+                    .ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "split words --min-word-length requires a compile-time known integer in eBPF"
+                                .into(),
+                        )
+                    })?;
+            if raw < 0 {
+                return Err(CompileError::UnsupportedInstruction(
+                    "split words --min-word-length requires a non-negative integer in eBPF".into(),
+                ));
+            }
+            Some(usize::try_from(raw).map_err(|_| {
+                CompileError::UnsupportedInstruction(
+                    "split words --min-word-length is too large for eBPF lowering".into(),
+                )
+            })?)
+        } else {
+            None
+        };
+
+        if min_word_len.is_none() && (use_utf8_bytes || use_grapheme_clusters) {
+            return Err(CompileError::UnsupportedInstruction(
+                "split words --utf-8-bytes and --grapheme-clusters require --min-word-length in eBPF"
+                    .into(),
+            ));
+        }
+
+        if let Some(reg) = input_reg
+            && let Some(nu_protocol::Value::List { .. }) = self
+                .get_metadata(reg)
+                .and_then(|meta| meta.constant_value.as_ref())
+        {
+            return Err(CompileError::UnsupportedInstruction(
+                "split words on list<string> produces nested lists, which are not supported in eBPF"
+                    .into(),
+            ));
+        }
+
+        let input = self.exact_string_input(input_reg, "split words")?;
+        let output = input
+            .unicode_words()
+            .filter(|word| {
+                min_word_len.is_none_or(|min_word_len| {
+                    let len = if use_grapheme_clusters {
+                        UnicodeSegmentation::graphemes(*word, true).count()
+                    } else {
+                        word.len()
+                    };
+                    len >= min_word_len
+                })
+            })
+            .map(ToString::to_string)
+            .collect();
+
+        self.lower_known_string_list_result(src_dst, result_vreg, output)
+    }
+
     pub(super) fn lower_string_stats(
         &mut self,
         src_dst: RegId,
