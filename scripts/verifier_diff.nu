@@ -36167,6 +36167,32 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-string-list-replace-join"
+        category: "language-core"
+        tags: [string list str replace join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ["abc" "aba"] | str replace "a" "z" | str join "-" | str starts-with "zbc-zba"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-string-list-replace-regex-join"
+        category: "language-core"
+        tags: [string list str replace regex join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ["abc123" "x9"] | str replace --regex "([a-z]+)([0-9]+)" "${2}" | str join "-" | str starts-with "123-9"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-string-replace-missing"
         category: "language-core"
         tags: [string str replace]

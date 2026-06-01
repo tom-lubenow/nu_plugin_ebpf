@@ -966,6 +966,102 @@ fn make_str_replace_then_starts_with_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_string_list_builder_replace_join_then_starts_with_program(
+    replace_decl: DeclId,
+    join_decl: DeclId,
+    starts_with_decl: DeclId,
+    values: &[&str],
+    find: &str,
+    replacement: &str,
+    prefix: &str,
+    flags: Vec<Vec<u8>>,
+) -> HirProgram {
+    let value_count = values.len();
+    let value_count_u32 = u32::try_from(value_count).expect("test string-list length fits in u32");
+    let mut stmts = vec![HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List {
+            capacity: value_count,
+        },
+    }];
+
+    for (index, value) in values.iter().enumerate() {
+        let item_reg = RegId::new(u32::try_from(index).expect("test index fits in u32") + 2);
+        stmts.push(HirStmt::LoadValue {
+            dst: item_reg,
+            val: Box::new(Value::string(*value, Span::test_data())),
+        });
+        stmts.push(HirStmt::ListPush {
+            src_dst: RegId::new(0),
+            item: item_reg,
+        });
+    }
+
+    let find_reg = RegId::new(value_count_u32 + 2);
+    let replacement_reg = RegId::new(find_reg.get() + 1);
+    let separator_reg = RegId::new(replacement_reg.get() + 1);
+    let prefix_reg = RegId::new(separator_reg.get() + 1);
+    stmts.push(HirStmt::LoadValue {
+        dst: find_reg,
+        val: Box::new(Value::string(find, Span::test_data())),
+    });
+    stmts.push(HirStmt::LoadValue {
+        dst: replacement_reg,
+        val: Box::new(Value::string(replacement, Span::test_data())),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: replace_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional: vec![find_reg, replacement_reg],
+            flags,
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::LoadValue {
+        dst: separator_reg,
+        val: Box::new(Value::string("-", Span::test_data())),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: join_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional: vec![separator_reg],
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::LoadValue {
+        dst: prefix_reg,
+        val: Box::new(Value::string(prefix, Span::test_data())),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: starts_with_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional: vec![prefix_reg],
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: prefix_reg.get() + 1,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_string_command_then_starts_with_program(
     command_decl: DeclId,
     starts_with_decl: DeclId,
@@ -6442,6 +6538,123 @@ fn test_lower_str_replace_on_known_string_materializes_replaced_literal() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("str replace result consumed by str starts-with should compile through codegen");
+}
+
+#[test]
+fn test_lower_str_replace_on_known_string_list_materializes_replaced_literals() {
+    let replace_decl = DeclId::new(396);
+    let join_decl = DeclId::new(397);
+    let starts_with_decl = DeclId::new(398);
+    let hir = make_string_list_builder_replace_join_then_starts_with_program(
+        replace_decl,
+        join_decl,
+        starts_with_decl,
+        &["abc", "aba"],
+        "a",
+        "z",
+        "zbc-zba",
+        Vec::new(),
+    );
+    let decl_names = HashMap::from([
+        (replace_decl, "str replace".to_string()),
+        (join_decl, "str join".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str replace should lower for compile-time known string-list input");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"zbc-zba\0")
+            )),
+        "expected str replace list output to feed str join with replaced strings"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .all(|inst| !matches!(
+                inst,
+                MirInst::ListGet { .. } | MirInst::ListLen { .. } | MirInst::ListPush { .. }
+            )),
+        "expected compile-time str replace string-list input not to use runtime list operations"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "str replace string-list result consumed by str join should compile through codegen",
+    );
+}
+
+#[test]
+fn test_lower_str_replace_regex_on_known_string_list_materializes_replaced_literals() {
+    let replace_decl = DeclId::new(399);
+    let join_decl = DeclId::new(400);
+    let starts_with_decl = DeclId::new(401);
+    let hir = make_string_list_builder_replace_join_then_starts_with_program(
+        replace_decl,
+        join_decl,
+        starts_with_decl,
+        &["abc123", "x9"],
+        "([a-z]+)([0-9]+)",
+        "${2}",
+        "123-9",
+        vec![b"regex".to_vec()],
+    );
+    let decl_names = HashMap::from([
+        (replace_decl, "str replace".to_string()),
+        (join_decl, "str join".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str replace --regex should lower for compile-time known string-list input");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"123-9\0")
+            )),
+        "expected str replace --regex list output to expand captures before str join"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "str replace --regex string-list result consumed by str join should compile through codegen",
+    );
 }
 
 #[test]

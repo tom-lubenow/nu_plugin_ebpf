@@ -833,7 +833,6 @@ impl<'a> HirToMirLowering<'a> {
             ));
         }
 
-        let input = self.exact_string_input(input_reg, "str replace")?;
         let find = self.literal_string_arg(self.positional_args[0].1, "str replace find")?;
         let replacement =
             self.literal_string_arg(self.positional_args[1].1, "str replace replacement")?;
@@ -844,25 +843,66 @@ impl<'a> HirToMirLowering<'a> {
             .iter()
             .any(|flag| flag == "regex" || flag == "multiline");
         let no_expand = self.named_flags.iter().any(|flag| flag == "no-expand");
-        let output = if use_regex {
-            self.string_replace_regex(&input, &find, &replacement, replace_all, no_expand)?
-        } else if replace_all {
-            input.replace(&find, &replacement)
-        } else {
-            input.replacen(&find, &replacement, 1)
-        };
+        let multiline = self.named_flags.iter().any(|flag| flag == "multiline");
+
+        if let Some(input) = self.exact_string_list_input(input_reg, "str replace")? {
+            let output = input
+                .into_iter()
+                .map(|item| {
+                    Self::replace_known_string(
+                        &item,
+                        &find,
+                        &replacement,
+                        replace_all,
+                        use_regex,
+                        no_expand,
+                        multiline,
+                    )
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            return self.lower_known_string_list_result(src_dst, result_vreg, output);
+        }
+
+        let input = self.exact_string_input(input_reg, "str replace")?;
+        let output = Self::replace_known_string(
+            &input,
+            &find,
+            &replacement,
+            replace_all,
+            use_regex,
+            no_expand,
+            multiline,
+        )?;
         self.lower_known_string_result(src_dst, result_vreg, output)
     }
 
+    fn replace_known_string(
+        input: &str,
+        find: &str,
+        replacement: &str,
+        replace_all: bool,
+        use_regex: bool,
+        no_expand: bool,
+        multiline: bool,
+    ) -> Result<String, CompileError> {
+        if use_regex {
+            Self::string_replace_regex(input, find, replacement, replace_all, no_expand, multiline)
+        } else if replace_all {
+            Ok(input.replace(find, replacement))
+        } else {
+            Ok(input.replacen(find, replacement, 1))
+        }
+    }
+
     fn string_replace_regex(
-        &self,
         input: &str,
         find: &str,
         replacement: &str,
         replace_all: bool,
         no_expand: bool,
+        multiline: bool,
     ) -> Result<String, CompileError> {
-        let pattern = if self.named_flags.iter().any(|flag| flag == "multiline") {
+        let pattern = if multiline {
             format!("(?m){find}")
         } else {
             find.to_string()
