@@ -14359,6 +14359,22 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "global-define-type-record-partial-list-field-zero-fills"
+        category: "globals"
+        tags: [globals records list global-define zero-fill accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  { pid: 7 } | global-define --type "record{pid:int,samples:list:int:2}" seen_state'
+            '  let state = (global-get seen_state)'
+            '  (($state.samples | length) + $state.pid) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "global-define-type-zero-record-list-field-get"
         category: "globals"
         tags: [globals records list global-define zero-fill accept]
