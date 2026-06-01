@@ -3867,6 +3867,57 @@ fn test_verify_mir_for_probe_context_seq_output_helpers_reject_non_iter_program(
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_seq_printf_checks_fmt_bounds() {
+    let (mut func, entry) = new_mir_function();
+    let seq = func.alloc_vreg();
+    let fmt_slot = func.alloc_stack_slot(16, 1, StackSlotKind::StringBuffer);
+    let data_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: seq,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::SeqPrintf as u32,
+            args: vec![
+                MirValue::VReg(seq),
+                MirValue::StackSlot(fmt_slot),
+                MirValue::Const(32),
+                MirValue::StackSlot(data_slot),
+                MirValue::Const(8),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let types = HashMap::from([
+        (
+            seq,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Kernel,
+            },
+        ),
+        (dst, MirType::I64),
+    ]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Iter, "task");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected seq_printf format bounds error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("helper seq_printf fmt out of bounds")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_seq_printf_rejects_unaligned_data_len() {
     let (mut func, entry) = new_mir_function();
     let seq = func.alloc_vreg();
@@ -9075,7 +9126,7 @@ fn test_verify_mir_for_probe_context_skb_load_bytes_rejects_out_of_bounds_destin
         .expect_err("expected skb_load_bytes to reject out-of-bounds stack buffer");
     assert!(
         err.iter()
-            .any(|e| e.message.contains("pointer access out of bounds")),
+            .any(|e| e.message.contains("helper skb_load_bytes to out of bounds")),
         "unexpected errors: {:?}",
         err
     );
@@ -9138,7 +9189,8 @@ fn test_verify_mir_helper_sock_map_update_rejects_out_of_bounds_key_pointer() {
     assert!(
         err.iter().any(|e| {
             e.kind == VccErrorKind::PointerBounds
-                && e.message.contains("pointer access out of bounds")
+                && e.message
+                    .contains("helper sock_map_update key out of bounds")
         }),
         "unexpected errors: {:?}",
         err

@@ -762,6 +762,16 @@ impl<'a> VccLowerer<'a> {
         size: usize,
         out: &mut Vec<VccInst>,
     ) -> Result<(), VccError> {
+        self.check_ptr_range_reg_with_op(ptr, size, "pointer access", out)
+    }
+
+    pub(super) fn check_ptr_range_reg_with_op(
+        &mut self,
+        ptr: VccReg,
+        size: usize,
+        op: &'static str,
+        out: &mut Vec<VccInst>,
+    ) -> Result<(), VccError> {
         if size == 0 {
             return Ok(());
         }
@@ -777,7 +787,7 @@ impl<'a> VccLowerer<'a> {
         out.push(VccInst::AssertPtrAccess {
             ptr,
             size: VccValue::Imm(size as i64),
-            op: "pointer access",
+            op,
         });
         Ok(())
     }
@@ -872,10 +882,10 @@ impl<'a> VccLowerer<'a> {
 
         if let Some(size) = access_size {
             match arg {
-                MirValue::VReg(vreg) => self.check_ptr_range(*vreg, size, out)?,
+                MirValue::VReg(vreg) => self.check_ptr_range_with_op(*vreg, size, op, out)?,
                 MirValue::StackSlot(slot) => {
                     let ptr = self.stack_addr_temp(*slot, out);
-                    self.check_ptr_range_reg(ptr, size, out)?;
+                    self.check_ptr_range_reg_with_op(ptr, size, op, out)?;
                 }
                 MirValue::Const(_) => {
                     return Err(VccError::new(
