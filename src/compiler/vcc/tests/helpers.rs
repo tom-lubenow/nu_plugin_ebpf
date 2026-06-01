@@ -3729,6 +3729,12 @@ fn test_verify_mir_helper_snprintf_btf_rejects_small_btf_ptr_buffer() {
         "expected pointer bounds error, got {:?}",
         err
     );
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("helper snprintf_btf ptr out of bounds")),
+        "unexpected error messages: {:?}",
+        err
+    );
 }
 
 #[test]
@@ -14171,6 +14177,12 @@ fn test_verify_mir_helper_trace_printk_bounds() {
         "expected pointer bounds error, got {:?}",
         err
     );
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("helper trace_printk fmt out of bounds")),
+        "unexpected error messages: {:?}",
+        err
+    );
 }
 
 #[test]
@@ -14258,6 +14270,13 @@ fn test_verify_mir_helper_trace_vprintk_bounds() {
     assert!(
         err.iter().any(|e| e.kind == VccErrorKind::PointerBounds),
         "expected pointer bounds error, got {:?}",
+        err
+    );
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper trace_vprintk data out of bounds")),
+        "unexpected error messages: {:?}",
         err
     );
 }
