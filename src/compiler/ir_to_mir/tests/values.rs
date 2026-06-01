@@ -3687,6 +3687,150 @@ fn test_lower_str_replace_all_on_known_string_materializes_all_replacements() {
 }
 
 #[test]
+fn test_lower_str_replace_regex_on_known_string_expands_captures() {
+    let replace_decl = DeclId::new(163);
+    let starts_with_decl = DeclId::new(164);
+    let hir = make_str_replace_then_starts_with_program(
+        replace_decl,
+        starts_with_decl,
+        "abc123",
+        "([a-z]+)([0-9]+)",
+        "${2}-${1}",
+        "123-abc",
+        vec![b"regex".to_vec()],
+    );
+    let decl_names = HashMap::from([
+        (replace_decl, "str replace".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str replace --regex should lower for compile-time known strings");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"123-abc\0")
+            )),
+        "expected str replace --regex to expand capture groups"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("str replace --regex result should compile through codegen");
+}
+
+#[test]
+fn test_lower_str_replace_regex_no_expand_materializes_literal_replacement() {
+    let replace_decl = DeclId::new(165);
+    let starts_with_decl = DeclId::new(166);
+    let hir = make_str_replace_then_starts_with_program(
+        replace_decl,
+        starts_with_decl,
+        "abc123",
+        "([a-z]+)([0-9]+)",
+        "${2}-${1}",
+        "${2}-${1}",
+        vec![b"regex".to_vec(), b"no-expand".to_vec()],
+    );
+    let decl_names = HashMap::from([
+        (replace_decl, "str replace".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str replace --regex --no-expand should lower for compile-time known strings");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"${2}-${1}\0")
+            )),
+        "expected str replace --regex --no-expand to keep replacement literal"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("str replace --regex --no-expand result should compile through codegen");
+}
+
+#[test]
+fn test_lower_str_replace_multiline_all_on_known_string_materializes_all_replacements() {
+    let replace_decl = DeclId::new(167);
+    let starts_with_decl = DeclId::new(168);
+    let hir = make_str_replace_then_starts_with_program(
+        replace_decl,
+        starts_with_decl,
+        "a\nb\nb",
+        "^b",
+        "X",
+        "a\nX\nX",
+        vec![b"all".to_vec(), b"multiline".to_vec()],
+    );
+    let decl_names = HashMap::from([
+        (replace_decl, "str replace".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str replace --multiline --all should lower for compile-time known strings");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"a\nX\nX\0")
+            )),
+        "expected str replace --multiline --all to materialize all line replacements"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("str replace --multiline --all result should compile through codegen");
+}
+
+#[test]
 fn test_lower_str_trim_on_known_string_materializes_trimmed_literal() {
     let trim_decl = DeclId::new(130);
     let starts_with_decl = DeclId::new(131);

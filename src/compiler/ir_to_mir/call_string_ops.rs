@@ -1,4 +1,5 @@
 use super::*;
+use fancy_regex::{NoExpand, Regex as FancyRegex};
 use unicode_segmentation::UnicodeSegmentation;
 
 struct KnownStringSearchOperands {
@@ -610,9 +611,14 @@ impl<'a> HirToMirLowering<'a> {
             dst_vreg
         };
 
-        if !self.named_args.is_empty() || self.named_flags.iter().any(|flag| flag != "all") {
+        if !self.named_args.is_empty()
+            || self
+                .named_flags
+                .iter()
+                .any(|flag| !matches!(flag.as_str(), "all" | "no-expand" | "regex" | "multiline"))
+        {
             return Err(CompileError::UnsupportedInstruction(
-                "str replace currently supports only default substring replacement and --all in eBPF"
+                "str replace currently supports only default substring replacement, --all, --regex, --multiline, and --no-expand in eBPF"
                     .into(),
             ));
         }
@@ -628,12 +634,51 @@ impl<'a> HirToMirLowering<'a> {
             self.literal_string_arg(self.positional_args[1].1, "str replace replacement")?;
 
         let replace_all = self.named_flags.iter().any(|flag| flag == "all");
-        let output = if replace_all {
+        let use_regex = self
+            .named_flags
+            .iter()
+            .any(|flag| flag == "regex" || flag == "multiline");
+        let no_expand = self.named_flags.iter().any(|flag| flag == "no-expand");
+        let output = if use_regex {
+            self.string_replace_regex(&input, &find, &replacement, replace_all, no_expand)?
+        } else if replace_all {
             input.replace(&find, &replacement)
         } else {
             input.replacen(&find, &replacement, 1)
         };
         self.lower_known_string_result(src_dst, result_vreg, output)
+    }
+
+    fn string_replace_regex(
+        &self,
+        input: &str,
+        find: &str,
+        replacement: &str,
+        replace_all: bool,
+        no_expand: bool,
+    ) -> Result<String, CompileError> {
+        let pattern = if self.named_flags.iter().any(|flag| flag == "multiline") {
+            format!("(?m){find}")
+        } else {
+            find.to_string()
+        };
+        let regex = FancyRegex::new(&pattern).map_err(|err| {
+            CompileError::UnsupportedInstruction(format!(
+                "str replace --regex pattern is invalid in eBPF: {err}"
+            ))
+        })?;
+        let limit = if replace_all { 0 } else { 1 };
+        let output = if no_expand {
+            regex.try_replacen(input, limit, NoExpand(replacement))
+        } else {
+            regex.try_replacen(input, limit, replacement)
+        }
+        .map_err(|err| {
+            CompileError::UnsupportedInstruction(format!(
+                "str replace --regex failed at compile time in eBPF: {err}"
+            ))
+        })?;
+        Ok(output.into_owned())
     }
 
     pub(super) fn lower_string_trim(

@@ -35374,6 +35374,32 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-string-replace-regex"
+        category: "language-core"
+        tags: [string str replace regex]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "abc123" | str replace --regex "([a-z]+)([0-9]+)" "${2}-${1}" | str starts-with "123-abc"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-string-replace-regex-no-expand"
+        category: "language-core"
+        tags: [string str replace regex no-expand]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "abc123" | str replace --regex --no-expand "([a-z]+)([0-9]+)" "${2}-${1}" | str starts-with "${2}-${1}"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-string-trim"
         category: "language-core"
         tags: [string str trim]

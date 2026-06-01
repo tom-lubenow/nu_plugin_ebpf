@@ -1135,6 +1135,7 @@ dependencies = [
  "btf",
  "bytes",
  "chrono",
+ "fancy-regex",
  "libc",
  "nu-cmd-lang",
  "nu-parser",
