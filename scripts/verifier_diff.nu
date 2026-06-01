@@ -36011,6 +36011,45 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-list-split-list-string-group-join"
+        category: "language-core"
+        tags: [list split-list string join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ["a" "b" "x" "c" "d" "x" "e" "f"] | split list "x" | get 1 | str join "-" | str starts-with "c-d"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-list-split-list-after-string-group-join"
+        category: "language-core"
+        tags: [list split-list after string join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ["a" "x" "c" "x" "e" "f"] | split list --split after "x" | get 1 | str join "-" | str starts-with "c-x"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-list-split-list-before-string-group-join"
+        category: "language-core"
+        tags: [list split-list before string join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ["a" "b" "x" "c" "x" "d"] | split list --split before "x" | get 1 | str join "-" | str starts-with "x-c"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-string-split-chars-join"
         category: "language-core"
         tags: [string split chars join]

@@ -2750,6 +2750,10 @@ impl<'a> HirToMirLowering<'a> {
                 self.lower_stack_list_find(src_dst, dst_vreg, src_dst_had_value)?;
             }
 
+            "split list" => {
+                self.lower_compile_time_split_list(src_dst, dst_vreg, src_dst_had_value)?;
+            }
+
             "append" | "prepend" => {
                 self.lower_stack_list_append_or_prepend(
                     &cmd_name,

@@ -68,6 +68,7 @@ const NU_CLOSURE_COMMANDS: &[&str] = &[
     "str distance",
     "str join",
     "split chars",
+    "split list",
     "split row",
     "split words",
     "str stats",

@@ -310,6 +310,7 @@ pub enum FixedLayoutValueConsumer {
     Uniq,
     Sort,
     Find,
+    SplitList,
     Compact,
     StringTransform,
 }
@@ -500,6 +501,7 @@ pub fn compile_time_value_flows_to_fixed_layout_aggregate_consumer(
         FixedLayoutValueConsumer::Uniq,
         FixedLayoutValueConsumer::Sort,
         FixedLayoutValueConsumer::Find,
+        FixedLayoutValueConsumer::SplitList,
         FixedLayoutValueConsumer::Compact,
         FixedLayoutValueConsumer::StringTransform,
     ]
@@ -766,6 +768,18 @@ fn compile_time_value_consumer_matches(
                 && args.rest.is_empty()
                 && args.named.is_empty()
                 && args.flags.is_empty()
+                && args.parser_info.is_empty()
+        }
+        FixedLayoutValueConsumer::SplitList => {
+            decl_name == Some("split list")
+                && call_args_tracked_only_in_pipeline(src_dst, args, tracked_regs)
+                && args.positional.len() == 1
+                && args.rest.is_empty()
+                && args
+                    .named
+                    .iter()
+                    .all(|(name, _)| name.as_slice() == b"split")
+                && args.flags.iter().all(|flag| flag.as_slice() == b"regex")
                 && args.parser_info.is_empty()
         }
         FixedLayoutValueConsumer::Compact => {

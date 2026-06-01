@@ -1901,6 +1901,127 @@ fn make_string_list_builder_pipeline_call_program(decl_id: DeclId, values: &[&st
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_split_list_string_get_join_then_starts_with_program(
+    split_decl: DeclId,
+    get_decl: DeclId,
+    join_decl: DeclId,
+    starts_with_decl: DeclId,
+    values: &[&str],
+    separator: &str,
+    split_mode: Option<&str>,
+    group_index: i64,
+    join_separator: &str,
+    prefix: &str,
+) -> HirProgram {
+    let mut next_reg = 2u32;
+    let mut stmts = vec![HirStmt::LoadValue {
+        dst: RegId::new(0),
+        val: Box::new(Value::list(
+            values
+                .iter()
+                .map(|value| Value::string(*value, Span::test_data()))
+                .collect(),
+            Span::test_data(),
+        )),
+    }];
+
+    let separator_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::LoadValue {
+        dst: separator_reg,
+        val: Box::new(Value::string(separator, Span::test_data())),
+    });
+
+    let mut named = Vec::new();
+    if let Some(split_mode) = split_mode {
+        let split_mode_reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadValue {
+            dst: split_mode_reg,
+            val: Box::new(Value::string(split_mode, Span::test_data())),
+        });
+        named.push((b"split".to_vec(), split_mode_reg));
+    }
+
+    stmts.push(HirStmt::Call {
+        decl_id: split_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional: vec![separator_reg],
+            named,
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let group_index_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::LoadLiteral {
+        dst: group_index_reg,
+        lit: HirLiteral::Int(group_index),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: get_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional: vec![group_index_reg],
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let join_separator_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::LoadValue {
+        dst: join_separator_reg,
+        val: Box::new(Value::string(join_separator, Span::test_data())),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: join_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional: vec![join_separator_reg],
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let prefix_reg = RegId::new(next_reg);
+    next_reg += 1;
+    let starts_with_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::LoadValue {
+        dst: prefix_reg,
+        val: Box::new(Value::string(prefix, Span::test_data())),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: starts_with_decl,
+        src_dst: starts_with_reg,
+        args: HirCallArgs {
+            positional: vec![prefix_reg],
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return {
+                src: starts_with_reg,
+            },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: next_reg,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_record_list_compact_length_program(
     compact_decl: DeclId,
     length_decl: DeclId,
@@ -9817,6 +9938,213 @@ fn test_lower_find_missing_on_numeric_list_returns_empty_list() {
 
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("find followed by length should compile through codegen");
+}
+
+#[test]
+fn test_lower_split_list_on_known_string_list_materializes_groups() {
+    let split_decl = DeclId::new(481);
+    let get_decl = DeclId::new(482);
+    let join_decl = DeclId::new(483);
+    let starts_with_decl = DeclId::new(484);
+    let hir = make_split_list_string_get_join_then_starts_with_program(
+        split_decl,
+        get_decl,
+        join_decl,
+        starts_with_decl,
+        &["a", "b", "x", "c", "d", "x", "e", "f"],
+        "x",
+        None,
+        1,
+        "-",
+        "c-d",
+    );
+    let decl_names = HashMap::from([
+        (split_decl, "split list".to_string()),
+        (get_decl, "get".to_string()),
+        (join_decl, "str join".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("split list should lower compile-time known homogeneous string groups");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"c-d\0")
+            )),
+        "expected split list output group to feed str join with c-d"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("split list group consumed by str join should compile");
+}
+
+#[test]
+fn test_lower_split_list_after_mode_keeps_separator_in_previous_group() {
+    let split_decl = DeclId::new(485);
+    let get_decl = DeclId::new(486);
+    let join_decl = DeclId::new(487);
+    let starts_with_decl = DeclId::new(488);
+    let hir = make_split_list_string_get_join_then_starts_with_program(
+        split_decl,
+        get_decl,
+        join_decl,
+        starts_with_decl,
+        &["a", "x", "c", "x", "e", "f"],
+        "x",
+        Some("after"),
+        1,
+        "-",
+        "c-x",
+    );
+    let decl_names = HashMap::from([
+        (split_decl, "split list".to_string()),
+        (get_decl, "get".to_string()),
+        (join_decl, "str join".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("split list --split after should lower compile-time known homogeneous string groups");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"c-x\0")
+            )),
+        "expected split list --split after to retain the separator in the previous group"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("split list --split after group consumed by str join should compile");
+}
+
+#[test]
+fn test_lower_split_list_before_mode_keeps_separator_in_next_group() {
+    let split_decl = DeclId::new(493);
+    let get_decl = DeclId::new(494);
+    let join_decl = DeclId::new(495);
+    let starts_with_decl = DeclId::new(496);
+    let hir = make_split_list_string_get_join_then_starts_with_program(
+        split_decl,
+        get_decl,
+        join_decl,
+        starts_with_decl,
+        &["a", "b", "x", "c", "x", "d"],
+        "x",
+        Some("before"),
+        1,
+        "-",
+        "x-c",
+    );
+    let decl_names = HashMap::from([
+        (split_decl, "split list".to_string()),
+        (get_decl, "get".to_string()),
+        (join_decl, "str join".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("split list --split before should lower compile-time known homogeneous string groups");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"x-c\0")
+            )),
+        "expected split list --split before to retain the separator in the next group"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("split list --split before group consumed by str join should compile");
+}
+
+#[test]
+fn test_lower_split_list_rejects_heterogeneous_group_layouts() {
+    let split_decl = DeclId::new(489);
+    let get_decl = DeclId::new(490);
+    let join_decl = DeclId::new(491);
+    let starts_with_decl = DeclId::new(492);
+    let hir = make_split_list_string_get_join_then_starts_with_program(
+        split_decl,
+        get_decl,
+        join_decl,
+        starts_with_decl,
+        &["a", "x", "b", "c", "x", "d"],
+        "x",
+        None,
+        1,
+        "-",
+        "b-c",
+    );
+    let decl_names = HashMap::from([
+        (split_decl, "split list".to_string()),
+        (get_decl, "get".to_string()),
+        (join_decl, "str join".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("split list should reject heterogeneous fixed-layout result groups");
+
+    assert!(
+        err.to_string()
+            .contains("split list result requires homogeneous fixed-layout groups"),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]

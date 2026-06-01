@@ -7,6 +7,7 @@ mod find;
 mod math;
 mod predicates;
 mod sort;
+mod split;
 
 impl<'a> HirToMirLowering<'a> {
     fn is_stack_list_placeholder_type(ty: &MirType) -> bool {
