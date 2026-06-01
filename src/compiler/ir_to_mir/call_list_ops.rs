@@ -22,17 +22,16 @@ impl<'a> HirToMirLowering<'a> {
         )
     }
 
-    pub(super) fn compile_time_only_list_builder_values(
+    pub(super) fn direct_list_builder_values(
         &self,
         input_reg: RegId,
         input_vreg: VReg,
     ) -> Option<&[nu_protocol::Value]> {
         let meta = self.get_metadata(input_reg)?;
-        let value @ nu_protocol::Value::List { vals, .. } = meta.constant_value.as_ref()? else {
+        let nu_protocol::Value::List { vals, .. } = meta.constant_value.as_ref()? else {
             return None;
         };
-        if meta.list_buffer.is_some() || crate::compiler::hir::supports_numeric_constant_list(value)
-        {
+        if meta.list_buffer.is_some() {
             return None;
         }
         let ty = self.vreg_type_hints.get(&input_vreg)?;
@@ -40,6 +39,21 @@ impl<'a> HirToMirLowering<'a> {
             return None;
         }
         Some(vals)
+    }
+
+    pub(super) fn compile_time_only_list_builder_values(
+        &self,
+        input_reg: RegId,
+        input_vreg: VReg,
+    ) -> Option<&[nu_protocol::Value]> {
+        let meta = self.get_metadata(input_reg)?;
+        let value @ nu_protocol::Value::List { .. } = meta.constant_value.as_ref()? else {
+            return None;
+        };
+        if crate::compiler::hir::supports_numeric_constant_list(value) {
+            return None;
+        }
+        self.direct_list_builder_values(input_reg, input_vreg)
     }
 
     pub(super) fn create_stack_numeric_list_result(

@@ -857,7 +857,7 @@ eBPF layout and verifier bounds are explicit:
 | `sort` | Stack-backed numeric lists with capacity <= 16, using bounded compare/swap lowering; `--reverse` is supported |
 | `compact` | Stack-backed numeric lists as an identity operation because numeric-list elements cannot be null or empty; column arguments are not modeled |
 | `find` | Stack-backed numeric lists with one numeric search argument, returning a bounded equality-filtered stack list |
-| `append` / `prepend` | Stack-backed numeric lists with scalar numeric items when the output fits the modeled capacity |
+| `append` / `prepend` | Stack-backed numeric lists with scalar numeric items when the output fits the modeled capacity; compile-time known fixed lists with compile-time constant items |
 | `is-empty` / `is-not-empty` | Stack-backed lists, tracked strings, literal null, literal list constants, and metadata-backed fixed records |
 | `describe` | No-input or compiler-known inputs, producing a bounded tracked string with Nushell's type description |
 | `bytes length` | Compile-time known binary input, returning its byte length |

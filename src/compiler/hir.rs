@@ -305,6 +305,7 @@ pub enum FixedLayoutValueConsumer {
     FirstLast,
     Slice,
     Reverse,
+    AppendPrepend,
 }
 
 pub fn compile_time_value_flows_to_fixed_layout_consumer(
@@ -488,6 +489,7 @@ pub fn compile_time_value_flows_to_fixed_layout_aggregate_consumer(
         FixedLayoutValueConsumer::FirstLast,
         FixedLayoutValueConsumer::Slice,
         FixedLayoutValueConsumer::Reverse,
+        FixedLayoutValueConsumer::AppendPrepend,
     ]
     .into_iter()
     .any(|consumer| {
@@ -690,6 +692,15 @@ fn compile_time_value_consumer_matches(
             decl_name == Some("reverse")
                 && call_args_tracked_only_in_pipeline(src_dst, args, tracked_regs)
                 && args.positional.is_empty()
+                && args.rest.is_empty()
+                && args.named.is_empty()
+                && args.flags.is_empty()
+                && args.parser_info.is_empty()
+        }
+        FixedLayoutValueConsumer::AppendPrepend => {
+            matches!(decl_name, Some("append" | "prepend"))
+                && call_args_tracked_only_in_pipeline(src_dst, args, tracked_regs)
+                && args.positional.len() == 1
                 && args.rest.is_empty()
                 && args.named.is_empty()
                 && args.flags.is_empty()

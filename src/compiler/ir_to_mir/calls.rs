@@ -120,6 +120,31 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         let (item_vreg, item_reg) = self.positional_args[0];
+        if let Some(values) = input_reg.and_then(|reg| {
+            self.direct_list_builder_values(reg, input_vreg)
+                .map(|values| values.to_vec())
+        }) {
+            let item_constant = self.get_metadata(item_reg).and_then(|meta| {
+                meta.constant_value.clone().or_else(|| {
+                    meta.literal_int
+                        .map(|value| nu_protocol::Value::int(value, Span::unknown()))
+                })
+            });
+            let Some(item) = item_constant else {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{cmd_name} item must be compile-time constant for compile-time known fixed lists in eBPF"
+                )));
+            };
+            let mut vals = values;
+            if cmd_name == "prepend" {
+                vals.insert(0, item);
+            } else {
+                vals.push(item);
+            }
+            self.lower_constant_value(src_dst, &nu_protocol::Value::list(vals, Span::unknown()))?;
+            return Ok(());
+        }
+
         let input_meta = input_reg
             .and_then(|reg| self.get_metadata(reg).cloned())
             .ok_or_else(|| {

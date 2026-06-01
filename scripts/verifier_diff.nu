@@ -35061,6 +35061,32 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-string-list-append"
+        category: "language-core"
+        tags: [string list append]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ["ab" "cd"] | append "ef" | str join "-" | str starts-with "ab-cd-ef"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-string-list-prepend"
+        category: "language-core"
+        tags: [string list prepend]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ["ab" "cd"] | prepend "zz" | str join "-" | str starts-with "zz-ab-cd"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-math-sum"
         category: "language-core"
         tags: [aggregate list math sum]
