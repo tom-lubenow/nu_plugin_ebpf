@@ -772,8 +772,40 @@ pub(crate) fn dynptr_from_mem_join_reinitialize_mir() -> (MirFunction, HashMap<V
     (func, types)
 }
 
-pub(crate) fn unknown_stack_object_conditional_init_blocks_reinitialize_mir()
--> (MirFunction, MirFunction, HashMap<VReg, MirType>) {
+pub(crate) struct UnknownStackObjectSubfnFixture {
+    pub(crate) subfunctions: Vec<MirFunction>,
+    pub(crate) subfunction_types: Vec<HashMap<VReg, MirType>>,
+    pub(crate) caller: MirFunction,
+    pub(crate) caller_types: HashMap<VReg, MirType>,
+}
+
+fn unknown_stack_object_init_subfn() -> (MirFunction, HashMap<VReg, MirType>) {
+    let mut init = MirFunction::new();
+    let init_entry = init.alloc_block();
+    init.entry = init_entry;
+    init.param_count = 1;
+    init.vreg_count = 1;
+    let init_slot = init.alloc_stack_slot(8, 8, StackSlotKind::Local);
+    init.param_stack_slots.insert(0, init_slot);
+    let init_ret = init.alloc_vreg();
+    init.block_mut(init_entry)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: init_ret,
+            kfunc: "__test_unknown_stack_object_init".to_string(),
+            btf_id: None,
+            args: vec![VReg(0)],
+        });
+    init.block_mut(init_entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(VReg(0), unknown_stack_ptr_ty());
+    types.insert(init_ret, MirType::I64);
+
+    (init, types)
+}
+
+fn unknown_stack_object_conditional_init_subfn() -> (MirFunction, HashMap<VReg, MirType>) {
     let mut init = MirFunction::new();
     let entry = init.alloc_block();
     let init_path = init.alloc_block();
@@ -799,6 +831,74 @@ pub(crate) fn unknown_stack_object_conditional_init_blocks_reinitialize_mir()
         });
     init.block_mut(init_path).terminator = MirInst::Return { val: None };
     init.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(VReg(0), unknown_stack_ptr_ty());
+    types.insert(VReg(1), MirType::Bool);
+    types.insert(init_ret, MirType::I64);
+
+    (init, types)
+}
+
+fn unknown_stack_object_destroy_subfn() -> (MirFunction, HashMap<VReg, MirType>) {
+    let mut destroy = MirFunction::new();
+    let destroy_entry = destroy.alloc_block();
+    destroy.entry = destroy_entry;
+    destroy.param_count = 1;
+    destroy.vreg_count = 1;
+    let destroy_slot = destroy.alloc_stack_slot(8, 8, StackSlotKind::Local);
+    destroy.param_stack_slots.insert(0, destroy_slot);
+    let destroy_ret = destroy.alloc_vreg();
+    destroy
+        .block_mut(destroy_entry)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: destroy_ret,
+            kfunc: "__test_unknown_stack_object_destroy".to_string(),
+            btf_id: None,
+            args: vec![VReg(0)],
+        });
+    destroy.block_mut(destroy_entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(VReg(0), unknown_stack_ptr_ty());
+    types.insert(destroy_ret, MirType::I64);
+
+    (destroy, types)
+}
+
+fn unknown_stack_object_copy_subfn() -> (MirFunction, HashMap<VReg, MirType>) {
+    let mut copy = MirFunction::new();
+    let copy_entry = copy.alloc_block();
+    copy.entry = copy_entry;
+    copy.param_count = 2;
+    copy.vreg_count = 2;
+    let copy_src_slot = copy.alloc_stack_slot(8, 8, StackSlotKind::Local);
+    let copy_dst_slot = copy.alloc_stack_slot(8, 8, StackSlotKind::Local);
+    copy.param_stack_slots.insert(0, copy_src_slot);
+    copy.param_stack_slots.insert(1, copy_dst_slot);
+    let copy_ret = copy.alloc_vreg();
+    copy.block_mut(copy_entry)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: copy_ret,
+            kfunc: "__test_unknown_stack_object_copy".to_string(),
+            btf_id: None,
+            args: vec![VReg(0), VReg(1)],
+        });
+    copy.block_mut(copy_entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(VReg(0), unknown_stack_ptr_ty());
+    types.insert(VReg(1), unknown_stack_ptr_ty());
+    types.insert(copy_ret, MirType::I64);
+
+    (copy, types)
+}
+
+pub(crate) fn unknown_stack_object_conditional_init_blocks_reinitialize_mir()
+-> UnknownStackObjectSubfnFixture {
+    let (init, init_types) = unknown_stack_object_conditional_init_subfn();
 
     let mut caller = MirFunction::new();
     let caller_entry = caller.alloc_block();
@@ -842,5 +942,177 @@ pub(crate) fn unknown_stack_object_conditional_init_blocks_reinitialize_mir()
     caller_types.insert(call_ret, MirType::I64);
     caller_types.insert(retry_ret, MirType::I64);
 
-    (init, caller, caller_types)
+    UnknownStackObjectSubfnFixture {
+        subfunctions: vec![init],
+        subfunction_types: vec![init_types],
+        caller,
+        caller_types,
+    }
+}
+
+pub(crate) fn unknown_stack_object_lifecycle_composes_mir() -> UnknownStackObjectSubfnFixture {
+    let (init, init_types) = unknown_stack_object_init_subfn();
+    let (destroy, destroy_types) = unknown_stack_object_destroy_subfn();
+
+    let mut caller = MirFunction::new();
+    let entry = caller.alloc_block();
+    caller.entry = entry;
+    let object = caller.alloc_vreg();
+    let init_call_ret = caller.alloc_vreg();
+    let destroy_call_ret = caller.alloc_vreg();
+    let object_slot = caller.alloc_stack_slot(8, 8, StackSlotKind::Local);
+    caller.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: object,
+        src: MirValue::StackSlot(object_slot),
+    });
+    caller
+        .block_mut(entry)
+        .instructions
+        .push(MirInst::CallSubfn {
+            dst: init_call_ret,
+            subfn: SubfunctionId(0),
+            args: vec![object],
+        });
+    caller
+        .block_mut(entry)
+        .instructions
+        .push(MirInst::CallSubfn {
+            dst: destroy_call_ret,
+            subfn: SubfunctionId(1),
+            args: vec![object],
+        });
+    caller.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut caller_types = HashMap::new();
+    caller_types.insert(object, unknown_stack_ptr_ty());
+    caller_types.insert(init_call_ret, MirType::I64);
+    caller_types.insert(destroy_call_ret, MirType::I64);
+
+    UnknownStackObjectSubfnFixture {
+        subfunctions: vec![init, destroy],
+        subfunction_types: vec![init_types, destroy_types],
+        caller,
+        caller_types,
+    }
+}
+
+pub(crate) fn unknown_stack_object_copy_initializes_destination_mir()
+-> UnknownStackObjectSubfnFixture {
+    let (init, init_types) = unknown_stack_object_init_subfn();
+    let (copy, copy_types) = unknown_stack_object_copy_subfn();
+    let (destroy, destroy_types) = unknown_stack_object_destroy_subfn();
+
+    let mut caller = MirFunction::new();
+    let entry = caller.alloc_block();
+    caller.entry = entry;
+    let src = caller.alloc_vreg();
+    let dst = caller.alloc_vreg();
+    let init_call_ret = caller.alloc_vreg();
+    let copy_call_ret = caller.alloc_vreg();
+    let destroy_src_ret = caller.alloc_vreg();
+    let destroy_dst_ret = caller.alloc_vreg();
+    let src_slot = caller.alloc_stack_slot(8, 8, StackSlotKind::Local);
+    let dst_slot = caller.alloc_stack_slot(8, 8, StackSlotKind::Local);
+    caller.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: src,
+        src: MirValue::StackSlot(src_slot),
+    });
+    caller.block_mut(entry).instructions.push(MirInst::Copy {
+        dst,
+        src: MirValue::StackSlot(dst_slot),
+    });
+    caller
+        .block_mut(entry)
+        .instructions
+        .push(MirInst::CallSubfn {
+            dst: init_call_ret,
+            subfn: SubfunctionId(0),
+            args: vec![src],
+        });
+    caller
+        .block_mut(entry)
+        .instructions
+        .push(MirInst::CallSubfn {
+            dst: copy_call_ret,
+            subfn: SubfunctionId(1),
+            args: vec![src, dst],
+        });
+    caller
+        .block_mut(entry)
+        .instructions
+        .push(MirInst::CallSubfn {
+            dst: destroy_src_ret,
+            subfn: SubfunctionId(2),
+            args: vec![src],
+        });
+    caller
+        .block_mut(entry)
+        .instructions
+        .push(MirInst::CallSubfn {
+            dst: destroy_dst_ret,
+            subfn: SubfunctionId(2),
+            args: vec![dst],
+        });
+    caller.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut caller_types = HashMap::new();
+    caller_types.insert(src, unknown_stack_ptr_ty());
+    caller_types.insert(dst, unknown_stack_ptr_ty());
+    caller_types.insert(init_call_ret, MirType::I64);
+    caller_types.insert(copy_call_ret, MirType::I64);
+    caller_types.insert(destroy_src_ret, MirType::I64);
+    caller_types.insert(destroy_dst_ret, MirType::I64);
+
+    UnknownStackObjectSubfnFixture {
+        subfunctions: vec![init, copy, destroy],
+        subfunction_types: vec![init_types, copy_types, destroy_types],
+        caller,
+        caller_types,
+    }
+}
+
+pub(crate) fn unknown_stack_object_init_blocks_reinitialize_mir() -> UnknownStackObjectSubfnFixture
+{
+    let (init, init_types) = unknown_stack_object_init_subfn();
+
+    let mut caller = MirFunction::new();
+    let entry = caller.alloc_block();
+    caller.entry = entry;
+    let object = caller.alloc_vreg();
+    let first_ret = caller.alloc_vreg();
+    let second_ret = caller.alloc_vreg();
+    let object_slot = caller.alloc_stack_slot(8, 8, StackSlotKind::Local);
+    caller.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: object,
+        src: MirValue::StackSlot(object_slot),
+    });
+    caller
+        .block_mut(entry)
+        .instructions
+        .push(MirInst::CallSubfn {
+            dst: first_ret,
+            subfn: SubfunctionId(0),
+            args: vec![object],
+        });
+    caller
+        .block_mut(entry)
+        .instructions
+        .push(MirInst::CallSubfn {
+            dst: second_ret,
+            subfn: SubfunctionId(0),
+            args: vec![object],
+        });
+    caller.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut caller_types = HashMap::new();
+    caller_types.insert(object, unknown_stack_ptr_ty());
+    caller_types.insert(first_ret, MirType::I64);
+    caller_types.insert(second_ret, MirType::I64);
+
+    UnknownStackObjectSubfnFixture {
+        subfunctions: vec![init],
+        subfunction_types: vec![init_types],
+        caller,
+        caller_types,
+    }
 }

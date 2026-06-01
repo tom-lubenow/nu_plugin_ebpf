@@ -6,6 +6,8 @@ use crate::compiler::test_mir_builders::{
     copy_from_user_task_dynptr_join_reinitialize_mir, dynptr_clone_join_reinitialize_mir,
     explicit_null_ref_join_release_mir, packet_dynptr_kfunc_join_reinitialize_mir,
     unknown_stack_object_conditional_init_blocks_reinitialize_mir,
+    unknown_stack_object_copy_initializes_destination_mir,
+    unknown_stack_object_init_blocks_reinitialize_mir, unknown_stack_object_lifecycle_composes_mir,
     xdp_get_xfrm_state_explicit_null_join_mir,
 };
 use crate::compiler::{EbpfProgramType, ProbeContext};
@@ -2694,9 +2696,8 @@ fn test_kfunc_dynptr_subfn_conditional_init_blocks_reinitialize() {
 
 #[test]
 fn test_unknown_stack_object_subfn_conditional_init_blocks_reinitialize() {
-    let (init, caller, caller_types) =
-        unknown_stack_object_conditional_init_blocks_reinitialize_mir();
-    let summaries = infer_subfunction_summaries(&[init]);
+    let fixture = unknown_stack_object_conditional_init_blocks_reinitialize_mir();
+    let summaries = infer_subfunction_summaries(&fixture.subfunctions);
     let init_summary = summaries
         .get(&SubfunctionId(0))
         .cloned()
@@ -2708,8 +2709,9 @@ fn test_unknown_stack_object_subfn_conditional_init_blocks_reinitialize() {
     assert_eq!(maybe.type_name, "bpf_test_obj");
     assert_eq!(maybe.type_id, Some(0xbeef));
 
-    let err = verify_mir_with_subfunction_summaries(&caller, &caller_types, &summaries)
-        .expect_err("expected maybe-initialized unknown stack object reinit error");
+    let err =
+        verify_mir_with_subfunction_summaries(&fixture.caller, &fixture.caller_types, &summaries)
+            .expect_err("expected maybe-initialized unknown stack object reinit error");
     assert!(
         err.iter().any(|e| e
             .message
@@ -2721,49 +2723,8 @@ fn test_unknown_stack_object_subfn_conditional_init_blocks_reinitialize() {
 
 #[test]
 fn test_unknown_stack_object_subfn_lifecycle_composes() {
-    let stack_obj_ty = MirType::Ptr {
-        pointee: Box::new(MirType::Unknown),
-        address_space: AddressSpace::Stack,
-    };
-
-    let mut init = MirFunction::new();
-    let init_entry = init.alloc_block();
-    init.entry = init_entry;
-    init.param_count = 1;
-    init.vreg_count = 1;
-    let init_slot = init.alloc_stack_slot(8, 8, StackSlotKind::Local);
-    init.param_stack_slots.insert(0, init_slot);
-    let init_ret = init.alloc_vreg();
-    init.block_mut(init_entry)
-        .instructions
-        .push(MirInst::CallKfunc {
-            dst: init_ret,
-            kfunc: "__test_unknown_stack_object_init".to_string(),
-            btf_id: None,
-            args: vec![VReg(0)],
-        });
-    init.block_mut(init_entry).terminator = MirInst::Return { val: None };
-
-    let mut destroy = MirFunction::new();
-    let destroy_entry = destroy.alloc_block();
-    destroy.entry = destroy_entry;
-    destroy.param_count = 1;
-    destroy.vreg_count = 1;
-    let destroy_slot = destroy.alloc_stack_slot(8, 8, StackSlotKind::Local);
-    destroy.param_stack_slots.insert(0, destroy_slot);
-    let destroy_ret = destroy.alloc_vreg();
-    destroy
-        .block_mut(destroy_entry)
-        .instructions
-        .push(MirInst::CallKfunc {
-            dst: destroy_ret,
-            kfunc: "__test_unknown_stack_object_destroy".to_string(),
-            btf_id: None,
-            args: vec![VReg(0)],
-        });
-    destroy.block_mut(destroy_entry).terminator = MirInst::Return { val: None };
-
-    let summaries = infer_subfunction_summaries(&[init.clone(), destroy.clone()]);
+    let fixture = unknown_stack_object_lifecycle_composes_mir();
+    let summaries = infer_subfunction_summaries(&fixture.subfunctions);
     let init_summary = summaries
         .get(&SubfunctionId(0))
         .cloned()
@@ -2773,12 +2734,9 @@ fn test_unknown_stack_object_subfn_lifecycle_composes() {
         .cloned()
         .expect("expected destroy summary");
 
-    let mut init_types = HashMap::new();
-    init_types.insert(VReg(0), stack_obj_ty.clone());
-    init_types.insert(init_ret, MirType::I64);
     verify_mir_with_subfunction_summaries_for_probe_context_with_current_summary(
-        &init,
-        &init_types,
+        &fixture.subfunctions[0],
+        &fixture.subfunction_types[0],
         &summaries,
         Some(init_summary),
         None,
@@ -2786,12 +2744,9 @@ fn test_unknown_stack_object_subfn_lifecycle_composes() {
     )
     .expect("expected init subfunction to verify");
 
-    let mut destroy_types = HashMap::new();
-    destroy_types.insert(VReg(0), stack_obj_ty.clone());
-    destroy_types.insert(destroy_ret, MirType::I64);
     verify_mir_with_subfunction_summaries_for_probe_context_with_current_summary(
-        &destroy,
-        &destroy_types,
+        &fixture.subfunctions[1],
+        &fixture.subfunction_types[1],
         &summaries,
         Some(destroy_summary),
         None,
@@ -2799,102 +2754,14 @@ fn test_unknown_stack_object_subfn_lifecycle_composes() {
     )
     .expect("expected destroy subfunction to verify");
 
-    let mut func = MirFunction::new();
-    let entry = func.alloc_block();
-    func.entry = entry;
-    let object = func.alloc_vreg();
-    let init_call_ret = func.alloc_vreg();
-    let destroy_call_ret = func.alloc_vreg();
-    let object_slot = func.alloc_stack_slot(8, 8, StackSlotKind::Local);
-    func.block_mut(entry).instructions.push(MirInst::Copy {
-        dst: object,
-        src: MirValue::StackSlot(object_slot),
-    });
-    func.block_mut(entry).instructions.push(MirInst::CallSubfn {
-        dst: init_call_ret,
-        subfn: SubfunctionId(0),
-        args: vec![object],
-    });
-    func.block_mut(entry).instructions.push(MirInst::CallSubfn {
-        dst: destroy_call_ret,
-        subfn: SubfunctionId(1),
-        args: vec![object],
-    });
-    func.block_mut(entry).terminator = MirInst::Return { val: None };
-
-    let mut types = HashMap::new();
-    types.insert(object, stack_obj_ty);
-    types.insert(init_call_ret, MirType::I64);
-    types.insert(destroy_call_ret, MirType::I64);
-    verify_mir_with_subfunction_summaries(&func, &types, &summaries)
+    verify_mir_with_subfunction_summaries(&fixture.caller, &fixture.caller_types, &summaries)
         .expect("expected unknown stack object init/destroy wrappers to compose");
 }
 
 #[test]
 fn test_unknown_stack_object_subfn_copy_initializes_destination_stack_slot() {
-    let stack_obj_ty = MirType::Ptr {
-        pointee: Box::new(MirType::Unknown),
-        address_space: AddressSpace::Stack,
-    };
-
-    let mut init = MirFunction::new();
-    let init_entry = init.alloc_block();
-    init.entry = init_entry;
-    init.param_count = 1;
-    init.vreg_count = 1;
-    let init_slot = init.alloc_stack_slot(8, 8, StackSlotKind::Local);
-    init.param_stack_slots.insert(0, init_slot);
-    let init_ret = init.alloc_vreg();
-    init.block_mut(init_entry)
-        .instructions
-        .push(MirInst::CallKfunc {
-            dst: init_ret,
-            kfunc: "__test_unknown_stack_object_init".to_string(),
-            btf_id: None,
-            args: vec![VReg(0)],
-        });
-    init.block_mut(init_entry).terminator = MirInst::Return { val: None };
-
-    let mut copy = MirFunction::new();
-    let copy_entry = copy.alloc_block();
-    copy.entry = copy_entry;
-    copy.param_count = 2;
-    copy.vreg_count = 2;
-    let copy_src_slot = copy.alloc_stack_slot(8, 8, StackSlotKind::Local);
-    let copy_dst_slot = copy.alloc_stack_slot(8, 8, StackSlotKind::Local);
-    copy.param_stack_slots.insert(0, copy_src_slot);
-    copy.param_stack_slots.insert(1, copy_dst_slot);
-    let copy_ret = copy.alloc_vreg();
-    copy.block_mut(copy_entry)
-        .instructions
-        .push(MirInst::CallKfunc {
-            dst: copy_ret,
-            kfunc: "__test_unknown_stack_object_copy".to_string(),
-            btf_id: None,
-            args: vec![VReg(0), VReg(1)],
-        });
-    copy.block_mut(copy_entry).terminator = MirInst::Return { val: None };
-
-    let mut destroy = MirFunction::new();
-    let destroy_entry = destroy.alloc_block();
-    destroy.entry = destroy_entry;
-    destroy.param_count = 1;
-    destroy.vreg_count = 1;
-    let destroy_slot = destroy.alloc_stack_slot(8, 8, StackSlotKind::Local);
-    destroy.param_stack_slots.insert(0, destroy_slot);
-    let destroy_ret = destroy.alloc_vreg();
-    destroy
-        .block_mut(destroy_entry)
-        .instructions
-        .push(MirInst::CallKfunc {
-            dst: destroy_ret,
-            kfunc: "__test_unknown_stack_object_destroy".to_string(),
-            btf_id: None,
-            args: vec![VReg(0)],
-        });
-    destroy.block_mut(destroy_entry).terminator = MirInst::Return { val: None };
-
-    let summaries = infer_subfunction_summaries(&[init, copy.clone(), destroy]);
+    let fixture = unknown_stack_object_copy_initializes_destination_mir();
+    let summaries = infer_subfunction_summaries(&fixture.subfunctions);
     let copy_summary = summaries
         .get(&SubfunctionId(1))
         .cloned()
@@ -2905,13 +2772,9 @@ fn test_unknown_stack_object_subfn_copy_initializes_destination_stack_slot() {
         .expect("expected copy destination delta");
     assert_eq!(dst_delta.delta, 1);
 
-    let mut copy_types = HashMap::new();
-    copy_types.insert(VReg(0), stack_obj_ty.clone());
-    copy_types.insert(VReg(1), stack_obj_ty.clone());
-    copy_types.insert(copy_ret, MirType::I64);
     verify_mir_with_subfunction_summaries_for_probe_context_with_current_summary(
-        &copy,
-        &copy_types,
+        &fixture.subfunctions[1],
+        &fixture.subfunction_types[1],
         &summaries,
         Some(copy_summary),
         None,
@@ -2919,113 +2782,17 @@ fn test_unknown_stack_object_subfn_copy_initializes_destination_stack_slot() {
     )
     .expect("expected unknown stack object copy wrapper to verify");
 
-    let mut func = MirFunction::new();
-    let entry = func.alloc_block();
-    func.entry = entry;
-    let src = func.alloc_vreg();
-    let dst = func.alloc_vreg();
-    let init_call_ret = func.alloc_vreg();
-    let copy_call_ret = func.alloc_vreg();
-    let destroy_src_ret = func.alloc_vreg();
-    let destroy_dst_ret = func.alloc_vreg();
-    let src_slot = func.alloc_stack_slot(8, 8, StackSlotKind::Local);
-    let dst_slot = func.alloc_stack_slot(8, 8, StackSlotKind::Local);
-    func.block_mut(entry).instructions.push(MirInst::Copy {
-        dst: src,
-        src: MirValue::StackSlot(src_slot),
-    });
-    func.block_mut(entry).instructions.push(MirInst::Copy {
-        dst,
-        src: MirValue::StackSlot(dst_slot),
-    });
-    func.block_mut(entry).instructions.push(MirInst::CallSubfn {
-        dst: init_call_ret,
-        subfn: SubfunctionId(0),
-        args: vec![src],
-    });
-    func.block_mut(entry).instructions.push(MirInst::CallSubfn {
-        dst: copy_call_ret,
-        subfn: SubfunctionId(1),
-        args: vec![src, dst],
-    });
-    func.block_mut(entry).instructions.push(MirInst::CallSubfn {
-        dst: destroy_src_ret,
-        subfn: SubfunctionId(2),
-        args: vec![src],
-    });
-    func.block_mut(entry).instructions.push(MirInst::CallSubfn {
-        dst: destroy_dst_ret,
-        subfn: SubfunctionId(2),
-        args: vec![dst],
-    });
-    func.block_mut(entry).terminator = MirInst::Return { val: None };
-
-    let mut types = HashMap::new();
-    types.insert(src, stack_obj_ty.clone());
-    types.insert(dst, stack_obj_ty);
-    types.insert(init_call_ret, MirType::I64);
-    types.insert(copy_call_ret, MirType::I64);
-    types.insert(destroy_src_ret, MirType::I64);
-    types.insert(destroy_dst_ret, MirType::I64);
-    verify_mir_with_subfunction_summaries(&func, &types, &summaries)
+    verify_mir_with_subfunction_summaries(&fixture.caller, &fixture.caller_types, &summaries)
         .expect("expected unknown stack object copy wrapper to initialize caller destination");
 }
 
 #[test]
 fn test_unknown_stack_object_subfn_init_blocks_reinitialize() {
-    let mut init = MirFunction::new();
-    let init_entry = init.alloc_block();
-    init.entry = init_entry;
-    init.param_count = 1;
-    init.vreg_count = 1;
-    let init_slot = init.alloc_stack_slot(8, 8, StackSlotKind::Local);
-    init.param_stack_slots.insert(0, init_slot);
-    let init_ret = init.alloc_vreg();
-    init.block_mut(init_entry)
-        .instructions
-        .push(MirInst::CallKfunc {
-            dst: init_ret,
-            kfunc: "__test_unknown_stack_object_init".to_string(),
-            btf_id: None,
-            args: vec![VReg(0)],
-        });
-    init.block_mut(init_entry).terminator = MirInst::Return { val: None };
-
-    let summaries = infer_subfunction_summaries(&[init]);
-    let mut func = MirFunction::new();
-    let entry = func.alloc_block();
-    func.entry = entry;
-    let object = func.alloc_vreg();
-    let first_ret = func.alloc_vreg();
-    let second_ret = func.alloc_vreg();
-    let object_slot = func.alloc_stack_slot(8, 8, StackSlotKind::Local);
-    func.block_mut(entry).instructions.push(MirInst::Copy {
-        dst: object,
-        src: MirValue::StackSlot(object_slot),
-    });
-    func.block_mut(entry).instructions.push(MirInst::CallSubfn {
-        dst: first_ret,
-        subfn: SubfunctionId(0),
-        args: vec![object],
-    });
-    func.block_mut(entry).instructions.push(MirInst::CallSubfn {
-        dst: second_ret,
-        subfn: SubfunctionId(0),
-        args: vec![object],
-    });
-    func.block_mut(entry).terminator = MirInst::Return { val: None };
-
-    let stack_obj_ty = MirType::Ptr {
-        pointee: Box::new(MirType::Unknown),
-        address_space: AddressSpace::Stack,
-    };
-    let mut types = HashMap::new();
-    types.insert(object, stack_obj_ty);
-    types.insert(first_ret, MirType::I64);
-    types.insert(second_ret, MirType::I64);
-
-    let err = verify_mir_with_subfunction_summaries(&func, &types, &summaries)
-        .expect_err("expected unknown stack object reinit error");
+    let fixture = unknown_stack_object_init_blocks_reinitialize_mir();
+    let summaries = infer_subfunction_summaries(&fixture.subfunctions);
+    let err =
+        verify_mir_with_subfunction_summaries(&fixture.caller, &fixture.caller_types, &summaries)
+            .expect_err("expected unknown stack object reinit error");
     assert!(
         err.iter().any(|e| e
             .message
