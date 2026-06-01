@@ -35790,6 +35790,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-string-list-starts-with-join"
+        category: "language-core"
+        tags: [string list str starts-with join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ["abc" "xbc"] | str starts-with "a" | str join "-" | str starts-with "true-false"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-string-ends-with"
         category: "language-core"
         tags: [string str ends-with]
@@ -35829,6 +35842,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-string-list-ends-with-join"
+        category: "language-core"
+        tags: [string list str ends-with join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ["abc" "abx"] | str ends-with "c" | str join "-" | str starts-with "true-false"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-string-contains"
         category: "language-core"
         tags: [string str contains]
@@ -35836,6 +35862,32 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  "abcdef" | str contains "cd"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-string-list-contains-join"
+        category: "language-core"
+        tags: [string list str contains join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ["abc" "def"] | str contains "a" | str join "-" | str starts-with "true-false"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-string-list-contains-ignore-case-join"
+        category: "language-core"
+        tags: [string list str contains ignore-case join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ["Abc" "def"] | str contains --ignore-case "a" | str join "-" | str starts-with "true-false"'
             '}'
         ]
         local: "accept"

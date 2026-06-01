@@ -792,6 +792,14 @@ fn compile_time_value_consumer_matches(
                                 )
                             })
                     }
+                    "str starts-with" | "str ends-with" | "str contains" => {
+                        args.positional.len() == 1
+                            && args.named.is_empty()
+                            && args
+                                .flags
+                                .iter()
+                                .all(|flag| flag.as_slice() == b"ignore-case")
+                    }
                     "str downcase"
                     | "str upcase"
                     | "str reverse"

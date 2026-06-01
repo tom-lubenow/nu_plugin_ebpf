@@ -1401,6 +1401,96 @@ fn make_string_list_str_length_sum_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_string_list_builder_predicate_join_then_starts_with_program(
+    predicate_decl: DeclId,
+    join_decl: DeclId,
+    starts_with_decl: DeclId,
+    values: &[&str],
+    needle: &str,
+    expected_prefix: &str,
+    flags: Vec<Vec<u8>>,
+) -> HirProgram {
+    let value_count = values.len();
+    let value_count_u32 = u32::try_from(value_count).expect("test string-list length fits in u32");
+    let mut stmts = vec![HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List {
+            capacity: value_count,
+        },
+    }];
+
+    for (index, value) in values.iter().enumerate() {
+        let item_reg = RegId::new(u32::try_from(index).expect("test index fits in u32") + 2);
+        stmts.push(HirStmt::LoadValue {
+            dst: item_reg,
+            val: Box::new(Value::string(*value, Span::test_data())),
+        });
+        stmts.push(HirStmt::ListPush {
+            src_dst: RegId::new(0),
+            item: item_reg,
+        });
+    }
+
+    let needle_reg = RegId::new(value_count_u32 + 2);
+    let separator_reg = RegId::new(needle_reg.get() + 1);
+    let expected_prefix_reg = RegId::new(separator_reg.get() + 1);
+    stmts.push(HirStmt::LoadValue {
+        dst: needle_reg,
+        val: Box::new(Value::string(needle, Span::test_data())),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: predicate_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional: vec![needle_reg],
+            flags,
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::LoadValue {
+        dst: separator_reg,
+        val: Box::new(Value::string("-", Span::test_data())),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: join_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional: vec![separator_reg],
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::LoadValue {
+        dst: expected_prefix_reg,
+        val: Box::new(Value::string(expected_prefix, Span::test_data())),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: starts_with_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional: vec![expected_prefix_reg],
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: expected_prefix_reg.get() + 1,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_string_list_builder_pipeline_call_program(decl_id: DeclId, values: &[&str]) -> HirProgram {
     let value_count = values.len();
     let value_count_u32 = u32::try_from(value_count).expect("test string-list length fits in u32");
@@ -5518,6 +5608,107 @@ fn test_lower_str_contains_too_long_substring_is_false() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("false str contains result should compile through codegen");
+}
+
+#[test]
+fn test_lower_string_list_predicates_materialize_bool_lists() {
+    let cases = [
+        (
+            "str starts-with",
+            &["abc", "xbc"][..],
+            "a",
+            Vec::new(),
+            "true-false",
+        ),
+        (
+            "str ends-with",
+            &["abc", "abx"][..],
+            "c",
+            Vec::new(),
+            "true-false",
+        ),
+        (
+            "str contains",
+            &["abc", "def"][..],
+            "a",
+            Vec::new(),
+            "true-false",
+        ),
+        (
+            "str contains",
+            &["Abc", "def"][..],
+            "a",
+            vec![b"ignore-case".to_vec()],
+            "true-false",
+        ),
+    ];
+
+    for (case_index, (command, values, needle, flags, expected)) in cases.into_iter().enumerate() {
+        let predicate_decl = DeclId::new(406 + (case_index * 3));
+        let join_decl = DeclId::new(predicate_decl.get() + 1);
+        let starts_with_decl = DeclId::new(predicate_decl.get() + 2);
+        let hir = make_string_list_builder_predicate_join_then_starts_with_program(
+            predicate_decl,
+            join_decl,
+            starts_with_decl,
+            values,
+            needle,
+            expected,
+            flags,
+        );
+        let decl_names = HashMap::from([
+            (predicate_decl, command.to_string()),
+            (join_decl, "str join".to_string()),
+            (starts_with_decl, "str starts-with".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("{command} should lower for compile-time known string-list input: {err}")
+        });
+
+        let expected_literal = format!("{expected}\0");
+        assert!(
+            result
+                .program
+                .main
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .any(|inst| matches!(
+                    inst,
+                    MirInst::StringAppend {
+                        val_type: StringAppendType::Literal { bytes },
+                        ..
+                    } if bytes.starts_with(expected_literal.as_bytes())
+                )),
+            "expected {command} string-list bool output to feed str join with {expected}"
+        );
+        assert!(
+            result
+                .program
+                .main
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .all(|inst| !matches!(
+                    inst,
+                    MirInst::ListGet { .. } | MirInst::ListLen { .. } | MirInst::ListPush { .. }
+                )),
+            "expected compile-time {command} string-list input not to use runtime list operations"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("{command} string-list bool output should compile: {err}")
+            });
+    }
 }
 
 #[test]

@@ -140,6 +140,32 @@ impl<'a> HirToMirLowering<'a> {
             ));
         }
 
+        let prefix = self.literal_string_arg(prefix_reg, "str starts-with")?;
+        if prefix.as_bytes().contains(&0) {
+            return Err(CompileError::UnsupportedInstruction(
+                "str starts-with does not support NUL bytes in the prefix in eBPF".into(),
+            ));
+        }
+        if let Some(input) = self.exact_string_list_input(input_reg, "str starts-with")? {
+            let prefix = if ignore_case {
+                prefix.to_lowercase()
+            } else {
+                prefix
+            };
+            let output = input
+                .into_iter()
+                .map(|item| {
+                    let item = if ignore_case {
+                        item.to_lowercase()
+                    } else {
+                        item
+                    };
+                    item.starts_with(&prefix)
+                })
+                .collect();
+            return self.lower_known_bool_list_result(src_dst, output);
+        }
+
         let input_meta = input_reg
             .and_then(|reg| self.get_metadata(reg).cloned())
             .ok_or_else(|| {
@@ -157,13 +183,6 @@ impl<'a> HirToMirLowering<'a> {
                 "str starts-with could not determine input string capacity in eBPF".into(),
             )
         })?;
-
-        let prefix = self.literal_string_arg(prefix_reg, "str starts-with")?;
-        if prefix.as_bytes().contains(&0) {
-            return Err(CompileError::UnsupportedInstruction(
-                "str starts-with does not support NUL bytes in the prefix in eBPF".into(),
-            ));
-        }
         if ignore_case {
             let input = self.exact_string_input(input_reg, "str starts-with --ignore-case")?;
             let matches = input.to_lowercase().starts_with(&prefix.to_lowercase());
@@ -242,6 +261,32 @@ impl<'a> HirToMirLowering<'a> {
             ));
         }
 
+        let suffix = self.literal_string_arg(suffix_reg, "str ends-with")?;
+        if suffix.as_bytes().contains(&0) {
+            return Err(CompileError::UnsupportedInstruction(
+                "str ends-with does not support NUL bytes in the suffix in eBPF".into(),
+            ));
+        }
+        if let Some(input) = self.exact_string_list_input(input_reg, "str ends-with")? {
+            let suffix = if ignore_case {
+                suffix.to_lowercase()
+            } else {
+                suffix
+            };
+            let output = input
+                .into_iter()
+                .map(|item| {
+                    let item = if ignore_case {
+                        item.to_lowercase()
+                    } else {
+                        item
+                    };
+                    item.ends_with(&suffix)
+                })
+                .collect();
+            return self.lower_known_bool_list_result(src_dst, output);
+        }
+
         let input_meta = input_reg
             .and_then(|reg| self.get_metadata(reg).cloned())
             .ok_or_else(|| {
@@ -264,13 +309,6 @@ impl<'a> HirToMirLowering<'a> {
                 "str ends-with requires a compile-time known input string length in eBPF".into(),
             )
         })?;
-
-        let suffix = self.literal_string_arg(suffix_reg, "str ends-with")?;
-        if suffix.as_bytes().contains(&0) {
-            return Err(CompileError::UnsupportedInstruction(
-                "str ends-with does not support NUL bytes in the suffix in eBPF".into(),
-            ));
-        }
         if ignore_case {
             let input = self.exact_string_input(input_reg, "str ends-with --ignore-case")?;
             let matches = input.to_lowercase().ends_with(&suffix.to_lowercase());
@@ -349,14 +387,34 @@ impl<'a> HirToMirLowering<'a> {
             ));
         }
 
+        let needle = self.literal_string_arg(needle_reg, "str contains")?;
+        if needle.as_bytes().contains(&0) {
+            return Err(CompileError::UnsupportedInstruction(
+                "str contains does not support NUL bytes in the substring in eBPF".into(),
+            ));
+        }
+        if let Some(input) = self.exact_string_list_input(input_reg, "str contains")? {
+            let needle = if ignore_case {
+                needle.to_lowercase()
+            } else {
+                needle
+            };
+            let output = input
+                .into_iter()
+                .map(|item| {
+                    let item = if ignore_case {
+                        item.to_lowercase()
+                    } else {
+                        item
+                    };
+                    item.contains(&needle)
+                })
+                .collect();
+            return self.lower_known_bool_list_result(src_dst, output);
+        }
+
         if ignore_case {
             let input = self.exact_string_input(input_reg, "str contains --ignore-case")?;
-            let needle = self.literal_string_arg(needle_reg, "str contains")?;
-            if needle.as_bytes().contains(&0) {
-                return Err(CompileError::UnsupportedInstruction(
-                    "str contains does not support NUL bytes in the substring in eBPF".into(),
-                ));
-            }
             let matches = input.to_lowercase().contains(&needle.to_lowercase());
             return self.lower_bool_result(src_dst, result_vreg, matches);
         }
@@ -1338,6 +1396,18 @@ impl<'a> HirToMirLowering<'a> {
             },
         });
         Ok(())
+    }
+
+    fn lower_known_bool_list_result(
+        &mut self,
+        src_dst: RegId,
+        outputs: Vec<bool>,
+    ) -> Result<(), CompileError> {
+        let values = outputs
+            .into_iter()
+            .map(|output| nu_protocol::Value::bool(output, Span::unknown()))
+            .collect();
+        self.lower_constant_value(src_dst, &nu_protocol::Value::list(values, Span::unknown()))
     }
 
     pub(super) fn lower_string_trim(
