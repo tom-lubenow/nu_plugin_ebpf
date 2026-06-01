@@ -35231,6 +35231,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-string-index-of-open-end-range"
+        category: "language-core"
+        tags: [string str index-of range]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "abcabc" | str index-of "bc" --range 2..'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-string-substring"
         category: "language-core"
         tags: [string str substring]

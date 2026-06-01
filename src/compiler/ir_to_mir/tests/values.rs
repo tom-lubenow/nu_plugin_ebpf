@@ -578,8 +578,8 @@ fn make_string_index_of_range_program(
     decl_id: DeclId,
     value: &str,
     needle: &str,
-    start: i64,
-    end: i64,
+    start: Option<i64>,
+    end: Option<i64>,
     inclusion: RangeInclusion,
     flags: Vec<Vec<u8>>,
 ) -> HirProgram {
@@ -597,7 +597,7 @@ fn make_string_index_of_range_program(
                 },
                 HirStmt::LoadLiteral {
                     dst: RegId::new(3),
-                    lit: HirLiteral::Int(start),
+                    lit: start.map_or(HirLiteral::Nothing, HirLiteral::Int),
                 },
                 HirStmt::LoadLiteral {
                     dst: RegId::new(4),
@@ -605,7 +605,7 @@ fn make_string_index_of_range_program(
                 },
                 HirStmt::LoadLiteral {
                     dst: RegId::new(5),
-                    lit: HirLiteral::Int(end),
+                    lit: end.map_or(HirLiteral::Nothing, HirLiteral::Int),
                 },
                 HirStmt::LoadLiteral {
                     dst: RegId::new(6),
@@ -3199,8 +3199,8 @@ fn test_lower_str_index_of_range_on_known_string_limits_search_offsets() {
         index_of_decl,
         "abcabc",
         "bc",
-        2,
-        5,
+        Some(2),
+        Some(5),
         RangeInclusion::Inclusive,
         Vec::new(),
     );
@@ -3256,6 +3256,68 @@ fn test_lower_str_index_of_range_on_known_string_limits_search_offsets() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("str index-of --range should compile through codegen");
+}
+
+#[test]
+fn test_lower_str_index_of_open_end_range_on_known_string_uses_input_length() {
+    let index_of_decl = DeclId::new(155);
+    let hir = make_string_index_of_range_program(
+        index_of_decl,
+        "abcabc",
+        "bc",
+        Some(2),
+        None,
+        RangeInclusion::Inclusive,
+        Vec::new(),
+    );
+    let decl_names = HashMap::from([(index_of_decl, "str index-of".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str index-of --range with omitted end should use the input length");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StrCmp {
+                    lhs_offset: 4,
+                    rhs_offset: 0,
+                    len: 2,
+                    ..
+                }
+            )),
+        "expected open-ended str index-of --range to probe through the input length"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Copy {
+                    src: MirValue::Const(4),
+                    ..
+                }
+            )),
+        "expected open-ended str index-of --range to return the absolute byte offset"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("str index-of open-ended --range should compile through codegen");
 }
 
 #[test]

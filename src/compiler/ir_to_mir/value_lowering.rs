@@ -935,7 +935,9 @@ impl<'a> HirToMirLowering<'a> {
                     dst: dst_vreg,
                     src: MirValue::Const(0),
                 });
-                self.get_or_create_metadata(dst).field_type = Some(MirType::I64);
+                let meta = self.get_or_create_metadata(dst);
+                meta.field_type = Some(MirType::I64);
+                meta.constant_value = Some(Value::nothing(Span::unknown()));
             }
 
             HirLiteral::String(bytes)
@@ -1021,16 +1023,21 @@ impl<'a> HirToMirLowering<'a> {
                 end,
                 inclusion,
             } => {
-                // For eBPF bounded loops, we need compile-time known bounds
-                let start_val = self
-                    .get_metadata(*start)
-                    .and_then(|m| m.literal_int)
-                    .ok_or_else(|| {
-                        CompileError::UnsupportedInstruction(
-                            "Range start must be a compile-time known integer for eBPF loops"
-                                .into(),
-                        )
-                    })?;
+                let start_meta = self.get_metadata(*start).cloned();
+                let start_val = if let Some(value) = start_meta.as_ref().and_then(|m| m.literal_int)
+                {
+                    Some(value)
+                } else if start_meta
+                    .as_ref()
+                    .and_then(|m| m.constant_value.as_ref())
+                    .is_some_and(|value| matches!(value, Value::Nothing { .. }))
+                {
+                    None
+                } else {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "Range start must be a compile-time known integer for eBPF loops".into(),
+                    ));
+                };
 
                 // Step can be nothing (default 1) or an explicit integer
                 let step_val = self
@@ -1038,14 +1045,20 @@ impl<'a> HirToMirLowering<'a> {
                     .and_then(|m| m.literal_int)
                     .unwrap_or(1);
 
-                let end_val = self
-                    .get_metadata(*end)
-                    .and_then(|m| m.literal_int)
-                    .ok_or_else(|| {
-                        CompileError::UnsupportedInstruction(
-                            "Range end must be a compile-time known integer for eBPF loops".into(),
-                        )
-                    })?;
+                let end_meta = self.get_metadata(*end).cloned();
+                let end_val = if let Some(value) = end_meta.as_ref().and_then(|m| m.literal_int) {
+                    Some(value)
+                } else if end_meta
+                    .as_ref()
+                    .and_then(|m| m.constant_value.as_ref())
+                    .is_some_and(|value| matches!(value, Value::Nothing { .. }))
+                {
+                    None
+                } else {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "Range end must be a compile-time known integer for eBPF loops".into(),
+                    ));
+                };
 
                 // Validate step is non-zero
                 if step_val == 0 {
@@ -1054,22 +1067,32 @@ impl<'a> HirToMirLowering<'a> {
                     ));
                 }
 
-                // Store range info in metadata for use by Iterate
-                let range = BoundedRange {
+                let inclusive = *inclusion == RangeInclusion::Inclusive;
+                let maybe_open_range = MaybeOpenRange {
                     start: start_val,
                     step: step_val,
                     end: end_val,
-                    inclusive: *inclusion == RangeInclusion::Inclusive,
+                    inclusive,
                 };
+                let bounded_range =
+                    start_val
+                        .zip(end_val)
+                        .map(|(start_val, end_val)| BoundedRange {
+                            start: start_val,
+                            step: step_val,
+                            end: end_val,
+                            inclusive,
+                        });
 
                 // Set a placeholder value
                 self.emit(MirInst::Copy {
                     dst: dst_vreg,
-                    src: MirValue::Const(start_val), // Initial value
+                    src: MirValue::Const(start_val.unwrap_or(0)), // Initial value
                 });
 
                 let meta = self.get_or_create_metadata(dst);
-                meta.bounded_range = Some(range);
+                meta.bounded_range = bounded_range;
+                meta.maybe_open_range = Some(maybe_open_range);
             }
 
             HirLiteral::List { capacity } => {

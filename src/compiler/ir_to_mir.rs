@@ -163,6 +163,19 @@ struct BoundedRange {
     inclusive: bool,
 }
 
+/// Compile-time range info where a string command may supply defaults from input length.
+#[derive(Debug, Clone, Copy)]
+struct MaybeOpenRange {
+    /// Start value, or None for an omitted lower bound.
+    start: Option<i64>,
+    /// Step value.
+    step: i64,
+    /// End value, or None for an omitted upper bound.
+    end: Option<i64>,
+    /// Whether end is inclusive when it is present.
+    inclusive: bool,
+}
+
 /// Loop context for tracking active loops
 #[derive(Debug, Clone)]
 struct LoopContext {
@@ -229,6 +242,8 @@ struct RegMetadata {
     source_var: Option<VarId>,
     /// Bounded range for iteration
     bounded_range: Option<BoundedRange>,
+    /// Compile-time range that may omit one bound for string byte-range commands.
+    maybe_open_range: Option<MaybeOpenRange>,
     /// List buffer (stack slot, max_len) for list construction
     list_buffer: Option<(StackSlotId, usize)>,
     /// Logical semantics for annotated mutable globals and their projected fields.

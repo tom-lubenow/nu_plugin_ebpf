@@ -547,7 +547,7 @@ impl<'a> HirToMirLowering<'a> {
         let range_reg = self.positional_args[0].1;
         let range = self
             .get_metadata(range_reg)
-            .and_then(|meta| meta.bounded_range)
+            .and_then(|meta| meta.maybe_open_range)
             .ok_or_else(|| {
                 CompileError::UnsupportedInstruction(
                     "str substring requires a compile-time known range argument in eBPF".into(),
@@ -559,7 +559,7 @@ impl<'a> HirToMirLowering<'a> {
             ));
         }
 
-        let (start, end) = Self::substring_byte_bounds(range, input.len());
+        let (start, end) = Self::string_range_byte_bounds(range, input.len());
         let bytes = input.as_bytes().get(start..end).ok_or_else(|| {
             CompileError::UnsupportedInstruction("invalid substring bounds".into())
         })?;
@@ -820,7 +820,7 @@ impl<'a> HirToMirLowering<'a> {
         };
         let range = self
             .get_metadata(range_reg)
-            .and_then(|meta| meta.bounded_range)
+            .and_then(|meta| meta.maybe_open_range)
             .ok_or_else(|| {
                 CompileError::UnsupportedInstruction(
                     "str index-of --range requires a compile-time known range in eBPF".into(),
@@ -833,7 +833,7 @@ impl<'a> HirToMirLowering<'a> {
             ));
         }
 
-        Ok(Self::substring_byte_bounds(range, input_len))
+        Ok(Self::string_range_byte_bounds(range, input_len))
     }
 
     fn capitalize_first_char(input: &str) -> String {
@@ -847,10 +847,17 @@ impl<'a> HirToMirLowering<'a> {
         output
     }
 
-    fn substring_byte_bounds(range: BoundedRange, len: usize) -> (usize, usize) {
+    fn string_range_byte_bounds(range: MaybeOpenRange, len: usize) -> (usize, usize) {
         let len = len as i64;
-        let start = Self::substring_start_bound(range.start, len);
-        let end = Self::substring_end_bound(range.end, range.inclusive, len).max(start);
+        let start = range
+            .start
+            .map(|start| Self::substring_start_bound(start, len))
+            .unwrap_or(0);
+        let end = range
+            .end
+            .map(|end| Self::substring_end_bound(end, range.inclusive, len))
+            .unwrap_or(len)
+            .max(start);
         (start as usize, end as usize)
     }
 
