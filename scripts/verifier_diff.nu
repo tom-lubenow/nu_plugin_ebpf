@@ -35062,6 +35062,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-string-str-length-grapheme-clusters"
+        category: "language-core"
+        tags: [string str length grapheme-clusters]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "🇯🇵ほげ" | str length --grapheme-clusters'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-string-starts-with"
         category: "language-core"
         tags: [string str starts-with]

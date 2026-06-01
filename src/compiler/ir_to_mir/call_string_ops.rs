@@ -25,13 +25,17 @@ impl<'a> HirToMirLowering<'a> {
             dst_vreg
         };
 
-        if !self.named_flags.is_empty()
-            || !self.named_args.is_empty()
-            || !self.positional_args.is_empty()
-        {
+        if !self.named_args.is_empty() || !self.positional_args.is_empty() {
             return Err(CompileError::UnsupportedInstruction(
                 "str length does not accept arguments in eBPF".into(),
             ));
+        }
+        let use_grapheme_clusters = self.string_grapheme_cluster_indexing_flag("str length")?;
+
+        if use_grapheme_clusters {
+            let input = self.exact_string_input(input_reg, "str length --grapheme-clusters")?;
+            let grapheme_len = UnicodeSegmentation::graphemes(input.as_str(), true).count() as i64;
+            return self.lower_i64_result(src_dst, result_vreg, grapheme_len);
         }
 
         let input_meta = input_reg.and_then(|reg| self.get_metadata(reg).cloned());

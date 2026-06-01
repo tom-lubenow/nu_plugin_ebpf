@@ -500,6 +500,14 @@ fn make_numeric_list_in_place_predicate_call_program(
 }
 
 fn make_string_pipeline_call_program(decl_id: DeclId, value: &str) -> HirProgram {
+    make_string_pipeline_call_program_with_flags(decl_id, value, Vec::new())
+}
+
+fn make_string_pipeline_call_program_with_flags(
+    decl_id: DeclId,
+    value: &str,
+    flags: Vec<Vec<u8>>,
+) -> HirProgram {
     let func = HirFunction {
         blocks: vec![HirBlock {
             id: HirBlockId(0),
@@ -513,6 +521,7 @@ fn make_string_pipeline_call_program(decl_id: DeclId, value: &str) -> HirProgram
                     src_dst: RegId::new(1),
                     args: HirCallArgs {
                         pipeline_input: Some(RegId::new(0)),
+                        flags,
                         ..HirCallArgs::default()
                     },
                 },
@@ -2666,6 +2675,46 @@ fn test_lower_str_length_on_string_copies_tracked_length() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("str length on tracked string should compile through codegen");
+}
+
+#[test]
+fn test_lower_str_length_grapheme_clusters_on_known_string_materializes_count() {
+    let str_length_decl = DeclId::new(162);
+    let hir = make_string_pipeline_call_program_with_flags(
+        str_length_decl,
+        "🇯🇵ほげ",
+        vec![b"grapheme-clusters".to_vec()],
+    );
+    let decl_names = HashMap::from([(str_length_decl, "str length".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str length --grapheme-clusters should lower on compile-time known strings");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Copy {
+                    src: MirValue::Const(3),
+                    ..
+                }
+            )),
+        "expected str length --grapheme-clusters to materialize the grapheme count"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("str length --grapheme-clusters should compile through codegen");
 }
 
 #[test]
