@@ -9318,6 +9318,85 @@ fn make_bytes_collect_then_starts_with_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_binary_list_builder_sort_collect_then_starts_with_program(
+    sort_decl: DeclId,
+    collect_decl: DeclId,
+    starts_with_decl: DeclId,
+    items: &[&[u8]],
+    flags: Vec<Vec<u8>>,
+    expected_prefix: Vec<u8>,
+) -> HirProgram {
+    let item_count = items.len();
+    let mut stmts = vec![HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List {
+            capacity: item_count,
+        },
+    }];
+    for (index, item) in items.iter().enumerate() {
+        let item_reg = RegId::new(u32::try_from(index).expect("test index fits in u32") + 1);
+        stmts.push(HirStmt::LoadLiteral {
+            dst: item_reg,
+            lit: HirLiteral::Binary(item.to_vec()),
+        });
+        stmts.push(HirStmt::ListPush {
+            src_dst: RegId::new(0),
+            item: item_reg,
+        });
+    }
+    let sort_reg = RegId::new(u32::try_from(item_count).expect("test length fits in u32") + 1);
+    let collect_reg = RegId::new(sort_reg.get() + 1);
+    let expected_reg = RegId::new(sort_reg.get() + 2);
+    let starts_with_reg = RegId::new(sort_reg.get() + 3);
+    stmts.push(HirStmt::Call {
+        decl_id: sort_decl,
+        src_dst: sort_reg,
+        args: HirCallArgs {
+            flags,
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: collect_decl,
+        src_dst: collect_reg,
+        args: HirCallArgs {
+            pipeline_input: Some(sort_reg),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::LoadLiteral {
+        dst: expected_reg,
+        lit: HirLiteral::Binary(expected_prefix),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: starts_with_decl,
+        src_dst: starts_with_reg,
+        args: HirCallArgs {
+            positional: vec![expected_reg],
+            pipeline_input: Some(collect_reg),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return {
+                src: starts_with_reg,
+            },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: starts_with_reg.get() + 1,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 #[test]
 fn test_lower_bytes_collect_materializes_concatenated_binary() {
     let bytes_collect_decl = DeclId::new(247);
@@ -9390,6 +9469,67 @@ fn test_lower_bytes_collect_with_separator_materializes_joined_binary() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("bytes collect separator output consumed by bytes starts-with should compile");
+}
+
+#[test]
+fn test_lower_binary_list_builder_sort_collect_constant_values() {
+    let scenarios = [
+        (Vec::new(), vec![0x01, 0x02, 0x03]),
+        (vec![b"reverse".to_vec()], vec![0x03, 0x02, 0x01]),
+    ];
+
+    for (index, (flags, expected)) in scenarios.into_iter().enumerate() {
+        let base_decl = 341 + index * 3;
+        let sort_decl = DeclId::new(base_decl);
+        let bytes_collect_decl = DeclId::new(base_decl + 1);
+        let bytes_starts_with_decl = DeclId::new(base_decl + 2);
+        let hir = make_binary_list_builder_sort_collect_then_starts_with_program(
+            sort_decl,
+            bytes_collect_decl,
+            bytes_starts_with_decl,
+            &[&[0x03], &[0x01], &[0x02]],
+            flags,
+            expected.clone(),
+        );
+        let decl_names = HashMap::from([
+            (sort_decl, "sort".to_string()),
+            (bytes_collect_decl, "bytes collect".to_string()),
+            (bytes_starts_with_decl, "bytes starts-with".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .expect("sort should fold compile-time binary-list builders");
+
+        assert!(
+            result
+                .readonly_globals
+                .iter()
+                .any(|global| global.data == expected),
+            "expected binary-list sort to feed bytes collect with sorted bytes"
+        );
+        assert!(
+            result
+                .program
+                .main
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .all(|inst| !matches!(
+                    inst,
+                    MirInst::ListGet { .. } | MirInst::ListLen { .. } | MirInst::ListPush { .. }
+                )),
+            "expected compile-time binary-list sort not to use runtime list operations"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .expect("sorted binary-list collect output should compile through codegen");
+    }
 }
 
 #[test]

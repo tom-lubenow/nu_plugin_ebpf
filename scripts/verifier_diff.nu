@@ -35439,6 +35439,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-binary-list-sort-collect"
+        category: "language-core"
+        tags: [binary list sort bytes collect]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [0x[03] 0x[01] 0x[02]] | sort | bytes collect | bytes starts-with 0x[01 02 03]'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-binary-bytes-split-collect-starts-with"
         category: "language-core"
         tags: [binary bytes split collect starts-with]
