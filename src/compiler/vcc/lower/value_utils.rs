@@ -416,6 +416,16 @@ impl<'a> VccLowerer<'a> {
         size: usize,
         out: &mut Vec<VccInst>,
     ) -> Result<(), VccError> {
+        self.check_ptr_range_with_op(reg, size, "pointer access", out)
+    }
+
+    pub(super) fn check_ptr_range_with_op(
+        &mut self,
+        reg: VReg,
+        size: usize,
+        op: &'static str,
+        out: &mut Vec<VccInst>,
+    ) -> Result<(), VccError> {
         if size == 0 {
             return Ok(());
         }
@@ -423,7 +433,7 @@ impl<'a> VccLowerer<'a> {
         out.push(VccInst::AssertPtrAccess {
             ptr: VccReg(reg.0),
             size: VccValue::Imm(size as i64),
-            op: "pointer access",
+            op,
         });
         Ok(())
     }

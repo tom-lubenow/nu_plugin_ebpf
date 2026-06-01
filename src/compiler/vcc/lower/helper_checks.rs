@@ -1672,14 +1672,14 @@ impl<'a> VccLowerer<'a> {
         out: &mut Vec<VccInst>,
     ) -> Result<(), VccError> {
         if map_name == STRING_COUNTER_MAP_NAME {
-            self.check_ptr_range(key, 16, out)
+            self.check_ptr_range_with_op(key, 16, "map key", out)
         } else if map_name == BYTES_COUNTER_MAP_NAME {
             let size = match self.types.get(&key) {
                 Some(MirType::Ptr { pointee, .. }) => pointee.size().max(1),
                 Some(ty) => ty.size().max(1),
                 None => 1,
             };
-            self.check_ptr_range(key, size, out)
+            self.check_ptr_range_with_op(key, size, "map key", out)
         } else {
             self.verify_map_operand(key, "map key", out)
         }
@@ -1692,7 +1692,7 @@ impl<'a> VccLowerer<'a> {
     pub(super) fn verify_map_operand(
         &mut self,
         reg: VReg,
-        what: &str,
+        what: &'static str,
         out: &mut Vec<VccInst>,
     ) -> Result<(), VccError> {
         if let Some(ty) = self.types.get(&reg) {
@@ -1740,7 +1740,7 @@ impl<'a> VccLowerer<'a> {
                 Some(MirType::Ptr { pointee, .. }) => pointee.size().max(1),
                 _ => 1,
             };
-            self.check_ptr_range(reg, size, out)
+            self.check_ptr_range_with_op(reg, size, what, out)
         } else {
             self.assert_scalar_reg(reg, out);
             Ok(())
