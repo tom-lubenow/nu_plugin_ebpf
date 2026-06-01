@@ -44,6 +44,7 @@ impl<'a> HirToMirLowering<'a> {
         let old_positional_args = std::mem::take(&mut self.positional_args);
         let old_named_flags = std::mem::take(&mut self.named_flags);
         let old_named_args = std::mem::take(&mut self.named_args);
+        let old_parser_info_args = std::mem::take(&mut self.parser_info_args);
         let old_var_mappings = std::mem::take(&mut self.var_mappings);
         let old_loop_contexts = std::mem::take(&mut self.loop_contexts);
         let old_hir_block_map = std::mem::take(&mut self.hir_block_map);
@@ -125,6 +126,7 @@ impl<'a> HirToMirLowering<'a> {
         self.positional_args = old_positional_args;
         self.named_flags = old_named_flags;
         self.named_args = old_named_args;
+        self.parser_info_args = old_parser_info_args;
         self.var_mappings = old_var_mappings;
         self.loop_contexts = old_loop_contexts;
         self.hir_block_map = old_hir_block_map;
@@ -284,6 +286,7 @@ impl<'a> HirToMirLowering<'a> {
         let old_positional_args = std::mem::take(&mut self.positional_args);
         let old_named_flags = std::mem::take(&mut self.named_flags);
         let old_named_args = std::mem::take(&mut self.named_args);
+        let old_parser_info_args = std::mem::take(&mut self.parser_info_args);
         let old_var_mappings = std::mem::take(&mut self.var_mappings);
         let old_loop_contexts = std::mem::take(&mut self.loop_contexts);
         let old_hir_block_map = std::mem::take(&mut self.hir_block_map);
@@ -418,6 +421,7 @@ impl<'a> HirToMirLowering<'a> {
         self.positional_args = old_positional_args;
         self.named_flags = old_named_flags;
         self.named_args = old_named_args;
+        self.parser_info_args = old_parser_info_args;
         self.var_mappings = old_var_mappings;
         self.loop_contexts = old_loop_contexts;
         self.hir_block_map = old_hir_block_map;

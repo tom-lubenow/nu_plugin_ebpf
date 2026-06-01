@@ -44,6 +44,58 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
+    fn rename_column_arg(&self) -> Option<(VReg, RegId)> {
+        self.named_args
+            .get("column")
+            .or_else(|| self.named_args.get("c"))
+            .copied()
+    }
+
+    fn has_rename_block_arg(&self) -> bool {
+        self.named_args.contains_key("block") || self.named_args.contains_key("b")
+    }
+
+    fn rename_column_target_name(value: &nu_protocol::Value) -> Result<String, CompileError> {
+        match value {
+            nu_protocol::Value::String { val, .. } => Ok(val.clone()),
+            nu_protocol::Value::CellPath { val, .. } => match val.members.as_slice() {
+                [PathMember::String { val, .. }] => Ok(val.clone()),
+                _ => Err(CompileError::UnsupportedInstruction(
+                    "rename --column supports only top-level replacement field names in eBPF"
+                        .into(),
+                )),
+            },
+            _ => Err(CompileError::UnsupportedInstruction(
+                "rename --column requires compile-time string replacement field names in eBPF"
+                    .into(),
+            )),
+        }
+    }
+
+    fn rename_column_pairs(&self, reg: RegId) -> Result<Vec<(String, String)>, CompileError> {
+        let Some(meta) = self.get_metadata(reg) else {
+            return Err(CompileError::UnsupportedInstruction(
+                "rename --column requires a compile-time record mapping in eBPF".into(),
+            ));
+        };
+        let Some(nu_protocol::Value::Record { val, .. }) = meta.constant_value.as_ref() else {
+            return Err(CompileError::UnsupportedInstruction(
+                "rename --column requires a compile-time record mapping in eBPF".into(),
+            ));
+        };
+        if val.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(
+                "rename --column requires a non-empty record mapping in eBPF".into(),
+            ));
+        }
+
+        let mut pairs = Vec::with_capacity(val.len());
+        for (source, target) in val.iter() {
+            pairs.push((source.to_string(), Self::rename_column_target_name(target)?));
+        }
+        Ok(pairs)
+    }
+
     pub(super) fn emit_metadata_record_result(
         &mut self,
         src_dst: RegId,
@@ -281,16 +333,47 @@ impl<'a> HirToMirLowering<'a> {
             .pipeline_input_reg
             .or(src_dst_had_value.then_some(src_dst));
 
-        if !self.named_flags.is_empty() || !self.named_args.is_empty() {
+        if !self.named_flags.is_empty() {
             return Err(CompileError::UnsupportedInstruction(
-                "rename --column and --block are not supported in eBPF".into(),
+                "rename does not accept named flags in eBPF".into(),
             ));
         }
 
-        let mut new_names = Vec::new();
-        for (_, reg) in &self.positional_args {
-            let name = self.top_level_field_name_arg(*reg, "rename")?;
-            new_names.push(name);
+        if self.has_rename_block_arg() {
+            return Err(CompileError::UnsupportedInstruction(
+                "rename --block is not supported in eBPF".into(),
+            ));
+        }
+        if !self.parser_info_args.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(
+                "rename --block is not supported in eBPF".into(),
+            ));
+        }
+        for name in self.named_args.keys() {
+            if !matches!(name.as_str(), "column" | "c" | "block" | "b") {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "rename does not accept named argument --{name} in eBPF"
+                )));
+            }
+        }
+
+        let column_renames = if let Some((_, column_reg)) = self.rename_column_arg() {
+            if !self.positional_args.is_empty() {
+                return Err(CompileError::UnsupportedInstruction(
+                    "rename --column cannot be combined with positional field names in eBPF".into(),
+                ));
+            }
+            Some(self.rename_column_pairs(column_reg)?)
+        } else {
+            None
+        };
+
+        let mut positional_names = Vec::new();
+        if column_renames.is_none() {
+            for (_, reg) in &self.positional_args {
+                let name = self.top_level_field_name_arg(*reg, "rename")?;
+                positional_names.push(name);
+            }
         }
 
         let input_meta = input_reg
@@ -307,15 +390,39 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         let mut renamed_fields = input_meta.record_fields.clone();
-        for (field, name) in renamed_fields.iter_mut().zip(new_names.iter()) {
-            field.name = name.clone();
+        if let Some(column_renames) = column_renames.as_ref() {
+            for (source, target) in column_renames {
+                let mut found = false;
+                for field in &mut renamed_fields {
+                    if field.name == *source {
+                        field.name = target.clone();
+                        found = true;
+                    }
+                }
+                if !found {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "rename --column cannot find record field '{source}'"
+                    )));
+                }
+            }
+        } else {
+            for (field, name) in renamed_fields.iter_mut().zip(positional_names.iter()) {
+                field.name = name.clone();
+            }
         }
 
         let constant_value = match input_meta.constant_value.clone() {
             Some(nu_protocol::Value::Record { val, .. }) => {
                 let mut out = nu_protocol::Record::new();
                 for (idx, (key, value)) in val.iter().enumerate() {
-                    let out_key = new_names.get(idx).unwrap_or(key).clone();
+                    let out_key = if let Some(column_renames) = column_renames.as_ref() {
+                        column_renames
+                            .iter()
+                            .find_map(|(source, target)| (source == key).then_some(target.clone()))
+                            .unwrap_or_else(|| key.to_string())
+                    } else {
+                        positional_names.get(idx).unwrap_or(key).clone()
+                    };
                     out.push(out_key, value.clone());
                 }
                 Some(nu_protocol::Value::record(out, Span::unknown()))

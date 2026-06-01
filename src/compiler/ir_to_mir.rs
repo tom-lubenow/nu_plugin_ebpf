@@ -371,6 +371,8 @@ pub struct HirToMirLowering<'a> {
     named_flags: Vec<String>,
     /// Named arguments with values for the next call (e.g., --count 5)
     named_args: HashMap<String, (VReg, RegId)>,
+    /// Parser-info arguments attached by Nushell for syntax-sensitive options.
+    parser_info_args: Vec<String>,
     /// Variable mappings for inlined functions (VarId -> VReg)
     var_mappings: HashMap<VarId, VReg>,
     /// Preserved metadata for variables that have been stored.
@@ -543,6 +545,7 @@ impl<'a> HirToMirLowering<'a> {
             positional_args: Vec::new(),
             named_flags: Vec::new(),
             named_args: HashMap::new(),
+            parser_info_args: Vec::new(),
             var_mappings: HashMap::new(),
             var_metadata: HashMap::new(),
             needs_ringbuf: false,

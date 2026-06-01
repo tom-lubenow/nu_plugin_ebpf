@@ -888,7 +888,7 @@ eBPF layout and verifier bounds are explicit:
 | `first` / `last` | Scalar first/last element access for stack-backed numeric lists and compile-time known fixed lists; counted forms rebuild bounded prefix/suffix stack-list slices for stack-backed numeric lists and constant-fold compile-time known fixed lists |
 | `get` | Stack-backed numeric-list indexing, constant-index item projection from compile-time known fixed lists, top-level metadata-backed fixed-record field projection, typed context / BTF-backed pointer field projection with compiler-visible field paths such as `$ctx | get sk | get family`, and typed kernel/user pointer numeric indexing; list literal indexes may be literal cell paths |
 | `select` / `reject` | Metadata-backed fixed records, materialized into a fresh fixed-layout record |
-| `rename` | Positional top-level field renames for metadata-backed fixed records; `--column` and `--block` are not yet modeled |
+| `rename` | Positional top-level field renames and compile-time `--column {old: new}` mappings for metadata-backed fixed records; `--block` is not yet modeled |
 | `merge` | Metadata-backed fixed records with one metadata-backed record argument, preserving Nushell overwrite and append field semantics |
 | `columns` | Non-empty metadata-backed fixed records, producing a fixed string list of field names in record field order |
 | `values` | Metadata-backed fixed records whose fields are integer scalars, producing a stack-backed numeric list in record field order |

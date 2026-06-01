@@ -36511,6 +36511,62 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-record-rename-column-fields"
+        category: "language-core"
+        tags: [aggregate record rename column]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let rec = ({ pid: 7 cpu: 2 ok: true } | rename --column { pid: tid ok: status })'
+            '  $rec.tid'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-record-rename-column-trailing-fields"
+        category: "language-core"
+        tags: [aggregate record rename column]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let rec = ({ pid: 7 cpu: 2 ok: true } | rename --column { pid: tid })'
+            '  $rec.cpu'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-record-rename-column-missing-reject"
+        category: "language-core"
+        tags: [aggregate record rename column]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  { pid: 7 } | rename --column { cpu: core }'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "rename --column cannot find record field 'cpu'"
+    }
+    {
+        name: "core-record-rename-block-reject"
+        category: "language-core"
+        tags: [aggregate record rename block]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  { pid: 7 } | rename --block { str upcase }'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "rename --block is not supported in eBPF"
+    }
+    {
         name: "core-record-merge-add-field"
         category: "language-core"
         tags: [aggregate record merge]

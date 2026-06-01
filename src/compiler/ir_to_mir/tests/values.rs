@@ -1750,6 +1750,68 @@ fn make_record_projection_then_field_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_record_rename_column_then_field_program(
+    command_decl: DeclId,
+    renames: &[(&str, &str)],
+    return_field: &str,
+) -> HirProgram {
+    let mut rec = Record::new();
+    rec.push("pid", Value::int(7, Span::test_data()));
+    rec.push("cpu", Value::int(2, Span::test_data()));
+    rec.push("ok", Value::bool(true, Span::test_data()));
+
+    let mut column_mapping = Record::new();
+    for (source, target) in renames {
+        column_mapping.push(*source, Value::string(*target, Span::test_data()));
+    }
+
+    let path_reg = RegId::new(3);
+    let stmts = vec![
+        HirStmt::LoadValue {
+            dst: RegId::new(0),
+            val: Box::new(Value::record(rec, Span::test_data())),
+        },
+        HirStmt::LoadValue {
+            dst: RegId::new(2),
+            val: Box::new(Value::record(column_mapping, Span::test_data())),
+        },
+        HirStmt::Call {
+            decl_id: command_decl,
+            src_dst: RegId::new(1),
+            args: HirCallArgs {
+                named: vec![(b"column".to_vec(), RegId::new(2))],
+                pipeline_input: Some(RegId::new(0)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::LoadLiteral {
+            dst: path_reg,
+            lit: HirLiteral::CellPath(Box::new(CellPath {
+                members: vec![string_member(return_field)],
+            })),
+        },
+        HirStmt::FollowCellPath {
+            src_dst: RegId::new(1),
+            path: path_reg,
+        },
+    ];
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 4,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_record_set_then_field_program(
     command_decl: DeclId,
     field: &str,
@@ -10609,6 +10671,74 @@ fn test_lower_rename_leaves_trailing_metadata_record_fields_unchanged() {
 
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("trailing field projection after rename should compile through codegen");
+}
+
+#[test]
+fn test_lower_rename_column_metadata_record_fields_by_name() {
+    let rename_decl = DeclId::new(104);
+    let hir = make_record_rename_column_then_field_program(
+        rename_decl,
+        &[("pid", "tid"), ("ok", "status")],
+        "tid",
+    );
+    let decl_names = HashMap::from([(rename_decl, "rename".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("rename --column should rename metadata-backed record fields by name");
+
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("rename --column field projection should compile through codegen");
+}
+
+#[test]
+fn test_lower_rename_column_leaves_unmapped_metadata_record_fields_unchanged() {
+    let rename_decl = DeclId::new(105);
+    let hir = make_record_rename_column_then_field_program(rename_decl, &[("pid", "tid")], "cpu");
+    let decl_names = HashMap::from([(rename_decl, "rename".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("rename --column should preserve unmapped metadata-backed record fields");
+
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("rename --column unmapped field projection should compile through codegen");
+}
+
+#[test]
+fn test_lower_rename_column_missing_metadata_record_field_is_rejected() {
+    let rename_decl = DeclId::new(106);
+    let hir =
+        make_record_rename_column_then_field_program(rename_decl, &[("missing", "tid")], "tid");
+    let decl_names = HashMap::from([(rename_decl, "rename".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("rename --column should reject missing metadata-backed record fields");
+
+    assert!(
+        err.to_string()
+            .contains("rename --column cannot find record field 'missing'"),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]
