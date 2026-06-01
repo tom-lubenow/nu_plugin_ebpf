@@ -3130,6 +3130,91 @@ impl<'a> HirToMirLowering<'a> {
                 )?;
             }
 
+            "bytes at" => {
+                let input_reg = self
+                    .pipeline_input_reg
+                    .or(src_dst_had_value.then_some(src_dst));
+
+                if !self.named_flags.is_empty() || !self.named_args.is_empty() {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "bytes at does not accept named flags or arguments in eBPF".into(),
+                    ));
+                }
+                if self.positional_args.len() != 1 {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "bytes at accepts exactly one range argument in eBPF".into(),
+                    ));
+                }
+
+                let input = input_reg
+                    .and_then(|reg| self.get_metadata(reg))
+                    .and_then(|meta| match meta.constant_value.as_ref() {
+                        Some(nu_protocol::Value::Binary { val, .. }) => Some(val.clone()),
+                        _ => None,
+                    })
+                    .ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "bytes at requires compile-time known binary input in eBPF".into(),
+                        )
+                    })?;
+                let (_, range_reg) = self.positional_args[0];
+                let range = self
+                    .get_metadata(range_reg)
+                    .and_then(|meta| meta.maybe_open_range)
+                    .ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "bytes at requires a compile-time known range in eBPF".into(),
+                        )
+                    })?;
+                if range.step != 1 {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "bytes at currently supports only default unit-step ranges in eBPF".into(),
+                    ));
+                }
+
+                let len = input.len() as i64;
+                let start = range
+                    .start
+                    .map(|idx| {
+                        let raw = if idx < 0 {
+                            len.saturating_add(idx)
+                        } else {
+                            idx
+                        };
+                        raw.clamp(0, len)
+                    })
+                    .unwrap_or(0);
+                let end = range
+                    .end
+                    .map(|idx| {
+                        let raw = if idx < 0 {
+                            len.saturating_add(idx)
+                        } else {
+                            idx
+                        };
+                        let exclusive = if range.inclusive {
+                            raw.saturating_add(1)
+                        } else {
+                            raw
+                        };
+                        exclusive.clamp(0, len)
+                    })
+                    .unwrap_or(len)
+                    .max(start);
+                let output = input[start as usize..end as usize].to_vec();
+                if output.is_empty() {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "bytes at requires a non-empty binary result in eBPF".into(),
+                    ));
+                }
+
+                self.reset_call_result_metadata(src_dst);
+                self.lower_constant_value(
+                    src_dst,
+                    &nu_protocol::Value::binary(output, nu_protocol::Span::unknown()),
+                )?;
+            }
+
             "str length" => {
                 self.lower_string_length(src_dst, dst_vreg, src_dst_had_value)?;
             }

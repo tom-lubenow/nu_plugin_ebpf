@@ -865,6 +865,7 @@ eBPF layout and verifier bounds are explicit:
 | `bytes index-of` | Compile-time known binary input and non-empty binary pattern, returning the first byte index or `-1`; `--end` returns the last index |
 | `bytes reverse` | Compile-time known non-empty binary input, returning a reversed fixed binary value |
 | `bytes build` | Compile-time known binary fragments and integer byte arguments, returning a non-empty fixed binary value |
+| `bytes at` | Compile-time known binary input and unit-step range, returning a non-empty fixed binary slice |
 | `str length` | Tracked strings and literal strings, returning the byte length tracked by the string buffer |
 | `str starts-with` | Tracked strings with a compile-time literal prefix, lowered as a bounded stack-buffer prefix comparison; `--ignore-case` is supported for compile-time known input strings |
 | `str ends-with` | Tracked strings with a compile-time known input length and literal suffix, lowered as a fixed-offset stack-buffer suffix comparison; `--ignore-case` is supported for compile-time known input strings |

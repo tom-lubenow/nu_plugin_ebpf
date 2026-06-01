@@ -6915,6 +6915,205 @@ fn test_lower_bytes_build_rejects_out_of_range_integer() {
     );
 }
 
+fn make_bytes_at_then_starts_with_program(
+    at_decl: DeclId,
+    starts_with_decl: DeclId,
+    input: Vec<u8>,
+    start: Option<i64>,
+    end: Option<i64>,
+    inclusion: RangeInclusion,
+    expected_prefix: Vec<u8>,
+) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Binary(input),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: start.map_or(HirLiteral::Nothing, HirLiteral::Int),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: end.map_or(HirLiteral::Nothing, HirLiteral::Int),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::Range {
+                        start: RegId::new(1),
+                        step: RegId::new(2),
+                        end: RegId::new(3),
+                        inclusion,
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: at_decl,
+                    src_dst: RegId::new(5),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(4)],
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(6),
+                    lit: HirLiteral::Binary(expected_prefix),
+                },
+                HirStmt::Call {
+                    decl_id: starts_with_decl,
+                    src_dst: RegId::new(7),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(6)],
+                        pipeline_input: Some(RegId::new(5)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(7) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 8,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+#[test]
+fn test_lower_bytes_at_materializes_non_empty_slice() {
+    let bytes_at_decl = DeclId::new(224);
+    let bytes_starts_with_decl = DeclId::new(225);
+    let hir = make_bytes_at_then_starts_with_program(
+        bytes_at_decl,
+        bytes_starts_with_decl,
+        vec![1, 2, 3, 4],
+        Some(1),
+        Some(2),
+        RangeInclusion::Inclusive,
+        vec![2, 3],
+    );
+    let decl_names = HashMap::from([
+        (bytes_at_decl, "bytes at".to_string()),
+        (bytes_starts_with_decl, "bytes starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bytes at should lower compile-time binary slices");
+
+    assert!(
+        result
+            .readonly_globals
+            .iter()
+            .any(|global| global.data == vec![2, 3]),
+        "expected bytes at to materialize the sliced binary rodata"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Copy {
+                    src: MirValue::Const(1),
+                    ..
+                }
+            )),
+        "expected sliced bytes to satisfy the starts-with predicate"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("bytes at output consumed by bytes starts-with should compile through codegen");
+}
+
+#[test]
+fn test_lower_bytes_at_rejects_empty_slice() {
+    let bytes_at_decl = DeclId::new(226);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Binary(vec![1, 2, 3]),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(5),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::Int(6),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::Range {
+                        start: RegId::new(1),
+                        step: RegId::new(2),
+                        end: RegId::new(3),
+                        inclusion: RangeInclusion::Inclusive,
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: bytes_at_decl,
+                    src_dst: RegId::new(5),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(4)],
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(5) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 6,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+    let decl_names = HashMap::from([(bytes_at_decl, "bytes at".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("bytes at should reject empty binary slices");
+
+    assert!(
+        err.to_string()
+            .contains("bytes at requires a non-empty binary result"),
+        "unexpected error: {err}"
+    );
+}
+
 #[test]
 fn test_lower_select_on_metadata_record_materializes_requested_layout() {
     let select_decl = DeclId::new(94);
