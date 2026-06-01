@@ -35491,6 +35491,84 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-string-camel-case"
+        category: "language-core"
+        tags: [string str camel-case]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "this-is-the-first-case" | str camel-case | str starts-with "thisIsTheFirstCase"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-string-kebab-case"
+        category: "language-core"
+        tags: [string str kebab-case]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "THIS_IS_THE_SECOND_CASE" | str kebab-case | str starts-with "this-is-the-second-case"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-string-pascal-case"
+        category: "language-core"
+        tags: [string str pascal-case]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "this_is_the_second_case" | str pascal-case | str starts-with "ThisIsTheSecondCase"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-string-screaming-snake-case"
+        category: "language-core"
+        tags: [string str screaming-snake-case]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "NuShell" | str screaming-snake-case | str starts-with "NU_SHELL"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-string-snake-case"
+        category: "language-core"
+        tags: [string str snake-case]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "NuShell" | str snake-case | str starts-with "nu_shell"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-string-title-case"
+        category: "language-core"
+        tags: [string str title-case]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "nu-shell" | str title-case | str starts-with "Nu Shell"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-null-is-empty"
         category: "language-core"
         tags: ["null" is-empty]

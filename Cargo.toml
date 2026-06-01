@@ -38,6 +38,9 @@ unicode-segmentation = "1.12"
 # Compile-time regex replacement for known string literals
 fancy-regex = "0.17"
 
+# Compile-time case conversion for known string literals
+heck = "0.5"
+
 [target.'cfg(target_os = "linux")'.dependencies]
 btf = "0.5.1"
 libc = "0.2"

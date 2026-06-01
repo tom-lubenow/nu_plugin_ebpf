@@ -4136,6 +4136,75 @@ fn test_lower_str_capitalize_on_known_string_materializes_capitalized_literal() 
 }
 
 #[test]
+fn test_lower_str_case_commands_on_known_strings_materialize_converted_literals() {
+    let cases = [
+        (
+            "str camel-case",
+            "this-is-the-first-case",
+            "thisIsTheFirstCase",
+        ),
+        (
+            "str kebab-case",
+            "THIS_IS_THE_SECOND_CASE",
+            "this-is-the-second-case",
+        ),
+        (
+            "str pascal-case",
+            "this_is_the_second_case",
+            "ThisIsTheSecondCase",
+        ),
+        ("str screaming-snake-case", "NuShell", "NU_SHELL"),
+        ("str snake-case", "NuShell", "nu_shell"),
+        ("str title-case", "nu-shell", "Nu Shell"),
+    ];
+
+    for (index, (command, input, expected)) in cases.iter().enumerate() {
+        let command_decl = DeclId::new(170 + index * 2);
+        let starts_with_decl = DeclId::new(171 + index * 2);
+        let hir = make_string_command_then_starts_with_program(
+            command_decl,
+            starts_with_decl,
+            input,
+            expected,
+        );
+        let decl_names = HashMap::from([
+            (command_decl, (*command).to_string()),
+            (starts_with_decl, "str starts-with".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("{command} should lower on known string input: {err:?}"));
+
+        let expected_bytes = [expected.as_bytes(), b"\0"].concat();
+        assert!(
+            result
+                .program
+                .main
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .any(|inst| matches!(
+                    inst,
+                    MirInst::StringAppend {
+                        val_type: StringAppendType::Literal { bytes },
+                        ..
+                    } if bytes.starts_with(&expected_bytes)
+                )),
+            "expected {command} to materialize {expected:?}"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{command} should compile through codegen: {err:?}"));
+    }
+}
+
+#[test]
 fn test_lower_str_substring_on_known_string_materializes_slice_literal() {
     let substring_decl = DeclId::new(140);
     let starts_with_decl = DeclId::new(141);

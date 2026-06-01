@@ -1,5 +1,8 @@
 use super::*;
 use fancy_regex::{NoExpand, Regex as FancyRegex};
+use heck::{
+    ToKebabCase, ToLowerCamelCase, ToShoutySnakeCase, ToSnakeCase, ToTitleCase, ToUpperCamelCase,
+};
 use unicode_segmentation::UnicodeSegmentation;
 
 struct KnownStringSearchOperands {
@@ -781,6 +784,12 @@ impl<'a> HirToMirLowering<'a> {
             "str upcase" => input.to_uppercase(),
             "str reverse" => input.chars().rev().collect(),
             "str capitalize" => Self::capitalize_first_char(&input),
+            "str camel-case" => input.to_lower_camel_case(),
+            "str kebab-case" => input.to_kebab_case(),
+            "str pascal-case" => input.to_upper_camel_case(),
+            "str screaming-snake-case" => input.to_shouty_snake_case(),
+            "str snake-case" => input.to_snake_case(),
+            "str title-case" => input.to_title_case(),
             _ => {
                 return Err(CompileError::UnsupportedInstruction(format!(
                     "unsupported string transform command '{command}'"

@@ -2863,7 +2863,16 @@ impl<'a> HirToMirLowering<'a> {
                 self.lower_string_trim(src_dst, dst_vreg, src_dst_had_value)?;
             }
 
-            "str downcase" | "str upcase" | "str reverse" | "str capitalize" => {
+            "str downcase"
+            | "str upcase"
+            | "str reverse"
+            | "str capitalize"
+            | "str camel-case"
+            | "str kebab-case"
+            | "str pascal-case"
+            | "str screaming-snake-case"
+            | "str snake-case"
+            | "str title-case" => {
                 self.lower_known_string_transform(&cmd_name, src_dst, dst_vreg, src_dst_had_value)?;
             }
 
