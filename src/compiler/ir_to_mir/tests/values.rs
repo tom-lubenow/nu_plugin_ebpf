@@ -819,6 +819,7 @@ fn make_string_substring_then_starts_with_program(
     end: i64,
     inclusion: RangeInclusion,
     prefix: &str,
+    flags: Vec<Vec<u8>>,
 ) -> HirProgram {
     let func = HirFunction {
         blocks: vec![HirBlock {
@@ -855,6 +856,7 @@ fn make_string_substring_then_starts_with_program(
                     args: HirCallArgs {
                         positional: vec![RegId::new(5)],
                         pipeline_input: Some(RegId::new(0)),
+                        flags,
                         ..HirCallArgs::default()
                     },
                 },
@@ -3782,6 +3784,7 @@ fn test_lower_str_substring_on_known_string_materializes_slice_literal() {
         3,
         RangeInclusion::Inclusive,
         "bcd",
+        Vec::new(),
     );
     let decl_names = HashMap::from([
         (substring_decl, "str substring".to_string()),
@@ -3830,6 +3833,7 @@ fn test_lower_str_substring_negative_end_materializes_slice_literal() {
         -2,
         RangeInclusion::Inclusive,
         "bcde",
+        Vec::new(),
     );
     let decl_names = HashMap::from([
         (substring_decl, "str substring".to_string()),
@@ -3864,6 +3868,56 @@ fn test_lower_str_substring_negative_end_materializes_slice_literal() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("str substring result consumed by str starts-with should compile through codegen");
+}
+
+#[test]
+fn test_lower_str_substring_grapheme_clusters_on_known_string_materializes_slice_literal() {
+    let substring_decl = DeclId::new(156);
+    let starts_with_decl = DeclId::new(157);
+    let hir = make_string_substring_then_starts_with_program(
+        substring_decl,
+        starts_with_decl,
+        "🇯🇵ほげ ふが ぴよ",
+        4,
+        5,
+        RangeInclusion::Inclusive,
+        "ふが",
+        vec![b"grapheme-clusters".to_vec()],
+    );
+    let decl_names = HashMap::from([
+        (substring_decl, "str substring".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str substring --grapheme-clusters should lower for known string input");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with("ふが\0".as_bytes())
+            )),
+        "expected grapheme-cluster substring to materialize the sliced string"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "str substring --grapheme-clusters result consumed by str starts-with should compile",
+    );
 }
 
 #[test]

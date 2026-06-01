@@ -1,4 +1,5 @@
 use super::*;
+use unicode_segmentation::UnicodeSegmentation;
 
 struct KnownStringSearchOperands {
     input_slot: StackSlotId,
@@ -527,16 +528,7 @@ impl<'a> HirToMirLowering<'a> {
                 "str substring does not accept named arguments in eBPF".into(),
             ));
         }
-        if self
-            .named_flags
-            .iter()
-            .any(|flag| flag.as_str() != "utf-8-bytes")
-        {
-            return Err(CompileError::UnsupportedInstruction(
-                "str substring currently supports only the default UTF-8 byte indexing mode in eBPF"
-                    .into(),
-            ));
-        }
+        let use_grapheme_clusters = self.string_grapheme_cluster_indexing_flag("str substring")?;
         if self.positional_args.len() != 1 {
             return Err(CompileError::UnsupportedInstruction(
                 "str substring requires exactly one explicit range argument in eBPF".into(),
@@ -557,6 +549,14 @@ impl<'a> HirToMirLowering<'a> {
             return Err(CompileError::UnsupportedInstruction(
                 "str substring currently supports only default unit-step ranges in eBPF".into(),
             ));
+        }
+
+        if use_grapheme_clusters {
+            let graphemes: Vec<&str> =
+                UnicodeSegmentation::graphemes(input.as_str(), true).collect();
+            let (start, end) = Self::string_range_byte_bounds(range, graphemes.len());
+            let output = graphemes[start..end].concat();
+            return self.lower_known_string_result(src_dst, result_vreg, output);
         }
 
         let (start, end) = Self::string_range_byte_bounds(range, input.len());
@@ -801,6 +801,28 @@ impl<'a> HirToMirLowering<'a> {
             }
         }
         Ok(from_end)
+    }
+
+    fn string_grapheme_cluster_indexing_flag(&self, command: &str) -> Result<bool, CompileError> {
+        let mut use_grapheme_clusters = false;
+        let mut use_utf8_bytes = false;
+        for flag in &self.named_flags {
+            match flag.as_str() {
+                "grapheme-clusters" => use_grapheme_clusters = true,
+                "utf-8-bytes" => use_utf8_bytes = true,
+                _ => {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{command} currently supports only --utf-8-bytes and --grapheme-clusters flags in eBPF"
+                    )));
+                }
+            }
+        }
+        if use_grapheme_clusters && use_utf8_bytes {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{command} accepts either --utf-8-bytes or --grapheme-clusters, not both, in eBPF"
+            )));
+        }
+        Ok(use_grapheme_clusters)
     }
 
     fn string_index_of_search_bounds(
