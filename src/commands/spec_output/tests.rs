@@ -2952,6 +2952,58 @@ fn test_spec_record_includes_kfunc_call_surface_metadata() {
             .minimum_kernel_source
             .is_some_and(|source| source.contains("/v6.12/net/core/filter.c"))
     );
+
+    let sched_ext_dispatch = ProgramSpec::parse("struct_ops:sched_ext_ops.dispatch")
+        .expect("sched_ext dispatch callback spec should parse");
+    let dispatch_kfuncs = spec_kfunc_calls(&sched_ext_dispatch);
+    let legacy_insert = dispatch_kfuncs
+        .iter()
+        .find(|surface| surface.kfunc == "scx_bpf_dsq_insert")
+        .expect("sched_ext dispatch should advertise legacy dsq_insert");
+    assert_eq!(legacy_insert.policy, "sched-ext-callback");
+    assert_eq!(legacy_insert.minimum_kernel, Some("6.13"));
+    assert_eq!(legacy_insert.maximum_kernel_exclusive, Some("6.23"));
+
+    let v2_insert = dispatch_kfuncs
+        .iter()
+        .find(|surface| surface.kfunc == "scx_bpf_dsq_insert___v2")
+        .expect("sched_ext dispatch should advertise v2 dsq_insert");
+    assert_eq!(v2_insert.minimum_kernel, Some("6.19"));
+    assert_eq!(v2_insert.maximum_kernel_exclusive, None);
+
+    let record = spec_record(
+        "struct_ops:sched_ext_ops.dispatch".to_string(),
+        sched_ext_dispatch,
+        Span::test_data(),
+        false,
+    )
+    .into_record()
+    .expect("sched_ext dispatch spec output should be a record");
+    let record_kfuncs = record
+        .get("kfunc_calls")
+        .expect("kfunc_calls should be present")
+        .as_list()
+        .expect("kfunc_calls should be a list");
+    let legacy_insert_record = record_kfuncs
+        .iter()
+        .find_map(|value| {
+            let record = value.as_record().ok()?;
+            (record
+                .get("kfunc")?
+                .as_str()
+                .ok()
+                .is_some_and(|name| name == "scx_bpf_dsq_insert"))
+            .then_some(record)
+        })
+        .expect("legacy dsq_insert kfunc record should be present");
+    assert_eq!(
+        legacy_insert_record
+            .get("maximum_kernel_exclusive")
+            .expect("maximum kernel should be present")
+            .as_str()
+            .expect("maximum kernel should be a string"),
+        "6.23"
+    );
 }
 
 #[test]
