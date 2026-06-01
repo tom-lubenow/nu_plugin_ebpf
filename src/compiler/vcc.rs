@@ -272,6 +272,7 @@ pub enum VccInst {
     },
     AssertScalar {
         value: VccValue,
+        op: Option<&'static str>,
     },
     AssertPositive {
         value: VccValue,

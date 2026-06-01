@@ -520,7 +520,10 @@ impl<'a> VccLowerer<'a> {
                         });
                     }
                     _ => {
-                        out.push(VccInst::AssertScalar { value: vcc_src });
+                        out.push(VccInst::AssertScalar {
+                            value: vcc_src,
+                            op: None,
+                        });
                         out.push(VccInst::Assume {
                             dst: VccReg(dst.0),
                             ty: dst_ty,
@@ -760,7 +763,7 @@ impl<'a> VccLowerer<'a> {
             MirInst::StoreCtxField { target, val, ty } => {
                 self.verify_ctx_field_store(target, ty)?;
                 let value = self.lower_value(val, out);
-                out.push(VccInst::AssertScalar { value });
+                out.push(VccInst::AssertScalar { value, op: None });
             }
             MirInst::StrCmp {
                 dst,
@@ -1197,7 +1200,7 @@ impl<'a> VccLowerer<'a> {
                 }
             }
             MirInst::Histogram { value } => {
-                self.assert_scalar_reg(*value, out);
+                self.assert_scalar_reg_with_op(*value, Some("histogram"), out);
             }
             MirInst::StartTimer => {}
             MirInst::StopTimer { dst } => {
@@ -1764,6 +1767,7 @@ impl<'a> VccLowerer<'a> {
                 let len_reg = VccReg(dst_len.0);
                 out.push(VccInst::AssertScalar {
                     value: VccValue::Reg(len_reg),
+                    op: Some("string append length"),
                 });
                 let dst_slot_size = self.slot_sizes.get(dst_buffer).copied().unwrap_or(0);
                 let required_append_bytes = match val_type {
@@ -1858,7 +1862,10 @@ impl<'a> VccLowerer<'a> {
                     }
                     StringAppendType::Integer => {
                         let vcc_val = self.lower_value(val, out);
-                        out.push(VccInst::AssertScalar { value: vcc_val });
+                        out.push(VccInst::AssertScalar {
+                            value: vcc_val,
+                            op: Some("string append integer"),
+                        });
 
                         let max_digits = MAX_INT_STRING_LEN;
                         if max_digits > 0 {
@@ -1897,6 +1904,7 @@ impl<'a> VccLowerer<'a> {
             } => {
                 out.push(VccInst::AssertScalar {
                     value: VccValue::Reg(VccReg(val.0)),
+                    op: Some("int to string value"),
                 });
 
                 let base = self.stack_addr_temp(*dst_buffer, out);
@@ -2263,7 +2271,10 @@ impl<'a> VccLowerer<'a> {
                     ));
                 }
                 let vcc_val = self.lower_value(index, out);
-                out.push(VccInst::AssertScalar { value: vcc_val });
+                out.push(VccInst::AssertScalar {
+                    value: vcc_val,
+                    op: None,
+                });
                 Ok(VccTerminator::Return { value: None })
             }
             MirInst::LoopHeader {

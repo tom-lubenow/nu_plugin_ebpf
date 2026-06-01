@@ -387,8 +387,18 @@ impl<'a> VccLowerer<'a> {
     }
 
     pub(super) fn assert_scalar_reg(&self, reg: VReg, out: &mut Vec<VccInst>) {
+        self.assert_scalar_reg_with_op(reg, None, out);
+    }
+
+    pub(super) fn assert_scalar_reg_with_op(
+        &self,
+        reg: VReg,
+        op: Option<&'static str>,
+        out: &mut Vec<VccInst>,
+    ) {
         out.push(VccInst::AssertScalar {
             value: VccValue::Reg(VccReg(reg.0)),
+            op,
         });
     }
 

@@ -355,7 +355,7 @@ impl VccVerifier {
                     ));
                 }
             }
-            VccInst::AssertScalar { value } => match state.value_type(*value) {
+            VccInst::AssertScalar { value, op } => match state.value_type(*value) {
                 Ok(ty) => {
                     if ty.class() != VccTypeClass::Scalar && ty.class() != VccTypeClass::Bool {
                         self.errors.push(VccError::new(
@@ -363,7 +363,10 @@ impl VccVerifier {
                                 expected: VccTypeClass::Scalar,
                                 actual: ty.class(),
                             },
-                            "expected scalar value",
+                            op.map_or_else(
+                                || "expected scalar value".to_string(),
+                                |op| format!("{op} expects scalar"),
+                            ),
                         ));
                     }
                 }

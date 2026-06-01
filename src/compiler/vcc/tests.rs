@@ -17,6 +17,7 @@ mod map_value_objects;
 mod records;
 mod ref_kfuncs;
 mod scalar_ranges;
+mod scalars;
 
 fn verify_ok(func: &VccFunction) {
     VccVerifier::default()
