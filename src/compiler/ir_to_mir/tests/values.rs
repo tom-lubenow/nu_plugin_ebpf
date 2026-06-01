@@ -6666,6 +6666,70 @@ fn test_lower_str_downcase_on_known_string_materializes_lowercase_literal() {
 }
 
 #[test]
+fn test_lower_str_downcase_on_known_string_list_materializes_lowercase_literals() {
+    let downcase_decl = DeclId::new(390);
+    let join_decl = DeclId::new(391);
+    let starts_with_decl = DeclId::new(392);
+    let hir = make_string_list_builder_transform_join_then_starts_with_program(
+        downcase_decl,
+        join_decl,
+        starts_with_decl,
+        &["Ab", "Cd"],
+        None,
+        Vec::new(),
+        "ab-cd",
+    );
+    let decl_names = HashMap::from([
+        (downcase_decl, "str downcase".to_string()),
+        (join_decl, "str join".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str downcase should lower for compile-time known string-list input");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"ab-cd\0")
+            )),
+        "expected str downcase list output to feed str join with lowercase strings"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .all(|inst| !matches!(
+                inst,
+                MirInst::ListGet { .. } | MirInst::ListLen { .. } | MirInst::ListPush { .. }
+            )),
+        "expected compile-time str downcase string-list input not to use runtime list operations"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "str downcase string-list result consumed by str join should compile through codegen",
+    );
+}
+
+#[test]
 fn test_lower_str_upcase_on_known_string_materializes_uppercase_literal() {
     let upcase_decl = DeclId::new(134);
     let starts_with_decl = DeclId::new(135);

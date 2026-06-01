@@ -310,6 +310,7 @@ pub enum FixedLayoutValueConsumer {
     Sort,
     Find,
     Compact,
+    StringTransform,
 }
 
 pub fn compile_time_value_flows_to_fixed_layout_consumer(
@@ -498,6 +499,7 @@ pub fn compile_time_value_flows_to_fixed_layout_aggregate_consumer(
         FixedLayoutValueConsumer::Sort,
         FixedLayoutValueConsumer::Find,
         FixedLayoutValueConsumer::Compact,
+        FixedLayoutValueConsumer::StringTransform,
     ]
     .into_iter()
     .any(|consumer| {
@@ -747,6 +749,28 @@ fn compile_time_value_consumer_matches(
                 && args.rest.is_empty()
                 && args.named.is_empty()
                 && args.flags.iter().all(|flag| flag.as_slice() == b"empty")
+                && args.parser_info.is_empty()
+        }
+        FixedLayoutValueConsumer::StringTransform => {
+            matches!(
+                decl_name,
+                Some(
+                    "str downcase"
+                        | "str upcase"
+                        | "str reverse"
+                        | "str capitalize"
+                        | "str camel-case"
+                        | "str kebab-case"
+                        | "str pascal-case"
+                        | "str screaming-snake-case"
+                        | "str snake-case"
+                        | "str title-case"
+                )
+            ) && call_args_tracked_only_in_pipeline(src_dst, args, tracked_regs)
+                && args.positional.is_empty()
+                && args.rest.is_empty()
+                && args.named.is_empty()
+                && args.flags.is_empty()
                 && args.parser_info.is_empty()
         }
     }

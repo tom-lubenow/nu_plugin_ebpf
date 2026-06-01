@@ -463,14 +463,14 @@ impl<'a> HirToMirLowering<'a> {
         }
         if let Some((_, separator_reg)) = self.positional_args.first().copied() {
             let separator = self.literal_string_arg(separator_reg, "str join separator")?;
-            if let Some(input) = self.string_list_input(input_reg, "str join")? {
+            if let Some(input) = self.string_join_list_input(input_reg, "str join")? {
                 return self.lower_known_string_result(
                     src_dst,
                     result_vreg,
                     input.join(&separator),
                 );
             }
-        } else if let Some(input) = self.string_list_input(input_reg, "str join")? {
+        } else if let Some(input) = self.string_join_list_input(input_reg, "str join")? {
             return self.lower_known_string_result(src_dst, result_vreg, input.concat());
         }
 
@@ -1350,26 +1350,36 @@ impl<'a> HirToMirLowering<'a> {
             )));
         }
 
+        if let Some(input) = self.exact_string_list_input(input_reg, command)? {
+            let output = input
+                .into_iter()
+                .map(|item| Self::known_string_transform(command, item))
+                .collect::<Result<Vec<_>, _>>()?;
+            return self.lower_known_string_list_result(src_dst, result_vreg, output);
+        }
+
         let input = self.exact_string_input(input_reg, command)?;
-        let output = match command {
-            "str downcase" => input.to_lowercase(),
-            "str upcase" => input.to_uppercase(),
-            "str reverse" => input.chars().rev().collect(),
-            "str capitalize" => Self::capitalize_first_char(&input),
-            "str camel-case" => input.to_lower_camel_case(),
-            "str kebab-case" => input.to_kebab_case(),
-            "str pascal-case" => input.to_upper_camel_case(),
-            "str screaming-snake-case" => input.to_shouty_snake_case(),
-            "str snake-case" => input.to_snake_case(),
-            "str title-case" => input.to_title_case(),
-            _ => {
-                return Err(CompileError::UnsupportedInstruction(format!(
-                    "unsupported string transform command '{command}'"
-                )));
-            }
-        };
+        let output = Self::known_string_transform(command, input)?;
 
         self.lower_known_string_result(src_dst, result_vreg, output)
+    }
+
+    fn known_string_transform(command: &str, input: String) -> Result<String, CompileError> {
+        match command {
+            "str downcase" => Ok(input.to_lowercase()),
+            "str upcase" => Ok(input.to_uppercase()),
+            "str reverse" => Ok(input.chars().rev().collect()),
+            "str capitalize" => Ok(Self::capitalize_first_char(&input)),
+            "str camel-case" => Ok(input.to_lower_camel_case()),
+            "str kebab-case" => Ok(input.to_kebab_case()),
+            "str pascal-case" => Ok(input.to_upper_camel_case()),
+            "str screaming-snake-case" => Ok(input.to_shouty_snake_case()),
+            "str snake-case" => Ok(input.to_snake_case()),
+            "str title-case" => Ok(input.to_title_case()),
+            _ => Err(CompileError::UnsupportedInstruction(format!(
+                "unsupported string transform command '{command}'"
+            ))),
+        }
     }
 
     fn exact_string_input(
@@ -1387,7 +1397,34 @@ impl<'a> HirToMirLowering<'a> {
             })
     }
 
-    fn string_list_input(
+    fn exact_string_list_input(
+        &self,
+        input_reg: Option<RegId>,
+        command: &str,
+    ) -> Result<Option<Vec<String>>, CompileError> {
+        let Some(meta) = input_reg.and_then(|reg| self.get_metadata(reg).cloned()) else {
+            return Ok(None);
+        };
+        let Some(nu_protocol::Value::List { vals, .. }) = meta.constant_value else {
+            return Ok(None);
+        };
+
+        vals.into_iter()
+            .enumerate()
+            .map(|(index, item)| match item {
+                nu_protocol::Value::String { val, .. } | nu_protocol::Value::Glob { val, .. } => {
+                    Ok(val)
+                }
+                other => Err(CompileError::UnsupportedInstruction(format!(
+                    "{command} requires string list items in eBPF; item {index} has type {}",
+                    other.get_type()
+                ))),
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map(Some)
+    }
+
+    fn string_join_list_input(
         &self,
         input_reg: Option<RegId>,
         command: &str,

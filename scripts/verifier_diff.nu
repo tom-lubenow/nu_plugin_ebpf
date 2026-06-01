@@ -36258,6 +36258,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-string-list-downcase-join"
+        category: "language-core"
+        tags: [string list str downcase join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ["Ab" "Cd"] | str downcase | str join "-" | str starts-with "ab-cd"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-string-upcase"
         category: "language-core"
         tags: [string str upcase]
