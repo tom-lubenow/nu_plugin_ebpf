@@ -16,10 +16,9 @@ impl<'a> HirToMirLowering<'a> {
                 "compact --{flag} is not supported for stack-backed numeric lists in eBPF"
             )));
         }
-        if !self.named_args.is_empty() || !self.positional_args.is_empty() {
+        if !self.named_args.is_empty() {
             return Err(CompileError::UnsupportedInstruction(
-                "compact does not accept column arguments for stack-backed numeric lists in eBPF"
-                    .into(),
+                "compact does not accept named arguments in eBPF".into(),
             ));
         }
         let remove_empty = self.named_flags.iter().any(|flag| flag == "empty");
@@ -38,12 +37,32 @@ impl<'a> HirToMirLowering<'a> {
             .direct_list_builder_values(input_reg, input_vreg)
             .map(|values| values.to_vec())
         {
+            let columns = self.compact_column_names()?;
+            if !columns.is_empty()
+                && !values
+                    .iter()
+                    .all(|value| matches!(value, nu_protocol::Value::Record { .. }))
+            {
+                return Err(CompileError::UnsupportedInstruction(
+                    "compact does not accept column arguments for non-record fixed lists in eBPF"
+                        .into(),
+                ));
+            }
             let vals = values
                 .into_iter()
-                .filter(|value| Self::compact_keeps_value(value, remove_empty))
+                .filter(|value| {
+                    Self::compact_keeps_value_for_columns(value, remove_empty, &columns)
+                })
                 .collect::<Vec<_>>();
             self.lower_constant_value(src_dst, &nu_protocol::Value::list(vals, Span::unknown()))?;
             return Ok(());
+        }
+
+        if !self.positional_args.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(
+                "compact does not accept column arguments for stack-backed numeric lists in eBPF"
+                    .into(),
+            ));
         }
 
         let input_meta = self.get_metadata(input_reg).cloned().ok_or_else(|| {
@@ -68,6 +87,33 @@ impl<'a> HirToMirLowering<'a> {
         });
         self.propagate_passthrough_reg_metadata(src_dst, result_vreg, input_reg, input_vreg);
         Ok(())
+    }
+
+    fn compact_column_names(&self) -> Result<Vec<String>, CompileError> {
+        let mut columns = Vec::with_capacity(self.positional_args.len());
+        for (_, reg) in &self.positional_args {
+            columns.push(self.top_level_field_name_arg(*reg, "compact")?);
+        }
+        Ok(columns)
+    }
+
+    fn compact_keeps_value_for_columns(
+        value: &nu_protocol::Value,
+        remove_empty: bool,
+        columns: &[String],
+    ) -> bool {
+        if columns.is_empty() {
+            return Self::compact_keeps_value(value, remove_empty);
+        }
+
+        let nu_protocol::Value::Record { val, .. } = value else {
+            return true;
+        };
+
+        columns.iter().all(|column| {
+            val.get(column)
+                .is_some_and(|value| Self::compact_keeps_value(value, remove_empty))
+        })
     }
 
     fn compact_keeps_value(value: &nu_protocol::Value, remove_empty: bool) -> bool {

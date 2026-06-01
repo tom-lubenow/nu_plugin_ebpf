@@ -173,7 +173,11 @@ impl<'a> HirToMirLowering<'a> {
         }))
     }
 
-    fn top_level_field_name_arg(&self, reg: RegId, context: &str) -> Result<String, CompileError> {
+    pub(super) fn top_level_field_name_arg(
+        &self,
+        reg: RegId,
+        context: &str,
+    ) -> Result<String, CompileError> {
         let Some(meta) = self.get_metadata(reg) else {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "{context} requires compile-time field names in eBPF"

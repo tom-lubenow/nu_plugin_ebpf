@@ -34642,6 +34642,32 @@ const FIXTURES = [
         error_contains: "compact does not accept column arguments"
     }
     {
+        name: "core-record-list-compact-column-length"
+        category: "language-core"
+        tags: [aggregate record list compact column length]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [{ pid: 7 cpu: 2 } { pid: 8 } { pid: 9 cpu: 4 }] | compact cpu | length'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-record-list-compact-empty-column-length"
+        category: "language-core"
+        tags: [aggregate record list compact empty column length]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [{ pid: 7 comm: "" } { pid: 8 comm: "nu" } { pid: 9 }] | compact --empty comm | length'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-find"
         category: "language-core"
         tags: [aggregate list find]

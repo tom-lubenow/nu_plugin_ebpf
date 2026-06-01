@@ -14,6 +14,14 @@ fn string_member(name: &str) -> PathMember {
     PathMember::test_string(name.to_string(), false, Casing::Sensitive)
 }
 
+fn test_record(fields: Vec<(&str, Value)>) -> Record {
+    let mut record = Record::new();
+    for (name, value) in fields {
+        record.push(name, value);
+    }
+    record
+}
+
 fn make_numeric_list_pipeline_call_program(decl_id: DeclId, count: Option<i64>) -> HirProgram {
     let mut stmts = vec![HirStmt::LoadValue {
         dst: RegId::new(0),
@@ -1234,6 +1242,83 @@ fn make_string_list_builder_pipeline_call_program(decl_id: DeclId, values: &[&st
         ast: Vec::new(),
         comments: Vec::new(),
         register_count: value_count_u32 + 2,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_record_list_compact_length_program(
+    compact_decl: DeclId,
+    length_decl: DeclId,
+    rows: Vec<Record>,
+    columns: &[&str],
+    remove_empty: bool,
+) -> HirProgram {
+    let mut stmts = vec![HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List {
+            capacity: rows.len(),
+        },
+    }];
+
+    let mut next_reg = 3u32;
+    for row in rows {
+        let row_reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadValue {
+            dst: row_reg,
+            val: Box::new(Value::record(row, Span::test_data())),
+        });
+        stmts.push(HirStmt::ListPush {
+            src_dst: RegId::new(0),
+            item: row_reg,
+        });
+    }
+
+    let mut positional = Vec::new();
+    for column in columns {
+        let column_reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadLiteral {
+            dst: column_reg,
+            lit: HirLiteral::String(column.as_bytes().to_vec()),
+        });
+        positional.push(column_reg);
+    }
+
+    stmts.push(HirStmt::Call {
+        decl_id: compact_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional,
+            flags: remove_empty
+                .then(|| b"empty".to_vec())
+                .into_iter()
+                .collect(),
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: length_decl,
+        src_dst: RegId::new(2),
+        args: HirCallArgs {
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(2) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: next_reg,
         file_count: 0,
     };
     HirProgram::new(func, HashMap::new(), vec![], None)
@@ -4263,6 +4348,94 @@ fn test_lower_string_list_builder_compact_empty_join_constant_values() {
 }
 
 #[test]
+fn test_lower_record_list_builder_compact_column_uses_constant_length() {
+    let compact_decl = DeclId::new(335);
+    let length_decl = DeclId::new(336);
+    let hir = make_record_list_compact_length_program(
+        compact_decl,
+        length_decl,
+        vec![
+            test_record(vec![
+                ("pid", Value::int(7, Span::test_data())),
+                ("cpu", Value::int(2, Span::test_data())),
+            ]),
+            test_record(vec![("pid", Value::int(8, Span::test_data()))]),
+            test_record(vec![
+                ("pid", Value::int(9, Span::test_data())),
+                ("cpu", Value::int(4, Span::test_data())),
+            ]),
+        ],
+        &["cpu"],
+        false,
+    );
+    let decl_names = HashMap::from([
+        (compact_decl, "compact".to_string()),
+        (length_decl, "length".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("compact column arguments should fold compile-time record-list builders");
+
+    assert_no_runtime_list_operations(&result.program, "record-list compact column");
+    assert_program_returns_constant(&result.program, 2, "record-list compact column length");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("compact column record-list builder result should compile through codegen");
+}
+
+#[test]
+fn test_lower_record_list_builder_compact_empty_column_uses_constant_length() {
+    let compact_decl = DeclId::new(337);
+    let length_decl = DeclId::new(338);
+    let hir = make_record_list_compact_length_program(
+        compact_decl,
+        length_decl,
+        vec![
+            test_record(vec![
+                ("pid", Value::int(7, Span::test_data())),
+                ("comm", Value::string("", Span::test_data())),
+            ]),
+            test_record(vec![
+                ("pid", Value::int(8, Span::test_data())),
+                ("comm", Value::string("nu", Span::test_data())),
+            ]),
+            test_record(vec![("pid", Value::int(9, Span::test_data()))]),
+        ],
+        &["comm"],
+        true,
+    );
+    let decl_names = HashMap::from([
+        (compact_decl, "compact".to_string()),
+        (length_decl, "length".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("compact --empty column arguments should fold compile-time record-list builders");
+
+    assert_no_runtime_list_operations(&result.program, "record-list compact --empty column");
+    assert_program_returns_constant(
+        &result.program,
+        1,
+        "record-list compact --empty column length",
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("compact --empty column record-list builder result should compile through codegen");
+}
+
+#[test]
 fn test_lower_string_list_builder_sort_join_constant_values() {
     let scenarios = [
         (Vec::new(), "aa-ab-cd"),
@@ -4270,7 +4443,7 @@ fn test_lower_string_list_builder_sort_join_constant_values() {
     ];
 
     for (index, (flags, expected)) in scenarios.into_iter().enumerate() {
-        let base_decl = 335 + index * 3;
+        let base_decl = 339 + index * 3;
         let sort_decl = DeclId::new(base_decl);
         let join_decl = DeclId::new(base_decl + 1);
         let starts_with_decl = DeclId::new(base_decl + 2);

@@ -744,7 +744,6 @@ fn compile_time_value_consumer_matches(
         FixedLayoutValueConsumer::Compact => {
             decl_name == Some("compact")
                 && call_args_tracked_only_in_pipeline(src_dst, args, tracked_regs)
-                && args.positional.is_empty()
                 && args.rest.is_empty()
                 && args.named.is_empty()
                 && args.flags.iter().all(|flag| flag.as_slice() == b"empty")
