@@ -2450,6 +2450,27 @@ fn test_kernel_kfunc_requirement_detail_reports_too_new_kernel_window() {
 }
 
 #[test]
+fn test_kernel_object_compatibility_requirement_detail_reports_too_new_kfunc_window() {
+    let object =
+        EbpfProgram::from_bytecode(EbpfProgramType::Kprobe, "do_sys_openat2", "main", vec![])
+            .with_used_kfuncs(["scx_bpf_reenqueue_local"])
+            .into_object();
+
+    assert_eq!(
+        object.compatibility_maximum_kernel_exclusive(),
+        Some("6.23")
+    );
+    let msg = kernel_object_compatibility_requirement_detail(&object, "6.23.0-test")
+        .expect("kernel 6.23 should be too new for legacy reenqueue_local object");
+
+    assert!(msg.contains("compiled kfuncs include kfuncs unavailable on kernel>=6.23"));
+    assert!(msg.contains("current kernel is 6.23.0-test"));
+    assert!(msg.contains("scx_bpf_reenqueue_local kfunc support"));
+    assert!(msg.contains("kernel>=6.12, kernel<6.23"));
+    assert!(kernel_object_compatibility_requirement_detail(&object, "6.22.99").is_none());
+}
+
+#[test]
 fn test_structured_event_string_respects_field_size() {
     let schema = EventSchema {
         fields: vec![
