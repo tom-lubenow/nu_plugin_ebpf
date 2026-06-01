@@ -4072,6 +4072,68 @@ fn test_lower_string_list_builder_uniq_join_constant_values() {
 }
 
 #[test]
+fn test_lower_string_list_builder_find_join_constant_values() {
+    let find_decl = DeclId::new(329);
+    let join_decl = DeclId::new(330);
+    let starts_with_decl = DeclId::new(331);
+    let hir = make_string_list_builder_item_transform_join_then_starts_with_program(
+        find_decl,
+        join_decl,
+        starts_with_decl,
+        &["ab", "cd", "ef", "cd"],
+        "cd",
+        "cd-cd",
+    );
+    let decl_names = HashMap::from([
+        (find_decl, "find".to_string()),
+        (join_decl, "str join".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("find should fold compile-time string-list builders");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"cd-cd\0")
+            )),
+        "expected find to feed str join with matching strings"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .all(|inst| !matches!(
+                inst,
+                MirInst::ListGet { .. } | MirInst::ListLen { .. } | MirInst::ListPush { .. }
+            )),
+        "expected compile-time string-list find not to use runtime list operations"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("find string-list builder result should compile through codegen");
+}
+
+#[test]
 fn test_lower_str_length_on_string_copies_tracked_length() {
     let str_length_decl = DeclId::new(117);
     let hir = make_string_pipeline_call_program(str_length_decl, "abc");

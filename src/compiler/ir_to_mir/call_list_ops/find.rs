@@ -23,6 +23,34 @@ impl<'a> HirToMirLowering<'a> {
         let input_reg = self
             .pipeline_input_reg
             .or(src_dst_had_value.then_some(src_dst));
+        let (needle_vreg, needle_reg) = self.positional_args[0];
+
+        if let Some(values) = input_reg.and_then(|reg| {
+            self.direct_list_builder_values(reg, input_vreg)
+                .map(|values| values.to_vec())
+        }) {
+            let Some(needle) = self
+                .get_metadata(needle_reg)
+                .and_then(|meta| meta.constant_value.clone())
+                .or_else(|| {
+                    self.get_metadata(needle_reg)
+                        .and_then(|meta| meta.literal_int)
+                        .map(|value| nu_protocol::Value::int(value, Span::unknown()))
+                })
+            else {
+                return Err(CompileError::UnsupportedInstruction(
+                    "find search argument must be compile-time constant for compile-time known fixed lists in eBPF"
+                        .into(),
+                ));
+            };
+            let vals = values
+                .into_iter()
+                .filter(|value| value == &needle)
+                .collect::<Vec<_>>();
+            self.lower_constant_value(src_dst, &nu_protocol::Value::list(vals, Span::unknown()))?;
+            return Ok(());
+        }
+
         let input_meta = input_reg
             .and_then(|reg| self.get_metadata(reg).cloned())
             .ok_or_else(|| {
@@ -36,7 +64,6 @@ impl<'a> HirToMirLowering<'a> {
             ));
         };
 
-        let (needle_vreg, needle_reg) = self.positional_args[0];
         let needle_meta = self.get_metadata(needle_reg).cloned();
         let needle_const = needle_meta
             .as_ref()

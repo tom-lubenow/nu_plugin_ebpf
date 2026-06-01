@@ -35100,6 +35100,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-string-list-find"
+        category: "language-core"
+        tags: [string list find]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ["ab" "cd" "ef" "cd"] | find "cd" | str join "-" | str starts-with "cd-cd"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-math-sum"
         category: "language-core"
         tags: [aggregate list math sum]

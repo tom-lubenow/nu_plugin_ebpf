@@ -565,6 +565,14 @@ fn test_list_push_string_item_allowed_for_uniq() {
 }
 
 #[test]
+fn test_list_push_string_item_allowed_for_find() {
+    assert_list_push_string_item_allowed_for_pipeline_command_with_string_arg(
+        DeclId::new(66),
+        "find",
+    );
+}
+
+#[test]
 fn test_list_push_record_item_allowed_for_typed_global_array_initializer() {
     let define_decl = DeclId::new(42);
     let mut func = HirFunction {
