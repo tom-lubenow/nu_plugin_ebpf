@@ -560,6 +560,11 @@ fn test_list_push_string_item_allowed_for_prepend() {
 }
 
 #[test]
+fn test_list_push_string_item_allowed_for_uniq() {
+    assert_list_push_string_item_allowed_for_pipeline_command(DeclId::new(65), "uniq");
+}
+
+#[test]
 fn test_list_push_record_item_allowed_for_typed_global_array_initializer() {
     let define_decl = DeclId::new(42);
     let mut func = HirFunction {

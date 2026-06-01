@@ -21,6 +21,20 @@ impl<'a> HirToMirLowering<'a> {
             ));
         }
 
+        if let Some(values) = input_reg.and_then(|reg| {
+            self.direct_list_builder_values(reg, input_vreg)
+                .map(|values| values.to_vec())
+        }) {
+            let mut unique = Vec::new();
+            for value in values {
+                if !unique.contains(&value) {
+                    unique.push(value);
+                }
+            }
+            self.lower_constant_value(src_dst, &nu_protocol::Value::list(unique, Span::unknown()))?;
+            return Ok(());
+        }
+
         let input_meta = input_reg
             .and_then(|reg| self.get_metadata(reg).cloned())
             .ok_or_else(|| {

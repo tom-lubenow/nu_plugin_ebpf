@@ -35087,6 +35087,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-string-list-uniq"
+        category: "language-core"
+        tags: [string list uniq]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ["ab" "cd" "ab" "ef" "cd"] | uniq | str join "-" | str starts-with "ab-cd-ef"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-math-sum"
         category: "language-core"
         tags: [aggregate list math sum]

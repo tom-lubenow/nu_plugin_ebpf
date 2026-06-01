@@ -853,7 +853,7 @@ eBPF layout and verifier bounds are explicit:
 | `skip` | Stack-backed numeric lists and compile-time known fixed lists with a compile-time non-negative count |
 | `drop` | Stack-backed numeric lists and compile-time known fixed lists with a compile-time non-negative count removed from the end |
 | `reverse` | Stack-backed numeric lists, preserving runtime length with descending constant-index loads; compile-time known fixed lists are reversed as constants |
-| `uniq` | Stack-backed numeric lists, preserving first occurrences through verifier-bounded duplicate checks |
+| `uniq` | Stack-backed numeric lists, preserving first occurrences through verifier-bounded duplicate checks; compile-time known fixed lists are deduplicated as constants |
 | `sort` | Stack-backed numeric lists with capacity <= 16, using bounded compare/swap lowering; `--reverse` is supported |
 | `compact` | Stack-backed numeric lists as an identity operation because numeric-list elements cannot be null or empty; column arguments are not modeled |
 | `find` | Stack-backed numeric lists with one numeric search argument, returning a bounded equality-filtered stack list |
