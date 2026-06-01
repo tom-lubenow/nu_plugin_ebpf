@@ -94,15 +94,27 @@ impl MapCompatibilityRequirement {
     }
 
     pub fn effective_minimum_kernel(requirements: &[Self]) -> Option<&'static str> {
-        let mut minimum = None;
+        Self::effective_minimum_kernel_requirement(requirements)
+            .map(|requirement| requirement.minimum_kernel())
+    }
+
+    pub fn effective_minimum_kernel_source(requirements: &[Self]) -> Option<&'static str> {
+        Self::effective_minimum_kernel_requirement(requirements)
+            .map(|requirement| requirement.minimum_kernel_source())
+    }
+
+    fn effective_minimum_kernel_requirement(requirements: &[Self]) -> Option<&Self> {
+        let mut minimum: Option<&Self> = None;
         for requirement in requirements {
             let candidate = requirement.minimum_kernel();
             let should_replace = match minimum {
-                Some(current) => Self::kernel_version_cmp(candidate, current).is_gt(),
+                Some(current) => {
+                    Self::kernel_version_cmp(candidate, current.minimum_kernel()).is_gt()
+                }
                 None => true,
             };
             if should_replace {
-                minimum = Some(candidate);
+                minimum = Some(requirement);
             }
         }
         minimum
@@ -228,15 +240,27 @@ impl MapValueCompatibilityRequirement {
     }
 
     pub fn effective_minimum_kernel(requirements: &[Self]) -> Option<&'static str> {
-        let mut minimum = None;
+        Self::effective_minimum_kernel_requirement(requirements)
+            .map(|requirement| requirement.minimum_kernel())
+    }
+
+    pub fn effective_minimum_kernel_source(requirements: &[Self]) -> Option<&'static str> {
+        Self::effective_minimum_kernel_requirement(requirements)
+            .map(|requirement| requirement.minimum_kernel_source())
+    }
+
+    fn effective_minimum_kernel_requirement(requirements: &[Self]) -> Option<&Self> {
+        let mut minimum: Option<&Self> = None;
         for requirement in requirements {
             let candidate = requirement.minimum_kernel();
             let should_replace = match minimum {
-                Some(current) => Self::kernel_version_cmp(candidate, current).is_gt(),
+                Some(current) => {
+                    Self::kernel_version_cmp(candidate, current.minimum_kernel()).is_gt()
+                }
                 None => true,
             };
             if should_replace {
-                minimum = Some(candidate);
+                minimum = Some(requirement);
             }
         }
         minimum

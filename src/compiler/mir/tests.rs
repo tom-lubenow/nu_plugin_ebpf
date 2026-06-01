@@ -220,6 +220,10 @@ fn test_map_kind_kernel_compatibility_metadata() {
         MapCompatibilityRequirement::effective_minimum_kernel(&requirements),
         Some("6.1")
     );
+    assert!(
+        MapCompatibilityRequirement::effective_minimum_kernel_source(&requirements)
+            .is_some_and(|source| source.contains("/v6.1/include/uapi/linux/bpf.h"))
+    );
     assert!(MapCompatibilityRequirement::kernel_version_at_least(
         "6.1.12", "6.1"
     ));
@@ -308,6 +312,12 @@ fn test_map_value_compatibility_requirements_are_source_backed() {
             MapValueCompatibilityRequirement::all()
         ),
         Some("6.10")
+    );
+    assert!(
+        MapValueCompatibilityRequirement::effective_minimum_kernel_source(
+            MapValueCompatibilityRequirement::all()
+        )
+        .is_some_and(|source| source.contains("/v6.10/include/linux/bpf.h"))
     );
     assert!(MapValueCompatibilityRequirement::kernel_version_at_least(
         "6.10.0", "6.10"
@@ -1026,6 +1036,10 @@ fn test_context_field_compatibility_requirements_are_source_backed() {
     assert_eq!(
         ContextFieldCompatibilityRequirement::effective_minimum_kernel(&requirements),
         Some("6.2")
+    );
+    assert!(
+        ContextFieldCompatibilityRequirement::effective_minimum_kernel_source(&requirements)
+            .is_some_and(|source| source.contains("/v6.2/include/uapi/linux/bpf.h"))
     );
     assert!(ContextFieldCompatibilityRequirement::kernel_version_at_least("6.2.0", "6.2"));
     assert!(!ContextFieldCompatibilityRequirement::kernel_version_at_least("6.1.99", "6.2"));

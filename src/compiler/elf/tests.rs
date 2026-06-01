@@ -5334,6 +5334,12 @@ fn test_compiled_feature_compatibility_requirement_surfaces_are_unique() {
         ),
         Some("5.3")
     );
+    assert!(
+        CompiledFeatureCompatibilityRequirement::effective_minimum_kernel_source(
+            CompiledFeatureCompatibilityRequirement::all()
+        )
+        .is_some_and(|source| source.contains("/v5.3/kernel/bpf/verifier.c"))
+    );
     assert!(CompiledFeatureCompatibilityRequirement::kernel_version_at_least("5.4.0", "5.3"));
 }
 
@@ -11195,6 +11201,10 @@ fn test_ebpf_program_reports_global_compatibility_requirements() {
     assert_eq!(requirements[0].key(), "global:bpf-data-sections");
     assert_eq!(requirements[0].minimum_kernel(), "5.2");
     assert!(requirements[0].minimum_kernel_source().contains("d8eca5"));
+    assert!(
+        GlobalCompatibilityRequirement::effective_minimum_kernel_source(&requirements)
+            .is_some_and(|source| source.contains("d8eca5"))
+    );
     assert_eq!(program.global_compatibility_minimum_kernel(), Some("5.2"));
     assert!(
         program

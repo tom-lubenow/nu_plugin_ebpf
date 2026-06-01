@@ -875,6 +875,10 @@ fn test_bpf_helper_kernel_compatibility_metadata() {
         HelperCompatibilityRequirement::effective_minimum_kernel(&requirements),
         Some("6.1")
     );
+    assert!(
+        HelperCompatibilityRequirement::effective_minimum_kernel_source(&requirements)
+            .is_some_and(|source| source.contains("/v6.1/include/uapi/linux/bpf.h"))
+    );
 }
 
 #[test]
@@ -4780,6 +4784,10 @@ fn test_kfunc_kernel_compatibility_metadata() {
     assert_eq!(
         KfuncCompatibilityRequirement::effective_minimum_kernel(&requirements),
         Some("6.12")
+    );
+    assert!(
+        KfuncCompatibilityRequirement::effective_minimum_kernel_source(&requirements)
+            .is_some_and(|source| source.contains("/v6.12/fs/bpf_fs_kfuncs.c"))
     );
     assert_eq!(
         KfuncCompatibilityRequirement::effective_maximum_kernel_exclusive(&requirements),
