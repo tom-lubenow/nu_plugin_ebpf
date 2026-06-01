@@ -455,6 +455,113 @@ pub(crate) fn copy_from_user_dynptr_join_reinitialize_mir() -> (MirFunction, Has
     (func, types)
 }
 
+pub(crate) fn copy_from_user_task_dynptr_join_reinitialize_mir(
+    kfunc: &str,
+) -> (MirFunction, HashMap<VReg, MirType>) {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let has_task = func.alloc_block();
+    let init_path = func.alloc_block();
+    let skip_init = func.alloc_block();
+    let join = func.alloc_block();
+    let release = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+
+    let cond = func.alloc_vreg();
+    let src = func.alloc_vreg();
+    let task = func.alloc_vreg();
+    func.param_count = 3;
+    let acquired = func.alloc_vreg();
+    let has_task_cond = func.alloc_vreg();
+    let dptr = func.alloc_vreg();
+    let off = func.alloc_vreg();
+    let size = func.alloc_vreg();
+    let init_ret = func.alloc_vreg();
+    let second_ret = func.alloc_vreg();
+    let release_ret = func.alloc_vreg();
+    let dptr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: acquired,
+        kfunc: "bpf_task_acquire".to_string(),
+        btf_id: None,
+        args: vec![task],
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: has_task_cond,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(acquired),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: has_task_cond,
+        if_true: has_task,
+        if_false: done,
+    };
+
+    func.block_mut(has_task).instructions.push(MirInst::Copy {
+        dst: dptr,
+        src: MirValue::StackSlot(dptr_slot),
+    });
+    func.block_mut(has_task).instructions.push(MirInst::Copy {
+        dst: off,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(has_task).instructions.push(MirInst::Copy {
+        dst: size,
+        src: MirValue::Const(8),
+    });
+    func.block_mut(has_task).terminator = MirInst::Branch {
+        cond,
+        if_true: init_path,
+        if_false: skip_init,
+    };
+
+    func.block_mut(init_path)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: init_ret,
+            kfunc: kfunc.to_string(),
+            btf_id: None,
+            args: vec![dptr, off, size, src, acquired],
+        });
+    func.block_mut(init_path).terminator = MirInst::Jump { target: join };
+    func.block_mut(skip_init).terminator = MirInst::Jump { target: join };
+    func.block_mut(join).instructions.push(MirInst::CallKfunc {
+        dst: second_ret,
+        kfunc: kfunc.to_string(),
+        btf_id: None,
+        args: vec![dptr, off, size, src, acquired],
+    });
+    func.block_mut(join).terminator = MirInst::Jump { target: release };
+    func.block_mut(release)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: release_ret,
+            kfunc: "bpf_task_release".to_string(),
+            btf_id: None,
+            args: vec![acquired],
+        });
+    func.block_mut(release).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(cond, MirType::Bool);
+    types.insert(src, user_ptr_ty());
+    types.insert(task, unknown_kernel_ptr_ty());
+    types.insert(acquired, unknown_kernel_ptr_ty());
+    types.insert(has_task_cond, MirType::Bool);
+    types.insert(dptr, unknown_stack_ptr_ty());
+    types.insert(off, MirType::I64);
+    types.insert(size, MirType::I64);
+    types.insert(init_ret, MirType::I64);
+    types.insert(second_ret, MirType::I64);
+    types.insert(release_ret, MirType::I64);
+
+    (func, types)
+}
+
 pub(crate) fn packet_dynptr_kfunc_join_reinitialize_mir(
     kfunc: &str,
 ) -> (MirFunction, HashMap<VReg, MirType>) {

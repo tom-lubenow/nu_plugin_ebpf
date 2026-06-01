@@ -3,8 +3,8 @@ use crate::compiler::mir::StructField;
 use crate::compiler::subfn_summaries::infer_subfunction_summaries;
 use crate::compiler::test_mir_builders::{
     ExplicitNullRefKfuncCase, copy_from_user_dynptr_join_reinitialize_mir,
-    explicit_null_ref_join_release_mir, packet_dynptr_kfunc_join_reinitialize_mir,
-    xdp_get_xfrm_state_explicit_null_join_mir,
+    copy_from_user_task_dynptr_join_reinitialize_mir, explicit_null_ref_join_release_mir,
+    packet_dynptr_kfunc_join_reinitialize_mir, xdp_get_xfrm_state_explicit_null_join_mir,
 };
 use crate::compiler::{EbpfProgramType, ProbeContext};
 
@@ -1957,6 +1957,33 @@ fn test_verify_mir_kfunc_copy_from_user_dynptr_rejects_destination_initialized_o
         )),
         "unexpected error messages: {:?}",
         err
+    );
+}
+
+fn assert_copy_from_user_task_dynptr_rejects_destination_initialized_on_one_path(kfunc: &str) {
+    let (func, types) = copy_from_user_task_dynptr_join_reinitialize_mir(kfunc);
+    let err = verify_mir(&func, &types)
+        .expect_err("expected copy_from_user_task dynptr reinitialize error at join");
+    assert!(
+        err.iter().any(|e| e.message.contains(&format!(
+            "kfunc '{kfunc}' arg0 requires uninitialized dynptr stack object slot"
+        ))),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_kfunc_task_dynptr_rejects_destination_initialized_on_one_path() {
+    assert_copy_from_user_task_dynptr_rejects_destination_initialized_on_one_path(
+        "bpf_copy_from_user_task_dynptr",
+    );
+}
+
+#[test]
+fn test_verify_mir_kfunc_task_str_dynptr_rejects_destination_initialized_on_one_path() {
+    assert_copy_from_user_task_dynptr_rejects_destination_initialized_on_one_path(
+        "bpf_copy_from_user_task_str_dynptr",
     );
 }
 
