@@ -60,6 +60,7 @@ const NU_CLOSURE_COMMANDS: &[&str] = &[
     "bytes remove",
     "bytes replace",
     "bytes collect",
+    "bytes split",
     "str length",
     "str starts-with",
     "str ends-with",

@@ -3527,6 +3527,104 @@ impl<'a> HirToMirLowering<'a> {
                 )?;
             }
 
+            "bytes split" => {
+                let input_reg = self
+                    .pipeline_input_reg
+                    .or(src_dst_had_value.then_some(src_dst));
+
+                if !self.named_flags.is_empty() || !self.named_args.is_empty() {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "bytes split does not accept named flags or arguments in eBPF".into(),
+                    ));
+                }
+                if self.positional_args.len() != 1 {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "bytes split accepts exactly one binary or string separator argument in eBPF"
+                            .into(),
+                    ));
+                }
+
+                let input = input_reg
+                    .and_then(|reg| self.get_metadata(reg))
+                    .and_then(|meta| match meta.constant_value.as_ref() {
+                        Some(nu_protocol::Value::Binary { val, .. }) => Some(val.clone()),
+                        _ => None,
+                    })
+                    .ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "bytes split requires compile-time known binary input in eBPF".into(),
+                        )
+                    })?;
+                let (_, separator_reg) = self.positional_args[0];
+                let separator = self
+                    .get_metadata(separator_reg)
+                    .and_then(|meta| match meta.constant_value.as_ref() {
+                        Some(nu_protocol::Value::Binary { val, .. }) => Some(val.clone()),
+                        Some(nu_protocol::Value::String { val, .. })
+                        | Some(nu_protocol::Value::Glob { val, .. }) => {
+                            Some(val.as_bytes().to_vec())
+                        }
+                        _ => None,
+                    })
+                    .ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "bytes split requires a compile-time known binary or string separator in eBPF"
+                                .into(),
+                        )
+                    })?;
+                if separator.is_empty() {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "bytes split requires a non-empty separator in eBPF".into(),
+                    ));
+                }
+
+                let mut parts = Vec::new();
+                let mut offset = 0usize;
+                loop {
+                    let found = if separator.len() > input[offset..].len() {
+                        None
+                    } else {
+                        input[offset..]
+                            .windows(separator.len())
+                            .position(|candidate| candidate == separator.as_slice())
+                    };
+                    if let Some(relative_index) = found {
+                        let end = offset + relative_index;
+                        parts.push(input[offset..end].to_vec());
+                        offset = end + separator.len();
+                    } else {
+                        parts.push(input[offset..].to_vec());
+                        break;
+                    }
+                }
+
+                let Some(first_part_len) = parts.first().map(Vec::len) else {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "bytes split requires at least one binary part in eBPF".into(),
+                    ));
+                };
+                if first_part_len == 0 || parts.iter().any(Vec::is_empty) {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "bytes split requires non-empty binary parts in eBPF".into(),
+                    ));
+                }
+                if parts.iter().any(|part| part.len() != first_part_len) {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "bytes split requires equal-length binary parts in eBPF".into(),
+                    ));
+                }
+
+                let values = parts
+                    .into_iter()
+                    .map(|part| nu_protocol::Value::binary(part, nu_protocol::Span::unknown()))
+                    .collect();
+                self.reset_call_result_metadata(src_dst);
+                self.lower_constant_value(
+                    src_dst,
+                    &nu_protocol::Value::list(values, nu_protocol::Span::unknown()),
+                )?;
+            }
+
             "str length" => {
                 self.lower_string_length(src_dst, dst_vreg, src_dst_had_value)?;
             }

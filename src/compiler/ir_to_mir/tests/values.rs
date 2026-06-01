@@ -7832,6 +7832,274 @@ fn test_lower_bytes_collect_rejects_empty_result() {
     );
 }
 
+fn make_bytes_split_collect_then_starts_with_program(
+    split_decl: DeclId,
+    collect_decl: DeclId,
+    starts_with_decl: DeclId,
+    input: Vec<u8>,
+    separator: HirLiteral,
+    collect_separator: Vec<u8>,
+    expected_prefix: Vec<u8>,
+) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Binary(input),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: separator,
+                },
+                HirStmt::Call {
+                    decl_id: split_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::Binary(collect_separator),
+                },
+                HirStmt::Call {
+                    decl_id: collect_decl,
+                    src_dst: RegId::new(4),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(3)],
+                        pipeline_input: Some(RegId::new(2)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(5),
+                    lit: HirLiteral::Binary(expected_prefix),
+                },
+                HirStmt::Call {
+                    decl_id: starts_with_decl,
+                    src_dst: RegId::new(6),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(5)],
+                        pipeline_input: Some(RegId::new(4)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(6) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 7,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_bytes_split_program(
+    split_decl: DeclId,
+    input: Vec<u8>,
+    separator: HirLiteral,
+) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Binary(input),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: separator,
+                },
+                HirStmt::Call {
+                    decl_id: split_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(2) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+#[test]
+fn test_lower_bytes_split_binary_separator_materializes_binary_list() {
+    let bytes_split_decl = DeclId::new(253);
+    let bytes_collect_decl = DeclId::new(254);
+    let bytes_starts_with_decl = DeclId::new(255);
+    let hir = make_bytes_split_collect_then_starts_with_program(
+        bytes_split_decl,
+        bytes_collect_decl,
+        bytes_starts_with_decl,
+        vec![0x61, 0x20, 0x62, 0x20, 0x63],
+        HirLiteral::Binary(vec![0x20]),
+        vec![0x2d],
+        vec![0x61, 0x2d, 0x62],
+    );
+    let decl_names = HashMap::from([
+        (bytes_split_decl, "bytes split".to_string()),
+        (bytes_collect_decl, "bytes collect".to_string()),
+        (bytes_starts_with_decl, "bytes starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bytes split should lower compile-time binary input and binary separator");
+
+    assert!(
+        result
+            .readonly_globals
+            .iter()
+            .any(|global| global.data == vec![0x61, 0x2d, 0x62, 0x2d, 0x63]),
+        "expected bytes split output consumed by bytes collect to materialize joined binary rodata"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("bytes split output consumed by bytes collect should compile");
+}
+
+#[test]
+fn test_lower_bytes_split_string_separator_materializes_binary_list() {
+    let bytes_split_decl = DeclId::new(256);
+    let bytes_collect_decl = DeclId::new(257);
+    let bytes_starts_with_decl = DeclId::new(258);
+    let hir = make_bytes_split_collect_then_starts_with_program(
+        bytes_split_decl,
+        bytes_collect_decl,
+        bytes_starts_with_decl,
+        vec![0x61, 0x2d, 0x2d, 0x62, 0x2d, 0x2d, 0x63],
+        HirLiteral::String(b"--".to_vec()),
+        vec![0x20],
+        vec![0x61, 0x20, 0x62],
+    );
+    let decl_names = HashMap::from([
+        (bytes_split_decl, "bytes split".to_string()),
+        (bytes_collect_decl, "bytes collect".to_string()),
+        (bytes_starts_with_decl, "bytes starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bytes split should lower compile-time binary input and string separator");
+
+    assert!(
+        result
+            .readonly_globals
+            .iter()
+            .any(|global| global.data == vec![0x61, 0x20, 0x62, 0x20, 0x63]),
+        "expected string separator bytes split to materialize joined binary rodata"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("bytes split string separator output consumed by bytes collect should compile");
+}
+
+#[test]
+fn test_lower_bytes_split_rejects_empty_separator() {
+    let bytes_split_decl = DeclId::new(259);
+    let hir =
+        make_bytes_split_program(bytes_split_decl, vec![0x61], HirLiteral::Binary(Vec::new()));
+    let decl_names = HashMap::from([(bytes_split_decl, "bytes split".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("bytes split should reject empty separators");
+
+    assert!(
+        err.to_string()
+            .contains("bytes split requires a non-empty separator"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_bytes_split_rejects_empty_parts() {
+    let bytes_split_decl = DeclId::new(260);
+    let hir = make_bytes_split_program(
+        bytes_split_decl,
+        vec![0x20, 0x61],
+        HirLiteral::Binary(vec![0x20]),
+    );
+    let decl_names = HashMap::from([(bytes_split_decl, "bytes split".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("bytes split should reject empty binary parts");
+
+    assert!(
+        err.to_string()
+            .contains("bytes split requires non-empty binary parts"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_bytes_split_rejects_unequal_part_lengths() {
+    let bytes_split_decl = DeclId::new(261);
+    let hir = make_bytes_split_program(
+        bytes_split_decl,
+        vec![0x61, 0x20, 0x62, 0x62],
+        HirLiteral::Binary(vec![0x20]),
+    );
+    let decl_names = HashMap::from([(bytes_split_decl, "bytes split".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("bytes split should reject unequal binary part lengths");
+
+    assert!(
+        err.to_string()
+            .contains("bytes split requires equal-length binary parts"),
+        "unexpected error: {err}"
+    );
+}
+
 #[test]
 fn test_lower_select_on_metadata_record_materializes_requested_layout() {
     let select_decl = DeclId::new(94);
