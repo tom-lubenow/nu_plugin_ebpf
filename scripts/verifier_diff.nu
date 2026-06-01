@@ -6600,6 +6600,18 @@ const PROGRAM_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS = [
         target: "tc:lo:ingress"
         program: [
             '{|ctx|'
+            '  def wrap [ignored event] { { socket: ($event | get sk) } }'
+            '  let rec = (wrap 0 $ctx)'
+            '  $rec.socket.family | count'
+            '  0'
+            '}'
+        ]
+        feature_keys: ["ctx:family" "ctx:sk" "helper:bpf_probe_read_kernel"]
+    }
+    {
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
             '  def read_family [sk] {'
             '    $sk.family | count'
             '    0'
