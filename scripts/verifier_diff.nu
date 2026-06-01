@@ -14671,6 +14671,23 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "global-define-type-array-record-list-builder-initializer"
+        category: "globals"
+        tags: [globals records arrays append global-define accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let entries = ([] | append { pid: 7 cpu: 2 } | append { pid: 9 cpu: 3 })'
+            '  $entries | global-define --type "array{record{pid:int,cpu:u32}:2}" seen_entries'
+            '  let entries = (global-get seen_entries)'
+            '  (($entries | get 1).cpu) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "global-define-type-array-record-nested-numeric-list-upsert"
         category: "globals"
         tags: [globals records arrays list upsert global-define accept]
@@ -14744,6 +14761,23 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  [{ pid: 7 cpu: 2 } { pid: 9 cpu: 3 }] | global-set seen_entries'
+            '  let entries = (global-get seen_entries)'
+            '  (($entries | get 1).cpu) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "global-set-array-record-list-builder-initializer"
+        category: "globals"
+        tags: [globals records arrays append global-set accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let entries = ([] | append { pid: 7 cpu: 2 } | append { pid: 9 cpu: 3 })'
+            '  $entries | global-set seen_entries'
             '  let entries = (global-get seen_entries)'
             '  (($entries | get 1).cpu) | count'
             '  0'
