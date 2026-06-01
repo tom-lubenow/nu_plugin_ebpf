@@ -291,6 +291,79 @@ fn test_list_push_binary_item_allowed_for_sort() {
     infer_hir(&program, &decl_names).expect("sort should allow compile-time binary list builders");
 }
 
+fn assert_list_push_binary_item_allowed_for_item_command(decl_id: DeclId, decl_name: &str) {
+    let collect_decl = DeclId::new(decl_id.get() + 100);
+    let mut func = HirFunction {
+        blocks: Vec::new(),
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 5,
+        file_count: 0,
+    };
+
+    let mut block = HirBlock {
+        id: HirBlockId(0),
+        stmts: Vec::new(),
+        terminator: HirTerminator::Return { src: RegId::new(4) },
+    };
+
+    block.stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List { capacity: 1 },
+    });
+    block.stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(1),
+        lit: HirLiteral::Binary(vec![0x01]),
+    });
+    block.stmts.push(HirStmt::ListPush {
+        src_dst: RegId::new(0),
+        item: RegId::new(1),
+    });
+    block.stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(2),
+        lit: HirLiteral::Binary(vec![0x02]),
+    });
+    block.stmts.push(HirStmt::Call {
+        decl_id,
+        src_dst: RegId::new(3),
+        args: HirCallArgs {
+            positional: vec![RegId::new(2)],
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+    block.stmts.push(HirStmt::Call {
+        decl_id: collect_decl,
+        src_dst: RegId::new(4),
+        args: HirCallArgs {
+            pipeline_input: Some(RegId::new(3)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    func.blocks.push(block);
+
+    let program = HirProgram::new(func, HashMap::new(), Vec::new(), None);
+    let decl_names = HashMap::from([
+        (decl_id, decl_name.to_string()),
+        (collect_decl, "bytes collect".to_string()),
+    ]);
+    infer_hir(&program, &decl_names)
+        .unwrap_or_else(|_| panic!("{decl_name} should allow compile-time binary lists"));
+}
+
+#[test]
+fn test_list_push_binary_item_allowed_for_append() {
+    assert_list_push_binary_item_allowed_for_item_command(DeclId::new(71), "append");
+}
+
+#[test]
+fn test_list_push_binary_item_allowed_for_prepend() {
+    assert_list_push_binary_item_allowed_for_item_command(DeclId::new(72), "prepend");
+}
+
 #[test]
 fn test_list_push_string_item_allowed_for_str_join() {
     let join_decl = DeclId::new(50);
