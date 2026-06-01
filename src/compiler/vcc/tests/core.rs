@@ -2615,6 +2615,104 @@ fn test_verify_mir_prunes_impossible_null_branch_for_non_null_pointer() {
 }
 
 #[test]
+fn test_verify_mir_rejects_stack_pointer_add_out_of_bounds() {
+    let (mut func, entry) = new_mir_function();
+
+    let slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let ptr = func.alloc_vreg();
+    let out = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: ptr,
+        src: MirValue::StackSlot(slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: out,
+        op: BinOpKind::Add,
+        lhs: MirValue::VReg(ptr),
+        rhs: MirValue::Const(16),
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let err = verify_mir(&func, &HashMap::new()).expect_err("expected pointer bounds error");
+    assert!(
+        err.iter().any(|e| e.kind == VccErrorKind::PointerBounds
+            && e.message.contains("pointer arithmetic out of bounds")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_rejects_stack_pointer_add_unknown_offset() {
+    let (mut func, entry) = new_mir_function();
+    func.param_count = 1;
+
+    let offset = func.alloc_vreg();
+    let slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let ptr = func.alloc_vreg();
+    let out = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: ptr,
+        src: MirValue::StackSlot(slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: out,
+        op: BinOpKind::Add,
+        lhs: MirValue::VReg(ptr),
+        rhs: MirValue::VReg(offset),
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(offset, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected unknown offset error");
+    assert!(
+        err.iter().any(|e| e.kind == VccErrorKind::UnknownOffset
+            && e.message.contains("requires bounded scalar offset")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_rejects_pointer_pointer_binop() {
+    let (mut func, entry) = new_mir_function();
+
+    let left_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let right_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let left = func.alloc_vreg();
+    let right = func.alloc_vreg();
+    let out = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: left,
+        src: MirValue::StackSlot(left_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: right,
+        src: MirValue::StackSlot(right_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: out,
+        op: BinOpKind::Add,
+        lhs: MirValue::VReg(left),
+        rhs: MirValue::VReg(right),
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let err = verify_mir(&func, &HashMap::new()).expect_err("expected pointer binop error");
+    assert!(
+        err.iter().any(|e| e.kind == VccErrorKind::PointerArithmetic
+            && e.message.contains("binop requires scalar operands")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_load_rejects_user_ptr() {
     let (mut func, entry) = new_mir_function();
     let ptr = func.alloc_vreg();
