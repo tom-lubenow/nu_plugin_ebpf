@@ -14397,6 +14397,23 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "global-set-record-builder-string-field-get"
+        category: "globals"
+        tags: [globals records string insert global-set accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let state = ({} | insert msg "hi" | insert pid 7)'
+            '  $state | global-set seen_state'
+            '  let state = (global-get seen_state)'
+            '  (($state.msg | str length) + $state.pid) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "global-set-metadata-record-list-field-get"
         category: "globals"
         tags: [globals records list global-set accept]
@@ -14406,6 +14423,24 @@ const FIXTURES = [
             '  { vals: [11 22] pid: 7 } | global-set seen_state'
             '  let state = (global-get seen_state)'
             '  (($state.vals | get 1) + $state.pid) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "global-set-nested-record-builder-list-field-get"
+        category: "globals"
+        tags: [globals records list nested insert global-set accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let inner = ({} | insert vals [11 22] | insert pid 7)'
+            '  let state = ({} | insert inner $inner | insert cpu 1)'
+            '  $state | global-set seen_state'
+            '  let state = (global-get seen_state)'
+            '  (($state.inner.vals | get 1) + $state.inner.pid + $state.cpu) | count'
             '  0'
             '}'
         ]
