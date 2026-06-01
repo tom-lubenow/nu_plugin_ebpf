@@ -4201,6 +4201,78 @@ fn test_lower_string_list_builder_compact_empty_join_constant_values() {
 }
 
 #[test]
+fn test_lower_string_list_builder_sort_join_constant_values() {
+    let scenarios = [
+        (Vec::new(), "aa-ab-cd"),
+        (vec![b"reverse".to_vec()], "cd-ab-aa"),
+    ];
+
+    for (index, (flags, expected)) in scenarios.into_iter().enumerate() {
+        let base_decl = 335 + index * 3;
+        let sort_decl = DeclId::new(base_decl);
+        let join_decl = DeclId::new(base_decl + 1);
+        let starts_with_decl = DeclId::new(base_decl + 2);
+        let hir = make_string_list_builder_transform_join_then_starts_with_program(
+            sort_decl,
+            join_decl,
+            starts_with_decl,
+            &["cd", "aa", "ab"],
+            None,
+            flags,
+            expected,
+        );
+        let decl_names = HashMap::from([
+            (sort_decl, "sort".to_string()),
+            (join_decl, "str join".to_string()),
+            (starts_with_decl, "str starts-with".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("sort should fold compile-time string-list builders: {err}"));
+
+        let expected_literal = format!("{expected}\0");
+        assert!(
+            result
+                .program
+                .main
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .any(|inst| matches!(
+                    inst,
+                    MirInst::StringAppend {
+                        val_type: StringAppendType::Literal { bytes },
+                        ..
+                    } if bytes.starts_with(expected_literal.as_bytes())
+                )),
+            "expected sort to feed str join with constant {expected}"
+        );
+        assert!(
+            result
+                .program
+                .main
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .all(|inst| !matches!(
+                    inst,
+                    MirInst::ListGet { .. } | MirInst::ListLen { .. } | MirInst::ListPush { .. }
+                )),
+            "expected compile-time string-list sort not to use runtime list operations"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .expect("sort string-list builder result should compile through codegen");
+    }
+}
+
+#[test]
 fn test_lower_str_length_on_string_copies_tracked_length() {
     let str_length_decl = DeclId::new(117);
     let hir = make_string_pipeline_call_program(str_length_decl, "abc");

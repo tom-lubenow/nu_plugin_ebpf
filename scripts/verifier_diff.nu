@@ -35100,6 +35100,32 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-string-list-sort"
+        category: "language-core"
+        tags: [string list sort]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ["cd" "aa" "ab"] | sort | str join "-" | str starts-with "aa-ab-cd"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-string-list-sort-reverse"
+        category: "language-core"
+        tags: [string list sort reverse]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ["cd" "aa" "ab"] | sort --reverse | str join "-" | str starts-with "cd-ab-aa"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-string-list-find"
         category: "language-core"
         tags: [string list find]

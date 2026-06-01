@@ -565,6 +565,11 @@ fn test_list_push_string_item_allowed_for_uniq() {
 }
 
 #[test]
+fn test_list_push_string_item_allowed_for_sort() {
+    assert_list_push_string_item_allowed_for_pipeline_command(DeclId::new(68), "sort");
+}
+
+#[test]
 fn test_list_push_string_item_allowed_for_find() {
     assert_list_push_string_item_allowed_for_pipeline_command_with_string_arg(
         DeclId::new(66),

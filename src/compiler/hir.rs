@@ -307,6 +307,7 @@ pub enum FixedLayoutValueConsumer {
     Reverse,
     AppendPrepend,
     Uniq,
+    Sort,
     Find,
     Compact,
 }
@@ -494,6 +495,7 @@ pub fn compile_time_value_flows_to_fixed_layout_aggregate_consumer(
         FixedLayoutValueConsumer::Reverse,
         FixedLayoutValueConsumer::AppendPrepend,
         FixedLayoutValueConsumer::Uniq,
+        FixedLayoutValueConsumer::Sort,
         FixedLayoutValueConsumer::Find,
         FixedLayoutValueConsumer::Compact,
     ]
@@ -719,6 +721,15 @@ fn compile_time_value_consumer_matches(
                 && args.rest.is_empty()
                 && args.named.is_empty()
                 && args.flags.is_empty()
+                && args.parser_info.is_empty()
+        }
+        FixedLayoutValueConsumer::Sort => {
+            decl_name == Some("sort")
+                && call_args_tracked_only_in_pipeline(src_dst, args, tracked_regs)
+                && args.positional.is_empty()
+                && args.rest.is_empty()
+                && args.named.is_empty()
+                && args.flags.iter().all(|flag| flag.as_slice() == b"reverse")
                 && args.parser_info.is_empty()
         }
         FixedLayoutValueConsumer::Find => {
