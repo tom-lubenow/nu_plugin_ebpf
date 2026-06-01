@@ -35413,6 +35413,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-string-list-join"
+        category: "language-core"
+        tags: [string list str expand join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "A{b,c}D" | str expand | str join "-" | str starts-with "AbD-AcD"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-string-stats-get-field"
         category: "language-core"
         tags: [string str stats record get]

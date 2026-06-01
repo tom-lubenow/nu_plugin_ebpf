@@ -462,7 +462,16 @@ impl<'a> HirToMirLowering<'a> {
             ));
         }
         if let Some((_, separator_reg)) = self.positional_args.first().copied() {
-            let _separator = self.literal_string_arg(separator_reg, "str join separator")?;
+            let separator = self.literal_string_arg(separator_reg, "str join separator")?;
+            if let Some(input) = self.string_list_input(input_reg, "str join")? {
+                return self.lower_known_string_result(
+                    src_dst,
+                    result_vreg,
+                    input.join(&separator),
+                );
+            }
+        } else if let Some(input) = self.string_list_input(input_reg, "str join")? {
+            return self.lower_known_string_result(src_dst, result_vreg, input.concat());
         }
 
         let input = self.exact_string_input(input_reg, "str join")?;
@@ -1374,6 +1383,33 @@ impl<'a> HirToMirLowering<'a> {
                     "{command} requires compile-time known string input in eBPF"
                 ))
             })
+    }
+
+    fn string_list_input(
+        &self,
+        input_reg: Option<RegId>,
+        command: &str,
+    ) -> Result<Option<Vec<String>>, CompileError> {
+        let Some(meta) = input_reg.and_then(|reg| self.get_metadata(reg).cloned()) else {
+            return Ok(None);
+        };
+        let Some(nu_protocol::Value::List { vals, .. }) = meta.constant_value else {
+            return Ok(None);
+        };
+
+        vals.into_iter()
+            .enumerate()
+            .map(|(index, item)| match item {
+                nu_protocol::Value::String { val, .. } | nu_protocol::Value::Glob { val, .. } => {
+                    Ok(val)
+                }
+                other => Err(CompileError::UnsupportedInstruction(format!(
+                    "{command} requires string list items in eBPF; item {index} has type {}",
+                    other.get_type()
+                ))),
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map(Some)
     }
 
     pub(super) fn lower_known_string_result(

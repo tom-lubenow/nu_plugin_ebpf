@@ -1058,6 +1058,66 @@ fn make_string_arg_then_starts_with_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_string_list_join_then_starts_with_program(
+    join_decl: DeclId,
+    starts_with_decl: DeclId,
+    values: &[&str],
+    separator: &str,
+    prefix: &str,
+) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::list(
+                        values
+                            .iter()
+                            .map(|value| Value::string(*value, Span::test_data()))
+                            .collect(),
+                        Span::test_data(),
+                    )),
+                },
+                HirStmt::LoadValue {
+                    dst: RegId::new(2),
+                    val: Box::new(Value::string(separator, Span::test_data())),
+                },
+                HirStmt::Call {
+                    decl_id: join_decl,
+                    src_dst: RegId::new(1),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(2)],
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadValue {
+                    dst: RegId::new(3),
+                    val: Box::new(Value::string(prefix, Span::test_data())),
+                },
+                HirStmt::Call {
+                    decl_id: starts_with_decl,
+                    src_dst: RegId::new(4),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(3)],
+                        pipeline_input: Some(RegId::new(1)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(4) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 5,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_string_command_then_get_field_program(
     command_decl: DeclId,
     get_decl: DeclId,
@@ -3572,6 +3632,52 @@ fn test_lower_str_join_on_known_string_materializes_same_string() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("str join result consumed by str starts-with should compile through codegen");
+}
+
+#[test]
+fn test_lower_str_join_on_known_string_list_materializes_joined_string() {
+    let join_decl = DeclId::new(267);
+    let starts_with_decl = DeclId::new(268);
+    let hir = make_string_list_join_then_starts_with_program(
+        join_decl,
+        starts_with_decl,
+        &["ab", "cd", "ef"],
+        "-",
+        "ab-cd-ef",
+    );
+    let decl_names = HashMap::from([
+        (join_decl, "str join".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str join should materialize compile-time known string-list input");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"ab-cd-ef\0")
+            )),
+        "expected str join on a known string list to materialize the joined string"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("str join list result consumed by str starts-with should compile through codegen");
 }
 
 #[test]
