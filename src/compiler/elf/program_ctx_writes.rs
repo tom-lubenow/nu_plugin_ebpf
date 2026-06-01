@@ -1,7 +1,7 @@
 use super::{
     ContextFieldDirectStore, ContextFieldIndexedStore, ContextFieldPhysicalStore,
-    ContextFieldReadTransform, ContextFieldStoreTransform, ContextFieldTransformedStore,
-    CtxWriteTarget, EbpfProgramType, ProgramCompatibilityRequirement, ProgramContextFamily,
+    ContextFieldStoreTransform, ContextFieldTransformedStore, CtxWriteTarget, EbpfProgramType,
+    ProgramCompatibilityRequirement, ProgramContextFamily,
 };
 use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::{ContextFieldCompatibilityRequirement, CtxField, CtxStoreTarget};
@@ -1296,6 +1296,7 @@ impl ProgramSpec {
 
 #[cfg(test)]
 mod tests {
+    use super::super::ContextFieldReadTransform;
     use super::*;
     use std::collections::HashSet;
 
