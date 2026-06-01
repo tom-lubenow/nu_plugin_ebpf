@@ -406,7 +406,7 @@ impl<'a> HirToMirLowering<'a> {
             dst_vreg
         };
 
-        let search_from_end = self.string_index_of_from_end_flag()?;
+        let (search_from_end, use_grapheme_clusters) = self.string_index_of_flags()?;
         let (_, needle_reg) = self.positional_args.first().copied().ok_or_else(|| {
             CompileError::UnsupportedInstruction(
                 "str index-of requires a string substring argument in eBPF".into(),
@@ -416,6 +416,24 @@ impl<'a> HirToMirLowering<'a> {
             return Err(CompileError::UnsupportedInstruction(
                 "str index-of accepts exactly one substring argument in eBPF".into(),
             ));
+        }
+
+        if use_grapheme_clusters {
+            if !self.named_args.is_empty() {
+                return Err(CompileError::UnsupportedInstruction(
+                    "str index-of --grapheme-clusters with --range is not supported in eBPF yet"
+                        .into(),
+                ));
+            }
+            let input = self.exact_string_input(input_reg, "str index-of --grapheme-clusters")?;
+            let needle = self.literal_string_arg(needle_reg, "str index-of")?;
+            if needle.as_bytes().contains(&0) {
+                return Err(CompileError::UnsupportedInstruction(
+                    "str index-of does not support NUL bytes in the substring in eBPF".into(),
+                ));
+            }
+            let index = Self::grapheme_index_of(&input, &needle, search_from_end);
+            return self.lower_i64_result(src_dst, result_vreg, index);
         }
 
         let operands = self.known_string_search_operands(input_reg, needle_reg, "str index-of")?;
@@ -770,6 +788,23 @@ impl<'a> HirToMirLowering<'a> {
         Ok(())
     }
 
+    fn lower_i64_result(
+        &mut self,
+        src_dst: RegId,
+        result_vreg: VReg,
+        value: i64,
+    ) -> Result<(), CompileError> {
+        self.emit(MirInst::Copy {
+            dst: result_vreg,
+            src: MirValue::Const(value),
+        });
+        self.reset_call_result_metadata(src_dst);
+        let out_meta = self.get_or_create_metadata(src_dst);
+        out_meta.field_type = Some(MirType::I64);
+        self.vreg_type_hints.insert(result_vreg, MirType::I64);
+        Ok(())
+    }
+
     fn string_ignore_case_flag(&self, command: &str) -> Result<bool, CompileError> {
         for flag in &self.named_flags {
             if flag != "ignore-case" {
@@ -781,26 +816,30 @@ impl<'a> HirToMirLowering<'a> {
         Ok(self.named_flags.iter().any(|flag| flag == "ignore-case"))
     }
 
-    fn string_index_of_from_end_flag(&self) -> Result<bool, CompileError> {
+    fn string_index_of_flags(&self) -> Result<(bool, bool), CompileError> {
         let mut from_end = false;
+        let mut use_grapheme_clusters = false;
+        let mut use_utf8_bytes = false;
         for flag in &self.named_flags {
             match flag.as_str() {
                 "end" => from_end = true,
-                "utf-8-bytes" => {}
-                "grapheme-clusters" => {
-                    return Err(CompileError::UnsupportedInstruction(
-                        "str index-of --grapheme-clusters is not supported in eBPF; byte indexes are the verifier-friendly representation".into(),
-                    ));
-                }
+                "utf-8-bytes" => use_utf8_bytes = true,
+                "grapheme-clusters" => use_grapheme_clusters = true,
                 _ => {
                     return Err(CompileError::UnsupportedInstruction(
-                        "str index-of currently supports only --end and --utf-8-bytes flags in eBPF"
+                        "str index-of currently supports only --end, --utf-8-bytes, and --grapheme-clusters flags in eBPF"
                             .into(),
                     ));
                 }
             }
         }
-        Ok(from_end)
+        if use_grapheme_clusters && use_utf8_bytes {
+            return Err(CompileError::UnsupportedInstruction(
+                "str index-of accepts either --utf-8-bytes or --grapheme-clusters, not both, in eBPF"
+                    .into(),
+            ));
+        }
+        Ok((from_end, use_grapheme_clusters))
     }
 
     fn string_grapheme_cluster_indexing_flag(&self, command: &str) -> Result<bool, CompileError> {
@@ -904,6 +943,38 @@ impl<'a> HirToMirLowering<'a> {
             raw
         };
         exclusive.clamp(0, len)
+    }
+
+    fn grapheme_index_of(input: &str, needle: &str, search_from_end: bool) -> i64 {
+        let input_graphemes: Vec<&str> = UnicodeSegmentation::graphemes(input, true).collect();
+        let needle_graphemes: Vec<&str> = UnicodeSegmentation::graphemes(needle, true).collect();
+
+        if needle_graphemes.is_empty() {
+            return if search_from_end {
+                input_graphemes.len() as i64
+            } else {
+                0
+            };
+        }
+
+        if needle_graphemes.len() > input_graphemes.len() {
+            return -1;
+        }
+
+        let last_offset = input_graphemes.len() - needle_graphemes.len();
+        let offsets: Box<dyn Iterator<Item = usize>> = if search_from_end {
+            Box::new((0..=last_offset).rev())
+        } else {
+            Box::new(0..=last_offset)
+        };
+
+        offsets
+            .filter(|offset| {
+                input_graphemes[*offset..*offset + needle_graphemes.len()] == needle_graphemes
+            })
+            .map(|offset| offset as i64)
+            .next()
+            .unwrap_or(-1)
     }
 
     fn known_string_search_operands(

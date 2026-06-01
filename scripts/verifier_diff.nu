@@ -35244,6 +35244,32 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-string-index-of-grapheme-clusters"
+        category: "language-core"
+        tags: [string str index-of grapheme-clusters]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "🇯🇵ほげ ふが ぴよ" | str index-of --grapheme-clusters "ふが"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-string-index-of-grapheme-clusters-from-end"
+        category: "language-core"
+        tags: [string str index-of end grapheme-clusters]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "a🇯🇵b🇯🇵c" | str index-of --grapheme-clusters --end "🇯🇵"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-string-substring"
         category: "language-core"
         tags: [string str substring]

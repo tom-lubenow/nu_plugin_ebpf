@@ -3323,6 +3323,132 @@ fn test_lower_str_index_of_open_end_range_on_known_string_uses_input_length() {
 }
 
 #[test]
+fn test_lower_str_index_of_grapheme_clusters_on_known_string_returns_grapheme_offset() {
+    let index_of_decl = DeclId::new(158);
+    let hir = make_string_arg_pipeline_call_program_with_flags(
+        index_of_decl,
+        "🇯🇵ほげ ふが ぴよ",
+        "ふが",
+        vec![b"grapheme-clusters".to_vec()],
+    );
+    let decl_names = HashMap::from([(index_of_decl, "str index-of".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str index-of --grapheme-clusters should lower on known strings");
+
+    assert!(
+        !result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::StrCmp { .. })),
+        "expected compile-time grapheme index-of to avoid byte probing"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Copy {
+                    src: MirValue::Const(4),
+                    ..
+                }
+            )),
+        "expected str index-of --grapheme-clusters to return the grapheme offset"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("str index-of --grapheme-clusters should compile through codegen");
+}
+
+#[test]
+fn test_lower_str_index_of_grapheme_clusters_from_end_returns_last_grapheme_offset() {
+    let index_of_decl = DeclId::new(159);
+    let hir = make_string_arg_pipeline_call_program_with_flags(
+        index_of_decl,
+        "a🇯🇵b🇯🇵c",
+        "🇯🇵",
+        vec![b"grapheme-clusters".to_vec(), b"end".to_vec()],
+    );
+    let decl_names = HashMap::from([(index_of_decl, "str index-of".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str index-of --grapheme-clusters --end should lower on known strings");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Copy {
+                    src: MirValue::Const(3),
+                    ..
+                }
+            )),
+        "expected str index-of --grapheme-clusters --end to return the last grapheme offset"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("str index-of --grapheme-clusters --end should compile through codegen");
+}
+
+#[test]
+fn test_lower_str_index_of_grapheme_clusters_with_range_is_rejected() {
+    let index_of_decl = DeclId::new(160);
+    let hir = make_string_index_of_range_program(
+        index_of_decl,
+        "🇯🇵ほげ ふが ぴよ",
+        "ふが",
+        Some(4),
+        Some(5),
+        RangeInclusion::Inclusive,
+        vec![b"grapheme-clusters".to_vec()],
+    );
+    let decl_names = HashMap::from([(index_of_decl, "str index-of".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("str index-of --grapheme-clusters --range should remain unsupported");
+
+    assert!(
+        matches!(
+            err,
+            CompileError::UnsupportedInstruction(ref msg)
+                if msg.contains("str index-of --grapheme-clusters with --range is not supported")
+        ),
+        "expected targeted unsupported range diagnostic, got {err:?}"
+    );
+}
+
+#[test]
 fn test_lower_str_replace_on_known_string_materializes_replaced_literal() {
     let replace_decl = DeclId::new(126);
     let starts_with_decl = DeclId::new(128);
