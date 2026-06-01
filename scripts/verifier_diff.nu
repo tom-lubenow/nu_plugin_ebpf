@@ -14129,6 +14129,22 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "global-set-root-binary-get"
+        category: "globals"
+        tags: [globals binary bytes global-set accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  0x[01 02 03] | global-set scratch'
+            '  let b = (global-get scratch)'
+            '  ($b | get 1) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "global-set-runtime-record-list-field-get"
         category: "globals"
         tags: [globals records list global-set accept]
