@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::{
     AddressSpace, BinOpKind, BlockId, CtxField, MirFunction, MirInst, MirType, MirValue,
     StackSlotKind, VReg,
@@ -389,6 +390,16 @@ fn bpf_dynptr_stack_ptr_ty() -> MirType {
     }
 }
 
+fn dynptr_map_value_ptr_ty() -> MirType {
+    MirType::Ptr {
+        pointee: Box::new(MirType::Array {
+            elem: Box::new(MirType::U8),
+            len: 16,
+        }),
+        address_space: AddressSpace::Map,
+    }
+}
+
 pub(crate) fn copy_from_user_dynptr_join_reinitialize_mir() -> (MirFunction, HashMap<VReg, MirType>)
 {
     let mut func = MirFunction::new();
@@ -686,6 +697,77 @@ pub(crate) fn dynptr_clone_join_reinitialize_mir() -> (MirFunction, HashMap<VReg
     types.insert(dst, dynptr_ty);
     types.insert(init_ret, MirType::I64);
     types.insert(clone_ret, MirType::I64);
+
+    (func, types)
+}
+
+pub(crate) fn dynptr_from_mem_join_reinitialize_mir() -> (MirFunction, HashMap<VReg, MirType>) {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let has_data = func.alloc_block();
+    let init_path = func.alloc_block();
+    let skip_init = func.alloc_block();
+    let join = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+
+    let cond = func.alloc_vreg();
+    let data = func.alloc_vreg();
+    func.param_count = 2;
+    let has_data_cond = func.alloc_vreg();
+    let init_ret = func.alloc_vreg();
+    let second_ret = func.alloc_vreg();
+    let dynptr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: has_data_cond,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(data),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: has_data_cond,
+        if_true: has_data,
+        if_false: done,
+    };
+    func.block_mut(has_data).terminator = MirInst::Branch {
+        cond,
+        if_true: init_path,
+        if_false: skip_init,
+    };
+    func.block_mut(init_path)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: init_ret,
+            helper: BpfHelper::DynptrFromMem as u32,
+            args: vec![
+                MirValue::VReg(data),
+                MirValue::Const(8),
+                MirValue::Const(0),
+                MirValue::StackSlot(dynptr_slot),
+            ],
+        });
+    func.block_mut(init_path).terminator = MirInst::Jump { target: join };
+    func.block_mut(skip_init).terminator = MirInst::Jump { target: join };
+    func.block_mut(join).instructions.push(MirInst::CallHelper {
+        dst: second_ret,
+        helper: BpfHelper::DynptrFromMem as u32,
+        args: vec![
+            MirValue::VReg(data),
+            MirValue::Const(8),
+            MirValue::Const(0),
+            MirValue::StackSlot(dynptr_slot),
+        ],
+    });
+    func.block_mut(join).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(cond, MirType::Bool);
+    types.insert(data, dynptr_map_value_ptr_ty());
+    types.insert(has_data_cond, MirType::Bool);
+    types.insert(init_ret, MirType::I64);
+    types.insert(second_ret, MirType::I64);
 
     (func, types)
 }

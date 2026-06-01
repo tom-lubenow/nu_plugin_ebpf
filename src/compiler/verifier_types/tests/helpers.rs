@@ -3,6 +3,7 @@ use crate::compiler::mir::StructField;
 use crate::compiler::subfn_summaries::{
     SubfunctionReturnSummary, SubfunctionSummary, infer_subfunction_summaries,
 };
+use crate::compiler::test_mir_builders::dynptr_from_mem_join_reinitialize_mir;
 use crate::compiler::{EbpfProgramType, MapRef, ProbeContext, ProgramCapability, ProgramTypeInfo};
 
 const BPF_SOCK_OPS_WRITE_HDR_OPT_CB: i64 = 15;
@@ -2335,6 +2336,20 @@ fn test_verify_mir_dynptr_helper_rejects_reinit() {
         err.iter().any(|e| e
             .message
             .contains("requires uninitialized dynptr stack object slot")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_dynptr_from_mem_rejects_destination_initialized_on_one_path() {
+    let (func, types) = dynptr_from_mem_join_reinitialize_mir();
+    let err =
+        verify_mir(&func, &types).expect_err("expected dynptr_from_mem reinitialize error at join");
+    assert!(
+        err.iter().any(|e| e.message.contains(
+            "helper 'bpf_dynptr_from_mem' arg3 requires uninitialized dynptr stack object slot"
+        )),
         "unexpected error messages: {:?}",
         err
     );
