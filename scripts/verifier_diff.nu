@@ -14001,6 +14001,22 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "global-define-type-bool-not-initializer"
+        category: "globals"
+        tags: [globals scalar bool global-define accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let enabled = (not false)'
+            '  $enabled | global-define --type bool enabled'
+            '  let stored = (global-get enabled)'
+            '  if $stored { 1 } else { 0 }'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "global-define-type-int-bool-initializer-rejects"
         category: "globals"
         tags: [globals scalar bool global-define reject]
