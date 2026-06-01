@@ -91,8 +91,9 @@ Compatibility metadata is source-backed when the project has a primary kernel
 source for the claim. Local preflight compares the running kernel release
 against known minimum and maximum-exclusive feature windows preserved in the
 compiled object and includes the source URL for the effective minimum-kernel
-floor when a too-old local kernel is rejected. It does not prove distro
-backports, kernel config, disabled helpers/kfuncs, tracefs/bpffs state,
+floor when a too-old local kernel is rejected, or the maximum-window source
+when a too-new kernel is rejected for a transitional kfunc. It does not prove
+distro backports, kernel config, disabled helpers/kfuncs, tracefs/bpffs state,
 cgroup/map/socket prerequisites, BTF availability, or every verifier rule.
 
 When in doubt, use:

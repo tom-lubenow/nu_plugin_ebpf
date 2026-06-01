@@ -551,6 +551,23 @@ fn aggregate_compatibility_maximum_kernel_exclusive(
     effective
 }
 
+fn aggregate_compatibility_maximum_kernel_exclusive_source(
+    maximums: impl IntoIterator<Item = (Option<&'static str>, Option<&'static str>)>,
+) -> Option<&'static str> {
+    let mut effective = None;
+    for (candidate, source) in maximums
+        .into_iter()
+        .filter_map(|(maximum, source)| Some((maximum?, source?)))
+    {
+        if effective.is_none_or(|(current, _)| {
+            ContextFieldCompatibilityRequirement::kernel_version_at_least(current, candidate)
+        }) {
+            effective = Some((candidate, source));
+        }
+    }
+    effective.map(|(_, source)| source)
+}
+
 fn section_name_for_program(
     prog_type: EbpfProgramType,
     target: &str,
@@ -1316,6 +1333,12 @@ impl EbpfProgramSection {
         )
     }
 
+    pub fn kfunc_compatibility_maximum_kernel_exclusive_source(&self) -> Option<&'static str> {
+        KfuncCompatibilityRequirement::effective_maximum_kernel_exclusive_source(
+            &self.kfunc_compatibility_requirements(),
+        )
+    }
+
     pub fn map_value_compatibility_requirements(&self) -> Vec<MapValueCompatibilityRequirement> {
         map_value_compatibility_requirements_for_value_types(self.generic_map_value_types.values())
     }
@@ -1437,6 +1460,14 @@ impl EbpfProgramSection {
         aggregate_compatibility_maximum_kernel_exclusive([
             self.kfunc_compatibility_maximum_kernel_exclusive()
         ])
+    }
+
+    /// Source URL for the aggregate exclusive upper kernel bound for this section.
+    pub fn compatibility_maximum_kernel_exclusive_source(&self) -> Option<&'static str> {
+        aggregate_compatibility_maximum_kernel_exclusive_source([(
+            self.kfunc_compatibility_maximum_kernel_exclusive(),
+            self.kfunc_compatibility_maximum_kernel_exclusive_source(),
+        )])
     }
 }
 
@@ -2136,6 +2167,12 @@ impl EbpfObject {
         )
     }
 
+    pub fn kfunc_compatibility_maximum_kernel_exclusive_source(&self) -> Option<&'static str> {
+        KfuncCompatibilityRequirement::effective_maximum_kernel_exclusive_source(
+            &self.kfunc_compatibility_requirements(),
+        )
+    }
+
     pub fn used_context_fields(&self) -> Vec<CtxField> {
         used_context_fields_for_programs(&self.programs)
     }
@@ -2224,6 +2261,14 @@ impl EbpfObject {
         aggregate_compatibility_maximum_kernel_exclusive([
             self.kfunc_compatibility_maximum_kernel_exclusive()
         ])
+    }
+
+    /// Source URL for the aggregate exclusive upper kernel bound for this object.
+    pub fn compatibility_maximum_kernel_exclusive_source(&self) -> Option<&'static str> {
+        aggregate_compatibility_maximum_kernel_exclusive_source([(
+            self.kfunc_compatibility_maximum_kernel_exclusive(),
+            self.kfunc_compatibility_maximum_kernel_exclusive_source(),
+        )])
     }
 
     fn local_btf_int_name(size: u32, signed: bool) -> &'static str {
@@ -2923,6 +2968,12 @@ impl EbpfProgram {
         )
     }
 
+    pub fn kfunc_compatibility_maximum_kernel_exclusive_source(&self) -> Option<&'static str> {
+        KfuncCompatibilityRequirement::effective_maximum_kernel_exclusive_source(
+            &self.kfunc_compatibility_requirements(),
+        )
+    }
+
     pub fn used_context_fields(&self) -> Vec<CtxField> {
         sorted_context_fields(&self.used_ctx_fields)
     }
@@ -3039,5 +3090,13 @@ impl EbpfProgram {
         aggregate_compatibility_maximum_kernel_exclusive([
             self.kfunc_compatibility_maximum_kernel_exclusive()
         ])
+    }
+
+    /// Source URL for the aggregate exclusive upper kernel bound for this program.
+    pub fn compatibility_maximum_kernel_exclusive_source(&self) -> Option<&'static str> {
+        aggregate_compatibility_maximum_kernel_exclusive_source([(
+            self.kfunc_compatibility_maximum_kernel_exclusive(),
+            self.kfunc_compatibility_maximum_kernel_exclusive_source(),
+        )])
     }
 }

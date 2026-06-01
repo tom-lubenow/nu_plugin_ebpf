@@ -55,7 +55,8 @@ object, and the compiled program/object model exposes aggregate
 metadata plus the derived `used_helpers` / `used_kfuncs` call surfaces behind
 those summaries.
 Known kfunc compatibility windows can also carry a maximum-exclusive kernel
-bound when the upstream kfunc spelling is source-verified as transitional.
+bound and source when the upstream kfunc spelling is source-verified as
+transitional.
 `ebpf spec`
 also reports source-backed
 minimum-kernel/source fields on individual context-field records when direct
@@ -83,8 +84,9 @@ Local-kernel live-load preflight is intentionally best effort. It reads the
 host release with `uname -r` and compares it with source-backed minimum kernels
 and known maximum-exclusive kfunc windows preserved in the compiled object. It
 reports the source URL for the effective minimum-kernel floor when it rejects a
-too-old local kernel. It does not prove kernel config, distro backports,
-disabled helpers/kfuncs, BTF availability, tracefs/bpffs state,
+too-old local kernel, and the maximum-window source when it rejects a too-new
+kernel for a transitional kfunc. It does not prove kernel config, distro
+backports, disabled helpers/kfuncs, BTF availability, tracefs/bpffs state,
 cgroup/map/socket prerequisites, or every attach-family-specific verifier rule.
 `--dry-run` still validates compiler, object, VCC, and modeled compatibility
 metadata without loading the program; the kernel verifier remains authoritative

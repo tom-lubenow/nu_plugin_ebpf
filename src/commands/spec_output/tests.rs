@@ -2963,6 +2963,11 @@ fn test_spec_record_includes_kfunc_call_surface_metadata() {
     assert_eq!(legacy_insert.policy, "sched-ext-callback");
     assert_eq!(legacy_insert.minimum_kernel, Some("6.13"));
     assert_eq!(legacy_insert.maximum_kernel_exclusive, Some("6.23"));
+    assert!(
+        legacy_insert
+            .maximum_kernel_exclusive_source
+            .is_some_and(|source| source.contains("kernel/sched/ext.c"))
+    );
 
     let v2_insert = dispatch_kfuncs
         .iter()
@@ -2970,6 +2975,7 @@ fn test_spec_record_includes_kfunc_call_surface_metadata() {
         .expect("sched_ext dispatch should advertise v2 dsq_insert");
     assert_eq!(v2_insert.minimum_kernel, Some("6.19"));
     assert_eq!(v2_insert.maximum_kernel_exclusive, None);
+    assert_eq!(v2_insert.maximum_kernel_exclusive_source, None);
 
     let record = spec_record(
         "struct_ops:sched_ext_ops.dispatch".to_string(),
@@ -3003,6 +3009,14 @@ fn test_spec_record_includes_kfunc_call_surface_metadata() {
             .as_str()
             .expect("maximum kernel should be a string"),
         "6.23"
+    );
+    assert!(
+        legacy_insert_record
+            .get("maximum_kernel_exclusive_source")
+            .expect("maximum kernel source should be present")
+            .as_str()
+            .expect("maximum kernel source should be a string")
+            .contains("kernel/sched/ext.c")
     );
 }
 
@@ -6108,6 +6122,7 @@ fn test_context_write_records_include_backing_abi_metadata() {
     );
     assert_eq!(sun_path.kfunc_minimum_kernel, Some("6.7"));
     assert_eq!(sun_path.kfunc_maximum_kernel_exclusive, None);
+    assert_eq!(sun_path.kfunc_maximum_kernel_exclusive_source, None);
     assert_eq!(sun_path.compatibility_minimum_kernel, Some("6.7"));
     assert!(sun_path.helper.is_none());
 
@@ -6297,6 +6312,12 @@ fn test_context_write_backing_abi_metadata_invariants() {
                         "{spec_source} ctx.{} kfunc-backed write should report the exact kfunc upper bound",
                         write.field
                     );
+                    assert_eq!(
+                        write.kfunc_maximum_kernel_exclusive_source,
+                        requirement.maximum_kernel_exclusive_source(),
+                        "{spec_source} ctx.{} kfunc-backed write should report the exact kfunc upper-bound source",
+                        write.field
+                    );
                 }
                 None => {
                     assert_eq!(write.kfunc, None);
@@ -6304,6 +6325,7 @@ fn test_context_write_backing_abi_metadata_invariants() {
                     assert_eq!(write.kfunc_minimum_kernel, None);
                     assert_eq!(write.kfunc_minimum_kernel_source, None);
                     assert_eq!(write.kfunc_maximum_kernel_exclusive, None);
+                    assert_eq!(write.kfunc_maximum_kernel_exclusive_source, None);
                 }
             }
 
@@ -6607,6 +6629,12 @@ fn test_spec_record_context_writes_include_backing_abi_metadata() {
         cb_flags
             .get("kfunc_maximum_kernel_exclusive")
             .expect("kfunc maximum kernel should be present")
+            .is_nothing()
+    );
+    assert!(
+        cb_flags
+            .get("kfunc_maximum_kernel_exclusive_source")
+            .expect("kfunc maximum kernel source should be present")
             .is_nothing()
     );
 }

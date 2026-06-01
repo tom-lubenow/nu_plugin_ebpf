@@ -85,6 +85,7 @@ struct SpecContextWrite {
     kfunc_minimum_kernel: Option<&'static str>,
     kfunc_minimum_kernel_source: Option<&'static str>,
     kfunc_maximum_kernel_exclusive: Option<&'static str>,
+    kfunc_maximum_kernel_exclusive_source: Option<&'static str>,
 }
 
 #[cfg(target_os = "linux")]
@@ -101,6 +102,7 @@ struct SpecKfuncCall {
     minimum_kernel: Option<&'static str>,
     minimum_kernel_source: Option<&'static str>,
     maximum_kernel_exclusive: Option<&'static str>,
+    maximum_kernel_exclusive_source: Option<&'static str>,
     acquire_ref_kind: Option<&'static str>,
     release_ref_kind: Option<&'static str>,
     release_arg_idx: Option<usize>,
@@ -1886,6 +1888,9 @@ fn spec_context_writes(spec: &crate::program_spec::ProgramSpec) -> Vec<SpecConte
                 kfunc_maximum_kernel_exclusive: kfunc_requirement
                     .as_ref()
                     .and_then(|requirement| requirement.maximum_kernel_exclusive()),
+                kfunc_maximum_kernel_exclusive_source: kfunc_requirement
+                    .as_ref()
+                    .and_then(|requirement| requirement.maximum_kernel_exclusive_source()),
             }
         })
         .collect()
@@ -1922,6 +1927,7 @@ fn context_write_records(spec: &crate::program_spec::ProgramSpec, span: Span) ->
                     "kfunc_minimum_kernel" => optional_static_str(surface.kfunc_minimum_kernel, span),
                     "kfunc_minimum_kernel_source" => optional_static_str(surface.kfunc_minimum_kernel_source, span),
                     "kfunc_maximum_kernel_exclusive" => optional_static_str(surface.kfunc_maximum_kernel_exclusive, span),
+                    "kfunc_maximum_kernel_exclusive_source" => optional_static_str(surface.kfunc_maximum_kernel_exclusive_source, span),
                 },
                 span,
             )
@@ -1966,6 +1972,9 @@ fn spec_kfunc_calls(spec: &crate::program_spec::ProgramSpec) -> Vec<SpecKfuncCal
                 maximum_kernel_exclusive: requirement
                     .as_ref()
                     .and_then(|requirement| requirement.maximum_kernel_exclusive()),
+                maximum_kernel_exclusive_source: requirement
+                    .as_ref()
+                    .and_then(|requirement| requirement.maximum_kernel_exclusive_source()),
                 acquire_ref_kind: kfunc_acquire_ref_kind(surface.kfunc).map(|kind| kind.label()),
                 release_ref_kind: kfunc_release_ref_kind(surface.kfunc).map(|kind| kind.label()),
                 release_arg_idx: kfunc_release_ref_arg_index(surface.kfunc),
@@ -2087,6 +2096,7 @@ fn kfunc_call_records(spec: &crate::program_spec::ProgramSpec, span: Span) -> Ve
                     "minimum_kernel" => optional_static_str(surface.minimum_kernel, span),
                     "minimum_kernel_source" => optional_static_str(surface.minimum_kernel_source, span),
                     "maximum_kernel_exclusive" => optional_static_str(surface.maximum_kernel_exclusive, span),
+                    "maximum_kernel_exclusive_source" => optional_static_str(surface.maximum_kernel_exclusive_source, span),
                     "acquire_ref_kind" => optional_static_str(surface.acquire_ref_kind, span),
                     "release_ref_kind" => optional_static_str(surface.release_ref_kind, span),
                     "release_arg_idx" => optional_usize(surface.release_arg_idx, span),

@@ -313,6 +313,12 @@ fn minimum_kernel_source_detail(source: Option<&'static str>) -> String {
         .unwrap_or_default()
 }
 
+fn maximum_kernel_exclusive_source_detail(source: Option<&'static str>) -> String {
+    source
+        .map(|source| format!("; maximum kernel source: {source}"))
+        .unwrap_or_default()
+}
+
 pub(super) fn kernel_minimum_requirement_detail(
     requirements: &[crate::compiler::ProgramCompatibilityRequirement],
     current_kernel: &str,
@@ -482,8 +488,10 @@ pub(super) fn kernel_kfunc_minimum_requirement_detail(
         .iter()
         .find(|requirement| !requirement.supports_kernel(current_kernel))?;
     let unavailable_from = unsupported.maximum_kernel_exclusive()?;
+    let source =
+        maximum_kernel_exclusive_source_detail(unsupported.maximum_kernel_exclusive_source());
     Some(format!(
-        "compiled kfuncs include kfuncs unavailable on kernel>={unavailable_from}; current kernel is {current_kernel}{}; use --dry-run to compile or use a compatible kernel",
+        "compiled kfuncs include kfuncs unavailable on kernel>={unavailable_from}; current kernel is {current_kernel}{source}{}; use --dry-run to compile or use a compatible kernel",
         kfunc_compatibility_requirements_detail(requirements)
     ))
 }

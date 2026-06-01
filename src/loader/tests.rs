@@ -2488,6 +2488,13 @@ fn test_kernel_kfunc_requirement_detail_reports_too_new_kernel_window() {
     assert!(msg.contains("current kernel is 6.23.0"));
     assert!(msg.contains("scx_bpf_reenqueue_local kfunc support"));
     assert!(msg.contains("kernel>=6.12, kernel<6.23"));
+    assert!(
+        msg.contains(
+            requirements[0]
+                .maximum_kernel_exclusive_source()
+                .expect("legacy reenqueue kfunc should have a source-backed maximum window")
+        )
+    );
 }
 
 #[test]
@@ -2508,6 +2515,14 @@ fn test_kernel_object_compatibility_requirement_detail_reports_too_new_kfunc_win
     assert!(msg.contains("current kernel is 6.23.0-test"));
     assert!(msg.contains("scx_bpf_reenqueue_local kfunc support"));
     assert!(msg.contains("kernel>=6.12, kernel<6.23"));
+    assert!(
+        msg.contains(
+            KfuncCompatibilityRequirement::for_name("scx_bpf_reenqueue_local")
+                .expect("legacy reenqueue kfunc should be versioned")
+                .maximum_kernel_exclusive_source()
+                .expect("legacy reenqueue kfunc should have a source-backed maximum window")
+        )
+    );
     assert!(kernel_object_compatibility_requirement_detail(&object, "6.22.99").is_none());
 }
 

@@ -74,6 +74,10 @@ const LINUX_NET_CORE_FILTER_C_V6_18_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.18/net/core/filter.c";
 const LINUX_SCHED_EXT_C_V6_19_SOURCE: &str =
     "https://github.com/torvalds/linux/blob/v6.19/kernel/sched/ext.c";
+const LINUX_SCHED_EXT_COMPAT_REMOVAL_SOURCE: &str = concat!(
+    "https://kernel.googlesource.com/pub/scm/linux/kernel/git/mic/linux/+/",
+    "a7423e6ea2f8f6f453de79213c26f7a36c86d9a2/kernel/sched/ext.c"
+);
 
 /// Source-backed kernel compatibility metadata for a named BPF kfunc.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -133,6 +137,10 @@ impl KfuncCompatibilityRequirement {
         kfunc_maximum_kernel_exclusive(self.name)
     }
 
+    pub fn maximum_kernel_exclusive_source(self) -> Option<&'static str> {
+        kfunc_maximum_kernel_exclusive_source(self.name)
+    }
+
     pub fn effective_minimum_kernel(requirements: &[Self]) -> Option<&'static str> {
         Self::effective_minimum_kernel_requirement(requirements)
             .map(|requirement| requirement.minimum_kernel())
@@ -161,17 +169,35 @@ impl KfuncCompatibilityRequirement {
     }
 
     pub fn effective_maximum_kernel_exclusive(requirements: &[Self]) -> Option<&'static str> {
-        let mut maximum = None;
-        for candidate in requirements
-            .iter()
-            .filter_map(|requirement| requirement.maximum_kernel_exclusive())
-        {
+        Self::effective_maximum_kernel_exclusive_requirement(requirements)
+            .and_then(|requirement| requirement.maximum_kernel_exclusive())
+    }
+
+    pub fn effective_maximum_kernel_exclusive_source(
+        requirements: &[Self],
+    ) -> Option<&'static str> {
+        Self::effective_maximum_kernel_exclusive_requirement(requirements)
+            .and_then(|requirement| requirement.maximum_kernel_exclusive_source())
+    }
+
+    fn effective_maximum_kernel_exclusive_requirement(requirements: &[Self]) -> Option<&Self> {
+        let mut maximum: Option<&Self> = None;
+        for requirement in requirements {
+            let Some(candidate) = requirement.maximum_kernel_exclusive() else {
+                continue;
+            };
             let should_replace = match maximum {
-                Some(current) => Self::kernel_version_cmp(candidate, current).is_lt(),
+                Some(current) => Self::kernel_version_cmp(
+                    candidate,
+                    current
+                        .maximum_kernel_exclusive()
+                        .expect("effective requirement should have a maximum kernel"),
+                )
+                .is_lt(),
                 None => true,
             };
             if should_replace {
-                maximum = Some(candidate);
+                maximum = Some(requirement);
             }
         }
         maximum
@@ -576,6 +602,16 @@ fn kfunc_minimum_kernel(name: &str) -> Option<&'static str> {
 fn kfunc_maximum_kernel_exclusive(name: &str) -> Option<&'static str> {
     Some(match name {
         "scx_bpf_dsq_insert" | "scx_bpf_dsq_insert_vtime" | "scx_bpf_reenqueue_local" => "6.23",
+        _ => return None,
+    })
+}
+
+fn kfunc_maximum_kernel_exclusive_source(name: &str) -> Option<&'static str> {
+    kfunc_maximum_kernel_exclusive(name)?;
+    Some(match name {
+        "scx_bpf_dsq_insert" | "scx_bpf_dsq_insert_vtime" | "scx_bpf_reenqueue_local" => {
+            LINUX_SCHED_EXT_COMPAT_REMOVAL_SOURCE
+        }
         _ => return None,
     })
 }

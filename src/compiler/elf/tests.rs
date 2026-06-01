@@ -11604,12 +11604,20 @@ fn test_ebpf_program_reports_kfunc_compatibility_requirements() {
             .is_some_and(|source| source.contains("/v6.12/fs/bpf_fs_kfuncs.c"))
     );
     assert_eq!(program.kfunc_compatibility_maximum_kernel_exclusive(), None);
+    assert_eq!(
+        program.kfunc_compatibility_maximum_kernel_exclusive_source(),
+        None
+    );
     let object = program.clone().into_object();
     assert_eq!(object.kfunc_compatibility_minimum_kernel(), Some("6.12"));
     assert!(
         object
             .kfunc_compatibility_minimum_kernel_source()
             .is_some_and(|source| source.contains("/v6.12/fs/bpf_fs_kfuncs.c"))
+    );
+    assert_eq!(
+        object.kfunc_compatibility_maximum_kernel_exclusive_source(),
+        None
     );
     assert_eq!(object.used_kfuncs(), program.used_kfuncs());
     assert_eq!(object.programs[0].used_kfuncs(), program.used_kfuncs());
@@ -11626,10 +11634,20 @@ fn test_ebpf_program_reports_kfunc_compatibility_requirements() {
         bounded.kfunc_compatibility_maximum_kernel_exclusive(),
         Some("6.23")
     );
+    assert!(
+        bounded
+            .kfunc_compatibility_maximum_kernel_exclusive_source()
+            .is_some_and(|source| source.contains("kernel/sched/ext.c"))
+    );
     let bounded_object = bounded.into_object();
     assert_eq!(
         bounded_object.kfunc_compatibility_maximum_kernel_exclusive(),
         Some("6.23")
+    );
+    assert!(
+        bounded_object
+            .kfunc_compatibility_maximum_kernel_exclusive_source()
+            .is_some_and(|source| source.contains("kernel/sched/ext.c"))
     );
 }
 
@@ -11892,6 +11910,10 @@ fn test_ebpf_program_reports_aggregate_compatibility_minimum_kernel() {
     );
     assert_eq!(program.compatibility_default_test_lane(), "host-gated");
     assert_eq!(program.compatibility_maximum_kernel_exclusive(), None);
+    assert_eq!(
+        program.compatibility_maximum_kernel_exclusive_source(),
+        None
+    );
 
     let object = program
         .with_used_kfuncs(["bpf_get_task_exe_file", "scx_bpf_reenqueue_local"])
@@ -11916,9 +11938,19 @@ fn test_ebpf_program_reports_aggregate_compatibility_minimum_kernel() {
         object.programs[0].compatibility_maximum_kernel_exclusive(),
         Some("6.23")
     );
+    assert!(
+        object.programs[0]
+            .compatibility_maximum_kernel_exclusive_source()
+            .is_some_and(|source| source.contains("kernel/sched/ext.c"))
+    );
     assert_eq!(
         object.compatibility_maximum_kernel_exclusive(),
         Some("6.23")
+    );
+    assert!(
+        object
+            .compatibility_maximum_kernel_exclusive_source()
+            .is_some_and(|source| source.contains("kernel/sched/ext.c"))
     );
 }
 

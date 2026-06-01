@@ -204,8 +204,9 @@ exposes aggregate `compatibility_minimum_kernel` and
 `compatibility_minimum_kernel_source` fields across those source-verified
 categories, an aggregate program/attach
 `compatibility_default_test_lane`, and `compatibility_maximum_kernel_exclusive`
-when bounded source-verified features are present. Known kfunc compatibility
-windows can carry maximum-exclusive kernel bounds for source-verified
+plus `compatibility_maximum_kernel_exclusive_source` when bounded
+source-verified features are present. Known kfunc compatibility windows can
+carry maximum-exclusive kernel bounds and sources for source-verified
 transitional kfunc spellings. Context
 fields that lower through modeled
 helpers inherit those helper minimum-kernel/source records, and source-verified
@@ -825,11 +826,11 @@ and whether each element is converted to big endian; transformed store rows
 report the offset plus conversion such as `host-u32-to-big-endian` or
 `host-port-to-big-endian-u32`. Known ABI-backed writes include separate
 helper/kfunc minimum-kernel and source fields, plus nullable kfunc
-maximum-exclusive windows, so surfaces such as `ctx.reply`, `ctx.mark`,
-`ctx.cb_flags`, `ctx.new_value`, `ctx.sk`, `ctx.sun_path`, attach-sensitive
-socket-address aliases such as `ctx.remote_ip4`, and context-pointer scalar
-field roots such as `ctx.flow_keys` can be inspected before writing code that
-depends on them.
+maximum-exclusive windows and sources, so surfaces such as `ctx.reply`,
+`ctx.mark`, `ctx.cb_flags`, `ctx.new_value`, `ctx.sk`, `ctx.sun_path`,
+attach-sensitive socket-address aliases such as `ctx.remote_ip4`, and
+context-pointer scalar field roots such as `ctx.flow_keys` can be inspected
+before writing code that depends on them.
 `intrinsics` rows include aggregate `compatibility_minimum_kernel` /
 `compatibility_minimum_kernel_source` fields, aggregate `backing_helpers`, and
 `context_field_requirements` when an intrinsic implies a context-field ABI

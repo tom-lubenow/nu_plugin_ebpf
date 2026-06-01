@@ -4767,6 +4767,12 @@ fn test_kfunc_kernel_compatibility_metadata() {
         let requirement = KfuncCompatibilityRequirement::for_name(name)
             .expect("source-checked compat sched_ext kfunc should be versioned");
         assert_eq!(requirement.maximum_kernel_exclusive(), Some("6.23"));
+        assert!(
+            requirement
+                .maximum_kernel_exclusive_source()
+                .is_some_and(|source| source.contains("kernel/sched/ext.c")),
+            "source should point at the scheduler file that documents the {name} compatibility removal window"
+        );
         assert!(requirement.supports_kernel("6.22.99"));
         assert!(!requirement.supports_kernel("6.23.0"));
     }
@@ -4792,6 +4798,10 @@ fn test_kfunc_kernel_compatibility_metadata() {
     assert_eq!(
         KfuncCompatibilityRequirement::effective_maximum_kernel_exclusive(&requirements),
         Some("6.23")
+    );
+    assert!(
+        KfuncCompatibilityRequirement::effective_maximum_kernel_exclusive_source(&requirements)
+            .is_some_and(|source| source.contains("kernel/sched/ext.c"))
     );
     assert!(KfuncCompatibilityRequirement::kernel_version_at_least(
         "6.5.0", "6.5"
