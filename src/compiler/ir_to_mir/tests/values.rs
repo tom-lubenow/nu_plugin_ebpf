@@ -574,6 +574,72 @@ fn make_string_arg_pipeline_call_program_with_flags(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_string_index_of_range_program(
+    decl_id: DeclId,
+    value: &str,
+    needle: &str,
+    start: i64,
+    end: i64,
+    inclusion: RangeInclusion,
+    flags: Vec<Vec<u8>>,
+) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::string(value, Span::test_data())),
+                },
+                HirStmt::LoadValue {
+                    dst: RegId::new(2),
+                    val: Box::new(Value::string(needle, Span::test_data())),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::Int(start),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::Int(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(5),
+                    lit: HirLiteral::Int(end),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(6),
+                    lit: HirLiteral::Range {
+                        start: RegId::new(3),
+                        step: RegId::new(4),
+                        end: RegId::new(5),
+                        inclusion,
+                    },
+                },
+                HirStmt::Call {
+                    decl_id,
+                    src_dst: RegId::new(1),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(2)],
+                        named: vec![(b"range".to_vec(), RegId::new(6))],
+                        pipeline_input: Some(RegId::new(0)),
+                        flags,
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 7,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_str_replace_then_starts_with_program(
     replace_decl: DeclId,
     starts_with_decl: DeclId,
@@ -3124,6 +3190,72 @@ fn test_lower_str_index_of_from_end_on_known_string_returns_last_offset() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("str index-of --end should compile through codegen");
+}
+
+#[test]
+fn test_lower_str_index_of_range_on_known_string_limits_search_offsets() {
+    let index_of_decl = DeclId::new(154);
+    let hir = make_string_index_of_range_program(
+        index_of_decl,
+        "abcabc",
+        "bc",
+        2,
+        5,
+        RangeInclusion::Inclusive,
+        Vec::new(),
+    );
+    let decl_names = HashMap::from([(index_of_decl, "str index-of".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str index-of --range should lower on tracked strings with known lengths");
+
+    let comparisons = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .filter(|inst| matches!(inst, MirInst::StrCmp { len: 2, .. }))
+        .count();
+    assert_eq!(
+        comparisons, 3,
+        "expected str index-of --range to probe only offsets inside the bounded byte window"
+    );
+    assert!(
+        !result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::StrCmp { lhs_offset: 1, .. })),
+        "expected str index-of --range to skip matches before the bounded window"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Copy {
+                    src: MirValue::Const(4),
+                    ..
+                }
+            )),
+        "expected str index-of --range to return the absolute byte offset"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("str index-of --range should compile through codegen");
 }
 
 #[test]
