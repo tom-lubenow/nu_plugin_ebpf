@@ -437,6 +437,83 @@ fn test_verifier_diff_fixture_summary_exposes_target() {
     );
 }
 
+#[test]
+fn test_verifier_diff_fixture_summary_reports_too_new_kfunc_window() {
+    let script = r#"source scripts/verifier_diff.nu
+let fixture = {
+    name: "unit-kfunc-window"
+    category: "kfunc"
+    target: "struct_ops:sched_ext_ops"
+    program: [
+        "{"
+        "    name: \"nu.demo_1\""
+        "    cpu_release: {|ctx|"
+        "        let ignored = (kfunc-call \"scx_bpf_reenqueue_local\")"
+        "        0"
+        "    }"
+        "}"
+    ]
+    local: "accept"
+    kernel: "skip"
+}
+let features = (fixture-kernel-features $fixture)
+let derived = (fixture-derived-metadata $fixture $features)
+let summary = (fixture-summary-from-derived $derived "6.23.0")
+{
+    effective_min_kernel: $summary.effective_min_kernel
+    effective_max_kernel_exclusive: $summary.effective_max_kernel_exclusive
+    compatible_with_compat_kernel: $summary.compatible_with_compat_kernel
+    compat_kernel_reason: $summary.compat_kernel_reason
+    kernel_features: (kernel-feature-labels $summary.kernel_features)
+} | to json"#;
+
+    let Some(output) = run_nu_script(script, "compat-kernel max-exclusive kfunc summary") else {
+        return;
+    };
+    assert!(
+        output.status.success(),
+        "verifier_diff.nu compat-kernel summary failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let actual: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .expect("verifier_diff.nu compat-kernel summary should emit JSON");
+    assert_eq!(
+        actual
+            .get("effective_min_kernel")
+            .and_then(serde_json::Value::as_str),
+        Some("6.12")
+    );
+    assert_eq!(
+        actual
+            .get("effective_max_kernel_exclusive")
+            .and_then(serde_json::Value::as_str),
+        Some("6.23")
+    );
+    assert_eq!(
+        actual
+            .get("compatible_with_compat_kernel")
+            .and_then(serde_json::Value::as_bool),
+        Some(false)
+    );
+    assert_eq!(
+        actual
+            .get("compat_kernel_reason")
+            .and_then(serde_json::Value::as_str),
+        Some("kernel<6.23")
+    );
+    let feature_labels = actual
+        .get("kernel_features")
+        .and_then(serde_json::Value::as_array)
+        .expect("summary should include kernel feature labels");
+    assert!(feature_labels.iter().any(|label| {
+        label
+            .as_str()
+            .is_some_and(|label| label.contains("kfunc:scx_bpf_reenqueue_local>=6.12,<6.23"))
+    }));
+}
+
 fn program_compatibility_verifier_feature_key(
     requirement: ProgramCompatibilityRequirement,
 ) -> Option<&'static str> {
