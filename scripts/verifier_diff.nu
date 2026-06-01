@@ -35205,6 +35205,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-string-index-of-from-end"
+        category: "language-core"
+        tags: [string str index-of end]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "ababa" | str index-of --end "ba"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-string-substring"
         category: "language-core"
         tags: [string str substring]

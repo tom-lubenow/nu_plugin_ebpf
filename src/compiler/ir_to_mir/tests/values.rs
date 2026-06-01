@@ -3056,6 +3056,77 @@ fn test_lower_str_index_of_missing_substring_returns_minus_one() {
 }
 
 #[test]
+fn test_lower_str_index_of_from_end_on_known_string_returns_last_offset() {
+    let index_of_decl = DeclId::new(153);
+    let hir = make_string_arg_pipeline_call_program_with_flags(
+        index_of_decl,
+        "ababa",
+        "ba",
+        vec![b"end".to_vec()],
+    );
+    let decl_names = HashMap::from([(index_of_decl, "str index-of".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str index-of --end should lower on tracked strings with known lengths");
+
+    let comparisons = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .filter(|inst| matches!(inst, MirInst::StrCmp { len: 2, .. }))
+        .count();
+    assert_eq!(
+        comparisons, 4,
+        "expected str index-of --end to test each possible fixed substring offset"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StrCmp {
+                    lhs_offset: 3,
+                    rhs_offset: 0,
+                    len: 2,
+                    ..
+                }
+            )),
+        "expected str index-of --end to probe the last matching byte offset first"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Copy {
+                    src: MirValue::Const(3),
+                    ..
+                }
+            )),
+        "expected str index-of --end to return the last matching byte offset"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("str index-of --end should compile through codegen");
+}
+
+#[test]
 fn test_lower_str_replace_on_known_string_materializes_replaced_literal() {
     let replace_decl = DeclId::new(126);
     let starts_with_decl = DeclId::new(128);

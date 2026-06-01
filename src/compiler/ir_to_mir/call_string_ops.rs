@@ -405,11 +405,12 @@ impl<'a> HirToMirLowering<'a> {
             dst_vreg
         };
 
-        if !self.named_flags.is_empty() || !self.named_args.is_empty() {
+        if !self.named_args.is_empty() {
             return Err(CompileError::UnsupportedInstruction(
-                "str index-of does not accept named flags or arguments in eBPF".into(),
+                "str index-of does not accept named arguments in eBPF".into(),
             ));
         }
+        let search_from_end = self.string_index_of_from_end_flag()?;
         let (_, needle_reg) = self.positional_args.first().copied().ok_or_else(|| {
             CompileError::UnsupportedInstruction(
                 "str index-of requires a string substring argument in eBPF".into(),
@@ -426,7 +427,11 @@ impl<'a> HirToMirLowering<'a> {
         if operands.needle_len == 0 {
             self.emit(MirInst::Copy {
                 dst: result_vreg,
-                src: MirValue::Const(0),
+                src: MirValue::Const(if search_from_end {
+                    operands.input_len as i64
+                } else {
+                    0
+                }),
             });
         } else if operands.needle_len > operands.input_len
             || operands.input_len > operands.input_slot_size.saturating_sub(1)
@@ -440,9 +445,20 @@ impl<'a> HirToMirLowering<'a> {
             let continuation_block = self.func.alloc_block();
             let last_offset = operands.input_len - operands.needle_len;
 
-            for offset in 0..=last_offset {
+            let offsets: Box<dyn Iterator<Item = usize>> = if search_from_end {
+                Box::new((0..=last_offset).rev())
+            } else {
+                Box::new(0..=last_offset)
+            };
+
+            for offset in offsets {
                 let found_block = self.func.alloc_block();
-                let next_block = if offset == last_offset {
+                let is_last_probe = if search_from_end {
+                    offset == 0
+                } else {
+                    offset == last_offset
+                };
+                let next_block = if is_last_probe {
                     not_found_block
                 } else {
                     self.func.alloc_block()
@@ -766,6 +782,28 @@ impl<'a> HirToMirLowering<'a> {
             }
         }
         Ok(self.named_flags.iter().any(|flag| flag == "ignore-case"))
+    }
+
+    fn string_index_of_from_end_flag(&self) -> Result<bool, CompileError> {
+        let mut from_end = false;
+        for flag in &self.named_flags {
+            match flag.as_str() {
+                "end" => from_end = true,
+                "utf-8-bytes" => {}
+                "grapheme-clusters" => {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "str index-of --grapheme-clusters is not supported in eBPF; byte indexes are the verifier-friendly representation".into(),
+                    ));
+                }
+                _ => {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "str index-of currently supports only --end and --utf-8-bytes flags in eBPF"
+                            .into(),
+                    ));
+                }
+            }
+        }
+        Ok(from_end)
     }
 
     fn capitalize_first_char(input: &str) -> String {
