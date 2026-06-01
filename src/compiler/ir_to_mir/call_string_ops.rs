@@ -565,6 +565,103 @@ impl<'a> HirToMirLowering<'a> {
         self.lower_known_string_result(src_dst, result_vreg, input)
     }
 
+    pub(super) fn lower_split_row(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+    ) -> Result<(), CompileError> {
+        let input_reg = self
+            .pipeline_input_reg
+            .or(src_dst_had_value.then_some(src_dst));
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+
+        for flag in &self.named_flags {
+            match flag.as_str() {
+                "regex" => {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "split row --regex is not supported in eBPF".into(),
+                    ));
+                }
+                _ => {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "split row currently supports only --number as an option in eBPF".into(),
+                    ));
+                }
+            }
+        }
+        for key in self.named_args.keys() {
+            if key != "number" {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "split row does not support named argument --{key} in eBPF"
+                )));
+            }
+        }
+        if self.positional_args.len() != 1 {
+            return Err(CompileError::UnsupportedInstruction(
+                "split row accepts exactly one string separator argument in eBPF".into(),
+            ));
+        }
+
+        let (_, separator_reg) = self.positional_args[0];
+        let separator = self.literal_string_arg(separator_reg, "split row separator")?;
+        let number = if let Some((_, number_reg)) = self.named_args.get("number").copied() {
+            let raw = self
+                .get_metadata(number_reg)
+                .and_then(|meta| {
+                    meta.literal_int
+                        .or_else(|| match meta.constant_value.as_ref() {
+                            Some(nu_protocol::Value::Int { val, .. }) => Some(*val),
+                            _ => None,
+                        })
+                })
+                .ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(
+                        "split row --number requires a compile-time known integer in eBPF".into(),
+                    )
+                })?;
+            if raw < 0 {
+                return Err(CompileError::UnsupportedInstruction(
+                    "split row --number requires a non-negative integer in eBPF".into(),
+                ));
+            }
+            Some(usize::try_from(raw).map_err(|_| {
+                CompileError::UnsupportedInstruction(
+                    "split row --number is too large for eBPF lowering".into(),
+                )
+            })?)
+        } else {
+            None
+        };
+
+        let output = if let Some(input) = self.exact_string_list_input(input_reg, "split row")? {
+            input
+                .into_iter()
+                .flat_map(|item| Self::split_row_known_string(&item, &separator, number))
+                .collect()
+        } else {
+            let input = self.exact_string_input(input_reg, "split row")?;
+            Self::split_row_known_string(&input, &separator, number)
+        };
+
+        self.lower_known_string_list_result(src_dst, result_vreg, output)
+    }
+
+    fn split_row_known_string(input: &str, separator: &str, number: Option<usize>) -> Vec<String> {
+        if let Some(number) = number {
+            input
+                .splitn(number, separator)
+                .map(ToString::to_string)
+                .collect()
+        } else {
+            input.split(separator).map(ToString::to_string).collect()
+        }
+    }
+
     pub(super) fn lower_string_stats(
         &mut self,
         src_dst: RegId,

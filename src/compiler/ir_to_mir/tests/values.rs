@@ -1224,6 +1224,95 @@ fn make_string_list_join_then_starts_with_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_split_row_join_then_starts_with_program(
+    split_decl: DeclId,
+    join_decl: DeclId,
+    starts_with_decl: DeclId,
+    input: Value,
+    separator: &str,
+    number: Option<i64>,
+    join_separator: &str,
+    prefix: &str,
+) -> HirProgram {
+    let mut stmts = vec![
+        HirStmt::LoadValue {
+            dst: RegId::new(0),
+            val: Box::new(input),
+        },
+        HirStmt::LoadValue {
+            dst: RegId::new(2),
+            val: Box::new(Value::string(separator, Span::test_data())),
+        },
+    ];
+    let mut named = Vec::new();
+    let mut next_reg = 3;
+    if let Some(number) = number {
+        stmts.push(HirStmt::LoadValue {
+            dst: RegId::new(next_reg),
+            val: Box::new(Value::int(number, Span::test_data())),
+        });
+        named.push((b"number".to_vec(), RegId::new(next_reg)));
+        next_reg += 1;
+    }
+    stmts.push(HirStmt::Call {
+        decl_id: split_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional: vec![RegId::new(2)],
+            named,
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let join_separator_reg = RegId::new(next_reg);
+    let expected_reg = RegId::new(next_reg + 1);
+    let starts_with_reg = RegId::new(next_reg + 2);
+    stmts.push(HirStmt::LoadValue {
+        dst: join_separator_reg,
+        val: Box::new(Value::string(join_separator, Span::test_data())),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: join_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional: vec![join_separator_reg],
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::LoadValue {
+        dst: expected_reg,
+        val: Box::new(Value::string(prefix, Span::test_data())),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: starts_with_decl,
+        src_dst: starts_with_reg,
+        args: HirCallArgs {
+            positional: vec![expected_reg],
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return {
+                src: starts_with_reg,
+            },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: starts_with_reg.get() + 1,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_constant_list_join_then_starts_with_program(
     join_decl: DeclId,
     starts_with_decl: DeclId,
@@ -5958,6 +6047,171 @@ fn test_lower_str_join_on_known_string_list_materializes_joined_string() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("str join list result consumed by str starts-with should compile through codegen");
+}
+
+#[test]
+fn test_lower_split_row_on_known_string_materializes_string_list() {
+    let split_decl = DeclId::new(460);
+    let join_decl = DeclId::new(461);
+    let starts_with_decl = DeclId::new(462);
+    let hir = make_split_row_join_then_starts_with_program(
+        split_decl,
+        join_decl,
+        starts_with_decl,
+        Value::string("alpha,beta,gamma", Span::test_data()),
+        ",",
+        None,
+        "-",
+        "alpha-beta-gamma",
+    );
+    let decl_names = HashMap::from([
+        (split_decl, "split row".to_string()),
+        (join_decl, "str join".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("split row should lower compile-time string input");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"alpha-beta-gamma\0")
+            )),
+        "expected split row output consumed by str join to materialize the split string"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("split row string output consumed by str join should compile");
+}
+
+#[test]
+fn test_lower_split_row_on_string_list_flattens_materialized_rows() {
+    let split_decl = DeclId::new(463);
+    let join_decl = DeclId::new(464);
+    let starts_with_decl = DeclId::new(465);
+    let hir = make_split_row_join_then_starts_with_program(
+        split_decl,
+        join_decl,
+        starts_with_decl,
+        Value::list(
+            vec![
+                Value::string("a,b", Span::test_data()),
+                Value::string("c,d", Span::test_data()),
+            ],
+            Span::test_data(),
+        ),
+        ",",
+        None,
+        "-",
+        "a-b-c-d",
+    );
+    let decl_names = HashMap::from([
+        (split_decl, "split row".to_string()),
+        (join_decl, "str join".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("split row should lower compile-time string-list input");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"a-b-c-d\0")
+            )),
+        "expected split row string-list output to flatten before str join"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("split row string-list output consumed by str join should compile");
+}
+
+#[test]
+fn test_lower_split_row_number_limits_each_input_string() {
+    let split_decl = DeclId::new(466);
+    let join_decl = DeclId::new(467);
+    let starts_with_decl = DeclId::new(468);
+    let hir = make_split_row_join_then_starts_with_program(
+        split_decl,
+        join_decl,
+        starts_with_decl,
+        Value::list(
+            vec![
+                Value::string("a,b,c", Span::test_data()),
+                Value::string("d,e", Span::test_data()),
+            ],
+            Span::test_data(),
+        ),
+        ",",
+        Some(2),
+        "-",
+        "a-b,c-d-e",
+    );
+    let decl_names = HashMap::from([
+        (split_decl, "split row".to_string()),
+        (join_decl, "str join".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("split row --number should lower compile-time string-list input");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"a-b,c-d-e\0")
+            )),
+        "expected split row --number to apply per input string before str join"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("split row --number output consumed by str join should compile");
 }
 
 #[test]

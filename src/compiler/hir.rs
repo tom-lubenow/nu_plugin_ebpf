@@ -833,6 +833,14 @@ fn compile_time_value_consumer_matches(
                                 )
                             })
                     }
+                    "split row" => {
+                        args.positional.len() == 1
+                            && args
+                                .named
+                                .iter()
+                                .all(|(name, _)| name.as_slice() == b"number")
+                            && args.flags.iter().all(|flag| flag.as_slice() == b"regex")
+                    }
                     "str downcase"
                     | "str upcase"
                     | "str reverse"
