@@ -35179,6 +35179,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-binary-bytes-collect-starts-with"
+        category: "language-core"
+        tags: [binary bytes collect starts-with]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [0x[11] 0x[33] 0x[44]] | bytes collect 0x[01] | bytes starts-with 0x[11 01 33]'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-string-is-empty"
         category: "language-core"
         tags: [string is-empty]

@@ -3454,6 +3454,79 @@ impl<'a> HirToMirLowering<'a> {
                 )?;
             }
 
+            "bytes collect" => {
+                let input_reg = self
+                    .pipeline_input_reg
+                    .or(src_dst_had_value.then_some(src_dst));
+
+                if !self.named_flags.is_empty() || !self.named_args.is_empty() {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "bytes collect does not accept named flags or arguments in eBPF".into(),
+                    ));
+                }
+                if self.positional_args.len() > 1 {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "bytes collect accepts at most one binary separator argument in eBPF"
+                            .into(),
+                    ));
+                }
+
+                let items = input_reg
+                    .and_then(|reg| self.get_metadata(reg))
+                    .and_then(|meta| match meta.constant_value.as_ref() {
+                        Some(nu_protocol::Value::List { vals, .. }) => Some(vals.clone()),
+                        _ => None,
+                    })
+                    .ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "bytes collect requires compile-time known list<binary> input in eBPF"
+                                .into(),
+                        )
+                    })?;
+                let separator = if let Some((_, separator_reg)) =
+                    self.positional_args.first().copied()
+                {
+                    self.get_metadata(separator_reg)
+                        .and_then(|meta| match meta.constant_value.as_ref() {
+                            Some(nu_protocol::Value::Binary { val, .. }) => Some(val.clone()),
+                            _ => None,
+                        })
+                        .ok_or_else(|| {
+                            CompileError::UnsupportedInstruction(
+                                "bytes collect requires a compile-time known binary separator in eBPF"
+                                    .into(),
+                            )
+                        })?
+                } else {
+                    Vec::new()
+                };
+
+                let mut output = Vec::new();
+                for (index, item) in items.iter().enumerate() {
+                    let nu_protocol::Value::Binary { val, .. } = item else {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "bytes collect requires binary list items in eBPF; item {index} has type {}",
+                            item.get_type()
+                        )));
+                    };
+                    if index > 0 {
+                        output.extend_from_slice(&separator);
+                    }
+                    output.extend_from_slice(val);
+                }
+                if output.is_empty() {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "bytes collect requires a non-empty binary result in eBPF".into(),
+                    ));
+                }
+
+                self.reset_call_result_metadata(src_dst);
+                self.lower_constant_value(
+                    src_dst,
+                    &nu_protocol::Value::binary(output, nu_protocol::Span::unknown()),
+                )?;
+            }
+
             "str length" => {
                 self.lower_string_length(src_dst, dst_vreg, src_dst_had_value)?;
             }

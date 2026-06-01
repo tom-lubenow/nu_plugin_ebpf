@@ -185,6 +185,54 @@ fn test_list_push_record_item_reports_fixed_layout_hint() {
 }
 
 #[test]
+fn test_list_push_binary_item_allowed_for_bytes_collect() {
+    let collect_decl = DeclId::new(49);
+    let mut func = HirFunction {
+        blocks: Vec::new(),
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+
+    let mut block = HirBlock {
+        id: HirBlockId(0),
+        stmts: Vec::new(),
+        terminator: HirTerminator::Return { src: RegId::new(2) },
+    };
+
+    block.stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List { capacity: 1 },
+    });
+    block.stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(1),
+        lit: HirLiteral::Binary(vec![0x11]),
+    });
+    block.stmts.push(HirStmt::ListPush {
+        src_dst: RegId::new(0),
+        item: RegId::new(1),
+    });
+    block.stmts.push(HirStmt::Call {
+        decl_id: collect_decl,
+        src_dst: RegId::new(2),
+        args: HirCallArgs {
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    func.blocks.push(block);
+
+    let program = HirProgram::new(func, HashMap::new(), Vec::new(), None);
+    let decl_names = HashMap::from([(collect_decl, "bytes collect".to_string())]);
+    infer_hir(&program, &decl_names)
+        .expect("bytes collect should allow compile-time binary list builders");
+}
+
+#[test]
 fn test_list_push_record_item_allowed_for_typed_global_array_initializer() {
     let define_decl = DeclId::new(42);
     let mut func = HirFunction {

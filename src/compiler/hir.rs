@@ -297,6 +297,7 @@ pub enum FixedLayoutValueConsumer {
     MapGetKey,
     MapDeleteKey,
     MapContainsProbe,
+    BytesCollect,
 }
 
 pub fn compile_time_value_flows_to_fixed_layout_consumer(
@@ -472,6 +473,7 @@ pub fn compile_time_value_flows_to_fixed_layout_aggregate_consumer(
         FixedLayoutValueConsumer::MapGetKey,
         FixedLayoutValueConsumer::MapDeleteKey,
         FixedLayoutValueConsumer::MapContainsProbe,
+        FixedLayoutValueConsumer::BytesCollect,
     ]
     .into_iter()
     .any(|consumer| {
@@ -600,6 +602,15 @@ fn compile_time_value_consumer_matches(
                     .named
                     .iter()
                     .all(|(name, _)| matches!(name.as_slice(), b"kind"))
+                && args.flags.is_empty()
+                && args.parser_info.is_empty()
+        }
+        FixedLayoutValueConsumer::BytesCollect => {
+            decl_name == Some("bytes collect")
+                && call_args_tracked_only_in_pipeline(src_dst, args, tracked_regs)
+                && args.positional.len() <= 1
+                && args.rest.is_empty()
+                && args.named.is_empty()
                 && args.flags.is_empty()
                 && args.parser_info.is_empty()
         }

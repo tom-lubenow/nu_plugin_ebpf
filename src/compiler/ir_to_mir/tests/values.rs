@@ -7661,6 +7661,177 @@ fn test_lower_bytes_replace_rejects_empty_result() {
     );
 }
 
+fn make_bytes_collect_then_starts_with_program(
+    collect_decl: DeclId,
+    starts_with_decl: DeclId,
+    items: Vec<Vec<u8>>,
+    separator: Option<Vec<u8>>,
+    expected_prefix: Vec<u8>,
+) -> HirProgram {
+    let mut stmts = vec![HirStmt::LoadValue {
+        dst: RegId::new(0),
+        val: Box::new(Value::list(
+            items
+                .into_iter()
+                .map(|item| Value::binary(item, Span::test_data()))
+                .collect(),
+            Span::test_data(),
+        )),
+    }];
+    let mut positional = Vec::new();
+    if let Some(separator) = separator {
+        stmts.push(HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: HirLiteral::Binary(separator),
+        });
+        positional.push(RegId::new(1));
+    }
+    stmts.push(HirStmt::Call {
+        decl_id: collect_decl,
+        src_dst: RegId::new(2),
+        args: HirCallArgs {
+            positional,
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(3),
+        lit: HirLiteral::Binary(expected_prefix),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: starts_with_decl,
+        src_dst: RegId::new(4),
+        args: HirCallArgs {
+            positional: vec![RegId::new(3)],
+            pipeline_input: Some(RegId::new(2)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(4) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 5,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+#[test]
+fn test_lower_bytes_collect_materializes_concatenated_binary() {
+    let bytes_collect_decl = DeclId::new(247);
+    let bytes_starts_with_decl = DeclId::new(248);
+    let hir = make_bytes_collect_then_starts_with_program(
+        bytes_collect_decl,
+        bytes_starts_with_decl,
+        vec![vec![0x11], vec![0x13], vec![0x15]],
+        None,
+        vec![0x11, 0x13, 0x15],
+    );
+    let decl_names = HashMap::from([
+        (bytes_collect_decl, "bytes collect".to_string()),
+        (bytes_starts_with_decl, "bytes starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bytes collect should lower compile-time binary list input");
+
+    assert!(
+        result
+            .readonly_globals
+            .iter()
+            .any(|global| global.data == vec![0x11, 0x13, 0x15]),
+        "expected bytes collect to materialize concatenated binary rodata"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("bytes collect output consumed by bytes starts-with should compile");
+}
+
+#[test]
+fn test_lower_bytes_collect_with_separator_materializes_joined_binary() {
+    let bytes_collect_decl = DeclId::new(249);
+    let bytes_starts_with_decl = DeclId::new(250);
+    let hir = make_bytes_collect_then_starts_with_program(
+        bytes_collect_decl,
+        bytes_starts_with_decl,
+        vec![vec![0x11], vec![0x33], vec![0x44]],
+        Some(vec![0x01]),
+        vec![0x11, 0x01, 0x33],
+    );
+    let decl_names = HashMap::from([
+        (bytes_collect_decl, "bytes collect".to_string()),
+        (bytes_starts_with_decl, "bytes starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bytes collect with separator should lower compile-time binary list input");
+
+    assert!(
+        result
+            .readonly_globals
+            .iter()
+            .any(|global| global.data == vec![0x11, 0x01, 0x33, 0x01, 0x44]),
+        "expected bytes collect separator to materialize joined binary rodata"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("bytes collect separator output consumed by bytes starts-with should compile");
+}
+
+#[test]
+fn test_lower_bytes_collect_rejects_empty_result() {
+    let bytes_collect_decl = DeclId::new(251);
+    let bytes_starts_with_decl = DeclId::new(252);
+    let hir = make_bytes_collect_then_starts_with_program(
+        bytes_collect_decl,
+        bytes_starts_with_decl,
+        Vec::new(),
+        None,
+        vec![0x11],
+    );
+    let decl_names = HashMap::from([
+        (bytes_collect_decl, "bytes collect".to_string()),
+        (bytes_starts_with_decl, "bytes starts-with".to_string()),
+    ]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("bytes collect should reject empty binary results");
+
+    assert!(
+        err.to_string()
+            .contains("bytes collect requires a non-empty binary result"),
+        "unexpected error: {err}"
+    );
+}
+
 #[test]
 fn test_lower_select_on_metadata_record_materializes_requested_layout() {
     let select_decl = DeclId::new(94);
