@@ -42,7 +42,7 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
-    fn emit_metadata_record_result(
+    pub(super) fn emit_metadata_record_result(
         &mut self,
         src_dst: RegId,
         result_vreg: VReg,

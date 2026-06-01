@@ -5,6 +5,7 @@ use heck::{
 };
 use nu_protocol::levenshtein_distance;
 use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
 
 struct KnownStringSearchOperands {
     input_slot: StackSlotId,
@@ -465,6 +466,76 @@ impl<'a> HirToMirLowering<'a> {
         self.lower_known_string_result(src_dst, result_vreg, input)
     }
 
+    pub(super) fn lower_string_stats(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+    ) -> Result<(), CompileError> {
+        let input_reg = self
+            .pipeline_input_reg
+            .or(src_dst_had_value.then_some(src_dst));
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+
+        if !self.named_flags.is_empty()
+            || !self.named_args.is_empty()
+            || !self.positional_args.is_empty()
+        {
+            return Err(CompileError::UnsupportedInstruction(
+                "str stats does not accept arguments in eBPF".into(),
+            ));
+        }
+
+        let input = self.exact_string_input(input_reg, "str stats")?;
+        let counts = [
+            ("lines", Self::string_stats_line_count(&input) as i64),
+            ("words", input.unicode_words().count() as i64),
+            ("bytes", input.len() as i64),
+            ("chars", input.chars().count() as i64),
+            (
+                "graphemes",
+                UnicodeSegmentation::graphemes(input.as_str(), true).count() as i64,
+            ),
+            (
+                "unicode-width",
+                Self::string_stats_unicode_width(&input) as i64,
+            ),
+        ];
+
+        let mut record = nu_protocol::Record::new();
+        let mut record_fields = Vec::with_capacity(counts.len());
+        for (name, count) in counts {
+            let value_vreg = self.func.alloc_vreg();
+            self.emit(MirInst::Copy {
+                dst: value_vreg,
+                src: MirValue::Const(count),
+            });
+            self.vreg_type_hints.insert(value_vreg, MirType::I64);
+            record.push(name, nu_protocol::Value::int(count, Span::unknown()));
+            record_fields.push(RecordField {
+                name: name.to_string(),
+                value_vreg,
+                source_reg: None,
+                stack_offset: None,
+                ty: MirType::I64,
+                semantics: None,
+                is_context: false,
+                root_ctx_field: None,
+            });
+        }
+
+        let projected_meta = RegMetadata {
+            constant_value: Some(nu_protocol::Value::record(record, Span::unknown())),
+            record_fields,
+            ..Default::default()
+        };
+        self.emit_metadata_record_result(src_dst, result_vreg, projected_meta)
+    }
+
     pub(super) fn lower_string_index_of(
         &mut self,
         src_dst: RegId,
@@ -748,6 +819,61 @@ impl<'a> HirToMirLowering<'a> {
             ))
         })?;
         Ok(output.into_owned())
+    }
+
+    fn string_stats_line_count(input: &str) -> usize {
+        if input.is_empty() {
+            return 0;
+        }
+
+        const LINE_ENDINGS: [&str; 7] = [
+            "\r\n", "\n", "\r", "\u{0085}", "\u{000C}", "\u{2028}", "\u{2029}",
+        ];
+
+        let mut count = 0;
+        let mut index = 0;
+        while index < input.len() {
+            let rest = &input[index..];
+            if rest.starts_with("\r\n") {
+                count += 1;
+                index += "\r\n".len();
+                continue;
+            }
+
+            let Some(ch) = rest.chars().next() else {
+                break;
+            };
+            if matches!(
+                ch,
+                '\n' | '\r' | '\u{0085}' | '\u{000C}' | '\u{2028}' | '\u{2029}'
+            ) {
+                count += 1;
+            }
+            index += ch.len_utf8();
+        }
+
+        if LINE_ENDINGS.iter().any(|ending| input.ends_with(ending)) {
+            count
+        } else {
+            count + 1
+        }
+    }
+
+    fn string_stats_unicode_width(input: &str) -> usize {
+        UnicodeSegmentation::graphemes(input, true)
+            .map(|grapheme| {
+                let width = UnicodeWidthStr::width(grapheme);
+                if width == 0 && grapheme.chars().any(Self::string_stats_counts_width_one) {
+                    1
+                } else {
+                    width
+                }
+            })
+            .sum()
+    }
+
+    fn string_stats_counts_width_one(ch: char) -> bool {
+        ch.is_control() || matches!(ch, '\u{2028}' | '\u{2029}')
     }
 
     pub(super) fn lower_string_trim(

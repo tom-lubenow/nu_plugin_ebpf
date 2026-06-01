@@ -54,6 +54,7 @@ const NU_CLOSURE_COMMANDS: &[&str] = &[
     "str contains",
     "str distance",
     "str join",
+    "str stats",
     "str index-of",
     "str substring",
     "str replace",

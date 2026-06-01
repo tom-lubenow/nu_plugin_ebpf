@@ -35,6 +35,9 @@ serde_json = "1"
 # Compile-time grapheme cluster handling for known string literals
 unicode-segmentation = "1.12"
 
+# Compile-time unicode display-width handling for known string literals
+unicode-width = "0.2"
+
 # Compile-time regex replacement for known string literals
 fancy-regex = "0.17"
 
