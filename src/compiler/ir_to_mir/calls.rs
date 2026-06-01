@@ -2992,7 +2992,14 @@ impl<'a> HirToMirLowering<'a> {
                                         .into(),
                                 )
                                 })?;
-                                if let Some(known_len) = Self::numeric_list_known_len(&meta) {
+                                let known_len = if meta.mutable_global_runtime
+                                    && meta.constant_value.is_none()
+                                {
+                                    None
+                                } else {
+                                    Self::numeric_list_known_len(&meta)
+                                };
+                                if let Some(known_len) = known_len {
                                     if idx_usize >= known_len {
                                         return Err(CompileError::UnsupportedInstruction(format!(
                                             "get index {raw_idx} is out of bounds for stack-backed numeric list with known length {known_len} in eBPF"

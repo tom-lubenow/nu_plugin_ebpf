@@ -1849,6 +1849,7 @@ impl<'a> HirToMirLowering<'a> {
             .insert(global_ptr, global_ptr_ty.clone());
 
         self.reg_metadata.insert(dst.get(), RegMetadata::default());
+        self.get_or_create_metadata(dst).mutable_global_runtime = true;
 
         if let Some(max_len) = global.list_max_len {
             let buffer_size = (max_len.saturating_add(1)) * std::mem::size_of::<i64>();

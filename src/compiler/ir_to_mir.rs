@@ -233,6 +233,8 @@ struct RegMetadata {
     list_buffer: Option<(StackSlotId, usize)>,
     /// Logical semantics for annotated mutable globals and their projected fields.
     annotated_semantics: Option<AnnotatedValueSemantics>,
+    /// Value was loaded from mutable global storage; initializer lengths are not runtime bounds.
+    mutable_global_runtime: bool,
     /// Provenance for pointers that still refer to a concrete map value allocation.
     map_value_origin: Option<MapValueOrigin>,
     /// Inner map template carried by a map-in-map outer lookup result.

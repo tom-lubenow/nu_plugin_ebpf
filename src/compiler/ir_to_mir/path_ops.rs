@@ -593,6 +593,12 @@ impl<'a> HirToMirLowering<'a> {
             .source_reg
             .and_then(|reg| self.get_metadata(reg).cloned());
         let base_trusted_btf = source_meta.as_ref().is_some_and(|meta| meta.trusted_btf);
+        let mutable_global_runtime = self
+            .get_metadata(src_dst)
+            .is_some_and(|meta| meta.mutable_global_runtime)
+            || source_meta
+                .as_ref()
+                .is_some_and(|meta| meta.mutable_global_runtime);
 
         if remaining_members.is_empty() {
             self.emit(MirInst::Copy {
@@ -609,6 +615,7 @@ impl<'a> HirToMirLowering<'a> {
             meta.trusted_btf = base_trusted_btf;
             meta.kernel_btf_field_addr = source_meta.and_then(|meta| meta.kernel_btf_field_addr);
             meta.annotated_semantics = record_field.semantics;
+            meta.mutable_global_runtime = mutable_global_runtime;
             meta.source_var = None;
             self.set_reg_constant_value(src_dst, constant_value);
             return Ok(());
@@ -982,6 +989,9 @@ impl<'a> HirToMirLowering<'a> {
             let base_semantics = self
                 .get_metadata(src_dst)
                 .and_then(|meta| meta.annotated_semantics.clone());
+            let mutable_global_runtime = self
+                .get_metadata(src_dst)
+                .is_some_and(|meta| meta.mutable_global_runtime);
             if self.lower_metadata_numeric_list_path_projection(
                 src_dst,
                 dst_vreg,
@@ -1030,6 +1040,7 @@ impl<'a> HirToMirLowering<'a> {
                     })
                 );
             meta.annotated_semantics = projected_semantics;
+            meta.mutable_global_runtime = mutable_global_runtime;
             meta.kernel_btf_field_addr = None;
             meta.source_var = None;
             self.set_reg_constant_value(src_dst, constant_value);
