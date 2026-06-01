@@ -2190,6 +2190,74 @@ fn make_record_values_then_get_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_record_string_values_then_get_then_starts_with_program(
+    values_decl: DeclId,
+    get_decl: DeclId,
+    starts_with_decl: DeclId,
+    get_index: i64,
+    prefix: &str,
+) -> HirProgram {
+    let mut record = Record::new();
+    record.push("comm", Value::string("nu", Span::test_data()));
+    record.push("exe", Value::string("bash", Span::test_data()));
+
+    let stmts = vec![
+        HirStmt::LoadValue {
+            dst: RegId::new(0),
+            val: Box::new(Value::record(record, Span::test_data())),
+        },
+        HirStmt::Call {
+            decl_id: values_decl,
+            src_dst: RegId::new(1),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(0)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(2),
+            lit: HirLiteral::Int(get_index),
+        },
+        HirStmt::Call {
+            decl_id: get_decl,
+            src_dst: RegId::new(3),
+            args: HirCallArgs {
+                positional: vec![RegId::new(2)],
+                pipeline_input: Some(RegId::new(1)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::LoadValue {
+            dst: RegId::new(4),
+            val: Box::new(Value::string(prefix, Span::test_data())),
+        },
+        HirStmt::Call {
+            decl_id: starts_with_decl,
+            src_dst: RegId::new(5),
+            args: HirCallArgs {
+                positional: vec![RegId::new(4)],
+                pipeline_input: Some(RegId::new(3)),
+                ..HirCallArgs::default()
+            },
+        },
+    ];
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(5) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 6,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_record_columns_then_get_then_starts_with_program(
     columns_decl: DeclId,
     get_decl: DeclId,
@@ -11148,6 +11216,55 @@ fn test_lower_values_rejects_non_integer_metadata_record_field() {
         err.to_string()
             .contains("values supports only integer scalar record fields"),
         "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_values_on_constant_string_record_materializes_fixed_list() {
+    let values_decl = DeclId::new(114);
+    let get_decl = DeclId::new(115);
+    let starts_with_decl = DeclId::new(116);
+    let hir = make_record_string_values_then_get_then_starts_with_program(
+        values_decl,
+        get_decl,
+        starts_with_decl,
+        1,
+        "bash",
+    );
+    let decl_names = HashMap::from([
+        (values_decl, "values".to_string()),
+        (get_decl, "get".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("values should lower compile-time known homogeneous string record fields");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"bash\0")
+            )),
+        "expected values | get 1 to materialize the constant string value"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "record string values followed by get/string predicate should compile through codegen",
     );
 }
 

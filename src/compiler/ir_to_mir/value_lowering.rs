@@ -748,6 +748,7 @@ impl<'a> HirToMirLowering<'a> {
         let meta = self.get_or_create_metadata(dst);
         meta.is_context = false;
         meta.field_type = Some(array_ty);
+        meta.annotated_semantics = Self::fixed_array_value_semantics(values)?;
 
         Ok(())
     }

@@ -36661,6 +36661,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-record-values-string-get"
+        category: "language-core"
+        tags: [aggregate record values list string]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  { comm: "nu" exe: "bash" } | values | get 1 | str starts-with "bash"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-record-columns-get"
         category: "language-core"
         tags: [aggregate record columns list string]

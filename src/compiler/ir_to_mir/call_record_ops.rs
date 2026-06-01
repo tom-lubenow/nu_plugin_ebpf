@@ -580,6 +580,20 @@ impl<'a> HirToMirLowering<'a> {
             ));
         }
 
+        if let Some(nu_protocol::Value::Record { val, .. }) = input_meta.constant_value.as_ref() {
+            let vals = val
+                .iter()
+                .map(|(_key, value)| value.clone())
+                .collect::<Vec<_>>();
+            let value_list = nu_protocol::Value::list(vals, Span::unknown());
+            if !crate::compiler::hir::supports_numeric_constant_list(&value_list)
+                && crate::compiler::hir::supports_fixed_array_constant_list(&value_list)
+            {
+                self.lower_constant_value(src_dst, &value_list)?;
+                return Ok(());
+            }
+        }
+
         for field in &input_meta.record_fields {
             if !Self::metadata_record_values_supported_field(&input_meta, field) {
                 return Err(CompileError::UnsupportedInstruction(format!(
