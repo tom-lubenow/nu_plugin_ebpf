@@ -6357,6 +6357,113 @@ fn test_lower_bytes_length_rejects_string_input() {
     );
 }
 
+fn make_bytes_predicate_program(decl_id: DeclId, input: Vec<u8>, pattern: Vec<u8>) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Binary(input),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Binary(pattern),
+                },
+                HirStmt::Call {
+                    decl_id,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(2) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+#[test]
+fn test_lower_bytes_starts_with_on_binary_returns_true() {
+    let bytes_starts_with_decl = DeclId::new(212);
+    let hir = make_bytes_predicate_program(bytes_starts_with_decl, vec![1, 2, 3], vec![1, 2]);
+    let decl_names = HashMap::from([(bytes_starts_with_decl, "bytes starts-with".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bytes starts-with should lower on literal binaries");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Copy {
+                    src: MirValue::Const(1),
+                    ..
+                }
+            )),
+        "expected bytes starts-with to lower to a true constant"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("bytes starts-with on literal binaries should compile through codegen");
+}
+
+#[test]
+fn test_lower_bytes_ends_with_on_binary_returns_false() {
+    let bytes_ends_with_decl = DeclId::new(213);
+    let hir = make_bytes_predicate_program(bytes_ends_with_decl, vec![1, 2, 3], vec![1, 2]);
+    let decl_names = HashMap::from([(bytes_ends_with_decl, "bytes ends-with".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bytes ends-with should lower on literal binaries");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Copy {
+                    src: MirValue::Const(0),
+                    ..
+                }
+            )),
+        "expected bytes ends-with to lower to a false constant"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("bytes ends-with on literal binaries should compile through codegen");
+}
+
 #[test]
 fn test_lower_select_on_metadata_record_materializes_requested_layout() {
     let select_decl = DeclId::new(94);

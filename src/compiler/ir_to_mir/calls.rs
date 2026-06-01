@@ -2879,6 +2879,70 @@ impl<'a> HirToMirLowering<'a> {
                 self.vreg_type_hints.insert(result_vreg, MirType::I64);
             }
 
+            "bytes starts-with" | "bytes ends-with" => {
+                let input_reg = self
+                    .pipeline_input_reg
+                    .or(src_dst_had_value.then_some(src_dst));
+                let result_vreg = if src_dst_had_value {
+                    self.assign_fresh_vreg(src_dst)
+                } else {
+                    dst_vreg
+                };
+
+                if !self.named_flags.is_empty() || !self.named_args.is_empty() {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{cmd_name} does not accept named flags or arguments in eBPF"
+                    )));
+                }
+                if self.positional_args.len() != 1 {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{cmd_name} accepts exactly one binary pattern argument in eBPF"
+                    )));
+                }
+
+                let input = input_reg
+                    .and_then(|reg| self.get_metadata(reg))
+                    .and_then(|meta| match meta.constant_value.as_ref() {
+                        Some(nu_protocol::Value::Binary { val, .. }) => Some(val.clone()),
+                        _ => None,
+                    })
+                    .ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(format!(
+                            "{cmd_name} requires compile-time known binary input in eBPF"
+                        ))
+                    })?;
+                let (_, pattern_reg) = self.positional_args[0];
+                let pattern = self
+                    .get_metadata(pattern_reg)
+                    .and_then(|meta| match meta.constant_value.as_ref() {
+                        Some(nu_protocol::Value::Binary { val, .. }) => Some(val.clone()),
+                        _ => None,
+                    })
+                    .ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(format!(
+                            "{cmd_name} requires a compile-time known binary pattern in eBPF"
+                        ))
+                    })?;
+                let matched = if cmd_name == "bytes starts-with" {
+                    input.starts_with(&pattern)
+                } else {
+                    input.ends_with(&pattern)
+                };
+
+                self.emit(MirInst::Copy {
+                    dst: result_vreg,
+                    src: MirValue::Const(if matched { 1 } else { 0 }),
+                });
+                self.reset_call_result_metadata(src_dst);
+                let out_meta = self.get_or_create_metadata(src_dst);
+                out_meta.field_type = Some(MirType::Bool);
+                out_meta.constant_value = Some(nu_protocol::Value::bool(
+                    matched,
+                    nu_protocol::Span::unknown(),
+                ));
+                self.vreg_type_hints.insert(result_vreg, MirType::Bool);
+            }
+
             "str length" => {
                 self.lower_string_length(src_dst, dst_vreg, src_dst_had_value)?;
             }

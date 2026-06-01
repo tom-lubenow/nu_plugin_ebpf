@@ -50,6 +50,8 @@ const NU_CLOSURE_COMMANDS: &[&str] = &[
     "is-not-empty",
     "describe",
     "bytes length",
+    "bytes starts-with",
+    "bytes ends-with",
     "str length",
     "str starts-with",
     "str ends-with",

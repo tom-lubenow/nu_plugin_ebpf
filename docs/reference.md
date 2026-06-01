@@ -861,6 +861,7 @@ eBPF layout and verifier bounds are explicit:
 | `is-empty` / `is-not-empty` | Stack-backed lists, tracked strings, literal null, literal list constants, and metadata-backed fixed records |
 | `describe` | No-input or compiler-known inputs, producing a bounded tracked string with Nushell's type description |
 | `bytes length` | Compile-time known binary input, returning its byte length |
+| `bytes starts-with` / `bytes ends-with` | Compile-time known binary input and binary pattern, returning a constant boolean |
 | `str length` | Tracked strings and literal strings, returning the byte length tracked by the string buffer |
 | `str starts-with` | Tracked strings with a compile-time literal prefix, lowered as a bounded stack-buffer prefix comparison; `--ignore-case` is supported for compile-time known input strings |
 | `str ends-with` | Tracked strings with a compile-time known input length and literal suffix, lowered as a fixed-offset stack-buffer suffix comparison; `--ignore-case` is supported for compile-time known input strings |
