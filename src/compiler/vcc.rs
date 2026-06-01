@@ -758,11 +758,12 @@ fn verify_mir_with_subfunction_summaries_impl(
         )]);
     }
     let empty_map_value_types = HashMap::new();
-    let early_errors = check_generic_map_layout_constraints(
+    let mut early_errors = check_generic_map_layout_constraints(
         func,
         types,
         generic_map_value_types.unwrap_or(&empty_map_value_types),
     );
+    early_errors.extend(check_list_scalar_operands(func, types));
     if !early_errors.is_empty() {
         return Err(early_errors);
     }
@@ -949,6 +950,89 @@ fn collect_list_max(func: &MirFunction) -> HashMap<StackSlotId, usize> {
         }
     }
     maxes
+}
+
+fn check_list_scalar_operands(func: &MirFunction, types: &HashMap<VReg, MirType>) -> Vec<VccError> {
+    let mut pointer_regs: HashSet<VReg> = types
+        .iter()
+        .filter_map(|(reg, ty)| {
+            (vcc_type_from_mir(ty).class() == VccTypeClass::Ptr).then_some(*reg)
+        })
+        .collect();
+    let mut errors = Vec::new();
+
+    for block in &func.blocks {
+        for inst in block
+            .instructions
+            .iter()
+            .chain(std::iter::once(&block.terminator))
+        {
+            match inst {
+                MirInst::ListPush { item, .. } if pointer_regs.contains(item) => {
+                    errors.push(VccError::new(
+                        VccErrorKind::TypeMismatch {
+                            expected: VccTypeClass::Scalar,
+                            actual: VccTypeClass::Ptr,
+                        },
+                        "list push item expects scalar",
+                    ));
+                }
+                MirInst::ListGet { idx, .. }
+                    if list_scalar_operand_is_pointer(idx, &pointer_regs) =>
+                {
+                    errors.push(VccError::new(
+                        VccErrorKind::TypeMismatch {
+                            expected: VccTypeClass::Scalar,
+                            actual: VccTypeClass::Ptr,
+                        },
+                        "list index expects scalar",
+                    ));
+                }
+                _ => {}
+            }
+
+            update_list_scalar_pointer_facts(inst, types, &mut pointer_regs);
+        }
+    }
+
+    errors
+}
+
+fn list_scalar_operand_is_pointer(value: &MirValue, pointer_regs: &HashSet<VReg>) -> bool {
+    match value {
+        MirValue::VReg(reg) => pointer_regs.contains(reg),
+        MirValue::StackSlot(_) => true,
+        MirValue::Const(_) => false,
+    }
+}
+
+fn update_list_scalar_pointer_facts(
+    inst: &MirInst,
+    types: &HashMap<VReg, MirType>,
+    pointer_regs: &mut HashSet<VReg>,
+) {
+    let Some(dst) = inst.def() else {
+        return;
+    };
+
+    let type_says_pointer = types
+        .get(&dst)
+        .is_some_and(|ty| vcc_type_from_mir(ty).class() == VccTypeClass::Ptr);
+    let is_pointer = type_says_pointer
+        || match inst {
+            MirInst::Copy { src, .. } => list_scalar_operand_is_pointer(src, pointer_regs),
+            MirInst::ListNew { .. }
+            | MirInst::MapLookup { .. }
+            | MirInst::MapLookupDynamic { .. } => true,
+            MirInst::Phi { args, .. } => args.iter().any(|(_, reg)| pointer_regs.contains(reg)),
+            _ => false,
+        };
+
+    if is_pointer {
+        pointer_regs.insert(dst);
+    } else {
+        pointer_regs.remove(&dst);
+    }
 }
 
 #[cfg(test)]
