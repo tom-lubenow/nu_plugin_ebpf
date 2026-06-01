@@ -3215,6 +3215,110 @@ impl<'a> HirToMirLowering<'a> {
                 )?;
             }
 
+            "bytes add" => {
+                let input_reg = self
+                    .pipeline_input_reg
+                    .or(src_dst_had_value.then_some(src_dst));
+
+                let mut from_end = false;
+                for flag in &self.named_flags {
+                    match flag.as_str() {
+                        "end" => from_end = true,
+                        _ => {
+                            return Err(CompileError::UnsupportedInstruction(
+                                "bytes add currently supports only --end as a flag in eBPF".into(),
+                            ));
+                        }
+                    }
+                }
+                for key in self.named_args.keys() {
+                    if key != "index" {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "bytes add does not support named argument --{key} in eBPF"
+                        )));
+                    }
+                }
+                if self.positional_args.len() != 1 {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "bytes add accepts exactly one binary data argument in eBPF".into(),
+                    ));
+                }
+
+                let input = input_reg
+                    .and_then(|reg| self.get_metadata(reg))
+                    .and_then(|meta| match meta.constant_value.as_ref() {
+                        Some(nu_protocol::Value::Binary { val, .. }) => Some(val.clone()),
+                        _ => None,
+                    })
+                    .ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "bytes add requires compile-time known binary input in eBPF".into(),
+                        )
+                    })?;
+                let (_, data_reg) = self.positional_args[0];
+                let data = self
+                    .get_metadata(data_reg)
+                    .and_then(|meta| match meta.constant_value.as_ref() {
+                        Some(nu_protocol::Value::Binary { val, .. }) => Some(val.clone()),
+                        _ => None,
+                    })
+                    .ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "bytes add requires compile-time known binary data in eBPF".into(),
+                        )
+                    })?;
+
+                let index = if let Some((_, index_reg)) = self.named_args.get("index").copied() {
+                    self.get_metadata(index_reg)
+                        .and_then(|meta| {
+                            meta.literal_int
+                                .or_else(|| match meta.constant_value.as_ref() {
+                                    Some(nu_protocol::Value::Int { val, .. }) => Some(*val),
+                                    _ => None,
+                                })
+                        })
+                        .ok_or_else(|| {
+                            CompileError::UnsupportedInstruction(
+                                "bytes add --index requires a compile-time known integer in eBPF"
+                                    .into(),
+                            )
+                        })?
+                } else {
+                    0
+                };
+                if index < 0 {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "bytes add --index requires a non-negative integer in eBPF".into(),
+                    ));
+                }
+
+                let input_len = input.len();
+                let index = index as usize;
+                let insert_at = if from_end {
+                    input_len.saturating_sub(index)
+                } else if self.named_args.contains_key("index") {
+                    index.min(input_len)
+                } else {
+                    0
+                };
+
+                let mut output = Vec::with_capacity(input.len().saturating_add(data.len()));
+                output.extend_from_slice(&input[..insert_at]);
+                output.extend_from_slice(&data);
+                output.extend_from_slice(&input[insert_at..]);
+                if output.is_empty() {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "bytes add requires a non-empty binary result in eBPF".into(),
+                    ));
+                }
+
+                self.reset_call_result_metadata(src_dst);
+                self.lower_constant_value(
+                    src_dst,
+                    &nu_protocol::Value::binary(output, nu_protocol::Span::unknown()),
+                )?;
+            }
+
             "str length" => {
                 self.lower_string_length(src_dst, dst_vreg, src_dst_had_value)?;
             }

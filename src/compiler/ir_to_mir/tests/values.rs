@@ -7114,6 +7114,209 @@ fn test_lower_bytes_at_rejects_empty_slice() {
     );
 }
 
+fn make_bytes_add_then_starts_with_program(
+    add_decl: DeclId,
+    starts_with_decl: DeclId,
+    input: Vec<u8>,
+    data: Vec<u8>,
+    index: Option<i64>,
+    from_end: bool,
+    expected_prefix: Vec<u8>,
+) -> HirProgram {
+    let mut stmts = vec![
+        HirStmt::LoadLiteral {
+            dst: RegId::new(0),
+            lit: HirLiteral::Binary(input),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: HirLiteral::Binary(data),
+        },
+    ];
+    let mut named = Vec::new();
+    let register_count = 6;
+    if let Some(index) = index {
+        stmts.push(HirStmt::LoadLiteral {
+            dst: RegId::new(2),
+            lit: HirLiteral::Int(index),
+        });
+        named.push((b"index".to_vec(), RegId::new(2)));
+    }
+    stmts.push(HirStmt::Call {
+        decl_id: add_decl,
+        src_dst: RegId::new(3),
+        args: HirCallArgs {
+            positional: vec![RegId::new(1)],
+            named,
+            pipeline_input: Some(RegId::new(0)),
+            flags: if from_end {
+                vec![b"end".to_vec()]
+            } else {
+                Vec::new()
+            },
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(4),
+        lit: HirLiteral::Binary(expected_prefix),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: starts_with_decl,
+        src_dst: RegId::new(5),
+        args: HirCallArgs {
+            positional: vec![RegId::new(4)],
+            pipeline_input: Some(RegId::new(3)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(5) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+#[test]
+fn test_lower_bytes_add_with_index_materializes_inserted_binary() {
+    let bytes_add_decl = DeclId::new(227);
+    let bytes_starts_with_decl = DeclId::new(228);
+    let hir = make_bytes_add_then_starts_with_program(
+        bytes_add_decl,
+        bytes_starts_with_decl,
+        vec![1, 4],
+        vec![2, 3],
+        Some(1),
+        false,
+        vec![1, 2, 3],
+    );
+    let decl_names = HashMap::from([
+        (bytes_add_decl, "bytes add".to_string()),
+        (bytes_starts_with_decl, "bytes starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bytes add should lower compile-time binary input and data");
+
+    assert!(
+        result
+            .readonly_globals
+            .iter()
+            .any(|global| global.data == vec![1, 2, 3, 4]),
+        "expected bytes add to materialize inserted binary rodata"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Copy {
+                    src: MirValue::Const(1),
+                    ..
+                }
+            )),
+        "expected added bytes to satisfy the starts-with predicate"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("bytes add output consumed by bytes starts-with should compile through codegen");
+}
+
+#[test]
+fn test_lower_bytes_add_from_end_materializes_inserted_binary() {
+    let bytes_add_decl = DeclId::new(229);
+    let bytes_starts_with_decl = DeclId::new(230);
+    let hir = make_bytes_add_then_starts_with_program(
+        bytes_add_decl,
+        bytes_starts_with_decl,
+        vec![1, 2, 5],
+        vec![3, 4],
+        Some(1),
+        true,
+        vec![1, 2, 3, 4],
+    );
+    let decl_names = HashMap::from([
+        (bytes_add_decl, "bytes add".to_string()),
+        (bytes_starts_with_decl, "bytes starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bytes add --end should lower compile-time binary input and data");
+
+    assert!(
+        result
+            .readonly_globals
+            .iter()
+            .any(|global| global.data == vec![1, 2, 3, 4, 5]),
+        "expected bytes add --end --index to materialize end-relative insertion"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "bytes add --end output consumed by bytes starts-with should compile through codegen",
+    );
+}
+
+#[test]
+fn test_lower_bytes_add_rejects_negative_index() {
+    let bytes_add_decl = DeclId::new(231);
+    let bytes_starts_with_decl = DeclId::new(232);
+    let hir = make_bytes_add_then_starts_with_program(
+        bytes_add_decl,
+        bytes_starts_with_decl,
+        vec![1, 2],
+        vec![3],
+        Some(-1),
+        false,
+        vec![1],
+    );
+    let decl_names = HashMap::from([
+        (bytes_add_decl, "bytes add".to_string()),
+        (bytes_starts_with_decl, "bytes starts-with".to_string()),
+    ]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("bytes add should reject negative index values");
+
+    assert!(
+        err.to_string()
+            .contains("bytes add --index requires a non-negative integer"),
+        "unexpected error: {err}"
+    );
+}
+
 #[test]
 fn test_lower_select_on_metadata_record_materializes_requested_layout() {
     let select_decl = DeclId::new(94);
