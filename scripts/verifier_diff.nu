@@ -35452,6 +35452,45 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-binary-list-length"
+        category: "language-core"
+        tags: [binary list length]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [0x[01] 0x[02] 0x[03]] | length'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-binary-list-is-empty"
+        category: "language-core"
+        tags: [binary list is-empty]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [0x[01]] | is-empty'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-binary-list-is-not-empty"
+        category: "language-core"
+        tags: [binary list is-not-empty]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [0x[01]] | is-not-empty'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-binary-list-append-collect"
         category: "language-core"
         tags: [binary list append bytes collect]

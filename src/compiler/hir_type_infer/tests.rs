@@ -354,6 +354,52 @@ fn assert_list_push_binary_item_allowed_for_item_command(decl_id: DeclId, decl_n
         .unwrap_or_else(|_| panic!("{decl_name} should allow compile-time binary lists"));
 }
 
+fn assert_list_push_binary_item_allowed_for_pipeline_command(decl_id: DeclId, decl_name: &str) {
+    let mut func = HirFunction {
+        blocks: Vec::new(),
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+
+    let mut block = HirBlock {
+        id: HirBlockId(0),
+        stmts: Vec::new(),
+        terminator: HirTerminator::Return { src: RegId::new(2) },
+    };
+
+    block.stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List { capacity: 1 },
+    });
+    block.stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(1),
+        lit: HirLiteral::Binary(vec![0x01]),
+    });
+    block.stmts.push(HirStmt::ListPush {
+        src_dst: RegId::new(0),
+        item: RegId::new(1),
+    });
+    block.stmts.push(HirStmt::Call {
+        decl_id,
+        src_dst: RegId::new(2),
+        args: HirCallArgs {
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    func.blocks.push(block);
+
+    let program = HirProgram::new(func, HashMap::new(), Vec::new(), None);
+    let decl_names = HashMap::from([(decl_id, decl_name.to_string())]);
+    infer_hir(&program, &decl_names)
+        .unwrap_or_else(|_| panic!("{decl_name} should allow compile-time binary lists"));
+}
+
 fn assert_list_push_binary_item_allowed_for_list_transform(
     decl_id: DeclId,
     decl_name: &str,
@@ -520,16 +566,31 @@ fn test_list_push_binary_item_allowed_for_prepend() {
 }
 
 #[test]
+fn test_list_push_binary_item_allowed_for_length() {
+    assert_list_push_binary_item_allowed_for_pipeline_command(DeclId::new(73), "length");
+}
+
+#[test]
+fn test_list_push_binary_item_allowed_for_is_empty() {
+    assert_list_push_binary_item_allowed_for_pipeline_command(DeclId::new(74), "is-empty");
+}
+
+#[test]
+fn test_list_push_binary_item_allowed_for_is_not_empty() {
+    assert_list_push_binary_item_allowed_for_pipeline_command(DeclId::new(75), "is-not-empty");
+}
+
+#[test]
 fn test_list_push_binary_item_allowed_for_list_transforms() {
     let scenarios = [
-        ("take", 73, Some(HirLiteral::Int(1)), Vec::new()),
-        ("skip", 74, Some(HirLiteral::Int(0)), Vec::new()),
-        ("drop", 75, Some(HirLiteral::Int(0)), Vec::new()),
-        ("first", 76, Some(HirLiteral::Int(1)), Vec::new()),
-        ("last", 77, Some(HirLiteral::Int(1)), Vec::new()),
-        ("reverse", 78, None, Vec::new()),
-        ("uniq", 79, None, Vec::new()),
-        ("compact", 80, None, vec![b"empty".to_vec()]),
+        ("take", 76, Some(HirLiteral::Int(1)), Vec::new()),
+        ("skip", 77, Some(HirLiteral::Int(0)), Vec::new()),
+        ("drop", 78, Some(HirLiteral::Int(0)), Vec::new()),
+        ("first", 79, Some(HirLiteral::Int(1)), Vec::new()),
+        ("last", 80, Some(HirLiteral::Int(1)), Vec::new()),
+        ("reverse", 81, None, Vec::new()),
+        ("uniq", 82, None, Vec::new()),
+        ("compact", 83, None, vec![b"empty".to_vec()]),
     ];
 
     for (decl_name, decl_id, positional, flags) in scenarios {
@@ -545,7 +606,7 @@ fn test_list_push_binary_item_allowed_for_list_transforms() {
 #[test]
 fn test_list_push_binary_item_allowed_for_find() {
     assert_list_push_binary_item_allowed_for_list_transform(
-        DeclId::new(81),
+        DeclId::new(84),
         "find",
         vec![HirLiteral::Binary(vec![0x01])],
         Vec::new(),
@@ -555,9 +616,9 @@ fn test_list_push_binary_item_allowed_for_find() {
 #[test]
 fn test_list_push_binary_item_allowed_for_item_access() {
     let scenarios = [
-        ("first", 82, None),
-        ("last", 83, None),
-        ("get", 84, Some(0)),
+        ("first", 85, None),
+        ("last", 86, None),
+        ("get", 87, Some(0)),
     ];
 
     for (decl_name, decl_id, index) in scenarios {

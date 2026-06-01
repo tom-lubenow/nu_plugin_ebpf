@@ -9333,15 +9333,15 @@ fn assert_no_runtime_list_operations(program: &MirProgram, context: &str) {
     );
 }
 
-fn assert_binary_starts_with_folded_true(program: &MirProgram, context: &str) {
-    let returns_true = program
+fn assert_program_returns_constant(program: &MirProgram, expected: i64, context: &str) {
+    let returns_expected = program
         .main
         .blocks
         .iter()
         .any(|block| match &block.terminator {
             MirInst::Return {
                 val: Some(MirValue::Const(value)),
-            } => *value == 1,
+            } => *value == expected,
             MirInst::Return {
                 val: Some(MirValue::VReg(return_vreg)),
             } => program
@@ -9354,17 +9354,69 @@ fn assert_binary_starts_with_folded_true(program: &MirProgram, context: &str) {
                         inst,
                         MirInst::Copy {
                             dst,
-                            src: MirValue::Const(1),
+                            src: MirValue::Const(value),
                         } if dst == return_vreg
+                            && *value == expected
                     )
                 }),
             _ => false,
         });
 
     assert!(
-        returns_true,
-        "expected {context} to prove the bytes starts-with predicate true"
+        returns_expected,
+        "expected {context} to return constant {expected}"
     );
+}
+
+fn assert_binary_starts_with_folded_true(program: &MirProgram, context: &str) {
+    assert_program_returns_constant(program, 1, context);
+}
+
+fn make_binary_list_builder_pipeline_call_program(decl_id: DeclId, items: &[&[u8]]) -> HirProgram {
+    let item_count = items.len();
+    let item_count_u32 = u32::try_from(item_count).expect("test binary-list length fits in u32");
+    let mut stmts = vec![HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List {
+            capacity: item_count,
+        },
+    }];
+
+    for (index, item) in items.iter().enumerate() {
+        let item_reg = RegId::new(u32::try_from(index).expect("test index fits in u32") + 2);
+        stmts.push(HirStmt::LoadLiteral {
+            dst: item_reg,
+            lit: HirLiteral::Binary(item.to_vec()),
+        });
+        stmts.push(HirStmt::ListPush {
+            src_dst: RegId::new(0),
+            item: item_reg,
+        });
+    }
+
+    stmts.push(HirStmt::Call {
+        decl_id,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: item_count_u32 + 2,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
 fn make_binary_list_builder_transform_collect_then_starts_with_program(
@@ -9708,6 +9760,69 @@ fn test_lower_bytes_collect_with_separator_materializes_joined_binary() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("bytes collect separator output consumed by bytes starts-with should compile");
+}
+
+#[test]
+fn test_lower_length_on_binary_list_builder_uses_constant_length() {
+    let length_decl = DeclId::new(386);
+    let hir =
+        make_binary_list_builder_pipeline_call_program(length_decl, &[&[0x01], &[0x02], &[0x03]]);
+    let decl_names = HashMap::from([(length_decl, "length".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("length should consume compile-time binary-list builders");
+
+    assert_program_returns_constant(&result.program, 3, "binary-list length");
+    assert_no_runtime_list_operations(&result.program, "compile-time binary-list length");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("length binary-list builder result should compile through codegen");
+}
+
+#[test]
+fn test_lower_empty_predicates_on_binary_list_builder_use_constant_length() {
+    let scenarios = [("is-empty", 0), ("is-not-empty", 1)];
+
+    for (index, (command, expected)) in scenarios.into_iter().enumerate() {
+        let predicate_decl = DeclId::new(387 + index);
+        let hir = make_binary_list_builder_pipeline_call_program(
+            predicate_decl,
+            &[&[0x01], &[0x02], &[0x03]],
+        );
+        let decl_names = HashMap::from([(predicate_decl, command.to_string())]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("{command} should consume compile-time binary-list builders: {err}")
+        });
+
+        assert_program_returns_constant(
+            &result.program,
+            expected,
+            &format!("binary-list {command}"),
+        );
+        assert_no_runtime_list_operations(
+            &result.program,
+            &format!("compile-time binary-list {command}"),
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("{command} binary-list builder result should compile through codegen: {err}")
+            });
+    }
 }
 
 #[test]
