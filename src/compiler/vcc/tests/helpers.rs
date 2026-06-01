@@ -3134,6 +3134,33 @@ fn test_verify_mir_bpf_spin_lock_rejects_second_lock() {
 }
 
 #[test]
+fn test_verify_mir_for_program_bpf_spin_lock_policy() {
+    let mut lock_ret = VReg(0);
+    let (func, lock) = bpf_spin_lock_guarded_function(|func, block, lock| {
+        lock_ret = func.alloc_vreg();
+        func.block_mut(block)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: lock_ret,
+                helper: BpfHelper::SpinLock as u32,
+                args: vec![MirValue::VReg(lock)],
+            });
+        func.block_mut(block).terminator = MirInst::Return { val: None };
+    });
+    let types = bpf_spin_lock_types(lock, &[(lock_ret, MirType::I64)]);
+
+    let err = verify_mir_for_program(&func, &types, EbpfProgramType::SocketFilter.info())
+        .expect_err("expected socket_filter bpf_spin_lock policy rejection");
+    assert!(
+        err.iter().any(|e| {
+            e.message.contains("helper 'bpf_spin_lock' is only valid") && e.message.contains("xdp")
+        }),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_bpf_spin_lock_rejects_calls_while_held() {
     let mut lock_ret = VReg(0);
     let mut helper_ret = VReg(0);
