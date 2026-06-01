@@ -1959,13 +1959,13 @@ impl<'a> HirToMirLowering<'a> {
             let vreg = self.get_vreg(*reg);
             self.named_args.insert(name, (vreg, *reg));
         }
-        for (name, _) in &args.parser_info {
+        for (name, info) in &args.parser_info {
             let name = std::str::from_utf8(name)
                 .map_err(|_| {
                     CompileError::UnsupportedInstruction("Invalid parser info name".into())
                 })?
                 .to_string();
-            self.parser_info_args.push(name);
+            self.parser_info_args.push((name, info.clone()));
         }
         for flag in &args.flags {
             let flag = std::str::from_utf8(flag)

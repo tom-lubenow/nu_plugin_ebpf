@@ -372,7 +372,7 @@ pub struct HirToMirLowering<'a> {
     /// Named arguments with values for the next call (e.g., --count 5)
     named_args: HashMap<String, (VReg, RegId)>,
     /// Parser-info arguments attached by Nushell for syntax-sensitive options.
-    parser_info_args: Vec<String>,
+    parser_info_args: Vec<(String, Box<nu_protocol::ast::Expression>)>,
     /// Variable mappings for inlined functions (VarId -> VReg)
     var_mappings: HashMap<VarId, VReg>,
     /// Preserved metadata for variables that have been stored.

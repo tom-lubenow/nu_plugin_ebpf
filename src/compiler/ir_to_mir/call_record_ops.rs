@@ -51,8 +51,168 @@ impl<'a> HirToMirLowering<'a> {
             .copied()
     }
 
-    fn has_rename_block_arg(&self) -> bool {
-        self.named_args.contains_key("block") || self.named_args.contains_key("b")
+    fn rename_block_arg(&self) -> Result<Option<NuBlockId>, CompileError> {
+        let mut block_id = None;
+        if let Some((_, reg)) = self
+            .named_args
+            .get("block")
+            .or_else(|| self.named_args.get("b"))
+        {
+            block_id = Some(
+                self.get_metadata(*reg)
+                    .and_then(|meta| meta.closure_block_id)
+                    .ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "rename --block requires a compile-time closure in eBPF".into(),
+                        )
+                    })?,
+            );
+        }
+
+        for (name, expr) in &self.parser_info_args {
+            if !matches!(name.as_str(), "block" | "b") {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "rename does not accept parser info --{name} in eBPF"
+                )));
+            }
+            let parser_block_id = expr.as_block().ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "rename --block requires a compile-time closure in eBPF".into(),
+                )
+            })?;
+            if let Some(existing) = block_id {
+                if existing != parser_block_id {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "rename --block accepts exactly one closure in eBPF".into(),
+                    ));
+                }
+            } else {
+                block_id = Some(parser_block_id);
+            }
+        }
+
+        Ok(block_id)
+    }
+
+    fn rename_block_string_transform_commands(
+        &self,
+        block_id: NuBlockId,
+    ) -> Result<Vec<String>, CompileError> {
+        let hir = self.closure_irs.get(&block_id).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "rename --block closure block {} not found",
+                block_id.get()
+            ))
+        })?;
+        if hir.blocks.len() != 1 {
+            return Err(CompileError::UnsupportedInstruction(
+                "rename --block supports only a straight-line string transform closure in eBPF"
+                    .into(),
+            ));
+        }
+
+        let mut commands = Vec::new();
+        for block in &hir.blocks {
+            for stmt in &block.stmts {
+                match stmt {
+                    HirStmt::LoadVariable { .. }
+                    | HirStmt::StoreVariable { .. }
+                    | HirStmt::DropVariable { .. }
+                    | HirStmt::Move { .. }
+                    | HirStmt::Clone { .. }
+                    | HirStmt::Collect { .. }
+                    | HirStmt::Span { .. }
+                    | HirStmt::Drop { .. }
+                    | HirStmt::Drain { .. }
+                    | HirStmt::DrainIfEnd { .. }
+                    | HirStmt::RedirectOut { .. }
+                    | HirStmt::RedirectErr { .. }
+                    | HirStmt::CheckErrRedirected { .. } => {}
+                    HirStmt::Call { decl_id, args, .. } => {
+                        if !args.positional.is_empty()
+                            || !args.rest.is_empty()
+                            || !args.named.is_empty()
+                            || !args.flags.is_empty()
+                            || !args.parser_info.is_empty()
+                        {
+                            return Err(CompileError::UnsupportedInstruction(
+                                "rename --block supports only no-argument string transform commands in eBPF"
+                                    .into(),
+                            ));
+                        }
+                        let command = self
+                            .decl_names
+                            .get(decl_id)
+                            .map(String::as_str)
+                            .ok_or_else(|| {
+                                CompileError::UnsupportedInstruction(format!(
+                                    "rename --block closure command {} is unknown",
+                                    decl_id.get()
+                                ))
+                            })?;
+                        if !matches!(
+                            command,
+                            "str downcase"
+                                | "str upcase"
+                                | "str reverse"
+                                | "str capitalize"
+                                | "str camel-case"
+                                | "str kebab-case"
+                                | "str pascal-case"
+                                | "str screaming-snake-case"
+                                | "str snake-case"
+                                | "str title-case"
+                        ) {
+                            return Err(CompileError::UnsupportedInstruction(format!(
+                                "rename --block supports only known string transform commands in eBPF, got '{command}'"
+                            )));
+                        }
+                        commands.push(command.to_string());
+                    }
+                    _ => {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "rename --block supports only a straight-line string transform closure in eBPF"
+                                .into(),
+                        ));
+                    }
+                }
+            }
+
+            if !matches!(
+                block.terminator,
+                HirTerminator::Return { .. } | HirTerminator::ReturnEarly { .. }
+            ) {
+                return Err(CompileError::UnsupportedInstruction(
+                    "rename --block supports only a straight-line string transform closure in eBPF"
+                        .into(),
+                ));
+            }
+        }
+
+        if commands.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(
+                "rename --block requires at least one string transform command in eBPF".into(),
+            ));
+        }
+        Ok(commands)
+    }
+
+    fn rename_block_field_names(
+        &self,
+        block_id: NuBlockId,
+        fields: &[RecordField],
+    ) -> Result<Vec<String>, CompileError> {
+        let commands = self.rename_block_string_transform_commands(block_id)?;
+        fields
+            .iter()
+            .map(|field| {
+                commands
+                    .iter()
+                    .try_fold(field.name.clone(), |name, command| {
+                        Self::known_string_transform(command, name)
+                    })
+            })
+            .collect()
     }
 
     fn rename_column_target_name(value: &nu_protocol::Value) -> Result<String, CompileError> {
@@ -343,16 +503,7 @@ impl<'a> HirToMirLowering<'a> {
             ));
         }
 
-        if self.has_rename_block_arg() {
-            return Err(CompileError::UnsupportedInstruction(
-                "rename --block is not supported in eBPF".into(),
-            ));
-        }
-        if !self.parser_info_args.is_empty() {
-            return Err(CompileError::UnsupportedInstruction(
-                "rename --block is not supported in eBPF".into(),
-            ));
-        }
+        let block_rename = self.rename_block_arg()?;
         for name in self.named_args.keys() {
             if !matches!(name.as_str(), "column" | "c" | "block" | "b") {
                 return Err(CompileError::UnsupportedInstruction(format!(
@@ -361,7 +512,19 @@ impl<'a> HirToMirLowering<'a> {
             }
         }
 
-        let column_renames = if let Some((_, column_reg)) = self.rename_column_arg() {
+        let column_arg = self.rename_column_arg();
+        if block_rename.is_some() && column_arg.is_some() {
+            return Err(CompileError::UnsupportedInstruction(
+                "rename --block cannot be combined with --column in eBPF".into(),
+            ));
+        }
+        if block_rename.is_some() && !self.positional_args.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(
+                "rename --block cannot be combined with positional field names in eBPF".into(),
+            ));
+        }
+
+        let column_renames = if let Some((_, column_reg)) = column_arg {
             if !self.positional_args.is_empty() {
                 return Err(CompileError::UnsupportedInstruction(
                     "rename --column cannot be combined with positional field names in eBPF".into(),
@@ -393,8 +556,16 @@ impl<'a> HirToMirLowering<'a> {
             ));
         }
 
+        let block_names = block_rename
+            .map(|block_id| self.rename_block_field_names(block_id, &input_meta.record_fields))
+            .transpose()?;
+
         let mut renamed_fields = input_meta.record_fields.clone();
-        if let Some(column_renames) = column_renames.as_ref() {
+        if let Some(block_names) = block_names.as_ref() {
+            for (field, name) in renamed_fields.iter_mut().zip(block_names) {
+                field.name = name.clone();
+            }
+        } else if let Some(column_renames) = column_renames.as_ref() {
             for (source, target) in column_renames {
                 let mut found = false;
                 for field in &mut renamed_fields {
@@ -419,7 +590,9 @@ impl<'a> HirToMirLowering<'a> {
             Some(nu_protocol::Value::Record { val, .. }) => {
                 let mut out = nu_protocol::Record::new();
                 for (idx, (key, value)) in val.iter().enumerate() {
-                    let out_key = if let Some(column_renames) = column_renames.as_ref() {
+                    let out_key = if let Some(block_names) = block_names.as_ref() {
+                        block_names.get(idx).unwrap_or(key).clone()
+                    } else if let Some(column_renames) = column_renames.as_ref() {
                         column_renames
                             .iter()
                             .find_map(|(source, target)| (source == key).then_some(target.clone()))

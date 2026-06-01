@@ -1364,7 +1364,10 @@ impl<'a> HirToMirLowering<'a> {
         self.lower_known_string_result(src_dst, result_vreg, output)
     }
 
-    fn known_string_transform(command: &str, input: String) -> Result<String, CompileError> {
+    pub(super) fn known_string_transform(
+        command: &str,
+        input: String,
+    ) -> Result<String, CompileError> {
         match command {
             "str downcase" => Ok(input.to_lowercase()),
             "str upcase" => Ok(input.to_uppercase()),

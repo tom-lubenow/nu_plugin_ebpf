@@ -2,13 +2,13 @@ use super::*;
 use crate::compiler::compile_mir_to_ebpf;
 use crate::compiler::hir::{
     HirBlock, HirBlockId, HirFunction, HirLiteral, HirProgram, HirStmt, HirTerminator,
-    lower_ir_to_hir,
+    extract_closure_block_ids, lower_ir_to_hir,
 };
 use crate::compiler::mir::{BinOpKind, MirInst, MirValue};
 use crate::compiler::verifier_types::verify_mir;
-use nu_protocol::ast::{Comparison, Math, Operator};
-use nu_protocol::ir::{Instruction, IrBlock, Literal};
-use nu_protocol::{RegId, Span, VarId};
+use nu_protocol::ast::{Comparison, Expr, Expression, Math, Operator};
+use nu_protocol::ir::{DataSlice, Instruction, IrBlock, Literal};
+use nu_protocol::{BlockId as NuBlockId, RegId, Span, SpanId, Type, VarId};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -22,6 +22,22 @@ fn make_ir_block(instructions: Vec<Instruction>) -> IrBlock {
         register_count: 4,
         file_count: 0,
     }
+}
+
+#[test]
+fn test_extract_closure_block_ids_includes_parser_info_blocks() {
+    let block_id = NuBlockId::new(7);
+    let ir = make_ir_block(vec![Instruction::PushParserInfo {
+        name: DataSlice::empty(),
+        info: Box::new(Expression {
+            expr: Expr::Closure(block_id),
+            span: Span::test_data(),
+            span_id: SpanId::new(0),
+            ty: Type::Closure,
+        }),
+    }]);
+
+    assert_eq!(extract_closure_block_ids(&ir), vec![block_id]);
 }
 
 #[test]

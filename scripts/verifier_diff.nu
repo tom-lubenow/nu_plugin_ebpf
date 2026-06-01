@@ -36618,18 +36618,18 @@ const FIXTURES = [
         error_contains: "rename --column cannot find record field 'cpu'"
     }
     {
-        name: "core-record-rename-block-reject"
+        name: "core-record-rename-block-fields"
         category: "language-core"
         tags: [aggregate record rename block]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  { pid: 7 } | rename --block { str upcase }'
+            '  let rec = ({ pid: 7 cpu: 2 } | rename --block { str upcase })'
+            '  $rec.PID'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "rename --block is not supported in eBPF"
+        local: "accept"
+        kernel: "accept"
     }
     {
         name: "core-record-merge-add-field"

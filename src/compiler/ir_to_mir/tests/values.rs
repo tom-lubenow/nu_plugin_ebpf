@@ -5,9 +5,11 @@ use crate::compiler::hir::{
 use crate::compiler::mir::{AddressSpace, MirProgram};
 use crate::compiler::passes::optimize_with_ssa_hints;
 use crate::compiler::{EbpfProgramType, compile_mir_to_ebpf_with_hints};
-use nu_protocol::ast::{CellPath, Comparison, Operator, PathMember, RangeInclusion};
+use nu_protocol::ast::{
+    CellPath, Comparison, Expr, Expression, Operator, PathMember, RangeInclusion,
+};
 use nu_protocol::casing::Casing;
-use nu_protocol::{DeclId, IN_VARIABLE_ID, Record, RegId, Span, Value, VarId};
+use nu_protocol::{DeclId, IN_VARIABLE_ID, Record, RegId, Span, SpanId, Type, Value, VarId};
 use std::collections::HashMap;
 
 fn string_member(name: &str) -> PathMember {
@@ -1949,6 +1951,90 @@ fn make_record_rename_column_then_field_program(
         file_count: 0,
     };
     HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_record_rename_block_then_field_program(
+    rename_decl: DeclId,
+    transform_decl: DeclId,
+    block_id: nu_protocol::BlockId,
+    return_field: &str,
+) -> HirProgram {
+    let mut rec = Record::new();
+    rec.push("pid", Value::int(7, Span::test_data()));
+    rec.push("cpu", Value::int(2, Span::test_data()));
+    rec.push("ok", Value::bool(true, Span::test_data()));
+
+    let path_reg = RegId::new(2);
+    let stmts = vec![
+        HirStmt::LoadValue {
+            dst: RegId::new(0),
+            val: Box::new(Value::record(rec, Span::test_data())),
+        },
+        HirStmt::Call {
+            decl_id: rename_decl,
+            src_dst: RegId::new(1),
+            args: HirCallArgs {
+                parser_info: vec![(
+                    b"block".to_vec(),
+                    Box::new(Expression {
+                        expr: Expr::Closure(block_id),
+                        span: Span::test_data(),
+                        span_id: SpanId::new(0),
+                        ty: Type::Closure,
+                    }),
+                )],
+                pipeline_input: Some(RegId::new(0)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::LoadLiteral {
+            dst: path_reg,
+            lit: HirLiteral::CellPath(Box::new(CellPath {
+                members: vec![string_member(return_field)],
+            })),
+        },
+        HirStmt::FollowCellPath {
+            src_dst: RegId::new(1),
+            path: path_reg,
+        },
+    ];
+
+    let main = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+
+    let closure = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(1),
+            stmts: vec![HirStmt::Call {
+                decl_id: transform_decl,
+                src_dst: RegId::new(0),
+                args: HirCallArgs {
+                    pipeline_input: Some(RegId::new(0)),
+                    ..HirCallArgs::default()
+                },
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(1),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 1,
+        file_count: 0,
+    };
+
+    HirProgram::new(main, HashMap::from([(block_id, closure)]), vec![], None)
 }
 
 fn make_record_set_then_field_program(
@@ -11177,8 +11263,34 @@ fn test_lower_rename_column_missing_metadata_record_field_is_rejected() {
 }
 
 #[test]
+fn test_lower_rename_block_metadata_record_fields_with_string_transform() {
+    let rename_decl = DeclId::new(107);
+    let upcase_decl = DeclId::new(108);
+    let block_id = nu_protocol::BlockId::new(1);
+    let hir =
+        make_record_rename_block_then_field_program(rename_decl, upcase_decl, block_id, "PID");
+    let decl_names = HashMap::from([
+        (rename_decl, "rename".to_string()),
+        (upcase_decl, "str upcase".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("rename --block should rename metadata-backed record fields with a string transform");
+
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("rename --block field projection should compile through codegen");
+}
+
+#[test]
 fn test_lower_merge_overwrites_metadata_record_field() {
-    let merge_decl = DeclId::new(107);
+    let merge_decl = DeclId::new(109);
     let hir = make_record_merge_then_field_program(merge_decl, &[("pid", 9), ("mem", 4)], "pid");
     let decl_names = HashMap::from([(merge_decl, "merge".to_string())]);
 

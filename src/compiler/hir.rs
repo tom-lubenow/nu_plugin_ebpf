@@ -1219,8 +1219,8 @@ pub fn extract_closure_block_ids(ir_block: &IrBlock) -> Vec<NuBlockId> {
     let mut block_ids = Vec::new();
 
     for instruction in &ir_block.instructions {
-        if let Instruction::LoadLiteral { lit, .. } = instruction {
-            match lit {
+        match instruction {
+            Instruction::LoadLiteral { lit, .. } => match lit {
                 Literal::Closure(block_id)
                 | Literal::Block(block_id)
                 | Literal::RowCondition(block_id) => {
@@ -1229,7 +1229,15 @@ pub fn extract_closure_block_ids(ir_block: &IrBlock) -> Vec<NuBlockId> {
                     }
                 }
                 _ => {}
+            },
+            Instruction::PushParserInfo { info, .. } => {
+                if let Some(block_id) = info.as_block()
+                    && !block_ids.contains(&block_id)
+                {
+                    block_ids.push(block_id);
+                }
             }
+            _ => {}
         }
     }
 
