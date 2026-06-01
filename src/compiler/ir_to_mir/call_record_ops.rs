@@ -649,9 +649,13 @@ impl<'a> HirToMirLowering<'a> {
                     "columns requires record input with compiler-known fields in eBPF".into(),
                 )
             })?;
-        if input_meta.record_fields.is_empty() {
+        let input_is_known_empty_record = matches!(
+            input_meta.constant_value.as_ref(),
+            Some(nu_protocol::Value::Record { val, .. }) if val.is_empty()
+        );
+        if input_meta.record_fields.is_empty() && !input_is_known_empty_record {
             return Err(CompileError::UnsupportedInstruction(
-                "columns requires non-empty record input with compiler-known fields in eBPF".into(),
+                "columns requires record input with compiler-known fields in eBPF".into(),
             ));
         }
         if input_meta.record_fields.len() > MAX_RECORD_COLUMNS_RESULTS {

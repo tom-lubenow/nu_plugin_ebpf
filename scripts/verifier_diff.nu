@@ -36674,6 +36674,32 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-record-columns-empty-length"
+        category: "language-core"
+        tags: [aggregate record columns list empty]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  {} | columns | length'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-record-values-empty-length"
+        category: "language-core"
+        tags: [aggregate record values list empty]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  {} | values | length'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-describe-known-record"
         category: "language-core"
         tags: [describe aggregate record string]

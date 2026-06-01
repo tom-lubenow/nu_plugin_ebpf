@@ -11200,8 +11200,9 @@ fn test_lower_columns_on_metadata_record_materializes_field_name_list() {
 }
 
 #[test]
-fn test_lower_columns_rejects_empty_metadata_record() {
+fn test_lower_columns_on_empty_metadata_record_materializes_empty_list() {
     let columns_decl = DeclId::new(205);
+    let length_decl = DeclId::new(206);
     let func = HirFunction {
         blocks: vec![HirBlock {
             id: HirBlockId(0),
@@ -11218,20 +11219,31 @@ fn test_lower_columns_rejects_empty_metadata_record() {
                         ..HirCallArgs::default()
                     },
                 },
+                HirStmt::Call {
+                    decl_id: length_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(1)),
+                        ..HirCallArgs::default()
+                    },
+                },
             ],
-            terminator: HirTerminator::Return { src: RegId::new(1) },
+            terminator: HirTerminator::Return { src: RegId::new(2) },
         }],
         entry: HirBlockId(0),
         spans: Vec::new(),
         ast: Vec::new(),
         comments: Vec::new(),
-        register_count: 2,
+        register_count: 3,
         file_count: 0,
     };
     let hir = HirProgram::new(func, HashMap::new(), vec![], None);
-    let decl_names = HashMap::from([(columns_decl, "columns".to_string())]);
+    let decl_names = HashMap::from([
+        (columns_decl, "columns".to_string()),
+        (length_decl, "length".to_string()),
+    ]);
 
-    let err = lower_hir_to_mir_with_hints(
+    let result = lower_hir_to_mir_with_hints(
         &hir,
         None,
         &decl_names,
@@ -11239,12 +11251,11 @@ fn test_lower_columns_rejects_empty_metadata_record() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("columns on empty metadata-backed records should be rejected");
+    .expect("columns on empty metadata-backed records should lower as an empty list");
 
-    assert!(
-        err.to_string().contains("requires non-empty record input"),
-        "unexpected error: {err}"
-    );
+    assert_program_returns_constant(&result.program, 0, "empty record columns length");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("empty record columns followed by length should compile through codegen");
 }
 
 #[test]

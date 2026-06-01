@@ -1203,34 +1203,41 @@ impl<'a> HirToMirLowering<'a> {
             elem: Box::new(elem_ty.clone()),
             len: outputs.len(),
         };
-        let mut data = vec![0u8; array_ty.size()];
-        for (index, output) in outputs.iter().enumerate() {
-            let offset = index * elem_ty.size();
-            data[offset..offset + 8].copy_from_slice(&(output.len() as u64).to_le_bytes());
-            data[offset + 8..offset + 8 + output.len()].copy_from_slice(output.as_bytes());
-        }
-
-        let symbol = self.alloc_readonly_global_name();
-        self.readonly_globals.push(ReadonlyGlobal {
-            name: symbol.clone(),
-            data,
-        });
-        let global_vreg = self.func.alloc_vreg();
-        self.emit(MirInst::LoadGlobal {
-            dst: global_vreg,
-            symbol,
-            ty: array_ty.clone(),
-        });
         let base_runtime_ty = MirType::Ptr {
             pointee: Box::new(array_ty.clone()),
             address_space: AddressSpace::Map,
         };
-        self.emit(MirInst::Copy {
-            dst: result_vreg,
-            src: MirValue::VReg(global_vreg),
-        });
-        self.vreg_type_hints
-            .insert(global_vreg, base_runtime_ty.clone());
+        if outputs.is_empty() {
+            self.emit(MirInst::Copy {
+                dst: result_vreg,
+                src: MirValue::Const(0),
+            });
+        } else {
+            let mut data = vec![0u8; array_ty.size()];
+            for (index, output) in outputs.iter().enumerate() {
+                let offset = index * elem_ty.size();
+                data[offset..offset + 8].copy_from_slice(&(output.len() as u64).to_le_bytes());
+                data[offset + 8..offset + 8 + output.len()].copy_from_slice(output.as_bytes());
+            }
+
+            let symbol = self.alloc_readonly_global_name();
+            self.readonly_globals.push(ReadonlyGlobal {
+                name: symbol.clone(),
+                data,
+            });
+            let global_vreg = self.func.alloc_vreg();
+            self.emit(MirInst::LoadGlobal {
+                dst: global_vreg,
+                symbol,
+                ty: array_ty.clone(),
+            });
+            self.emit(MirInst::Copy {
+                dst: result_vreg,
+                src: MirValue::VReg(global_vreg),
+            });
+            self.vreg_type_hints
+                .insert(global_vreg, base_runtime_ty.clone());
+        }
         self.vreg_type_hints.insert(result_vreg, base_runtime_ty);
 
         self.reset_call_result_metadata(src_dst);
