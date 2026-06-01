@@ -14114,6 +14114,23 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "global-define-type-list-builder-initializer"
+        category: "globals"
+        tags: [globals list append global-define accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let initial = ([] | append 11 | append 22)'
+            '  $initial | global-define --type "list:int:4" samples'
+            '  let samples = (global-get samples)'
+            '  ($samples | get 1) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "global-get-before-later-global-define-data"
         category: "globals"
         tags: [globals scalar forward global-define accept]
