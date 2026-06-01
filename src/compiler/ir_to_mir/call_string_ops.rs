@@ -1376,7 +1376,7 @@ impl<'a> HirToMirLowering<'a> {
             })
     }
 
-    fn lower_known_string_result(
+    pub(super) fn lower_known_string_result(
         &mut self,
         src_dst: RegId,
         result_vreg: VReg,
@@ -1389,6 +1389,57 @@ impl<'a> HirToMirLowering<'a> {
             Some(nu_protocol::Value::string(output, Span::unknown())),
         );
         Ok(())
+    }
+
+    pub(super) fn lower_describe(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+    ) -> Result<(), CompileError> {
+        let input_reg = self
+            .pipeline_input_reg
+            .or(src_dst_had_value.then_some(src_dst));
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+
+        if !self.named_flags.is_empty()
+            || !self.named_args.is_empty()
+            || !self.positional_args.is_empty()
+        {
+            return Err(CompileError::UnsupportedInstruction(
+                "describe does not accept arguments in eBPF".into(),
+            ));
+        }
+
+        let output = if let Some(input_reg) = input_reg {
+            let meta = self.get_metadata(input_reg).ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "describe requires compile-time known input in eBPF".into(),
+                )
+            })?;
+            let value = meta.constant_value.as_ref().ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "describe requires compile-time known input in eBPF".into(),
+                )
+            })?;
+            value.get_type().to_string()
+        } else {
+            "nothing".to_string()
+        };
+
+        if output.len().saturating_add(1) > MAX_STRING_SIZE {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "describe output is {} bytes; eBPF lowering supports at most {} bytes",
+                output.len(),
+                MAX_STRING_SIZE - 1
+            )));
+        }
+
+        self.lower_known_string_result(src_dst, result_vreg, output)
     }
 
     fn lower_bool_result(

@@ -35929,6 +35929,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-describe-known-record"
+        category: "language-core"
+        tags: [describe aggregate record string]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  { pid: 7 cpu: 2 } | describe | str starts-with "record<pid: int, cpu: int>"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-record-values-non-integer-reject"
         category: "language-core"
         tags: [aggregate record values reject]

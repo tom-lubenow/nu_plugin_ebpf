@@ -702,6 +702,88 @@ fn make_string_command_then_get_then_starts_with_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_describe_then_starts_with_program(
+    describe_decl: DeclId,
+    starts_with_decl: DeclId,
+    value: Value,
+    prefix: &str,
+) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(value),
+                },
+                HirStmt::Call {
+                    decl_id: describe_decl,
+                    src_dst: RegId::new(1),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadValue {
+                    dst: RegId::new(2),
+                    val: Box::new(Value::string(prefix, Span::test_data())),
+                },
+                HirStmt::Call {
+                    decl_id: starts_with_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(2)],
+                        pipeline_input: Some(RegId::new(1)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(3) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 4,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_describe_no_input_then_length_program(
+    describe_decl: DeclId,
+    length_decl: DeclId,
+) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::Call {
+                    decl_id: describe_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs::default(),
+                },
+                HirStmt::Call {
+                    decl_id: length_decl,
+                    src_dst: RegId::new(1),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 2,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_string_arg_pipeline_call_program(decl_id: DeclId, value: &str, arg: &str) -> HirProgram {
     make_string_arg_pipeline_call_program_with_flags(decl_id, value, arg, Vec::new())
 }
@@ -3813,6 +3895,95 @@ fn test_lower_str_expand_zero_padded_range_preserves_item_content() {
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
         "str expand range get item consumed by str starts-with should compile through codegen",
     );
+}
+
+#[test]
+fn test_lower_describe_on_known_record_materializes_type_string() {
+    let describe_decl = DeclId::new(206);
+    let starts_with_decl = DeclId::new(207);
+    let mut record = Record::new();
+    record.push("pid", Value::int(7, Span::test_data()));
+    record.push("cpu", Value::int(2, Span::test_data()));
+    let hir = make_describe_then_starts_with_program(
+        describe_decl,
+        starts_with_decl,
+        Value::record(record, Span::test_data()),
+        "record<pid: int, cpu: int>",
+    );
+    let decl_names = HashMap::from([
+        (describe_decl, "describe".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("describe should lower compile-time known record input");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"record<pid: int, cpu: int>\0")
+            )),
+        "expected describe to materialize the Nushell record type string"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "describe record output consumed by str starts-with should compile through codegen",
+    );
+}
+
+#[test]
+fn test_lower_describe_no_input_materializes_nothing_type_string() {
+    let describe_decl = DeclId::new(208);
+    let length_decl = DeclId::new(209);
+    let hir = make_describe_no_input_then_length_program(describe_decl, length_decl);
+    let decl_names = HashMap::from([
+        (describe_decl, "describe".to_string()),
+        (length_decl, "str length".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("describe should lower no-input as Nushell nothing");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"nothing\0")
+            )),
+        "expected describe with no input to materialize 'nothing'"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("describe no-input output consumed by str length should compile through codegen");
 }
 
 #[test]

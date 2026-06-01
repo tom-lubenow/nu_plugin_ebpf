@@ -2831,6 +2831,10 @@ impl<'a> HirToMirLowering<'a> {
                 self.vreg_type_hints.insert(result_vreg, MirType::I64);
             }
 
+            "describe" => {
+                self.lower_describe(src_dst, dst_vreg, src_dst_had_value)?;
+            }
+
             "str length" => {
                 self.lower_string_length(src_dst, dst_vreg, src_dst_had_value)?;
             }

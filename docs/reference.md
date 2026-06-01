@@ -859,6 +859,7 @@ eBPF layout and verifier bounds are explicit:
 | `find` | Stack-backed numeric lists with one numeric search argument, returning a bounded equality-filtered stack list |
 | `append` / `prepend` | Stack-backed numeric lists with scalar numeric items when the output fits the modeled capacity |
 | `is-empty` / `is-not-empty` | Stack-backed lists, tracked strings, literal null, literal list constants, and metadata-backed fixed records |
+| `describe` | No-input or compiler-known inputs, producing a bounded tracked string with Nushell's type description |
 | `str length` | Tracked strings and literal strings, returning the byte length tracked by the string buffer |
 | `str starts-with` | Tracked strings with a compile-time literal prefix, lowered as a bounded stack-buffer prefix comparison; `--ignore-case` is supported for compile-time known input strings |
 | `str ends-with` | Tracked strings with a compile-time known input length and literal suffix, lowered as a fixed-offset stack-buffer suffix comparison; `--ignore-case` is supported for compile-time known input strings |

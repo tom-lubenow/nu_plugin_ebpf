@@ -48,6 +48,7 @@ const NU_CLOSURE_COMMANDS: &[&str] = &[
     "prepend",
     "is-empty",
     "is-not-empty",
+    "describe",
     "str length",
     "str starts-with",
     "str ends-with",
