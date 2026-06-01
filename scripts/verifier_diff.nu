@@ -14061,6 +14061,24 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "global-get-before-later-typed-record-global-define-data"
+        category: "globals"
+        tags: [globals records typed forward upsert global-define accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  mut seed = { pid: 0 }'
+            '  $seed.pid = 8'
+            '  let before = (global-get state)'
+            '  $seed | global-define --type "record{pid:int}" state'
+            '  $before.pid | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "global-define-type-zero-list-root-appends"
         category: "globals"
         tags: [globals list upsert global-define accept]
