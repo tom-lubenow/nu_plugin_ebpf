@@ -2859,6 +2859,10 @@ impl<'a> HirToMirLowering<'a> {
                 self.lower_string_stats(src_dst, dst_vreg, src_dst_had_value)?;
             }
 
+            "str expand" => {
+                self.lower_string_expand(src_dst, dst_vreg, src_dst_had_value)?;
+            }
+
             "str index-of" => {
                 self.lower_string_index_of(src_dst, dst_vreg, src_dst_had_value)?;
             }
@@ -3090,13 +3094,56 @@ impl<'a> HirToMirLowering<'a> {
                                 let root_ctx_field = self
                                     .get_metadata(input_reg)
                                     .and_then(|meta| meta.root_ctx_field.clone());
-                                self.lower_dynamic_typed_numeric_get(
-                                    src_dst,
-                                    input_vreg,
-                                    &base_runtime_ty,
-                                    idx,
-                                    root_ctx_field.as_ref(),
-                                )?;
+                                let projected_constant = match (self.get_metadata(input_reg), &idx)
+                                {
+                                    (
+                                        Some(RegMetadata {
+                                            constant_value:
+                                                Some(nu_protocol::Value::List { vals, .. }),
+                                            ..
+                                        }),
+                                        MirValue::Const(raw_idx),
+                                    ) if *raw_idx >= 0 => vals.get(*raw_idx as usize).cloned(),
+                                    _ => None,
+                                };
+                                let projected_semantics =
+                                    self.get_metadata(input_reg).and_then(|meta| {
+                                        match &meta.annotated_semantics {
+                                            Some(AnnotatedValueSemantics::FixedArray {
+                                                elem,
+                                                ..
+                                            }) => Some((**elem).clone()),
+                                            _ => None,
+                                        }
+                                    });
+                                let projected_string_bytes = match projected_constant.as_ref() {
+                                    Some(nu_protocol::Value::String { val, .. })
+                                    | Some(nu_protocol::Value::Glob { val, .. })
+                                        if matches!(
+                                            projected_semantics,
+                                            Some(AnnotatedValueSemantics::String { .. })
+                                        ) =>
+                                    {
+                                        Some(val.as_bytes().to_vec())
+                                    }
+                                    _ => None,
+                                };
+                                if let Some(bytes) = projected_string_bytes {
+                                    self.reset_call_result_metadata(src_dst);
+                                    self.lower_string_like_literal(src_dst, result_vreg, &bytes)?;
+                                    self.set_reg_constant_value(src_dst, projected_constant);
+                                } else {
+                                    self.lower_dynamic_typed_numeric_get(
+                                        src_dst,
+                                        input_vreg,
+                                        &base_runtime_ty,
+                                        idx,
+                                        root_ctx_field.as_ref(),
+                                    )?;
+                                    let out_meta = self.get_or_create_metadata(src_dst);
+                                    out_meta.constant_value = projected_constant;
+                                    out_meta.annotated_semantics = projected_semantics;
+                                }
                             }
                             _ => {
                                 return Err(CompileError::UnsupportedInstruction(format!(

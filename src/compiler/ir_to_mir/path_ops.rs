@@ -152,7 +152,28 @@ impl<'a> HirToMirLowering<'a> {
         };
 
         let (element_ty, element_size) = match pointee.as_ref() {
-            MirType::Array { elem, .. } => (elem.as_ref().clone(), elem.size()),
+            MirType::Array { elem, len } => {
+                if let MirValue::Const(raw_idx) = &idx {
+                    if *raw_idx < 0 {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "numeric get index must be non-negative for typed array input in eBPF"
+                                .into(),
+                        ));
+                    }
+                    let idx_usize = usize::try_from(*raw_idx).map_err(|_| {
+                        CompileError::UnsupportedInstruction(
+                            "numeric get index is too large for typed array input in eBPF".into(),
+                        )
+                    })?;
+                    if idx_usize >= *len {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "numeric get index {} is out of bounds for typed array length {} in eBPF",
+                            raw_idx, len
+                        )));
+                    }
+                }
+                (elem.as_ref().clone(), elem.size())
+            }
             other => (other.clone(), other.size()),
         };
 

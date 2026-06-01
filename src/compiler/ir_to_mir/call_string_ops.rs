@@ -1,4 +1,5 @@
 use super::*;
+use crate::compiler::mir::AddressSpace;
 use fancy_regex::{NoExpand, Regex as FancyRegex};
 use heck::{
     ToKebabCase, ToLowerCamelCase, ToShoutySnakeCase, ToSnakeCase, ToTitleCase, ToUpperCamelCase,
@@ -14,6 +15,8 @@ struct KnownStringSearchOperands {
     needle_slot: StackSlotId,
     needle_len: usize,
 }
+
+const MAX_STRING_EXPAND_RESULTS: usize = 60;
 
 impl<'a> HirToMirLowering<'a> {
     pub(super) fn lower_string_length(
@@ -536,6 +539,44 @@ impl<'a> HirToMirLowering<'a> {
         self.emit_metadata_record_result(src_dst, result_vreg, projected_meta)
     }
 
+    pub(super) fn lower_string_expand(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+    ) -> Result<(), CompileError> {
+        let input_reg = self
+            .pipeline_input_reg
+            .or(src_dst_had_value.then_some(src_dst));
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+
+        if !self.named_args.is_empty() || !self.positional_args.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(
+                "str expand does not accept arguments in eBPF".into(),
+            ));
+        }
+        for flag in &self.named_flags {
+            if flag != "path" {
+                return Err(CompileError::UnsupportedInstruction(
+                    "str expand currently supports only --path as a flag in eBPF".into(),
+                ));
+            }
+        }
+
+        let input = self.exact_string_input(input_reg, "str expand")?;
+        let expansion_input = if self.named_flags.iter().any(|flag| flag == "path") {
+            input.replace('\\', "\\\\")
+        } else {
+            input
+        };
+        let outputs = Self::string_expand_pattern(&expansion_input)?;
+        self.lower_known_string_list_result(src_dst, result_vreg, outputs)
+    }
+
     pub(super) fn lower_string_index_of(
         &mut self,
         src_dst: RegId,
@@ -874,6 +915,334 @@ impl<'a> HirToMirLowering<'a> {
 
     fn string_stats_counts_width_one(ch: char) -> bool {
         ch.is_control() || matches!(ch, '\u{2028}' | '\u{2029}')
+    }
+
+    fn string_expand_pattern(input: &str) -> Result<Vec<String>, CompileError> {
+        let mut saw_braces = false;
+        let outputs = Self::string_expand_segment(input, &mut saw_braces)?;
+        if !saw_braces {
+            return Err(CompileError::UnsupportedInstruction(
+                "str expand requires at least one brace expression in eBPF".into(),
+            ));
+        }
+        if outputs.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(
+                "str expand patterns that produce an empty list are not supported in eBPF".into(),
+            ));
+        }
+        if outputs.len() > MAX_STRING_EXPAND_RESULTS {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "str expand produced {} strings; eBPF lowering supports at most {}",
+                outputs.len(),
+                MAX_STRING_EXPAND_RESULTS
+            )));
+        }
+        for output in &outputs {
+            if output.len().saturating_add(1) > MAX_STRING_SIZE {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "str expand output requires {} bytes (limit {})",
+                    output.len() + 1,
+                    MAX_STRING_SIZE
+                )));
+            }
+        }
+        Ok(outputs)
+    }
+
+    fn string_expand_segment(
+        input: &str,
+        saw_braces: &mut bool,
+    ) -> Result<Vec<String>, CompileError> {
+        let Some(open) = Self::string_expand_find_open_brace(input)? else {
+            return Ok(vec![Self::string_expand_unescape(input)]);
+        };
+        *saw_braces = true;
+        let close = Self::string_expand_find_matching_brace(input, open)?;
+        let prefix = Self::string_expand_unescape(&input[..open]);
+        let inner = &input[open + '{'.len_utf8()..close];
+        let suffix = &input[close + '}'.len_utf8()..];
+        let alternatives = Self::string_expand_alternatives(inner, saw_braces)?;
+        let suffixes = Self::string_expand_segment(suffix, saw_braces)?;
+
+        let mut outputs = Vec::new();
+        for alternative in alternatives {
+            for suffix in &suffixes {
+                outputs.push(format!("{prefix}{alternative}{suffix}"));
+                if outputs.len() > MAX_STRING_EXPAND_RESULTS {
+                    return Ok(outputs);
+                }
+            }
+        }
+        Ok(outputs)
+    }
+
+    fn string_expand_alternatives(
+        input: &str,
+        saw_braces: &mut bool,
+    ) -> Result<Vec<String>, CompileError> {
+        if let Some(parts) = Self::string_expand_split_commas(input)? {
+            let mut outputs = Vec::new();
+            for part in parts {
+                outputs.extend(Self::string_expand_segment(part, saw_braces)?);
+                if outputs.len() > MAX_STRING_EXPAND_RESULTS {
+                    return Ok(outputs);
+                }
+            }
+            return Ok(outputs);
+        }
+
+        if let Some(range) = Self::string_expand_numeric_range(input)? {
+            return Ok(range);
+        }
+
+        Self::string_expand_segment(input, saw_braces)
+    }
+
+    fn string_expand_find_open_brace(input: &str) -> Result<Option<usize>, CompileError> {
+        let mut escaped = false;
+        for (index, ch) in input.char_indices() {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            match ch {
+                '\\' => escaped = true,
+                '{' => return Ok(Some(index)),
+                '}' => {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "str expand requires balanced brace expressions in eBPF".into(),
+                    ));
+                }
+                _ => {}
+            }
+        }
+        Ok(None)
+    }
+
+    fn string_expand_find_matching_brace(input: &str, open: usize) -> Result<usize, CompileError> {
+        let mut escaped = false;
+        let mut depth = 1usize;
+        for (offset, ch) in input[open + '{'.len_utf8()..].char_indices() {
+            let index = open + '{'.len_utf8() + offset;
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            match ch {
+                '\\' => escaped = true,
+                '{' => depth = depth.saturating_add(1),
+                '}' => {
+                    depth = depth.saturating_sub(1);
+                    if depth == 0 {
+                        return Ok(index);
+                    }
+                }
+                _ => {}
+            }
+        }
+        Err(CompileError::UnsupportedInstruction(
+            "str expand requires balanced brace expressions in eBPF".into(),
+        ))
+    }
+
+    fn string_expand_split_commas(input: &str) -> Result<Option<Vec<&str>>, CompileError> {
+        let mut escaped = false;
+        let mut depth = 0usize;
+        let mut start = 0usize;
+        let mut parts = Vec::new();
+        for (index, ch) in input.char_indices() {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            match ch {
+                '\\' => escaped = true,
+                '{' => depth = depth.saturating_add(1),
+                '}' if depth == 0 => {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "str expand requires balanced brace expressions in eBPF".into(),
+                    ));
+                }
+                '}' => depth = depth.saturating_sub(1),
+                ',' if depth == 0 => {
+                    parts.push(&input[start..index]);
+                    start = index + ','.len_utf8();
+                }
+                _ => {}
+            }
+        }
+        if depth != 0 {
+            return Err(CompileError::UnsupportedInstruction(
+                "str expand requires balanced brace expressions in eBPF".into(),
+            ));
+        }
+        if parts.is_empty() {
+            Ok(None)
+        } else {
+            parts.push(&input[start..]);
+            Ok(Some(parts))
+        }
+    }
+
+    fn string_expand_numeric_range(input: &str) -> Result<Option<Vec<String>>, CompileError> {
+        let mut escaped = false;
+        let mut ranges = Vec::new();
+        let mut iter = input.char_indices().peekable();
+        while let Some((index, ch)) = iter.next() {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            if ch == '\\' {
+                escaped = true;
+                continue;
+            }
+            if ch == '.'
+                && let Some((_, '.')) = iter.peek().copied()
+            {
+                ranges.push(index);
+                iter.next();
+            }
+        }
+
+        match ranges.as_slice() {
+            [] => Ok(None),
+            [_first, _second, ..] => Err(CompileError::UnsupportedInstruction(
+                "str expand numeric ranges must use exactly one '..' operator in eBPF".into(),
+            )),
+            [range_index] => {
+                let start_text = Self::string_expand_unescape(&input[..*range_index]);
+                let end_text = Self::string_expand_unescape(&input[*range_index + 2..]);
+                if start_text.is_empty()
+                    || end_text.is_empty()
+                    || !start_text.chars().all(|ch| ch.is_ascii_digit())
+                    || !end_text.chars().all(|ch| ch.is_ascii_digit())
+                {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "str expand numeric ranges must use unsigned integer bounds in eBPF".into(),
+                    ));
+                }
+
+                let start = start_text.parse::<u64>().map_err(|err| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "str expand range start is too large in eBPF: {err}"
+                    ))
+                })?;
+                let end = end_text.parse::<u64>().map_err(|err| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "str expand range end is too large in eBPF: {err}"
+                    ))
+                })?;
+                if start > end {
+                    return Ok(Some(Vec::new()));
+                }
+                let count = end.saturating_sub(start).saturating_add(1);
+                if count > MAX_STRING_EXPAND_RESULTS as u64 {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "str expand range produces {count} strings; eBPF lowering supports at most {MAX_STRING_EXPAND_RESULTS}"
+                    )));
+                }
+
+                let padded = start_text.starts_with('0') || end_text.starts_with('0');
+                let width = if padded {
+                    start_text.len().max(end_text.len())
+                } else {
+                    0
+                };
+                let values = (start..=end)
+                    .map(|value| {
+                        if padded {
+                            format!("{value:0width$}")
+                        } else {
+                            value.to_string()
+                        }
+                    })
+                    .collect();
+                Ok(Some(values))
+            }
+        }
+    }
+
+    fn string_expand_unescape(input: &str) -> String {
+        let mut out = String::with_capacity(input.len());
+        let mut chars = input.chars();
+        while let Some(ch) = chars.next() {
+            if ch == '\\'
+                && let Some(next) = chars.next()
+            {
+                out.push(next);
+            } else {
+                out.push(ch);
+            }
+        }
+        out
+    }
+
+    fn lower_known_string_list_result(
+        &mut self,
+        src_dst: RegId,
+        result_vreg: VReg,
+        outputs: Vec<String>,
+    ) -> Result<(), CompileError> {
+        let max_len = outputs.iter().map(String::len).max().unwrap_or(0);
+        let aligned_len = align_to_eight(max_len + 1).min(MAX_STRING_SIZE).max(16);
+        let elem_ty = MirType::Array {
+            elem: Box::new(MirType::U8),
+            len: 8 + aligned_len,
+        };
+        let array_ty = MirType::Array {
+            elem: Box::new(elem_ty.clone()),
+            len: outputs.len(),
+        };
+        let mut data = vec![0u8; array_ty.size()];
+        for (index, output) in outputs.iter().enumerate() {
+            let offset = index * elem_ty.size();
+            data[offset..offset + 8].copy_from_slice(&(output.len() as u64).to_le_bytes());
+            data[offset + 8..offset + 8 + output.len()].copy_from_slice(output.as_bytes());
+        }
+
+        let symbol = self.alloc_readonly_global_name();
+        self.readonly_globals.push(ReadonlyGlobal {
+            name: symbol.clone(),
+            data,
+        });
+        let global_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::LoadGlobal {
+            dst: global_vreg,
+            symbol,
+            ty: array_ty.clone(),
+        });
+        let base_runtime_ty = MirType::Ptr {
+            pointee: Box::new(array_ty.clone()),
+            address_space: AddressSpace::Map,
+        };
+        self.emit(MirInst::Copy {
+            dst: result_vreg,
+            src: MirValue::VReg(global_vreg),
+        });
+        self.vreg_type_hints
+            .insert(global_vreg, base_runtime_ty.clone());
+        self.vreg_type_hints.insert(result_vreg, base_runtime_ty);
+
+        self.reset_call_result_metadata(src_dst);
+        let values = outputs
+            .into_iter()
+            .map(|output| nu_protocol::Value::string(output, Span::unknown()))
+            .collect();
+        let meta = self.get_or_create_metadata(src_dst);
+        meta.constant_value = Some(nu_protocol::Value::list(values, Span::unknown()));
+        meta.field_type = Some(array_ty);
+        meta.annotated_semantics = Some(AnnotatedValueSemantics::FixedArray {
+            elem: Box::new(AnnotatedValueSemantics::String {
+                slot_len: aligned_len,
+                content_cap: aligned_len.saturating_sub(1),
+            }),
+            len: match &meta.constant_value {
+                Some(nu_protocol::Value::List { vals, .. }) => vals.len(),
+                _ => 0,
+            },
+        });
+        Ok(())
     }
 
     pub(super) fn lower_string_trim(

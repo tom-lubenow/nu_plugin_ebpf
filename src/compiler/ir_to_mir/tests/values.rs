@@ -538,6 +538,170 @@ fn make_string_pipeline_call_program_with_flags(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_string_command_then_length_program(
+    command_decl: DeclId,
+    length_decl: DeclId,
+    value: &str,
+    flags: Vec<Vec<u8>>,
+) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::string(value, Span::test_data())),
+                },
+                HirStmt::Call {
+                    decl_id: command_decl,
+                    src_dst: RegId::new(1),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        flags,
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: length_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(1)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(2) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_string_command_then_get_then_length_program(
+    command_decl: DeclId,
+    get_decl: DeclId,
+    length_decl: DeclId,
+    value: &str,
+    get_index: i64,
+) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::string(value, Span::test_data())),
+                },
+                HirStmt::Call {
+                    decl_id: command_decl,
+                    src_dst: RegId::new(1),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(get_index),
+                },
+                HirStmt::Call {
+                    decl_id: get_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(2)],
+                        pipeline_input: Some(RegId::new(1)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: length_decl,
+                    src_dst: RegId::new(4),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(3)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(4) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 5,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_string_command_then_get_then_starts_with_program(
+    command_decl: DeclId,
+    get_decl: DeclId,
+    starts_with_decl: DeclId,
+    value: &str,
+    get_index: i64,
+    prefix: &str,
+) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::string(value, Span::test_data())),
+                },
+                HirStmt::Call {
+                    decl_id: command_decl,
+                    src_dst: RegId::new(1),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(get_index),
+                },
+                HirStmt::Call {
+                    decl_id: get_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(2)],
+                        pipeline_input: Some(RegId::new(1)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadValue {
+                    dst: RegId::new(4),
+                    val: Box::new(Value::string(prefix, Span::test_data())),
+                },
+                HirStmt::Call {
+                    decl_id: starts_with_decl,
+                    src_dst: RegId::new(5),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(4)],
+                        pipeline_input: Some(RegId::new(3)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(5) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 6,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_string_arg_pipeline_call_program(decl_id: DeclId, value: &str, arg: &str) -> HirProgram {
     make_string_arg_pipeline_call_program_with_flags(decl_id, value, arg, Vec::new())
 }
@@ -3343,6 +3507,243 @@ fn test_lower_str_stats_unicode_width_matches_nushell_controls() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("str stats unicode-width projection should compile through codegen");
+}
+
+#[test]
+fn test_lower_str_expand_on_known_string_materializes_string_list() {
+    let expand_decl = DeclId::new(189);
+    let length_decl = DeclId::new(190);
+    let hir = make_string_command_then_length_program(
+        expand_decl,
+        length_decl,
+        "A{b,c}D{e,f}G",
+        Vec::new(),
+    );
+    let decl_names = HashMap::from([
+        (expand_decl, "str expand".to_string()),
+        (length_decl, "length".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str expand should materialize a fixed string list for known string input");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Copy {
+                    src: MirValue::Const(4),
+                    ..
+                }
+            )),
+        "expected str expand output length to be known at compile time"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("str expand output consumed by length should compile through codegen");
+}
+
+#[test]
+fn test_lower_str_expand_path_on_known_string_materializes_string_list() {
+    let expand_decl = DeclId::new(191);
+    let length_decl = DeclId::new(192);
+    let hir = make_string_command_then_length_program(
+        expand_decl,
+        length_decl,
+        "C:\\{Users,Windows}",
+        vec![b"path".to_vec()],
+    );
+    let decl_names = HashMap::from([
+        (expand_decl, "str expand".to_string()),
+        (length_decl, "length".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str expand --path should preprocess path backslashes at compile time");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Copy {
+                    src: MirValue::Const(2),
+                    ..
+                }
+            )),
+        "expected str expand --path output length to be known at compile time"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("str expand --path output consumed by length should compile through codegen");
+}
+
+#[test]
+fn test_lower_str_expand_get_materializes_item_string() {
+    let expand_decl = DeclId::new(193);
+    let get_decl = DeclId::new(194);
+    let length_decl = DeclId::new(195);
+    let hir = make_string_command_then_get_then_length_program(
+        expand_decl,
+        get_decl,
+        length_decl,
+        "A{b,c}D{e,f}G",
+        0,
+    );
+    let decl_names = HashMap::from([
+        (expand_decl, "str expand".to_string()),
+        (get_decl, "get".to_string()),
+        (length_decl, "str length".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str expand fixed string-list items should preserve constant metadata through get");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"AbDeG\0")
+            )),
+        "expected get 0 from str expand output to materialize AbDeG as a tracked string"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("str expand get item consumed by str length should compile through codegen");
+}
+
+#[test]
+fn test_lower_str_expand_get_preserves_item_content() {
+    let expand_decl = DeclId::new(196);
+    let get_decl = DeclId::new(197);
+    let starts_with_decl = DeclId::new(198);
+    let hir = make_string_command_then_get_then_starts_with_program(
+        expand_decl,
+        get_decl,
+        starts_with_decl,
+        "A{b,c}D{e,f}G",
+        1,
+        "AbDfG",
+    );
+    let decl_names = HashMap::from([
+        (expand_decl, "str expand".to_string()),
+        (get_decl, "get".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str expand fixed string-list items should preserve exact contents through get");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"AbDfG\0")
+            )),
+        "expected get 1 from str expand output to materialize AbDfG"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("str expand get item consumed by str starts-with should compile through codegen");
+}
+
+#[test]
+fn test_lower_str_expand_zero_padded_range_preserves_item_content() {
+    let expand_decl = DeclId::new(199);
+    let get_decl = DeclId::new(200);
+    let starts_with_decl = DeclId::new(201);
+    let hir = make_string_command_then_get_then_starts_with_program(
+        expand_decl,
+        get_decl,
+        starts_with_decl,
+        "A{08..10}B",
+        2,
+        "A10B",
+    );
+    let decl_names = HashMap::from([
+        (expand_decl, "str expand".to_string()),
+        (get_decl, "get".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str expand should support zero-padded numeric ranges on known string input");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"A10B\0")
+            )),
+        "expected get 2 from A{{08..10}}B expansion to materialize A10B"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "str expand range get item consumed by str starts-with should compile through codegen",
+    );
 }
 
 #[test]
