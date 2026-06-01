@@ -35113,6 +35113,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-string-list-compact-empty"
+        category: "language-core"
+        tags: [string list compact empty]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ["ab" "" "cd"] | compact --empty | str join "-" | str starts-with "ab-cd"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-math-sum"
         category: "language-core"
         tags: [aggregate list math sum]

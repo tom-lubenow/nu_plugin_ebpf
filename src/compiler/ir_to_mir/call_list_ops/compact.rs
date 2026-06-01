@@ -22,6 +22,7 @@ impl<'a> HirToMirLowering<'a> {
                     .into(),
             ));
         }
+        let remove_empty = self.named_flags.iter().any(|flag| flag == "empty");
 
         let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
         let input_reg = self
@@ -32,6 +33,19 @@ impl<'a> HirToMirLowering<'a> {
                 "compact requires a pipeline input with tracked metadata in eBPF".into(),
             )
         })?;
+
+        if let Some(values) = self
+            .direct_list_builder_values(input_reg, input_vreg)
+            .map(|values| values.to_vec())
+        {
+            let vals = values
+                .into_iter()
+                .filter(|value| Self::compact_keeps_value(value, remove_empty))
+                .collect::<Vec<_>>();
+            self.lower_constant_value(src_dst, &nu_protocol::Value::list(vals, Span::unknown()))?;
+            return Ok(());
+        }
+
         let input_meta = self.get_metadata(input_reg).cloned().ok_or_else(|| {
             CompileError::UnsupportedInstruction(
                 "compact requires a pipeline input with tracked metadata in eBPF".into(),
@@ -54,5 +68,16 @@ impl<'a> HirToMirLowering<'a> {
         });
         self.propagate_passthrough_reg_metadata(src_dst, result_vreg, input_reg, input_vreg);
         Ok(())
+    }
+
+    fn compact_keeps_value(value: &nu_protocol::Value, remove_empty: bool) -> bool {
+        match value {
+            nu_protocol::Value::Nothing { .. } => false,
+            nu_protocol::Value::String { val, .. } => !remove_empty || !val.is_empty(),
+            nu_protocol::Value::Binary { val, .. } => !remove_empty || !val.is_empty(),
+            nu_protocol::Value::List { vals, .. } => !remove_empty || !vals.is_empty(),
+            nu_protocol::Value::Record { val, .. } => !remove_empty || !val.is_empty(),
+            _ => true,
+        }
     }
 }

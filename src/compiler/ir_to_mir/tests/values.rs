@@ -1321,6 +1321,7 @@ fn make_string_list_builder_transform_join_then_starts_with_program(
     starts_with_decl: DeclId,
     values: &[&str],
     count: Option<i64>,
+    flags: Vec<Vec<u8>>,
     prefix: &str,
 ) -> HirProgram {
     let value_count = values.len();
@@ -1359,6 +1360,7 @@ fn make_string_list_builder_transform_join_then_starts_with_program(
         src_dst: RegId::new(1),
         args: HirCallArgs {
             positional: count_reg.into_iter().collect(),
+            flags,
             pipeline_input: Some(RegId::new(0)),
             ..HirCallArgs::default()
         },
@@ -3876,6 +3878,7 @@ fn test_lower_string_list_builder_transforms_join_constant_values() {
             starts_with_decl,
             &["ab", "cd", "ef"],
             count,
+            Vec::new(),
             expected,
         );
         let decl_names = HashMap::from([
@@ -4020,6 +4023,7 @@ fn test_lower_string_list_builder_uniq_join_constant_values() {
         starts_with_decl,
         &["ab", "cd", "ab", "ef", "cd"],
         None,
+        Vec::new(),
         "ab-cd-ef",
     );
     let decl_names = HashMap::from([
@@ -4131,6 +4135,69 @@ fn test_lower_string_list_builder_find_join_constant_values() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("find string-list builder result should compile through codegen");
+}
+
+#[test]
+fn test_lower_string_list_builder_compact_empty_join_constant_values() {
+    let compact_decl = DeclId::new(332);
+    let join_decl = DeclId::new(333);
+    let starts_with_decl = DeclId::new(334);
+    let hir = make_string_list_builder_transform_join_then_starts_with_program(
+        compact_decl,
+        join_decl,
+        starts_with_decl,
+        &["ab", "", "cd"],
+        None,
+        vec![b"empty".to_vec()],
+        "ab-cd",
+    );
+    let decl_names = HashMap::from([
+        (compact_decl, "compact".to_string()),
+        (join_decl, "str join".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("compact --empty should fold compile-time string-list builders");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"ab-cd\0")
+            )),
+        "expected compact --empty to feed str join without empty strings"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .all(|inst| !matches!(
+                inst,
+                MirInst::ListGet { .. } | MirInst::ListLen { .. } | MirInst::ListPush { .. }
+            )),
+        "expected compile-time string-list compact not to use runtime list operations"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("compact --empty string-list builder result should compile through codegen");
 }
 
 #[test]

@@ -573,6 +573,11 @@ fn test_list_push_string_item_allowed_for_find() {
 }
 
 #[test]
+fn test_list_push_string_item_allowed_for_compact() {
+    assert_list_push_string_item_allowed_for_pipeline_command(DeclId::new(67), "compact");
+}
+
+#[test]
 fn test_list_push_record_item_allowed_for_typed_global_array_initializer() {
     let define_decl = DeclId::new(42);
     let mut func = HirFunction {
