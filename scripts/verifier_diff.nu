@@ -14081,6 +14081,22 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "global-set-root-string-field-get"
+        category: "globals"
+        tags: [globals string global-set accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  "hello" | global-set seen_name'
+            '  let name = (global-get seen_name)'
+            '  ($name | str length) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "global-set-runtime-record-list-field-get"
         category: "globals"
         tags: [globals records list global-set accept]
