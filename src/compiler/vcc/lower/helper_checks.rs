@@ -970,7 +970,7 @@ impl<'a> VccLowerer<'a> {
         helper_id: u32,
         arg_idx: usize,
         arg: &MirValue,
-        op: &str,
+        _op: &str,
         out: &mut Vec<VccInst>,
     ) -> Result<(), VccError> {
         let ptr = self.value_ptr_info(arg).ok_or_else(|| {
@@ -990,7 +990,9 @@ impl<'a> VccLowerer<'a> {
             return Err(VccError::new(
                 VccErrorKind::PointerBounds,
                 format!(
-                    "{op} expects ringbuf record pointer, got {}",
+                    "helper {} arg{} expects ringbuf record pointer, got {}",
+                    helper_id,
+                    arg_idx,
                     self.helper_space_name(ptr.space)
                 ),
             ));

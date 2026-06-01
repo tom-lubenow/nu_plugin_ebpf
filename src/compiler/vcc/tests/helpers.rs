@@ -3228,7 +3228,7 @@ fn test_verify_mir_bpf_spin_lock_rejects_calls_while_held() {
     assert!(
         err.iter().any(|e| e
             .message
-            .contains("helper 'bpf_ktime_get_ns' cannot be called")),
+            .contains("helper 'bpf_ktime_get_ns' cannot be called while bpf_spin_lock is held")),
         "unexpected error messages: {:?}",
         err
     );
@@ -13637,7 +13637,7 @@ fn test_verify_mir_helper_ringbuf_submit_rejects_stack_pointer() {
     assert!(
         err.iter().any(|e| e
             .message
-            .contains("expects ringbuf record pointer, got Stack")),
+            .contains("helper 132 arg0 expects ringbuf record pointer, got Stack")),
         "unexpected error messages: {:?}",
         err
     );
