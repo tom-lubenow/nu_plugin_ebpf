@@ -14099,6 +14099,23 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "global-set-nested-metadata-record-list-field-get"
+        category: "globals"
+        tags: [globals records list nested global-set accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let inner = { pid: 7 vals: [11 22] }'
+            '  { inner: $inner cpu: 1 } | global-set seen_state'
+            '  let state = (global-get seen_state)'
+            '  (($state.inner.vals | get 1) + $state.inner.pid + $state.cpu) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "global-define-type-array-u32-initializer"
         category: "globals"
         tags: [globals arrays global-define accept]
