@@ -432,6 +432,39 @@ impl<'a> HirToMirLowering<'a> {
         self.lower_i64_result(src_dst, result_vreg, distance)
     }
 
+    pub(super) fn lower_string_join(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+    ) -> Result<(), CompileError> {
+        let input_reg = self
+            .pipeline_input_reg
+            .or(src_dst_had_value.then_some(src_dst));
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+
+        if !self.named_flags.is_empty() || !self.named_args.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(
+                "str join does not accept named arguments in eBPF".into(),
+            ));
+        }
+        if self.positional_args.len() > 1 {
+            return Err(CompileError::UnsupportedInstruction(
+                "str join accepts at most one separator argument in eBPF".into(),
+            ));
+        }
+        if let Some((_, separator_reg)) = self.positional_args.first().copied() {
+            let _separator = self.literal_string_arg(separator_reg, "str join separator")?;
+        }
+
+        let input = self.exact_string_input(input_reg, "str join")?;
+        self.lower_known_string_result(src_dst, result_vreg, input)
+    }
+
     pub(super) fn lower_string_index_of(
         &mut self,
         src_dst: RegId,

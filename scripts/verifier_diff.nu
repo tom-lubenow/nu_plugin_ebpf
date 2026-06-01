@@ -35205,6 +35205,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-string-join-scalar"
+        category: "language-core"
+        tags: [string str join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "abc" | str join "-" | str starts-with "abc"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-string-index-of"
         category: "language-core"
         tags: [string str index-of]
