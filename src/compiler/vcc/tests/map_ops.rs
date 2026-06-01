@@ -80,6 +80,138 @@ fn test_verify_mir_helper_map_lookup_null_check_then_load_ok() {
 }
 
 #[test]
+fn test_verify_mir_dynamic_map_lookup_requires_null_check() {
+    let (mut func, entry) = new_mir_function();
+    let outer_key = func.alloc_vreg();
+    let inner_key = func.alloc_vreg();
+    let inner_map_ptr = func.alloc_vreg();
+    let value_ptr = func.alloc_vreg();
+    let outer = MapRef {
+        name: "outer_maps".to_string(),
+        kind: MapKind::ArrayOfMaps,
+    };
+    let inner = MapRef {
+        name: "inner_values".to_string(),
+        kind: MapKind::Hash,
+    };
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: outer_key,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::MapLookup {
+        dst: inner_map_ptr,
+        map: outer,
+        key: outer_key,
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: inner_key,
+        src: MirValue::Const(7),
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::MapLookupDynamic {
+            dst: value_ptr,
+            map_ptr: inner_map_ptr,
+            inner_map: inner,
+            key: inner_key,
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    for i in 0..func.vreg_count {
+        types.insert(VReg(i), MirType::I64);
+    }
+    types.insert(inner_map_ptr, MirType::named_kernel_struct_ptr("bpf_map"));
+    types.insert(
+        value_ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::I64),
+            address_space: AddressSpace::Map,
+        },
+    );
+
+    let err = verify_mir(&func, &types).expect_err("expected dynamic map null-check error");
+    assert!(
+        err.iter().any(|e| e.message.contains("dynamic map lookup")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_dynamic_map_lookup_null_check_ok() {
+    let (mut func, entry) = new_mir_function();
+    let ok = func.alloc_block();
+    let done = func.alloc_block();
+    let outer_key = func.alloc_vreg();
+    let inner_key = func.alloc_vreg();
+    let inner_map_ptr = func.alloc_vreg();
+    let cond = func.alloc_vreg();
+    let value_ptr = func.alloc_vreg();
+    let outer = MapRef {
+        name: "outer_maps".to_string(),
+        kind: MapKind::ArrayOfMaps,
+    };
+    let inner = MapRef {
+        name: "inner_values".to_string(),
+        kind: MapKind::Hash,
+    };
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: outer_key,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::MapLookup {
+        dst: inner_map_ptr,
+        map: outer,
+        key: outer_key,
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: cond,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(inner_map_ptr),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond,
+        if_true: ok,
+        if_false: done,
+    };
+
+    func.block_mut(ok).instructions.push(MirInst::Copy {
+        dst: inner_key,
+        src: MirValue::Const(7),
+    });
+    func.block_mut(ok)
+        .instructions
+        .push(MirInst::MapLookupDynamic {
+            dst: value_ptr,
+            map_ptr: inner_map_ptr,
+            inner_map: inner,
+            key: inner_key,
+        });
+    func.block_mut(ok).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    for i in 0..func.vreg_count {
+        types.insert(VReg(i), MirType::I64);
+    }
+    types.insert(inner_map_ptr, MirType::named_kernel_struct_ptr("bpf_map"));
+    types.insert(cond, MirType::Bool);
+    types.insert(
+        value_ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::I64),
+            address_space: AddressSpace::Map,
+        },
+    );
+
+    verify_mir(&func, &types).expect("expected null-checked dynamic map lookup to pass");
+}
+
+#[test]
 fn test_verify_mir_dynamic_map_update_requires_null_check() {
     let (mut func, entry) = new_mir_function();
     let outer_key = func.alloc_vreg();
