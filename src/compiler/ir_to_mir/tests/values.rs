@@ -1313,6 +1313,71 @@ fn make_split_row_join_then_starts_with_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_split_chars_join_then_starts_with_program(
+    split_decl: DeclId,
+    join_decl: DeclId,
+    starts_with_decl: DeclId,
+    input: &str,
+    flags: Vec<Vec<u8>>,
+    join_separator: &str,
+    prefix: &str,
+) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::string(input, Span::test_data())),
+                },
+                HirStmt::Call {
+                    decl_id: split_decl,
+                    src_dst: RegId::new(1),
+                    args: HirCallArgs {
+                        flags,
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadValue {
+                    dst: RegId::new(2),
+                    val: Box::new(Value::string(join_separator, Span::test_data())),
+                },
+                HirStmt::Call {
+                    decl_id: join_decl,
+                    src_dst: RegId::new(1),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(2)],
+                        pipeline_input: Some(RegId::new(1)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadValue {
+                    dst: RegId::new(3),
+                    val: Box::new(Value::string(prefix, Span::test_data())),
+                },
+                HirStmt::Call {
+                    decl_id: starts_with_decl,
+                    src_dst: RegId::new(4),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(3)],
+                        pipeline_input: Some(RegId::new(1)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(4) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 5,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_constant_list_join_then_starts_with_program(
     join_decl: DeclId,
     starts_with_decl: DeclId,
@@ -6212,6 +6277,106 @@ fn test_lower_split_row_number_limits_each_input_string() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("split row --number output consumed by str join should compile");
+}
+
+#[test]
+fn test_lower_split_chars_on_known_string_materializes_code_point_list() {
+    let split_decl = DeclId::new(469);
+    let join_decl = DeclId::new(470);
+    let starts_with_decl = DeclId::new(471);
+    let hir = make_split_chars_join_then_starts_with_program(
+        split_decl,
+        join_decl,
+        starts_with_decl,
+        "a🇯🇵b",
+        vec![b"code-points".to_vec()],
+        "-",
+        "a-🇯-🇵-b",
+    );
+    let decl_names = HashMap::from([
+        (split_decl, "split chars".to_string()),
+        (join_decl, "str join".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("split chars should lower compile-time string input");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with("a-🇯-🇵-b\0".as_bytes())
+            )),
+        "expected split chars output consumed by str join to materialize code-point split string"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("split chars output consumed by str join should compile");
+}
+
+#[test]
+fn test_lower_split_chars_grapheme_clusters_preserves_clusters() {
+    let split_decl = DeclId::new(472);
+    let join_decl = DeclId::new(473);
+    let starts_with_decl = DeclId::new(474);
+    let hir = make_split_chars_join_then_starts_with_program(
+        split_decl,
+        join_decl,
+        starts_with_decl,
+        "a🇯🇵b",
+        vec![b"grapheme-clusters".to_vec()],
+        "-",
+        "a-🇯🇵-b",
+    );
+    let decl_names = HashMap::from([
+        (split_decl, "split chars".to_string()),
+        (join_decl, "str join".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("split chars --grapheme-clusters should lower compile-time string input");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with("a-🇯🇵-b\0".as_bytes())
+            )),
+        "expected split chars --grapheme-clusters output to preserve grapheme clusters before str join"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("split chars --grapheme-clusters output consumed by str join should compile");
 }
 
 #[test]

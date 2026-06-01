@@ -841,6 +841,13 @@ fn compile_time_value_consumer_matches(
                                 .all(|(name, _)| name.as_slice() == b"number")
                             && args.flags.iter().all(|flag| flag.as_slice() == b"regex")
                     }
+                    "split chars" => {
+                        args.positional.is_empty()
+                            && args.named.is_empty()
+                            && args.flags.iter().all(|flag| {
+                                matches!(flag.as_slice(), b"code-points" | b"grapheme-clusters")
+                            })
+                    }
                     "str downcase"
                     | "str upcase"
                     | "str reverse"

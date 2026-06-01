@@ -36011,6 +36011,32 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-string-split-chars-join"
+        category: "language-core"
+        tags: [string split chars join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "a🇯🇵b" | split chars | str join "-" | str starts-with "a-🇯-🇵-b"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-string-split-chars-grapheme-join"
+        category: "language-core"
+        tags: [string split chars grapheme join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "a🇯🇵b" | split chars --grapheme-clusters | str join "-" | str starts-with "a-🇯🇵-b"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-string-split-row-join"
         category: "language-core"
         tags: [string split row join]

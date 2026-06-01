@@ -662,6 +662,71 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
+    pub(super) fn lower_split_chars(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+    ) -> Result<(), CompileError> {
+        let input_reg = self
+            .pipeline_input_reg
+            .or(src_dst_had_value.then_some(src_dst));
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+
+        if !self.positional_args.is_empty() || !self.named_args.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(
+                "split chars does not accept arguments in eBPF".into(),
+            ));
+        }
+
+        let mut use_code_points = false;
+        let mut use_grapheme_clusters = false;
+        for flag in &self.named_flags {
+            match flag.as_str() {
+                "code-points" => use_code_points = true,
+                "grapheme-clusters" => use_grapheme_clusters = true,
+                _ => {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "split chars currently supports only --code-points and --grapheme-clusters flags in eBPF"
+                            .into(),
+                    ));
+                }
+            }
+        }
+        if use_code_points && use_grapheme_clusters {
+            return Err(CompileError::UnsupportedInstruction(
+                "split chars accepts either --code-points or --grapheme-clusters, not both, in eBPF"
+                    .into(),
+            ));
+        }
+
+        if let Some(reg) = input_reg
+            && let Some(nu_protocol::Value::List { .. }) = self
+                .get_metadata(reg)
+                .and_then(|meta| meta.constant_value.as_ref())
+        {
+            return Err(CompileError::UnsupportedInstruction(
+                "split chars on list<string> produces nested lists, which are not supported in eBPF"
+                    .into(),
+            ));
+        }
+
+        let input = self.exact_string_input(input_reg, "split chars")?;
+        let output = if use_grapheme_clusters {
+            UnicodeSegmentation::graphemes(input.as_str(), true)
+                .map(ToString::to_string)
+                .collect()
+        } else {
+            input.chars().map(|ch| ch.to_string()).collect()
+        };
+
+        self.lower_known_string_list_result(src_dst, result_vreg, output)
+    }
+
     pub(super) fn lower_string_stats(
         &mut self,
         src_dst: RegId,

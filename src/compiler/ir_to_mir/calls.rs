@@ -3852,6 +3852,10 @@ impl<'a> HirToMirLowering<'a> {
                 self.lower_split_row(src_dst, dst_vreg, src_dst_had_value)?;
             }
 
+            "split chars" => {
+                self.lower_split_chars(src_dst, dst_vreg, src_dst_had_value)?;
+            }
+
             "str stats" => {
                 self.lower_string_stats(src_dst, dst_vreg, src_dst_had_value)?;
             }
