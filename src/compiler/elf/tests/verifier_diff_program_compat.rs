@@ -137,6 +137,7 @@ struct VerifierDiffFeatureRecord {
     min_kernel: String,
     source: String,
     max_kernel_exclusive: Option<String>,
+    max_kernel_exclusive_source: Option<String>,
 }
 
 fn verifier_diff_const_body<'a>(source: &'a str, name: &str, delimiter: char) -> &'a str {
@@ -159,18 +160,34 @@ fn verifier_diff_const_body<'a>(source: &'a str, name: &str, delimiter: char) ->
 
 fn verifier_diff_quoted_field<'a>(text: &'a str, field: &str) -> Option<&'a str> {
     let needle = format!("{field}: \"");
-    let rest = text.split_once(&needle)?.1;
+    let rest = verifier_diff_field_rest(text, &needle)?;
     let end = rest.find('"')?;
     Some(&rest[..end])
 }
 
 fn verifier_diff_dollar_field<'a>(text: &'a str, field: &str) -> Option<&'a str> {
     let needle = format!("{field}: $");
-    let rest = text.split_once(&needle)?.1;
+    let rest = verifier_diff_field_rest(text, &needle)?;
     let end = rest
         .find(|c: char| c.is_whitespace() || c == '}')
         .unwrap_or(rest.len());
     Some(&rest[..end])
+}
+
+fn verifier_diff_field_rest<'a>(text: &'a str, needle: &str) -> Option<&'a str> {
+    let mut offset = 0;
+    while let Some(relative_index) = text[offset..].find(needle) {
+        let index = offset + relative_index;
+        let field_start = match text[..index].chars().next_back() {
+            Some(c) => !(c == '_' || c.is_ascii_alphanumeric()),
+            None => true,
+        };
+        if field_start {
+            return Some(&text[index + needle.len()..]);
+        }
+        offset = index + 1;
+    }
+    None
 }
 
 fn verifier_diff_feature_record(source: &str, const_name: &str) -> VerifierDiffFeatureRecord {
@@ -187,6 +204,11 @@ fn verifier_diff_feature_record(source: &str, const_name: &str) -> VerifierDiffF
             .to_string(),
         max_kernel_exclusive: verifier_diff_quoted_field(body, "max_kernel_exclusive")
             .map(str::to_string),
+        max_kernel_exclusive_source: verifier_diff_quoted_field(
+            body,
+            "max_kernel_exclusive_source",
+        )
+        .map(str::to_string),
     }
 }
 
@@ -265,6 +287,11 @@ fn verifier_diff_kfunc_fallback_records(
             source: source.to_string(),
             max_kernel_exclusive: verifier_diff_quoted_field(line, "max_kernel_exclusive")
                 .map(str::to_string),
+            max_kernel_exclusive_source: verifier_diff_quoted_field(
+                line,
+                "max_kernel_exclusive_source",
+            )
+            .map(str::to_string),
         };
         assert!(
             records.insert(name.to_string(), record).is_none(),
@@ -462,6 +489,7 @@ let summary = (fixture-summary-from-derived $derived "6.23.0")
 {
     effective_min_kernel: $summary.effective_min_kernel
     effective_max_kernel_exclusive: $summary.effective_max_kernel_exclusive
+    effective_max_kernel_exclusive_sources: $summary.effective_max_kernel_exclusive_sources
     compatible_with_compat_kernel: $summary.compatible_with_compat_kernel
     compat_kernel_reason: $summary.compat_kernel_reason
     kernel_features: (kernel-feature-labels $summary.kernel_features)
@@ -491,6 +519,15 @@ let summary = (fixture-summary-from-derived $derived "6.23.0")
             .and_then(serde_json::Value::as_str),
         Some("6.23")
     );
+    let max_sources = actual
+        .get("effective_max_kernel_exclusive_sources")
+        .and_then(serde_json::Value::as_array)
+        .expect("summary should include effective max-kernel source list");
+    assert!(max_sources.iter().any(|source| {
+        source
+            .as_str()
+            .is_some_and(|source| source.contains("kernel/sched/ext.c"))
+    }));
     assert_eq!(
         actual
             .get("compatible_with_compat_kernel")
@@ -882,6 +919,11 @@ fn assert_verifier_feature_record_matches_kfunc_requirement(
         requirement.maximum_kernel_exclusive(),
         "scripts/verifier_diff.nu kfunc max_kernel_exclusive drifted for {name}"
     );
+    assert_eq!(
+        record.max_kernel_exclusive_source.as_deref(),
+        requirement.maximum_kernel_exclusive_source(),
+        "scripts/verifier_diff.nu kfunc max_kernel_exclusive_source drifted for {name}"
+    );
 }
 
 fn verifier_feature_record_matches_context_requirement(
@@ -939,6 +981,7 @@ $checks
         min_kernel: ($feature | get -o min_kernel)
         source: ($feature | get -o source)
         max_kernel_exclusive: ($feature | get -o max_kernel_exclusive)
+        max_kernel_exclusive_source: ($feature | get -o max_kernel_exclusive_source)
     }}
 }}
 | to json"#
@@ -992,6 +1035,10 @@ $checks
                 .to_string(),
             max_kernel_exclusive: value
                 .get("max_kernel_exclusive")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_string),
+            max_kernel_exclusive_source: value
+                .get("max_kernel_exclusive_source")
                 .and_then(serde_json::Value::as_str)
                 .map(str::to_string),
         });
@@ -1421,6 +1468,7 @@ $checks
             min_kernel: String::new(),
             source: String::new(),
             max_kernel_exclusive: None,
+            max_kernel_exclusive_source: None,
         };
         checks.len()
     ];
@@ -1452,6 +1500,10 @@ $checks
                 .to_string(),
             max_kernel_exclusive: value
                 .get("max_kernel_exclusive")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_string),
+            max_kernel_exclusive_source: value
+                .get("max_kernel_exclusive_source")
                 .and_then(serde_json::Value::as_str)
                 .map(str::to_string),
         };

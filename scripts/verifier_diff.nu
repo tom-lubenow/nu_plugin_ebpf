@@ -1958,6 +1958,7 @@ const KERNEL_FEATURE_KFUNC_SCX_BPF_DSQ_INSERT = {
     key: "kfunc:scx_bpf_dsq_insert"
     min_kernel: "6.13"
     max_kernel_exclusive: "6.23"
+    max_kernel_exclusive_source: "https://kernel.googlesource.com/pub/scm/linux/kernel/git/mic/linux/+/a7423e6ea2f8f6f453de79213c26f7a36c86d9a2/kernel/sched/ext.c"
     source: "https://github.com/torvalds/linux/blob/v6.13/kernel/sched/ext.c"
 }
 const KERNEL_FEATURE_KFUNC_SCX_BPF_DSQ_INSERT_V2 = {
@@ -1969,12 +1970,14 @@ const KERNEL_FEATURE_KFUNC_SCX_BPF_DSQ_INSERT_VTIME = {
     key: "kfunc:scx_bpf_dsq_insert_vtime"
     min_kernel: "6.13"
     max_kernel_exclusive: "6.23"
+    max_kernel_exclusive_source: "https://kernel.googlesource.com/pub/scm/linux/kernel/git/mic/linux/+/a7423e6ea2f8f6f453de79213c26f7a36c86d9a2/kernel/sched/ext.c"
     source: "https://github.com/torvalds/linux/blob/v6.13/kernel/sched/ext.c"
 }
 const KERNEL_FEATURE_KFUNC_SCX_BPF_REENQUEUE_LOCAL = {
     key: "kfunc:scx_bpf_reenqueue_local"
     min_kernel: "6.12"
     max_kernel_exclusive: "6.23"
+    max_kernel_exclusive_source: "https://kernel.googlesource.com/pub/scm/linux/kernel/git/mic/linux/+/a7423e6ea2f8f6f453de79213c26f7a36c86d9a2/kernel/sched/ext.c"
     source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c"
 }
 const KERNEL_FEATURE_KFUNC_SCX_BPF_REENQUEUE_LOCAL_V2 = {
@@ -5717,9 +5720,9 @@ const KFUNC_KERNEL_FEATURE_FALLBACKS = [
     { name: "scx_bpf_destroy_dsq", min_kernel: "6.12", source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c" }
     { name: "scx_bpf_dispatch_cancel", min_kernel: "6.12", source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c" }
     { name: "scx_bpf_dispatch_nr_slots", min_kernel: "6.12", source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c" }
-    { name: "scx_bpf_dsq_insert", min_kernel: "6.13", source: "https://github.com/torvalds/linux/blob/v6.13/kernel/sched/ext.c", max_kernel_exclusive: "6.23" }
+    { name: "scx_bpf_dsq_insert", min_kernel: "6.13", source: "https://github.com/torvalds/linux/blob/v6.13/kernel/sched/ext.c", max_kernel_exclusive: "6.23", max_kernel_exclusive_source: "https://kernel.googlesource.com/pub/scm/linux/kernel/git/mic/linux/+/a7423e6ea2f8f6f453de79213c26f7a36c86d9a2/kernel/sched/ext.c" }
     { name: "scx_bpf_dsq_insert___v2", min_kernel: "6.19", source: "https://github.com/torvalds/linux/blob/v6.19/kernel/sched/ext.c" }
-    { name: "scx_bpf_dsq_insert_vtime", min_kernel: "6.13", source: "https://github.com/torvalds/linux/blob/v6.13/kernel/sched/ext.c", max_kernel_exclusive: "6.23" }
+    { name: "scx_bpf_dsq_insert_vtime", min_kernel: "6.13", source: "https://github.com/torvalds/linux/blob/v6.13/kernel/sched/ext.c", max_kernel_exclusive: "6.23", max_kernel_exclusive_source: "https://kernel.googlesource.com/pub/scm/linux/kernel/git/mic/linux/+/a7423e6ea2f8f6f453de79213c26f7a36c86d9a2/kernel/sched/ext.c" }
     { name: "scx_bpf_dsq_move", min_kernel: "6.13", source: "https://github.com/torvalds/linux/blob/v6.13/kernel/sched/ext.c" }
     { name: "scx_bpf_dsq_move_set_slice", min_kernel: "6.13", source: "https://github.com/torvalds/linux/blob/v6.13/kernel/sched/ext.c" }
     { name: "scx_bpf_dsq_move_set_vtime", min_kernel: "6.13", source: "https://github.com/torvalds/linux/blob/v6.13/kernel/sched/ext.c" }
@@ -5746,7 +5749,7 @@ const KFUNC_KERNEL_FEATURE_FALLBACKS = [
     { name: "scx_bpf_pick_idle_cpu_node", min_kernel: "6.15", source: "https://github.com/torvalds/linux/blob/v6.15/kernel/sched/ext_idle.c" }
     { name: "scx_bpf_put_cpumask", min_kernel: "6.12", source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c" }
     { name: "scx_bpf_put_idle_cpumask", min_kernel: "6.12", source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c" }
-    { name: "scx_bpf_reenqueue_local", min_kernel: "6.12", source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c", max_kernel_exclusive: "6.23" }
+    { name: "scx_bpf_reenqueue_local", min_kernel: "6.12", source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c", max_kernel_exclusive: "6.23", max_kernel_exclusive_source: "https://kernel.googlesource.com/pub/scm/linux/kernel/git/mic/linux/+/a7423e6ea2f8f6f453de79213c26f7a36c86d9a2/kernel/sched/ext.c" }
     { name: "scx_bpf_reenqueue_local___v2", min_kernel: "6.19", source: "https://github.com/torvalds/linux/blob/v6.19/kernel/sched/ext.c" }
     { name: "scx_bpf_select_cpu_and", min_kernel: "6.16", source: "https://github.com/torvalds/linux/blob/v6.16/kernel/sched/ext.c" }
     { name: "scx_bpf_select_cpu_dfl", min_kernel: "6.12", source: "https://github.com/torvalds/linux/blob/v6.12/kernel/sched/ext.c" }
@@ -38585,6 +38588,10 @@ def kfunc-kernel-feature [name: string] {
     let max_kernel = ($entry | get -o max_kernel_exclusive)
     if $max_kernel != null and $max_kernel != "" {
         $feature = ($feature | insert max_kernel_exclusive $max_kernel)
+        let max_kernel_source = ($entry | get -o max_kernel_exclusive_source)
+        if $max_kernel_source != null and $max_kernel_source != "" {
+            $feature = ($feature | insert max_kernel_exclusive_source $max_kernel_source)
+        }
     }
 
     $feature
@@ -44319,6 +44326,19 @@ def effective-max-kernel-exclusive-from-features [features] {
     kernel-version-min $versions
 }
 
+def effective-max-kernel-exclusive-sources-from-features [features] {
+    let max_kernel = (effective-max-kernel-exclusive-from-features $features)
+    if $max_kernel == null {
+        return []
+    }
+
+    $features
+    | where {|feature| ($feature | get -o max_kernel_exclusive) == $max_kernel }
+    | each {|feature| $feature | get -o max_kernel_exclusive_source }
+    | where {|source| $source != null and $source != "" }
+    | uniq
+}
+
 def effective-min-kernel-sources-from-features [features] {
     let min_kernel = (effective-min-kernel-from-features $features)
     if $min_kernel == null {
@@ -44543,6 +44563,7 @@ def fixture-derived-metadata [fixture kernel_features] {
         effective_min_kernel_raw: $effective_min_kernel
         effective_max_kernel_exclusive_raw: $effective_max_kernel_exclusive
         effective_min_kernel_sources: (effective-min-kernel-sources-from-features $kernel_features)
+        effective_max_kernel_exclusive_sources: (effective-max-kernel-exclusive-sources-from-features $kernel_features)
         min_kernel: (optional $fixture min_kernel "")
         min_kernel_source: (optional $fixture min_kernel_source "")
         tags: (optional $fixture tags [])
@@ -44572,6 +44593,7 @@ def fixture-summary-from-derived [derived compat_kernel] {
         effective_min_kernel: ($derived.effective_min_kernel_raw | default "")
         effective_max_kernel_exclusive: ($derived.effective_max_kernel_exclusive_raw | default "")
         effective_min_kernel_sources: $derived.effective_min_kernel_sources
+        effective_max_kernel_exclusive_sources: $derived.effective_max_kernel_exclusive_sources
         compat_kernel: ($compat_kernel | default "")
         compatible_with_compat_kernel: $compatibility.compatible
         compat_kernel_reason: $compatibility.reason
@@ -44868,6 +44890,7 @@ def validate-kernel-feature-record [fixture_name: string origin: string feature]
     let key = ($feature | get -o key)
     let min_kernel = ($feature | get -o min_kernel)
     let max_kernel = ($feature | get -o max_kernel_exclusive)
+    let max_kernel_source = ($feature | get -o max_kernel_exclusive_source)
     let source = ($feature | get -o source)
 
     if $key == null or $key == "" {
@@ -44883,9 +44906,14 @@ def validate-kernel-feature-record [fixture_name: string origin: string feature]
     parse-kernel-version $min_kernel | ignore
     if $max_kernel != null and $max_kernel != "" {
         parse-kernel-version $max_kernel | ignore
+        if $max_kernel_source == null or $max_kernel_source == "" {
+            fail $"fixture ($fixture_name) ($origin) kernel feature ($key) with max_kernel_exclusive=($max_kernel) missing max_kernel_exclusive_source"
+        }
         if (kernel-version-compare $max_kernel $min_kernel) <= 0 {
             fail $"fixture ($fixture_name) ($origin) kernel feature ($key) max_kernel_exclusive=($max_kernel) must be greater than min_kernel=($min_kernel)"
         }
+    } else if $max_kernel_source != null and $max_kernel_source != "" {
+        fail $"fixture ($fixture_name) ($origin) kernel feature ($key) declares max_kernel_exclusive_source without max_kernel_exclusive"
     }
 }
 
@@ -45019,7 +45047,7 @@ def validate-target-context-field-kernel-feature-expectations [] {
             fail $"context-field-kernel-feature missing expected target-aware metadata for ($target) ctx.($field)"
         }
 
-        for key in [key min_kernel source max_kernel_exclusive] {
+        for key in [key min_kernel source max_kernel_exclusive max_kernel_exclusive_source] {
             let expected_value = ($expected | get -o $key)
             let actual_value = ($actual | get -o $key)
             if $expected_value != $actual_value {
@@ -45040,7 +45068,7 @@ def validate-context-field-helper-kernel-feature-expectations [] {
             fail $"context-field-helper-kernel-feature missing expected metadata for ($target) ctx.($field)"
         }
 
-        for key in [key min_kernel source max_kernel_exclusive] {
+        for key in [key min_kernel source max_kernel_exclusive max_kernel_exclusive_source] {
             let expected_value = ($expected | get -o $key)
             let actual_value = ($actual | get -o $key)
             if $expected_value != $actual_value {
@@ -45061,7 +45089,7 @@ def validate-context-projection-kernel-feature-expectations [] {
             fail $"context-projection-kernel-feature missing expected metadata for ($target) ctx.($raw_access)"
         }
 
-        for key in [key min_kernel source max_kernel_exclusive] {
+        for key in [key min_kernel source max_kernel_exclusive max_kernel_exclusive_source] {
             let expected_value = ($expected | get -o $key)
             let actual_value = ($actual | get -o $key)
             if $expected_value != $actual_value {
@@ -45138,7 +45166,7 @@ def validate-program-kfunc-kernel-feature-detail-expectations [] {
         }
 
         let actual = ($matches | first)
-        for key in [key min_kernel source max_kernel_exclusive] {
+        for key in [key min_kernel source max_kernel_exclusive max_kernel_exclusive_source] {
             let expected_value = ($expected | get -o $key)
             let actual_value = ($actual | get -o $key)
             if $expected_value != $actual_value {
