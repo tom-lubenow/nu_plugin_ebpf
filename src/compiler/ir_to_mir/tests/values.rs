@@ -9497,6 +9497,55 @@ fn test_lower_bytes_length_on_binary_returns_byte_len() {
 }
 
 #[test]
+fn test_lower_bytes_length_on_binary_list_materializes_numeric_lengths() {
+    let bytes_length_decl = DeclId::new(452);
+    let join_decl = DeclId::new(453);
+    let starts_with_decl = DeclId::new(454);
+    let hir = make_binary_list_bytes_length_join_then_starts_with_program(
+        bytes_length_decl,
+        join_decl,
+        starts_with_decl,
+        &[&[0x01, 0x02], &[0x03], &[]],
+        "2-1-0",
+    );
+    let decl_names = HashMap::from([
+        (bytes_length_decl, "bytes length".to_string()),
+        (join_decl, "str join".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bytes length should lower on compile-time binary-list input");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"2-1-0\0")
+            )),
+        "expected bytes length binary-list output to feed str join with 2-1-0"
+    );
+    assert_no_runtime_list_operations(&result.program, "compile-time binary-list bytes length");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("bytes length binary-list output consumed by str join should compile");
+}
+
+#[test]
 fn test_lower_bytes_length_rejects_string_input() {
     let bytes_length_decl = DeclId::new(211);
     let func = HirFunction {
@@ -9540,7 +9589,7 @@ fn test_lower_bytes_length_rejects_string_input() {
 
     assert!(
         err.to_string()
-            .contains("bytes length requires compile-time known binary input"),
+            .contains("bytes length requires compile-time known binary or list<binary> input"),
         "unexpected error: {err}"
     );
 }
@@ -11009,6 +11058,88 @@ fn make_binary_list_builder_pipeline_call_program(decl_id: DeclId, items: &[&[u8
         ast: Vec::new(),
         comments: Vec::new(),
         register_count: item_count_u32 + 2,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_binary_list_bytes_length_join_then_starts_with_program(
+    bytes_length_decl: DeclId,
+    join_decl: DeclId,
+    starts_with_decl: DeclId,
+    items: &[&[u8]],
+    expected_prefix: &str,
+) -> HirProgram {
+    let item_count = items.len();
+    let item_count_u32 = u32::try_from(item_count).expect("test binary-list length fits in u32");
+    let mut stmts = vec![HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List {
+            capacity: item_count,
+        },
+    }];
+
+    for (index, item) in items.iter().enumerate() {
+        let item_reg = RegId::new(u32::try_from(index).expect("test index fits in u32") + 2);
+        stmts.push(HirStmt::LoadLiteral {
+            dst: item_reg,
+            lit: HirLiteral::Binary(item.to_vec()),
+        });
+        stmts.push(HirStmt::ListPush {
+            src_dst: RegId::new(0),
+            item: item_reg,
+        });
+    }
+
+    stmts.push(HirStmt::Call {
+        decl_id: bytes_length_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let separator_reg = RegId::new(item_count_u32 + 2);
+    let expected_reg = RegId::new(separator_reg.get() + 1);
+    stmts.push(HirStmt::LoadValue {
+        dst: separator_reg,
+        val: Box::new(Value::string("-", Span::test_data())),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: join_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional: vec![separator_reg],
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::LoadValue {
+        dst: expected_reg,
+        val: Box::new(Value::string(expected_prefix, Span::test_data())),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: starts_with_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional: vec![expected_reg],
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: expected_reg.get() + 1,
         file_count: 0,
     };
     HirProgram::new(func, HashMap::new(), vec![], None)

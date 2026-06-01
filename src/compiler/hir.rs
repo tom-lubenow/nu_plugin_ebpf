@@ -657,6 +657,7 @@ fn compile_time_value_consumer_matches(
                 && args.parser_info.is_empty()
                 && match decl_name {
                     Some("length") => args.flags.is_empty(),
+                    Some("bytes length") => args.flags.is_empty(),
                     Some("str length") => args.flags.iter().all(|flag| {
                         matches!(flag.as_slice(), b"utf-8-bytes" | b"grapheme-clusters")
                     }),

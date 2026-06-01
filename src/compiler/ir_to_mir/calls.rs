@@ -2879,17 +2879,47 @@ impl<'a> HirToMirLowering<'a> {
                     ));
                 }
 
-                let len = input_reg
+                let input = input_reg
                     .and_then(|reg| self.get_metadata(reg))
-                    .and_then(|meta| match meta.constant_value.as_ref() {
-                        Some(nu_protocol::Value::Binary { val, .. }) => Some(val.len()),
-                        _ => None,
-                    })
+                    .and_then(|meta| meta.constant_value.as_ref())
+                    .cloned()
                     .ok_or_else(|| {
                         CompileError::UnsupportedInstruction(
-                            "bytes length requires compile-time known binary input in eBPF".into(),
+                            "bytes length requires compile-time known binary or list<binary> input in eBPF"
+                                .into(),
                         )
                     })?;
+                let len = match input {
+                    nu_protocol::Value::Binary { val, .. } => val.len(),
+                    nu_protocol::Value::List { vals, .. } => {
+                        let lengths = vals
+                            .iter()
+                            .enumerate()
+                            .map(|(index, item)| {
+                                let nu_protocol::Value::Binary { val, .. } = item else {
+                                    return Err(CompileError::UnsupportedInstruction(format!(
+                                        "bytes length requires binary list items in eBPF; item {index} has type {}",
+                                        item.get_type()
+                                    )));
+                                };
+                                Ok(nu_protocol::Value::int(
+                                    val.len() as i64,
+                                    nu_protocol::Span::unknown(),
+                                ))
+                            })
+                            .collect::<Result<Vec<_>, _>>()?;
+                        return self.lower_constant_value(
+                            src_dst,
+                            &nu_protocol::Value::list(lengths, nu_protocol::Span::unknown()),
+                        );
+                    }
+                    _ => {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "bytes length requires compile-time known binary or list<binary> input in eBPF"
+                                .into(),
+                        ));
+                    }
+                };
                 self.emit(MirInst::Copy {
                     dst: result_vreg,
                     src: MirValue::Const(len as i64),

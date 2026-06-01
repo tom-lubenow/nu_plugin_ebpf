@@ -35322,6 +35322,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-binary-list-bytes-length-join"
+        category: "language-core"
+        tags: [binary list bytes length join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [0x[01 02] 0x[03] 0x[]] | bytes length | str join "-" | str starts-with "2-1-0"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-binary-bytes-starts-with"
         category: "language-core"
         tags: [binary bytes starts-with]

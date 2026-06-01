@@ -860,7 +860,7 @@ eBPF layout and verifier bounds are explicit:
 | `append` / `prepend` | Stack-backed numeric lists with scalar numeric items when the output fits the modeled capacity; compile-time known fixed lists with compile-time constant items |
 | `is-empty` / `is-not-empty` | Stack-backed lists, tracked strings, literal null, literal list constants, and metadata-backed fixed records |
 | `describe` | No-input or compiler-known inputs, producing a bounded tracked string with Nushell's type description |
-| `bytes length` | Compile-time known binary input, returning its byte length |
+| `bytes length` | Compile-time known binary input returning its byte length, or compile-time known list<binary> input returning a numeric list of byte lengths |
 | `bytes starts-with` / `bytes ends-with` | Compile-time known binary input and binary pattern, returning a constant boolean |
 | `bytes index-of` | Compile-time known binary input and non-empty binary pattern, returning the first byte index or `-1`; `--end` returns the last index |
 | `bytes reverse` | Compile-time known non-empty binary input, returning a reversed fixed binary value |
