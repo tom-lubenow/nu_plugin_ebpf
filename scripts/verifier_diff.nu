@@ -14029,6 +14029,38 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "global-get-before-later-typed-global-define-bss"
+        category: "globals"
+        tags: [globals scalar typed forward global-define zero-fill accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let before = (global-get state)'
+            '  global-define --type int state'
+            '  $before | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "global-get-before-later-typed-record-global-define-bss"
+        category: "globals"
+        tags: [globals records typed forward global-define zero-fill accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let before = (global-get state)'
+            '  global-define --type "record{pid:int}" state'
+            '  $before.pid | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "global-define-type-zero-list-root-appends"
         category: "globals"
         tags: [globals list upsert global-define accept]
