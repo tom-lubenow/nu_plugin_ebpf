@@ -1401,17 +1401,28 @@ impl<'a> HirToMirLowering<'a> {
 
         vals.into_iter()
             .enumerate()
-            .map(|(index, item)| match item {
-                nu_protocol::Value::String { val, .. } | nu_protocol::Value::Glob { val, .. } => {
-                    Ok(val)
-                }
-                other => Err(CompileError::UnsupportedInstruction(format!(
-                    "{command} requires string list items in eBPF; item {index} has type {}",
-                    other.get_type()
-                ))),
-            })
+            .map(|(index, item)| Self::string_join_item_value(item, command, index))
             .collect::<Result<Vec<_>, _>>()
             .map(Some)
+    }
+
+    fn string_join_item_value(
+        value: nu_protocol::Value,
+        command: &str,
+        index: usize,
+    ) -> Result<String, CompileError> {
+        match value {
+            nu_protocol::Value::String { val, .. } | nu_protocol::Value::Glob { val, .. } => {
+                Ok(val)
+            }
+            nu_protocol::Value::Int { val, .. } => Ok(val.to_string()),
+            nu_protocol::Value::Bool { val, .. } => Ok(val.to_string()),
+            nu_protocol::Value::Nothing { .. } => Ok(String::new()),
+            other => Err(CompileError::UnsupportedInstruction(format!(
+                "{command} supports only string, int, bool, and null compile-time list items in eBPF; item {index} has type {}",
+                other.get_type()
+            ))),
+        }
     }
 
     pub(super) fn lower_known_string_result(

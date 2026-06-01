@@ -876,7 +876,7 @@ eBPF layout and verifier bounds are explicit:
 | `str ends-with` | Tracked strings with a compile-time known input length and literal suffix, lowered as a fixed-offset stack-buffer suffix comparison; `--ignore-case` is supported for compile-time known input strings |
 | `str contains` | Tracked strings with a compile-time known input length and literal substring, lowered as bounded fixed-offset stack-buffer comparisons; `--ignore-case` is supported for compile-time known input strings |
 | `str index-of` | Tracked strings with a compile-time known input length and literal substring, returning the first byte index or `-1` through bounded fixed-offset comparisons; `--end`, unit-step `--range`, and compile-time `--grapheme-clusters` are supported |
-| `str join` | Compile-time known string input as a pass-through, or compile-time known string-list input with an optional literal separator, returning a tracked string |
+| `str join` | Compile-time known string input as a pass-through, or compile-time known string/int/bool/null-list input with an optional literal separator, returning a tracked string |
 | `str expand` | Compile-time known string input with brace expressions, producing a fixed string list; empty expansion results and `--path` are supported |
 | `str substring` | Compile-time known string input with one compile-time known explicit unit-step range argument, using default UTF-8 byte indexes |
 | `str replace` | Compile-time known string input with literal find/replacement arguments in the default first-substring replacement mode or `--all` substring replacement mode |

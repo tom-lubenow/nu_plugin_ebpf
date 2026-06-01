@@ -35881,6 +35881,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-string-scalar-list-join"
+        category: "language-core"
+        tags: [string list scalar str join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [1 true null] | str join ":" | str starts-with "1:true:"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-string-stats-get-field"
         category: "language-core"
         tags: [string str stats record get]
