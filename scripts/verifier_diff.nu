@@ -35270,6 +35270,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-string-index-of-grapheme-clusters-range"
+        category: "language-core"
+        tags: [string str index-of range grapheme-clusters]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "ほげ ふが" | str index-of --grapheme-clusters "ふ" --range 6..9'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-string-substring"
         category: "language-core"
         tags: [string str substring]

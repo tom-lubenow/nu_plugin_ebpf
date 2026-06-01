@@ -419,12 +419,6 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         if use_grapheme_clusters {
-            if !self.named_args.is_empty() {
-                return Err(CompileError::UnsupportedInstruction(
-                    "str index-of --grapheme-clusters with --range is not supported in eBPF yet"
-                        .into(),
-                ));
-            }
             let input = self.exact_string_input(input_reg, "str index-of --grapheme-clusters")?;
             let needle = self.literal_string_arg(needle_reg, "str index-of")?;
             if needle.as_bytes().contains(&0) {
@@ -432,7 +426,14 @@ impl<'a> HirToMirLowering<'a> {
                     "str index-of does not support NUL bytes in the substring in eBPF".into(),
                 ));
             }
-            let index = Self::grapheme_index_of(&input, &needle, search_from_end);
+            let (search_start, search_end) = self.string_index_of_search_bounds(input.len())?;
+            let index = Self::grapheme_index_of_in_byte_range(
+                &input,
+                &needle,
+                search_from_end,
+                search_start,
+                search_end,
+            )?;
             return self.lower_i64_result(src_dst, result_vreg, index);
         }
 
@@ -975,6 +976,35 @@ impl<'a> HirToMirLowering<'a> {
             .map(|offset| offset as i64)
             .next()
             .unwrap_or(-1)
+    }
+
+    fn grapheme_index_of_in_byte_range(
+        input: &str,
+        needle: &str,
+        search_from_end: bool,
+        search_start: usize,
+        search_end: usize,
+    ) -> Result<i64, CompileError> {
+        let Some(search_input) = input.get(search_start..search_end) else {
+            return Err(CompileError::UnsupportedInstruction(
+                "str index-of --grapheme-clusters --range bounds must align to UTF-8 character boundaries in eBPF"
+                    .into(),
+            ));
+        };
+        let Some(prefix) = input.get(..search_start) else {
+            return Err(CompileError::UnsupportedInstruction(
+                "str index-of --grapheme-clusters --range start must align to a UTF-8 character boundary in eBPF"
+                    .into(),
+            ));
+        };
+
+        let local_index = Self::grapheme_index_of(search_input, needle, search_from_end);
+        if local_index < 0 {
+            return Ok(-1);
+        }
+
+        let prefix_graphemes = UnicodeSegmentation::graphemes(prefix, true).count() as i64;
+        Ok(prefix_graphemes + local_index)
     }
 
     fn known_string_search_operands(

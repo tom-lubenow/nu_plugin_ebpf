@@ -3415,8 +3415,52 @@ fn test_lower_str_index_of_grapheme_clusters_from_end_returns_last_grapheme_offs
 }
 
 #[test]
-fn test_lower_str_index_of_grapheme_clusters_with_range_is_rejected() {
+fn test_lower_str_index_of_grapheme_clusters_with_range_returns_absolute_grapheme_offset() {
     let index_of_decl = DeclId::new(160);
+    let hir = make_string_index_of_range_program(
+        index_of_decl,
+        "ほげ ふが",
+        "ふ",
+        Some(6),
+        Some(9),
+        RangeInclusion::Inclusive,
+        vec![b"grapheme-clusters".to_vec()],
+    );
+    let decl_names = HashMap::from([(index_of_decl, "str index-of".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str index-of --grapheme-clusters --range should lower on UTF-8-aligned bounds");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Copy {
+                    src: MirValue::Const(3),
+                    ..
+                }
+            )),
+        "expected str index-of --grapheme-clusters --range to return the absolute grapheme offset"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("str index-of --grapheme-clusters --range should compile through codegen");
+}
+
+#[test]
+fn test_lower_str_index_of_grapheme_clusters_with_non_boundary_range_is_rejected() {
+    let index_of_decl = DeclId::new(161);
     let hir = make_string_index_of_range_program(
         index_of_decl,
         "🇯🇵ほげ ふが ぴよ",
@@ -3436,15 +3480,15 @@ fn test_lower_str_index_of_grapheme_clusters_with_range_is_rejected() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("str index-of --grapheme-clusters --range should remain unsupported");
+    .expect_err("str index-of --grapheme-clusters --range should reject non-boundary ranges");
 
     assert!(
         matches!(
             err,
             CompileError::UnsupportedInstruction(ref msg)
-                if msg.contains("str index-of --grapheme-clusters with --range is not supported")
+                if msg.contains("--range bounds must align to UTF-8 character boundaries")
         ),
-        "expected targeted unsupported range diagnostic, got {err:?}"
+        "expected targeted UTF-8 boundary diagnostic, got {err:?}"
     );
 }
 
