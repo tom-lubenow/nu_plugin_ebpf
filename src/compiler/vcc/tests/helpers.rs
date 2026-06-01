@@ -13948,7 +13948,7 @@ fn test_verify_mir_tail_call_rejects_pointer_index() {
     );
     assert!(
         err.iter()
-            .any(|e| e.message.contains("expected scalar value")),
+            .any(|e| e.message.contains("tail_call index expects scalar")),
         "unexpected error messages: {:?}",
         err
     );

@@ -2395,7 +2395,7 @@ impl VccVerifier {
                                 expected: VccTypeClass::Bool,
                                 actual: ty.class(),
                             },
-                            "branch condition must be scalar/bool/pointer",
+                            "branch condition expects scalar or pointer",
                         ));
                     }
                 }

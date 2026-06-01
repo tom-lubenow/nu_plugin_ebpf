@@ -578,6 +578,36 @@ fn test_constant_false_branch_prunes_true_path() {
 }
 
 #[test]
+fn test_verify_mir_branch_rejects_unknown_condition() {
+    let (mut func, entry) = new_mir_function();
+    let if_true = func.alloc_block();
+    let if_false = func.alloc_block();
+    func.param_count = 1;
+
+    let cond = VReg(0);
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond,
+        if_true,
+        if_false,
+    };
+    func.block_mut(if_true).terminator = MirInst::Return { val: None };
+    func.block_mut(if_false).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(cond, MirType::Unknown);
+
+    let err = verify_mir(&func, &types).expect_err("expected branch condition error");
+    assert!(
+        err.iter()
+            .any(|e| matches!(e.kind, VccErrorKind::TypeMismatch { .. })
+                && e.message
+                    .contains("branch condition expects scalar or pointer")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_dynptr_require_initialized_after_mark() {
     let mut func = VccFunction::new();
     let entry = func.entry;

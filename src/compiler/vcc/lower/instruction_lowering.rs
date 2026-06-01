@@ -2273,7 +2273,7 @@ impl<'a> VccLowerer<'a> {
                 let vcc_val = self.lower_value(index, out);
                 out.push(VccInst::AssertScalar {
                     value: vcc_val,
-                    op: None,
+                    op: Some("tail_call index"),
                 });
                 Ok(VccTerminator::Return { value: None })
             }
