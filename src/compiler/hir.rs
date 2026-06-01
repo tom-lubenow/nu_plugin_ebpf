@@ -756,6 +756,7 @@ fn compile_time_value_consumer_matches(
                 decl_name,
                 Some(
                     "str downcase"
+                        | "str trim"
                         | "str upcase"
                         | "str reverse"
                         | "str capitalize"
@@ -769,8 +770,14 @@ fn compile_time_value_consumer_matches(
             ) && call_args_tracked_only_in_pipeline(src_dst, args, tracked_regs)
                 && args.positional.is_empty()
                 && args.rest.is_empty()
-                && args.named.is_empty()
-                && args.flags.is_empty()
+                && args
+                    .named
+                    .iter()
+                    .all(|(name, _)| name.as_slice() == b"char")
+                && args
+                    .flags
+                    .iter()
+                    .all(|flag| matches!(flag.as_slice(), b"left" | b"right"))
                 && args.parser_info.is_empty()
         }
     }

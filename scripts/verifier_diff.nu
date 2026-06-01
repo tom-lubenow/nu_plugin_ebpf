@@ -36219,6 +36219,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-string-list-trim-join"
+        category: "language-core"
+        tags: [string list str trim join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [" ab " " cd "] | str trim | str join "-" | str starts-with "ab-cd"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-string-trim-left"
         category: "language-core"
         tags: [string str trim]

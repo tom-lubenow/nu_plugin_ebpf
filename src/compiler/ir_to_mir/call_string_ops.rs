@@ -1293,7 +1293,6 @@ impl<'a> HirToMirLowering<'a> {
             }
         }
 
-        let input = self.exact_string_input(input_reg, "str trim")?;
         let trim_char = if let Some((_, char_reg)) = self.named_args.get("char").copied() {
             let raw = self.literal_string_arg(char_reg, "str trim --char")?;
             let mut chars = raw.chars();
@@ -1314,15 +1313,34 @@ impl<'a> HirToMirLowering<'a> {
 
         let trim_left = self.named_flags.iter().any(|flag| flag == "left");
         let trim_right = self.named_flags.iter().any(|flag| flag == "right");
-        let output = match (trim_char, trim_left, trim_right) {
+
+        if let Some(input) = self.exact_string_list_input(input_reg, "str trim")? {
+            let output = input
+                .into_iter()
+                .map(|item| Self::trim_known_string(item, trim_char, trim_left, trim_right))
+                .collect();
+            return self.lower_known_string_list_result(src_dst, result_vreg, output);
+        }
+
+        let input = self.exact_string_input(input_reg, "str trim")?;
+        let output = Self::trim_known_string(input, trim_char, trim_left, trim_right);
+        self.lower_known_string_result(src_dst, result_vreg, output)
+    }
+
+    fn trim_known_string(
+        input: String,
+        trim_char: Option<char>,
+        trim_left: bool,
+        trim_right: bool,
+    ) -> String {
+        match (trim_char, trim_left, trim_right) {
             (Some(ch), true, false) => input.trim_start_matches(ch).to_string(),
             (Some(ch), false, true) => input.trim_end_matches(ch).to_string(),
             (Some(ch), _, _) => input.trim_matches(ch).to_string(),
             (None, true, false) => input.trim_start().to_string(),
             (None, false, true) => input.trim_end().to_string(),
             (None, _, _) => input.trim().to_string(),
-        };
-        self.lower_known_string_result(src_dst, result_vreg, output)
+        }
     }
 
     pub(super) fn lower_known_string_transform(

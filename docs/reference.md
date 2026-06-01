@@ -880,7 +880,7 @@ eBPF layout and verifier bounds are explicit:
 | `str expand` | Compile-time known string input with brace expressions, producing a fixed string list; empty expansion results and `--path` are supported |
 | `str substring` | Compile-time known string input with one compile-time known explicit unit-step range argument, using default UTF-8 byte indexes |
 | `str replace` | Compile-time known string input with literal find/replacement arguments in the default first-substring replacement mode or `--all` substring replacement mode |
-| `str trim` | Compile-time known string input in default, `--left`, `--right`, and single-character `--char` trim modes |
+| `str trim` | Compile-time known string or string-list input in default, `--left`, `--right`, and single-character `--char` trim modes |
 | `str downcase` / `str upcase` | Compile-time known string or string-list input in the default whole-string case-conversion mode |
 | `str reverse` / `str capitalize` | Compile-time known string or string-list input in the default whole-string transform mode |
 | `str camel-case` / `str kebab-case` / `str pascal-case` / `str screaming-snake-case` / `str snake-case` / `str title-case` | Compile-time known string or string-list input in the default whole-string case-conversion mode |

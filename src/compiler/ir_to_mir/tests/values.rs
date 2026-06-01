@@ -6615,6 +6615,69 @@ fn test_lower_str_trim_on_known_string_materializes_trimmed_literal() {
 }
 
 #[test]
+fn test_lower_str_trim_on_known_string_list_materializes_trimmed_literals() {
+    let trim_decl = DeclId::new(380);
+    let join_decl = DeclId::new(381);
+    let starts_with_decl = DeclId::new(382);
+    let hir = make_string_list_builder_transform_join_then_starts_with_program(
+        trim_decl,
+        join_decl,
+        starts_with_decl,
+        &[" ab ", " cd "],
+        None,
+        Vec::new(),
+        "ab-cd",
+    );
+    let decl_names = HashMap::from([
+        (trim_decl, "str trim".to_string()),
+        (join_decl, "str join".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str trim should lower for compile-time known string-list input");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"ab-cd\0")
+            )),
+        "expected str trim list output to feed str join with trimmed strings"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .all(|inst| !matches!(
+                inst,
+                MirInst::ListGet { .. } | MirInst::ListLen { .. } | MirInst::ListPush { .. }
+            )),
+        "expected compile-time str trim string-list input not to use runtime list operations"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("str trim string-list result consumed by str join should compile through codegen");
+}
+
+#[test]
 fn test_lower_str_trim_left_on_known_string_materializes_left_trimmed_literal() {
     let trim_decl = DeclId::new(146);
     let starts_with_decl = DeclId::new(147);
