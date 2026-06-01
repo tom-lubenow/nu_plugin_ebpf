@@ -34,6 +34,31 @@ impl<'a> HirToMirLowering<'a> {
         let lhs_vreg = self.get_vreg(lhs_dst);
         let rhs_vreg = self.get_vreg(rhs);
 
+        if let Some(Value::String { val, .. } | Value::Glob { val, .. }) = constant_value.as_ref() {
+            self.lower_string_like_literal(lhs_dst, lhs_vreg, val.as_bytes())?;
+            self.clear_source_var(lhs_dst);
+            self.set_reg_constant_value(lhs_dst, constant_value);
+            return Ok(());
+        }
+
+        if matches!(
+            op,
+            Operator::Math(Math::Add) | Operator::Math(Math::Concatenate)
+        ) && (self
+            .get_metadata(lhs_dst)
+            .map(|meta| meta.string_slot.is_some() || meta.literal_string.is_some())
+            .unwrap_or(false)
+            || self
+                .get_metadata(rhs)
+                .map(|meta| meta.string_slot.is_some() || meta.literal_string.is_some())
+                .unwrap_or(false))
+        {
+            return Err(CompileError::UnsupportedInstruction(
+                "string concatenation with + requires compile-time constant operands in eBPF"
+                    .into(),
+            ));
+        }
+
         let mir_op = match op {
             Operator::Math(Math::Add) => BinOpKind::Add,
             Operator::Math(Math::Subtract) => BinOpKind::Sub,

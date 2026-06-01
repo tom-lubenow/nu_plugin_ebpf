@@ -13950,6 +13950,40 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "global-define-type-string-concat-initializer"
+        category: "globals"
+        tags: [globals string global-define accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let greeting = ("hel" + "lo")'
+            '  $greeting | global-define --type string:8 greeting'
+            '  let stored = (global-get greeting)'
+            '  ($stored | str length) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "global-define-type-record-builder-initializer"
+        category: "globals"
+        tags: [globals records global-define accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let state = ({} | insert pid 7)'
+            '  $state | global-define --type "record{pid:int}" state'
+            '  let stored = (global-get state)'
+            '  $stored.pid | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "global-define-type-int-bool-initializer-rejects"
         category: "globals"
         tags: [globals scalar bool global-define reject]

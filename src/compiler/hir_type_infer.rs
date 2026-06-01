@@ -391,6 +391,14 @@ impl<'a> HirTypeInference<'a> {
                         self.constrain(lhs_ty, HMType::Bool, "bool_lhs")?;
                         self.constrain(rhs_ty, HMType::Bool, "bool_rhs")?;
                     }
+                    Operator::Math(nu_protocol::ast::Math::Add)
+                    | Operator::Math(nu_protocol::ast::Math::Concatenate)
+                        if hm_type_is_stack_string(&self.substitution.apply(&lhs_ty))
+                            || hm_type_is_stack_string(&self.substitution.apply(&rhs_ty)) =>
+                    {
+                        self.constrain(lhs_ty, stack_string_ptr_type(), "string_concat_lhs")?;
+                        self.constrain(rhs_ty, stack_string_ptr_type(), "string_concat_rhs")?;
+                    }
                     Operator::Math(_) => {
                         self.constrain(lhs_ty, HMType::I64, "math_lhs")?;
                         self.constrain(rhs_ty, HMType::I64, "math_rhs")?;
@@ -614,6 +622,16 @@ fn stack_string_ptr_type() -> HMType {
         pointee: Box::new(HMType::U8),
         address_space: AddressSpace::Stack,
     }
+}
+
+fn hm_type_is_stack_string(ty: &HMType) -> bool {
+    matches!(
+        ty,
+        HMType::Ptr {
+            pointee,
+            address_space: AddressSpace::Stack,
+        } if matches!(pointee.as_ref(), HMType::U8)
+    )
 }
 
 fn readonly_binary_ptr_type() -> HMType {
