@@ -7317,6 +7317,350 @@ fn test_lower_bytes_add_rejects_negative_index() {
     );
 }
 
+fn make_bytes_pattern_transform_then_starts_with_program(
+    transform_decl: DeclId,
+    starts_with_decl: DeclId,
+    command: &str,
+    input: Vec<u8>,
+    pattern: Vec<u8>,
+    replacement: Option<Vec<u8>>,
+    flags: Vec<&str>,
+    expected_prefix: Vec<u8>,
+) -> HirProgram {
+    let mut stmts = vec![
+        HirStmt::LoadLiteral {
+            dst: RegId::new(0),
+            lit: HirLiteral::Binary(input),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: HirLiteral::Binary(pattern),
+        },
+    ];
+    let mut positional = vec![RegId::new(1)];
+    if command == "bytes replace" {
+        let replacement = replacement.expect("bytes replace requires replacement fixture data");
+        stmts.push(HirStmt::LoadLiteral {
+            dst: RegId::new(2),
+            lit: HirLiteral::Binary(replacement),
+        });
+        positional.push(RegId::new(2));
+    }
+    stmts.push(HirStmt::Call {
+        decl_id: transform_decl,
+        src_dst: RegId::new(3),
+        args: HirCallArgs {
+            positional,
+            pipeline_input: Some(RegId::new(0)),
+            flags: flags
+                .into_iter()
+                .map(|flag| flag.as_bytes().to_vec())
+                .collect(),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(4),
+        lit: HirLiteral::Binary(expected_prefix),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: starts_with_decl,
+        src_dst: RegId::new(5),
+        args: HirCallArgs {
+            positional: vec![RegId::new(4)],
+            pipeline_input: Some(RegId::new(3)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(5) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 6,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+#[test]
+fn test_lower_bytes_remove_materializes_first_removed_binary() {
+    let bytes_remove_decl = DeclId::new(233);
+    let bytes_starts_with_decl = DeclId::new(234);
+    let hir = make_bytes_pattern_transform_then_starts_with_program(
+        bytes_remove_decl,
+        bytes_starts_with_decl,
+        "bytes remove",
+        vec![0x10, 0xaa, 0xff, 0xaa, 0xff],
+        vec![0x10, 0xaa],
+        None,
+        Vec::new(),
+        vec![0xff, 0xaa],
+    );
+    let decl_names = HashMap::from([
+        (bytes_remove_decl, "bytes remove".to_string()),
+        (bytes_starts_with_decl, "bytes starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bytes remove should lower compile-time binary input and pattern");
+
+    assert!(
+        result
+            .readonly_globals
+            .iter()
+            .any(|global| global.data == vec![0xff, 0xaa, 0xff]),
+        "expected bytes remove to materialize binary with first match removed"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("bytes remove output consumed by bytes starts-with should compile through codegen");
+}
+
+#[test]
+fn test_lower_bytes_remove_from_end_materializes_last_removed_binary() {
+    let bytes_remove_decl = DeclId::new(235);
+    let bytes_starts_with_decl = DeclId::new(236);
+    let hir = make_bytes_pattern_transform_then_starts_with_program(
+        bytes_remove_decl,
+        bytes_starts_with_decl,
+        "bytes remove",
+        vec![0x10, 0xaa, 0x10, 0xbb, 0xcc, 0xaa, 0x10],
+        vec![0x10],
+        None,
+        vec!["end"],
+        vec![0x10, 0xaa, 0x10],
+    );
+    let decl_names = HashMap::from([
+        (bytes_remove_decl, "bytes remove".to_string()),
+        (bytes_starts_with_decl, "bytes starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bytes remove --end should lower compile-time binary input and pattern");
+
+    assert!(
+        result
+            .readonly_globals
+            .iter()
+            .any(|global| global.data == vec![0x10, 0xaa, 0x10, 0xbb, 0xcc, 0xaa]),
+        "expected bytes remove --end to materialize binary with last match removed"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("bytes remove --end output consumed by bytes starts-with should compile");
+}
+
+#[test]
+fn test_lower_bytes_remove_all_materializes_all_removed_binary() {
+    let bytes_remove_decl = DeclId::new(237);
+    let bytes_starts_with_decl = DeclId::new(238);
+    let hir = make_bytes_pattern_transform_then_starts_with_program(
+        bytes_remove_decl,
+        bytes_starts_with_decl,
+        "bytes remove",
+        vec![0x10, 0xaa, 0x10, 0xbb, 0x10],
+        vec![0x10],
+        None,
+        vec!["all"],
+        vec![0xaa, 0xbb],
+    );
+    let decl_names = HashMap::from([
+        (bytes_remove_decl, "bytes remove".to_string()),
+        (bytes_starts_with_decl, "bytes starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bytes remove --all should lower compile-time binary input and pattern");
+
+    assert!(
+        result
+            .readonly_globals
+            .iter()
+            .any(|global| global.data == vec![0xaa, 0xbb]),
+        "expected bytes remove --all to materialize binary with every match removed"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("bytes remove --all output consumed by bytes starts-with should compile");
+}
+
+#[test]
+fn test_lower_bytes_replace_materializes_first_replaced_binary() {
+    let bytes_replace_decl = DeclId::new(239);
+    let bytes_starts_with_decl = DeclId::new(240);
+    let hir = make_bytes_pattern_transform_then_starts_with_program(
+        bytes_replace_decl,
+        bytes_starts_with_decl,
+        "bytes replace",
+        vec![0x10, 0xaa, 0xff, 0xaa, 0xff],
+        vec![0x10, 0xaa],
+        Some(vec![0xff]),
+        Vec::new(),
+        vec![0xff, 0xff],
+    );
+    let decl_names = HashMap::from([
+        (bytes_replace_decl, "bytes replace".to_string()),
+        (bytes_starts_with_decl, "bytes starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bytes replace should lower compile-time binary input, pattern, and replacement");
+
+    assert!(
+        result
+            .readonly_globals
+            .iter()
+            .any(|global| global.data == vec![0xff, 0xff, 0xaa, 0xff]),
+        "expected bytes replace to materialize binary with first match replaced"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("bytes replace output consumed by bytes starts-with should compile");
+}
+
+#[test]
+fn test_lower_bytes_replace_all_materializes_all_replaced_binary() {
+    let bytes_replace_decl = DeclId::new(241);
+    let bytes_starts_with_decl = DeclId::new(242);
+    let hir = make_bytes_pattern_transform_then_starts_with_program(
+        bytes_replace_decl,
+        bytes_starts_with_decl,
+        "bytes replace",
+        vec![0x10, 0xaa, 0x10, 0xbb, 0x10],
+        vec![0x10],
+        Some(vec![0xa0]),
+        vec!["all"],
+        vec![0xa0, 0xaa, 0xa0],
+    );
+    let decl_names = HashMap::from([
+        (bytes_replace_decl, "bytes replace".to_string()),
+        (bytes_starts_with_decl, "bytes starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bytes replace --all should lower compile-time binary input, pattern, and replacement");
+
+    assert!(
+        result
+            .readonly_globals
+            .iter()
+            .any(|global| global.data == vec![0xa0, 0xaa, 0xa0, 0xbb, 0xa0]),
+        "expected bytes replace --all to materialize binary with every match replaced"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("bytes replace --all output consumed by bytes starts-with should compile");
+}
+
+#[test]
+fn test_lower_bytes_remove_rejects_empty_pattern() {
+    let bytes_remove_decl = DeclId::new(243);
+    let bytes_starts_with_decl = DeclId::new(244);
+    let hir = make_bytes_pattern_transform_then_starts_with_program(
+        bytes_remove_decl,
+        bytes_starts_with_decl,
+        "bytes remove",
+        vec![0x10, 0xaa],
+        Vec::new(),
+        None,
+        Vec::new(),
+        vec![0x10],
+    );
+    let decl_names = HashMap::from([
+        (bytes_remove_decl, "bytes remove".to_string()),
+        (bytes_starts_with_decl, "bytes starts-with".to_string()),
+    ]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("bytes remove should reject empty patterns");
+
+    assert!(
+        err.to_string()
+            .contains("bytes remove requires a non-empty binary pattern"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_bytes_replace_rejects_empty_result() {
+    let bytes_replace_decl = DeclId::new(245);
+    let bytes_starts_with_decl = DeclId::new(246);
+    let hir = make_bytes_pattern_transform_then_starts_with_program(
+        bytes_replace_decl,
+        bytes_starts_with_decl,
+        "bytes replace",
+        vec![0x10],
+        vec![0x10],
+        Some(Vec::new()),
+        Vec::new(),
+        vec![0x10],
+    );
+    let decl_names = HashMap::from([
+        (bytes_replace_decl, "bytes replace".to_string()),
+        (bytes_starts_with_decl, "bytes starts-with".to_string()),
+    ]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("bytes replace should reject empty binary results");
+
+    assert!(
+        err.to_string()
+            .contains("bytes replace requires a non-empty binary result"),
+        "unexpected error: {err}"
+    );
+}
+
 #[test]
 fn test_lower_select_on_metadata_record_materializes_requested_layout() {
     let select_decl = DeclId::new(94);

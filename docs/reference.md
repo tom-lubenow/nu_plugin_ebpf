@@ -867,6 +867,8 @@ eBPF layout and verifier bounds are explicit:
 | `bytes build` | Compile-time known binary fragments and integer byte arguments, returning a non-empty fixed binary value |
 | `bytes at` | Compile-time known binary input and unit-step range, returning a non-empty fixed binary slice |
 | `bytes add` | Compile-time known binary input/data with optional non-negative `--index` and `--end`, returning a non-empty fixed binary value |
+| `bytes remove` | Compile-time known binary input and non-empty binary pattern with optional `--all` and `--end`, returning a non-empty fixed binary value |
+| `bytes replace` | Compile-time known binary input, non-empty binary pattern, and binary replacement with optional `--all`, returning a non-empty fixed binary value |
 | `str length` | Tracked strings and literal strings, returning the byte length tracked by the string buffer |
 | `str starts-with` | Tracked strings with a compile-time literal prefix, lowered as a bounded stack-buffer prefix comparison; `--ignore-case` is supported for compile-time known input strings |
 | `str ends-with` | Tracked strings with a compile-time known input length and literal suffix, lowered as a fixed-offset stack-buffer suffix comparison; `--ignore-case` is supported for compile-time known input strings |

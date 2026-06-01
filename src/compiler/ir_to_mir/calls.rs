@@ -3319,6 +3319,141 @@ impl<'a> HirToMirLowering<'a> {
                 )?;
             }
 
+            "bytes remove" | "bytes replace" => {
+                let input_reg = self
+                    .pipeline_input_reg
+                    .or(src_dst_had_value.then_some(src_dst));
+
+                let mut apply_all = false;
+                let mut from_end = false;
+                for flag in &self.named_flags {
+                    match flag.as_str() {
+                        "all" => apply_all = true,
+                        "end" if cmd_name == "bytes remove" => from_end = true,
+                        "end" => {
+                            return Err(CompileError::UnsupportedInstruction(
+                                "bytes replace does not support --end in eBPF".into(),
+                            ));
+                        }
+                        _ => {
+                            return Err(CompileError::UnsupportedInstruction(format!(
+                                "{cmd_name} currently supports only --all{} as flags in eBPF",
+                                if cmd_name == "bytes remove" {
+                                    " and --end"
+                                } else {
+                                    ""
+                                }
+                            )));
+                        }
+                    }
+                }
+                if !self.named_args.is_empty() {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{cmd_name} does not accept named arguments in eBPF"
+                    )));
+                }
+
+                let expected_args = if cmd_name == "bytes remove" { 1 } else { 2 };
+                if self.positional_args.len() != expected_args {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{cmd_name} accepts exactly {expected_args} binary positional argument{} in eBPF",
+                        if expected_args == 1 { "" } else { "s" }
+                    )));
+                }
+
+                let input = input_reg
+                    .and_then(|reg| self.get_metadata(reg))
+                    .and_then(|meta| match meta.constant_value.as_ref() {
+                        Some(nu_protocol::Value::Binary { val, .. }) => Some(val.clone()),
+                        _ => None,
+                    })
+                    .ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(format!(
+                            "{cmd_name} requires compile-time known binary input in eBPF"
+                        ))
+                    })?;
+                let (_, pattern_reg) = self.positional_args[0];
+                let pattern = self
+                    .get_metadata(pattern_reg)
+                    .and_then(|meta| match meta.constant_value.as_ref() {
+                        Some(nu_protocol::Value::Binary { val, .. }) => Some(val.clone()),
+                        _ => None,
+                    })
+                    .ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(format!(
+                            "{cmd_name} requires a compile-time known binary pattern in eBPF"
+                        ))
+                    })?;
+                if pattern.is_empty() {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{cmd_name} requires a non-empty binary pattern in eBPF"
+                    )));
+                }
+
+                let replacement = if cmd_name == "bytes replace" {
+                    let (_, replacement_reg) = self.positional_args[1];
+                    self.get_metadata(replacement_reg)
+                        .and_then(|meta| match meta.constant_value.as_ref() {
+                            Some(nu_protocol::Value::Binary { val, .. }) => Some(val.clone()),
+                            _ => None,
+                        })
+                        .ok_or_else(|| {
+                            CompileError::UnsupportedInstruction(
+                                "bytes replace requires compile-time known binary replacement in eBPF"
+                                    .into(),
+                            )
+                        })?
+                } else {
+                    Vec::new()
+                };
+
+                let mut output = Vec::new();
+                if apply_all {
+                    let mut index = 0;
+                    while index < input.len() {
+                        if input[index..].starts_with(&pattern) {
+                            output.extend_from_slice(&replacement);
+                            index += pattern.len();
+                        } else {
+                            output.push(input[index]);
+                            index += 1;
+                        }
+                    }
+                } else {
+                    let found = if pattern.len() > input.len() {
+                        None
+                    } else if from_end {
+                        input
+                            .windows(pattern.len())
+                            .rposition(|candidate| candidate == pattern.as_slice())
+                    } else {
+                        input
+                            .windows(pattern.len())
+                            .position(|candidate| candidate == pattern.as_slice())
+                    };
+
+                    if let Some(found) = found {
+                        output.extend_from_slice(&input[..found]);
+                        output.extend_from_slice(&replacement);
+                        output.extend_from_slice(&input[found + pattern.len()..]);
+                    } else {
+                        output.extend_from_slice(&input);
+                    }
+                }
+
+                if output.is_empty() {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{cmd_name} requires a non-empty binary result in eBPF"
+                    )));
+                }
+
+                self.reset_call_result_metadata(src_dst);
+                self.lower_constant_value(
+                    src_dst,
+                    &nu_protocol::Value::binary(output, nu_protocol::Span::unknown()),
+                )?;
+            }
+
             "str length" => {
                 self.lower_string_length(src_dst, dst_vreg, src_dst_had_value)?;
             }

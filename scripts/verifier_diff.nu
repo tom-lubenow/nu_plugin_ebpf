@@ -35153,6 +35153,32 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-binary-bytes-remove-starts-with"
+        category: "language-core"
+        tags: [binary bytes remove starts-with]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  0x[10 aa 10 bb 10] | bytes remove --all 0x[10] | bytes starts-with 0x[aa bb]'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-binary-bytes-replace-starts-with"
+        category: "language-core"
+        tags: [binary bytes replace starts-with]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  0x[10 aa 10 bb 10] | bytes replace --all 0x[10] 0x[a0] | bytes starts-with 0x[a0 aa a0]'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-string-is-empty"
         category: "language-core"
         tags: [string is-empty]
