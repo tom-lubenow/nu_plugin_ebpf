@@ -934,11 +934,6 @@ impl<'a> HirToMirLowering<'a> {
                 "str expand requires at least one brace expression in eBPF".into(),
             ));
         }
-        if outputs.is_empty() {
-            return Err(CompileError::UnsupportedInstruction(
-                "str expand patterns that produce an empty list are not supported in eBPF".into(),
-            ));
-        }
         if outputs.len() > MAX_STRING_EXPAND_RESULTS {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "str expand produced {} strings; eBPF lowering supports at most {}",

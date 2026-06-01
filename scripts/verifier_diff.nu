@@ -35933,6 +35933,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-string-expand-empty-length"
+        category: "language-core"
+        tags: [string str expand list length empty]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "A{2..1}B" | str expand | length'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-string-expand-get-length"
         category: "language-core"
         tags: [string str expand list get length]

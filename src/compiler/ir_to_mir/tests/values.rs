@@ -5370,6 +5370,32 @@ fn test_lower_str_expand_path_on_known_string_materializes_string_list() {
 }
 
 #[test]
+fn test_lower_str_expand_empty_range_materializes_empty_string_list() {
+    let expand_decl = DeclId::new(202);
+    let length_decl = DeclId::new(203);
+    let hir =
+        make_string_command_then_length_program(expand_decl, length_decl, "A{2..1}B", Vec::new());
+    let decl_names = HashMap::from([
+        (expand_decl, "str expand".to_string()),
+        (length_decl, "length".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str expand should materialize empty fixed string lists for empty ranges");
+
+    assert_program_returns_constant(&result.program, 0, "empty str expand length");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("empty str expand output consumed by length should compile through codegen");
+}
+
+#[test]
 fn test_lower_str_expand_get_materializes_item_string() {
     let expand_decl = DeclId::new(193);
     let get_decl = DeclId::new(194);
