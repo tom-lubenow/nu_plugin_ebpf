@@ -1239,6 +1239,82 @@ fn make_string_list_builder_pipeline_call_program(decl_id: DeclId, values: &[&st
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_string_list_builder_item_access_then_starts_with_program(
+    access_decl: DeclId,
+    starts_with_decl: DeclId,
+    values: &[&str],
+    index: Option<i64>,
+    prefix: &str,
+) -> HirProgram {
+    let value_count = values.len();
+    let value_count_u32 = u32::try_from(value_count).expect("test string-list length fits in u32");
+    let mut stmts = vec![HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List {
+            capacity: value_count,
+        },
+    }];
+
+    for (index, value) in values.iter().enumerate() {
+        let item_reg = RegId::new(u32::try_from(index).expect("test index fits in u32") + 2);
+        stmts.push(HirStmt::LoadValue {
+            dst: item_reg,
+            val: Box::new(Value::string(*value, Span::test_data())),
+        });
+        stmts.push(HirStmt::ListPush {
+            src_dst: RegId::new(0),
+            item: item_reg,
+        });
+    }
+
+    let index_reg = index.map(|raw_index| {
+        let reg = RegId::new(value_count_u32 + 2);
+        stmts.push(HirStmt::LoadLiteral {
+            dst: reg,
+            lit: HirLiteral::Int(raw_index),
+        });
+        reg
+    });
+    let prefix_reg = RegId::new(value_count_u32 + 2 + u32::from(index_reg.is_some()));
+    stmts.push(HirStmt::Call {
+        decl_id: access_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional: index_reg.into_iter().collect(),
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::LoadValue {
+        dst: prefix_reg,
+        val: Box::new(Value::string(prefix, Span::test_data())),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: starts_with_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional: vec![prefix_reg],
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: prefix_reg.get() + 1,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_string_command_then_get_field_program(
     command_decl: DeclId,
     get_decl: DeclId,
@@ -3320,6 +3396,283 @@ fn test_lower_is_not_empty_on_string_list_builder_uses_constant_length() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("is-not-empty string-list builder result should compile through codegen");
+}
+
+#[test]
+fn test_lower_get_on_string_list_builder_materializes_item_string() {
+    let get_decl = DeclId::new(274);
+    let starts_with_decl = DeclId::new(275);
+    let hir = make_string_list_builder_item_access_then_starts_with_program(
+        get_decl,
+        starts_with_decl,
+        &["ab", "cd"],
+        Some(1),
+        "cd",
+    );
+    let decl_names = HashMap::from([
+        (get_decl, "get".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("get should consume compile-time string-list builders");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"cd\0")
+            )),
+        "expected get 1 from a string-list builder to materialize cd"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .all(|inst| !matches!(inst, MirInst::ListGet { .. } | MirInst::ListLen { .. })),
+        "expected compile-time string-list get not to inspect a runtime list"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("get string-list builder result should compile through codegen");
+}
+
+#[test]
+fn test_lower_get_on_string_list_builder_rejects_dynamic_index() {
+    let get_decl = DeclId::new(280);
+    let random_decl = DeclId::new(281);
+    let values = ["ab", "cd"];
+    let value_count_u32 = u32::try_from(values.len()).expect("test string-list length fits in u32");
+    let index_reg = RegId::new(value_count_u32 + 2);
+    let mut stmts = vec![HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List {
+            capacity: values.len(),
+        },
+    }];
+
+    for (index, value) in values.iter().enumerate() {
+        let item_reg = RegId::new(u32::try_from(index).expect("test index fits in u32") + 2);
+        stmts.push(HirStmt::LoadValue {
+            dst: item_reg,
+            val: Box::new(Value::string(*value, Span::test_data())),
+        });
+        stmts.push(HirStmt::ListPush {
+            src_dst: RegId::new(0),
+            item: item_reg,
+        });
+    }
+    stmts.push(HirStmt::Call {
+        decl_id: random_decl,
+        src_dst: index_reg,
+        args: HirCallArgs::default(),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: get_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional: vec![index_reg],
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: index_reg.get() + 1,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+    let decl_names = HashMap::from([
+        (get_decl, "get".to_string()),
+        (random_decl, "random int".to_string()),
+    ]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("dynamic get index should be rejected for compile-time string-list builders");
+
+    assert!(
+        err.to_string()
+            .contains("get index must be compile-time constant"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_get_on_string_list_builder_rejects_out_of_bounds_index() {
+    let get_decl = DeclId::new(282);
+    let starts_with_decl = DeclId::new(283);
+    let hir = make_string_list_builder_item_access_then_starts_with_program(
+        get_decl,
+        starts_with_decl,
+        &["ab", "cd"],
+        Some(2),
+        "cd",
+    );
+    let decl_names = HashMap::from([
+        (get_decl, "get".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("out-of-bounds get index should be rejected for compile-time string-list builders");
+
+    assert!(
+        err.to_string()
+            .contains("get index 2 is out of bounds for compile-time known fixed list"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_first_on_string_list_builder_materializes_first_item() {
+    let first_decl = DeclId::new(276);
+    let starts_with_decl = DeclId::new(277);
+    let hir = make_string_list_builder_item_access_then_starts_with_program(
+        first_decl,
+        starts_with_decl,
+        &["ab", "cd"],
+        None,
+        "ab",
+    );
+    let decl_names = HashMap::from([
+        (first_decl, "first".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("first should consume compile-time string-list builders");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"ab\0")
+            )),
+        "expected first from a string-list builder to materialize ab"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .all(|inst| !matches!(inst, MirInst::ListGet { .. } | MirInst::ListLen { .. })),
+        "expected compile-time string-list first not to inspect a runtime list"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("first string-list builder result should compile through codegen");
+}
+
+#[test]
+fn test_lower_last_on_string_list_builder_materializes_last_item() {
+    let last_decl = DeclId::new(278);
+    let starts_with_decl = DeclId::new(279);
+    let hir = make_string_list_builder_item_access_then_starts_with_program(
+        last_decl,
+        starts_with_decl,
+        &["ab", "cd"],
+        None,
+        "cd",
+    );
+    let decl_names = HashMap::from([
+        (last_decl, "last".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("last should consume compile-time string-list builders");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"cd\0")
+            )),
+        "expected last from a string-list builder to materialize cd"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .all(|inst| !matches!(inst, MirInst::ListGet { .. } | MirInst::ListLen { .. })),
+        "expected compile-time string-list last not to inspect a runtime list"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("last string-list builder result should compile through codegen");
 }
 
 #[test]

@@ -34944,6 +34944,45 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-string-list-get"
+        category: "language-core"
+        tags: [string list get]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ["ab" "cd"] | get 1 | str starts-with "cd"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-string-list-first"
+        category: "language-core"
+        tags: [string list first]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ["ab" "cd"] | first | str starts-with "ab"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-string-list-last"
+        category: "language-core"
+        tags: [string list last]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ["ab" "cd"] | last | str starts-with "cd"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-math-sum"
         category: "language-core"
         tags: [aggregate list math sum]

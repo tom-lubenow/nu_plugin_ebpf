@@ -9,6 +9,39 @@ mod predicates;
 mod sort;
 
 impl<'a> HirToMirLowering<'a> {
+    fn is_stack_list_placeholder_type(ty: &MirType) -> bool {
+        matches!(
+            ty,
+            MirType::Ptr {
+                pointee,
+                address_space: AddressSpace::Stack,
+            } if matches!(
+                pointee.as_ref(),
+                MirType::Array { elem, .. } if matches!(elem.as_ref(), MirType::I64)
+            )
+        )
+    }
+
+    pub(super) fn compile_time_only_list_builder_values(
+        &self,
+        input_reg: RegId,
+        input_vreg: VReg,
+    ) -> Option<&[nu_protocol::Value]> {
+        let meta = self.get_metadata(input_reg)?;
+        let value @ nu_protocol::Value::List { vals, .. } = meta.constant_value.as_ref()? else {
+            return None;
+        };
+        if meta.list_buffer.is_some() || crate::compiler::hir::supports_numeric_constant_list(value)
+        {
+            return None;
+        }
+        let ty = self.vreg_type_hints.get(&input_vreg)?;
+        if !Self::is_stack_list_placeholder_type(ty) {
+            return None;
+        }
+        Some(vals)
+    }
+
     pub(super) fn create_stack_numeric_list_result(
         &mut self,
         dst_vreg: VReg,
@@ -83,7 +116,24 @@ impl<'a> HirToMirLowering<'a> {
         };
         let input_meta = self.get_metadata(input_reg).cloned();
 
-        if input_meta
+        if let Some(projected) = self
+            .compile_time_only_list_builder_values(input_reg, input_vreg)
+            .map(|values| {
+                if values.is_empty() {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{cmd_name} requires a non-empty compile-time known list in eBPF"
+                    )));
+                }
+                Ok(if cmd_name == "first" {
+                    values[0].clone()
+                } else {
+                    values[values.len() - 1].clone()
+                })
+            })
+            .transpose()?
+        {
+            self.lower_constant_value(src_dst, &projected)?;
+        } else if input_meta
             .as_ref()
             .and_then(|meta| meta.list_buffer)
             .is_some()

@@ -3894,7 +3894,37 @@ impl<'a> HirToMirLowering<'a> {
                         .unwrap_or(MirValue::VReg(idx_vreg));
                     let mut handled_list_get = false;
                     if let Some(meta) = input_meta {
-                        if let Some((_slot, max_len)) = meta.list_buffer {
+                        if let Some(values) = input_reg.and_then(|reg| {
+                            self.compile_time_only_list_builder_values(reg, input_vreg)
+                        }) {
+                            let MirValue::Const(raw_idx) = idx else {
+                                return Err(CompileError::UnsupportedInstruction(
+                                    "get index must be compile-time constant for compile-time known fixed lists in eBPF"
+                                        .into(),
+                                ));
+                            };
+                            if raw_idx < 0 {
+                                return Err(CompileError::UnsupportedInstruction(
+                                    "get index must be non-negative for compile-time known fixed lists in eBPF"
+                                        .into(),
+                                ));
+                            }
+                            let idx_usize = usize::try_from(raw_idx).map_err(|_| {
+                                CompileError::UnsupportedInstruction(
+                                    "get index is too large for compile-time known fixed-list lowering"
+                                        .into(),
+                                )
+                            })?;
+                            let projected = values.get(idx_usize).cloned().ok_or_else(|| {
+                                CompileError::UnsupportedInstruction(format!(
+                                    "get index {raw_idx} is out of bounds for compile-time known fixed list with length {} in eBPF",
+                                    values.len()
+                                ))
+                            })?;
+
+                            self.lower_constant_value(src_dst, &projected)?;
+                            handled_list_get = true;
+                        } else if let Some((_slot, max_len)) = meta.list_buffer {
                             if let MirValue::Const(raw_idx) = &idx {
                                 let raw_idx = *raw_idx;
                                 if raw_idx < 0 {

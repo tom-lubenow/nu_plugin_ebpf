@@ -301,6 +301,8 @@ pub enum FixedLayoutValueConsumer {
     StrJoin,
     Length,
     EmptyPredicate,
+    Get,
+    FirstLast,
 }
 
 pub fn compile_time_value_flows_to_fixed_layout_consumer(
@@ -480,6 +482,8 @@ pub fn compile_time_value_flows_to_fixed_layout_aggregate_consumer(
         FixedLayoutValueConsumer::StrJoin,
         FixedLayoutValueConsumer::Length,
         FixedLayoutValueConsumer::EmptyPredicate,
+        FixedLayoutValueConsumer::Get,
+        FixedLayoutValueConsumer::FirstLast,
     ]
     .into_iter()
     .any(|consumer| {
@@ -640,6 +644,24 @@ fn compile_time_value_consumer_matches(
         }
         FixedLayoutValueConsumer::EmptyPredicate => {
             matches!(decl_name, Some("is-empty" | "is-not-empty"))
+                && call_args_tracked_only_in_pipeline(src_dst, args, tracked_regs)
+                && args.positional.is_empty()
+                && args.rest.is_empty()
+                && args.named.is_empty()
+                && args.flags.is_empty()
+                && args.parser_info.is_empty()
+        }
+        FixedLayoutValueConsumer::Get => {
+            decl_name == Some("get")
+                && call_args_tracked_only_in_pipeline(src_dst, args, tracked_regs)
+                && args.positional.len() == 1
+                && args.rest.is_empty()
+                && args.named.is_empty()
+                && args.flags.is_empty()
+                && args.parser_info.is_empty()
+        }
+        FixedLayoutValueConsumer::FirstLast => {
+            matches!(decl_name, Some("first" | "last"))
                 && call_args_tracked_only_in_pipeline(src_dst, args, tracked_regs)
                 && args.positional.is_empty()
                 && args.rest.is_empty()

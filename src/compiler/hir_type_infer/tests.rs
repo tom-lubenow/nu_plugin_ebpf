@@ -341,6 +341,68 @@ fn test_list_push_string_item_allowed_for_is_not_empty() {
 }
 
 #[test]
+fn test_list_push_string_item_allowed_for_first() {
+    assert_list_push_string_item_allowed_for_pipeline_command(DeclId::new(54), "first");
+}
+
+#[test]
+fn test_list_push_string_item_allowed_for_last() {
+    assert_list_push_string_item_allowed_for_pipeline_command(DeclId::new(55), "last");
+}
+
+#[test]
+fn test_list_push_string_item_allowed_for_get() {
+    let get_decl = DeclId::new(56);
+    let mut func = HirFunction {
+        blocks: Vec::new(),
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 4,
+        file_count: 0,
+    };
+
+    let mut block = HirBlock {
+        id: HirBlockId(0),
+        stmts: Vec::new(),
+        terminator: HirTerminator::Return { src: RegId::new(2) },
+    };
+
+    block.stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List { capacity: 1 },
+    });
+    block.stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(1),
+        lit: HirLiteral::String(b"ab".to_vec()),
+    });
+    block.stmts.push(HirStmt::ListPush {
+        src_dst: RegId::new(0),
+        item: RegId::new(1),
+    });
+    block.stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(3),
+        lit: HirLiteral::Int(0),
+    });
+    block.stmts.push(HirStmt::Call {
+        decl_id: get_decl,
+        src_dst: RegId::new(2),
+        args: HirCallArgs {
+            positional: vec![RegId::new(3)],
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    func.blocks.push(block);
+
+    let program = HirProgram::new(func, HashMap::new(), Vec::new(), None);
+    let decl_names = HashMap::from([(get_decl, "get".to_string())]);
+    infer_hir(&program, &decl_names).expect("get should allow compile-time string lists");
+}
+
+#[test]
 fn test_list_push_record_item_allowed_for_typed_global_array_initializer() {
     let define_decl = DeclId::new(42);
     let mut func = HirFunction {
