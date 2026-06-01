@@ -4520,7 +4520,40 @@ mod tests {
         for spec_text in spec_texts {
             let spec = ProgramSpec::parse(&spec_text)
                 .unwrap_or_else(|err| panic!("{spec_text} should parse: {err}"));
-            covered.extend(spec.compatibility_requirements());
+            let requirements = spec.compatibility_requirements();
+            let mut spec_keys = HashSet::new();
+            for requirement in &requirements {
+                assert!(
+                    spec_keys.insert(requirement.key()),
+                    "{spec_text} should not report duplicate compatibility requirement key {}",
+                    requirement.key()
+                );
+                match (
+                    requirement.minimum_kernel(),
+                    requirement.minimum_kernel_source(),
+                ) {
+                    (Some(minimum_kernel), Some(source)) => {
+                        assert!(
+                            !minimum_kernel.is_empty(),
+                            "{requirement:?} should report a non-empty minimum kernel"
+                        );
+                        assert!(
+                            source.starts_with("https://"),
+                            "{requirement:?} should report a primary source URL, got {source}"
+                        );
+                    }
+                    (None, None) => assert!(
+                        matches!(
+                            requirement,
+                            ProgramCompatibilityRequirement::SockMapAttach
+                                | ProgramCompatibilityRequirement::CgroupV2
+                        ),
+                        "{requirement:?} should be source-backed or explicitly unversioned"
+                    ),
+                    _ => panic!("{requirement:?} should report minimum kernel and source together"),
+                }
+            }
+            covered.extend(requirements);
         }
 
         for requirement in ProgramCompatibilityRequirement::all() {
