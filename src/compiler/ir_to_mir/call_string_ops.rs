@@ -700,14 +700,40 @@ impl<'a> HirToMirLowering<'a> {
             ));
         }
 
+        let needle = self.literal_string_arg(needle_reg, "str index-of")?;
+        if needle.as_bytes().contains(&0) {
+            return Err(CompileError::UnsupportedInstruction(
+                "str index-of does not support NUL bytes in the substring in eBPF".into(),
+            ));
+        }
+        if let Some(input) = self.exact_string_list_input(input_reg, "str index-of")? {
+            let mut output = Vec::with_capacity(input.len());
+            for item in input {
+                let (search_start, search_end) = self.string_index_of_search_bounds(item.len())?;
+                let index = if use_grapheme_clusters {
+                    Self::grapheme_index_of_in_byte_range(
+                        &item,
+                        &needle,
+                        search_from_end,
+                        search_start,
+                        search_end,
+                    )?
+                } else {
+                    Self::byte_index_of_in_range(
+                        &item,
+                        &needle,
+                        search_from_end,
+                        search_start,
+                        search_end,
+                    )
+                };
+                output.push(index);
+            }
+            return self.lower_known_i64_list_result(src_dst, output);
+        }
+
         if use_grapheme_clusters {
             let input = self.exact_string_input(input_reg, "str index-of --grapheme-clusters")?;
-            let needle = self.literal_string_arg(needle_reg, "str index-of")?;
-            if needle.as_bytes().contains(&0) {
-                return Err(CompileError::UnsupportedInstruction(
-                    "str index-of does not support NUL bytes in the substring in eBPF".into(),
-                ));
-            }
             let (search_start, search_end) = self.string_index_of_search_bounds(input.len())?;
             let index = Self::grapheme_index_of_in_byte_range(
                 &input,
@@ -1410,6 +1436,18 @@ impl<'a> HirToMirLowering<'a> {
         self.lower_constant_value(src_dst, &nu_protocol::Value::list(values, Span::unknown()))
     }
 
+    fn lower_known_i64_list_result(
+        &mut self,
+        src_dst: RegId,
+        outputs: Vec<i64>,
+    ) -> Result<(), CompileError> {
+        let values = outputs
+            .into_iter()
+            .map(|output| nu_protocol::Value::int(output, Span::unknown()))
+            .collect();
+        self.lower_constant_value(src_dst, &nu_protocol::Value::list(values, Span::unknown()))
+    }
+
     pub(super) fn lower_string_trim(
         &mut self,
         src_dst: RegId,
@@ -1906,6 +1944,40 @@ impl<'a> HirToMirLowering<'a> {
             })
             .map(|offset| offset as i64)
             .next()
+            .unwrap_or(-1)
+    }
+
+    fn byte_index_of_in_range(
+        input: &str,
+        needle: &str,
+        search_from_end: bool,
+        search_start: usize,
+        search_end: usize,
+    ) -> i64 {
+        if needle.is_empty() {
+            return if search_from_end {
+                search_end as i64
+            } else {
+                search_start as i64
+            };
+        }
+
+        if needle.len() > input.len() || search_start.saturating_add(needle.len()) > search_end {
+            return -1;
+        }
+
+        let last_offset = search_end - needle.len();
+        let input = input.as_bytes();
+        let needle = needle.as_bytes();
+        let mut offsets: Box<dyn Iterator<Item = usize>> = if search_from_end {
+            Box::new((search_start..=last_offset).rev())
+        } else {
+            Box::new(search_start..=last_offset)
+        };
+
+        offsets
+            .find(|offset| &input[*offset..*offset + needle.len()] == needle)
+            .map(|offset| offset as i64)
             .unwrap_or(-1)
     }
 

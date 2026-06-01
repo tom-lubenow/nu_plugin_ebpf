@@ -1491,6 +1491,132 @@ fn make_string_list_builder_predicate_join_then_starts_with_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_string_list_builder_index_of_join_then_starts_with_program(
+    index_of_decl: DeclId,
+    join_decl: DeclId,
+    starts_with_decl: DeclId,
+    values: &[&str],
+    needle: &str,
+    expected_prefix: &str,
+    flags: Vec<Vec<u8>>,
+    range: Option<(Option<i64>, Option<i64>, RangeInclusion)>,
+) -> HirProgram {
+    let value_count = values.len();
+    let value_count_u32 = u32::try_from(value_count).expect("test string-list length fits in u32");
+    let mut stmts = vec![HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List {
+            capacity: value_count,
+        },
+    }];
+
+    for (index, value) in values.iter().enumerate() {
+        let item_reg = RegId::new(u32::try_from(index).expect("test index fits in u32") + 2);
+        stmts.push(HirStmt::LoadValue {
+            dst: item_reg,
+            val: Box::new(Value::string(*value, Span::test_data())),
+        });
+        stmts.push(HirStmt::ListPush {
+            src_dst: RegId::new(0),
+            item: item_reg,
+        });
+    }
+
+    let needle_reg = RegId::new(value_count_u32 + 2);
+    let mut next_reg = needle_reg.get() + 1;
+    stmts.push(HirStmt::LoadValue {
+        dst: needle_reg,
+        val: Box::new(Value::string(needle, Span::test_data())),
+    });
+
+    let mut named = Vec::new();
+    if let Some((start, end, inclusion)) = range {
+        let start_reg = RegId::new(next_reg);
+        let step_reg = RegId::new(next_reg + 1);
+        let end_reg = RegId::new(next_reg + 2);
+        let range_reg = RegId::new(next_reg + 3);
+        next_reg += 4;
+        stmts.push(HirStmt::LoadLiteral {
+            dst: start_reg,
+            lit: start.map_or(HirLiteral::Nothing, HirLiteral::Int),
+        });
+        stmts.push(HirStmt::LoadLiteral {
+            dst: step_reg,
+            lit: HirLiteral::Int(1),
+        });
+        stmts.push(HirStmt::LoadLiteral {
+            dst: end_reg,
+            lit: end.map_or(HirLiteral::Nothing, HirLiteral::Int),
+        });
+        stmts.push(HirStmt::LoadLiteral {
+            dst: range_reg,
+            lit: HirLiteral::Range {
+                start: start_reg,
+                step: step_reg,
+                end: end_reg,
+                inclusion,
+            },
+        });
+        named.push((b"range".to_vec(), range_reg));
+    }
+
+    stmts.push(HirStmt::Call {
+        decl_id: index_of_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional: vec![needle_reg],
+            named,
+            flags,
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let separator_reg = RegId::new(next_reg);
+    let expected_prefix_reg = RegId::new(next_reg + 1);
+    stmts.push(HirStmt::LoadValue {
+        dst: separator_reg,
+        val: Box::new(Value::string("-", Span::test_data())),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: join_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional: vec![separator_reg],
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::LoadValue {
+        dst: expected_prefix_reg,
+        val: Box::new(Value::string(expected_prefix, Span::test_data())),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: starts_with_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional: vec![expected_prefix_reg],
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: expected_prefix_reg.get() + 1,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_string_list_builder_pipeline_call_program(decl_id: DeclId, values: &[&str]) -> HirProgram {
     let value_count = values.len();
     let value_count_u32 = u32::try_from(value_count).expect("test string-list length fits in u32");
@@ -6830,6 +6956,98 @@ fn test_lower_str_index_of_grapheme_clusters_with_non_boundary_range_is_rejected
         ),
         "expected targeted UTF-8 boundary diagnostic, got {err:?}"
     );
+}
+
+#[test]
+fn test_lower_string_list_index_of_materializes_numeric_lists() {
+    let cases = [
+        (&["ababa", "xaba"][..], "ba", Vec::new(), None, "1-2"),
+        (
+            &["ababa", "baba"][..],
+            "ba",
+            vec![b"end".to_vec()],
+            None,
+            "3-2",
+        ),
+        (
+            &["abcabc", "zzbc"][..],
+            "bc",
+            Vec::new(),
+            Some((Some(2), Some(5), RangeInclusion::Inclusive)),
+            "4-2",
+        ),
+        (
+            &["🇯🇵ほげ ふが", "a🇯🇵b"][..],
+            "🇯🇵",
+            vec![b"grapheme-clusters".to_vec()],
+            None,
+            "0-1",
+        ),
+    ];
+
+    for (case_index, (values, needle, flags, range, expected)) in cases.into_iter().enumerate() {
+        let index_of_decl = DeclId::new(430 + (case_index * 3));
+        let join_decl = DeclId::new(index_of_decl.get() + 1);
+        let starts_with_decl = DeclId::new(index_of_decl.get() + 2);
+        let hir = make_string_list_builder_index_of_join_then_starts_with_program(
+            index_of_decl,
+            join_decl,
+            starts_with_decl,
+            values,
+            needle,
+            expected,
+            flags,
+            range,
+        );
+        let decl_names = HashMap::from([
+            (index_of_decl, "str index-of".to_string()),
+            (join_decl, "str join".to_string()),
+            (starts_with_decl, "str starts-with".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .expect("str index-of should lower for compile-time known string-list input");
+
+        let expected_literal = format!("{expected}\0");
+        assert!(
+            result
+                .program
+                .main
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .any(|inst| matches!(
+                    inst,
+                    MirInst::StringAppend {
+                        val_type: StringAppendType::Literal { bytes },
+                        ..
+                    } if bytes.starts_with(expected_literal.as_bytes())
+                )),
+            "expected str index-of string-list output to feed str join with {expected}"
+        );
+        assert!(
+            result
+                .program
+                .main
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .all(|inst| !matches!(
+                    inst,
+                    MirInst::ListGet { .. } | MirInst::ListLen { .. } | MirInst::ListPush { .. }
+                )),
+            "expected compile-time str index-of string-list input not to use runtime list operations"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .expect("str index-of string-list numeric output should compile");
+    }
 }
 
 #[test]

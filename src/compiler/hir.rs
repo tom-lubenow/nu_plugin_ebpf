@@ -800,6 +800,19 @@ fn compile_time_value_consumer_matches(
                                 .iter()
                                 .all(|flag| flag.as_slice() == b"ignore-case")
                     }
+                    "str index-of" => {
+                        args.positional.len() == 1
+                            && args
+                                .named
+                                .iter()
+                                .all(|(name, _)| name.as_slice() == b"range")
+                            && args.flags.iter().all(|flag| {
+                                matches!(
+                                    flag.as_slice(),
+                                    b"end" | b"utf-8-bytes" | b"grapheme-clusters"
+                                )
+                            })
+                    }
                     "str downcase"
                     | "str upcase"
                     | "str reverse"

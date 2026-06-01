@@ -36180,6 +36180,58 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-string-list-index-of-join"
+        category: "language-core"
+        tags: [string list str index-of join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ["ababa" "xaba"] | str index-of "ba" | str join "-" | str starts-with "1-2"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-string-list-index-of-from-end-join"
+        category: "language-core"
+        tags: [string list str index-of end join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ["ababa" "baba"] | str index-of --end "ba" | str join "-" | str starts-with "3-2"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-string-list-index-of-range-join"
+        category: "language-core"
+        tags: [string list str index-of range join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ["abcabc" "zzbc"] | str index-of "bc" --range 2..5 | str join "-" | str starts-with "4-2"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-string-list-index-of-grapheme-clusters-join"
+        category: "language-core"
+        tags: [string list str index-of grapheme-clusters join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ["🇯🇵ほげ ふが" "a🇯🇵b"] | str index-of --grapheme-clusters "🇯🇵" | str join "-" | str starts-with "0-1"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-string-substring"
         category: "language-core"
         tags: [string str substring]
