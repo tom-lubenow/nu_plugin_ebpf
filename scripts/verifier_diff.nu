@@ -35725,6 +35725,32 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-string-list-str-length-sum"
+        category: "language-core"
+        tags: [string list str length sum]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ["a" "bb"] | str length | math sum'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-string-list-str-length-grapheme-clusters-sum"
+        category: "language-core"
+        tags: [string list str length grapheme-clusters sum]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ["🇯🇵" "ほげ"] | str length --grapheme-clusters | math sum'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-string-starts-with"
         category: "language-core"
         tags: [string str starts-with]

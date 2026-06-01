@@ -650,13 +650,18 @@ fn compile_time_value_consumer_matches(
                 && args.parser_info.is_empty()
         }
         FixedLayoutValueConsumer::Length => {
-            decl_name == Some("length")
-                && call_args_tracked_only_in_pipeline(src_dst, args, tracked_regs)
+            call_args_tracked_only_in_pipeline(src_dst, args, tracked_regs)
                 && args.positional.is_empty()
                 && args.rest.is_empty()
                 && args.named.is_empty()
-                && args.flags.is_empty()
                 && args.parser_info.is_empty()
+                && match decl_name {
+                    Some("length") => args.flags.is_empty(),
+                    Some("str length") => args.flags.iter().all(|flag| {
+                        matches!(flag.as_slice(), b"utf-8-bytes" | b"grapheme-clusters")
+                    }),
+                    _ => false,
+                }
         }
         FixedLayoutValueConsumer::EmptyPredicate => {
             matches!(decl_name, Some("is-empty" | "is-not-empty"))

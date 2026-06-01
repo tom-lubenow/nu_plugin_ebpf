@@ -1352,6 +1352,55 @@ fn make_string_list_builder_join_then_starts_with_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_string_list_str_length_sum_program(
+    str_length_decl: DeclId,
+    sum_decl: DeclId,
+    values: &[&str],
+    flags: Vec<Vec<u8>>,
+) -> HirProgram {
+    let values = values
+        .iter()
+        .map(|value| Value::string(*value, Span::test_data()))
+        .collect();
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::list(values, Span::test_data())),
+                },
+                HirStmt::Call {
+                    decl_id: str_length_decl,
+                    src_dst: RegId::new(1),
+                    args: HirCallArgs {
+                        flags,
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: sum_decl,
+                    src_dst: RegId::new(1),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(1)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 2,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_string_list_builder_pipeline_call_program(decl_id: DeclId, values: &[&str]) -> HirProgram {
     let value_count = values.len();
     let value_count_u32 = u32::try_from(value_count).expect("test string-list length fits in u32");
@@ -5008,6 +5057,106 @@ fn test_lower_str_length_grapheme_clusters_on_known_string_materializes_count() 
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("str length --grapheme-clusters should compile through codegen");
+}
+
+#[test]
+fn test_lower_str_length_on_known_string_list_materializes_numeric_lengths() {
+    let str_length_decl = DeclId::new(402);
+    let sum_decl = DeclId::new(403);
+    let hir = make_string_list_str_length_sum_program(
+        str_length_decl,
+        sum_decl,
+        &["a", "bb"],
+        Vec::new(),
+    );
+    let decl_names = HashMap::from([
+        (str_length_decl, "str length".to_string()),
+        (sum_decl, "math sum".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str length should lower for compile-time known string-list input");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .all(|inst| !matches!(inst, MirInst::StringAppend { .. })),
+        "expected compile-time str length string-list input not to materialize runtime strings"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::ListGet { .. })),
+        "expected math sum to consume the str length numeric-list result"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "str length string-list result consumed by math sum should compile through codegen",
+    );
+}
+
+#[test]
+fn test_lower_str_length_grapheme_clusters_on_known_string_list_materializes_numeric_lengths() {
+    let str_length_decl = DeclId::new(404);
+    let sum_decl = DeclId::new(405);
+    let hir = make_string_list_str_length_sum_program(
+        str_length_decl,
+        sum_decl,
+        &["🇯🇵", "ほげ"],
+        vec![b"grapheme-clusters".to_vec()],
+    );
+    let decl_names = HashMap::from([
+        (str_length_decl, "str length".to_string()),
+        (sum_decl, "math sum".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str length --grapheme-clusters should lower for compile-time known string-list input");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .all(|inst| !matches!(inst, MirInst::StringAppend { .. })),
+        "expected compile-time str length --grapheme-clusters string-list input not to materialize runtime strings"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::ListGet { .. })),
+        "expected math sum to consume the grapheme length numeric-list result"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "str length --grapheme-clusters string-list result consumed by math sum should compile through codegen",
+    );
 }
 
 #[test]

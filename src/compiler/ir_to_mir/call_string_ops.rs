@@ -42,9 +42,38 @@ impl<'a> HirToMirLowering<'a> {
         let use_grapheme_clusters = self.string_grapheme_cluster_indexing_flag("str length")?;
 
         if use_grapheme_clusters {
+            if let Some(input) = self.exact_string_list_input(input_reg, "str length")? {
+                let lengths = input
+                    .into_iter()
+                    .map(|item| {
+                        nu_protocol::Value::int(
+                            UnicodeSegmentation::graphemes(item.as_str(), true).count() as i64,
+                            Span::unknown(),
+                        )
+                    })
+                    .collect();
+                self.lower_constant_value(
+                    src_dst,
+                    &nu_protocol::Value::list(lengths, Span::unknown()),
+                )?;
+                return Ok(());
+            }
+
             let input = self.exact_string_input(input_reg, "str length --grapheme-clusters")?;
             let grapheme_len = UnicodeSegmentation::graphemes(input.as_str(), true).count() as i64;
             return self.lower_i64_result(src_dst, result_vreg, grapheme_len);
+        }
+
+        if let Some(input) = self.exact_string_list_input(input_reg, "str length")? {
+            let lengths = input
+                .into_iter()
+                .map(|item| nu_protocol::Value::int(item.len() as i64, Span::unknown()))
+                .collect();
+            self.lower_constant_value(
+                src_dst,
+                &nu_protocol::Value::list(lengths, Span::unknown()),
+            )?;
+            return Ok(());
         }
 
         let input_meta = input_reg.and_then(|reg| self.get_metadata(reg).cloned());
