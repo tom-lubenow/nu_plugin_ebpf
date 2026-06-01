@@ -3070,6 +3070,66 @@ impl<'a> HirToMirLowering<'a> {
                 )?;
             }
 
+            "bytes build" => {
+                if self.pipeline_input_reg.is_some()
+                    || src_dst_had_value
+                    || !self.named_flags.is_empty()
+                    || !self.named_args.is_empty()
+                {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "bytes build does not accept pipeline input, named flags, or named arguments in eBPF"
+                            .into(),
+                    ));
+                }
+                if self.positional_args.is_empty() {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "bytes build requires at least one argument in eBPF".into(),
+                    ));
+                }
+
+                let mut output = Vec::new();
+                for (_, arg_reg) in &self.positional_args {
+                    let value = self
+                        .get_metadata(*arg_reg)
+                        .and_then(|meta| meta.constant_value.as_ref())
+                        .ok_or_else(|| {
+                            CompileError::UnsupportedInstruction(
+                                "bytes build requires compile-time known arguments in eBPF".into(),
+                            )
+                        })?;
+                    match value {
+                        nu_protocol::Value::Binary { val, .. } => {
+                            output.extend_from_slice(val);
+                        }
+                        nu_protocol::Value::Int { val, .. } if (0..=255).contains(val) => {
+                            output.push(*val as u8);
+                        }
+                        nu_protocol::Value::Int { .. } => {
+                            return Err(CompileError::UnsupportedInstruction(
+                                "bytes build integer arguments must be in 0..=255 in eBPF".into(),
+                            ));
+                        }
+                        _ => {
+                            return Err(CompileError::UnsupportedInstruction(
+                                "bytes build supports only binary and integer byte arguments in eBPF"
+                                    .into(),
+                            ));
+                        }
+                    }
+                }
+                if output.is_empty() {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "bytes build requires a non-empty binary result in eBPF".into(),
+                    ));
+                }
+
+                self.reset_call_result_metadata(src_dst);
+                self.lower_constant_value(
+                    src_dst,
+                    &nu_protocol::Value::binary(output, nu_protocol::Span::unknown()),
+                )?;
+            }
+
             "str length" => {
                 self.lower_string_length(src_dst, dst_vreg, src_dst_had_value)?;
             }

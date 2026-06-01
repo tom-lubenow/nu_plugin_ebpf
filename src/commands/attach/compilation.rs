@@ -54,6 +54,7 @@ const NU_CLOSURE_COMMANDS: &[&str] = &[
     "bytes ends-with",
     "bytes index-of",
     "bytes reverse",
+    "bytes build",
     "str length",
     "str starts-with",
     "str ends-with",
