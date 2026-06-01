@@ -35023,6 +35023,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-list-math-abs-sum"
+        category: "language-core"
+        tags: [aggregate list math abs sum]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [-2 -1 0 3] | math abs | math sum'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-null-length"
         category: "language-core"
         tags: ["null" length]

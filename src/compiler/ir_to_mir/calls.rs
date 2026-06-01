@@ -3709,18 +3709,58 @@ impl<'a> HirToMirLowering<'a> {
                     ));
                 }
 
-                let input = input_reg
+                let input_meta = input_reg
                     .and_then(|reg| self.get_metadata(reg))
-                    .and_then(|meta| {
-                        meta.literal_int
-                            .or_else(|| match meta.constant_value.as_ref() {
-                                Some(nu_protocol::Value::Int { val, .. }) => Some(*val),
-                                _ => None,
-                            })
+                    .cloned()
+                    .ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "math abs requires compile-time known integer or integer-list input in eBPF"
+                                .into(),
+                        )
+                    })?;
+
+                if let Some(nu_protocol::Value::List { vals, .. }) =
+                    input_meta.constant_value.clone()
+                {
+                    let mut output = Vec::with_capacity(vals.len());
+                    for (index, item) in vals.into_iter().enumerate() {
+                        let val = match item {
+                            nu_protocol::Value::Int { val, .. } => val,
+                            other => {
+                                return Err(CompileError::UnsupportedInstruction(format!(
+                                    "math abs requires integer list items in eBPF; item {index} has type {}",
+                                    other.get_type()
+                                )));
+                            }
+                        };
+                        let abs = val.checked_abs().ok_or_else(|| {
+                            CompileError::UnsupportedInstruction(
+                                "math abs cannot represent the absolute value of i64::MIN in eBPF"
+                                    .into(),
+                            )
+                        })?;
+                        output.push(nu_protocol::Value::int(abs, nu_protocol::Span::unknown()));
+                    }
+
+                    self.reset_call_result_metadata(src_dst);
+                    self.lower_constant_value(
+                        src_dst,
+                        &nu_protocol::Value::list(output, nu_protocol::Span::unknown()),
+                    )?;
+                    self.clear_call_state();
+                    return Ok(());
+                }
+
+                let input = input_meta
+                    .literal_int
+                    .or_else(|| match input_meta.constant_value.as_ref() {
+                        Some(nu_protocol::Value::Int { val, .. }) => Some(*val),
+                        _ => None,
                     })
                     .ok_or_else(|| {
                         CompileError::UnsupportedInstruction(
-                            "math abs requires compile-time known integer input in eBPF".into(),
+                            "math abs requires compile-time known integer or integer-list input in eBPF"
+                                .into(),
                         )
                     })?;
                 let output = input.checked_abs().ok_or_else(|| {

@@ -5639,6 +5639,148 @@ fn test_lower_math_abs_rejects_i64_min_overflow() {
     );
 }
 
+fn make_math_abs_list_sum_program(
+    abs_decl: DeclId,
+    sum_decl: DeclId,
+    values: Vec<i64>,
+) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::list(
+                        values
+                            .into_iter()
+                            .map(|value| Value::int(value, Span::test_data()))
+                            .collect(),
+                        Span::test_data(),
+                    )),
+                },
+                HirStmt::Call {
+                    decl_id: abs_decl,
+                    src_dst: RegId::new(1),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: sum_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(1)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(2) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_math_abs_list_program(abs_decl: DeclId, values: Vec<i64>) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::list(
+                        values
+                            .into_iter()
+                            .map(|value| Value::int(value, Span::test_data()))
+                            .collect(),
+                        Span::test_data(),
+                    )),
+                },
+                HirStmt::Call {
+                    decl_id: abs_decl,
+                    src_dst: RegId::new(1),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 2,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+#[test]
+fn test_lower_math_abs_on_known_integer_list_materializes_absolute_values() {
+    let abs_decl = DeclId::new(264);
+    let sum_decl = DeclId::new(265);
+    let hir = make_math_abs_list_sum_program(abs_decl, sum_decl, vec![-2, -1, 0, 3]);
+    let decl_names = HashMap::from([
+        (abs_decl, "math abs".to_string()),
+        (sum_decl, "math sum".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("math abs should lower compile-time known integer-list input");
+    let expected = [2i64, 1, 0, 3]
+        .into_iter()
+        .flat_map(|value| value.to_le_bytes())
+        .collect::<Vec<_>>();
+
+    assert!(
+        result
+            .readonly_globals
+            .iter()
+            .any(|global| global.data == expected),
+        "expected math abs on list to materialize absolute-value rodata"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("math abs list output consumed by math sum should compile");
+}
+
+#[test]
+fn test_lower_math_abs_on_integer_list_rejects_i64_min_overflow() {
+    let abs_decl = DeclId::new(266);
+    let hir = make_math_abs_list_program(abs_decl, vec![1, i64::MIN]);
+    let decl_names = HashMap::from([(abs_decl, "math abs".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("math abs should reject i64::MIN in integer lists");
+
+    assert!(
+        err.to_string()
+            .contains("math abs cannot represent the absolute value of i64::MIN"),
+        "unexpected error: {err}"
+    );
+}
+
 #[test]
 fn test_lower_uniq_on_numeric_list_removes_duplicate_values() {
     let uniq_decl = DeclId::new(111);
