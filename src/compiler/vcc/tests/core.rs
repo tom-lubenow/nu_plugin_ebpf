@@ -2065,7 +2065,7 @@ fn test_verify_mir_int_to_string_buffer_oob() {
 }
 
 #[test]
-fn test_verify_mir_emit_event_requires_ptr() {
+fn test_verify_mir_emit_event_requires_pointer_for_large_payload() {
     let (mut func, entry) = new_mir_function();
     let slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
     let data = func.alloc_vreg();
@@ -2094,9 +2094,14 @@ fn test_verify_mir_emit_event_requires_ptr() {
 
     let err = verify_mir(&func, &HashMap::new()).expect_err("expected pointer error");
     assert!(
-        err.iter()
-            .any(|e| matches!(e.kind, VccErrorKind::TypeMismatch { .. })),
-        "expected type mismatch error, got {:?}",
+        err.iter().any(|e| matches!(
+            e.kind,
+            VccErrorKind::TypeMismatch {
+                expected: VccTypeClass::Ptr,
+                actual: _,
+            }
+        ) && e.message.contains("emit event requires pointer type")),
+        "unexpected error messages: {:?}",
         err
     );
 }

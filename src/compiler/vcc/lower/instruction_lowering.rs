@@ -1149,7 +1149,23 @@ impl<'a> VccLowerer<'a> {
                 } else if *size <= 8 {
                     self.assert_scalar_reg(*data, out);
                 } else {
-                    self.check_ptr_range(*data, *size, out)?;
+                    let data_ty = self
+                        .types
+                        .get(data)
+                        .map(vcc_type_from_mir)
+                        .unwrap_or(VccValueType::Unknown);
+                    if data_ty.class() != VccTypeClass::Ptr
+                        && !self.ptr_regs.contains_key(&VccReg(data.0))
+                    {
+                        return Err(VccError::new(
+                            VccErrorKind::TypeMismatch {
+                                expected: VccTypeClass::Ptr,
+                                actual: data_ty.class(),
+                            },
+                            "emit event requires pointer type",
+                        ));
+                    }
+                    self.check_ptr_range_with_op(*data, *size, "emit event", out)?;
                 }
             }
             MirInst::EmitRecord { fields } => {
