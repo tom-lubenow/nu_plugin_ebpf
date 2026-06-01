@@ -7736,7 +7736,7 @@ fn test_verify_mir_get_stack_rejects_small_stack_buffer() {
     );
     assert!(
         err.iter()
-            .any(|e| e.message.contains("pointer access out of bounds")),
+            .any(|e| e.message.contains("helper get_stack buf out of bounds")),
         "unexpected errors: {:?}",
         err
     );

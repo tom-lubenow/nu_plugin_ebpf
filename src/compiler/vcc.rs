@@ -763,7 +763,7 @@ fn verify_mir_with_subfunction_summaries_impl(
         types,
         generic_map_value_types.unwrap_or(&empty_map_value_types),
     );
-    early_errors.extend(check_list_scalar_operands(func, types));
+    early_errors.extend(check_list_operands(func, types));
     if !early_errors.is_empty() {
         return Err(early_errors);
     }
@@ -952,12 +952,16 @@ fn collect_list_max(func: &MirFunction) -> HashMap<StackSlotId, usize> {
     maxes
 }
 
-fn check_list_scalar_operands(func: &MirFunction, types: &HashMap<VReg, MirType>) -> Vec<VccError> {
-    let mut pointer_regs: HashSet<VReg> = types
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ListOperandFact {
+    NonPtr(VccTypeClass),
+    Ptr(VccAddrSpace),
+}
+
+fn check_list_operands(func: &MirFunction, types: &HashMap<VReg, MirType>) -> Vec<VccError> {
+    let mut facts: HashMap<VReg, ListOperandFact> = types
         .iter()
-        .filter_map(|(reg, ty)| {
-            (vcc_type_from_mir(ty).class() == VccTypeClass::Ptr).then_some(*reg)
-        })
+        .filter_map(|(reg, ty)| list_operand_fact_from_mir_type(ty).map(|fact| (*reg, fact)))
         .collect();
     let mut errors = Vec::new();
 
@@ -968,70 +972,233 @@ fn check_list_scalar_operands(func: &MirFunction, types: &HashMap<VReg, MirType>
             .chain(std::iter::once(&block.terminator))
         {
             match inst {
-                MirInst::ListPush { item, .. } if pointer_regs.contains(item) => {
-                    errors.push(VccError::new(
-                        VccErrorKind::TypeMismatch {
-                            expected: VccTypeClass::Scalar,
-                            actual: VccTypeClass::Ptr,
-                        },
-                        "list push item expects scalar",
-                    ));
+                MirInst::ListLen { list, .. } => {
+                    check_list_reg_operand(*list, &facts, func, &mut errors);
                 }
-                MirInst::ListGet { idx, .. }
-                    if list_scalar_operand_is_pointer(idx, &pointer_regs) =>
-                {
-                    errors.push(VccError::new(
-                        VccErrorKind::TypeMismatch {
-                            expected: VccTypeClass::Scalar,
-                            actual: VccTypeClass::Ptr,
-                        },
-                        "list index expects scalar",
-                    ));
+                MirInst::ListPush { list, item } => {
+                    check_list_reg_operand(*list, &facts, func, &mut errors);
+                    if list_scalar_operand_is_pointer(&MirValue::VReg(*item), &facts) {
+                        errors.push(VccError::new(
+                            VccErrorKind::TypeMismatch {
+                                expected: VccTypeClass::Scalar,
+                                actual: VccTypeClass::Ptr,
+                            },
+                            "list push item expects scalar",
+                        ));
+                    }
+                }
+                MirInst::ListGet { list, idx, .. } => {
+                    check_list_reg_operand(*list, &facts, func, &mut errors);
+                    if list_scalar_operand_is_pointer(idx, &facts) {
+                        errors.push(VccError::new(
+                            VccErrorKind::TypeMismatch {
+                                expected: VccTypeClass::Scalar,
+                                actual: VccTypeClass::Ptr,
+                            },
+                            "list index expects scalar",
+                        ));
+                    }
                 }
                 _ => {}
             }
 
-            update_list_scalar_pointer_facts(inst, types, &mut pointer_regs);
+            update_list_operand_facts(inst, types, &mut facts);
         }
     }
 
     errors
 }
 
-fn list_scalar_operand_is_pointer(value: &MirValue, pointer_regs: &HashSet<VReg>) -> bool {
+fn list_operand_fact_from_mir_type(ty: &MirType) -> Option<ListOperandFact> {
+    match vcc_type_from_mir(ty) {
+        VccValueType::Ptr(info) => Some(ListOperandFact::Ptr(info.space)),
+        VccValueType::Unknown | VccValueType::Uninit | VccValueType::StalePacketPtr => None,
+        other => Some(ListOperandFact::NonPtr(other.class())),
+    }
+}
+
+fn check_list_reg_operand(
+    reg: VReg,
+    facts: &HashMap<VReg, ListOperandFact>,
+    func: &MirFunction,
+    errors: &mut Vec<VccError>,
+) {
+    match facts.get(&reg).copied() {
+        Some(ListOperandFact::Ptr(VccAddrSpace::Stack(slot))) => {
+            if stack_slot_kind(func, slot).is_some_and(|kind| kind != StackSlotKind::ListBuffer) {
+                errors.push(VccError::new(
+                    VccErrorKind::PointerBounds,
+                    "list expects ListBuffer stack slot",
+                ));
+            }
+        }
+        Some(ListOperandFact::Ptr(space)) => {
+            errors.push(VccError::new(
+                VccErrorKind::PointerBounds,
+                format!(
+                    "list expects pointer in [Stack], got {}",
+                    list_operand_space_name(space)
+                ),
+            ));
+        }
+        Some(ListOperandFact::NonPtr(actual)) => {
+            errors.push(VccError::new(
+                VccErrorKind::TypeMismatch {
+                    expected: VccTypeClass::Ptr,
+                    actual,
+                },
+                "list expects pointer value",
+            ));
+        }
+        None => {}
+    }
+}
+
+fn stack_slot_kind(func: &MirFunction, slot: StackSlotId) -> Option<StackSlotKind> {
+    func.stack_slots
+        .iter()
+        .find(|stack_slot| stack_slot.id == slot)
+        .map(|stack_slot| stack_slot.kind)
+}
+
+fn list_operand_space_name(space: VccAddrSpace) -> &'static str {
+    match space {
+        VccAddrSpace::Stack(_) => "Stack",
+        VccAddrSpace::MapValue => "Map",
+        VccAddrSpace::Packet => "Packet",
+        VccAddrSpace::Context => "Context",
+        VccAddrSpace::RingBuf => "RingBuf",
+        VccAddrSpace::Kernel => "Kernel",
+        VccAddrSpace::KernelBtf => "KernelBtf",
+        VccAddrSpace::User => "User",
+        VccAddrSpace::Unknown => "Unknown",
+    }
+}
+
+fn list_scalar_operand_is_pointer(
+    value: &MirValue,
+    facts: &HashMap<VReg, ListOperandFact>,
+) -> bool {
     match value {
-        MirValue::VReg(reg) => pointer_regs.contains(reg),
+        MirValue::VReg(reg) => matches!(facts.get(reg), Some(ListOperandFact::Ptr(_))),
         MirValue::StackSlot(_) => true,
         MirValue::Const(_) => false,
     }
 }
 
-fn update_list_scalar_pointer_facts(
+fn update_list_operand_facts(
     inst: &MirInst,
     types: &HashMap<VReg, MirType>,
-    pointer_regs: &mut HashSet<VReg>,
+    facts: &mut HashMap<VReg, ListOperandFact>,
 ) {
     let Some(dst) = inst.def() else {
         return;
     };
 
-    let type_says_pointer = types
+    let fact = types
         .get(&dst)
-        .is_some_and(|ty| vcc_type_from_mir(ty).class() == VccTypeClass::Ptr);
-    let is_pointer = type_says_pointer
-        || match inst {
-            MirInst::Copy { src, .. } => list_scalar_operand_is_pointer(src, pointer_regs),
-            MirInst::ListNew { .. }
-            | MirInst::MapLookup { .. }
-            | MirInst::MapLookupDynamic { .. } => true,
-            MirInst::Phi { args, .. } => args.iter().any(|(_, reg)| pointer_regs.contains(reg)),
-            _ => false,
-        };
+        .and_then(list_operand_fact_from_mir_type)
+        .or_else(|| match inst {
+            MirInst::Copy { src, .. } => list_operand_fact_from_value(src, facts),
+            MirInst::ListNew { buffer, .. } => {
+                Some(ListOperandFact::Ptr(VccAddrSpace::Stack(*buffer)))
+            }
+            MirInst::MapLookup { .. } | MirInst::MapLookupDynamic { .. } => {
+                Some(ListOperandFact::Ptr(VccAddrSpace::MapValue))
+            }
+            MirInst::LoadGlobal { ty, .. }
+            | MirInst::Load { ty, .. }
+            | MirInst::LoadSlot { ty, .. } => list_operand_fact_from_mir_type(ty),
+            MirInst::CallHelper { helper, .. } => list_operand_fact_from_helper_return(*helper),
+            MirInst::CallKfunc { kfunc, .. } => list_operand_fact_from_kfunc_return(kfunc),
+            MirInst::Phi { args, .. } => {
+                let mut merged = None;
+                for (_, reg) in args {
+                    let Some(fact) = facts.get(reg).copied() else {
+                        return None;
+                    };
+                    match merged {
+                        None => merged = Some(fact),
+                        Some(existing) if existing == fact => {}
+                        Some(_) => return None,
+                    }
+                }
+                merged
+            }
+            MirInst::BinOp { .. }
+            | MirInst::UnaryOp { .. }
+            | MirInst::LoadMapFd { .. }
+            | MirInst::StrCmp { .. }
+            | MirInst::StopTimer { .. }
+            | MirInst::ListLen { .. }
+            | MirInst::ListGet { .. } => Some(ListOperandFact::NonPtr(VccTypeClass::Scalar)),
+            _ => None,
+        });
 
-    if is_pointer {
-        pointer_regs.insert(dst);
+    if let Some(fact) = fact {
+        facts.insert(dst, fact);
     } else {
-        pointer_regs.remove(&dst);
+        facts.remove(&dst);
+    }
+}
+
+fn list_operand_fact_from_helper_return(helper_id: u32) -> Option<ListOperandFact> {
+    let helper = BpfHelper::from_u32(helper_id);
+    let sig = HelperSignature::for_id(helper_id)?;
+    match sig.ret_kind {
+        HelperRetKind::Void | HelperRetKind::Scalar => {
+            Some(ListOperandFact::NonPtr(VccTypeClass::Scalar))
+        }
+        HelperRetKind::PointerNonNull => {
+            let space = match helper {
+                Some(BpfHelper::GetLocalStorage) => VccAddrSpace::MapValue,
+                _ => VccAddrSpace::Kernel,
+            };
+            Some(ListOperandFact::Ptr(space))
+        }
+        HelperRetKind::PointerMaybeNull => {
+            let space = match helper {
+                Some(BpfHelper::RingbufReserve) => VccAddrSpace::RingBuf,
+                Some(
+                    BpfHelper::KptrXchg
+                    | BpfHelper::SkFullsock
+                    | BpfHelper::TcpSock
+                    | BpfHelper::SkcToTcp6Sock
+                    | BpfHelper::SkcToTcpTimewaitSock
+                    | BpfHelper::SkcToTcpRequestSock
+                    | BpfHelper::SkcToUdp6Sock
+                    | BpfHelper::SockFromFile
+                    | BpfHelper::TaskPtRegs
+                    | BpfHelper::SkcToTcpSock
+                    | BpfHelper::PerCpuPtr
+                    | BpfHelper::GetListenerSock,
+                ) => VccAddrSpace::Kernel,
+                Some(helper) if helper_acquire_ref_kind(helper).is_some() => VccAddrSpace::Kernel,
+                _ => VccAddrSpace::MapValue,
+            };
+            Some(ListOperandFact::Ptr(space))
+        }
+    }
+}
+
+fn list_operand_fact_from_kfunc_return(kfunc: &str) -> Option<ListOperandFact> {
+    let sig = KfuncSignature::for_name_or_kernel_btf(kfunc)?;
+    match sig.ret_kind {
+        KfuncRetKind::Scalar | KfuncRetKind::Void => {
+            Some(ListOperandFact::NonPtr(VccTypeClass::Scalar))
+        }
+        KfuncRetKind::PointerMaybeNull => Some(ListOperandFact::Ptr(VccAddrSpace::Kernel)),
+    }
+}
+
+fn list_operand_fact_from_value(
+    value: &MirValue,
+    facts: &HashMap<VReg, ListOperandFact>,
+) -> Option<ListOperandFact> {
+    match value {
+        MirValue::VReg(reg) => facts.get(reg).copied(),
+        MirValue::StackSlot(slot) => Some(ListOperandFact::Ptr(VccAddrSpace::Stack(*slot))),
+        MirValue::Const(_) => Some(ListOperandFact::NonPtr(VccTypeClass::Scalar)),
     }
 }
 

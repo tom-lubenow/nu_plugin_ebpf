@@ -194,3 +194,89 @@ fn test_verify_mir_list_get_rejects_pointer_index() {
         err
     );
 }
+
+#[test]
+fn test_verify_mir_list_len_rejects_scalar_list_operand() {
+    let (mut func, entry) = new_mir_function();
+    let list = func.alloc_vreg();
+    let len = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: list,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::ListLen { dst: len, list });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let err = verify_mir(&func, &HashMap::new()).expect_err("expected list operand pointer error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("list expects pointer value")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_list_push_rejects_non_list_stack_slot() {
+    let (mut func, entry) = new_mir_function();
+    let wrong_slot = func.alloc_stack_slot(24, 8, StackSlotKind::StringBuffer);
+    let list = func.alloc_vreg();
+    let item = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: list,
+        src: MirValue::StackSlot(wrong_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: item,
+        src: MirValue::Const(7),
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::ListPush { list, item });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let err = verify_mir(&func, &HashMap::new()).expect_err("expected list slot kind error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("list expects ListBuffer stack slot")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_list_get_rejects_non_stack_list_pointer() {
+    let (mut func, entry) = new_mir_function();
+    func.param_count = 1;
+    let list = func.alloc_vreg();
+    let out = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::ListGet {
+        dst: out,
+        list,
+        idx: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        list,
+        MirType::Ptr {
+            pointee: Box::new(MirType::I64),
+            address_space: AddressSpace::User,
+        },
+    );
+
+    let err = verify_mir(&func, &types).expect_err("expected non-stack list operand pointer error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("list expects pointer in [Stack], got User")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
