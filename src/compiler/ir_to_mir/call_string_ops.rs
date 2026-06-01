@@ -749,7 +749,6 @@ impl<'a> HirToMirLowering<'a> {
             ));
         }
 
-        let input = self.exact_string_input(input_reg, "str substring")?;
         let range_reg = self.positional_args[0].1;
         let range = self
             .get_metadata(range_reg)
@@ -765,25 +764,41 @@ impl<'a> HirToMirLowering<'a> {
             ));
         }
 
+        if let Some(input) = self.exact_string_list_input(input_reg, "str substring")? {
+            let output = input
+                .into_iter()
+                .map(|item| Self::substring_known_string(item, range, use_grapheme_clusters))
+                .collect::<Result<Vec<_>, _>>()?;
+            return self.lower_known_string_list_result(src_dst, result_vreg, output);
+        }
+
+        let input = self.exact_string_input(input_reg, "str substring")?;
+        let output = Self::substring_known_string(input, range, use_grapheme_clusters)?;
+
+        self.lower_known_string_result(src_dst, result_vreg, output)
+    }
+
+    fn substring_known_string(
+        input: String,
+        range: MaybeOpenRange,
+        use_grapheme_clusters: bool,
+    ) -> Result<String, CompileError> {
         if use_grapheme_clusters {
             let graphemes: Vec<&str> =
                 UnicodeSegmentation::graphemes(input.as_str(), true).collect();
             let (start, end) = Self::string_range_byte_bounds(range, graphemes.len());
-            let output = graphemes[start..end].concat();
-            return self.lower_known_string_result(src_dst, result_vreg, output);
+            return Ok(graphemes[start..end].concat());
         }
 
         let (start, end) = Self::string_range_byte_bounds(range, input.len());
         let bytes = input.as_bytes().get(start..end).ok_or_else(|| {
             CompileError::UnsupportedInstruction("invalid substring bounds".into())
         })?;
-        let output = String::from_utf8(bytes.to_vec()).map_err(|_| {
+        String::from_utf8(bytes.to_vec()).map_err(|_| {
             CompileError::UnsupportedInstruction(
                 "str substring byte bounds must preserve valid UTF-8 in eBPF".into(),
             )
-        })?;
-
-        self.lower_known_string_result(src_dst, result_vreg, output)
+        })
     }
 
     pub(super) fn lower_string_replace(

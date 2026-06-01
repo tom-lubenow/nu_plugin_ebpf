@@ -36115,6 +36115,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-string-list-substring-join"
+        category: "language-core"
+        tags: [string list str substring join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ["abcd" "wxyz"] | str substring 1..2 | str join "-" | str starts-with "bc-xy"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-string-substring-negative-end"
         category: "language-core"
         tags: [string str substring]

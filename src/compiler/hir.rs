@@ -752,33 +752,45 @@ fn compile_time_value_consumer_matches(
                 && args.parser_info.is_empty()
         }
         FixedLayoutValueConsumer::StringTransform => {
-            matches!(
-                decl_name,
-                Some(
-                    "str downcase"
-                        | "str trim"
-                        | "str upcase"
-                        | "str reverse"
-                        | "str capitalize"
-                        | "str camel-case"
-                        | "str kebab-case"
-                        | "str pascal-case"
-                        | "str screaming-snake-case"
-                        | "str snake-case"
-                        | "str title-case"
-                )
-            ) && call_args_tracked_only_in_pipeline(src_dst, args, tracked_regs)
-                && args.positional.is_empty()
+            let Some(decl_name) = decl_name else {
+                return false;
+            };
+            call_args_tracked_only_in_pipeline(src_dst, args, tracked_regs)
                 && args.rest.is_empty()
-                && args
-                    .named
-                    .iter()
-                    .all(|(name, _)| name.as_slice() == b"char")
-                && args
-                    .flags
-                    .iter()
-                    .all(|flag| matches!(flag.as_slice(), b"left" | b"right"))
                 && args.parser_info.is_empty()
+                && match decl_name {
+                    "str trim" => {
+                        args.positional.is_empty()
+                            && args
+                                .named
+                                .iter()
+                                .all(|(name, _)| name.as_slice() == b"char")
+                            && args
+                                .flags
+                                .iter()
+                                .all(|flag| matches!(flag.as_slice(), b"left" | b"right"))
+                    }
+                    "str substring" => {
+                        args.positional.len() == 1
+                            && args.named.is_empty()
+                            && args.flags.iter().all(|flag| {
+                                matches!(flag.as_slice(), b"utf-8-bytes" | b"grapheme-clusters")
+                            })
+                    }
+                    "str downcase"
+                    | "str upcase"
+                    | "str reverse"
+                    | "str capitalize"
+                    | "str camel-case"
+                    | "str kebab-case"
+                    | "str pascal-case"
+                    | "str screaming-snake-case"
+                    | "str snake-case"
+                    | "str title-case" => {
+                        args.positional.is_empty() && args.named.is_empty() && args.flags.is_empty()
+                    }
+                    _ => false,
+                }
         }
     }
 }

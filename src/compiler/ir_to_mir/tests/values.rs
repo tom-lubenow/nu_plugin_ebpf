@@ -1824,6 +1824,118 @@ fn make_string_substring_then_starts_with_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_string_list_builder_substring_join_then_starts_with_program(
+    substring_decl: DeclId,
+    join_decl: DeclId,
+    starts_with_decl: DeclId,
+    values: &[&str],
+    start: i64,
+    end: i64,
+    inclusion: RangeInclusion,
+    prefix: &str,
+    flags: Vec<Vec<u8>>,
+) -> HirProgram {
+    let value_count = values.len();
+    let value_count_u32 = u32::try_from(value_count).expect("test string-list length fits in u32");
+    let mut stmts = vec![HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List {
+            capacity: value_count,
+        },
+    }];
+
+    for (index, value) in values.iter().enumerate() {
+        let item_reg = RegId::new(u32::try_from(index).expect("test index fits in u32") + 2);
+        stmts.push(HirStmt::LoadValue {
+            dst: item_reg,
+            val: Box::new(Value::string(*value, Span::test_data())),
+        });
+        stmts.push(HirStmt::ListPush {
+            src_dst: RegId::new(0),
+            item: item_reg,
+        });
+    }
+
+    let start_reg = RegId::new(value_count_u32 + 2);
+    let step_reg = RegId::new(start_reg.get() + 1);
+    let end_reg = RegId::new(step_reg.get() + 1);
+    let range_reg = RegId::new(end_reg.get() + 1);
+    let separator_reg = RegId::new(range_reg.get() + 1);
+    let prefix_reg = RegId::new(separator_reg.get() + 1);
+    stmts.push(HirStmt::LoadLiteral {
+        dst: start_reg,
+        lit: HirLiteral::Int(start),
+    });
+    stmts.push(HirStmt::LoadLiteral {
+        dst: step_reg,
+        lit: HirLiteral::Int(1),
+    });
+    stmts.push(HirStmt::LoadLiteral {
+        dst: end_reg,
+        lit: HirLiteral::Int(end),
+    });
+    stmts.push(HirStmt::LoadLiteral {
+        dst: range_reg,
+        lit: HirLiteral::Range {
+            start: start_reg,
+            step: step_reg,
+            end: end_reg,
+            inclusion,
+        },
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: substring_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional: vec![range_reg],
+            flags,
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::LoadValue {
+        dst: separator_reg,
+        val: Box::new(Value::string("-", Span::test_data())),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: join_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional: vec![separator_reg],
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::LoadValue {
+        dst: prefix_reg,
+        val: Box::new(Value::string(prefix, Span::test_data())),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: starts_with_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional: vec![prefix_reg],
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: prefix_reg.get() + 1,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_record_projection_then_field_program(
     command_decl: DeclId,
     fields: &[&str],
@@ -7121,6 +7233,72 @@ fn test_lower_str_substring_on_known_string_materializes_slice_literal() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("str substring result consumed by str starts-with should compile through codegen");
+}
+
+#[test]
+fn test_lower_str_substring_on_known_string_list_materializes_slice_literals() {
+    let substring_decl = DeclId::new(393);
+    let join_decl = DeclId::new(394);
+    let starts_with_decl = DeclId::new(395);
+    let hir = make_string_list_builder_substring_join_then_starts_with_program(
+        substring_decl,
+        join_decl,
+        starts_with_decl,
+        &["abcd", "wxyz"],
+        1,
+        2,
+        RangeInclusion::Inclusive,
+        "bc-xy",
+        Vec::new(),
+    );
+    let decl_names = HashMap::from([
+        (substring_decl, "str substring".to_string()),
+        (join_decl, "str join".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str substring should lower for compile-time known string-list input and range");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"bc-xy\0")
+            )),
+        "expected str substring list output to feed str join with sliced strings"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .all(|inst| !matches!(
+                inst,
+                MirInst::ListGet { .. } | MirInst::ListLen { .. } | MirInst::ListPush { .. }
+            )),
+        "expected compile-time str substring string-list input not to use runtime list operations"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "str substring string-list result consumed by str join should compile through codegen",
+    );
 }
 
 #[test]
