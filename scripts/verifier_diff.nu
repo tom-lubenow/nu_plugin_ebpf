@@ -14117,6 +14117,22 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "global-set-metadata-record-string-field-get"
+        category: "globals"
+        tags: [globals records string global-set accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  { msg: "hi" pid: 7 } | global-set seen_state'
+            '  let state = (global-get seen_state)'
+            '  (($state.msg | str length) + $state.pid) | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "global-set-nested-metadata-record-list-field-get"
         category: "globals"
         tags: [globals records list nested global-set accept]
