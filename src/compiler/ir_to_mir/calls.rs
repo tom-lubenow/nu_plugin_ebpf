@@ -14,6 +14,56 @@ const BPF_SK_LOOKUP_F_REPLACE: u64 = 1 << 0;
 const BPF_SK_LOOKUP_F_NO_REUSEPORT: u64 = 1 << 1;
 
 impl<'a> HirToMirLowering<'a> {
+    fn bytes_at_output(input: &[u8], range: MaybeOpenRange) -> Vec<u8> {
+        let len = input.len() as i64;
+        let start = range
+            .start
+            .map(|idx| {
+                let raw = if idx < 0 {
+                    len.saturating_add(idx)
+                } else {
+                    idx
+                };
+                raw.clamp(0, len)
+            })
+            .unwrap_or(0);
+        let end = range
+            .end
+            .map(|idx| {
+                let raw = if idx < 0 {
+                    len.saturating_add(idx)
+                } else {
+                    idx
+                };
+                let exclusive = if range.inclusive {
+                    raw.saturating_add(1)
+                } else {
+                    raw
+                };
+                exclusive.clamp(0, len)
+            })
+            .unwrap_or(len)
+            .max(start);
+
+        input[start as usize..end as usize].to_vec()
+    }
+
+    fn bytes_add_output(input: &[u8], data: &[u8], index: i64, from_end: bool) -> Vec<u8> {
+        let input_len = input.len();
+        let index = index as usize;
+        let insert_at = if from_end {
+            input_len.saturating_sub(index)
+        } else {
+            index.min(input_len)
+        };
+
+        let mut output = Vec::with_capacity(input.len().saturating_add(data.len()));
+        output.extend_from_slice(&input[..insert_at]);
+        output.extend_from_slice(data);
+        output.extend_from_slice(&input[insert_at..]);
+        output
+    }
+
     fn lower_synthetic_follow_cell_path(
         &mut self,
         src_dst: RegId,
@@ -3203,13 +3253,11 @@ impl<'a> HirToMirLowering<'a> {
 
                 let input = input_reg
                     .and_then(|reg| self.get_metadata(reg))
-                    .and_then(|meta| match meta.constant_value.as_ref() {
-                        Some(nu_protocol::Value::Binary { val, .. }) => Some(val.clone()),
-                        _ => None,
-                    })
+                    .and_then(|meta| meta.constant_value.as_ref().cloned())
                     .ok_or_else(|| {
                         CompileError::UnsupportedInstruction(
-                            "bytes at requires compile-time known binary input in eBPF".into(),
+                            "bytes at requires compile-time known binary or list<binary> input in eBPF"
+                                .into(),
                         )
                     })?;
                 let (_, range_reg) = self.positional_args[0];
@@ -3227,47 +3275,88 @@ impl<'a> HirToMirLowering<'a> {
                     ));
                 }
 
-                let len = input.len() as i64;
-                let start = range
-                    .start
-                    .map(|idx| {
-                        let raw = if idx < 0 {
-                            len.saturating_add(idx)
-                        } else {
-                            idx
-                        };
-                        raw.clamp(0, len)
-                    })
-                    .unwrap_or(0);
-                let end = range
-                    .end
-                    .map(|idx| {
-                        let raw = if idx < 0 {
-                            len.saturating_add(idx)
-                        } else {
-                            idx
-                        };
-                        let exclusive = if range.inclusive {
-                            raw.saturating_add(1)
-                        } else {
-                            raw
-                        };
-                        exclusive.clamp(0, len)
-                    })
-                    .unwrap_or(len)
-                    .max(start);
-                let output = input[start as usize..end as usize].to_vec();
-                if output.is_empty() {
-                    return Err(CompileError::UnsupportedInstruction(
-                        "bytes at requires a non-empty binary result in eBPF".into(),
-                    ));
-                }
+                match input {
+                    nu_protocol::Value::Binary { val, .. } => {
+                        let output = Self::bytes_at_output(&val, range);
+                        if output.is_empty() {
+                            return Err(CompileError::UnsupportedInstruction(
+                                "bytes at requires a non-empty binary result in eBPF".into(),
+                            ));
+                        }
 
-                self.reset_call_result_metadata(src_dst);
-                self.lower_constant_value(
-                    src_dst,
-                    &nu_protocol::Value::binary(output, nu_protocol::Span::unknown()),
-                )?;
+                        self.reset_call_result_metadata(src_dst);
+                        self.lower_constant_value(
+                            src_dst,
+                            &nu_protocol::Value::binary(output, nu_protocol::Span::unknown()),
+                        )?;
+                    }
+                    nu_protocol::Value::List { vals, .. } => {
+                        let Some((first, rest)) = vals.split_first() else {
+                            return Err(CompileError::UnsupportedInstruction(
+                                "bytes at requires a non-empty list<binary> result in eBPF".into(),
+                            ));
+                        };
+                        let first_output = match first {
+                            nu_protocol::Value::Binary { val, .. } => {
+                                Self::bytes_at_output(val, range)
+                            }
+                            other => {
+                                return Err(CompileError::UnsupportedInstruction(format!(
+                                    "bytes at requires binary list items in eBPF; item 0 has type {}",
+                                    other.get_type()
+                                )));
+                            }
+                        };
+                        if first_output.is_empty() {
+                            return Err(CompileError::UnsupportedInstruction(
+                                "bytes at requires non-empty binary list results in eBPF".into(),
+                            ));
+                        }
+                        let expected_len = first_output.len();
+                        let mut values = vec![nu_protocol::Value::binary(
+                            first_output,
+                            nu_protocol::Span::unknown(),
+                        )];
+                        for (offset, item) in rest.iter().enumerate() {
+                            let index = offset + 1;
+                            let nu_protocol::Value::Binary { val, .. } = item else {
+                                return Err(CompileError::UnsupportedInstruction(format!(
+                                    "bytes at requires binary list items in eBPF; item {index} has type {}",
+                                    item.get_type()
+                                )));
+                            };
+                            let output = Self::bytes_at_output(val, range);
+                            if output.is_empty() {
+                                return Err(CompileError::UnsupportedInstruction(
+                                    "bytes at requires non-empty binary list results in eBPF"
+                                        .into(),
+                                ));
+                            }
+                            if output.len() != expected_len {
+                                return Err(CompileError::UnsupportedInstruction(
+                                    "bytes at requires equal-length binary list results in eBPF"
+                                        .into(),
+                                ));
+                            }
+                            values.push(nu_protocol::Value::binary(
+                                output,
+                                nu_protocol::Span::unknown(),
+                            ));
+                        }
+
+                        self.reset_call_result_metadata(src_dst);
+                        self.lower_constant_value(
+                            src_dst,
+                            &nu_protocol::Value::list(values, nu_protocol::Span::unknown()),
+                        )?;
+                    }
+                    other => {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "bytes at requires binary or list<binary> input in eBPF, got {}",
+                            other.get_type()
+                        )));
+                    }
+                }
             }
 
             "bytes add" => {
@@ -3301,13 +3390,11 @@ impl<'a> HirToMirLowering<'a> {
 
                 let input = input_reg
                     .and_then(|reg| self.get_metadata(reg))
-                    .and_then(|meta| match meta.constant_value.as_ref() {
-                        Some(nu_protocol::Value::Binary { val, .. }) => Some(val.clone()),
-                        _ => None,
-                    })
+                    .and_then(|meta| meta.constant_value.as_ref().cloned())
                     .ok_or_else(|| {
                         CompileError::UnsupportedInstruction(
-                            "bytes add requires compile-time known binary input in eBPF".into(),
+                            "bytes add requires compile-time known binary or list<binary> input in eBPF"
+                                .into(),
                         )
                     })?;
                 let (_, data_reg) = self.positional_args[0];
@@ -3347,31 +3434,88 @@ impl<'a> HirToMirLowering<'a> {
                     ));
                 }
 
-                let input_len = input.len();
-                let index = index as usize;
-                let insert_at = if from_end {
-                    input_len.saturating_sub(index)
-                } else if self.named_args.contains_key("index") {
-                    index.min(input_len)
-                } else {
-                    0
-                };
+                match input {
+                    nu_protocol::Value::Binary { val, .. } => {
+                        let output = Self::bytes_add_output(&val, &data, index, from_end);
+                        if output.is_empty() {
+                            return Err(CompileError::UnsupportedInstruction(
+                                "bytes add requires a non-empty binary result in eBPF".into(),
+                            ));
+                        }
 
-                let mut output = Vec::with_capacity(input.len().saturating_add(data.len()));
-                output.extend_from_slice(&input[..insert_at]);
-                output.extend_from_slice(&data);
-                output.extend_from_slice(&input[insert_at..]);
-                if output.is_empty() {
-                    return Err(CompileError::UnsupportedInstruction(
-                        "bytes add requires a non-empty binary result in eBPF".into(),
-                    ));
+                        self.reset_call_result_metadata(src_dst);
+                        self.lower_constant_value(
+                            src_dst,
+                            &nu_protocol::Value::binary(output, nu_protocol::Span::unknown()),
+                        )?;
+                    }
+                    nu_protocol::Value::List { vals, .. } => {
+                        let Some((first, rest)) = vals.split_first() else {
+                            return Err(CompileError::UnsupportedInstruction(
+                                "bytes add requires a non-empty list<binary> result in eBPF".into(),
+                            ));
+                        };
+                        let first_output = match first {
+                            nu_protocol::Value::Binary { val, .. } => {
+                                Self::bytes_add_output(val, &data, index, from_end)
+                            }
+                            other => {
+                                return Err(CompileError::UnsupportedInstruction(format!(
+                                    "bytes add requires binary list items in eBPF; item 0 has type {}",
+                                    other.get_type()
+                                )));
+                            }
+                        };
+                        if first_output.is_empty() {
+                            return Err(CompileError::UnsupportedInstruction(
+                                "bytes add requires non-empty binary list results in eBPF".into(),
+                            ));
+                        }
+                        let expected_len = first_output.len();
+                        let mut values = vec![nu_protocol::Value::binary(
+                            first_output,
+                            nu_protocol::Span::unknown(),
+                        )];
+                        for (offset, item) in rest.iter().enumerate() {
+                            let item_index = offset + 1;
+                            let nu_protocol::Value::Binary { val, .. } = item else {
+                                return Err(CompileError::UnsupportedInstruction(format!(
+                                    "bytes add requires binary list items in eBPF; item {item_index} has type {}",
+                                    item.get_type()
+                                )));
+                            };
+                            let output = Self::bytes_add_output(val, &data, index, from_end);
+                            if output.is_empty() {
+                                return Err(CompileError::UnsupportedInstruction(
+                                    "bytes add requires non-empty binary list results in eBPF"
+                                        .into(),
+                                ));
+                            }
+                            if output.len() != expected_len {
+                                return Err(CompileError::UnsupportedInstruction(
+                                    "bytes add requires equal-length binary list results in eBPF"
+                                        .into(),
+                                ));
+                            }
+                            values.push(nu_protocol::Value::binary(
+                                output,
+                                nu_protocol::Span::unknown(),
+                            ));
+                        }
+
+                        self.reset_call_result_metadata(src_dst);
+                        self.lower_constant_value(
+                            src_dst,
+                            &nu_protocol::Value::list(values, nu_protocol::Span::unknown()),
+                        )?;
+                    }
+                    other => {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "bytes add requires binary or list<binary> input in eBPF, got {}",
+                            other.get_type()
+                        )));
+                    }
                 }
-
-                self.reset_call_result_metadata(src_dst);
-                self.lower_constant_value(
-                    src_dst,
-                    &nu_protocol::Value::binary(output, nu_protocol::Span::unknown()),
-                )?;
             }
 
             "bytes remove" | "bytes replace" => {

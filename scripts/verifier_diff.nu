@@ -35426,6 +35426,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-binary-list-bytes-at-collect"
+        category: "language-core"
+        tags: [binary list bytes at collect starts-with]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [0x[01 02] 0x[03 04]] | bytes at 0..0 | bytes collect | bytes starts-with 0x[01 03]'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-binary-bytes-add-starts-with"
         category: "language-core"
         tags: [binary bytes add starts-with]
@@ -35433,6 +35446,19 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  0x[01 04] | bytes add 0x[02 03] --index 1 | bytes starts-with 0x[01 02 03]'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-binary-list-bytes-add-collect"
+        category: "language-core"
+        tags: [binary list bytes add collect starts-with]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [0x[01] 0x[02]] | bytes add 0x[ff] --index 1 | bytes collect | bytes starts-with 0x[01 ff 02 ff]'
             '}'
         ]
         local: "accept"

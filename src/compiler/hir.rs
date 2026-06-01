@@ -297,6 +297,7 @@ pub enum FixedLayoutValueConsumer {
     MapGetKey,
     MapDeleteKey,
     MapContainsProbe,
+    BinaryBytesTransform,
     BytesCollect,
     StrJoin,
     Length,
@@ -486,6 +487,7 @@ pub fn compile_time_value_flows_to_fixed_layout_aggregate_consumer(
         FixedLayoutValueConsumer::MapGetKey,
         FixedLayoutValueConsumer::MapDeleteKey,
         FixedLayoutValueConsumer::MapContainsProbe,
+        FixedLayoutValueConsumer::BinaryBytesTransform,
         FixedLayoutValueConsumer::BytesCollect,
         FixedLayoutValueConsumer::StrJoin,
         FixedLayoutValueConsumer::Length,
@@ -629,6 +631,23 @@ fn compile_time_value_consumer_matches(
                     .iter()
                     .all(|(name, _)| matches!(name.as_slice(), b"kind"))
                 && args.flags.is_empty()
+                && args.parser_info.is_empty()
+        }
+        FixedLayoutValueConsumer::BinaryBytesTransform => {
+            matches!(decl_name, Some("bytes at" | "bytes add"))
+                && call_args_tracked_only_in_pipeline(src_dst, args, tracked_regs)
+                && args.positional.len() == 1
+                && args.rest.is_empty()
+                && match decl_name {
+                    Some("bytes at") => args.named.is_empty() && args.flags.is_empty(),
+                    Some("bytes add") => {
+                        args.named
+                            .iter()
+                            .all(|(name, _)| name.as_slice() == b"index")
+                            && args.flags.iter().all(|flag| flag.as_slice() == b"end")
+                    }
+                    _ => false,
+                }
                 && args.parser_info.is_empty()
         }
         FixedLayoutValueConsumer::BytesCollect => {

@@ -10225,6 +10225,116 @@ fn make_bytes_at_then_starts_with_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_bytes_at_list_collect_then_starts_with_program(
+    at_decl: DeclId,
+    collect_decl: DeclId,
+    starts_with_decl: DeclId,
+    items: &[&[u8]],
+    start: Option<i64>,
+    end: Option<i64>,
+    inclusion: RangeInclusion,
+    expected_prefix: Vec<u8>,
+) -> HirProgram {
+    let item_count = items.len();
+    let item_count_u32 = u32::try_from(item_count).expect("test binary-list length fits in u32");
+    let mut stmts = vec![HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List {
+            capacity: item_count,
+        },
+    }];
+
+    for (index, item) in items.iter().enumerate() {
+        let item_reg = RegId::new(u32::try_from(index).expect("test index fits in u32") + 1);
+        stmts.push(HirStmt::LoadLiteral {
+            dst: item_reg,
+            lit: HirLiteral::Binary(item.to_vec()),
+        });
+        stmts.push(HirStmt::ListPush {
+            src_dst: RegId::new(0),
+            item: item_reg,
+        });
+    }
+
+    let range_start_reg = RegId::new(item_count_u32 + 1);
+    let range_step_reg = RegId::new(item_count_u32 + 2);
+    let range_end_reg = RegId::new(item_count_u32 + 3);
+    let range_reg = RegId::new(item_count_u32 + 4);
+    let sliced_reg = RegId::new(item_count_u32 + 5);
+    let collected_reg = RegId::new(item_count_u32 + 6);
+    let expected_reg = RegId::new(item_count_u32 + 7);
+    let starts_with_reg = RegId::new(item_count_u32 + 8);
+
+    stmts.push(HirStmt::LoadLiteral {
+        dst: range_start_reg,
+        lit: start.map_or(HirLiteral::Nothing, HirLiteral::Int),
+    });
+    stmts.push(HirStmt::LoadLiteral {
+        dst: range_step_reg,
+        lit: HirLiteral::Int(1),
+    });
+    stmts.push(HirStmt::LoadLiteral {
+        dst: range_end_reg,
+        lit: end.map_or(HirLiteral::Nothing, HirLiteral::Int),
+    });
+    stmts.push(HirStmt::LoadLiteral {
+        dst: range_reg,
+        lit: HirLiteral::Range {
+            start: range_start_reg,
+            step: range_step_reg,
+            end: range_end_reg,
+            inclusion,
+        },
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: at_decl,
+        src_dst: sliced_reg,
+        args: HirCallArgs {
+            positional: vec![range_reg],
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: collect_decl,
+        src_dst: collected_reg,
+        args: HirCallArgs {
+            pipeline_input: Some(sliced_reg),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::LoadLiteral {
+        dst: expected_reg,
+        lit: HirLiteral::Binary(expected_prefix),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: starts_with_decl,
+        src_dst: starts_with_reg,
+        args: HirCallArgs {
+            positional: vec![expected_reg],
+            pipeline_input: Some(collected_reg),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return {
+                src: starts_with_reg,
+            },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: starts_with_reg.get() + 1,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 #[test]
 fn test_lower_bytes_at_materializes_non_empty_slice() {
     let bytes_at_decl = DeclId::new(224);
@@ -10278,6 +10388,50 @@ fn test_lower_bytes_at_materializes_non_empty_slice() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("bytes at output consumed by bytes starts-with should compile through codegen");
+}
+
+#[test]
+fn test_lower_bytes_at_binary_list_materializes_sliced_list() {
+    let bytes_at_decl = DeclId::new(454);
+    let bytes_collect_decl = DeclId::new(455);
+    let bytes_starts_with_decl = DeclId::new(456);
+    let hir = make_bytes_at_list_collect_then_starts_with_program(
+        bytes_at_decl,
+        bytes_collect_decl,
+        bytes_starts_with_decl,
+        &[&[1, 2], &[3, 4]],
+        Some(0),
+        Some(0),
+        RangeInclusion::Inclusive,
+        vec![1, 3],
+    );
+    let decl_names = HashMap::from([
+        (bytes_at_decl, "bytes at".to_string()),
+        (bytes_collect_decl, "bytes collect".to_string()),
+        (bytes_starts_with_decl, "bytes starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bytes at should lower compile-time binary-list slices");
+
+    assert!(
+        result
+            .readonly_globals
+            .iter()
+            .any(|global| global.data == vec![1, 3]),
+        "expected bytes at binary-list output to feed bytes collect with sliced bytes"
+    );
+    assert_binary_starts_with_folded_true(&result.program, "bytes at binary-list");
+    assert_no_runtime_list_operations(&result.program, "compile-time bytes at binary-list");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("bytes at binary-list output consumed by bytes collect should compile");
 }
 
 #[test]
@@ -10424,6 +10578,112 @@ fn make_bytes_add_then_starts_with_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_bytes_add_list_collect_then_starts_with_program(
+    add_decl: DeclId,
+    collect_decl: DeclId,
+    starts_with_decl: DeclId,
+    items: &[&[u8]],
+    data: Vec<u8>,
+    index: Option<i64>,
+    from_end: bool,
+    expected_prefix: Vec<u8>,
+) -> HirProgram {
+    let item_count = items.len();
+    let item_count_u32 = u32::try_from(item_count).expect("test binary-list length fits in u32");
+    let mut stmts = vec![HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List {
+            capacity: item_count,
+        },
+    }];
+
+    for (item_index, item) in items.iter().enumerate() {
+        let item_reg = RegId::new(u32::try_from(item_index).expect("test index fits in u32") + 1);
+        stmts.push(HirStmt::LoadLiteral {
+            dst: item_reg,
+            lit: HirLiteral::Binary(item.to_vec()),
+        });
+        stmts.push(HirStmt::ListPush {
+            src_dst: RegId::new(0),
+            item: item_reg,
+        });
+    }
+
+    let data_reg = RegId::new(item_count_u32 + 1);
+    let index_reg = index.map(|raw_index| {
+        let reg = RegId::new(item_count_u32 + 2);
+        stmts.push(HirStmt::LoadLiteral {
+            dst: reg,
+            lit: HirLiteral::Int(raw_index),
+        });
+        reg
+    });
+    let added_reg = RegId::new(item_count_u32 + 2 + u32::from(index_reg.is_some()));
+    let collected_reg = RegId::new(added_reg.get() + 1);
+    let expected_reg = RegId::new(added_reg.get() + 2);
+    let starts_with_reg = RegId::new(added_reg.get() + 3);
+
+    stmts.push(HirStmt::LoadLiteral {
+        dst: data_reg,
+        lit: HirLiteral::Binary(data),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: add_decl,
+        src_dst: added_reg,
+        args: HirCallArgs {
+            positional: vec![data_reg],
+            named: index_reg
+                .map(|reg| vec![(b"index".to_vec(), reg)])
+                .unwrap_or_default(),
+            pipeline_input: Some(RegId::new(0)),
+            flags: if from_end {
+                vec![b"end".to_vec()]
+            } else {
+                Vec::new()
+            },
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: collect_decl,
+        src_dst: collected_reg,
+        args: HirCallArgs {
+            pipeline_input: Some(added_reg),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::LoadLiteral {
+        dst: expected_reg,
+        lit: HirLiteral::Binary(expected_prefix),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: starts_with_decl,
+        src_dst: starts_with_reg,
+        args: HirCallArgs {
+            positional: vec![expected_reg],
+            pipeline_input: Some(collected_reg),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return {
+                src: starts_with_reg,
+            },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: starts_with_reg.get() + 1,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 #[test]
 fn test_lower_bytes_add_with_index_materializes_inserted_binary() {
     let bytes_add_decl = DeclId::new(227);
@@ -10477,6 +10737,50 @@ fn test_lower_bytes_add_with_index_materializes_inserted_binary() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("bytes add output consumed by bytes starts-with should compile through codegen");
+}
+
+#[test]
+fn test_lower_bytes_add_binary_list_materializes_added_list() {
+    let bytes_add_decl = DeclId::new(457);
+    let bytes_collect_decl = DeclId::new(458);
+    let bytes_starts_with_decl = DeclId::new(459);
+    let hir = make_bytes_add_list_collect_then_starts_with_program(
+        bytes_add_decl,
+        bytes_collect_decl,
+        bytes_starts_with_decl,
+        &[&[1], &[2]],
+        vec![0xff],
+        Some(1),
+        false,
+        vec![1, 0xff, 2, 0xff],
+    );
+    let decl_names = HashMap::from([
+        (bytes_add_decl, "bytes add".to_string()),
+        (bytes_collect_decl, "bytes collect".to_string()),
+        (bytes_starts_with_decl, "bytes starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bytes add should lower compile-time binary-list input and data");
+
+    assert!(
+        result
+            .readonly_globals
+            .iter()
+            .any(|global| global.data == vec![1, 0xff, 2, 0xff]),
+        "expected bytes add binary-list output to feed bytes collect with added bytes"
+    );
+    assert_binary_starts_with_folded_true(&result.program, "bytes add binary-list");
+    assert_no_runtime_list_operations(&result.program, "compile-time bytes add binary-list");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("bytes add binary-list output consumed by bytes collect should compile");
 }
 
 #[test]
