@@ -14013,6 +14013,22 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "global-get-before-later-global-define-data"
+        category: "globals"
+        tags: [globals scalar forward global-define accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let before = (global-get state)'
+            '  7 | global-define state'
+            '  $before | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "global-define-type-zero-list-root-appends"
         category: "globals"
         tags: [globals list upsert global-define accept]
@@ -14075,6 +14091,22 @@ const FIXTURES = [
             '  $samples | global-set samples'
             '  let persisted = (global-get samples)'
             '  $persisted.0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "global-get-before-later-global-set-bss"
+        category: "globals"
+        tags: [globals scalar forward global-set zero-fill accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let before = (global-get state)'
+            '  7 | global-set state'
+            '  $before | count'
+            '  0'
             '}'
         ]
         local: "accept"
