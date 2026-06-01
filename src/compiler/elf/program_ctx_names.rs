@@ -574,26 +574,40 @@ mod tests {
 
     fn verifier_diff_quoted_field<'a>(line: &'a str, field: &str) -> Option<&'a str> {
         let marker = format!("{field}: \"");
-        let start = line.find(&marker)? + marker.len();
-        let rest = &line[start..];
+        let rest = verifier_diff_field_value_rest(line, &marker)?;
         let end = rest.find('"')?;
         Some(&rest[..end])
     }
 
     fn verifier_diff_dollar_field<'a>(line: &'a str, field: &str) -> Option<&'a str> {
         let marker = format!("{field}: $");
-        let start = line.find(&marker)? + marker.len();
-        let rest = &line[start..];
+        let rest = verifier_diff_field_value_rest(line, &marker)?;
         let end = rest
             .find(|c: char| c.is_whitespace() || c == '}')
             .unwrap_or(rest.len());
         Some(&rest[..end])
     }
 
+    fn verifier_diff_field_value_rest<'a>(line: &'a str, marker: &str) -> Option<&'a str> {
+        let mut offset = 0;
+        while let Some(relative_index) = line[offset..].find(marker) {
+            let index = offset + relative_index;
+            let field_start = match line[..index].chars().next_back() {
+                Some(c) => !(c == '_' || c.is_ascii_alphanumeric()),
+                None => true,
+            };
+            if field_start {
+                return Some(&line[index + marker.len()..]);
+            }
+            offset = index + 1;
+        }
+        None
+    }
+
     fn verifier_diff_feature_record<'a>(
         script: &'a str,
         feature_const: &str,
-    ) -> (&'a str, &'a str, &'a str, Option<&'a str>) {
+    ) -> (&'a str, &'a str, &'a str, Option<&'a str>, Option<&'a str>) {
         let body = verifier_diff_const_body(script, feature_const, '{');
         let key = verifier_diff_quoted_field(body, "key")
             .unwrap_or_else(|| panic!("expected {feature_const} to declare key"));
@@ -602,7 +616,8 @@ mod tests {
         let source = verifier_diff_quoted_field(body, "source")
             .unwrap_or_else(|| panic!("expected {feature_const} to declare source"));
         let max_kernel = verifier_diff_quoted_field(body, "max_kernel_exclusive");
-        (key, min_kernel, source, max_kernel)
+        let max_kernel_source = verifier_diff_quoted_field(body, "max_kernel_exclusive_source");
+        (key, min_kernel, source, max_kernel, max_kernel_source)
     }
 
     #[test]
@@ -714,7 +729,7 @@ mod tests {
                 .unwrap_or_else(|| {
                     panic!("ctx.{field_name} should have Rust compatibility metadata")
                 });
-            let (key, min_kernel, source, max_kernel) =
+            let (key, min_kernel, source, max_kernel, max_kernel_source) =
                 verifier_diff_feature_record(verifier_diff, feature_const);
 
             assert_eq!(
@@ -735,6 +750,10 @@ mod tests {
             assert_eq!(
                 max_kernel, None,
                 "context fields should not have max_kernel_exclusive metadata"
+            );
+            assert_eq!(
+                max_kernel_source, None,
+                "context fields should not have max_kernel_exclusive_source metadata"
             );
         }
     }
@@ -777,7 +796,7 @@ mod tests {
             .unwrap_or_else(|| {
                 panic!("{target} ctx.{field_name} should have Rust compatibility metadata")
             });
-            let (key, min_kernel, source, max_kernel) =
+            let (key, min_kernel, source, max_kernel, max_kernel_source) =
                 verifier_diff_feature_record(verifier_diff, feature_const);
 
             assert_eq!(
@@ -798,6 +817,10 @@ mod tests {
             assert_eq!(
                 max_kernel, None,
                 "target context fields should not have max_kernel_exclusive metadata"
+            );
+            assert_eq!(
+                max_kernel_source, None,
+                "target context fields should not have max_kernel_exclusive_source metadata"
             );
         }
     }
@@ -840,7 +863,7 @@ mod tests {
                     helper.name()
                 )
             });
-            let (key, min_kernel, source, max_kernel) =
+            let (key, min_kernel, source, max_kernel, max_kernel_source) =
                 verifier_diff_feature_record(verifier_diff, feature_const);
 
             assert_eq!(
@@ -861,6 +884,10 @@ mod tests {
             assert_eq!(
                 max_kernel, None,
                 "context helper features should not have max_kernel_exclusive metadata"
+            );
+            assert_eq!(
+                max_kernel_source, None,
+                "context helper features should not have max_kernel_exclusive_source metadata"
             );
         }
     }
@@ -939,7 +966,7 @@ mod tests {
                     requirement.minimum_kernel_source(),
                 )
             };
-            let (key, min_kernel, source, max_kernel) =
+            let (key, min_kernel, source, max_kernel, max_kernel_source) =
                 verifier_diff_feature_record(verifier_diff, feature_const);
 
             assert_eq!(
@@ -957,6 +984,10 @@ mod tests {
             assert_eq!(
                 max_kernel, None,
                 "context projection helper features should not have max_kernel_exclusive metadata"
+            );
+            assert_eq!(
+                max_kernel_source, None,
+                "context projection helper features should not have max_kernel_exclusive_source metadata"
             );
         }
     }
