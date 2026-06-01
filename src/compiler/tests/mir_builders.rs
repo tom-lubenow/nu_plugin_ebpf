@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::{
     AddressSpace, BinOpKind, BlockId, CtxField, MirFunction, MirInst, MirType, MirValue,
-    StackSlotKind, VReg,
+    StackSlotKind, SubfunctionId, VReg,
 };
 
 pub(crate) fn unknown_kernel_ptr_ty() -> MirType {
@@ -770,4 +770,77 @@ pub(crate) fn dynptr_from_mem_join_reinitialize_mir() -> (MirFunction, HashMap<V
     types.insert(second_ret, MirType::I64);
 
     (func, types)
+}
+
+pub(crate) fn unknown_stack_object_conditional_init_blocks_reinitialize_mir()
+-> (MirFunction, MirFunction, HashMap<VReg, MirType>) {
+    let mut init = MirFunction::new();
+    let entry = init.alloc_block();
+    let init_path = init.alloc_block();
+    let done = init.alloc_block();
+    init.entry = entry;
+    init.param_count = 2;
+    init.vreg_count = 2;
+    let init_slot = init.alloc_stack_slot(8, 8, StackSlotKind::Local);
+    init.param_stack_slots.insert(0, init_slot);
+    init.block_mut(entry).terminator = MirInst::Branch {
+        cond: VReg(1),
+        if_true: init_path,
+        if_false: done,
+    };
+    let init_ret = init.alloc_vreg();
+    init.block_mut(init_path)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: init_ret,
+            kfunc: "__test_unknown_stack_object_init".to_string(),
+            btf_id: None,
+            args: vec![VReg(0)],
+        });
+    init.block_mut(init_path).terminator = MirInst::Return { val: None };
+    init.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut caller = MirFunction::new();
+    let caller_entry = caller.alloc_block();
+    caller.entry = caller_entry;
+    caller.param_count = 1;
+    caller.vreg_count = 1;
+    let cond = VReg(0);
+    let object = caller.alloc_vreg();
+    let call_ret = caller.alloc_vreg();
+    let retry_ret = caller.alloc_vreg();
+    let object_slot = caller.alloc_stack_slot(8, 8, StackSlotKind::Local);
+    caller
+        .block_mut(caller_entry)
+        .instructions
+        .push(MirInst::Copy {
+            dst: object,
+            src: MirValue::StackSlot(object_slot),
+        });
+    caller
+        .block_mut(caller_entry)
+        .instructions
+        .push(MirInst::CallSubfn {
+            dst: call_ret,
+            subfn: SubfunctionId(0),
+            args: vec![object, cond],
+        });
+    caller
+        .block_mut(caller_entry)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst: retry_ret,
+            kfunc: "__test_unknown_stack_object_init".to_string(),
+            btf_id: None,
+            args: vec![object],
+        });
+    caller.block_mut(caller_entry).terminator = MirInst::Return { val: None };
+
+    let mut caller_types = HashMap::new();
+    caller_types.insert(cond, MirType::Bool);
+    caller_types.insert(object, unknown_stack_ptr_ty());
+    caller_types.insert(call_ret, MirType::I64);
+    caller_types.insert(retry_ret, MirType::I64);
+
+    (init, caller, caller_types)
 }

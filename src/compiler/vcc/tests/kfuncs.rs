@@ -4,7 +4,9 @@ use crate::compiler::subfn_summaries::infer_subfunction_summaries;
 use crate::compiler::test_mir_builders::{
     ExplicitNullRefKfuncCase, copy_from_user_dynptr_join_reinitialize_mir,
     copy_from_user_task_dynptr_join_reinitialize_mir, explicit_null_ref_join_release_mir,
-    packet_dynptr_kfunc_join_reinitialize_mir, xdp_get_xfrm_state_explicit_null_join_mir,
+    packet_dynptr_kfunc_join_reinitialize_mir,
+    unknown_stack_object_conditional_init_blocks_reinitialize_mir,
+    xdp_get_xfrm_state_explicit_null_join_mir,
 };
 use crate::compiler::{EbpfProgramType, ProbeContext};
 
@@ -2497,30 +2499,8 @@ fn test_verify_mir_kfunc_dynptr_subfn_conditional_init_blocks_reinitialize() {
 
 #[test]
 fn test_verify_mir_unknown_stack_object_subfn_conditional_init_blocks_reinitialize() {
-    let (mut init, entry) = new_mir_function();
-    let init_path = init.alloc_block();
-    let done = init.alloc_block();
-    init.param_count = 2;
-    init.vreg_count = 2;
-    let init_slot = init.alloc_stack_slot(8, 8, StackSlotKind::Local);
-    init.param_stack_slots.insert(0, init_slot);
-    init.block_mut(entry).terminator = MirInst::Branch {
-        cond: VReg(1),
-        if_true: init_path,
-        if_false: done,
-    };
-    let init_ret = init.alloc_vreg();
-    init.block_mut(init_path)
-        .instructions
-        .push(MirInst::CallKfunc {
-            dst: init_ret,
-            kfunc: "__test_unknown_stack_object_init".to_string(),
-            btf_id: None,
-            args: vec![VReg(0)],
-        });
-    init.block_mut(init_path).terminator = MirInst::Return { val: None };
-    init.block_mut(done).terminator = MirInst::Return { val: None };
-
+    let (init, caller, caller_types) =
+        unknown_stack_object_conditional_init_blocks_reinitialize_mir();
     let summaries = infer_subfunction_summaries(&[init]);
     let init_summary = summaries
         .get(&SubfunctionId(0))
@@ -2533,48 +2513,7 @@ fn test_verify_mir_unknown_stack_object_subfn_conditional_init_blocks_reinitiali
     assert_eq!(maybe.type_name, "bpf_test_obj");
     assert_eq!(maybe.type_id, Some(0xbeef));
 
-    let (mut func, caller_entry) = new_mir_function();
-    func.param_count = 1;
-    func.vreg_count = 1;
-    let cond = VReg(0);
-    let object = func.alloc_vreg();
-    let call_ret = func.alloc_vreg();
-    let retry_ret = func.alloc_vreg();
-    let object_slot = func.alloc_stack_slot(8, 8, StackSlotKind::Local);
-    func.block_mut(caller_entry)
-        .instructions
-        .push(MirInst::Copy {
-            dst: object,
-            src: MirValue::StackSlot(object_slot),
-        });
-    func.block_mut(caller_entry)
-        .instructions
-        .push(MirInst::CallSubfn {
-            dst: call_ret,
-            subfn: SubfunctionId(0),
-            args: vec![object, cond],
-        });
-    func.block_mut(caller_entry)
-        .instructions
-        .push(MirInst::CallKfunc {
-            dst: retry_ret,
-            kfunc: "__test_unknown_stack_object_init".to_string(),
-            btf_id: None,
-            args: vec![object],
-        });
-    func.block_mut(caller_entry).terminator = MirInst::Return { val: None };
-
-    let stack_obj_ty = MirType::Ptr {
-        pointee: Box::new(MirType::Unknown),
-        address_space: AddressSpace::Stack,
-    };
-    let mut types = HashMap::new();
-    types.insert(cond, MirType::Bool);
-    types.insert(object, stack_obj_ty);
-    types.insert(call_ret, MirType::I64);
-    types.insert(retry_ret, MirType::I64);
-
-    let err = verify_mir_with_subfunction_summaries(&func, &types, &summaries)
+    let err = verify_mir_with_subfunction_summaries(&caller, &caller_types, &summaries)
         .expect_err("expected maybe-initialized unknown stack object reinit error");
     assert!(
         err.iter().any(|e| e
