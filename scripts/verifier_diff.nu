@@ -44639,6 +44639,7 @@ def fixture-matrix-summary-from-derived [derived compat_kernel] {
         kernel: $derived.kernel
         default_test_lane: $derived.default_test_lane
         has_effective_min_kernel: ($derived.effective_min_kernel_raw != null)
+        has_effective_max_kernel_exclusive: ($derived.effective_max_kernel_exclusive_raw != null)
         compatible_with_compat_kernel: $compatibility.compatible
         compat_kernel_reason: $compatibility.reason
     }
@@ -44654,6 +44655,13 @@ def matrix-kernel-accept-versioned-count [fixtures versioned: bool] {
     $fixtures
     | where {|fixture| $fixture.kernel == "accept" }
     | where {|fixture| $fixture.has_effective_min_kernel == $versioned }
+    | length
+}
+
+def matrix-kernel-accept-bounded-count [fixtures bounded: bool] {
+    $fixtures
+    | where {|fixture| $fixture.kernel == "accept" }
+    | where {|fixture| $fixture.has_effective_max_kernel_exclusive == $bounded }
     | length
 }
 
@@ -44734,6 +44742,8 @@ def fixture-matrix-rows-from-matrix-summaries [matrix_fixtures compat_kernel] {
                 kernel_skip: (matrix-status-count $category_fixtures kernel skip)
                 kernel_accept_versioned: (matrix-kernel-accept-versioned-count $category_fixtures true)
                 kernel_accept_unversioned: (matrix-kernel-accept-versioned-count $category_fixtures false)
+                kernel_accept_bounded: (matrix-kernel-accept-bounded-count $category_fixtures true)
+                kernel_accept_unbounded: (matrix-kernel-accept-bounded-count $category_fixtures false)
                 lane_host_safe: (matrix-test-lane-count $category_fixtures "host-safe")
                 lane_host_gated: (matrix-test-lane-count $category_fixtures "host-gated")
                 lane_dry_run: (matrix-test-lane-count $category_fixtures "dry-run")
@@ -44776,7 +44786,7 @@ def print-fixture-matrix-row [row] {
     } else {
         $" compat_kernel=($row.compat_kernel) kernel_accept_compatible=($row.kernel_accept_compatible) kernel_accept_incompatible=($row.kernel_accept_incompatible) kernel_accept_requires_newer=($row.kernel_accept_requires_newer) kernel_accept_requires_older=($row.kernel_accept_requires_older)"
     }
-    print $"tier=($row.tier) category=($row.category) total=($row.total) local_accept=($row.local_accept) local_reject=($row.local_reject) local_skip=($row.local_skip) kernel_accept=($row.kernel_accept) kernel_reject=($row.kernel_reject) kernel_skip=($row.kernel_skip) kernel_accept_versioned=($row.kernel_accept_versioned) kernel_accept_unversioned=($row.kernel_accept_unversioned) lane_host_safe=($row.lane_host_safe) lane_host_gated=($row.lane_host_gated) lane_dry_run=($row.lane_dry_run) lane_vm_only=($row.lane_vm_only)($compat_text)"
+    print $"tier=($row.tier) category=($row.category) total=($row.total) local_accept=($row.local_accept) local_reject=($row.local_reject) local_skip=($row.local_skip) kernel_accept=($row.kernel_accept) kernel_reject=($row.kernel_reject) kernel_skip=($row.kernel_skip) kernel_accept_versioned=($row.kernel_accept_versioned) kernel_accept_unversioned=($row.kernel_accept_unversioned) kernel_accept_bounded=($row.kernel_accept_bounded) kernel_accept_unbounded=($row.kernel_accept_unbounded) lane_host_safe=($row.lane_host_safe) lane_host_gated=($row.lane_host_gated) lane_dry_run=($row.lane_dry_run) lane_vm_only=($row.lane_vm_only)($compat_text)"
 }
 
 def validate-tier-option [label: string value] {

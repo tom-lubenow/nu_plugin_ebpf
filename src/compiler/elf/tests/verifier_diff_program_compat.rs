@@ -514,6 +514,80 @@ let summary = (fixture-summary-from-derived $derived "6.23.0")
     }));
 }
 
+#[test]
+fn test_verifier_diff_matrix_counts_bounded_kernel_windows() {
+    let script = r#"source scripts/verifier_diff.nu
+let bounded = {
+    name: "unit-bounded-kfunc-window"
+    category: "kfunc"
+    target: "struct_ops:sched_ext_ops"
+    program: [
+        "{"
+        "    name: \"nu.demo_1\""
+        "    cpu_release: {|ctx|"
+        "        let ignored = (kfunc-call \"scx_bpf_reenqueue_local\")"
+        "        0"
+        "    }"
+        "}"
+    ]
+    local: "accept"
+    kernel: "accept"
+}
+let unbounded = {
+    name: "unit-unbounded-kfunc"
+    category: "kfunc"
+    target: "kprobe:ksys_read"
+    program: [
+        "{|ctx|"
+        "  let ignored = (kfunc-call \"bpf_get_task_exe_file\")"
+        "  0"
+        "}"
+    ]
+    local: "accept"
+    kernel: "accept"
+}
+let derived = (
+    [$bounded $unbounded]
+    | each {|fixture|
+        let features = (fixture-kernel-features $fixture)
+        fixture-derived-metadata $fixture $features
+    }
+)
+fixture-matrix-rows-from-derived $derived "6.23.0"
+| where category == "kfunc"
+| first
+| to json"#;
+
+    let Some(output) = run_nu_script(script, "compat-kernel bounded matrix counts") else {
+        return;
+    };
+    assert!(
+        output.status.success(),
+        "verifier_diff.nu compat-kernel matrix failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let actual: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .expect("verifier_diff.nu compat-kernel matrix should emit JSON");
+    let int_field = |field: &str| {
+        actual
+            .get(field)
+            .and_then(serde_json::Value::as_i64)
+            .unwrap_or_else(|| panic!("matrix row should include integer field {field}"))
+    };
+
+    assert_eq!(int_field("kernel_accept"), 2);
+    assert_eq!(int_field("kernel_accept_versioned"), 2);
+    assert_eq!(int_field("kernel_accept_unversioned"), 0);
+    assert_eq!(int_field("kernel_accept_bounded"), 1);
+    assert_eq!(int_field("kernel_accept_unbounded"), 1);
+    assert_eq!(int_field("kernel_accept_compatible"), 1);
+    assert_eq!(int_field("kernel_accept_incompatible"), 1);
+    assert_eq!(int_field("kernel_accept_requires_newer"), 0);
+    assert_eq!(int_field("kernel_accept_requires_older"), 1);
+}
+
 fn program_compatibility_verifier_feature_key(
     requirement: ProgramCompatibilityRequirement,
 ) -> Option<&'static str> {
