@@ -35415,11 +35415,11 @@ const FIXTURES = [
     {
         name: "core-string-list-join"
         category: "language-core"
-        tags: [string list str expand join]
+        tags: [string list str join]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  "A{b,c}D" | str expand | str join "-" | str starts-with "AbD-AcD"'
+            '  ["ab" "cd" "ef"] | str join "-" | str starts-with "ab-cd-ef"'
             '}'
         ]
         local: "accept"

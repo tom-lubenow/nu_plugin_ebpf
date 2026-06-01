@@ -298,6 +298,7 @@ pub enum FixedLayoutValueConsumer {
     MapDeleteKey,
     MapContainsProbe,
     BytesCollect,
+    StrJoin,
 }
 
 pub fn compile_time_value_flows_to_fixed_layout_consumer(
@@ -474,6 +475,7 @@ pub fn compile_time_value_flows_to_fixed_layout_aggregate_consumer(
         FixedLayoutValueConsumer::MapDeleteKey,
         FixedLayoutValueConsumer::MapContainsProbe,
         FixedLayoutValueConsumer::BytesCollect,
+        FixedLayoutValueConsumer::StrJoin,
     ]
     .into_iter()
     .any(|consumer| {
@@ -607,6 +609,15 @@ fn compile_time_value_consumer_matches(
         }
         FixedLayoutValueConsumer::BytesCollect => {
             decl_name == Some("bytes collect")
+                && call_args_tracked_only_in_pipeline(src_dst, args, tracked_regs)
+                && args.positional.len() <= 1
+                && args.rest.is_empty()
+                && args.named.is_empty()
+                && args.flags.is_empty()
+                && args.parser_info.is_empty()
+        }
+        FixedLayoutValueConsumer::StrJoin => {
+            decl_name == Some("str join")
                 && call_args_tracked_only_in_pipeline(src_dst, args, tracked_regs)
                 && args.positional.len() <= 1
                 && args.rest.is_empty()
