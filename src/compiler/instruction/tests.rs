@@ -975,7 +975,8 @@ fn test_verifier_diff_helper_metadata_matches_rust() {
         let feature_const = dollar_field(line, "feature").unwrap_or_else(|| {
             panic!("expected explicit verifier_diff.nu helper feature for {name}")
         });
-        let (key, min_kernel, source, max_kernel) = nu_feature_record(verifier_diff, feature_const);
+        let (key, min_kernel, source, max_kernel, max_kernel_source) =
+            nu_feature_record(verifier_diff, feature_const);
         assert_eq!(key, requirement.key());
         assert_eq!(
             min_kernel,
@@ -990,6 +991,10 @@ fn test_verifier_diff_helper_metadata_matches_rust() {
         assert_eq!(
             max_kernel, None,
             "helpers should not have max_kernel_exclusive metadata"
+        );
+        assert_eq!(
+            max_kernel_source, None,
+            "helpers should not have max_kernel_exclusive_source metadata"
         );
     }
 }
@@ -4836,16 +4841,14 @@ fn nu_const_body<'a>(source: &'a str, name: &str, delimiter: char) -> &'a str {
 
 fn quoted_field<'a>(line: &'a str, field: &str) -> Option<&'a str> {
     let marker = format!("{field}: \"");
-    let start = line.find(&marker)? + marker.len();
-    let rest = &line[start..];
+    let rest = field_value_rest(line, &marker)?;
     let end = rest.find('"')?;
     Some(&rest[..end])
 }
 
 fn dollar_field<'a>(line: &'a str, field: &str) -> Option<&'a str> {
     let marker = format!("{field}: $");
-    let start = line.find(&marker)? + marker.len();
-    let rest = &line[start..];
+    let rest = field_value_rest(line, &marker)?;
     let end = rest
         .find(|c: char| c.is_whitespace() || c == '}')
         .unwrap_or(rest.len());
@@ -4854,18 +4857,33 @@ fn dollar_field<'a>(line: &'a str, field: &str) -> Option<&'a str> {
 
 fn numeric_field(line: &str, field: &str) -> Option<u32> {
     let marker = format!("{field}: ");
-    let start = line.find(&marker)? + marker.len();
-    let rest = &line[start..];
+    let rest = field_value_rest(line, &marker)?;
     let end = rest
         .find(|c: char| !c.is_ascii_digit())
         .unwrap_or(rest.len());
     rest[..end].parse().ok()
 }
 
+fn field_value_rest<'a>(line: &'a str, marker: &str) -> Option<&'a str> {
+    let mut offset = 0;
+    while let Some(relative_index) = line[offset..].find(marker) {
+        let index = offset + relative_index;
+        let field_start = match line[..index].chars().next_back() {
+            Some(c) => !(c == '_' || c.is_ascii_alphanumeric()),
+            None => true,
+        };
+        if field_start {
+            return Some(&line[index + marker.len()..]);
+        }
+        offset = index + 1;
+    }
+    None
+}
+
 fn nu_feature_record<'a>(
     script: &'a str,
     feature_const: &str,
-) -> (&'a str, &'a str, &'a str, Option<&'a str>) {
+) -> (&'a str, &'a str, &'a str, Option<&'a str>, Option<&'a str>) {
     let body = nu_const_body(script, feature_const, '{');
     let key = quoted_field(body, "key")
         .unwrap_or_else(|| panic!("expected {feature_const} to declare key"));
@@ -4874,7 +4892,8 @@ fn nu_feature_record<'a>(
     let source = quoted_field(body, "source")
         .unwrap_or_else(|| panic!("expected {feature_const} to declare source"));
     let max_kernel = quoted_field(body, "max_kernel_exclusive");
-    (key, min_kernel, source, max_kernel)
+    let max_kernel_source = quoted_field(body, "max_kernel_exclusive_source");
+    (key, min_kernel, source, max_kernel, max_kernel_source)
 }
 
 #[test]
@@ -4918,9 +4937,10 @@ fn test_verifier_diff_kfunc_metadata_matches_rust() {
         let source = quoted_field(line, "source")
             .unwrap_or_else(|| panic!("expected fallback metadata for {name} to declare source"));
         let max_kernel = quoted_field(line, "max_kernel_exclusive");
+        let max_kernel_source = quoted_field(line, "max_kernel_exclusive_source");
         assert!(
             fallback
-                .insert(name, (min_kernel, source, max_kernel))
+                .insert(name, (min_kernel, source, max_kernel, max_kernel_source))
                 .is_none(),
             "duplicate verifier_diff.nu fallback kfunc metadata for {name}"
         );
@@ -4954,7 +4974,7 @@ fn test_verifier_diff_kfunc_metadata_matches_rust() {
     for name in &signature_names {
         let requirement = KfuncCompatibilityRequirement::for_name(name)
             .expect("modeled kfunc signature should have compatibility metadata");
-        let (min_kernel, source, max_kernel) = fallback
+        let (min_kernel, source, max_kernel, max_kernel_source) = fallback
             .get(name)
             .unwrap_or_else(|| panic!("expected verifier_diff.nu fallback metadata for {name}"));
         assert_eq!(
@@ -4972,6 +4992,11 @@ fn test_verifier_diff_kfunc_metadata_matches_rust() {
             requirement.maximum_kernel_exclusive(),
             "verifier_diff.nu max_kernel_exclusive drifted for {name}"
         );
+        assert_eq!(
+            *max_kernel_source,
+            requirement.maximum_kernel_exclusive_source(),
+            "verifier_diff.nu max_kernel_exclusive_source drifted for {name}"
+        );
     }
 
     let explicit_body = nu_const_body(verifier_diff, "KFUNC_KERNEL_FEATURES", '[');
@@ -4982,13 +5007,14 @@ fn test_verifier_diff_kfunc_metadata_matches_rust() {
         let feature_const = dollar_field(line, "feature").unwrap_or_else(|| {
             panic!("expected explicit verifier_diff.nu kfunc feature for {name}")
         });
-        let (key, min_kernel, source, max_kernel) = nu_feature_record(verifier_diff, feature_const);
+        let (key, min_kernel, source, max_kernel, max_kernel_source) =
+            nu_feature_record(verifier_diff, feature_const);
         assert_eq!(key, format!("kfunc:{name}"));
         let fallback_metadata = fallback.get(name).unwrap_or_else(|| {
             panic!("explicit verifier_diff.nu kfunc feature {name} has no fallback metadata")
         });
         assert_eq!(
-            (min_kernel, source, max_kernel),
+            (min_kernel, source, max_kernel, max_kernel_source),
             *fallback_metadata,
             "explicit verifier_diff.nu kfunc feature metadata drifted for {name}"
         );
