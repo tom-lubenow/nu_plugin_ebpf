@@ -990,6 +990,7 @@ impl<'a> HirToMirLowering<'a> {
 
                 let meta = self.get_or_create_metadata(dst);
                 meta.field_type = Some(array_ty);
+                meta.constant_value = Some(Value::binary(bytes.clone(), Span::unknown()));
             }
 
             HirLiteral::CellPath(cell_path) => {

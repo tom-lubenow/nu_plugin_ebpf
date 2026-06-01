@@ -2835,6 +2835,50 @@ impl<'a> HirToMirLowering<'a> {
                 self.lower_describe(src_dst, dst_vreg, src_dst_had_value)?;
             }
 
+            "bytes length" => {
+                let input_reg = self
+                    .pipeline_input_reg
+                    .or(src_dst_had_value.then_some(src_dst));
+                let result_vreg = if src_dst_had_value {
+                    self.assign_fresh_vreg(src_dst)
+                } else {
+                    dst_vreg
+                };
+
+                if !self.named_flags.is_empty()
+                    || !self.named_args.is_empty()
+                    || !self.positional_args.is_empty()
+                {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "bytes length does not accept arguments in eBPF".into(),
+                    ));
+                }
+
+                let len = input_reg
+                    .and_then(|reg| self.get_metadata(reg))
+                    .and_then(|meta| match meta.constant_value.as_ref() {
+                        Some(nu_protocol::Value::Binary { val, .. }) => Some(val.len()),
+                        _ => None,
+                    })
+                    .ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "bytes length requires compile-time known binary input in eBPF".into(),
+                        )
+                    })?;
+                self.emit(MirInst::Copy {
+                    dst: result_vreg,
+                    src: MirValue::Const(len as i64),
+                });
+                self.reset_call_result_metadata(src_dst);
+                let out_meta = self.get_or_create_metadata(src_dst);
+                out_meta.field_type = Some(MirType::I64);
+                out_meta.constant_value = Some(nu_protocol::Value::int(
+                    len as i64,
+                    nu_protocol::Span::unknown(),
+                ));
+                self.vreg_type_hints.insert(result_vreg, MirType::I64);
+            }
+
             "str length" => {
                 self.lower_string_length(src_dst, dst_vreg, src_dst_had_value)?;
             }
