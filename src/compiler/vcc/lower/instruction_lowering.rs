@@ -1190,7 +1190,7 @@ impl<'a> VccLowerer<'a> {
                             ));
                         }
                         let size = record_pointer_access_size(&field.ty, value_ty);
-                        self.check_ptr_range(field.value, size, out)?;
+                        self.check_ptr_range_with_op(field.value, size, "emit record", out)?;
                     } else {
                         self.assert_scalar_reg(field.value, out);
                     }
@@ -1966,9 +1966,10 @@ impl<'a> VccLowerer<'a> {
                         ));
                     }
                     if let MirValue::VReg(vreg) = val {
-                        self.check_ptr_range(
+                        self.check_ptr_range_with_op(
                             *vreg,
                             record_pointer_access_size(ty, self.types.get(vreg)),
+                            "record store",
                             out,
                         )?;
                     }

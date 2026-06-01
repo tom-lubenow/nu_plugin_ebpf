@@ -104,7 +104,7 @@ fn test_verify_mir_emit_record_rejects_out_of_bounds_array_pointer() {
     let err = verify_mir(&func, &HashMap::new()).expect_err("expected record bounds error");
     assert!(
         err.iter().any(|e| e.kind == VccErrorKind::PointerBounds
-            && e.message.contains("pointer access out of bounds")),
+            && e.message.contains("emit record out of bounds")),
         "unexpected error messages: {:?}",
         err
     );
@@ -220,7 +220,7 @@ fn test_verify_mir_record_store_rejects_out_of_bounds_array_pointer() {
     let err = verify_mir(&func, &types).expect_err("expected record bounds error");
     assert!(
         err.iter().any(|e| e.kind == VccErrorKind::PointerBounds
-            && e.message.contains("pointer access out of bounds")),
+            && e.message.contains("record store out of bounds")),
         "unexpected error messages: {:?}",
         err
     );
