@@ -3542,6 +3542,14 @@ fn test_spec_record_includes_compatibility_requirement_metadata() {
     );
     assert_eq!(
         record
+            .get("compatibility_minimum_kernel_source")
+            .expect("compatibility minimum kernel source should be present")
+            .as_str()
+            .expect("compatibility minimum kernel source should be a string"),
+        "https://github.com/torvalds/linux/blob/v6.6/include/uapi/linux/bpf.h"
+    );
+    assert_eq!(
+        record
             .get("compatibility_default_test_lane")
             .expect("compatibility default test lane should be present")
             .as_str()

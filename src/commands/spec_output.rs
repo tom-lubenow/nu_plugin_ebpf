@@ -2174,6 +2174,10 @@ pub(super) fn spec_record(
     let compatibility_requirements = spec.compatibility_requirements();
     let compatibility_minimum_kernel =
         ProgramCompatibilityRequirement::effective_minimum_kernel(&compatibility_requirements);
+    let compatibility_minimum_kernel_source =
+        ProgramCompatibilityRequirement::effective_minimum_kernel_source(
+            &compatibility_requirements,
+        );
     let compatibility_default_test_lane = spec.compatibility_default_test_lane();
     let requirements = compatibility_requirements
         .iter()
@@ -2265,6 +2269,7 @@ pub(super) fn spec_record(
             "intrinsics" => Value::list(intrinsics, span),
             "compatibility_requirements" => Value::list(requirements, span),
             "compatibility_minimum_kernel" => optional_static_str(compatibility_minimum_kernel, span),
+            "compatibility_minimum_kernel_source" => optional_static_str(compatibility_minimum_kernel_source, span),
             "compatibility_default_test_lane" => Value::string(compatibility_default_test_lane.key(), span),
             "compatibility_default_test_lane_description" => Value::string(compatibility_default_test_lane.description(), span),
             "return_aliases" => Value::list(return_aliases, span),

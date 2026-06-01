@@ -230,7 +230,8 @@ expose `kernel_target_validation` and
 tracepoint, or LSM-hook guidance before attach. Source-verified requirements
 carry minimum
 versions, `compatibility_minimum_kernel` reports the maximum known requirement
-for the parsed target, and `compatibility_default_test_lane` reports the most
+for the parsed target, `compatibility_minimum_kernel_source` reports one source
+for that aggregate floor, and `compatibility_default_test_lane` reports the most
 restrictive default lane across those requirements. The `intrinsics` list is program- and
 attach-aware, and first-class helper-backed commands expose aggregate
 compatibility metadata plus `backing_helpers` records with source-checked

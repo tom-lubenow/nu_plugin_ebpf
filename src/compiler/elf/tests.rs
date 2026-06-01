@@ -5275,6 +5275,14 @@ fn test_program_compatibility_requirement_surfaces_are_unique() {
         ]),
         Some("5.10")
     );
+    assert_eq!(
+        ProgramCompatibilityRequirement::effective_minimum_kernel_source(&[
+            ProgramCompatibilityRequirement::KernelBtf,
+            ProgramCompatibilityRequirement::BpfTrampoline,
+            ProgramCompatibilityRequirement::SleepableProgram,
+        ]),
+        ProgramCompatibilityRequirement::SleepableProgram.minimum_kernel_source()
+    );
     assert!(ProgramCompatibilityRequirement::kernel_version_at_least(
         "6.1.12-generic",
         "5.10"

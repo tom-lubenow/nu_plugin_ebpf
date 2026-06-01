@@ -2406,20 +2406,40 @@ impl ProgramCompatibilityRequirement {
     pub fn effective_minimum_kernel(
         requirements: &[ProgramCompatibilityRequirement],
     ) -> Option<&'static str> {
-        let mut minimum = None;
+        Self::effective_minimum_kernel_requirement(requirements)
+            .and_then(|requirement| requirement.minimum_kernel())
+    }
+
+    pub fn effective_minimum_kernel_source(
+        requirements: &[ProgramCompatibilityRequirement],
+    ) -> Option<&'static str> {
+        Self::effective_minimum_kernel_requirement(requirements)
+            .and_then(|requirement| requirement.minimum_kernel_source())
+    }
+
+    fn effective_minimum_kernel_requirement(
+        requirements: &[ProgramCompatibilityRequirement],
+    ) -> Option<&ProgramCompatibilityRequirement> {
+        let mut effective: Option<&ProgramCompatibilityRequirement> = None;
         for requirement in requirements {
             let Some(candidate) = requirement.minimum_kernel() else {
                 continue;
             };
-            let should_replace = match minimum {
-                Some(current) => Self::kernel_version_cmp(candidate, current).is_gt(),
+            let should_replace = match effective {
+                Some(current) => Self::kernel_version_cmp(
+                    candidate,
+                    current
+                        .minimum_kernel()
+                        .expect("effective requirement should have a minimum kernel"),
+                )
+                .is_gt(),
                 None => true,
             };
             if should_replace {
-                minimum = Some(candidate);
+                effective = Some(requirement);
             }
         }
-        minimum
+        effective
     }
 
     pub fn kernel_version_at_least(current: &str, minimum: &str) -> bool {
