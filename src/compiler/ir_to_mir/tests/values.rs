@@ -3079,6 +3079,42 @@ fn test_lower_str_contains_too_long_substring_is_false() {
 }
 
 #[test]
+fn test_lower_str_distance_on_known_strings_materializes_levenshtein_distance() {
+    let distance_decl = DeclId::new(182);
+    let hir = make_string_arg_pipeline_call_program(distance_decl, "nushell", "nutshell");
+    let decl_names = HashMap::from([(distance_decl, "str distance".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str distance should lower on compile-time known strings");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Copy {
+                    src: MirValue::Const(1),
+                    ..
+                }
+            )),
+        "expected str distance to materialize the Levenshtein distance"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("str distance should compile through codegen");
+}
+
+#[test]
 fn test_lower_str_index_of_on_known_string_returns_first_offset() {
     let index_of_decl = DeclId::new(124);
     let hir = make_string_arg_pipeline_call_program(index_of_decl, "ababa", "ba");

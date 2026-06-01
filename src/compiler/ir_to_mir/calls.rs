@@ -2847,6 +2847,10 @@ impl<'a> HirToMirLowering<'a> {
                 self.lower_string_contains(src_dst, dst_vreg, src_dst_had_value)?;
             }
 
+            "str distance" => {
+                self.lower_string_distance(src_dst, dst_vreg, src_dst_had_value)?;
+            }
+
             "str index-of" => {
                 self.lower_string_index_of(src_dst, dst_vreg, src_dst_had_value)?;
             }

@@ -35192,6 +35192,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-string-distance"
+        category: "language-core"
+        tags: [string str distance]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "nushell" | str distance "nutshell"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-string-index-of"
         category: "language-core"
         tags: [string str index-of]

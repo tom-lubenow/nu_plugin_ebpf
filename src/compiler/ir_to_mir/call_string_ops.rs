@@ -3,6 +3,7 @@ use fancy_regex::{NoExpand, Regex as FancyRegex};
 use heck::{
     ToKebabCase, ToLowerCamelCase, ToShoutySnakeCase, ToSnakeCase, ToTitleCase, ToUpperCamelCase,
 };
+use nu_protocol::levenshtein_distance;
 use unicode_segmentation::UnicodeSegmentation;
 
 struct KnownStringSearchOperands {
@@ -397,6 +398,38 @@ impl<'a> HirToMirLowering<'a> {
         out_meta.field_type = Some(MirType::Bool);
         self.vreg_type_hints.insert(result_vreg, MirType::Bool);
         Ok(())
+    }
+
+    pub(super) fn lower_string_distance(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+    ) -> Result<(), CompileError> {
+        let input_reg = self
+            .pipeline_input_reg
+            .or(src_dst_had_value.then_some(src_dst));
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+
+        if !self.named_flags.is_empty() || !self.named_args.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(
+                "str distance does not accept named arguments in eBPF".into(),
+            ));
+        }
+        if self.positional_args.len() != 1 {
+            return Err(CompileError::UnsupportedInstruction(
+                "str distance requires exactly one compare-string argument in eBPF".into(),
+            ));
+        }
+
+        let input = self.exact_string_input(input_reg, "str distance")?;
+        let compare = self.literal_string_arg(self.positional_args[0].1, "str distance")?;
+        let distance = levenshtein_distance(&input, &compare) as i64;
+        self.lower_i64_result(src_dst, result_vreg, distance)
     }
 
     pub(super) fn lower_string_index_of(
