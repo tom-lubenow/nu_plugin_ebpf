@@ -14017,6 +14017,40 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "global-define-type-int-add-initializer"
+        category: "globals"
+        tags: [globals scalar global-define accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let sum = (3 + 4)'
+            '  $sum | global-define --type int sum'
+            '  let stored = (global-get sum)'
+            '  $stored | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "global-define-type-int-record-field-initializer"
+        category: "globals"
+        tags: [globals records scalar global-define accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let state = { pid: 7 }'
+            '  $state.pid | global-define --type int seen_pid'
+            '  let stored = (global-get seen_pid)'
+            '  $stored | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "global-define-type-int-bool-initializer-rejects"
         category: "globals"
         tags: [globals scalar bool global-define reject]
