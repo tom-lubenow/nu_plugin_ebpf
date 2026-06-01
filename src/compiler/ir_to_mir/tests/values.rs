@@ -1315,6 +1315,97 @@ fn make_string_list_builder_item_access_then_starts_with_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_string_list_builder_transform_join_then_starts_with_program(
+    transform_decl: DeclId,
+    join_decl: DeclId,
+    starts_with_decl: DeclId,
+    values: &[&str],
+    count: Option<i64>,
+    prefix: &str,
+) -> HirProgram {
+    let value_count = values.len();
+    let value_count_u32 = u32::try_from(value_count).expect("test string-list length fits in u32");
+    let mut stmts = vec![HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List {
+            capacity: value_count,
+        },
+    }];
+
+    for (index, value) in values.iter().enumerate() {
+        let item_reg = RegId::new(u32::try_from(index).expect("test index fits in u32") + 2);
+        stmts.push(HirStmt::LoadValue {
+            dst: item_reg,
+            val: Box::new(Value::string(*value, Span::test_data())),
+        });
+        stmts.push(HirStmt::ListPush {
+            src_dst: RegId::new(0),
+            item: item_reg,
+        });
+    }
+
+    let count_reg = count.map(|raw_count| {
+        let reg = RegId::new(value_count_u32 + 2);
+        stmts.push(HirStmt::LoadLiteral {
+            dst: reg,
+            lit: HirLiteral::Int(raw_count),
+        });
+        reg
+    });
+    let separator_reg = RegId::new(value_count_u32 + 2 + u32::from(count_reg.is_some()));
+    let prefix_reg = RegId::new(separator_reg.get() + 1);
+    stmts.push(HirStmt::Call {
+        decl_id: transform_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional: count_reg.into_iter().collect(),
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::LoadValue {
+        dst: separator_reg,
+        val: Box::new(Value::string("-", Span::test_data())),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: join_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional: vec![separator_reg],
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::LoadValue {
+        dst: prefix_reg,
+        val: Box::new(Value::string(prefix, Span::test_data())),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: starts_with_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional: vec![prefix_reg],
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: prefix_reg.get() + 1,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_string_command_then_get_field_program(
     command_decl: DeclId,
     get_decl: DeclId,
@@ -3673,6 +3764,87 @@ fn test_lower_last_on_string_list_builder_materializes_last_item() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("last string-list builder result should compile through codegen");
+}
+
+#[test]
+fn test_lower_string_list_builder_transforms_join_constant_values() {
+    let scenarios = [
+        ("take", Some(2), "ab-cd"),
+        ("skip", Some(1), "cd-ef"),
+        ("drop", Some(1), "ab-cd"),
+        ("first", Some(2), "ab-cd"),
+        ("last", Some(2), "cd-ef"),
+        ("reverse", None, "ef-cd-ab"),
+    ];
+
+    for (index, &(command, count, expected)) in scenarios.iter().enumerate() {
+        let base_decl = 290 + index * 3;
+        let transform_decl = DeclId::new(base_decl);
+        let join_decl = DeclId::new(base_decl + 1);
+        let starts_with_decl = DeclId::new(base_decl + 2);
+        let hir = make_string_list_builder_transform_join_then_starts_with_program(
+            transform_decl,
+            join_decl,
+            starts_with_decl,
+            &["ab", "cd", "ef"],
+            count,
+            expected,
+        );
+        let decl_names = HashMap::from([
+            (transform_decl, (*command).to_string()),
+            (join_decl, "str join".to_string()),
+            (starts_with_decl, "str starts-with".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("{command} should fold compile-time string-list builders: {err}")
+        });
+
+        let expected_literal = format!("{expected}\0");
+        assert!(
+            result
+                .program
+                .main
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .any(|inst| matches!(
+                    inst,
+                    MirInst::StringAppend {
+                        val_type: StringAppendType::Literal { bytes },
+                        ..
+                    } if bytes.starts_with(expected_literal.as_bytes())
+                )),
+            "expected {command} to feed str join with constant {expected}"
+        );
+        assert!(
+            result
+                .program
+                .main
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .all(|inst| !matches!(
+                    inst,
+                    MirInst::ListGet { .. } | MirInst::ListLen { .. } | MirInst::ListPush { .. }
+                )),
+            "expected compile-time string-list {command} not to use runtime list operations"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!(
+                    "{command} string-list transform result should compile through codegen: {err}"
+                )
+            });
+    }
 }
 
 #[test]

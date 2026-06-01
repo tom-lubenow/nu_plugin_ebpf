@@ -284,6 +284,23 @@ impl<'a> HirToMirLowering<'a> {
             ))
         })?;
 
+        if let Some(values) = input_reg.and_then(|reg| {
+            self.compile_time_only_list_builder_values(reg, input_vreg)
+                .map(|values| values.to_vec())
+        }) {
+            let vals = match cmd_name {
+                "take" | "first" => values.into_iter().take(count).collect::<Vec<_>>(),
+                "skip" => values.into_iter().skip(count).collect::<Vec<_>>(),
+                "drop" => {
+                    let keep_len = values.len().saturating_sub(count);
+                    values.into_iter().take(keep_len).collect::<Vec<_>>()
+                }
+                _ => unreachable!("validated stack list slice command"),
+            };
+            self.lower_constant_value(src_dst, &nu_protocol::Value::list(vals, Span::unknown()))?;
+            return Ok(());
+        }
+
         let input_meta = input_reg
             .and_then(|reg| self.get_metadata(reg).cloned())
             .ok_or_else(|| {
@@ -424,6 +441,15 @@ impl<'a> HirToMirLowering<'a> {
             ));
         }
 
+        if let Some(mut values) = input_reg.and_then(|reg| {
+            self.compile_time_only_list_builder_values(reg, input_vreg)
+                .map(|values| values.to_vec())
+        }) {
+            values.reverse();
+            self.lower_constant_value(src_dst, &nu_protocol::Value::list(values, Span::unknown()))?;
+            return Ok(());
+        }
+
         let input_meta = input_reg
             .and_then(|reg| self.get_metadata(reg).cloned())
             .ok_or_else(|| {
@@ -551,6 +577,21 @@ impl<'a> HirToMirLowering<'a> {
                 "last count is too large for eBPF list lowering".into(),
             )
         })?;
+
+        if let Some(values) = input_reg.and_then(|reg| {
+            self.compile_time_only_list_builder_values(reg, input_vreg)
+                .map(|values| values.to_vec())
+        }) {
+            let start = values.len().saturating_sub(count);
+            self.lower_constant_value(
+                src_dst,
+                &nu_protocol::Value::list(
+                    values.into_iter().skip(start).collect::<Vec<_>>(),
+                    Span::unknown(),
+                ),
+            )?;
+            return Ok(());
+        }
 
         let input_meta = input_reg
             .and_then(|reg| self.get_metadata(reg).cloned())

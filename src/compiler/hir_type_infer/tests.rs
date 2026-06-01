@@ -325,6 +325,60 @@ fn assert_list_push_string_item_allowed_for_pipeline_command(decl_id: DeclId, de
         .unwrap_or_else(|_| panic!("{decl_name} should allow compile-time string lists"));
 }
 
+fn assert_list_push_string_item_allowed_for_pipeline_command_with_int_arg(
+    decl_id: DeclId,
+    decl_name: &str,
+) {
+    let mut func = HirFunction {
+        blocks: Vec::new(),
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 4,
+        file_count: 0,
+    };
+
+    let mut block = HirBlock {
+        id: HirBlockId(0),
+        stmts: Vec::new(),
+        terminator: HirTerminator::Return { src: RegId::new(2) },
+    };
+
+    block.stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List { capacity: 1 },
+    });
+    block.stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(1),
+        lit: HirLiteral::String(b"ab".to_vec()),
+    });
+    block.stmts.push(HirStmt::ListPush {
+        src_dst: RegId::new(0),
+        item: RegId::new(1),
+    });
+    block.stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(3),
+        lit: HirLiteral::Int(1),
+    });
+    block.stmts.push(HirStmt::Call {
+        decl_id,
+        src_dst: RegId::new(2),
+        args: HirCallArgs {
+            positional: vec![RegId::new(3)],
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    func.blocks.push(block);
+
+    let program = HirProgram::new(func, HashMap::new(), Vec::new(), None);
+    let decl_names = HashMap::from([(decl_id, decl_name.to_string())]);
+    infer_hir(&program, &decl_names)
+        .unwrap_or_else(|_| panic!("{decl_name} should allow compile-time string lists"));
+}
+
 #[test]
 fn test_list_push_string_item_allowed_for_length() {
     assert_list_push_string_item_allowed_for_pipeline_command(DeclId::new(51), "length");
@@ -400,6 +454,39 @@ fn test_list_push_string_item_allowed_for_get() {
     let program = HirProgram::new(func, HashMap::new(), Vec::new(), None);
     let decl_names = HashMap::from([(get_decl, "get".to_string())]);
     infer_hir(&program, &decl_names).expect("get should allow compile-time string lists");
+}
+
+#[test]
+fn test_list_push_string_item_allowed_for_take() {
+    assert_list_push_string_item_allowed_for_pipeline_command_with_int_arg(DeclId::new(57), "take");
+}
+
+#[test]
+fn test_list_push_string_item_allowed_for_skip() {
+    assert_list_push_string_item_allowed_for_pipeline_command_with_int_arg(DeclId::new(58), "skip");
+}
+
+#[test]
+fn test_list_push_string_item_allowed_for_drop() {
+    assert_list_push_string_item_allowed_for_pipeline_command_with_int_arg(DeclId::new(59), "drop");
+}
+
+#[test]
+fn test_list_push_string_item_allowed_for_first_count() {
+    assert_list_push_string_item_allowed_for_pipeline_command_with_int_arg(
+        DeclId::new(60),
+        "first",
+    );
+}
+
+#[test]
+fn test_list_push_string_item_allowed_for_last_count() {
+    assert_list_push_string_item_allowed_for_pipeline_command_with_int_arg(DeclId::new(61), "last");
+}
+
+#[test]
+fn test_list_push_string_item_allowed_for_reverse() {
+    assert_list_push_string_item_allowed_for_pipeline_command(DeclId::new(62), "reverse");
 }
 
 #[test]

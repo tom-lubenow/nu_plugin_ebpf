@@ -849,10 +849,10 @@ eBPF layout and verifier bounds are explicit:
 | `where` | Stack-backed numeric lists with a closure predicate; scalar pipeline filtering also lowers to an early return when the predicate is false |
 | `each` | Stack-backed numeric lists with a closure transform, preserving runtime list length; scalar pipeline transforms are also supported |
 | `all` / `any` | Stack-backed numeric lists with a closure predicate, verifier-bounded constant-index reads, and Nushell empty-list identities |
-| `take` | Stack-backed numeric lists with a compile-time non-negative count |
-| `skip` | Stack-backed numeric lists with a compile-time non-negative count |
-| `drop` | Stack-backed numeric lists with a compile-time non-negative count removed from the end |
-| `reverse` | Stack-backed numeric lists, preserving runtime length with descending constant-index loads |
+| `take` | Stack-backed numeric lists and compile-time known fixed lists with a compile-time non-negative count |
+| `skip` | Stack-backed numeric lists and compile-time known fixed lists with a compile-time non-negative count |
+| `drop` | Stack-backed numeric lists and compile-time known fixed lists with a compile-time non-negative count removed from the end |
+| `reverse` | Stack-backed numeric lists, preserving runtime length with descending constant-index loads; compile-time known fixed lists are reversed as constants |
 | `uniq` | Stack-backed numeric lists, preserving first occurrences through verifier-bounded duplicate checks |
 | `sort` | Stack-backed numeric lists with capacity <= 16, using bounded compare/swap lowering; `--reverse` is supported |
 | `compact` | Stack-backed numeric lists as an identity operation because numeric-list elements cannot be null or empty; column arguments are not modeled |
@@ -885,7 +885,7 @@ eBPF layout and verifier bounds are explicit:
 | `length` | Stack-backed numeric lists, compile-time known list constants, literal binary, and literal null values |
 | `math sum` / `math product` / `math min` / `math max` | Stack-backed numeric lists with known non-empty length; empty-list input is rejected to match Nushell semantics |
 | `math abs` | Compile-time known integer or integer-list input, rejecting the unrepresentable `i64::MIN` absolute value |
-| `first` / `last` | Scalar first/last element access for stack-backed numeric lists and compile-time known fixed lists; counted forms rebuild bounded prefix/suffix stack-list slices for stack-backed numeric lists |
+| `first` / `last` | Scalar first/last element access for stack-backed numeric lists and compile-time known fixed lists; counted forms rebuild bounded prefix/suffix stack-list slices for stack-backed numeric lists and constant-fold compile-time known fixed lists |
 | `get` | Stack-backed numeric-list indexing, constant-index item projection from compile-time known fixed lists, top-level metadata-backed fixed-record field projection, typed context / BTF-backed pointer field projection with compiler-visible field paths such as `$ctx | get sk | get family`, and typed kernel/user pointer numeric indexing; list literal indexes may be literal cell paths |
 | `select` / `reject` | Metadata-backed fixed records, materialized into a fresh fixed-layout record |
 | `rename` | Positional top-level field renames for metadata-backed fixed records; `--column` and `--block` are not yet modeled |

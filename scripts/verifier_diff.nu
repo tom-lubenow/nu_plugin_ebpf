@@ -34983,6 +34983,84 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-string-list-take"
+        category: "language-core"
+        tags: [string list take]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ["ab" "cd" "ef"] | take 2 | str join "-" | str starts-with "ab-cd"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-string-list-skip"
+        category: "language-core"
+        tags: [string list skip]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ["ab" "cd" "ef"] | skip 1 | str join "-" | str starts-with "cd-ef"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-string-list-drop"
+        category: "language-core"
+        tags: [string list drop]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ["ab" "cd" "ef"] | drop 1 | str join "-" | str starts-with "ab-cd"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-string-list-first-count"
+        category: "language-core"
+        tags: [string list first]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ["ab" "cd" "ef"] | first 2 | str join "-" | str starts-with "ab-cd"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-string-list-last-count"
+        category: "language-core"
+        tags: [string list last]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ["ab" "cd" "ef"] | last 2 | str join "-" | str starts-with "cd-ef"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-string-list-reverse"
+        category: "language-core"
+        tags: [string list reverse]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ["ab" "cd" "ef"] | reverse | str join "-" | str starts-with "ef-cd-ab"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-math-sum"
         category: "language-core"
         tags: [aggregate list math sum]
