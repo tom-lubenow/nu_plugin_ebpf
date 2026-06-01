@@ -2913,6 +2913,10 @@ impl<'a> HirToMirLowering<'a> {
                 self.lower_metadata_record_merge(src_dst, dst_vreg, src_dst_had_value)?;
             }
 
+            "columns" => {
+                self.lower_metadata_record_columns(src_dst, dst_vreg, src_dst_had_value)?;
+            }
+
             "values" => {
                 self.lower_metadata_record_values(src_dst, dst_vreg, src_dst_had_value)?;
             }

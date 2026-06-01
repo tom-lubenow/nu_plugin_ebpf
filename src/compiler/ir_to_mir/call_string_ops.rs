@@ -1178,7 +1178,7 @@ impl<'a> HirToMirLowering<'a> {
         out
     }
 
-    fn lower_known_string_list_result(
+    pub(super) fn lower_known_string_list_result(
         &mut self,
         src_dst: RegId,
         result_vreg: VReg,

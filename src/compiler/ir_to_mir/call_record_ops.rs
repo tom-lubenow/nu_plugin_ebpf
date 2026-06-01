@@ -1,6 +1,8 @@
 use super::*;
 use crate::compiler::mir::AddressSpace;
 
+const MAX_RECORD_COLUMNS_RESULTS: usize = 64;
+
 impl<'a> HirToMirLowering<'a> {
     fn metadata_record_values_supported_field(meta: &RegMetadata, field: &RecordField) -> bool {
         let storage_is_integer = matches!(
@@ -508,6 +510,63 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         Ok(())
+    }
+
+    pub(super) fn lower_metadata_record_columns(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+    ) -> Result<(), CompileError> {
+        let input_reg = self
+            .pipeline_input_reg
+            .or(src_dst_had_value.then_some(src_dst));
+
+        if !self.named_flags.is_empty()
+            || !self.named_args.is_empty()
+            || !self.positional_args.is_empty()
+        {
+            return Err(CompileError::UnsupportedInstruction(
+                "columns does not accept arguments in eBPF".into(),
+            ));
+        }
+
+        let input_meta = input_reg
+            .and_then(|reg| self.get_metadata(reg).cloned())
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "columns requires record input with compiler-known fields in eBPF".into(),
+                )
+            })?;
+        if input_meta.record_fields.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(
+                "columns requires non-empty record input with compiler-known fields in eBPF".into(),
+            ));
+        }
+        if input_meta.record_fields.len() > MAX_RECORD_COLUMNS_RESULTS {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "columns supports at most {MAX_RECORD_COLUMNS_RESULTS} record fields in eBPF"
+            )));
+        }
+
+        let mut columns = Vec::with_capacity(input_meta.record_fields.len());
+        for field in &input_meta.record_fields {
+            if field.name.len().saturating_add(1) > MAX_STRING_SIZE {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "columns field name '{}' exceeds the eBPF string capacity of {} bytes",
+                    field.name,
+                    MAX_STRING_SIZE - 1
+                )));
+            }
+            columns.push(field.name.clone());
+        }
+
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+        self.lower_known_string_list_result(src_dst, result_vreg, columns)
     }
 
     pub(super) fn lower_metadata_record_get(

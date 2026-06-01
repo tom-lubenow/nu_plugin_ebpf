@@ -82,6 +82,7 @@ const NU_CLOSURE_COMMANDS: &[&str] = &[
     "reject",
     "rename",
     "merge",
+    "columns",
     "values",
     "insert",
     "update",

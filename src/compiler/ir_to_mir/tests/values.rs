@@ -1523,6 +1523,75 @@ fn make_record_values_then_get_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_record_columns_then_get_then_starts_with_program(
+    columns_decl: DeclId,
+    get_decl: DeclId,
+    starts_with_decl: DeclId,
+    get_index: i64,
+    prefix: &str,
+) -> HirProgram {
+    let mut record = Record::new();
+    record.push("pid", Value::int(7, Span::test_data()));
+    record.push("cpu", Value::int(2, Span::test_data()));
+    record.push("ok", Value::bool(true, Span::test_data()));
+
+    let stmts = vec![
+        HirStmt::LoadValue {
+            dst: RegId::new(0),
+            val: Box::new(Value::record(record, Span::test_data())),
+        },
+        HirStmt::Call {
+            decl_id: columns_decl,
+            src_dst: RegId::new(1),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(0)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(2),
+            lit: HirLiteral::Int(get_index),
+        },
+        HirStmt::Call {
+            decl_id: get_decl,
+            src_dst: RegId::new(3),
+            args: HirCallArgs {
+                positional: vec![RegId::new(2)],
+                pipeline_input: Some(RegId::new(1)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::LoadValue {
+            dst: RegId::new(4),
+            val: Box::new(Value::string(prefix, Span::test_data())),
+        },
+        HirStmt::Call {
+            decl_id: starts_with_decl,
+            src_dst: RegId::new(5),
+            args: HirCallArgs {
+                positional: vec![RegId::new(4)],
+                pipeline_input: Some(RegId::new(3)),
+                ..HirCallArgs::default()
+            },
+        },
+    ];
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(5) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 6,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_record_empty_predicate_program(
     decl_id: DeclId,
     command_name: &str,
@@ -6372,6 +6441,102 @@ fn test_lower_values_rejects_non_integer_metadata_record_field() {
     assert!(
         err.to_string()
             .contains("values supports only integer scalar record fields"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_columns_on_metadata_record_materializes_field_name_list() {
+    let columns_decl = DeclId::new(202);
+    let get_decl = DeclId::new(203);
+    let starts_with_decl = DeclId::new(204);
+    let hir = make_record_columns_then_get_then_starts_with_program(
+        columns_decl,
+        get_decl,
+        starts_with_decl,
+        1,
+        "cpu",
+    );
+    let decl_names = HashMap::from([
+        (columns_decl, "columns".to_string()),
+        (get_decl, "get".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("columns should lower metadata-backed record field names");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"cpu\0")
+            )),
+        "expected get 1 from columns output to materialize cpu as a tracked string"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("record columns followed by string predicate should compile through codegen");
+}
+
+#[test]
+fn test_lower_columns_rejects_empty_metadata_record() {
+    let columns_decl = DeclId::new(205);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Record { capacity: 0 },
+                },
+                HirStmt::Call {
+                    decl_id: columns_decl,
+                    src_dst: RegId::new(1),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 2,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+    let decl_names = HashMap::from([(columns_decl, "columns".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("columns on empty metadata-backed records should be rejected");
+
+    assert!(
+        err.to_string().contains("requires non-empty record input"),
         "unexpected error: {err}"
     );
 }
