@@ -11150,12 +11150,24 @@ fn test_ebpf_program_reports_map_compatibility_requirements() {
         "map:BPF_MAP_TYPE_HASH_OF_MAPS"
     );
     assert_eq!(program.map_compatibility_minimum_kernel(), Some("5.8"));
+    assert!(
+        program
+            .map_compatibility_minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v5.8/include/uapi/linux/bpf.h"))
+    );
     assert_eq!(
         program
             .clone()
             .into_object()
             .map_compatibility_minimum_kernel(),
         Some("5.8")
+    );
+    assert!(
+        program
+            .clone()
+            .into_object()
+            .map_compatibility_minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v5.8/include/uapi/linux/bpf.h"))
     );
 }
 
@@ -11184,12 +11196,24 @@ fn test_ebpf_program_reports_global_compatibility_requirements() {
     assert_eq!(requirements[0].minimum_kernel(), "5.2");
     assert!(requirements[0].minimum_kernel_source().contains("d8eca5"));
     assert_eq!(program.global_compatibility_minimum_kernel(), Some("5.2"));
+    assert!(
+        program
+            .global_compatibility_minimum_kernel_source()
+            .is_some_and(|source| source.contains("d8eca5"))
+    );
     assert_eq!(
         program
             .clone()
             .into_object()
             .global_compatibility_minimum_kernel(),
         Some("5.2")
+    );
+    assert!(
+        program
+            .clone()
+            .into_object()
+            .global_compatibility_minimum_kernel_source()
+            .is_some_and(|source| source.contains("d8eca5"))
     );
 
     let mut custom_data_object = EbpfProgram::hello_world("sys_clone").into_object();
@@ -11361,12 +11385,24 @@ fn test_ebpf_program_reports_map_value_compatibility_requirements() {
         program.map_value_compatibility_minimum_kernel(),
         Some("6.10")
     );
+    assert!(
+        program
+            .map_value_compatibility_minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v6.10/include/linux/bpf.h"))
+    );
     assert_eq!(
         program
             .clone()
             .into_object()
             .map_value_compatibility_minimum_kernel(),
         Some("6.10")
+    );
+    assert!(
+        program
+            .clone()
+            .into_object()
+            .map_value_compatibility_minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v6.10/include/linux/bpf.h"))
     );
     assert!(
         EbpfProgram::hello_world("sys_clone")
@@ -11506,10 +11542,20 @@ fn test_ebpf_program_reports_helper_compatibility_requirements() {
     assert_eq!(requirements[2].helper(), BpfHelper::UserRingbufDrain);
     assert_eq!(requirements[2].key(), "helper:bpf_user_ringbuf_drain");
     assert_eq!(program.helper_compatibility_minimum_kernel(), Some("6.1"));
+    assert!(
+        program
+            .helper_compatibility_minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v6.1/include/uapi/linux/bpf.h"))
+    );
     let object = program.clone().into_object();
     assert_eq!(object.used_helpers(), program.used_helpers());
     assert_eq!(object.programs[0].used_helpers(), program.used_helpers());
     assert_eq!(object.helper_compatibility_minimum_kernel(), Some("6.1"));
+    assert!(
+        object
+            .helper_compatibility_minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v6.1/include/uapi/linux/bpf.h"))
+    );
 }
 
 #[test]
@@ -11542,9 +11588,19 @@ fn test_ebpf_program_reports_kfunc_compatibility_requirements() {
     assert_eq!(requirements[1].name(), "bpf_task_acquire");
     assert_eq!(requirements[1].key(), "kfunc:bpf_task_acquire");
     assert_eq!(program.kfunc_compatibility_minimum_kernel(), Some("6.12"));
+    assert!(
+        program
+            .kfunc_compatibility_minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v6.12/fs/bpf_fs_kfuncs.c"))
+    );
     assert_eq!(program.kfunc_compatibility_maximum_kernel_exclusive(), None);
     let object = program.clone().into_object();
     assert_eq!(object.kfunc_compatibility_minimum_kernel(), Some("6.12"));
+    assert!(
+        object
+            .kfunc_compatibility_minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v6.12/fs/bpf_fs_kfuncs.c"))
+    );
     assert_eq!(object.used_kfuncs(), program.used_kfuncs());
     assert_eq!(object.programs[0].used_kfuncs(), program.used_kfuncs());
 
@@ -11649,6 +11705,11 @@ fn test_ebpf_program_reports_compiled_feature_compatibility_requirements() {
         subprogram.compiled_feature_compatibility_minimum_kernel(),
         Some("4.16")
     );
+    assert!(
+        subprogram
+            .compiled_feature_compatibility_minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v4.16/include/uapi/linux/bpf.h"))
+    );
     assert_eq!(subprogram.compatibility_minimum_kernel(), Some("4.16"));
 
     let mut loop_builder = EbpfBuilder::new();
@@ -11668,6 +11729,11 @@ fn test_ebpf_program_reports_compiled_feature_compatibility_requirements() {
     assert_eq!(
         loop_program.compiled_feature_compatibility_minimum_kernel(),
         Some("5.3")
+    );
+    assert!(
+        loop_program
+            .compiled_feature_compatibility_minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v5.3/kernel/bpf/verifier.c"))
     );
     assert_eq!(loop_program.compatibility_minimum_kernel(), Some("5.3"));
 
@@ -11694,6 +11760,11 @@ fn test_ebpf_program_reports_compiled_feature_compatibility_requirements() {
     assert_eq!(
         object.compiled_feature_compatibility_minimum_kernel(),
         Some("5.3")
+    );
+    assert!(
+        object
+            .compiled_feature_compatibility_minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v5.3/kernel/bpf/verifier.c"))
     );
     assert_eq!(object.compatibility_minimum_kernel(), Some("5.3"));
 }
@@ -11751,24 +11822,64 @@ fn test_ebpf_program_reports_aggregate_compatibility_minimum_kernel() {
     .with_used_context_fields([CtxField::EgressIfindex]);
 
     assert_eq!(program.program_compatibility_minimum_kernel(), Some("5.18"));
+    assert!(
+        program
+            .program_compatibility_minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v5.18/include/uapi/linux/bpf.h"))
+    );
     assert_eq!(
         program.program_compatibility_default_test_lane(),
         "host-gated"
     );
     assert_eq!(program.map_compatibility_minimum_kernel(), Some("5.8"));
+    assert!(
+        program
+            .map_compatibility_minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v5.8/include/uapi/linux/bpf.h"))
+    );
     assert_eq!(program.global_compatibility_minimum_kernel(), Some("5.2"));
+    assert!(
+        program
+            .global_compatibility_minimum_kernel_source()
+            .is_some_and(|source| source.contains("d8eca5"))
+    );
     assert_eq!(
         program.map_value_compatibility_minimum_kernel(),
         Some("6.10")
     );
+    assert!(
+        program
+            .map_value_compatibility_minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v6.10/include/linux/bpf.h"))
+    );
     assert_eq!(program.helper_compatibility_minimum_kernel(), Some("6.1"));
+    assert!(
+        program
+            .helper_compatibility_minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v6.1/include/uapi/linux/bpf.h"))
+    );
     assert_eq!(program.kfunc_compatibility_minimum_kernel(), Some("6.12"));
+    assert!(
+        program
+            .kfunc_compatibility_minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v6.12/fs/bpf_fs_kfuncs.c"))
+    );
     assert_eq!(program.kfunc_compatibility_maximum_kernel_exclusive(), None);
     assert_eq!(
         program.context_field_compatibility_minimum_kernel(),
         Some("5.8")
     );
+    assert!(
+        program
+            .context_field_compatibility_minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v5.8/include/uapi/linux/bpf.h"))
+    );
     assert_eq!(program.compatibility_minimum_kernel(), Some("6.12"));
+    assert!(
+        program
+            .compatibility_minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v6.12/fs/bpf_fs_kfuncs.c"))
+    );
     assert_eq!(program.compatibility_default_test_lane(), "host-gated");
     assert_eq!(program.compatibility_maximum_kernel_exclusive(), None);
 
@@ -11779,7 +11890,17 @@ fn test_ebpf_program_reports_aggregate_compatibility_minimum_kernel() {
         object.programs[0].compatibility_minimum_kernel(),
         Some("6.12")
     );
+    assert!(
+        object.programs[0]
+            .compatibility_minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v6.12/fs/bpf_fs_kfuncs.c"))
+    );
     assert_eq!(object.compatibility_minimum_kernel(), Some("6.12"));
+    assert!(
+        object
+            .compatibility_minimum_kernel_source()
+            .is_some_and(|source| source.contains("/v6.12/fs/bpf_fs_kfuncs.c"))
+    );
     assert_eq!(object.compatibility_default_test_lane(), "host-gated");
     assert_eq!(
         object.programs[0].compatibility_maximum_kernel_exclusive(),

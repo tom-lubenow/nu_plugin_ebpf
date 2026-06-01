@@ -520,6 +520,115 @@ fn aggregate_compatibility_minimum_kernel(
     effective
 }
 
+fn effective_requirement_minimum_kernel_source<T>(
+    requirements: &[T],
+    minimum_kernel: impl Fn(&T) -> Option<&'static str>,
+    minimum_kernel_source: impl Fn(&T) -> Option<&'static str>,
+) -> Option<&'static str> {
+    let mut effective = None;
+    for requirement in requirements {
+        let Some(candidate) = minimum_kernel(requirement) else {
+            continue;
+        };
+        let Some(source) = minimum_kernel_source(requirement) else {
+            continue;
+        };
+        if effective.is_none_or(|(current, _)| {
+            !ContextFieldCompatibilityRequirement::kernel_version_at_least(current, candidate)
+        }) {
+            effective = Some((candidate, source));
+        }
+    }
+    effective.map(|(_, source)| source)
+}
+
+fn aggregate_compatibility_minimum_kernel_source(
+    minimums: impl IntoIterator<Item = (Option<&'static str>, Option<&'static str>)>,
+) -> Option<&'static str> {
+    let mut effective = None;
+    for (candidate, source) in minimums
+        .into_iter()
+        .filter_map(|(minimum, source)| Some((minimum?, source?)))
+    {
+        if effective.is_none_or(|(current, _)| {
+            !ContextFieldCompatibilityRequirement::kernel_version_at_least(current, candidate)
+        }) {
+            effective = Some((candidate, source));
+        }
+    }
+    effective.map(|(_, source)| source)
+}
+
+fn map_compatibility_minimum_kernel_source(
+    requirements: &[MapCompatibilityRequirement],
+) -> Option<&'static str> {
+    effective_requirement_minimum_kernel_source(
+        requirements,
+        |requirement| Some(requirement.minimum_kernel()),
+        |requirement| Some(requirement.minimum_kernel_source()),
+    )
+}
+
+fn global_compatibility_minimum_kernel_source(
+    requirements: &[GlobalCompatibilityRequirement],
+) -> Option<&'static str> {
+    effective_requirement_minimum_kernel_source(
+        requirements,
+        |requirement| Some(requirement.minimum_kernel()),
+        |requirement| Some(requirement.minimum_kernel_source()),
+    )
+}
+
+fn map_value_compatibility_minimum_kernel_source(
+    requirements: &[MapValueCompatibilityRequirement],
+) -> Option<&'static str> {
+    effective_requirement_minimum_kernel_source(
+        requirements,
+        |requirement| Some(requirement.minimum_kernel()),
+        |requirement| Some(requirement.minimum_kernel_source()),
+    )
+}
+
+fn helper_compatibility_minimum_kernel_source(
+    requirements: &[HelperCompatibilityRequirement],
+) -> Option<&'static str> {
+    effective_requirement_minimum_kernel_source(
+        requirements,
+        |requirement| Some(requirement.minimum_kernel()),
+        |requirement| Some(requirement.minimum_kernel_source()),
+    )
+}
+
+fn compiled_feature_compatibility_minimum_kernel_source(
+    requirements: &[CompiledFeatureCompatibilityRequirement],
+) -> Option<&'static str> {
+    effective_requirement_minimum_kernel_source(
+        requirements,
+        |requirement| Some(requirement.minimum_kernel()),
+        |requirement| Some(requirement.minimum_kernel_source()),
+    )
+}
+
+fn kfunc_compatibility_minimum_kernel_source(
+    requirements: &[KfuncCompatibilityRequirement],
+) -> Option<&'static str> {
+    effective_requirement_minimum_kernel_source(
+        requirements,
+        |requirement| Some(requirement.minimum_kernel()),
+        |requirement| Some(requirement.minimum_kernel_source()),
+    )
+}
+
+fn context_field_compatibility_minimum_kernel_source(
+    requirements: &[ContextFieldCompatibilityRequirement],
+) -> Option<&'static str> {
+    effective_requirement_minimum_kernel_source(
+        requirements,
+        |requirement| Some(requirement.minimum_kernel()),
+        |requirement| Some(requirement.minimum_kernel_source()),
+    )
+}
+
 fn aggregate_compatibility_maximum_kernel_exclusive(
     maximums: impl IntoIterator<Item = Option<&'static str>>,
 ) -> Option<&'static str> {
@@ -1249,6 +1358,10 @@ impl EbpfProgramSection {
         )
     }
 
+    pub fn helper_compatibility_minimum_kernel_source(&self) -> Option<&'static str> {
+        helper_compatibility_minimum_kernel_source(&self.helper_compatibility_requirements())
+    }
+
     pub fn compiled_feature_compatibility_requirements(
         &self,
     ) -> Vec<CompiledFeatureCompatibilityRequirement> {
@@ -1257,6 +1370,12 @@ impl EbpfProgramSection {
 
     pub fn compiled_feature_compatibility_minimum_kernel(&self) -> Option<&'static str> {
         CompiledFeatureCompatibilityRequirement::effective_minimum_kernel(
+            &self.compiled_feature_compatibility_requirements(),
+        )
+    }
+
+    pub fn compiled_feature_compatibility_minimum_kernel_source(&self) -> Option<&'static str> {
+        compiled_feature_compatibility_minimum_kernel_source(
             &self.compiled_feature_compatibility_requirements(),
         )
     }
@@ -1275,6 +1394,10 @@ impl EbpfProgramSection {
         )
     }
 
+    pub fn kfunc_compatibility_minimum_kernel_source(&self) -> Option<&'static str> {
+        kfunc_compatibility_minimum_kernel_source(&self.kfunc_compatibility_requirements())
+    }
+
     pub fn kfunc_compatibility_maximum_kernel_exclusive(&self) -> Option<&'static str> {
         KfuncCompatibilityRequirement::effective_maximum_kernel_exclusive(
             &self.kfunc_compatibility_requirements(),
@@ -1291,6 +1414,10 @@ impl EbpfProgramSection {
         )
     }
 
+    pub fn map_value_compatibility_minimum_kernel_source(&self) -> Option<&'static str> {
+        map_value_compatibility_minimum_kernel_source(&self.map_value_compatibility_requirements())
+    }
+
     pub fn used_context_fields(&self) -> Vec<CtxField> {
         sorted_context_fields(&self.used_ctx_fields)
     }
@@ -1301,6 +1428,12 @@ impl EbpfProgramSection {
 
     pub fn program_compatibility_minimum_kernel(&self) -> Option<&'static str> {
         ProgramCompatibilityRequirement::effective_minimum_kernel(
+            &self.program_compatibility_requirements(),
+        )
+    }
+
+    pub fn program_compatibility_minimum_kernel_source(&self) -> Option<&'static str> {
+        ProgramCompatibilityRequirement::effective_minimum_kernel_source(
             &self.program_compatibility_requirements(),
         )
     }
@@ -1328,6 +1461,12 @@ impl EbpfProgramSection {
         )
     }
 
+    pub fn context_field_compatibility_minimum_kernel_source(&self) -> Option<&'static str> {
+        context_field_compatibility_minimum_kernel_source(
+            &self.context_field_compatibility_requirements(),
+        )
+    }
+
     /// Highest source-verified minimum kernel required by this program section.
     ///
     /// This summarizes program-family, typed map-value, helper,
@@ -1341,6 +1480,36 @@ impl EbpfProgramSection {
             self.compiled_feature_compatibility_minimum_kernel(),
             self.kfunc_compatibility_minimum_kernel(),
             self.context_field_compatibility_minimum_kernel(),
+        ])
+    }
+
+    /// Source URL for the aggregate minimum kernel reported by this program section.
+    pub fn compatibility_minimum_kernel_source(&self) -> Option<&'static str> {
+        aggregate_compatibility_minimum_kernel_source([
+            (
+                self.program_compatibility_minimum_kernel(),
+                self.program_compatibility_minimum_kernel_source(),
+            ),
+            (
+                self.map_value_compatibility_minimum_kernel(),
+                self.map_value_compatibility_minimum_kernel_source(),
+            ),
+            (
+                self.helper_compatibility_minimum_kernel(),
+                self.helper_compatibility_minimum_kernel_source(),
+            ),
+            (
+                self.compiled_feature_compatibility_minimum_kernel(),
+                self.compiled_feature_compatibility_minimum_kernel_source(),
+            ),
+            (
+                self.kfunc_compatibility_minimum_kernel(),
+                self.kfunc_compatibility_minimum_kernel_source(),
+            ),
+            (
+                self.context_field_compatibility_minimum_kernel(),
+                self.context_field_compatibility_minimum_kernel_source(),
+            ),
         ])
     }
 
@@ -1924,6 +2093,12 @@ impl EbpfObject {
         )
     }
 
+    pub fn program_compatibility_minimum_kernel_source(&self) -> Option<&'static str> {
+        ProgramCompatibilityRequirement::effective_minimum_kernel_source(
+            &self.program_compatibility_requirements(),
+        )
+    }
+
     pub fn program_compatibility_default_test_lane(&self) -> &'static str {
         ProgramCompatibilityRequirement::effective_default_test_lane(
             &self.program_compatibility_requirements(),
@@ -1938,6 +2113,10 @@ impl EbpfObject {
         MapCompatibilityRequirement::effective_minimum_kernel(
             &self.map_compatibility_requirements(),
         )
+    }
+
+    pub fn map_compatibility_minimum_kernel_source(&self) -> Option<&'static str> {
+        map_compatibility_minimum_kernel_source(&self.map_compatibility_requirements())
     }
 
     pub fn global_compatibility_requirements(&self) -> Vec<GlobalCompatibilityRequirement> {
@@ -1955,6 +2134,10 @@ impl EbpfObject {
         )
     }
 
+    pub fn global_compatibility_minimum_kernel_source(&self) -> Option<&'static str> {
+        global_compatibility_minimum_kernel_source(&self.global_compatibility_requirements())
+    }
+
     pub fn map_value_compatibility_requirements(&self) -> Vec<MapValueCompatibilityRequirement> {
         map_value_compatibility_requirements_for_programs(&self.programs)
     }
@@ -1963,6 +2146,10 @@ impl EbpfObject {
         MapValueCompatibilityRequirement::effective_minimum_kernel(
             &self.map_value_compatibility_requirements(),
         )
+    }
+
+    pub fn map_value_compatibility_minimum_kernel_source(&self) -> Option<&'static str> {
+        map_value_compatibility_minimum_kernel_source(&self.map_value_compatibility_requirements())
     }
 
     pub fn helper_compatibility_requirements(&self) -> Vec<HelperCompatibilityRequirement> {
@@ -1979,6 +2166,10 @@ impl EbpfObject {
         )
     }
 
+    pub fn helper_compatibility_minimum_kernel_source(&self) -> Option<&'static str> {
+        helper_compatibility_minimum_kernel_source(&self.helper_compatibility_requirements())
+    }
+
     pub fn compiled_feature_compatibility_requirements(
         &self,
     ) -> Vec<CompiledFeatureCompatibilityRequirement> {
@@ -1987,6 +2178,12 @@ impl EbpfObject {
 
     pub fn compiled_feature_compatibility_minimum_kernel(&self) -> Option<&'static str> {
         CompiledFeatureCompatibilityRequirement::effective_minimum_kernel(
+            &self.compiled_feature_compatibility_requirements(),
+        )
+    }
+
+    pub fn compiled_feature_compatibility_minimum_kernel_source(&self) -> Option<&'static str> {
+        compiled_feature_compatibility_minimum_kernel_source(
             &self.compiled_feature_compatibility_requirements(),
         )
     }
@@ -2003,6 +2200,10 @@ impl EbpfObject {
         KfuncCompatibilityRequirement::effective_minimum_kernel(
             &self.kfunc_compatibility_requirements(),
         )
+    }
+
+    pub fn kfunc_compatibility_minimum_kernel_source(&self) -> Option<&'static str> {
+        kfunc_compatibility_minimum_kernel_source(&self.kfunc_compatibility_requirements())
     }
 
     pub fn kfunc_compatibility_maximum_kernel_exclusive(&self) -> Option<&'static str> {
@@ -2027,6 +2228,12 @@ impl EbpfObject {
         )
     }
 
+    pub fn context_field_compatibility_minimum_kernel_source(&self) -> Option<&'static str> {
+        context_field_compatibility_minimum_kernel_source(
+            &self.context_field_compatibility_requirements(),
+        )
+    }
+
     /// Highest source-verified minimum kernel required by this compiled object.
     ///
     /// This aggregates program-family, map-kind, global data-section, typed
@@ -2042,6 +2249,44 @@ impl EbpfObject {
             self.compiled_feature_compatibility_minimum_kernel(),
             self.kfunc_compatibility_minimum_kernel(),
             self.context_field_compatibility_minimum_kernel(),
+        ])
+    }
+
+    /// Source URL for the aggregate minimum kernel reported by this compiled object.
+    pub fn compatibility_minimum_kernel_source(&self) -> Option<&'static str> {
+        aggregate_compatibility_minimum_kernel_source([
+            (
+                self.program_compatibility_minimum_kernel(),
+                self.program_compatibility_minimum_kernel_source(),
+            ),
+            (
+                self.map_compatibility_minimum_kernel(),
+                self.map_compatibility_minimum_kernel_source(),
+            ),
+            (
+                self.global_compatibility_minimum_kernel(),
+                self.global_compatibility_minimum_kernel_source(),
+            ),
+            (
+                self.map_value_compatibility_minimum_kernel(),
+                self.map_value_compatibility_minimum_kernel_source(),
+            ),
+            (
+                self.helper_compatibility_minimum_kernel(),
+                self.helper_compatibility_minimum_kernel_source(),
+            ),
+            (
+                self.compiled_feature_compatibility_minimum_kernel(),
+                self.compiled_feature_compatibility_minimum_kernel_source(),
+            ),
+            (
+                self.kfunc_compatibility_minimum_kernel(),
+                self.kfunc_compatibility_minimum_kernel_source(),
+            ),
+            (
+                self.context_field_compatibility_minimum_kernel(),
+                self.context_field_compatibility_minimum_kernel_source(),
+            ),
         ])
     }
 
@@ -2645,6 +2890,10 @@ impl EbpfProgram {
         )
     }
 
+    pub fn map_compatibility_minimum_kernel_source(&self) -> Option<&'static str> {
+        map_compatibility_minimum_kernel_source(&self.map_compatibility_requirements())
+    }
+
     pub fn global_compatibility_requirements(&self) -> Vec<GlobalCompatibilityRequirement> {
         global_compatibility_requirements_for_sections(
             &self.readonly_globals,
@@ -2660,6 +2909,10 @@ impl EbpfProgram {
         )
     }
 
+    pub fn global_compatibility_minimum_kernel_source(&self) -> Option<&'static str> {
+        global_compatibility_minimum_kernel_source(&self.global_compatibility_requirements())
+    }
+
     pub fn map_value_compatibility_requirements(&self) -> Vec<MapValueCompatibilityRequirement> {
         map_value_compatibility_requirements_for_value_types(self.generic_map_value_types.values())
     }
@@ -2668,6 +2921,10 @@ impl EbpfProgram {
         MapValueCompatibilityRequirement::effective_minimum_kernel(
             &self.map_value_compatibility_requirements(),
         )
+    }
+
+    pub fn map_value_compatibility_minimum_kernel_source(&self) -> Option<&'static str> {
+        map_value_compatibility_minimum_kernel_source(&self.map_value_compatibility_requirements())
     }
 
     pub fn helper_compatibility_requirements(&self) -> Vec<HelperCompatibilityRequirement> {
@@ -2684,6 +2941,10 @@ impl EbpfProgram {
         )
     }
 
+    pub fn helper_compatibility_minimum_kernel_source(&self) -> Option<&'static str> {
+        helper_compatibility_minimum_kernel_source(&self.helper_compatibility_requirements())
+    }
+
     pub fn compiled_feature_compatibility_requirements(
         &self,
     ) -> Vec<CompiledFeatureCompatibilityRequirement> {
@@ -2693,6 +2954,12 @@ impl EbpfProgram {
 
     pub fn compiled_feature_compatibility_minimum_kernel(&self) -> Option<&'static str> {
         CompiledFeatureCompatibilityRequirement::effective_minimum_kernel(
+            &self.compiled_feature_compatibility_requirements(),
+        )
+    }
+
+    pub fn compiled_feature_compatibility_minimum_kernel_source(&self) -> Option<&'static str> {
+        compiled_feature_compatibility_minimum_kernel_source(
             &self.compiled_feature_compatibility_requirements(),
         )
     }
@@ -2712,6 +2979,10 @@ impl EbpfProgram {
         )
     }
 
+    pub fn kfunc_compatibility_minimum_kernel_source(&self) -> Option<&'static str> {
+        kfunc_compatibility_minimum_kernel_source(&self.kfunc_compatibility_requirements())
+    }
+
     pub fn kfunc_compatibility_maximum_kernel_exclusive(&self) -> Option<&'static str> {
         KfuncCompatibilityRequirement::effective_maximum_kernel_exclusive(
             &self.kfunc_compatibility_requirements(),
@@ -2729,6 +3000,12 @@ impl EbpfProgram {
 
     pub fn program_compatibility_minimum_kernel(&self) -> Option<&'static str> {
         ProgramCompatibilityRequirement::effective_minimum_kernel(
+            &self.program_compatibility_requirements(),
+        )
+    }
+
+    pub fn program_compatibility_minimum_kernel_source(&self) -> Option<&'static str> {
+        ProgramCompatibilityRequirement::effective_minimum_kernel_source(
             &self.program_compatibility_requirements(),
         )
     }
@@ -2756,6 +3033,12 @@ impl EbpfProgram {
         )
     }
 
+    pub fn context_field_compatibility_minimum_kernel_source(&self) -> Option<&'static str> {
+        context_field_compatibility_minimum_kernel_source(
+            &self.context_field_compatibility_requirements(),
+        )
+    }
+
     /// Highest source-verified minimum kernel required by this compiled program.
     ///
     /// This aggregates program-family, map-kind, global data-section, typed
@@ -2771,6 +3054,44 @@ impl EbpfProgram {
             self.compiled_feature_compatibility_minimum_kernel(),
             self.kfunc_compatibility_minimum_kernel(),
             self.context_field_compatibility_minimum_kernel(),
+        ])
+    }
+
+    /// Source URL for the aggregate minimum kernel reported by this compiled program.
+    pub fn compatibility_minimum_kernel_source(&self) -> Option<&'static str> {
+        aggregate_compatibility_minimum_kernel_source([
+            (
+                self.program_compatibility_minimum_kernel(),
+                self.program_compatibility_minimum_kernel_source(),
+            ),
+            (
+                self.map_compatibility_minimum_kernel(),
+                self.map_compatibility_minimum_kernel_source(),
+            ),
+            (
+                self.global_compatibility_minimum_kernel(),
+                self.global_compatibility_minimum_kernel_source(),
+            ),
+            (
+                self.map_value_compatibility_minimum_kernel(),
+                self.map_value_compatibility_minimum_kernel_source(),
+            ),
+            (
+                self.helper_compatibility_minimum_kernel(),
+                self.helper_compatibility_minimum_kernel_source(),
+            ),
+            (
+                self.compiled_feature_compatibility_minimum_kernel(),
+                self.compiled_feature_compatibility_minimum_kernel_source(),
+            ),
+            (
+                self.kfunc_compatibility_minimum_kernel(),
+                self.kfunc_compatibility_minimum_kernel_source(),
+            ),
+            (
+                self.context_field_compatibility_minimum_kernel(),
+                self.context_field_compatibility_minimum_kernel_source(),
+            ),
         ])
     }
 
