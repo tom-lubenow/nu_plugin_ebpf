@@ -2943,6 +2943,94 @@ impl<'a> HirToMirLowering<'a> {
                 self.vreg_type_hints.insert(result_vreg, MirType::Bool);
             }
 
+            "bytes index-of" => {
+                let input_reg = self
+                    .pipeline_input_reg
+                    .or(src_dst_had_value.then_some(src_dst));
+                let result_vreg = if src_dst_had_value {
+                    self.assign_fresh_vreg(src_dst)
+                } else {
+                    dst_vreg
+                };
+
+                let mut search_from_end = false;
+                for flag in &self.named_flags {
+                    match flag.as_str() {
+                        "end" => search_from_end = true,
+                        _ => {
+                            return Err(CompileError::UnsupportedInstruction(
+                                "bytes index-of currently supports only --end as a flag in eBPF"
+                                    .into(),
+                            ));
+                        }
+                    }
+                }
+                if !self.named_args.is_empty() {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "bytes index-of does not accept named arguments in eBPF".into(),
+                    ));
+                }
+                if self.positional_args.len() != 1 {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "bytes index-of accepts exactly one binary pattern argument in eBPF".into(),
+                    ));
+                }
+
+                let input = input_reg
+                    .and_then(|reg| self.get_metadata(reg))
+                    .and_then(|meta| match meta.constant_value.as_ref() {
+                        Some(nu_protocol::Value::Binary { val, .. }) => Some(val.clone()),
+                        _ => None,
+                    })
+                    .ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "bytes index-of requires compile-time known binary input in eBPF"
+                                .into(),
+                        )
+                    })?;
+                let (_, pattern_reg) = self.positional_args[0];
+                let pattern = self
+                    .get_metadata(pattern_reg)
+                    .and_then(|meta| match meta.constant_value.as_ref() {
+                        Some(nu_protocol::Value::Binary { val, .. }) => Some(val.clone()),
+                        _ => None,
+                    })
+                    .ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "bytes index-of requires a compile-time known binary pattern in eBPF"
+                                .into(),
+                        )
+                    })?;
+                if pattern.is_empty() {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "bytes index-of requires a non-empty binary pattern in eBPF".into(),
+                    ));
+                }
+
+                let index = if pattern.len() > input.len() {
+                    -1
+                } else {
+                    let mut matches = input.windows(pattern.len());
+                    let found = if search_from_end {
+                        matches.rposition(|candidate| candidate == pattern.as_slice())
+                    } else {
+                        matches.position(|candidate| candidate == pattern.as_slice())
+                    };
+                    found.map(|idx| idx as i64).unwrap_or(-1)
+                };
+
+                self.emit(MirInst::Copy {
+                    dst: result_vreg,
+                    src: MirValue::Const(index),
+                });
+                self.reset_call_result_metadata(src_dst);
+                let out_meta = self.get_or_create_metadata(src_dst);
+                out_meta.field_type = Some(MirType::I64);
+                out_meta.constant_value =
+                    Some(nu_protocol::Value::int(index, nu_protocol::Span::unknown()));
+                self.vreg_type_hints.insert(result_vreg, MirType::I64);
+            }
+
             "str length" => {
                 self.lower_string_length(src_dst, dst_vreg, src_dst_had_value)?;
             }

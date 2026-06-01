@@ -6358,6 +6358,15 @@ fn test_lower_bytes_length_rejects_string_input() {
 }
 
 fn make_bytes_predicate_program(decl_id: DeclId, input: Vec<u8>, pattern: Vec<u8>) -> HirProgram {
+    make_bytes_arg_pipeline_call_program_with_flags(decl_id, input, pattern, Vec::new())
+}
+
+fn make_bytes_arg_pipeline_call_program_with_flags(
+    decl_id: DeclId,
+    input: Vec<u8>,
+    pattern: Vec<u8>,
+    flags: Vec<Vec<u8>>,
+) -> HirProgram {
     let func = HirFunction {
         blocks: vec![HirBlock {
             id: HirBlockId(0),
@@ -6376,6 +6385,7 @@ fn make_bytes_predicate_program(decl_id: DeclId, input: Vec<u8>, pattern: Vec<u8
                     args: HirCallArgs {
                         positional: vec![RegId::new(1)],
                         pipeline_input: Some(RegId::new(0)),
+                        flags,
                         ..HirCallArgs::default()
                     },
                 },
@@ -6462,6 +6472,157 @@ fn test_lower_bytes_ends_with_on_binary_returns_false() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("bytes ends-with on literal binaries should compile through codegen");
+}
+
+#[test]
+fn test_lower_bytes_index_of_on_binary_returns_first_offset() {
+    let bytes_index_of_decl = DeclId::new(214);
+    let hir = make_bytes_arg_pipeline_call_program_with_flags(
+        bytes_index_of_decl,
+        vec![1, 2, 3, 2],
+        vec![2],
+        Vec::new(),
+    );
+    let decl_names = HashMap::from([(bytes_index_of_decl, "bytes index-of".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bytes index-of should lower on literal binaries");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Copy {
+                    src: MirValue::Const(1),
+                    ..
+                }
+            )),
+        "expected bytes index-of to lower to the first matching offset"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("bytes index-of on literal binaries should compile through codegen");
+}
+
+#[test]
+fn test_lower_bytes_index_of_from_end_on_binary_returns_last_offset() {
+    let bytes_index_of_decl = DeclId::new(215);
+    let hir = make_bytes_arg_pipeline_call_program_with_flags(
+        bytes_index_of_decl,
+        vec![1, 2, 3, 2],
+        vec![2],
+        vec![b"end".to_vec()],
+    );
+    let decl_names = HashMap::from([(bytes_index_of_decl, "bytes index-of".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bytes index-of --end should lower on literal binaries");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Copy {
+                    src: MirValue::Const(3),
+                    ..
+                }
+            )),
+        "expected bytes index-of --end to lower to the last matching offset"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("bytes index-of --end on literal binaries should compile through codegen");
+}
+
+#[test]
+fn test_lower_bytes_index_of_missing_pattern_returns_minus_one() {
+    let bytes_index_of_decl = DeclId::new(216);
+    let hir = make_bytes_arg_pipeline_call_program_with_flags(
+        bytes_index_of_decl,
+        vec![1, 2, 3],
+        vec![4],
+        Vec::new(),
+    );
+    let decl_names = HashMap::from([(bytes_index_of_decl, "bytes index-of".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bytes index-of should lower missing literal binary patterns");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Copy {
+                    src: MirValue::Const(-1),
+                    ..
+                }
+            )),
+        "expected bytes index-of to lower missing patterns to -1"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("missing bytes index-of result should compile through codegen");
+}
+
+#[test]
+fn test_lower_bytes_index_of_rejects_empty_pattern() {
+    let bytes_index_of_decl = DeclId::new(217);
+    let hir = make_bytes_arg_pipeline_call_program_with_flags(
+        bytes_index_of_decl,
+        vec![1, 2, 3],
+        Vec::new(),
+        Vec::new(),
+    );
+    let decl_names = HashMap::from([(bytes_index_of_decl, "bytes index-of".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("bytes index-of should reject empty binary patterns");
+
+    assert!(
+        err.to_string()
+            .contains("bytes index-of requires a non-empty binary pattern"),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]

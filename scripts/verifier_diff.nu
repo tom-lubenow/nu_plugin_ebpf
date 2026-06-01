@@ -35075,6 +35075,32 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-binary-bytes-index-of"
+        category: "language-core"
+        tags: [binary bytes index-of]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  0x[01 02 03 02] | bytes index-of 0x[02]'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-binary-bytes-index-of-end"
+        category: "language-core"
+        tags: [binary bytes index-of end]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  0x[01 02 03 02] | bytes index-of --end 0x[02]'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-string-is-empty"
         category: "language-core"
         tags: [string is-empty]
