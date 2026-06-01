@@ -2058,6 +2058,13 @@ fn test_kernel_minimum_requirement_detail_reports_too_old_kernel() {
     assert!(msg.contains("current kernel is 5.4.0-test"));
     assert!(msg.contains(ProgramCompatibilityRequirement::SleepableProgram.description()));
     assert!(msg.contains("kernel>=5.10"));
+    assert!(
+        msg.contains(
+            ProgramCompatibilityRequirement::SleepableProgram
+                .minimum_kernel_source()
+                .expect("sleepable program should have a source-backed floor")
+        )
+    );
 }
 
 #[test]
@@ -2179,6 +2186,13 @@ fn test_kernel_map_minimum_requirement_detail_reports_too_old_kernel() {
     assert!(msg.contains("current kernel is 5.4.0-test"));
     assert!(msg.contains("BPF_MAP_TYPE_RINGBUF map support"));
     assert!(msg.contains("kernel>=5.8"));
+    assert!(
+        msg.contains(
+            MapKind::RingBuf
+                .compatibility_requirement()
+                .minimum_kernel_source()
+        )
+    );
 }
 
 #[test]
@@ -2212,6 +2226,7 @@ fn test_kernel_map_value_minimum_requirement_detail_reports_too_old_kernel() {
     assert!(msg.contains("BPF map-value kptr field support"));
     assert!(msg.contains("BPF map-value workqueue field support"));
     assert!(msg.contains("kernel>=6.10"));
+    assert!(msg.contains(MapValueCompatibilityRequirement::BpfWorkqueue.minimum_kernel_source()));
 }
 
 #[test]
@@ -2253,6 +2268,7 @@ fn test_kernel_global_minimum_requirement_detail_reports_too_old_kernel() {
     assert!(msg.contains("current kernel is 5.1.21-test"));
     assert!(msg.contains("BPF global data-section support"));
     assert!(msg.contains("kernel>=5.2"));
+    assert!(msg.contains(GlobalCompatibilityRequirement::BpfDataSections.minimum_kernel_source()));
 }
 
 #[test]
@@ -2280,6 +2296,14 @@ fn test_kernel_helper_minimum_requirement_detail_reports_too_old_kernel() {
     assert!(msg.contains("current kernel is 5.4.0-test"));
     assert!(msg.contains("bpf_ringbuf_reserve helper support"));
     assert!(msg.contains("kernel>=5.8"));
+    assert!(
+        msg.contains(
+            BpfHelper::RingbufReserve
+                .compatibility_requirement()
+                .expect("ringbuf reserve helper should be versioned")
+                .minimum_kernel_source()
+        )
+    );
 }
 
 #[test]
@@ -2311,6 +2335,9 @@ fn test_kernel_compiled_feature_minimum_requirement_detail_reports_too_old_kerne
     assert!(msg.contains("bounded backward-branch loop support"));
     assert!(msg.contains("BPF-to-BPF subprogram call support"));
     assert!(msg.contains("kernel>=5.3"));
+    assert!(
+        msg.contains(CompiledFeatureCompatibilityRequirement::BoundedLoops.minimum_kernel_source())
+    );
 }
 
 #[test]
@@ -2339,6 +2366,13 @@ fn test_kernel_context_field_minimum_requirement_detail_reports_too_old_kernel()
     assert!(msg.contains("current kernel is 5.4.0-test"));
     assert!(msg.contains("ctx.egress_ifindex context field support"));
     assert!(msg.contains("kernel>=5.8"));
+    assert!(
+        msg.contains(
+            ContextFieldCompatibilityRequirement::for_field(&CtxField::EgressIfindex)
+                .expect("egress_ifindex context field should be versioned")
+                .minimum_kernel_source()
+        )
+    );
 }
 
 #[test]
@@ -2388,6 +2422,13 @@ fn test_kernel_kfunc_minimum_requirement_detail_reports_too_old_kernel() {
     assert!(msg.contains("current kernel is 6.8.0-test"));
     assert!(msg.contains("bpf_get_task_exe_file kfunc support"));
     assert!(msg.contains("kernel>=6.12"));
+    assert!(
+        msg.contains(
+            KfuncCompatibilityRequirement::for_name("bpf_get_task_exe_file")
+                .expect("file kfunc should be versioned")
+                .minimum_kernel_source()
+        )
+    );
 }
 
 #[test]

@@ -307,6 +307,12 @@ fn current_kernel_release() -> Option<String> {
     Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
+fn minimum_kernel_source_detail(source: Option<&'static str>) -> String {
+    source
+        .map(|source| format!("; minimum kernel source: {source}"))
+        .unwrap_or_default()
+}
+
 pub(super) fn kernel_minimum_requirement_detail(
     requirements: &[crate::compiler::ProgramCompatibilityRequirement],
     current_kernel: &str,
@@ -320,8 +326,13 @@ pub(super) fn kernel_minimum_requirement_detail(
         return None;
     }
 
+    let source = minimum_kernel_source_detail(
+        crate::compiler::ProgramCompatibilityRequirement::effective_minimum_kernel_source(
+            requirements,
+        ),
+    );
     Some(format!(
-        "parsed target requires kernel>={minimum}; current kernel is {current_kernel}{}; use --dry-run to compile or use a newer kernel",
+        "parsed target requires kernel>={minimum}; current kernel is {current_kernel}{source}{}; use --dry-run to compile or use a newer kernel",
         compatibility_requirements_detail(requirements)
     ))
 }
@@ -339,8 +350,11 @@ pub(super) fn kernel_map_minimum_requirement_detail(
         return None;
     }
 
+    let source = minimum_kernel_source_detail(
+        crate::compiler::MapCompatibilityRequirement::effective_minimum_kernel_source(requirements),
+    );
     Some(format!(
-        "compiled maps require kernel>={minimum}; current kernel is {current_kernel}{}; use --dry-run to compile or use a newer kernel",
+        "compiled maps require kernel>={minimum}; current kernel is {current_kernel}{source}{}; use --dry-run to compile or use a newer kernel",
         map_compatibility_requirements_detail(requirements)
     ))
 }
@@ -358,8 +372,13 @@ pub(super) fn kernel_map_value_minimum_requirement_detail(
         return None;
     }
 
+    let source = minimum_kernel_source_detail(
+        crate::compiler::MapValueCompatibilityRequirement::effective_minimum_kernel_source(
+            requirements,
+        ),
+    );
     Some(format!(
-        "compiled map-value fields require kernel>={minimum}; current kernel is {current_kernel}{}; use --dry-run to compile or use a newer kernel",
+        "compiled map-value fields require kernel>={minimum}; current kernel is {current_kernel}{source}{}; use --dry-run to compile or use a newer kernel",
         map_value_compatibility_requirements_detail(requirements)
     ))
 }
@@ -377,8 +396,13 @@ pub(super) fn kernel_global_minimum_requirement_detail(
         return None;
     }
 
+    let source = minimum_kernel_source_detail(
+        crate::compiler::GlobalCompatibilityRequirement::effective_minimum_kernel_source(
+            requirements,
+        ),
+    );
     Some(format!(
-        "compiled global data sections require kernel>={minimum}; current kernel is {current_kernel}{}; use --dry-run to compile or use a newer kernel",
+        "compiled global data sections require kernel>={minimum}; current kernel is {current_kernel}{source}{}; use --dry-run to compile or use a newer kernel",
         global_compatibility_requirements_detail(requirements)
     ))
 }
@@ -396,8 +420,13 @@ pub(super) fn kernel_helper_minimum_requirement_detail(
         return None;
     }
 
+    let source = minimum_kernel_source_detail(
+        crate::compiler::HelperCompatibilityRequirement::effective_minimum_kernel_source(
+            requirements,
+        ),
+    );
     Some(format!(
-        "compiled helpers require kernel>={minimum}; current kernel is {current_kernel}{}; use --dry-run to compile or use a newer kernel",
+        "compiled helpers require kernel>={minimum}; current kernel is {current_kernel}{source}{}; use --dry-run to compile or use a newer kernel",
         helper_compatibility_requirements_detail(requirements)
     ))
 }
@@ -417,8 +446,13 @@ pub(super) fn kernel_compiled_feature_minimum_requirement_detail(
         return None;
     }
 
+    let source = minimum_kernel_source_detail(
+        crate::compiler::CompiledFeatureCompatibilityRequirement::effective_minimum_kernel_source(
+            requirements,
+        ),
+    );
     Some(format!(
-        "compiled bytecode features require kernel>={minimum}; current kernel is {current_kernel}{}; use --dry-run to compile or use a newer kernel",
+        "compiled bytecode features require kernel>={minimum}; current kernel is {current_kernel}{source}{}; use --dry-run to compile or use a newer kernel",
         compiled_feature_compatibility_requirements_detail(requirements)
     ))
 }
@@ -433,8 +467,13 @@ pub(super) fn kernel_kfunc_minimum_requirement_detail(
         current_kernel,
         minimum,
     ) {
+        let source = minimum_kernel_source_detail(
+            crate::compiler::KfuncCompatibilityRequirement::effective_minimum_kernel_source(
+                requirements,
+            ),
+        );
         return Some(format!(
-            "compiled kfuncs require kernel>={minimum}; current kernel is {current_kernel}{}; use --dry-run to compile or use a newer kernel",
+            "compiled kfuncs require kernel>={minimum}; current kernel is {current_kernel}{source}{}; use --dry-run to compile or use a newer kernel",
             kfunc_compatibility_requirements_detail(requirements)
         ));
     }
@@ -463,8 +502,13 @@ pub(super) fn kernel_context_field_minimum_requirement_detail(
         return None;
     }
 
+    let source = minimum_kernel_source_detail(
+        crate::compiler::ContextFieldCompatibilityRequirement::effective_minimum_kernel_source(
+            requirements,
+        ),
+    );
     Some(format!(
-        "compiled context fields require kernel>={minimum}; current kernel is {current_kernel}{}; use --dry-run to compile or use a newer kernel",
+        "compiled context fields require kernel>={minimum}; current kernel is {current_kernel}{source}{}; use --dry-run to compile or use a newer kernel",
         context_field_compatibility_requirements_detail(requirements)
     ))
 }
