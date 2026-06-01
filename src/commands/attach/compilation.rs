@@ -88,6 +88,7 @@ const NU_CLOSURE_COMMANDS: &[&str] = &[
     "math min",
     "math product",
     "math sum",
+    "math abs",
     "first",
     "last",
     "get",

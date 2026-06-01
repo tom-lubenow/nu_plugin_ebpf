@@ -5550,6 +5550,95 @@ fn test_lower_math_product_min_max_on_numeric_lists() {
     }
 }
 
+fn make_math_abs_program(abs_decl: DeclId, input: i64) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Int(input),
+                },
+                HirStmt::Call {
+                    decl_id: abs_decl,
+                    src_dst: RegId::new(1),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 2,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+#[test]
+fn test_lower_math_abs_on_known_integer_returns_absolute_value() {
+    let abs_decl = DeclId::new(262);
+    let hir = make_math_abs_program(abs_decl, -42);
+    let decl_names = HashMap::from([(abs_decl, "math abs".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("math abs should lower compile-time known integer input");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Copy {
+                    src: MirValue::Const(42),
+                    ..
+                }
+            )),
+        "expected math abs to materialize the absolute integer"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("math abs should compile through codegen");
+}
+
+#[test]
+fn test_lower_math_abs_rejects_i64_min_overflow() {
+    let abs_decl = DeclId::new(263);
+    let hir = make_math_abs_program(abs_decl, i64::MIN);
+    let decl_names = HashMap::from([(abs_decl, "math abs".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("math abs should reject i64::MIN overflow");
+
+    assert!(
+        err.to_string()
+            .contains("math abs cannot represent the absolute value of i64::MIN"),
+        "unexpected error: {err}"
+    );
+}
+
 #[test]
 fn test_lower_uniq_on_numeric_list_removes_duplicate_values() {
     let uniq_decl = DeclId::new(111);

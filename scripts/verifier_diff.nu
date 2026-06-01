@@ -35010,6 +35010,19 @@ const FIXTURES = [
         error_contains: "math sum requires a non-empty stack-backed numeric list"
     }
     {
+        name: "core-scalar-math-abs"
+        category: "language-core"
+        tags: [scalar math abs]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  -42 | math abs'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-null-length"
         category: "language-core"
         tags: ["null" length]

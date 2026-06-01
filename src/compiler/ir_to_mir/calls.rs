@@ -3690,6 +3690,60 @@ impl<'a> HirToMirLowering<'a> {
                 self.lower_stack_list_math_reduce(&cmd_name, src_dst, dst_vreg, src_dst_had_value)?;
             }
 
+            "math abs" => {
+                let input_reg = self
+                    .pipeline_input_reg
+                    .or(src_dst_had_value.then_some(src_dst));
+                let result_vreg = if src_dst_had_value {
+                    self.assign_fresh_vreg(src_dst)
+                } else {
+                    dst_vreg
+                };
+
+                if !self.named_flags.is_empty()
+                    || !self.named_args.is_empty()
+                    || !self.positional_args.is_empty()
+                {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "math abs does not accept arguments in eBPF".into(),
+                    ));
+                }
+
+                let input = input_reg
+                    .and_then(|reg| self.get_metadata(reg))
+                    .and_then(|meta| {
+                        meta.literal_int
+                            .or_else(|| match meta.constant_value.as_ref() {
+                                Some(nu_protocol::Value::Int { val, .. }) => Some(*val),
+                                _ => None,
+                            })
+                    })
+                    .ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "math abs requires compile-time known integer input in eBPF".into(),
+                        )
+                    })?;
+                let output = input.checked_abs().ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(
+                        "math abs cannot represent the absolute value of i64::MIN in eBPF".into(),
+                    )
+                })?;
+
+                self.emit(MirInst::Copy {
+                    dst: result_vreg,
+                    src: MirValue::Const(output),
+                });
+                self.reset_call_result_metadata(src_dst);
+                let out_meta = self.get_or_create_metadata(src_dst);
+                out_meta.field_type = Some(MirType::I64);
+                out_meta.constant_value = Some(nu_protocol::Value::int(
+                    output,
+                    nu_protocol::Span::unknown(),
+                ));
+                out_meta.literal_int = Some(output);
+                self.vreg_type_hints.insert(result_vreg, MirType::I64);
+            }
+
             "select" | "reject" => {
                 self.lower_metadata_record_select_or_reject(
                     &cmd_name,
