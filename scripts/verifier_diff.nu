@@ -14081,6 +14081,38 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "global-set-root-scalar-data"
+        category: "globals"
+        tags: [globals scalar global-set accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  7 | global-set seen_pid'
+            '  let pid = (global-get seen_pid)'
+            '  $pid | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "global-set-root-scalar-bss"
+        category: "globals"
+        tags: [globals scalar zero-fill global-set accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  0 | global-set seen_zero'
+            '  let value = (global-get seen_zero)'
+            '  $value | count'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "global-set-root-string-field-get"
         category: "globals"
         tags: [globals string global-set accept]
