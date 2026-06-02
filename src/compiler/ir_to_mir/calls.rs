@@ -3513,12 +3513,6 @@ impl<'a> HirToMirLowering<'a> {
                 match input {
                     nu_protocol::Value::Binary { val, .. } => {
                         let output = Self::bytes_add_output(&val, &data, index, from_end);
-                        if output.is_empty() {
-                            return Err(CompileError::UnsupportedInstruction(
-                                "bytes add requires a non-empty binary result in eBPF".into(),
-                            ));
-                        }
-
                         self.reset_call_result_metadata(src_dst);
                         self.lower_constant_value(
                             src_dst,
@@ -3526,34 +3520,16 @@ impl<'a> HirToMirLowering<'a> {
                         )?;
                     }
                     nu_protocol::Value::List { vals, .. } => {
-                        let Some((first, rest)) = vals.split_first() else {
+                        if vals.is_empty() && !self.current_call_result_metadata_only {
                             return Err(CompileError::UnsupportedInstruction(
                                 "bytes add requires a non-empty list<binary> result in eBPF".into(),
                             ));
-                        };
-                        let first_output = match first {
-                            nu_protocol::Value::Binary { val, .. } => {
-                                Self::bytes_add_output(val, &data, index, from_end)
-                            }
-                            other => {
-                                return Err(CompileError::UnsupportedInstruction(format!(
-                                    "bytes add requires binary list items in eBPF; item 0 has type {}",
-                                    other.get_type()
-                                )));
-                            }
-                        };
-                        if first_output.is_empty() {
-                            return Err(CompileError::UnsupportedInstruction(
-                                "bytes add requires non-empty binary list results in eBPF".into(),
-                            ));
                         }
-                        let expected_len = first_output.len();
-                        let mut values = vec![nu_protocol::Value::binary(
-                            first_output,
-                            nu_protocol::Span::unknown(),
-                        )];
-                        for (offset, item) in rest.iter().enumerate() {
-                            let item_index = offset + 1;
+                        let mut expected_len = None;
+                        let mut has_empty_output = false;
+                        let mut has_unequal_output_len = false;
+                        let mut values = Vec::with_capacity(vals.len());
+                        for (item_index, item) in vals.iter().enumerate() {
                             let nu_protocol::Value::Binary { val, .. } = item else {
                                 return Err(CompileError::UnsupportedInstruction(format!(
                                     "bytes add requires binary list items in eBPF; item {item_index} has type {}",
@@ -3562,28 +3538,39 @@ impl<'a> HirToMirLowering<'a> {
                             };
                             let output = Self::bytes_add_output(val, &data, index, from_end);
                             if output.is_empty() {
-                                return Err(CompileError::UnsupportedInstruction(
-                                    "bytes add requires non-empty binary list results in eBPF"
-                                        .into(),
-                                ));
+                                has_empty_output = true;
                             }
-                            if output.len() != expected_len {
-                                return Err(CompileError::UnsupportedInstruction(
-                                    "bytes add requires equal-length binary list results in eBPF"
-                                        .into(),
-                                ));
+                            if let Some(expected_len) = expected_len {
+                                if output.len() != expected_len {
+                                    has_unequal_output_len = true;
+                                }
+                            } else {
+                                expected_len = Some(output.len());
                             }
                             values.push(nu_protocol::Value::binary(
                                 output,
                                 nu_protocol::Span::unknown(),
                             ));
                         }
+                        if has_empty_output && !self.current_call_result_metadata_only {
+                            return Err(CompileError::UnsupportedInstruction(
+                                "bytes add requires non-empty binary list results in eBPF".into(),
+                            ));
+                        }
+                        if has_unequal_output_len && !self.current_call_result_metadata_only {
+                            return Err(CompileError::UnsupportedInstruction(
+                                "bytes add requires equal-length binary list results in eBPF"
+                                    .into(),
+                            ));
+                        }
 
                         self.reset_call_result_metadata(src_dst);
-                        self.lower_constant_value(
-                            src_dst,
-                            &nu_protocol::Value::list(values, nu_protocol::Span::unknown()),
-                        )?;
+                        let value = nu_protocol::Value::list(values, nu_protocol::Span::unknown());
+                        if vals.is_empty() || has_empty_output || has_unequal_output_len {
+                            self.lower_compile_time_only_constant_value(src_dst, &value);
+                        } else {
+                            self.lower_constant_value(src_dst, &value)?;
+                        }
                     }
                     other => {
                         return Err(CompileError::UnsupportedInstruction(format!(
