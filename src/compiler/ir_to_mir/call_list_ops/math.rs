@@ -349,13 +349,16 @@ impl<'a> HirToMirLowering<'a> {
         Ok(())
     }
 
-    pub(in crate::compiler::ir_to_mir) fn lower_compile_time_math_mode(
+    pub(in crate::compiler::ir_to_mir) fn lower_math_mode(
         &mut self,
         src_dst: RegId,
+        dst_vreg: VReg,
         src_dst_had_value: bool,
     ) -> Result<(), CompileError> {
         const MAX_MODE_STACK_LIST_CAPACITY: usize = 60;
+        const MAX_RUNTIME_MODE_STACK_LIST_CAPACITY: usize = 16;
 
+        let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
         let input_reg = self
             .pipeline_input_reg
             .or(src_dst_had_value.then_some(src_dst));
@@ -373,41 +376,420 @@ impl<'a> HirToMirLowering<'a> {
             .and_then(|reg| self.get_metadata(reg).cloned())
             .ok_or_else(|| {
                 CompileError::UnsupportedInstruction(
-                    "math mode requires compile-time known integer-list input in eBPF".into(),
+                    "math mode requires compile-time known integer-list or stack-backed numeric-list input in eBPF".into(),
                 )
             })?;
-        let Some(nu_protocol::Value::List { vals, .. }) = input_meta.constant_value else {
-            return Err(CompileError::UnsupportedInstruction(
-                "math mode requires compile-time known integer-list input in eBPF".into(),
-            ));
-        };
 
-        let mut counts = std::collections::BTreeMap::<i64, usize>::new();
-        for (index, value) in vals.into_iter().enumerate() {
-            let nu_protocol::Value::Int { val, .. } = value else {
+        if let Some(nu_protocol::Value::List { vals, .. }) = input_meta.constant_value {
+            let mut counts = std::collections::BTreeMap::<i64, usize>::new();
+            for (index, value) in vals.into_iter().enumerate() {
+                let nu_protocol::Value::Int { val, .. } = value else {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "math mode requires integer list items in eBPF; item {index} has type {}",
+                        value.get_type()
+                    )));
+                };
+                *counts.entry(val).or_default() += 1;
+            }
+
+            let max_count = counts.values().copied().max().unwrap_or(0);
+            let modes = counts
+                .into_iter()
+                .filter_map(|(value, count)| {
+                    (count == max_count).then_some(nu_protocol::Value::int(value, Span::unknown()))
+                })
+                .collect::<Vec<_>>();
+            if modes.len() > MAX_MODE_STACK_LIST_CAPACITY {
                 return Err(CompileError::UnsupportedInstruction(format!(
-                    "math mode requires integer list items in eBPF; item {index} has type {}",
-                    value.get_type()
+                    "math mode output exceeds stack-backed numeric list capacity {MAX_MODE_STACK_LIST_CAPACITY} in eBPF"
                 )));
-            };
-            *counts.entry(val).or_default() += 1;
+            }
+
+            self.reset_call_result_metadata(src_dst);
+            return self
+                .lower_constant_value(src_dst, &nu_protocol::Value::list(modes, Span::unknown()));
         }
 
-        let max_count = counts.values().copied().max().unwrap_or(0);
-        let modes = counts
-            .into_iter()
-            .filter_map(|(value, count)| {
-                (count == max_count).then_some(nu_protocol::Value::int(value, Span::unknown()))
-            })
-            .collect::<Vec<_>>();
-        if modes.len() > MAX_MODE_STACK_LIST_CAPACITY {
+        let Some((_input_slot, max_len)) = input_meta.list_buffer else {
             return Err(CompileError::UnsupportedInstruction(format!(
-                "math mode output exceeds stack-backed numeric list capacity {MAX_MODE_STACK_LIST_CAPACITY} in eBPF"
+                "math mode requires compile-time known integer-list or stack-backed numeric-list input in eBPF"
+            )));
+        };
+        if max_len > MAX_RUNTIME_MODE_STACK_LIST_CAPACITY {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "math mode supports stack-backed numeric lists with capacity <= {MAX_RUNTIME_MODE_STACK_LIST_CAPACITY} in eBPF"
             )));
         }
 
-        self.reset_call_result_metadata(src_dst);
-        self.lower_constant_value(src_dst, &nu_protocol::Value::list(modes, Span::unknown()))
+        self.lower_stack_list_math_mode(
+            src_dst,
+            dst_vreg,
+            src_dst_had_value,
+            input_vreg,
+            input_meta,
+            max_len,
+        )
+    }
+
+    fn lower_stack_list_math_mode(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+        input_vreg: VReg,
+        input_meta: RegMetadata,
+        max_len: usize,
+    ) -> Result<(), CompileError> {
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+        let (out_slot, out_ty) = self.create_stack_numeric_list_result(result_vreg, max_len);
+
+        if max_len == 0 {
+            self.install_stack_numeric_list_result_metadata(
+                src_dst,
+                out_slot,
+                out_ty,
+                max_len,
+                Some(0),
+            );
+            return Ok(());
+        }
+
+        let sorted_vreg = self.func.alloc_vreg();
+        let (sorted_slot, _sorted_ty) = self.create_stack_numeric_list_result(sorted_vreg, max_len);
+        let len_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::ListLen {
+            dst: len_vreg,
+            list: input_vreg,
+        });
+        self.vreg_type_hints.insert(len_vreg, MirType::U64);
+
+        let after_copy_block = self.func.alloc_block();
+        for source_index in 0..max_len {
+            let copy_block = self.func.alloc_block();
+            let next_block = if source_index + 1 == max_len {
+                after_copy_block
+            } else {
+                self.func.alloc_block()
+            };
+
+            let in_bounds_vreg = self.func.alloc_vreg();
+            self.emit(MirInst::BinOp {
+                dst: in_bounds_vreg,
+                op: BinOpKind::Lt,
+                lhs: MirValue::Const(source_index as i64),
+                rhs: MirValue::VReg(len_vreg),
+            });
+            self.vreg_type_hints.insert(in_bounds_vreg, MirType::Bool);
+            self.terminate(MirInst::Branch {
+                cond: in_bounds_vreg,
+                if_true: copy_block,
+                if_false: next_block,
+            });
+
+            self.current_block = copy_block;
+            let item_vreg = self.func.alloc_vreg();
+            self.emit(MirInst::ListGet {
+                dst: item_vreg,
+                list: input_vreg,
+                idx: MirValue::Const(source_index as i64),
+            });
+            self.vreg_type_hints.insert(item_vreg, MirType::I64);
+            self.emit(MirInst::ListPush {
+                list: sorted_vreg,
+                item: item_vreg,
+            });
+            self.terminate(MirInst::Jump { target: next_block });
+
+            self.current_block = next_block;
+        }
+        self.current_block = after_copy_block;
+
+        for pass in 0..max_len {
+            for left_index in 0..max_len.saturating_sub(1 + pass) {
+                self.emit_stack_list_compare_swap(sorted_slot, left_index, left_index + 1, false);
+            }
+        }
+
+        let count_slot = self.alloc_u64_math_mode_slot();
+        let max_count_slot = self.alloc_u64_math_mode_slot();
+        self.emit(MirInst::StoreSlot {
+            slot: max_count_slot,
+            offset: 0,
+            val: MirValue::Const(0),
+            ty: MirType::U64,
+        });
+
+        let after_max_count_block = self.func.alloc_block();
+        for candidate_index in 0..max_len {
+            let count_candidate_block = self.func.alloc_block();
+            let next_candidate_block = if candidate_index + 1 == max_len {
+                after_max_count_block
+            } else {
+                self.func.alloc_block()
+            };
+
+            self.emit_static_index_in_bounds_branch(
+                candidate_index,
+                len_vreg,
+                count_candidate_block,
+                next_candidate_block,
+            );
+
+            self.current_block = count_candidate_block;
+            let candidate_vreg = self.load_sorted_math_mode_item(sorted_slot, candidate_index);
+            let after_count_block = self.func.alloc_block();
+            self.emit_count_matching_sorted_items(
+                sorted_slot,
+                max_len,
+                len_vreg,
+                candidate_vreg,
+                count_slot,
+                after_count_block,
+            );
+
+            let count_vreg = self.load_u64_math_mode_slot(count_slot);
+            let max_count_vreg = self.load_u64_math_mode_slot(max_count_slot);
+            let is_larger_vreg = self.func.alloc_vreg();
+            self.emit(MirInst::BinOp {
+                dst: is_larger_vreg,
+                op: BinOpKind::Gt,
+                lhs: MirValue::VReg(count_vreg),
+                rhs: MirValue::VReg(max_count_vreg),
+            });
+            self.vreg_type_hints.insert(is_larger_vreg, MirType::Bool);
+            let update_block = self.func.alloc_block();
+            self.terminate(MirInst::Branch {
+                cond: is_larger_vreg,
+                if_true: update_block,
+                if_false: next_candidate_block,
+            });
+
+            self.current_block = update_block;
+            self.emit(MirInst::StoreSlot {
+                slot: max_count_slot,
+                offset: 0,
+                val: MirValue::VReg(count_vreg),
+                ty: MirType::U64,
+            });
+            self.terminate(MirInst::Jump {
+                target: next_candidate_block,
+            });
+
+            self.current_block = next_candidate_block;
+        }
+        self.current_block = after_max_count_block;
+
+        let after_emit_modes_block = self.func.alloc_block();
+        for candidate_index in 0..max_len {
+            let maybe_unique_block = self.func.alloc_block();
+            let next_candidate_block = if candidate_index + 1 == max_len {
+                after_emit_modes_block
+            } else {
+                self.func.alloc_block()
+            };
+
+            self.emit_static_index_in_bounds_branch(
+                candidate_index,
+                len_vreg,
+                maybe_unique_block,
+                next_candidate_block,
+            );
+
+            self.current_block = maybe_unique_block;
+            let candidate_vreg = self.load_sorted_math_mode_item(sorted_slot, candidate_index);
+            let count_unique_block = self.func.alloc_block();
+            if candidate_index == 0 {
+                self.terminate(MirInst::Jump {
+                    target: count_unique_block,
+                });
+            } else {
+                let previous_vreg =
+                    self.load_sorted_math_mode_item(sorted_slot, candidate_index - 1);
+                let is_unique_vreg = self.func.alloc_vreg();
+                self.emit(MirInst::BinOp {
+                    dst: is_unique_vreg,
+                    op: BinOpKind::Ne,
+                    lhs: MirValue::VReg(candidate_vreg),
+                    rhs: MirValue::VReg(previous_vreg),
+                });
+                self.vreg_type_hints.insert(is_unique_vreg, MirType::Bool);
+                self.terminate(MirInst::Branch {
+                    cond: is_unique_vreg,
+                    if_true: count_unique_block,
+                    if_false: next_candidate_block,
+                });
+            }
+
+            self.current_block = count_unique_block;
+            let after_count_block = self.func.alloc_block();
+            self.emit_count_matching_sorted_items(
+                sorted_slot,
+                max_len,
+                len_vreg,
+                candidate_vreg,
+                count_slot,
+                after_count_block,
+            );
+
+            let count_vreg = self.load_u64_math_mode_slot(count_slot);
+            let max_count_vreg = self.load_u64_math_mode_slot(max_count_slot);
+            let is_mode_vreg = self.func.alloc_vreg();
+            self.emit(MirInst::BinOp {
+                dst: is_mode_vreg,
+                op: BinOpKind::Eq,
+                lhs: MirValue::VReg(count_vreg),
+                rhs: MirValue::VReg(max_count_vreg),
+            });
+            self.vreg_type_hints.insert(is_mode_vreg, MirType::Bool);
+            let push_block = self.func.alloc_block();
+            self.terminate(MirInst::Branch {
+                cond: is_mode_vreg,
+                if_true: push_block,
+                if_false: next_candidate_block,
+            });
+
+            self.current_block = push_block;
+            self.emit(MirInst::ListPush {
+                list: result_vreg,
+                item: candidate_vreg,
+            });
+            self.terminate(MirInst::Jump {
+                target: next_candidate_block,
+            });
+
+            self.current_block = next_candidate_block;
+        }
+        self.current_block = after_emit_modes_block;
+
+        let known_len = match Self::numeric_list_known_len(&input_meta) {
+            Some(0) => Some(0),
+            _ => None,
+        };
+        self.install_stack_numeric_list_result_metadata(
+            src_dst, out_slot, out_ty, max_len, known_len,
+        );
+        Ok(())
+    }
+
+    fn alloc_u64_math_mode_slot(&mut self) -> StackSlotId {
+        let slot = self.func.alloc_stack_slot(8, 8, StackSlotKind::Local);
+        self.record_stack_slot_type(slot, MirType::U64);
+        slot
+    }
+
+    fn load_u64_math_mode_slot(&mut self, slot: StackSlotId) -> VReg {
+        let value_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::LoadSlot {
+            dst: value_vreg,
+            slot,
+            offset: 0,
+            ty: MirType::U64,
+        });
+        self.vreg_type_hints.insert(value_vreg, MirType::U64);
+        value_vreg
+    }
+
+    fn load_sorted_math_mode_item(&mut self, sorted_slot: StackSlotId, index: usize) -> VReg {
+        let item_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::LoadSlot {
+            dst: item_vreg,
+            slot: sorted_slot,
+            offset: Self::list_item_offset(index),
+            ty: MirType::I64,
+        });
+        self.vreg_type_hints.insert(item_vreg, MirType::I64);
+        item_vreg
+    }
+
+    fn emit_static_index_in_bounds_branch(
+        &mut self,
+        index: usize,
+        len_vreg: VReg,
+        if_true: BlockId,
+        if_false: BlockId,
+    ) {
+        let in_bounds_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::BinOp {
+            dst: in_bounds_vreg,
+            op: BinOpKind::Lt,
+            lhs: MirValue::Const(index as i64),
+            rhs: MirValue::VReg(len_vreg),
+        });
+        self.vreg_type_hints.insert(in_bounds_vreg, MirType::Bool);
+        self.terminate(MirInst::Branch {
+            cond: in_bounds_vreg,
+            if_true,
+            if_false,
+        });
+    }
+
+    fn emit_count_matching_sorted_items(
+        &mut self,
+        sorted_slot: StackSlotId,
+        max_len: usize,
+        len_vreg: VReg,
+        candidate_vreg: VReg,
+        count_slot: StackSlotId,
+        continuation_block: BlockId,
+    ) {
+        self.emit(MirInst::StoreSlot {
+            slot: count_slot,
+            offset: 0,
+            val: MirValue::Const(0),
+            ty: MirType::U64,
+        });
+
+        for index in 0..max_len {
+            let compare_block = self.func.alloc_block();
+            let next_block = if index + 1 == max_len {
+                continuation_block
+            } else {
+                self.func.alloc_block()
+            };
+
+            self.emit_static_index_in_bounds_branch(index, len_vreg, compare_block, next_block);
+
+            self.current_block = compare_block;
+            let item_vreg = self.load_sorted_math_mode_item(sorted_slot, index);
+            let matches_vreg = self.func.alloc_vreg();
+            self.emit(MirInst::BinOp {
+                dst: matches_vreg,
+                op: BinOpKind::Eq,
+                lhs: MirValue::VReg(item_vreg),
+                rhs: MirValue::VReg(candidate_vreg),
+            });
+            self.vreg_type_hints.insert(matches_vreg, MirType::Bool);
+            let increment_block = self.func.alloc_block();
+            self.terminate(MirInst::Branch {
+                cond: matches_vreg,
+                if_true: increment_block,
+                if_false: next_block,
+            });
+
+            self.current_block = increment_block;
+            let current_count_vreg = self.load_u64_math_mode_slot(count_slot);
+            let incremented_vreg = self.func.alloc_vreg();
+            self.emit(MirInst::BinOp {
+                dst: incremented_vreg,
+                op: BinOpKind::Add,
+                lhs: MirValue::VReg(current_count_vreg),
+                rhs: MirValue::Const(1),
+            });
+            self.vreg_type_hints.insert(incremented_vreg, MirType::U64);
+            self.emit(MirInst::StoreSlot {
+                slot: count_slot,
+                offset: 0,
+                val: MirValue::VReg(incremented_vreg),
+                ty: MirType::U64,
+            });
+            self.terminate(MirInst::Jump { target: next_block });
+
+            self.current_block = next_block;
+        }
     }
 
     pub(in crate::compiler::ir_to_mir) fn lower_math_median(

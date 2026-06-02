@@ -129,6 +129,71 @@ fn make_runtime_numeric_list_pipeline_call_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_runtime_numeric_list_two_call_program(
+    first_decl: DeclId,
+    second_decl: DeclId,
+    append_decl: DeclId,
+    random_decl: DeclId,
+    trailing_values: &[i64],
+) -> HirProgram {
+    let mut stmts = vec![HirStmt::LoadValue {
+        dst: RegId::new(0),
+        val: Box::new(Value::list(
+            trailing_values
+                .iter()
+                .map(|value| Value::int(*value, Span::test_data()))
+                .collect(),
+            Span::test_data(),
+        )),
+    }];
+
+    stmts.push(HirStmt::Call {
+        decl_id: random_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs::default(),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: append_decl,
+        src_dst: RegId::new(2),
+        args: HirCallArgs {
+            pipeline_input: Some(RegId::new(0)),
+            positional: vec![RegId::new(1)],
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: first_decl,
+        src_dst: RegId::new(3),
+        args: HirCallArgs {
+            pipeline_input: Some(RegId::new(2)),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: second_decl,
+        src_dst: RegId::new(4),
+        args: HirCallArgs {
+            pipeline_input: Some(RegId::new(3)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(4) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 5,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_empty_numeric_list_pipeline_call_program(decl_id: DeclId) -> HirProgram {
     let func = HirFunction {
         blocks: vec![HirBlock {
@@ -10745,6 +10810,195 @@ fn test_lower_math_mode_on_empty_integer_list_returns_empty_list() {
 }
 
 #[test]
+fn test_lower_math_mode_on_runtime_stack_numeric_list_uses_bounded_counts() {
+    let mode_decl = DeclId::new(540);
+    let length_decl = DeclId::new(541);
+    let append_decl = DeclId::new(542);
+    let random_decl = DeclId::new(543);
+    let hir = make_runtime_numeric_list_two_call_program(
+        mode_decl,
+        length_decl,
+        append_decl,
+        random_decl,
+        &[5, 1, 5],
+    );
+    let decl_names = HashMap::from([
+        (mode_decl, "math mode".to_string()),
+        (length_decl, "length".to_string()),
+        (append_decl, "append".to_string()),
+        (random_decl, "random int".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("math mode should lower runtime-valued stack-backed numeric-list input");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+
+    assert!(
+        instructions
+            .iter()
+            .any(|inst| matches!(inst, MirInst::ListNew { max_len: 4, .. })),
+        "expected runtime math mode to allocate bounded four-item stack lists"
+    );
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::Gt,
+                ..
+            }
+        )),
+        "expected runtime math mode to sort and update max counts"
+    );
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::Eq,
+                ..
+            }
+        )),
+        "expected runtime math mode to count values and select modes"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("runtime math mode output consumed by length should compile through codegen");
+}
+
+#[test]
+fn test_lower_math_mode_on_dynamic_length_stack_numeric_list() {
+    let where_decl = DeclId::new(544);
+    let mode_decl = DeclId::new(545);
+    let length_decl = DeclId::new(546);
+    let closure_block_id = nu_protocol::BlockId::new(1);
+
+    let main = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::List { capacity: 3 },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(10),
+                },
+                HirStmt::ListPush {
+                    src_dst: RegId::new(0),
+                    item: RegId::new(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(20),
+                },
+                HirStmt::ListPush {
+                    src_dst: RegId::new(0),
+                    item: RegId::new(2),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::Closure(closure_block_id),
+                },
+                HirStmt::Call {
+                    decl_id: where_decl,
+                    src_dst: RegId::new(4),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(3)],
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: mode_decl,
+                    src_dst: RegId::new(5),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(4)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: length_decl,
+                    src_dst: RegId::new(6),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(5)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(6) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 7,
+        file_count: 0,
+    };
+    let closure = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::LoadLiteral {
+                dst: RegId::new(0),
+                lit: HirLiteral::Bool(true),
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 1,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(
+        main,
+        HashMap::from([(closure_block_id, closure)]),
+        Vec::new(),
+        None,
+    );
+    let decl_names = HashMap::from([
+        (where_decl, "where".to_string()),
+        (mode_decl, "math mode".to_string()),
+        (length_decl, "length".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("math mode should lower dynamic-length stack-backed numeric-list input");
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::ListLen { .. })),
+        "expected dynamic-length math mode to preserve runtime length guards"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "dynamic-length math mode output consumed by length should compile through codegen",
+    );
+}
+
+#[test]
 fn test_lower_math_mode_rejects_non_integer_list_items() {
     let mode_decl = DeclId::new(529);
     let hir = make_value_list_pipeline_call_program(
@@ -10793,6 +11047,44 @@ fn test_lower_math_mode_rejects_output_over_capacity() {
     assert!(
         err.to_string()
             .contains("math mode output exceeds stack-backed numeric list capacity 60"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_math_mode_rejects_large_runtime_stack_numeric_list_capacity() {
+    let mode_decl = DeclId::new(547);
+    let length_decl = DeclId::new(548);
+    let append_decl = DeclId::new(549);
+    let random_decl = DeclId::new(550);
+    let trailing_values = (0..16).collect::<Vec<_>>();
+    let hir = make_runtime_numeric_list_two_call_program(
+        mode_decl,
+        length_decl,
+        append_decl,
+        random_decl,
+        &trailing_values,
+    );
+    let decl_names = HashMap::from([
+        (mode_decl, "math mode".to_string()),
+        (length_decl, "length".to_string()),
+        (append_decl, "append".to_string()),
+        (random_decl, "random int".to_string()),
+    ]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("math mode should reject stack-backed numeric lists over the bounded sort limit");
+
+    assert!(
+        err.to_string()
+            .contains("math mode supports stack-backed numeric lists with capacity <= 16"),
         "unexpected error: {err}"
     );
 }

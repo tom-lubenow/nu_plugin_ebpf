@@ -274,7 +274,7 @@ impl<'a> HirToMirLowering<'a> {
         self.current_block = next_block;
     }
 
-    fn list_item_offset(index: usize) -> i32 {
+    pub(super) fn list_item_offset(index: usize) -> i32 {
         (8 + index * 8) as i32
     }
 

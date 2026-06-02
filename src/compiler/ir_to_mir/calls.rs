@@ -4039,7 +4039,7 @@ impl<'a> HirToMirLowering<'a> {
             }
 
             "math mode" => {
-                self.lower_compile_time_math_mode(src_dst, src_dst_had_value)?;
+                self.lower_math_mode(src_dst, dst_vreg, src_dst_had_value)?;
             }
 
             "math abs" => {

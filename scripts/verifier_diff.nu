@@ -35310,6 +35310,20 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-runtime-list-math-mode"
+        category: "language-core"
+        tags: [aggregate list math mode runtime]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let n = random int'
+            '  (seq 1 1 3 | append $n | math mode | length) >= 1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-math-mode-empty"
         category: "language-core"
         tags: [aggregate list math mode empty]
