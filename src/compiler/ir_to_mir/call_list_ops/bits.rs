@@ -101,6 +101,61 @@ impl<'a> HirToMirLowering<'a> {
         input.iter().map(|byte| !byte).collect()
     }
 
+    fn bits_binary_get_bit(input: &[u8], bit_index: usize) -> bool {
+        let byte = input[bit_index / 8];
+        let mask = 1u8 << (7 - (bit_index % 8));
+        byte & mask != 0
+    }
+
+    fn bits_binary_set_bit(output: &mut [u8], bit_index: usize) {
+        let mask = 1u8 << (7 - (bit_index % 8));
+        output[bit_index / 8] |= mask;
+    }
+
+    fn bits_binary_shift_rotate_output(
+        cmd_name: &str,
+        input: &[u8],
+        count: usize,
+    ) -> Result<Vec<u8>, CompileError> {
+        let bit_len = input.len().checked_mul(8).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} binary input is too large to transform in eBPF"
+            ))
+        })?;
+        let count_name = if matches!(cmd_name, "bits shl" | "bits shr") {
+            "shift"
+        } else {
+            "rotate"
+        };
+        if count > bit_len {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires a {count_name} count from 0 through {bit_len} for binary input in eBPF; got {count}"
+            )));
+        }
+
+        if bit_len == 0 {
+            return Ok(Vec::new());
+        }
+
+        let mut output = vec![0u8; input.len()];
+        let rotate = count % bit_len;
+        for out_bit in 0..bit_len {
+            let src_bit = match cmd_name {
+                "bits shl" => (out_bit + count < bit_len).then_some(out_bit + count),
+                "bits shr" => out_bit.checked_sub(count),
+                "bits rol" => Some((out_bit + rotate) % bit_len),
+                "bits ror" => Some((out_bit + bit_len - rotate) % bit_len),
+                _ => unreachable!("validated bits shift/rotate command"),
+            };
+            if let Some(src_bit) = src_bit {
+                if Self::bits_binary_get_bit(input, src_bit) {
+                    Self::bits_binary_set_bit(&mut output, out_bit);
+                }
+            }
+        }
+        Ok(output)
+    }
+
     fn bits_shift_op(cmd_name: &str, mode: BitsShiftMode) -> BinOpKind {
         match cmd_name {
             "bits shl" => BinOpKind::Shl,
@@ -419,6 +474,97 @@ impl<'a> HirToMirLowering<'a> {
                 "{cmd_name} requires integer {role} in eBPF; got MIR type {ty:?}"
             )))
         }
+    }
+
+    fn bits_binary_shift_rotate_count(&self, cmd_name: &str) -> Result<usize, CompileError> {
+        if !self.parser_info_args.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} does not support parser-info arguments in eBPF"
+            )));
+        }
+        if self.positional_args.len() != 1 {
+            let count_name = if matches!(cmd_name, "bits shl" | "bits shr") {
+                "shift"
+            } else {
+                "rotate"
+            };
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires exactly one compile-time {count_name}-count argument in eBPF"
+            )));
+        }
+
+        match self.named_flags.as_slice() {
+            [] => {}
+            [flag] if matches!(flag.as_str(), "signed" | "s") => {}
+            _ => {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{cmd_name} supports only --signed and --number-bytes for binary input in eBPF"
+                )));
+            }
+        }
+
+        let mut number_bytes_reg = None;
+        for (name, (_vreg, reg)) in &self.named_args {
+            match name.as_str() {
+                "number-bytes" | "n" => {
+                    if number_bytes_reg.replace(*reg).is_some() {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "{cmd_name} accepts only one --number-bytes argument in eBPF"
+                        )));
+                    }
+                }
+                _ => {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{cmd_name} supports only --number-bytes for binary input in eBPF"
+                    )));
+                }
+            }
+        }
+        if let Some(number_bytes_reg) = number_bytes_reg {
+            let number_bytes_meta = self.get_metadata(number_bytes_reg).ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "{cmd_name} requires compile-time --number-bytes in eBPF"
+                ))
+            })?;
+            let Some(number_bytes) = Self::bits_integer_value_from_metadata(number_bytes_meta)
+            else {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{cmd_name} requires compile-time --number-bytes in eBPF"
+                )));
+            };
+            if !matches!(number_bytes, 1 | 2 | 4 | 8) {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{cmd_name} binary input supports --number-bytes 1, 2, 4, or 8 in eBPF; got {number_bytes}"
+                )));
+            }
+        }
+
+        let count_name = if matches!(cmd_name, "bits shl" | "bits shr") {
+            "shift"
+        } else {
+            "rotate"
+        };
+        let (_count_vreg, count_reg) = self.positional_args[0];
+        let count_meta = self.get_metadata(count_reg).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires a compile-time integer {count_name} count in eBPF"
+            ))
+        })?;
+        let Some(count) = Self::bits_integer_value_from_metadata(count_meta) else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires a compile-time integer {count_name} count in eBPF"
+            )));
+        };
+        if count < 0 {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires a non-negative {count_name} count in eBPF; got {count}"
+            )));
+        }
+        usize::try_from(count).map_err(|_| {
+            CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} {count_name} count is too large for eBPF binary input: {count}"
+            ))
+        })
     }
 
     fn bits_shift_spec(&self, cmd_name: &str) -> Result<BitsShiftSpec, CompileError> {
@@ -892,7 +1038,6 @@ impl<'a> HirToMirLowering<'a> {
     ) -> Result<(), CompileError> {
         const MAX_BITS_STACK_LIST_CAPACITY: usize = 60;
 
-        let spec = self.bits_shift_spec(cmd_name)?;
         let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
         let input_reg = self
             .pipeline_input_reg
@@ -905,19 +1050,65 @@ impl<'a> HirToMirLowering<'a> {
 
         let input_reg = input_reg.ok_or_else(|| {
             CompileError::UnsupportedInstruction(format!(
-                "{cmd_name} requires integer or integer-list pipeline input in eBPF"
+                "{cmd_name} requires integer, binary, integer-list, or binary-list pipeline input in eBPF"
             ))
         })?;
         let input_meta = self.get_metadata(input_reg).cloned().ok_or_else(|| {
             CompileError::UnsupportedInstruction(format!(
-                "{cmd_name} requires tracked integer or integer-list input in eBPF"
+                "{cmd_name} requires tracked integer, binary, integer-list, or binary-list input in eBPF"
             ))
         })?;
 
-        let op = Self::bits_shift_op(cmd_name, spec.mode);
-        let rhs_value = MirValue::Const(spec.count);
-
         if let Some(nu_protocol::Value::List { vals, .. }) = input_meta.constant_value.clone() {
+            if !vals.is_empty()
+                && vals
+                    .iter()
+                    .all(|value| matches!(value, nu_protocol::Value::Binary { .. }))
+            {
+                let count = self.bits_binary_shift_rotate_count(cmd_name)?;
+                let output = vals
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, value)| {
+                        let nu_protocol::Value::Binary { val, .. } = value else {
+                            return Err(CompileError::UnsupportedInstruction(format!(
+                                "{cmd_name} requires binary list items in eBPF; item {index} has type {}",
+                                value.get_type()
+                            )));
+                        };
+                        Ok(nu_protocol::Value::binary(
+                            Self::bits_binary_shift_rotate_output(cmd_name, &val, count)?,
+                            nu_protocol::Span::unknown(),
+                        ))
+                    })
+                    .collect::<Result<Vec<_>, CompileError>>()?;
+                let output_len = output
+                    .first()
+                    .and_then(|value| match value {
+                        nu_protocol::Value::Binary { val, .. } => Some(val.len()),
+                        _ => None,
+                    })
+                    .unwrap_or(0);
+                let equal_non_empty_output = output_len > 0
+                    && output.iter().all(|value| match value {
+                        nu_protocol::Value::Binary { val, .. } => val.len() == output_len,
+                        _ => false,
+                    });
+                if !equal_non_empty_output {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{cmd_name} binary list output requires non-empty equal-length binary items in eBPF"
+                    )));
+                }
+
+                self.reset_call_result_metadata(src_dst);
+                self.lower_constant_value(
+                    src_dst,
+                    &nu_protocol::Value::list(output, nu_protocol::Span::unknown()),
+                )?;
+                return Ok(());
+            }
+
+            let spec = self.bits_shift_spec(cmd_name)?;
             if vals.len() > MAX_BITS_STACK_LIST_CAPACITY {
                 return Err(CompileError::UnsupportedInstruction(format!(
                     "{cmd_name} output exceeds stack-backed numeric list capacity {MAX_BITS_STACK_LIST_CAPACITY} in eBPF"
@@ -951,6 +1142,21 @@ impl<'a> HirToMirLowering<'a> {
             )?;
             return Ok(());
         }
+
+        if let Some(nu_protocol::Value::Binary { val, .. }) = input_meta.constant_value.as_ref() {
+            let count = self.bits_binary_shift_rotate_count(cmd_name)?;
+            let output = Self::bits_binary_shift_rotate_output(cmd_name, val, count)?;
+            self.reset_call_result_metadata(src_dst);
+            self.lower_constant_value(
+                src_dst,
+                &nu_protocol::Value::binary(output, nu_protocol::Span::unknown()),
+            )?;
+            return Ok(());
+        }
+
+        let spec = self.bits_shift_spec(cmd_name)?;
+        let op = Self::bits_shift_op(cmd_name, spec.mode);
+        let rhs_value = MirValue::Const(spec.count);
 
         if input_meta.list_buffer.is_some() {
             if spec.mode == BitsShiftMode::SignedI64 {
@@ -1203,7 +1409,6 @@ impl<'a> HirToMirLowering<'a> {
     ) -> Result<(), CompileError> {
         const MAX_BITS_STACK_LIST_CAPACITY: usize = 60;
 
-        let spec = self.bits_rotate_spec(cmd_name)?;
         let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
         let input_reg = self
             .pipeline_input_reg
@@ -1216,16 +1421,65 @@ impl<'a> HirToMirLowering<'a> {
 
         let input_reg = input_reg.ok_or_else(|| {
             CompileError::UnsupportedInstruction(format!(
-                "{cmd_name} requires integer or integer-list pipeline input in eBPF"
+                "{cmd_name} requires integer, binary, integer-list, or binary-list pipeline input in eBPF"
             ))
         })?;
         let input_meta = self.get_metadata(input_reg).cloned().ok_or_else(|| {
             CompileError::UnsupportedInstruction(format!(
-                "{cmd_name} requires tracked integer or integer-list input in eBPF"
+                "{cmd_name} requires tracked integer, binary, integer-list, or binary-list input in eBPF"
             ))
         })?;
 
         if let Some(nu_protocol::Value::List { vals, .. }) = input_meta.constant_value.clone() {
+            if !vals.is_empty()
+                && vals
+                    .iter()
+                    .all(|value| matches!(value, nu_protocol::Value::Binary { .. }))
+            {
+                let count = self.bits_binary_shift_rotate_count(cmd_name)?;
+                let output = vals
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, value)| {
+                        let nu_protocol::Value::Binary { val, .. } = value else {
+                            return Err(CompileError::UnsupportedInstruction(format!(
+                                "{cmd_name} requires binary list items in eBPF; item {index} has type {}",
+                                value.get_type()
+                            )));
+                        };
+                        Ok(nu_protocol::Value::binary(
+                            Self::bits_binary_shift_rotate_output(cmd_name, &val, count)?,
+                            nu_protocol::Span::unknown(),
+                        ))
+                    })
+                    .collect::<Result<Vec<_>, CompileError>>()?;
+                let output_len = output
+                    .first()
+                    .and_then(|value| match value {
+                        nu_protocol::Value::Binary { val, .. } => Some(val.len()),
+                        _ => None,
+                    })
+                    .unwrap_or(0);
+                let equal_non_empty_output = output_len > 0
+                    && output.iter().all(|value| match value {
+                        nu_protocol::Value::Binary { val, .. } => val.len() == output_len,
+                        _ => false,
+                    });
+                if !equal_non_empty_output {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{cmd_name} binary list output requires non-empty equal-length binary items in eBPF"
+                    )));
+                }
+
+                self.reset_call_result_metadata(src_dst);
+                self.lower_constant_value(
+                    src_dst,
+                    &nu_protocol::Value::list(output, nu_protocol::Span::unknown()),
+                )?;
+                return Ok(());
+            }
+
+            let spec = self.bits_rotate_spec(cmd_name)?;
             if vals.len() > MAX_BITS_STACK_LIST_CAPACITY {
                 return Err(CompileError::UnsupportedInstruction(format!(
                     "{cmd_name} output exceeds stack-backed numeric list capacity {MAX_BITS_STACK_LIST_CAPACITY} in eBPF"
@@ -1260,6 +1514,18 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(());
         }
 
+        if let Some(nu_protocol::Value::Binary { val, .. }) = input_meta.constant_value.as_ref() {
+            let count = self.bits_binary_shift_rotate_count(cmd_name)?;
+            let output = Self::bits_binary_shift_rotate_output(cmd_name, val, count)?;
+            self.reset_call_result_metadata(src_dst);
+            self.lower_constant_value(
+                src_dst,
+                &nu_protocol::Value::binary(output, nu_protocol::Span::unknown()),
+            )?;
+            return Ok(());
+        }
+
+        let spec = self.bits_rotate_spec(cmd_name)?;
         if input_meta.list_buffer.is_some() {
             return self.lower_bits_rotate_runtime_list(
                 cmd_name,

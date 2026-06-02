@@ -10817,6 +10817,163 @@ fn make_bits_not_binary_bytes_list_collect_starts_with_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_bits_shift_rotate_binary_bytes_starts_with_program(
+    bits_decl: DeclId,
+    starts_with_decl: DeclId,
+    input: &[u8],
+    count: i64,
+    prefix: &[u8],
+    signed: bool,
+    number_bytes: Option<i64>,
+) -> HirProgram {
+    let mut stmts = vec![
+        HirStmt::LoadLiteral {
+            dst: RegId::new(0),
+            lit: HirLiteral::Binary(input.to_vec()),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: HirLiteral::Int(count),
+        },
+    ];
+    let named = if let Some(number_bytes) = number_bytes {
+        stmts.push(HirStmt::LoadLiteral {
+            dst: RegId::new(2),
+            lit: HirLiteral::Int(number_bytes),
+        });
+        vec![(b"number-bytes".to_vec(), RegId::new(2))]
+    } else {
+        Vec::new()
+    };
+    stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(3),
+        lit: HirLiteral::Binary(prefix.to_vec()),
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: {
+                stmts.push(HirStmt::Call {
+                    decl_id: bits_decl,
+                    src_dst: RegId::new(4),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        positional: vec![RegId::new(1)],
+                        named,
+                        flags: signed.then(|| b"signed".to_vec()).into_iter().collect(),
+                        ..HirCallArgs::default()
+                    },
+                });
+                stmts.push(HirStmt::Call {
+                    decl_id: starts_with_decl,
+                    src_dst: RegId::new(5),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(4)),
+                        positional: vec![RegId::new(3)],
+                        ..HirCallArgs::default()
+                    },
+                });
+                stmts
+            },
+            terminator: HirTerminator::Return { src: RegId::new(5) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 6,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_bits_shift_rotate_binary_bytes_list_collect_starts_with_program(
+    bits_decl: DeclId,
+    collect_decl: DeclId,
+    starts_with_decl: DeclId,
+    values: Vec<Vec<u8>>,
+    count: i64,
+    prefix: &[u8],
+    signed: bool,
+    number_bytes: Option<i64>,
+) -> HirProgram {
+    let mut stmts = vec![
+        HirStmt::LoadValue {
+            dst: RegId::new(0),
+            val: Box::new(Value::list(
+                values
+                    .into_iter()
+                    .map(|value| Value::binary(value, Span::test_data()))
+                    .collect(),
+                Span::test_data(),
+            )),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: HirLiteral::Int(count),
+        },
+    ];
+    let named = if let Some(number_bytes) = number_bytes {
+        stmts.push(HirStmt::LoadLiteral {
+            dst: RegId::new(2),
+            lit: HirLiteral::Int(number_bytes),
+        });
+        vec![(b"number-bytes".to_vec(), RegId::new(2))]
+    } else {
+        Vec::new()
+    };
+    stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(3),
+        lit: HirLiteral::Binary(prefix.to_vec()),
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: {
+                stmts.push(HirStmt::Call {
+                    decl_id: bits_decl,
+                    src_dst: RegId::new(4),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        positional: vec![RegId::new(1)],
+                        named,
+                        flags: signed.then(|| b"signed".to_vec()).into_iter().collect(),
+                        ..HirCallArgs::default()
+                    },
+                });
+                stmts.push(HirStmt::Call {
+                    decl_id: collect_decl,
+                    src_dst: RegId::new(5),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(4)),
+                        ..HirCallArgs::default()
+                    },
+                });
+                stmts.push(HirStmt::Call {
+                    decl_id: starts_with_decl,
+                    src_dst: RegId::new(6),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(5)),
+                        positional: vec![RegId::new(3)],
+                        ..HirCallArgs::default()
+                    },
+                });
+                stmts
+            },
+            terminator: HirTerminator::Return { src: RegId::new(6) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 7,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_bits_not_program(bits_decl: DeclId, input: i64, signed: bool) -> HirProgram {
     make_bits_not_program_with_number_bytes(bits_decl, input, signed, None)
 }
@@ -12937,6 +13094,69 @@ fn test_lower_bits_shift_signed_i64_on_known_integer_inputs() {
 }
 
 #[test]
+fn test_lower_bits_shift_commands_on_known_binary_inputs() {
+    for (offset, command_name, input, count, signed, number_bytes, expected_prefix) in [
+        (
+            0,
+            "bits shl",
+            vec![0x4f, 0xf4],
+            4,
+            false,
+            None,
+            vec![0xff, 0x40],
+        ),
+        (
+            1,
+            "bits shr",
+            vec![0x4f, 0xf4],
+            4,
+            true,
+            Some(8),
+            vec![0x04, 0xff],
+        ),
+        (
+            2,
+            "bits shl",
+            vec![0x12, 0x34],
+            16,
+            false,
+            Some(8),
+            vec![0x00, 0x00],
+        ),
+    ] {
+        let bits_decl = DeclId::new(7100 + offset);
+        let starts_with_decl = DeclId::new(7110 + offset);
+        let hir = make_bits_shift_rotate_binary_bytes_starts_with_program(
+            bits_decl,
+            starts_with_decl,
+            &input,
+            count,
+            &expected_prefix,
+            signed,
+            number_bytes,
+        );
+        let decl_names = HashMap::from([
+            (bits_decl, command_name.to_string()),
+            (starts_with_decl, "bytes starts-with".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("{command_name} should lower binary input: {err}"));
+
+        assert_program_returns_constant(&result.program, 1, command_name);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{command_name} should compile through codegen: {err}"));
+    }
+}
+
+#[test]
 fn test_lower_bits_shift_number_bytes_on_known_integer_inputs() {
     for (offset, command_name, input, shift_count, number_bytes, expected) in [
         (0, "bits shl", 255, 1, 1, 254),
@@ -13066,6 +13286,59 @@ fn test_lower_bits_shift_number_bytes_on_known_integer_lists() {
 }
 
 #[test]
+fn test_lower_bits_shift_commands_on_known_binary_lists() {
+    for (offset, command_name, values, count, expected_prefix) in [
+        (
+            0,
+            "bits shl",
+            vec![vec![0x4f, 0xf4], vec![0xc0, 0xff]],
+            4,
+            vec![0xff, 0x40, 0x0f, 0xf0],
+        ),
+        (
+            1,
+            "bits shr",
+            vec![vec![0x4f, 0xf4], vec![0xc0, 0xff]],
+            4,
+            vec![0x04, 0xff, 0x0c, 0x0f],
+        ),
+    ] {
+        let bits_decl = DeclId::new(7120 + offset);
+        let collect_decl = DeclId::new(7130 + offset);
+        let starts_with_decl = DeclId::new(7140 + offset);
+        let hir = make_bits_shift_rotate_binary_bytes_list_collect_starts_with_program(
+            bits_decl,
+            collect_decl,
+            starts_with_decl,
+            values,
+            count,
+            &expected_prefix,
+            false,
+            None,
+        );
+        let decl_names = HashMap::from([
+            (bits_decl, command_name.to_string()),
+            (collect_decl, "bytes collect".to_string()),
+            (starts_with_decl, "bytes starts-with".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("{command_name} should lower binary-list input: {err}"));
+
+        assert_program_returns_constant(&result.program, 1, command_name);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{command_name} should compile through codegen: {err}"));
+    }
+}
+
+#[test]
 fn test_lower_bits_shift_default_is_rejected() {
     let bits_decl = DeclId::new(7030);
     let hir = make_bits_binary_program(bits_decl, 4, 1);
@@ -13084,6 +13357,41 @@ fn test_lower_bits_shift_default_is_rejected() {
     assert!(
         err.to_string()
             .contains("bits shl default auto-width shifts are not supported"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_bits_shift_binary_rejects_count_over_bit_len() {
+    let bits_decl = DeclId::new(70301);
+    let starts_with_decl = DeclId::new(70302);
+    let hir = make_bits_shift_rotate_binary_bytes_starts_with_program(
+        bits_decl,
+        starts_with_decl,
+        &[0x12, 0x34],
+        17,
+        &[0x00, 0x00],
+        false,
+        None,
+    );
+    let decl_names = HashMap::from([
+        (bits_decl, "bits shl".to_string()),
+        (starts_with_decl, "bytes starts-with".to_string()),
+    ]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("bits shl should reject binary shifts beyond the bit length");
+
+    assert!(
+        err.to_string()
+            .contains("bits shl requires a shift count from 0 through 16"),
         "unexpected error: {err}"
     );
 }
@@ -13246,6 +13554,61 @@ fn test_lower_bits_rotate_signed_i64_on_known_integer_inputs() {
 }
 
 #[test]
+fn test_lower_bits_rotate_commands_on_known_binary_inputs() {
+    for (offset, command_name, input, count, signed, number_bytes, expected_prefix) in [
+        (
+            0,
+            "bits rol",
+            vec![0xc0, 0xff, 0xee],
+            10,
+            true,
+            Some(8),
+            vec![0xff, 0xbb, 0x03],
+        ),
+        (
+            1,
+            "bits ror",
+            vec![0xff, 0xbb, 0x03],
+            10,
+            false,
+            Some(8),
+            vec![0xc0, 0xff, 0xee],
+        ),
+        (2, "bits ror", vec![0x12], 8, false, None, vec![0x12]),
+    ] {
+        let bits_decl = DeclId::new(7200 + offset);
+        let starts_with_decl = DeclId::new(7210 + offset);
+        let hir = make_bits_shift_rotate_binary_bytes_starts_with_program(
+            bits_decl,
+            starts_with_decl,
+            &input,
+            count,
+            &expected_prefix,
+            signed,
+            number_bytes,
+        );
+        let decl_names = HashMap::from([
+            (bits_decl, command_name.to_string()),
+            (starts_with_decl, "bytes starts-with".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("{command_name} should lower binary input: {err}"));
+
+        assert_program_returns_constant(&result.program, 1, command_name);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{command_name} should compile through codegen: {err}"));
+    }
+}
+
+#[test]
 fn test_lower_bits_rotate_number_bytes_on_known_integer_inputs() {
     for (offset, command_name, input, rotate_count, number_bytes, expected) in [
         (0, "bits rol", 127, 1, 1, 254),
@@ -13368,6 +13731,59 @@ fn test_lower_bits_rotate_number_bytes_on_known_integer_lists() {
 }
 
 #[test]
+fn test_lower_bits_rotate_commands_on_known_binary_lists() {
+    for (offset, command_name, values, count, expected_prefix) in [
+        (
+            0,
+            "bits rol",
+            vec![vec![0xc0, 0xff, 0xee], vec![0xff, 0xbb, 0x03]],
+            10,
+            vec![0xff, 0xbb, 0x03, 0xec, 0x0f, 0xfe],
+        ),
+        (
+            1,
+            "bits ror",
+            vec![vec![0xc0, 0xff, 0xee], vec![0xff, 0xbb, 0x03]],
+            10,
+            vec![0xfb, 0xb0, 0x3f, 0xc0, 0xff, 0xee],
+        ),
+    ] {
+        let bits_decl = DeclId::new(7220 + offset);
+        let collect_decl = DeclId::new(7230 + offset);
+        let starts_with_decl = DeclId::new(7240 + offset);
+        let hir = make_bits_shift_rotate_binary_bytes_list_collect_starts_with_program(
+            bits_decl,
+            collect_decl,
+            starts_with_decl,
+            values,
+            count,
+            &expected_prefix,
+            false,
+            None,
+        );
+        let decl_names = HashMap::from([
+            (bits_decl, command_name.to_string()),
+            (collect_decl, "bytes collect".to_string()),
+            (starts_with_decl, "bytes starts-with".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("{command_name} should lower binary-list input: {err}"));
+
+        assert_program_returns_constant(&result.program, 1, command_name);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{command_name} should compile through codegen: {err}"));
+    }
+}
+
+#[test]
 fn test_lower_bits_rotate_default_is_rejected() {
     let bits_decl = DeclId::new(7100);
     let hir = make_bits_shift_program(bits_decl, 4, 1, false, None);
@@ -13386,6 +13802,41 @@ fn test_lower_bits_rotate_default_is_rejected() {
     assert!(
         err.to_string()
             .contains("bits rol default auto-width rotates are not supported"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_bits_rotate_binary_rejects_count_over_bit_len() {
+    let bits_decl = DeclId::new(71001);
+    let starts_with_decl = DeclId::new(71002);
+    let hir = make_bits_shift_rotate_binary_bytes_starts_with_program(
+        bits_decl,
+        starts_with_decl,
+        &[0x12, 0x34],
+        17,
+        &[0x00, 0x00],
+        false,
+        None,
+    );
+    let decl_names = HashMap::from([
+        (bits_decl, "bits ror".to_string()),
+        (starts_with_decl, "bytes starts-with".to_string()),
+    ]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("bits ror should reject binary rotates beyond the bit length");
+
+    assert!(
+        err.to_string()
+            .contains("bits ror requires a rotate count from 0 through 16"),
         "unexpected error: {err}"
     );
 }

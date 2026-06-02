@@ -35611,6 +35611,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-scalar-bits-shift-rotate-binary-bytes"
+        category: "language-core"
+        tags: [scalar binary bits shl shr rol ror signed number-bytes]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  (0x[4f f4] | bits shl 4 | bytes starts-with 0x[ff 40]) and (0x[4f f4] | bits shr 4 --signed --number-bytes 8 | bytes starts-with 0x[04 ff]) and (0x[c0 ff ee] | bits rol 10 --signed --number-bytes 8 | bytes starts-with 0x[ff bb 03]) and (0x[ff bb 03] | bits ror 10 --number-bytes 8 | bytes starts-with 0x[c0 ff ee])'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-bits-shift-number-bytes"
         category: "language-core"
         tags: [aggregate list bits shl number-bytes]
