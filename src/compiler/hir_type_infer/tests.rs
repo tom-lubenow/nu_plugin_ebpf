@@ -3,7 +3,7 @@ use crate::compiler::hir::{
     AnnotatedMutGlobal, HirBlock, HirBlockId, HirCallArgs, HirFunction, HirLiteral, HirProgram,
     HirStmt, HirTerminator,
 };
-use nu_protocol::ast::{CellPath, Comparison, Math, Operator, PathMember};
+use nu_protocol::ast::{CellPath, Comparison, Math, Operator, PathMember, Pattern};
 use nu_protocol::casing::Casing;
 use nu_protocol::{DeclId, Record, RegId, Span, Type, Value, VarId};
 
@@ -59,6 +59,73 @@ fn test_let_generalization_allows_distinct_instantiations() {
     let program = HirProgram::new(func, HashMap::new(), Vec::new(), None);
     let decl_names = HashMap::new();
     infer_hir(&program, &decl_names).expect("expected polymorphic let to type-check");
+}
+
+#[test]
+fn test_match_variable_pattern_shadows_prior_binding_with_source_type() {
+    let var_id = VarId::new(0);
+    let func = HirFunction {
+        blocks: vec![
+            HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Int(41),
+                }],
+                terminator: HirTerminator::Match {
+                    pattern: Box::new(Pattern::Variable(var_id)),
+                    src: RegId::new(0),
+                    if_true: HirBlockId(1),
+                    if_false: HirBlockId(2),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(1),
+                stmts: vec![
+                    HirStmt::LoadVariable {
+                        dst: RegId::new(1),
+                        var_id,
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::Int(1),
+                    },
+                    HirStmt::BinaryOp {
+                        lhs_dst: RegId::new(1),
+                        op: Operator::Math(Math::Add),
+                        rhs: RegId::new(2),
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(1) },
+            },
+            HirBlock {
+                id: HirBlockId(2),
+                stmts: vec![HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::Int(0),
+                }],
+                terminator: HirTerminator::Return { src: RegId::new(3) },
+            },
+        ],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 4,
+        file_count: 0,
+    };
+    let program = HirProgram::new(
+        func,
+        HashMap::new(),
+        vec![(
+            var_id,
+            Value::string("previous string binding".to_string(), Span::test_data()),
+        )],
+        None,
+    );
+
+    infer_hir(&program, &HashMap::new())
+        .expect("match variable pattern should shadow prior binding with matched source type");
 }
 
 #[test]

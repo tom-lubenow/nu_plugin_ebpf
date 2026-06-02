@@ -7,7 +7,7 @@
 
 use std::collections::HashMap;
 
-use nu_protocol::ast::{Boolean, CellPath, Operator, PathMember};
+use nu_protocol::ast::{Boolean, CellPath, Operator, PathMember, Pattern};
 use nu_protocol::{BlockId as NuBlockId, DeclId, RegId, Type, Value, VarId};
 
 use super::hindley_milner::{
@@ -429,6 +429,17 @@ impl<'a> HirTypeInference<'a> {
         Ok(())
     }
 
+    fn bind_match_pattern_type(
+        &mut self,
+        pattern: &Pattern,
+        src_ty: &HMType,
+    ) -> Result<(), TypeError> {
+        if let Pattern::Variable(var_id) = pattern {
+            self.env.insert(*var_id, TypeScheme::mono(src_ty.clone()));
+        }
+        Ok(())
+    }
+
     fn infer_terminator(&mut self, term: &HirTerminator) -> Result<(), TypeError> {
         match term {
             HirTerminator::Jump { .. }
@@ -437,9 +448,13 @@ impl<'a> HirTypeInference<'a> {
             | HirTerminator::Iterate { .. }
             | HirTerminator::BranchIf { .. }
             | HirTerminator::BranchIfEmpty { .. }
-            | HirTerminator::Match { .. }
             | HirTerminator::ReturnEarly { .. }
             | HirTerminator::Return { .. } => {}
+            HirTerminator::Match { pattern, src, .. } => {
+                let src_ty = self.reg_type(*src);
+                let src_ty = self.substitution.apply(&src_ty);
+                self.bind_match_pattern_type(pattern, &src_ty)?;
+            }
         }
         Ok(())
     }

@@ -35560,6 +35560,20 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-runtime-match-variable-binding"
+        category: "language-core"
+        tags: [control-flow "match" binding scalar integer runtime]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let n = ((random int | bits and 3) - 2)'
+            '  match $n { $x => ($x + 1) }'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-math-abs-sum"
         category: "language-core"
         tags: [aggregate list math abs sum]

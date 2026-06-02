@@ -299,6 +299,67 @@ fn make_integer_match_program(pattern: Pattern) -> HirProgram {
     )
 }
 
+fn make_integer_match_binding_program() -> HirProgram {
+    use nu_protocol::ast::{Math, Operator};
+
+    let var_id = VarId::new(0);
+    HirProgram::new(
+        HirFunction {
+            blocks: vec![
+                HirBlock {
+                    id: HirBlockId(0),
+                    stmts: vec![HirStmt::LoadLiteral {
+                        dst: RegId::new(0),
+                        lit: HirLiteral::Int(41),
+                    }],
+                    terminator: HirTerminator::Match {
+                        pattern: Box::new(Pattern::Variable(var_id)),
+                        src: RegId::new(0),
+                        if_true: HirBlockId(1),
+                        if_false: HirBlockId(2),
+                    },
+                },
+                HirBlock {
+                    id: HirBlockId(1),
+                    stmts: vec![
+                        HirStmt::LoadVariable {
+                            dst: RegId::new(1),
+                            var_id,
+                        },
+                        HirStmt::LoadLiteral {
+                            dst: RegId::new(2),
+                            lit: HirLiteral::Int(1),
+                        },
+                        HirStmt::BinaryOp {
+                            lhs_dst: RegId::new(1),
+                            op: Operator::Math(Math::Add),
+                            rhs: RegId::new(2),
+                        },
+                    ],
+                    terminator: HirTerminator::Return { src: RegId::new(1) },
+                },
+                HirBlock {
+                    id: HirBlockId(2),
+                    stmts: vec![HirStmt::LoadLiteral {
+                        dst: RegId::new(3),
+                        lit: HirLiteral::Int(0),
+                    }],
+                    terminator: HirTerminator::Return { src: RegId::new(3) },
+                },
+            ],
+            entry: HirBlockId(0),
+            spans: Vec::new(),
+            ast: Vec::new(),
+            comments: Vec::new(),
+            register_count: 4,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        None,
+    )
+}
+
 fn make_random_int_runtime_pow_exponent_program(random_decl: DeclId) -> HirProgram {
     use nu_protocol::ast::{Math, Operator};
 
@@ -662,6 +723,26 @@ fn test_lower_match_integer_right_exclusive_range_pattern_compiles() {
 
     compile_mir_to_ebpf_with_hints(&program, None, None)
         .expect("integer right-exclusive range match pattern should compile through codegen");
+}
+
+#[test]
+fn test_lower_match_variable_pattern_binds_integer_for_arm_math() {
+    let hir = make_integer_match_binding_program();
+
+    let program = lower_hir_to_mir(&hir, None, &HashMap::new())
+        .expect("integer match variable pattern should lower to MIR");
+    assert!(
+        program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::Copy { .. })),
+        "match variable binding should preserve the matched value with a copy"
+    );
+
+    compile_mir_to_ebpf_with_hints(&program, None, None)
+        .expect("integer match variable pattern should compile through codegen");
 }
 
 #[test]

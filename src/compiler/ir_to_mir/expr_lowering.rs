@@ -217,7 +217,7 @@ impl<'a> HirToMirLowering<'a> {
             }
             Pattern::Or(patterns) => self.lower_match_or(patterns, src_vreg, if_true, if_false)?,
             Pattern::Variable(var_id) => {
-                self.var_mappings.insert(*var_id, src_vreg);
+                self.bind_variable_to_src_value(*var_id, src, src_vreg)?;
                 self.terminate(MirInst::Jump { target: if_true });
             }
             Pattern::IgnoreValue => {
