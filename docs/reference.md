@@ -429,7 +429,9 @@ also support the `--pull` form. These lower to `bpf_skb_change_head`,
 `bpf_skb_change_tail`, `bpf_skb_pull_data`, and `bpf_skb_adjust_room`
 with the ambient skb context pointer materialized automatically. Raw
 `bpf_skb_change_head` calls require `head_room` to be `0..i32::MAX`
-and flags to be `0`. After XDP adjust helpers, previously
+and flags to be `0`; raw `bpf_skb_change_tail` calls require `new_len`
+to be `0..i32::MAX` and flags to be `0`. The kernel still enforces its
+configuration-dependent `BPF_SKB_MAX_LEN` ceiling at runtime. After XDP adjust helpers, previously
 loaded packet pointers are invalid and must be reloaded from
 `ctx.data`, `ctx.data_meta`, and `ctx.data_end` before further packet
 access. After skb relayout helpers, reload `ctx.data` and

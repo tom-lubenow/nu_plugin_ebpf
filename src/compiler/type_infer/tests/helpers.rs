@@ -3027,6 +3027,29 @@ fn make_skb_change_head_call(head_room: i64, flags: i64) -> MirFunction {
     func
 }
 
+fn make_skb_change_tail_call(new_len: i64, flags: i64) -> MirFunction {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SkbChangeTail as u32,
+        args: vec![
+            MirValue::VReg(ctx),
+            MirValue::Const(new_len),
+            MirValue::Const(flags),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+    func
+}
+
 #[test]
 fn test_type_error_skb_change_head_helper_requires_zero_flags() {
     let func = make_skb_change_head_call(14, 1);
@@ -3055,6 +3078,25 @@ fn test_type_error_skb_change_head_helper_rejects_invalid_head_room() {
                 "helper 'bpf_skb_change_head' requires arg1 head_room to be between 0 and i32::MAX"
             )),
             "unexpected errors for head_room {head_room}: {:?}",
+            errs
+        );
+    }
+}
+
+#[test]
+fn test_type_error_skb_change_tail_helper_rejects_invalid_new_len() {
+    for new_len in [-1_i64, 0x8000_0000] {
+        let func = make_skb_change_tail_call(new_len, 0);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected bpf_skb_change_tail new_len to be rejected");
+        assert!(
+            errs.iter().any(|e| e.message.contains(
+                "helper 'bpf_skb_change_tail' requires arg1 new_len to be between 0 and i32::MAX"
+            )),
+            "unexpected errors for new_len {new_len}: {:?}",
             errs
         );
     }

@@ -2674,6 +2674,14 @@ fn test_helpers_with_reserved_zero_flags() {
         Some((2, "helper 'bpf_skb_change_tail' requires arg2 = 0"))
     );
     assert_eq!(
+        BpfHelper::SkbChangeTail.scalar_arg_range_requirement(1),
+        Some((
+            0,
+            i32::MAX as i64,
+            "helper 'bpf_skb_change_tail' requires arg1 new_len to be between 0 and i32::MAX"
+        ))
+    );
+    assert_eq!(
         BpfHelper::SkbChangeHead.zero_scalar_arg_requirement(),
         Some((2, "helper 'bpf_skb_change_head' requires arg2 = 0"))
     );
