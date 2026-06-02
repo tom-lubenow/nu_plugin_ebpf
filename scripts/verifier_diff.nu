@@ -35782,6 +35782,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-list-bits-shift-unsigned-i64-runtime"
+        category: "language-core"
+        tags: [aggregate list bits shr number-bytes runtime]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ([(random int)] | bits shr 1 --number-bytes 8 | length) == 1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-scalar-bits-shift-signed-i64-runtime"
         category: "language-core"
         tags: [scalar bits shr signed number-bytes runtime]
@@ -35835,18 +35848,17 @@ const FIXTURES = [
         error_contains: "bits shl default auto-width shifts require compile-time known integer input"
     }
     {
-        name: "core-scalar-bits-shift-unsigned-i64-runtime-reject"
+        name: "core-scalar-bits-shift-unsigned-i64-runtime"
         category: "language-core"
-        tags: [scalar bits shr number-bytes runtime reject]
+        tags: [scalar bits shr number-bytes runtime]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
             '  (random int) | bits shr 1 --number-bytes 8'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "bits shr unsigned --number-bytes 8 requires compile-time known integer input"
+        local: "accept"
+        kernel: "accept"
     }
     {
         name: "core-scalar-bits-rotate-signed-i64"

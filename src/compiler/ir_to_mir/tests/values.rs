@@ -14089,12 +14089,64 @@ fn test_lower_bits_shift_default_rejects_runtime_scalar_integer_input() {
 }
 
 #[test]
-fn test_lower_bits_shift_unsigned_i64_rejects_runtime_scalar_integer_input() {
+fn test_lower_bits_shift_unsigned_i64_right_on_runtime_scalar_integer_input() {
     let bits_decl = DeclId::new(70142);
     let random_decl = DeclId::new(70143);
     let hir = make_runtime_scalar_bits_shift_program(bits_decl, random_decl, 1, false, Some(8));
     let decl_names = HashMap::from([
         (bits_decl, "bits shr".to_string()),
+        (random_decl, "random int".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bits shr --number-bytes 8 should lower runtime scalar input");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .any(|block| matches!(block.terminator, MirInst::Branch { .. })),
+        "expected runtime scalar bits shr --number-bytes 8 to branch on source sign"
+    );
+    for expected_op in [BinOpKind::ArShr, BinOpKind::Shr] {
+        assert!(
+            instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op,
+                    ..
+                } if *op == expected_op
+            )),
+            "expected runtime scalar bits shr --number-bytes 8 to emit {expected_op:?}"
+        );
+    }
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("bits shr --number-bytes 8 runtime scalar input should compile");
+}
+
+#[test]
+fn test_lower_bits_shift_unsigned_i64_left_rejects_runtime_scalar_integer_input() {
+    let bits_decl = DeclId::new(70144);
+    let random_decl = DeclId::new(70145);
+    let hir = make_runtime_scalar_bits_shift_program(bits_decl, random_decl, 1, false, Some(8));
+    let decl_names = HashMap::from([
+        (bits_decl, "bits shl".to_string()),
         (random_decl, "random int".to_string()),
     ]);
 
@@ -14106,11 +14158,11 @@ fn test_lower_bits_shift_unsigned_i64_rejects_runtime_scalar_integer_input() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("bits shr --number-bytes 8 should reject runtime scalar input");
+    .expect_err("bits shl --number-bytes 8 should reject runtime scalar input");
 
     assert!(
         err.to_string().contains(
-            "bits shr unsigned --number-bytes 8 requires compile-time known integer input"
+            "bits shl unsigned --number-bytes 8 requires compile-time known integer input"
         ),
         "unexpected error: {err}"
     );
@@ -16311,7 +16363,7 @@ fn test_lower_bits_shift_default_rejects_runtime_stack_numeric_lists() {
 }
 
 #[test]
-fn test_lower_bits_shift_unsigned_i64_rejects_runtime_stack_numeric_lists() {
+fn test_lower_bits_shift_unsigned_i64_right_on_runtime_stack_numeric_lists() {
     let bits_decl = DeclId::new(71960);
     let length_decl = DeclId::new(71961);
     let random_decl = DeclId::new(71962);
@@ -16329,6 +16381,73 @@ fn test_lower_bits_shift_unsigned_i64_rejects_runtime_stack_numeric_lists() {
         (random_decl, "random int".to_string()),
     ]);
 
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bits shr --number-bytes 8 should lower on runtime stack-backed numeric lists");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .any(|block| matches!(block.terminator, MirInst::Branch { .. })),
+        "expected runtime bits shr --number-bytes 8 list lowering to branch on item sign"
+    );
+    for expected_op in [BinOpKind::ArShr, BinOpKind::Shr] {
+        assert!(
+            instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op,
+                    ..
+                } if *op == expected_op
+            )),
+            "expected runtime bits shr --number-bytes 8 list lowering to emit {expected_op:?}"
+        );
+    }
+    assert!(
+        instructions
+            .iter()
+            .any(|inst| matches!(inst, MirInst::ListPush { .. })),
+        "expected runtime bits shr --number-bytes 8 to materialize an output list"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("bits shr --number-bytes 8 runtime list output consumed by length should compile");
+}
+
+#[test]
+fn test_lower_bits_shift_unsigned_i64_left_rejects_runtime_stack_numeric_lists() {
+    let bits_decl = DeclId::new(71963);
+    let length_decl = DeclId::new(71964);
+    let random_decl = DeclId::new(71965);
+    let hir = make_runtime_bits_shift_list_length_program(
+        bits_decl,
+        length_decl,
+        random_decl,
+        1,
+        false,
+        Some(8),
+    );
+    let decl_names = HashMap::from([
+        (bits_decl, "bits shl".to_string()),
+        (length_decl, "length".to_string()),
+        (random_decl, "random int".to_string()),
+    ]);
+
     let err = lower_hir_to_mir_with_hints(
         &hir,
         None,
@@ -16337,11 +16456,11 @@ fn test_lower_bits_shift_unsigned_i64_rejects_runtime_stack_numeric_lists() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("bits shr --number-bytes 8 should reject runtime stack-backed numeric lists");
+    .expect_err("bits shl --number-bytes 8 should reject runtime stack-backed numeric lists");
 
     assert!(
         err.to_string().contains(
-            "bits shr unsigned --number-bytes 8 requires compile-time known integer input"
+            "bits shl unsigned --number-bytes 8 requires compile-time known integer input"
         ),
         "unexpected error: {err}"
     );

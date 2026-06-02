@@ -829,9 +829,12 @@ impl<'a> HirToMirLowering<'a> {
                     "{cmd_name} integer mode supports --number-bytes 1, 2, 4, or 8 in eBPF; got {number_bytes}"
                 ))
             })?;
-            if matches!(mode, BitsShiftMode::UnsignedI64) && auto_input.is_none() {
+            if matches!(mode, BitsShiftMode::UnsignedI64)
+                && auto_input.is_none()
+                && cmd_name == "bits shl"
+            {
                 return Err(CompileError::UnsupportedInstruction(format!(
-                    "{cmd_name} unsigned --number-bytes 8 requires compile-time known integer input in eBPF; use --signed --number-bytes 8 for runtime 64-bit shifts"
+                    "{cmd_name} unsigned --number-bytes 8 requires compile-time known integer input in eBPF; use --signed --number-bytes 8 for runtime 64-bit left shifts"
                 )));
             }
             mode
@@ -1439,7 +1442,7 @@ impl<'a> HirToMirLowering<'a> {
                 });
             }
             BitsShiftMode::UnsignedI64 => {
-                unreachable!("unsigned 8-byte shifts require compile-time known integer input")
+                self.emit_bits_shift_unsigned_i64_value(cmd_name, dst, src, spec.count);
             }
             BitsShiftMode::FixedWidth { mask, sign_bit, .. } => {
                 let negative_block = self.func.alloc_block();
@@ -1488,6 +1491,71 @@ impl<'a> HirToMirLowering<'a> {
             }
         }
         self.vreg_type_hints.insert(dst, MirType::I64);
+    }
+
+    fn emit_bits_shift_unsigned_i64_value(
+        &mut self,
+        cmd_name: &str,
+        dst: VReg,
+        src: MirValue,
+        shift_count: i64,
+    ) {
+        match cmd_name {
+            "bits shl" => {
+                unreachable!("runtime unsigned 8-byte left shifts can exceed i64::MAX")
+            }
+            "bits shr" => {
+                if shift_count == 0 {
+                    self.emit(MirInst::Copy { dst, src });
+                    return;
+                }
+
+                let negative_block = self.func.alloc_block();
+                let non_negative_block = self.func.alloc_block();
+                let continuation_block = self.func.alloc_block();
+
+                let is_negative_vreg = self.func.alloc_vreg();
+                self.emit(MirInst::BinOp {
+                    dst: is_negative_vreg,
+                    op: BinOpKind::Lt,
+                    lhs: src.clone(),
+                    rhs: MirValue::Const(0),
+                });
+                self.vreg_type_hints.insert(is_negative_vreg, MirType::Bool);
+                self.terminate(MirInst::Branch {
+                    cond: is_negative_vreg,
+                    if_true: negative_block,
+                    if_false: non_negative_block,
+                });
+
+                self.current_block = negative_block;
+                self.emit(MirInst::BinOp {
+                    dst,
+                    op: BinOpKind::ArShr,
+                    lhs: src.clone(),
+                    rhs: MirValue::Const(shift_count),
+                });
+                self.vreg_type_hints.insert(dst, MirType::I64);
+                self.terminate(MirInst::Jump {
+                    target: continuation_block,
+                });
+
+                self.current_block = non_negative_block;
+                self.emit(MirInst::BinOp {
+                    dst,
+                    op: BinOpKind::Shr,
+                    lhs: src,
+                    rhs: MirValue::Const(shift_count),
+                });
+                self.vreg_type_hints.insert(dst, MirType::I64);
+                self.terminate(MirInst::Jump {
+                    target: continuation_block,
+                });
+
+                self.current_block = continuation_block;
+            }
+            _ => unreachable!("validated bits shift command"),
+        }
     }
 
     fn emit_bits_shift_fixed_unsigned_value(
