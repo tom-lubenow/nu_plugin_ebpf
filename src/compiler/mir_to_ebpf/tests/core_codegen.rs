@@ -545,6 +545,51 @@ fn test_binop_codegen_does_not_spill_r0_as_temp() {
 }
 
 #[test]
+fn test_arithmetic_shift_right_emits_arsh_opcode() {
+    let mut func = LirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let dst = func.alloc_vreg();
+    let lhs = func.alloc_vreg();
+    func.precolored.insert(dst, EbpfReg::R0);
+    func.precolored.insert(lhs, EbpfReg::R0);
+
+    func.block_mut(entry).instructions.push(LirInst::BinOp {
+        dst,
+        op: BinOpKind::ArShr,
+        lhs: MirValue::VReg(lhs),
+        rhs: MirValue::Const(1),
+    });
+    func.block_mut(entry).terminator = LirInst::Return {
+        val: Some(MirValue::VReg(dst)),
+    };
+
+    let program = LirProgram::new(func);
+    let mut compiler = MirToEbpfCompiler::new(&program, None);
+    compiler
+        .prepare_function_state(
+            &program.main,
+            compiler.available_regs.clone(),
+            program.main.precolored.clone(),
+        )
+        .expect("arithmetic shift program should prepare");
+    compiler
+        .compile_function(&program.main)
+        .expect("arithmetic shift program should compile");
+    compiler.fixup_jumps().expect("jump fixups should succeed");
+
+    assert!(
+        compiler.instructions.iter().any(|insn| {
+            insn.opcode == opcode::BPF_ALU64 | opcode::BPF_ARSH | opcode::BPF_K
+                && insn.dst_reg == EbpfReg::R0.as_u8()
+                && insn.imm == 1
+        }),
+        "arithmetic right shift should emit eBPF ARSH, not logical RSH"
+    );
+}
+
+#[test]
 fn test_parallel_move_stack_to_stack() {
     let program = LirProgram::new(LirFunction::new());
     let mut compiler = MirToEbpfCompiler::new(&program, None);

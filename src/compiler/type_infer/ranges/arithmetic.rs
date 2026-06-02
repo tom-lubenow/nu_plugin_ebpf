@@ -14,7 +14,7 @@ impl<'a> TypeInference<'a> {
             BinOpKind::Div => self.range_div(lhs, rhs),
             BinOpKind::Mod => self.range_mod(lhs, rhs),
             BinOpKind::Shl => self.range_shift(lhs, rhs, true),
-            BinOpKind::Shr => self.range_shift(lhs, rhs, false),
+            BinOpKind::Shr | BinOpKind::ArShr => self.range_shift(lhs, rhs, false),
             BinOpKind::And => self.range_and(lhs, rhs),
             BinOpKind::Or => self.range_or(lhs, rhs),
             BinOpKind::Xor => self.range_xor(lhs, rhs),

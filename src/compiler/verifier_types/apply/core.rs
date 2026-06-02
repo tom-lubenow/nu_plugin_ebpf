@@ -288,7 +288,13 @@ fn scalar_identity_source(
     let preserved = match (op, vreg(lhs), const_value(lhs), vreg(rhs), const_value(rhs)) {
         (BinOpKind::Add | BinOpKind::Or | BinOpKind::Xor, Some(reg), _, _, Some(0)) => Some(reg),
         (BinOpKind::Add | BinOpKind::Or | BinOpKind::Xor, _, Some(0), Some(reg), _) => Some(reg),
-        (BinOpKind::Sub | BinOpKind::Shl | BinOpKind::Shr, Some(reg), _, _, Some(0)) => Some(reg),
+        (
+            BinOpKind::Sub | BinOpKind::Shl | BinOpKind::Shr | BinOpKind::ArShr,
+            Some(reg),
+            _,
+            _,
+            Some(0),
+        ) => Some(reg),
         (BinOpKind::Mul, Some(reg), _, _, Some(1)) => Some(reg),
         (BinOpKind::Mul, _, Some(1), Some(reg), _) => Some(reg),
         (BinOpKind::Div, Some(reg), _, _, Some(1)) => Some(reg),
@@ -635,7 +641,8 @@ mod tests {
             (BinOpKind::Mul, one.clone(), reg.clone()),
             (BinOpKind::Div, reg.clone(), one.clone()),
             (BinOpKind::Shl, reg.clone(), zero.clone()),
-            (BinOpKind::Shr, reg, zero),
+            (BinOpKind::Shr, reg.clone(), zero.clone()),
+            (BinOpKind::ArShr, reg, zero),
         ];
 
         for (op, lhs, rhs) in cases {
@@ -656,7 +663,8 @@ mod tests {
             (BinOpKind::Mul, reg.clone(), MirValue::Const(2)),
             (BinOpKind::Div, MirValue::Const(1), reg.clone()),
             (BinOpKind::Shl, MirValue::Const(0), reg.clone()),
-            (BinOpKind::Shr, MirValue::Const(0), reg),
+            (BinOpKind::Shr, MirValue::Const(0), reg.clone()),
+            (BinOpKind::ArShr, MirValue::Const(0), reg),
         ];
 
         for (op, lhs, rhs) in cases {

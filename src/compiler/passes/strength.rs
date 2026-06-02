@@ -354,7 +354,7 @@ impl StrengthReduction {
             }
 
             // Shift reductions
-            BinOpKind::Shl | BinOpKind::Shr => {
+            BinOpKind::Shl | BinOpKind::Shr | BinOpKind::ArShr => {
                 // x << 0 = x, x >> 0 = x
                 if rhs_const == Some(0) {
                     return Some(MirInst::Copy {

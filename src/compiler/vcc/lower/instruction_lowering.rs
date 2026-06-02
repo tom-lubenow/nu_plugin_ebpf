@@ -95,7 +95,13 @@ impl<'a> VccLowerer<'a> {
             (BinOpKind::Add | BinOpKind::Or | BinOpKind::Xor, _, Some(0), Some(reg), _) => {
                 Some(reg)
             }
-            (BinOpKind::Sub | BinOpKind::Shl | BinOpKind::Shr, Some(reg), _, _, Some(0)) => {
+            (
+                BinOpKind::Sub | BinOpKind::Shl | BinOpKind::Shr | BinOpKind::ArShr,
+                Some(reg),
+                _,
+                _,
+                Some(0),
+            ) => {
                 Some(reg)
             }
             (BinOpKind::Mul, Some(reg), _, _, Some(1)) => Some(reg),

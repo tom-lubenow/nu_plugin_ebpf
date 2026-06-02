@@ -23,7 +23,7 @@ impl<'a> HirToMirLowering<'a> {
     fn bits_shift_op(cmd_name: &str) -> BinOpKind {
         match cmd_name {
             "bits shl" => BinOpKind::Shl,
-            "bits shr" => BinOpKind::Shr,
+            "bits shr" => BinOpKind::ArShr,
             _ => unreachable!("validated bits shift command"),
         }
     }

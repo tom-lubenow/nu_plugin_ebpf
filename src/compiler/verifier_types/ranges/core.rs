@@ -66,7 +66,7 @@ pub(in crate::compiler::verifier_types) fn range_for_binop(
         BinOpKind::Div => range_div(lhs_range, rhs_range),
         BinOpKind::Mod => range_mod(lhs_range, rhs_range),
         BinOpKind::Shl => range_shift(lhs_range, rhs_range, true),
-        BinOpKind::Shr => range_shift(lhs_range, rhs_range, false),
+        BinOpKind::Shr | BinOpKind::ArShr => range_shift(lhs_range, rhs_range, false),
         BinOpKind::And => range_and(lhs_range, rhs_range),
         BinOpKind::Or => range_or(lhs_range, rhs_range),
         BinOpKind::Xor => range_xor(lhs_range, rhs_range),

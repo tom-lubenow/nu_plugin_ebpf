@@ -501,7 +501,8 @@ impl<'a> TypeInference<'a> {
                     | BinOpKind::Or
                     | BinOpKind::Xor
                     | BinOpKind::Shl
-                    | BinOpKind::Shr => {
+                    | BinOpKind::Shr
+                    | BinOpKind::ArShr => {
                         if lhs_ptr.is_some() || rhs_ptr.is_some() {
                             errors.push(TypeError::new(
                                 "bitwise/arithmetic ops on pointers are not supported".to_string(),

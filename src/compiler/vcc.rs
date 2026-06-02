@@ -907,7 +907,7 @@ fn to_vcc_binop(op: BinOpKind) -> VccBinOp {
         BinOpKind::Or => VccBinOp::Or,
         BinOpKind::Xor => VccBinOp::Xor,
         BinOpKind::Shl => VccBinOp::Shl,
-        BinOpKind::Shr => VccBinOp::Shr,
+        BinOpKind::Shr | BinOpKind::ArShr => VccBinOp::Shr,
         BinOpKind::Eq => VccBinOp::Eq,
         BinOpKind::Ne => VccBinOp::Ne,
         BinOpKind::Lt => VccBinOp::Lt,

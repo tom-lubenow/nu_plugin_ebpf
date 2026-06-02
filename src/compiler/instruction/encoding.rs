@@ -151,6 +151,16 @@ impl EbpfInsn {
         Self::new(opcode::RSH64_REG, dst.as_u8(), src.as_u8(), 0, 0)
     }
 
+    /// ARSH64 dst, imm - Arithmetic right shift register by immediate
+    pub const fn arsh64_imm(dst: EbpfReg, imm: i32) -> Self {
+        Self::new(opcode::ARSH64_IMM, dst.as_u8(), 0, 0, imm)
+    }
+
+    /// ARSH64 dst, src - Arithmetic right shift register by register
+    pub const fn arsh64_reg(dst: EbpfReg, src: EbpfReg) -> Self {
+        Self::new(opcode::ARSH64_REG, dst.as_u8(), src.as_u8(), 0, 0)
+    }
+
     /// CALL helper - Call a BPF helper function
     pub const fn call(helper: BpfHelper) -> Self {
         Self::new(opcode::CALL, 0, 0, 0, helper as i32)

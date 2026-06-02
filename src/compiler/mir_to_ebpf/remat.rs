@@ -145,6 +145,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             BinOpKind::Xor => Some(lhs ^ rhs),
             BinOpKind::Shl => Some(lhs << (rhs & 63)),
             BinOpKind::Shr => Some(lhs >> (rhs & 63)),
+            BinOpKind::ArShr => Some(lhs >> (rhs & 63)),
             BinOpKind::Eq => Some(if lhs == rhs { 1 } else { 0 }),
             BinOpKind::Ne => Some(if lhs != rhs { 1 } else { 0 }),
             BinOpKind::Lt => Some(if lhs < rhs { 1 } else { 0 }),

@@ -1450,6 +1450,7 @@ pub enum BinOpKind {
     Xor,
     Shl,
     Shr,
+    ArShr,
 
     // Comparison (result is 0 or 1)
     Eq,
@@ -1473,6 +1474,7 @@ impl fmt::Display for BinOpKind {
             BinOpKind::Xor => "^",
             BinOpKind::Shl => "<<",
             BinOpKind::Shr => ">>",
+            BinOpKind::ArShr => "a>>",
             BinOpKind::Eq => "==",
             BinOpKind::Ne => "!=",
             BinOpKind::Lt => "<",

@@ -319,7 +319,7 @@ impl<'a> TypeInference<'a> {
 
             BinOpKind::And | BinOpKind::Or | BinOpKind::Xor => Ok(self.promote_numeric(lhs, rhs)),
 
-            BinOpKind::Shl | BinOpKind::Shr => {
+            BinOpKind::Shl | BinOpKind::Shr | BinOpKind::ArShr => {
                 // Shift result type is lhs type
                 Ok(lhs.clone())
             }

@@ -12057,7 +12057,7 @@ fn test_lower_bits_not_signed_on_runtime_stack_numeric_lists() {
 fn test_lower_bits_shift_signed_i64_on_runtime_stack_numeric_lists() {
     for (offset, command_name, expected_op) in [
         (0, "bits shl", BinOpKind::Shl),
-        (1, "bits shr", BinOpKind::Shr),
+        (1, "bits shr", BinOpKind::ArShr),
     ] {
         let bits_decl = DeclId::new(7040 + offset);
         let length_decl = DeclId::new(7050 + offset);

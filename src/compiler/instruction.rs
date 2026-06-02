@@ -1901,6 +1901,8 @@ pub mod opcode {
     pub const LSH64_REG: u8 = BPF_ALU64 | BPF_LSH | BPF_X; // 0x6f
     pub const RSH64_IMM: u8 = BPF_ALU64 | BPF_RSH | BPF_K; // 0x77
     pub const RSH64_REG: u8 = BPF_ALU64 | BPF_RSH | BPF_X; // 0x7f
+    pub const ARSH64_IMM: u8 = BPF_ALU64 | BPF_ARSH | BPF_K; // 0xc7
+    pub const ARSH64_REG: u8 = BPF_ALU64 | BPF_ARSH | BPF_X; // 0xcf
     pub const CALL: u8 = BPF_JMP | BPF_CALL; // 0x85
     pub const EXIT: u8 = BPF_JMP | BPF_EXIT; // 0x95
     pub const LD_DW_IMM: u8 = BPF_LD | BPF_DW | BPF_IMM; // 0x18 (64-bit immediate load)

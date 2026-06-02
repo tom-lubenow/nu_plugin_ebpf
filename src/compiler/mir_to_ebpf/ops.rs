@@ -160,6 +160,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             BinOpKind::Xor => self.instructions.push(EbpfInsn::xor64_reg(dst, rhs)),
             BinOpKind::Shl => self.instructions.push(EbpfInsn::lsh64_reg(dst, rhs)),
             BinOpKind::Shr => self.instructions.push(EbpfInsn::rsh64_reg(dst, rhs)),
+            BinOpKind::ArShr => self.instructions.push(EbpfInsn::arsh64_reg(dst, rhs)),
             // Comparisons - set to 1, conditionally jump over setting to 0
             BinOpKind::Eq
             | BinOpKind::Ne
@@ -192,6 +193,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             BinOpKind::Xor => self.instructions.push(EbpfInsn::xor64_imm(dst, imm)),
             BinOpKind::Shl => self.instructions.push(EbpfInsn::lsh64_imm(dst, imm)),
             BinOpKind::Shr => self.instructions.push(EbpfInsn::rsh64_imm(dst, imm)),
+            BinOpKind::ArShr => self.instructions.push(EbpfInsn::arsh64_imm(dst, imm)),
             // Comparisons
             BinOpKind::Eq
             | BinOpKind::Ne
