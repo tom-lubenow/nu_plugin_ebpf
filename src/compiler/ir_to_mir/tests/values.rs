@@ -10115,6 +10115,134 @@ fn make_math_abs_program(abs_decl: DeclId, input: i64) -> HirProgram {
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_integer_list_pipeline_call_program(decl_id: DeclId, values: &[i64]) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::list(
+                        values
+                            .iter()
+                            .map(|value| Value::int(*value, Span::test_data()))
+                            .collect(),
+                        Span::test_data(),
+                    )),
+                },
+                HirStmt::Call {
+                    decl_id,
+                    src_dst: RegId::new(1),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 2,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+#[test]
+fn test_lower_math_median_on_known_odd_integer_list_materializes_median() {
+    let median_decl = DeclId::new(520);
+    let hir = make_integer_list_pipeline_call_program(median_decl, &[30, 10, 20]);
+    let decl_names = HashMap::from([(median_decl, "math median".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("math median should lower compile-time known odd integer-list input");
+
+    assert_program_returns_constant(&result.program, 20, "math median");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("math median should compile through codegen");
+}
+
+#[test]
+fn test_lower_math_median_on_seq_output_materializes_median() {
+    let seq_decl = DeclId::new(521);
+    let median_decl = DeclId::new(522);
+    let hir = make_seq_pipeline_call_program(seq_decl, median_decl, &[1, 5]);
+    let decl_names = HashMap::from([
+        (seq_decl, "seq".to_string()),
+        (median_decl, "math median".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("math median should consume compile-time known seq output");
+
+    assert_program_returns_constant(&result.program, 3, "seq math median");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("seq output consumed by math median should compile through codegen");
+}
+
+#[test]
+fn test_lower_math_median_rejects_even_length_integer_list() {
+    let median_decl = DeclId::new(523);
+    let hir = make_integer_list_pipeline_call_program(median_decl, &[1, 3]);
+    let decl_names = HashMap::from([(median_decl, "math median".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("math median should reject even-length integer lists");
+
+    assert!(
+        err.to_string()
+            .contains("math median requires an odd-length integer list"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_math_median_rejects_empty_integer_list() {
+    let median_decl = DeclId::new(524);
+    let hir = make_integer_list_pipeline_call_program(median_decl, &[]);
+    let decl_names = HashMap::from([(median_decl, "math median".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("math median should reject empty integer lists");
+
+    assert!(
+        err.to_string()
+            .contains("math median requires a non-empty integer list"),
+        "unexpected error: {err}"
+    );
+}
+
 #[test]
 fn test_lower_math_abs_on_known_integer_returns_absolute_value() {
     let abs_decl = DeclId::new(262);

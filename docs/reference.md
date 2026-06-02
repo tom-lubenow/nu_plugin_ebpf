@@ -893,6 +893,7 @@ eBPF layout and verifier bounds are explicit:
 | `str camel-case` / `str kebab-case` / `str pascal-case` / `str screaming-snake-case` / `str snake-case` / `str title-case` | Compile-time known string or string-list input in the default whole-string case-conversion mode |
 | `length` | Stack-backed numeric lists, compile-time known list constants, literal binary, and literal null values |
 | `math sum` / `math product` / `math min` / `math max` | Stack-backed numeric lists with known non-empty length; empty-list input is rejected to match Nushell semantics |
+| `math median` | Compile-time known odd-length integer lists, returning the integer median; empty lists, even-length lists, runtime lists, and float medians are not supported |
 | `math abs` | Compile-time known integer or integer-list input, rejecting the unrepresentable `i64::MIN` absolute value |
 | `first` / `last` | Scalar first/last element access for stack-backed numeric lists and compile-time known fixed lists; counted forms rebuild bounded prefix/suffix stack-list slices for stack-backed numeric lists and constant-fold compile-time known fixed lists |
 | `get` | Stack-backed numeric-list indexing, constant-index item projection from compile-time known fixed lists, top-level metadata-backed fixed-record field projection, typed context / BTF-backed pointer field projection with compiler-visible field paths such as `$ctx | get sk | get family`, and typed kernel/user pointer numeric indexing; list literal indexes may be literal cell paths |

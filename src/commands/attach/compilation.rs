@@ -92,6 +92,7 @@ const NU_CLOSURE_COMMANDS: &[&str] = &[
     "str title-case",
     "length",
     "math max",
+    "math median",
     "math min",
     "math product",
     "math sum",

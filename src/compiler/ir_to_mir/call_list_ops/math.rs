@@ -1,6 +1,79 @@
 use super::*;
 
 impl<'a> HirToMirLowering<'a> {
+    pub(in crate::compiler::ir_to_mir) fn lower_compile_time_math_median(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+    ) -> Result<(), CompileError> {
+        let input_reg = self
+            .pipeline_input_reg
+            .or(src_dst_had_value.then_some(src_dst));
+
+        if !self.named_flags.is_empty()
+            || !self.named_args.is_empty()
+            || !self.positional_args.is_empty()
+        {
+            return Err(CompileError::UnsupportedInstruction(
+                "math median does not accept arguments in eBPF".into(),
+            ));
+        }
+
+        let input_meta = input_reg
+            .and_then(|reg| self.get_metadata(reg).cloned())
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "math median requires compile-time known integer-list input in eBPF".into(),
+                )
+            })?;
+        let Some(nu_protocol::Value::List { vals, .. }) = input_meta.constant_value else {
+            return Err(CompileError::UnsupportedInstruction(
+                "math median requires compile-time known integer-list input in eBPF".into(),
+            ));
+        };
+        if vals.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(
+                "math median requires a non-empty integer list in eBPF".into(),
+            ));
+        }
+        if vals.len() % 2 == 0 {
+            return Err(CompileError::UnsupportedInstruction(
+                "math median requires an odd-length integer list in eBPF because even-length medians are floats in Nushell".into(),
+            ));
+        }
+
+        let mut ints = Vec::with_capacity(vals.len());
+        for (index, value) in vals.into_iter().enumerate() {
+            let nu_protocol::Value::Int { val, .. } = value else {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "math median requires integer list items in eBPF; item {index} has type {}",
+                    value.get_type()
+                )));
+            };
+            ints.push(val);
+        }
+        ints.sort_unstable();
+        let median = ints[ints.len() / 2];
+
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+        self.emit(MirInst::Copy {
+            dst: result_vreg,
+            src: MirValue::Const(median),
+        });
+        self.reset_call_result_metadata(src_dst);
+        let out_meta = self.get_or_create_metadata(src_dst);
+        out_meta.field_type = Some(MirType::I64);
+        out_meta.literal_int = Some(median);
+        out_meta.constant_value = Some(nu_protocol::Value::int(median, Span::unknown()));
+        self.vreg_type_hints.insert(result_vreg, MirType::I64);
+        Ok(())
+    }
+
     pub(in crate::compiler::ir_to_mir) fn lower_stack_list_math_reduce(
         &mut self,
         cmd_name: &str,

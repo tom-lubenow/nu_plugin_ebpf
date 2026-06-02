@@ -35256,6 +35256,32 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-list-math-median"
+        category: "language-core"
+        tags: [aggregate list math median]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [20 10 30] | math median'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-seq-math-median"
+        category: "language-core"
+        tags: [aggregate list seq math median]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  seq 1 5 | math median'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-math-min-single"
         category: "language-core"
         tags: [aggregate list math min]
