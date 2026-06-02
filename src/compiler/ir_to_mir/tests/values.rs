@@ -10556,34 +10556,53 @@ fn make_bits_shift_signed_i64_program(
     input: i64,
     shift_count: i64,
 ) -> HirProgram {
+    make_bits_shift_program(bits_decl, input, shift_count, true, Some(8))
+}
+
+fn make_bits_shift_program(
+    bits_decl: DeclId,
+    input: i64,
+    shift_count: i64,
+    signed: bool,
+    number_bytes: Option<i64>,
+) -> HirProgram {
+    let mut stmts = vec![
+        HirStmt::LoadLiteral {
+            dst: RegId::new(0),
+            lit: HirLiteral::Int(input),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: HirLiteral::Int(shift_count),
+        },
+    ];
+    let named = if let Some(number_bytes) = number_bytes {
+        stmts.push(HirStmt::LoadLiteral {
+            dst: RegId::new(2),
+            lit: HirLiteral::Int(number_bytes),
+        });
+        vec![(b"number-bytes".to_vec(), RegId::new(2))]
+    } else {
+        Vec::new()
+    };
+
     let func = HirFunction {
         blocks: vec![HirBlock {
             id: HirBlockId(0),
-            stmts: vec![
-                HirStmt::LoadLiteral {
-                    dst: RegId::new(0),
-                    lit: HirLiteral::Int(input),
-                },
-                HirStmt::LoadLiteral {
-                    dst: RegId::new(1),
-                    lit: HirLiteral::Int(shift_count),
-                },
-                HirStmt::LoadLiteral {
-                    dst: RegId::new(2),
-                    lit: HirLiteral::Int(8),
-                },
-                HirStmt::Call {
+            stmts: {
+                stmts.push(HirStmt::Call {
                     decl_id: bits_decl,
                     src_dst: RegId::new(3),
                     args: HirCallArgs {
                         pipeline_input: Some(RegId::new(0)),
                         positional: vec![RegId::new(1)],
-                        named: vec![(b"number-bytes".to_vec(), RegId::new(2))],
-                        flags: vec![b"signed".to_vec()],
+                        named,
+                        flags: signed.then(|| b"signed".to_vec()).into_iter().collect(),
                         ..HirCallArgs::default()
                     },
-                },
-            ],
+                });
+                stmts
+            },
             terminator: HirTerminator::Return { src: RegId::new(3) },
         }],
         entry: HirBlockId(0),
@@ -10696,48 +10715,68 @@ fn make_bits_shift_signed_i64_list_sum_program(
     values: &[i64],
     shift_count: i64,
 ) -> HirProgram {
+    make_bits_shift_list_sum_program(bits_decl, sum_decl, values, shift_count, true, Some(8))
+}
+
+fn make_bits_shift_list_sum_program(
+    bits_decl: DeclId,
+    sum_decl: DeclId,
+    values: &[i64],
+    shift_count: i64,
+    signed: bool,
+    number_bytes: Option<i64>,
+) -> HirProgram {
+    let mut stmts = vec![
+        HirStmt::LoadValue {
+            dst: RegId::new(0),
+            val: Box::new(Value::list(
+                values
+                    .iter()
+                    .map(|value| Value::int(*value, Span::test_data()))
+                    .collect(),
+                Span::test_data(),
+            )),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: HirLiteral::Int(shift_count),
+        },
+    ];
+    let named = if let Some(number_bytes) = number_bytes {
+        stmts.push(HirStmt::LoadLiteral {
+            dst: RegId::new(2),
+            lit: HirLiteral::Int(number_bytes),
+        });
+        vec![(b"number-bytes".to_vec(), RegId::new(2))]
+    } else {
+        Vec::new()
+    };
+
     let func = HirFunction {
         blocks: vec![HirBlock {
             id: HirBlockId(0),
-            stmts: vec![
-                HirStmt::LoadValue {
-                    dst: RegId::new(0),
-                    val: Box::new(Value::list(
-                        values
-                            .iter()
-                            .map(|value| Value::int(*value, Span::test_data()))
-                            .collect(),
-                        Span::test_data(),
-                    )),
-                },
-                HirStmt::LoadLiteral {
-                    dst: RegId::new(1),
-                    lit: HirLiteral::Int(shift_count),
-                },
-                HirStmt::LoadLiteral {
-                    dst: RegId::new(2),
-                    lit: HirLiteral::Int(8),
-                },
-                HirStmt::Call {
+            stmts: {
+                stmts.push(HirStmt::Call {
                     decl_id: bits_decl,
                     src_dst: RegId::new(3),
                     args: HirCallArgs {
                         pipeline_input: Some(RegId::new(0)),
                         positional: vec![RegId::new(1)],
-                        named: vec![(b"number-bytes".to_vec(), RegId::new(2))],
-                        flags: vec![b"signed".to_vec()],
+                        named,
+                        flags: signed.then(|| b"signed".to_vec()).into_iter().collect(),
                         ..HirCallArgs::default()
                     },
-                },
-                HirStmt::Call {
+                });
+                stmts.push(HirStmt::Call {
                     decl_id: sum_decl,
                     src_dst: RegId::new(4),
                     args: HirCallArgs {
                         pipeline_input: Some(RegId::new(3)),
                         ..HirCallArgs::default()
                     },
-                },
-            ],
+                });
+                stmts
+            },
             terminator: HirTerminator::Return { src: RegId::new(4) },
         }],
         entry: HirBlockId(0),
@@ -10878,34 +10917,53 @@ fn make_bits_shift_signed_i64_value_list_program(
     values: Vec<Value>,
     shift_count: i64,
 ) -> HirProgram {
+    make_bits_shift_value_list_program(bits_decl, values, shift_count, true, Some(8))
+}
+
+fn make_bits_shift_value_list_program(
+    bits_decl: DeclId,
+    values: Vec<Value>,
+    shift_count: i64,
+    signed: bool,
+    number_bytes: Option<i64>,
+) -> HirProgram {
+    let mut stmts = vec![
+        HirStmt::LoadValue {
+            dst: RegId::new(0),
+            val: Box::new(Value::list(values, Span::test_data())),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: HirLiteral::Int(shift_count),
+        },
+    ];
+    let named = if let Some(number_bytes) = number_bytes {
+        stmts.push(HirStmt::LoadLiteral {
+            dst: RegId::new(2),
+            lit: HirLiteral::Int(number_bytes),
+        });
+        vec![(b"number-bytes".to_vec(), RegId::new(2))]
+    } else {
+        Vec::new()
+    };
+
     let func = HirFunction {
         blocks: vec![HirBlock {
             id: HirBlockId(0),
-            stmts: vec![
-                HirStmt::LoadValue {
-                    dst: RegId::new(0),
-                    val: Box::new(Value::list(values, Span::test_data())),
-                },
-                HirStmt::LoadLiteral {
-                    dst: RegId::new(1),
-                    lit: HirLiteral::Int(shift_count),
-                },
-                HirStmt::LoadLiteral {
-                    dst: RegId::new(2),
-                    lit: HirLiteral::Int(8),
-                },
-                HirStmt::Call {
+            stmts: {
+                stmts.push(HirStmt::Call {
                     decl_id: bits_decl,
                     src_dst: RegId::new(3),
                     args: HirCallArgs {
                         pipeline_input: Some(RegId::new(0)),
                         positional: vec![RegId::new(1)],
-                        named: vec![(b"number-bytes".to_vec(), RegId::new(2))],
-                        flags: vec![b"signed".to_vec()],
+                        named,
+                        flags: signed.then(|| b"signed".to_vec()).into_iter().collect(),
                         ..HirCallArgs::default()
                     },
-                },
-            ],
+                });
+                stmts
+            },
             terminator: HirTerminator::Return { src: RegId::new(3) },
         }],
         entry: HirBlockId(0),
@@ -12253,6 +12311,44 @@ fn test_lower_bits_shift_signed_i64_on_known_integer_inputs() {
 }
 
 #[test]
+fn test_lower_bits_shift_number_bytes_on_known_integer_inputs() {
+    for (offset, command_name, input, shift_count, number_bytes, expected) in [
+        (0, "bits shl", 255, 1, 1, 254),
+        (1, "bits shl", -129, 1, 1, -2),
+        (2, "bits shr", 255, 1, 1, 127),
+        (3, "bits shr", -65, 1, 1, -33),
+        (4, "bits shl", 65_535, 1, 2, 65_534),
+        (5, "bits shr", -32_769, 1, 2, 16_383),
+        (6, "bits shl", 65_536, 1, 4, 131_072),
+        (7, "bits shr", -32_769, 1, 4, -16_385),
+    ] {
+        let decl = DeclId::new(70000 + offset);
+        let hir = make_bits_shift_program(decl, input, shift_count, false, Some(number_bytes));
+        let decl_names = HashMap::from([(decl, command_name.to_string())]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("{command_name} --number-bytes {number_bytes} should lower integer input: {err}")
+        });
+
+        assert_program_returns_constant(
+            &result.program,
+            expected,
+            &format!("{command_name} --number-bytes {number_bytes}"),
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{command_name} should compile through codegen: {err}"));
+    }
+}
+
+#[test]
 fn test_lower_bits_shift_signed_i64_on_known_integer_lists() {
     for (offset, command_name, values, expected_values) in [
         (0, "bits shl", vec![4i64, 3, 2], vec![8i64, 6, 4]),
@@ -12297,6 +12393,53 @@ fn test_lower_bits_shift_signed_i64_on_known_integer_lists() {
 }
 
 #[test]
+fn test_lower_bits_shift_number_bytes_on_known_integer_lists() {
+    for (offset, command_name, values, expected_values) in [
+        (0, "bits shl", vec![127i64, 128, -129], vec![254i64, 0, -2]),
+        (
+            1,
+            "bits shr",
+            vec![255i64, -65, -129],
+            vec![127i64, -33, 63],
+        ),
+    ] {
+        let bits_decl = DeclId::new(70100 + offset);
+        let sum_decl = DeclId::new(70200 + offset);
+        let hir = make_bits_shift_list_sum_program(bits_decl, sum_decl, &values, 1, false, Some(1));
+        let decl_names = HashMap::from([
+            (bits_decl, command_name.to_string()),
+            (sum_decl, "math sum".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("{command_name} --number-bytes 1 should lower integer-list input: {err}")
+        });
+        let expected = expected_values
+            .into_iter()
+            .flat_map(|value| value.to_le_bytes())
+            .collect::<Vec<_>>();
+
+        assert!(
+            result
+                .readonly_globals
+                .iter()
+                .any(|global| global.data == expected),
+            "expected {command_name} --number-bytes 1 to materialize the shifted integer list"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{command_name} should compile through codegen: {err}"));
+    }
+}
+
+#[test]
 fn test_lower_bits_shift_default_is_rejected() {
     let bits_decl = DeclId::new(7030);
     let hir = make_bits_binary_program(bits_decl, 4, 1);
@@ -12314,7 +12457,7 @@ fn test_lower_bits_shift_default_is_rejected() {
 
     assert!(
         err.to_string()
-            .contains("bits shl currently requires --signed --number-bytes 8"),
+            .contains("bits shl default auto-width shifts are not supported"),
         "unexpected error: {err}"
     );
 }
@@ -12338,6 +12481,52 @@ fn test_lower_bits_shift_rejects_out_of_range_shift_count() {
     assert!(
         err.to_string()
             .contains("bits shl requires a shift count from 0 through 63"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_bits_shift_number_bytes_rejects_out_of_range_shift_count() {
+    let bits_decl = DeclId::new(70311);
+    let hir = make_bits_shift_program(bits_decl, 1, 8, false, Some(1));
+    let decl_names = HashMap::from([(bits_decl, "bits shl".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("bits shl --number-bytes 1 should reject shift count 8");
+
+    assert!(
+        err.to_string()
+            .contains("bits shl requires a shift count from 0 through 7"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_bits_shift_rejects_unsupported_number_bytes() {
+    let bits_decl = DeclId::new(70312);
+    let hir = make_bits_shift_program(bits_decl, 1, 1, false, Some(8));
+    let decl_names = HashMap::from([(bits_decl, "bits shl".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("bits shl --number-bytes 8 without --signed should remain unsupported");
+
+    assert!(
+        err.to_string()
+            .contains("bits shl explicit-width integer mode supports --number-bytes 1, 2, or 4"),
         "unexpected error: {err}"
     );
 }
@@ -12859,51 +13048,78 @@ fn make_runtime_bits_shift_signed_i64_list_length_program(
     random_decl: DeclId,
     shift_count: i64,
 ) -> HirProgram {
+    make_runtime_bits_shift_list_length_program(
+        bits_decl,
+        length_decl,
+        random_decl,
+        shift_count,
+        true,
+        Some(8),
+    )
+}
+
+fn make_runtime_bits_shift_list_length_program(
+    bits_decl: DeclId,
+    length_decl: DeclId,
+    random_decl: DeclId,
+    shift_count: i64,
+    signed: bool,
+    number_bytes: Option<i64>,
+) -> HirProgram {
+    let mut stmts = vec![
+        HirStmt::LoadLiteral {
+            dst: RegId::new(0),
+            lit: HirLiteral::List { capacity: 1 },
+        },
+        HirStmt::Call {
+            decl_id: random_decl,
+            src_dst: RegId::new(1),
+            args: HirCallArgs::default(),
+        },
+        HirStmt::ListPush {
+            src_dst: RegId::new(0),
+            item: RegId::new(1),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(2),
+            lit: HirLiteral::Int(shift_count),
+        },
+    ];
+    let named = if let Some(number_bytes) = number_bytes {
+        stmts.push(HirStmt::LoadLiteral {
+            dst: RegId::new(3),
+            lit: HirLiteral::Int(number_bytes),
+        });
+        vec![(b"number-bytes".to_vec(), RegId::new(3))]
+    } else {
+        Vec::new()
+    };
+
     let func = HirFunction {
         blocks: vec![HirBlock {
             id: HirBlockId(0),
-            stmts: vec![
-                HirStmt::LoadLiteral {
-                    dst: RegId::new(0),
-                    lit: HirLiteral::List { capacity: 1 },
-                },
-                HirStmt::Call {
-                    decl_id: random_decl,
-                    src_dst: RegId::new(1),
-                    args: HirCallArgs::default(),
-                },
-                HirStmt::ListPush {
-                    src_dst: RegId::new(0),
-                    item: RegId::new(1),
-                },
-                HirStmt::LoadLiteral {
-                    dst: RegId::new(2),
-                    lit: HirLiteral::Int(shift_count),
-                },
-                HirStmt::LoadLiteral {
-                    dst: RegId::new(3),
-                    lit: HirLiteral::Int(8),
-                },
-                HirStmt::Call {
+            stmts: {
+                stmts.push(HirStmt::Call {
                     decl_id: bits_decl,
                     src_dst: RegId::new(4),
                     args: HirCallArgs {
                         pipeline_input: Some(RegId::new(0)),
                         positional: vec![RegId::new(2)],
-                        named: vec![(b"number-bytes".to_vec(), RegId::new(3))],
-                        flags: vec![b"signed".to_vec()],
+                        named,
+                        flags: signed.then(|| b"signed".to_vec()).into_iter().collect(),
                         ..HirCallArgs::default()
                     },
-                },
-                HirStmt::Call {
+                });
+                stmts.push(HirStmt::Call {
                     decl_id: length_decl,
                     src_dst: RegId::new(5),
                     args: HirCallArgs {
                         pipeline_input: Some(RegId::new(4)),
                         ..HirCallArgs::default()
                     },
-                },
-            ],
+                });
+                stmts
+            },
             terminator: HirTerminator::Return { src: RegId::new(5) },
         }],
         entry: HirBlockId(0),
@@ -13267,6 +13483,94 @@ fn test_lower_bits_shift_signed_i64_on_runtime_stack_numeric_lists() {
             .unwrap_or_else(|err| {
                 panic!(
                     "{command_name} runtime list output consumed by length should compile: {err}"
+                )
+            });
+    }
+}
+
+#[test]
+fn test_lower_bits_shift_number_bytes_on_runtime_stack_numeric_lists() {
+    for (offset, command_name, expected_shift_op) in [
+        (0, "bits shl", BinOpKind::Shl),
+        (1, "bits shr", BinOpKind::Shr),
+    ] {
+        let bits_decl = DeclId::new(7140 + offset);
+        let length_decl = DeclId::new(7150 + offset);
+        let random_decl = DeclId::new(7160 + offset);
+        let hir = make_runtime_bits_shift_list_length_program(
+            bits_decl,
+            length_decl,
+            random_decl,
+            1,
+            false,
+            Some(1),
+        );
+        let decl_names = HashMap::from([
+            (bits_decl, command_name.to_string()),
+            (length_decl, "length".to_string()),
+            (random_decl, "random int".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!(
+                "{command_name} --number-bytes 1 should lower on runtime stack-backed numeric lists: {err}"
+            )
+        });
+        let instructions = result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .collect::<Vec<_>>();
+
+        assert!(
+            result
+                .program
+                .main
+                .blocks
+                .iter()
+                .any(|block| matches!(block.terminator, MirInst::Branch { .. })),
+            "expected runtime {command_name} --number-bytes 1 to branch on source sign"
+        );
+        assert!(
+            instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op: BinOpKind::And,
+                    ..
+                }
+            )),
+            "expected runtime {command_name} --number-bytes 1 to mask values"
+        );
+        assert!(
+            instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op,
+                    ..
+                } if *op == expected_shift_op
+            )),
+            "expected runtime {command_name} --number-bytes 1 to emit {expected_shift_op:?}"
+        );
+        assert!(
+            instructions
+                .iter()
+                .any(|inst| matches!(inst, MirInst::ListPush { .. })),
+            "expected runtime {command_name} --number-bytes 1 to materialize an output list"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!(
+                    "{command_name} --number-bytes 1 runtime list output consumed by length should compile: {err}"
                 )
             });
     }

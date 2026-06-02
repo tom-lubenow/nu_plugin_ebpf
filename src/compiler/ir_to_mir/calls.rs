@@ -4027,7 +4027,7 @@ impl<'a> HirToMirLowering<'a> {
             }
 
             "bits shl" | "bits shr" => {
-                self.lower_bits_shift_signed_i64(&cmd_name, src_dst, dst_vreg, src_dst_had_value)?;
+                self.lower_bits_shift(&cmd_name, src_dst, dst_vreg, src_dst_had_value)?;
             }
 
             "bits rol" | "bits ror" => {

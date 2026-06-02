@@ -35572,6 +35572,45 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-scalar-bits-shift-number-bytes"
+        category: "language-core"
+        tags: [scalar bits shl shr number-bytes]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ((255 | bits shl 1 --number-bytes 1) == 254) and ((-65 | bits shr 1 --number-bytes 1) == -33) and ((65536 | bits shl 1 --number-bytes 4) == 131072)'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-list-bits-shift-number-bytes"
+        category: "language-core"
+        tags: [aggregate list bits shl number-bytes]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ([127 128 -129] | bits shl 1 --number-bytes 1 | math sum) == 252'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-list-bits-shift-number-bytes-runtime"
+        category: "language-core"
+        tags: [aggregate list bits shl number-bytes runtime]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ([(random int)] | bits shl 1 --number-bytes 1 | length) == 1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-scalar-bits-shift-default-reject"
         category: "language-core"
         tags: [scalar bits shl reject]
@@ -35583,7 +35622,7 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "bits shl currently requires --signed --number-bytes 8"
+        error_contains: "bits shl default auto-width shifts are not supported"
     }
     {
         name: "core-scalar-bits-rotate-signed-i64"
