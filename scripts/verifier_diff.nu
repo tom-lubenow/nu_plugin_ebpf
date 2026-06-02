@@ -35417,6 +35417,20 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-scalar-math-div-mod-runtime"
+        category: "language-core"
+        tags: [scalar math divide modulo runtime]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let n = ((random int | bits and 255) + 1)'
+            '  (($n / 3) >= 0) and (($n mod 3) >= 0)'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-math-abs-sum"
         category: "language-core"
         tags: [aggregate list math abs sum]
