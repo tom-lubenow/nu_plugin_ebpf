@@ -35769,6 +35769,32 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-scalar-bits-shift-signed-i64-runtime"
+        category: "language-core"
+        tags: [scalar bits shr signed number-bytes runtime]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  (random int | bits shr 1 --signed --number-bytes 8) != 0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-scalar-bits-shift-number-bytes-runtime"
+        category: "language-core"
+        tags: [scalar bits shl number-bytes runtime]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  (random int | bits shl 1 --number-bytes 1) != 0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-scalar-bits-shift-default"
         category: "language-core"
         tags: [scalar bits shl shr default]
@@ -35895,6 +35921,32 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  ([(random int)] | bits ror 1 --signed --number-bytes 1 | length) == 1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-scalar-bits-rotate-signed-i64-runtime"
+        category: "language-core"
+        tags: [scalar bits rol signed number-bytes runtime]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  (random int | bits rol 1 --signed --number-bytes 8) != 0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-scalar-bits-rotate-number-bytes-runtime"
+        category: "language-core"
+        tags: [scalar bits ror number-bytes runtime]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  (random int | bits ror 1 --number-bytes 1) != 0'
             '}'
         ]
         local: "accept"

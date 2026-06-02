@@ -11391,6 +11391,63 @@ fn make_bits_shift_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_runtime_scalar_bits_shift_program(
+    bits_decl: DeclId,
+    random_decl: DeclId,
+    count: i64,
+    signed: bool,
+    number_bytes: Option<i64>,
+) -> HirProgram {
+    let mut stmts = vec![
+        HirStmt::Call {
+            decl_id: random_decl,
+            src_dst: RegId::new(0),
+            args: HirCallArgs::default(),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: HirLiteral::Int(count),
+        },
+    ];
+    let named = if let Some(number_bytes) = number_bytes {
+        stmts.push(HirStmt::LoadLiteral {
+            dst: RegId::new(2),
+            lit: HirLiteral::Int(number_bytes),
+        });
+        vec![(b"number-bytes".to_vec(), RegId::new(2))]
+    } else {
+        Vec::new()
+    };
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: {
+                stmts.push(HirStmt::Call {
+                    decl_id: bits_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        positional: vec![RegId::new(1)],
+                        named,
+                        flags: signed.then(|| b"signed".to_vec()).into_iter().collect(),
+                        ..HirCallArgs::default()
+                    },
+                });
+                stmts
+            },
+            terminator: HirTerminator::Return { src: RegId::new(3) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 4,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_integer_list_pipeline_call_program(decl_id: DeclId, values: &[i64]) -> HirProgram {
     let func = HirFunction {
         blocks: vec![HirBlock {
@@ -13819,6 +13876,247 @@ fn test_lower_bits_shift_signed_without_number_bytes_on_known_integer_inputs() {
 }
 
 #[test]
+fn test_lower_bits_shift_signed_i64_on_runtime_scalar_integer_inputs() {
+    for (offset, command_name, expected_op) in [
+        (0, "bits shl", BinOpKind::Shl),
+        (1, "bits shr", BinOpKind::ArShr),
+    ] {
+        let bits_decl = DeclId::new(70040 + offset);
+        let random_decl = DeclId::new(70050 + offset);
+        let hir = make_runtime_scalar_bits_shift_program(bits_decl, random_decl, 1, true, Some(8));
+        let decl_names = HashMap::from([
+            (bits_decl, command_name.to_string()),
+            (random_decl, "random int".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!(
+                "{command_name} --signed --number-bytes 8 should lower runtime scalar input: {err}"
+            )
+        });
+        let instructions = result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .collect::<Vec<_>>();
+
+        assert!(
+            instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op,
+                    ..
+                } if *op == expected_op
+            )),
+            "expected runtime scalar {command_name} --signed --number-bytes 8 to emit {expected_op:?}"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("{command_name} runtime scalar input should compile through codegen: {err}")
+            });
+    }
+}
+
+#[test]
+fn test_lower_bits_shift_number_bytes_on_runtime_scalar_integer_inputs() {
+    for (offset, command_name, expected_shift_op) in [
+        (0, "bits shl", BinOpKind::Shl),
+        (1, "bits shr", BinOpKind::Shr),
+    ] {
+        let bits_decl = DeclId::new(70060 + offset);
+        let random_decl = DeclId::new(70070 + offset);
+        let hir = make_runtime_scalar_bits_shift_program(bits_decl, random_decl, 1, false, Some(1));
+        let decl_names = HashMap::from([
+            (bits_decl, command_name.to_string()),
+            (random_decl, "random int".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("{command_name} --number-bytes 1 should lower runtime scalar input: {err}")
+        });
+        let instructions = result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .collect::<Vec<_>>();
+
+        assert!(
+            result
+                .program
+                .main
+                .blocks
+                .iter()
+                .any(|block| matches!(block.terminator, MirInst::Branch { .. })),
+            "expected runtime scalar {command_name} --number-bytes 1 to branch on source sign"
+        );
+        assert!(
+            instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op: BinOpKind::And,
+                    ..
+                }
+            )),
+            "expected runtime scalar {command_name} --number-bytes 1 to mask values"
+        );
+        assert!(
+            instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op,
+                    ..
+                } if *op == expected_shift_op
+            )),
+            "expected runtime scalar {command_name} --number-bytes 1 to emit {expected_shift_op:?}"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("{command_name} --number-bytes 1 runtime scalar input should compile: {err}")
+            });
+    }
+}
+
+#[test]
+fn test_lower_bits_shift_signed_fixed_width_on_runtime_scalar_integer_inputs() {
+    for (offset, command_name, expected_shift_op) in [
+        (0, "bits shl", BinOpKind::Shl),
+        (1, "bits shr", BinOpKind::ArShr),
+    ] {
+        let bits_decl = DeclId::new(70080 + offset);
+        let random_decl = DeclId::new(70090 + offset);
+        let hir = make_runtime_scalar_bits_shift_program(bits_decl, random_decl, 1, true, Some(1));
+        let decl_names = HashMap::from([
+            (bits_decl, command_name.to_string()),
+            (random_decl, "random int".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!(
+                "{command_name} --signed --number-bytes 1 should lower runtime scalar input: {err}"
+            )
+        });
+        let instructions = result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .collect::<Vec<_>>();
+
+        assert!(
+            instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op: BinOpKind::And,
+                    ..
+                }
+            )),
+            "expected runtime scalar {command_name} --signed --number-bytes 1 to mask values"
+        );
+        assert!(
+            instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op,
+                    ..
+                } if *op == expected_shift_op
+            )),
+            "expected runtime scalar {command_name} --signed --number-bytes 1 to emit {expected_shift_op:?}"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!(
+                    "{command_name} --signed --number-bytes 1 runtime scalar input should compile: {err}"
+                )
+            });
+    }
+}
+
+#[test]
+fn test_lower_bits_shift_default_rejects_runtime_scalar_integer_input() {
+    let bits_decl = DeclId::new(70140);
+    let random_decl = DeclId::new(70141);
+    let hir = make_runtime_scalar_bits_shift_program(bits_decl, random_decl, 1, false, None);
+    let decl_names = HashMap::from([
+        (bits_decl, "bits shl".to_string()),
+        (random_decl, "random int".to_string()),
+    ]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("default bits shl should reject runtime scalar input");
+
+    assert!(
+        err.to_string().contains(
+            "bits shl default auto-width shifts require compile-time known integer input"
+        ),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_bits_shift_unsigned_i64_rejects_runtime_scalar_integer_input() {
+    let bits_decl = DeclId::new(70142);
+    let random_decl = DeclId::new(70143);
+    let hir = make_runtime_scalar_bits_shift_program(bits_decl, random_decl, 1, false, Some(8));
+    let decl_names = HashMap::from([
+        (bits_decl, "bits shr".to_string()),
+        (random_decl, "random int".to_string()),
+    ]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("bits shr --number-bytes 8 should reject runtime scalar input");
+
+    assert!(
+        err.to_string().contains(
+            "bits shr unsigned --number-bytes 8 requires compile-time known integer input"
+        ),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn test_lower_bits_shift_signed_i64_on_known_integer_lists() {
     for (offset, command_name, values, expected_values) in [
         (0, "bits shl", vec![4i64, 3, 2], vec![8i64, 6, 4]),
@@ -14430,6 +14728,244 @@ fn test_lower_bits_rotate_signed_without_number_bytes_on_known_integer_inputs() 
         compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
             .unwrap_or_else(|err| panic!("{command_name} --signed should compile: {err}"));
     }
+}
+
+#[test]
+fn test_lower_bits_rotate_signed_i64_on_runtime_scalar_integer_inputs() {
+    for (offset, command_name) in [(0, "bits rol"), (1, "bits ror")] {
+        let bits_decl = DeclId::new(70740 + offset);
+        let random_decl = DeclId::new(70750 + offset);
+        let hir = make_runtime_scalar_bits_shift_program(bits_decl, random_decl, 1, true, Some(8));
+        let decl_names = HashMap::from([
+            (bits_decl, command_name.to_string()),
+            (random_decl, "random int".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!(
+                "{command_name} --signed --number-bytes 8 should lower runtime scalar input: {err}"
+            )
+        });
+        let instructions = result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .collect::<Vec<_>>();
+
+        for expected_op in [BinOpKind::Shl, BinOpKind::Shr, BinOpKind::Or] {
+            assert!(
+                instructions.iter().any(|inst| matches!(
+                    inst,
+                    MirInst::BinOp {
+                        op,
+                        ..
+                    } if *op == expected_op
+                )),
+                "expected runtime scalar {command_name} --signed --number-bytes 8 to emit {expected_op:?}"
+            );
+        }
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("{command_name} runtime scalar input should compile through codegen: {err}")
+            });
+    }
+}
+
+#[test]
+fn test_lower_bits_rotate_number_bytes_on_runtime_scalar_integer_inputs() {
+    for (offset, command_name) in [(0, "bits rol"), (1, "bits ror")] {
+        let bits_decl = DeclId::new(70760 + offset);
+        let random_decl = DeclId::new(70770 + offset);
+        let hir = make_runtime_scalar_bits_shift_program(bits_decl, random_decl, 1, false, Some(1));
+        let decl_names = HashMap::from([
+            (bits_decl, command_name.to_string()),
+            (random_decl, "random int".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("{command_name} --number-bytes 1 should lower runtime scalar input: {err}")
+        });
+        let instructions = result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .collect::<Vec<_>>();
+
+        assert!(
+            result
+                .program
+                .main
+                .blocks
+                .iter()
+                .any(|block| matches!(block.terminator, MirInst::Branch { .. })),
+            "expected runtime scalar {command_name} --number-bytes 1 to branch on source sign"
+        );
+        assert!(
+            instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op: BinOpKind::And,
+                    ..
+                }
+            )),
+            "expected runtime scalar {command_name} --number-bytes 1 to mask values"
+        );
+        for expected_op in [BinOpKind::Shl, BinOpKind::Shr, BinOpKind::Or] {
+            assert!(
+                instructions.iter().any(|inst| matches!(
+                    inst,
+                    MirInst::BinOp {
+                        op,
+                        ..
+                    } if *op == expected_op
+                )),
+                "expected runtime scalar {command_name} --number-bytes 1 to emit {expected_op:?}"
+            );
+        }
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("{command_name} --number-bytes 1 runtime scalar input should compile: {err}")
+            });
+    }
+}
+
+#[test]
+fn test_lower_bits_rotate_signed_fixed_width_on_runtime_scalar_integer_inputs() {
+    for (offset, command_name) in [(0, "bits rol"), (1, "bits ror")] {
+        let bits_decl = DeclId::new(70780 + offset);
+        let random_decl = DeclId::new(70790 + offset);
+        let hir = make_runtime_scalar_bits_shift_program(bits_decl, random_decl, 1, true, Some(1));
+        let decl_names = HashMap::from([
+            (bits_decl, command_name.to_string()),
+            (random_decl, "random int".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!(
+                "{command_name} --signed --number-bytes 1 should lower runtime scalar input: {err}"
+            )
+        });
+        let instructions = result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .collect::<Vec<_>>();
+
+        assert!(
+            instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op: BinOpKind::And,
+                    ..
+                }
+            )),
+            "expected runtime scalar {command_name} --signed --number-bytes 1 to mask values"
+        );
+        for expected_op in [BinOpKind::Shl, BinOpKind::Shr, BinOpKind::Or] {
+            assert!(
+                instructions.iter().any(|inst| matches!(
+                    inst,
+                    MirInst::BinOp {
+                        op,
+                        ..
+                    } if *op == expected_op
+                )),
+                "expected runtime scalar {command_name} --signed --number-bytes 1 to emit {expected_op:?}"
+            );
+        }
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!(
+                    "{command_name} --signed --number-bytes 1 runtime scalar input should compile: {err}"
+                )
+            });
+    }
+}
+
+#[test]
+fn test_lower_bits_rotate_default_rejects_runtime_scalar_integer_input() {
+    let bits_decl = DeclId::new(70840);
+    let random_decl = DeclId::new(70841);
+    let hir = make_runtime_scalar_bits_shift_program(bits_decl, random_decl, 1, false, None);
+    let decl_names = HashMap::from([
+        (bits_decl, "bits rol".to_string()),
+        (random_decl, "random int".to_string()),
+    ]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("default bits rol should reject runtime scalar input");
+
+    assert!(
+        err.to_string().contains(
+            "bits rol default auto-width rotates require compile-time known integer input"
+        ),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_bits_rotate_unsigned_i64_rejects_runtime_scalar_integer_input() {
+    let bits_decl = DeclId::new(70842);
+    let random_decl = DeclId::new(70843);
+    let hir = make_runtime_scalar_bits_shift_program(bits_decl, random_decl, 1, false, Some(8));
+    let decl_names = HashMap::from([
+        (bits_decl, "bits ror".to_string()),
+        (random_decl, "random int".to_string()),
+    ]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("bits ror --number-bytes 8 should reject runtime scalar input");
+
+    assert!(
+        err.to_string().contains(
+            "bits ror unsigned --number-bytes 8 requires compile-time known integer input"
+        ),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]

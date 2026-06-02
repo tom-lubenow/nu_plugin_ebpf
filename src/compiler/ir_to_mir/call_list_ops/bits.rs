@@ -1256,13 +1256,12 @@ impl<'a> HirToMirLowering<'a> {
                 "{cmd_name} requires integer, binary, integer-list, or binary-list pipeline input in eBPF"
             ))
         })?;
-        let input_meta = self.get_metadata(input_reg).cloned().ok_or_else(|| {
-            CompileError::UnsupportedInstruction(format!(
-                "{cmd_name} requires tracked integer, binary, integer-list, or binary-list input in eBPF"
-            ))
-        })?;
+        let input_meta = self.get_metadata(input_reg).cloned();
 
-        if let Some(nu_protocol::Value::List { vals, .. }) = input_meta.constant_value.clone() {
+        if let Some(nu_protocol::Value::List { vals, .. }) = input_meta
+            .as_ref()
+            .and_then(|meta| meta.constant_value.clone())
+        {
             if !vals.is_empty()
                 && vals
                     .iter()
@@ -1346,7 +1345,10 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(());
         }
 
-        if let Some(nu_protocol::Value::Binary { val, .. }) = input_meta.constant_value.as_ref() {
+        if let Some(nu_protocol::Value::Binary { val, .. }) = input_meta
+            .as_ref()
+            .and_then(|meta| meta.constant_value.as_ref())
+        {
             let count = self.bits_binary_shift_rotate_count(cmd_name)?;
             let output = Self::bits_binary_shift_rotate_output(cmd_name, val, count)?;
             self.reset_call_result_metadata(src_dst);
@@ -1357,7 +1359,9 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(());
         }
 
-        if input_meta.list_buffer.is_some() {
+        if let Some(input_meta) = input_meta.as_ref()
+            && input_meta.list_buffer.is_some()
+        {
             let spec = self.bits_shift_spec(cmd_name, None)?;
             let op = Self::bits_shift_op(cmd_name, spec.mode);
             let rhs_value = MirValue::Const(spec.count);
@@ -1367,7 +1371,7 @@ impl<'a> HirToMirLowering<'a> {
                     src_dst,
                     input_vreg,
                     result_vreg,
-                    &input_meta,
+                    input_meta,
                     op,
                     rhs_value,
                 );
@@ -1377,16 +1381,23 @@ impl<'a> HirToMirLowering<'a> {
                 src_dst,
                 input_vreg,
                 result_vreg,
-                &input_meta,
+                input_meta,
                 spec,
             );
         }
 
-        self.validate_bits_integer_operand(cmd_name, "pipeline input", &input_meta, input_vreg)?;
-        let lhs_value = Self::bits_integer_value_from_metadata(&input_meta)
-            .map_or(MirValue::VReg(input_vreg), MirValue::Const);
+        self.validate_bits_integer_operand_optional_metadata(
+            cmd_name,
+            "pipeline input",
+            input_meta.as_ref(),
+            input_vreg,
+        )?;
+        let lhs_const = input_meta
+            .as_ref()
+            .and_then(Self::bits_integer_value_from_metadata);
+        let lhs_value = lhs_const.map_or(MirValue::VReg(input_vreg), MirValue::Const);
 
-        if let Some(input) = Self::bits_integer_value_from_metadata(&input_meta) {
+        if let Some(input) = lhs_const {
             let spec = self.bits_shift_spec(cmd_name, Some(input))?;
             let output = Self::bits_shift_output(cmd_name, input, spec)?;
             self.emit(MirInst::Copy {
@@ -1690,13 +1701,12 @@ impl<'a> HirToMirLowering<'a> {
                 "{cmd_name} requires integer, binary, integer-list, or binary-list pipeline input in eBPF"
             ))
         })?;
-        let input_meta = self.get_metadata(input_reg).cloned().ok_or_else(|| {
-            CompileError::UnsupportedInstruction(format!(
-                "{cmd_name} requires tracked integer, binary, integer-list, or binary-list input in eBPF"
-            ))
-        })?;
+        let input_meta = self.get_metadata(input_reg).cloned();
 
-        if let Some(nu_protocol::Value::List { vals, .. }) = input_meta.constant_value.clone() {
+        if let Some(nu_protocol::Value::List { vals, .. }) = input_meta
+            .as_ref()
+            .and_then(|meta| meta.constant_value.clone())
+        {
             if !vals.is_empty()
                 && vals
                     .iter()
@@ -1780,7 +1790,10 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(());
         }
 
-        if let Some(nu_protocol::Value::Binary { val, .. }) = input_meta.constant_value.as_ref() {
+        if let Some(nu_protocol::Value::Binary { val, .. }) = input_meta
+            .as_ref()
+            .and_then(|meta| meta.constant_value.as_ref())
+        {
             let count = self.bits_binary_shift_rotate_count(cmd_name)?;
             let output = Self::bits_binary_shift_rotate_output(cmd_name, val, count)?;
             self.reset_call_result_metadata(src_dst);
@@ -1791,23 +1804,32 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(());
         }
 
-        if input_meta.list_buffer.is_some() {
+        if let Some(input_meta) = input_meta.as_ref()
+            && input_meta.list_buffer.is_some()
+        {
             let spec = self.bits_rotate_spec(cmd_name, None)?;
             return self.lower_bits_rotate_runtime_list(
                 cmd_name,
                 src_dst,
                 input_vreg,
                 result_vreg,
-                &input_meta,
+                input_meta,
                 spec,
             );
         }
 
-        self.validate_bits_integer_operand(cmd_name, "pipeline input", &input_meta, input_vreg)?;
-        let lhs_value = Self::bits_integer_value_from_metadata(&input_meta)
-            .map_or(MirValue::VReg(input_vreg), MirValue::Const);
+        self.validate_bits_integer_operand_optional_metadata(
+            cmd_name,
+            "pipeline input",
+            input_meta.as_ref(),
+            input_vreg,
+        )?;
+        let lhs_const = input_meta
+            .as_ref()
+            .and_then(Self::bits_integer_value_from_metadata);
+        let lhs_value = lhs_const.map_or(MirValue::VReg(input_vreg), MirValue::Const);
 
-        if let Some(input) = Self::bits_integer_value_from_metadata(&input_meta) {
+        if let Some(input) = lhs_const {
             let spec = self.bits_rotate_spec(cmd_name, Some(input))?;
             let output = Self::bits_rotate_output(cmd_name, input, spec)?;
             self.emit(MirInst::Copy {
