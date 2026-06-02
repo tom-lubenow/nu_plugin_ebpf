@@ -216,6 +216,34 @@ fn validate_helper_scalar_range(
     }
 }
 
+fn validate_program_helper_scalar_range(
+    helper: BpfHelper,
+    arg_idx: usize,
+    value: &MirValue,
+    state: &VerifierState,
+    program: Option<&ProgramTypeInfo>,
+    probe_ctx: Option<&ProbeContext>,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    let Some((min_required, max_required, message)) = probe_ctx
+        .and_then(|ctx| ctx.helper_scalar_arg_range_requirement(helper, arg_idx))
+        .or_else(|| {
+            program.and_then(|program| {
+                program
+                    .program_type
+                    .helper_scalar_arg_range_requirement(helper, arg_idx)
+            })
+        })
+    else {
+        return;
+    };
+    if let ValueRange::Known { min, max } = value_range(value, state)
+        && (min < min_required || max > max_required)
+    {
+        errors.push(VerifierTypeError::new(message));
+    }
+}
+
 fn validate_helper_scalar_allowed_values(
     helper: BpfHelper,
     arg_idx: usize,
@@ -510,6 +538,9 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
     for (arg_idx, value) in args.iter().enumerate().take(5) {
         validate_helper_scalar_multiple_of(helper, arg_idx, value, state, errors);
         validate_helper_scalar_range(helper, arg_idx, value, state, errors);
+        validate_program_helper_scalar_range(
+            helper, arg_idx, value, state, program, probe_ctx, errors,
+        );
         validate_helper_scalar_allowed_values(helper, arg_idx, value, state, errors);
         validate_helper_scalar_bitmask(helper, arg_idx, value, state, errors);
         validate_helper_scalar_bit_combinations(helper, arg_idx, value, state, errors);

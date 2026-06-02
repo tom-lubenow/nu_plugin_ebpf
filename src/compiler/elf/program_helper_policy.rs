@@ -31,6 +31,16 @@ struct HelperConstArgRequirementSpec {
 }
 
 #[derive(Debug, Clone, Copy)]
+struct HelperScalarArgRangeRequirementSpec {
+    helper: BpfHelper,
+    program_type: EbpfProgramType,
+    arg_idx: usize,
+    min: i64,
+    max: i64,
+    error_message: &'static str,
+}
+
+#[derive(Debug, Clone, Copy)]
 struct GetSocketCookieArgPolicySpec {
     policy: GetSocketCookieArgPolicy,
     program_types: &'static [EbpfProgramType],
@@ -1007,6 +1017,16 @@ const HELPER_CONST_ARG_REQUIREMENTS: &[HelperConstArgRequirementSpec] = &[
         error_message: "helper 'bpf_skb_adjust_room' requires arg3 flags = 0 in sk_skb_parser programs",
     },
 ];
+const HELPER_SCALAR_ARG_RANGE_REQUIREMENTS: &[HelperScalarArgRangeRequirementSpec] = &[
+    HelperScalarArgRangeRequirementSpec {
+        helper: BpfHelper::SkbLoadBytes,
+        program_type: EbpfProgramType::FlowDissector,
+        arg_idx: 1,
+        min: 0,
+        max: 0xffff,
+        error_message: "helper 'bpf_skb_load_bytes' requires arg1 offset to be between 0 and 0xffff in flow_dissector programs",
+    },
+];
 
 fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurfaceSpec> {
     Some(match helper {
@@ -1297,6 +1317,21 @@ impl EbpfProgramType {
             .iter()
             .find(|spec| helper_ids_equal(spec.helper, helper) && spec.program_type == *self)
             .map(|spec| (spec.arg_idx, spec.expected, spec.error_message))
+    }
+
+    pub(crate) fn helper_scalar_arg_range_requirement(
+        &self,
+        helper: BpfHelper,
+        arg_idx: usize,
+    ) -> Option<(i64, i64, &'static str)> {
+        HELPER_SCALAR_ARG_RANGE_REQUIREMENTS
+            .iter()
+            .find(|spec| {
+                helper_ids_equal(spec.helper, helper)
+                    && spec.program_type == *self
+                    && spec.arg_idx == arg_idx
+            })
+            .map(|spec| (spec.min, spec.max, spec.error_message))
     }
 
     pub(crate) fn get_socket_cookie_arg_policy(&self) -> Option<GetSocketCookieArgPolicy> {
@@ -2278,6 +2313,49 @@ mod tests {
                     requirement.error_message
                 )),
                 "const-arg helper requirement for '{}' / {:?} must be reachable through the public lookup",
+                requirement.helper.name(),
+                requirement.program_type
+            );
+        }
+
+        let mut scalar_arg_range_requirements = HashSet::new();
+        for requirement in HELPER_SCALAR_ARG_RANGE_REQUIREMENTS {
+            let key = (
+                requirement.helper as u32,
+                requirement.program_type,
+                requirement.arg_idx,
+            );
+            assert!(
+                scalar_arg_range_requirements.insert(key),
+                "duplicate scalar-arg range helper requirement for {} / {:?} arg{}",
+                requirement.helper.name(),
+                requirement.program_type,
+                requirement.arg_idx
+            );
+            assert!(
+                !requirement.error_message.is_empty(),
+                "scalar-arg range helper requirement must have an error message"
+            );
+            assert!(
+                requirement.arg_idx < requirement.helper.signature().max_args,
+                "scalar-arg range helper requirement for '{}' references arg{} but helper has {} args",
+                requirement.helper.name(),
+                requirement.arg_idx,
+                requirement.helper.signature().max_args
+            );
+            assert!(
+                requirement.min <= requirement.max,
+                "scalar-arg range helper requirement for '{}' / {:?} arg{} has an invalid range",
+                requirement.helper.name(),
+                requirement.program_type,
+                requirement.arg_idx
+            );
+            assert_eq!(
+                requirement
+                    .program_type
+                    .helper_scalar_arg_range_requirement(requirement.helper, requirement.arg_idx),
+                Some((requirement.min, requirement.max, requirement.error_message)),
+                "scalar-arg range helper requirement for '{}' / {:?} must be reachable through the public lookup",
                 requirement.helper.name(),
                 requirement.program_type
             );

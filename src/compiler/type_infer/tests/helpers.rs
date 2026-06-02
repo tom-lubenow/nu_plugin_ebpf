@@ -8517,6 +8517,23 @@ fn test_type_error_skb_byte_helpers_reject_invalid_offsets() {
     }
 }
 
+#[test]
+fn test_type_error_flow_dissector_skb_load_bytes_rejects_large_offset() {
+    let func = make_skb_bytes_helper_call(BpfHelper::SkbLoadBytes, 0x1_0000);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::FlowDissector, "/proc/self/ns/net");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected flow_dissector skb_load_bytes offset validation error");
+    assert!(
+        errs.iter().any(|e| e.message.contains(
+            "helper 'bpf_skb_load_bytes' requires arg1 offset to be between 0 and 0xffff in flow_dissector programs"
+        )),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
 fn make_xdp_bytes_helper_call(helper: BpfHelper, offset: i64, len: i64) -> MirFunction {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();

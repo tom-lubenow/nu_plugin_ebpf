@@ -1074,6 +1074,15 @@ impl ProbeContext {
         self.program_type().helper_const_arg_requirement(helper)
     }
 
+    pub(crate) fn helper_scalar_arg_range_requirement(
+        &self,
+        helper: BpfHelper,
+        arg_idx: usize,
+    ) -> Option<(i64, i64, &'static str)> {
+        self.program_type()
+            .helper_scalar_arg_range_requirement(helper, arg_idx)
+    }
+
     pub(crate) fn get_socket_cookie_arg_policy(&self) -> Option<GetSocketCookieArgPolicy> {
         self.program_type().get_socket_cookie_arg_policy()
     }
