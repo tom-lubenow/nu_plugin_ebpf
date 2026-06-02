@@ -35545,6 +35545,59 @@ const FIXTURES = [
         error_contains: "bits shl currently requires --signed --number-bytes 8"
     }
     {
+        name: "core-scalar-bits-rotate-signed-i64"
+        category: "language-core"
+        tags: [scalar bits rol ror signed]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ((1 | bits rol 1 --signed --number-bytes 8) == 2) and ((1 | bits ror 1 --signed --number-bytes 8) == -9223372036854775808) and ((1 | bits rol 64 --signed --number-bytes 8) == 1)'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-list-bits-rotate-signed-i64"
+        category: "language-core"
+        tags: [aggregate list bits rol signed]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ([4 3 2] | bits rol 1 --signed --number-bytes 8 | math sum) == 18'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-list-bits-rotate-signed-i64-runtime"
+        category: "language-core"
+        tags: [aggregate list bits ror signed runtime]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ([(random int)] | bits ror 1 --signed --number-bytes 8 | length) == 1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-scalar-bits-rotate-default-reject"
+        category: "language-core"
+        tags: [scalar bits rol reject]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  4 | bits rol 1'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "bits rol currently requires --signed --number-bytes 8"
+    }
+    {
         name: "core-null-length"
         category: "language-core"
         tags: ["null" length]

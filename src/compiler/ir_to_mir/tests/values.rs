@@ -11548,6 +11548,184 @@ fn test_lower_bits_shift_signed_i64_rejects_constant_list_output_over_capacity()
 }
 
 #[test]
+fn test_lower_bits_rotate_signed_i64_on_known_integer_inputs() {
+    for (offset, command_name, input, rotate_count, expected) in [
+        (0, "bits rol", 1, 1, 2),
+        (1, "bits ror", 1, 1, i64::MIN),
+        (2, "bits rol", i64::MIN, 1, 1),
+        (3, "bits ror", 1, 64, 1),
+    ] {
+        let decl = DeclId::new(7070 + offset);
+        let hir = make_bits_shift_signed_i64_program(decl, input, rotate_count);
+        let decl_names = HashMap::from([(decl, command_name.to_string())]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("{command_name} --signed --number-bytes 8 should lower integer input: {err}")
+        });
+
+        assert_program_returns_constant(
+            &result.program,
+            expected,
+            &format!("{command_name} --signed --number-bytes 8"),
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{command_name} should compile through codegen: {err}"));
+    }
+}
+
+#[test]
+fn test_lower_bits_rotate_signed_i64_on_known_integer_lists() {
+    for (offset, command_name, values, expected_values) in [
+        (0, "bits rol", vec![4i64, 3, 2], vec![8i64, 6, 4]),
+        (1, "bits ror", vec![1i64, 2], vec![i64::MIN, 1]),
+    ] {
+        let bits_decl = DeclId::new(7080 + offset);
+        let sum_decl = DeclId::new(7090 + offset);
+        let hir = make_bits_shift_signed_i64_list_sum_program(bits_decl, sum_decl, &values, 1);
+        let decl_names = HashMap::from([
+            (bits_decl, command_name.to_string()),
+            (sum_decl, "math sum".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!(
+                "{command_name} --signed --number-bytes 8 should lower integer-list input: {err}"
+            )
+        });
+        let expected = expected_values
+            .into_iter()
+            .flat_map(|value| value.to_le_bytes())
+            .collect::<Vec<_>>();
+
+        assert!(
+            result
+                .readonly_globals
+                .iter()
+                .any(|global| global.data == expected),
+            "expected {command_name} --signed --number-bytes 8 to materialize the rotated integer list"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{command_name} should compile through codegen: {err}"));
+    }
+}
+
+#[test]
+fn test_lower_bits_rotate_default_is_rejected() {
+    let bits_decl = DeclId::new(7100);
+    let hir = make_bits_binary_program(bits_decl, 4, 1);
+    let decl_names = HashMap::from([(bits_decl, "bits rol".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("default bits rol should reject because it is byte-width masked");
+
+    assert!(
+        err.to_string()
+            .contains("bits rol currently requires --signed --number-bytes 8"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_bits_rotate_rejects_out_of_range_rotate_count() {
+    let bits_decl = DeclId::new(7101);
+    let hir = make_bits_shift_signed_i64_program(bits_decl, 1, 65);
+    let decl_names = HashMap::from([(bits_decl, "bits ror".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("bits ror should reject rotate counts outside the 64-bit word");
+
+    assert!(
+        err.to_string()
+            .contains("bits ror requires a rotate count from 0 through 64"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_bits_rotate_signed_i64_rejects_non_integer_list_items() {
+    let bits_decl = DeclId::new(7102);
+    let hir = make_bits_shift_signed_i64_value_list_program(
+        bits_decl,
+        vec![
+            Value::int(1, Span::test_data()),
+            Value::bool(true, Span::test_data()),
+        ],
+        1,
+    );
+    let decl_names = HashMap::from([(bits_decl, "bits rol".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("bits rol should reject non-integer list items");
+
+    assert!(
+        err.to_string()
+            .contains("bits rol requires integer list items"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_bits_rotate_signed_i64_rejects_constant_list_output_over_capacity() {
+    let bits_decl = DeclId::new(7103);
+    let values = (0..=60).collect::<Vec<_>>();
+    let hir = make_bits_shift_signed_i64_list_sum_program(bits_decl, DeclId::new(7104), &values, 1);
+    let decl_names = HashMap::from([(bits_decl, "bits ror".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("bits ror output over the stack-list capacity should be rejected");
+
+    assert!(
+        err.to_string()
+            .contains("bits ror output exceeds stack-backed numeric list capacity 60"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn test_lower_math_abs_on_known_integer_list_materializes_absolute_values() {
     let abs_decl = DeclId::new(264);
     let sum_decl = DeclId::new(265);
@@ -12105,6 +12283,72 @@ fn test_lower_bits_shift_signed_i64_on_runtime_stack_numeric_lists() {
             )),
             "expected runtime {command_name} --signed --number-bytes 8 to emit {expected_op:?}"
         );
+        assert!(
+            instructions
+                .iter()
+                .any(|inst| matches!(inst, MirInst::ListPush { .. })),
+            "expected runtime {command_name} --signed --number-bytes 8 to materialize an output list"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!(
+                    "{command_name} runtime list output consumed by length should compile: {err}"
+                )
+            });
+    }
+}
+
+#[test]
+fn test_lower_bits_rotate_signed_i64_on_runtime_stack_numeric_lists() {
+    for (offset, command_name) in [(0, "bits rol"), (1, "bits ror")] {
+        let bits_decl = DeclId::new(7110 + offset);
+        let length_decl = DeclId::new(7120 + offset);
+        let random_decl = DeclId::new(7130 + offset);
+        let hir = make_runtime_bits_shift_signed_i64_list_length_program(
+            bits_decl,
+            length_decl,
+            random_decl,
+            1,
+        );
+        let decl_names = HashMap::from([
+            (bits_decl, command_name.to_string()),
+            (length_decl, "length".to_string()),
+            (random_decl, "random int".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!(
+                "{command_name} --signed --number-bytes 8 should lower on runtime stack-backed numeric lists: {err}"
+            )
+        });
+        let instructions = result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .collect::<Vec<_>>();
+
+        for expected_op in [BinOpKind::Shl, BinOpKind::Shr, BinOpKind::Or] {
+            assert!(
+                instructions.iter().any(|inst| matches!(
+                    inst,
+                    MirInst::BinOp {
+                        op,
+                        ..
+                    } if *op == expected_op
+                )),
+                "expected runtime {command_name} --signed --number-bytes 8 to emit {expected_op:?}"
+            );
+        }
         assert!(
             instructions
                 .iter()
