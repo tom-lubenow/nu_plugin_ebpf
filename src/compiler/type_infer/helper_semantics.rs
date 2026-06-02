@@ -677,6 +677,14 @@ impl<'a> TypeInference<'a> {
             errors.push(TypeError::new(message));
         }
 
+        for requirement in helper.scalar_arg_const_requirements_when_arg_const() {
+            if arg_is_known_const(requirement.trigger_arg_idx, requirement.trigger_expected)
+                && !arg_is_known_const(requirement.arg_idx, requirement.expected)
+            {
+                errors.push(TypeError::new(requirement.message));
+            }
+        }
+
         for (arg_idx, arg) in args.iter().enumerate() {
             if helper.dynptr_arg_role(arg_idx).is_none() {
                 continue;

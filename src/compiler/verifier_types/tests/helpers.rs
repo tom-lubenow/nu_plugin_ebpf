@@ -13701,6 +13701,7 @@ fn test_verify_mir_for_probe_context_lwt_seg6_helpers_accept_lwt_seg6local_progr
     for (func, types) in [
         make_lwt_buffer_verify_call(BpfHelper::LwtSeg6StoreBytes, 16, 16),
         make_lwt_buffer_verify_call(BpfHelper::LwtSeg6Action, 16, 16),
+        make_lwt_buffer_verify_call_with_selector(BpfHelper::LwtSeg6Action, 3, 4, 4),
         make_lwt_seg6_adjust_srh_verify_call(),
     ] {
         let probe_ctx = ProbeContext::new(EbpfProgramType::LwtSeg6Local, "demo-route");
@@ -13735,6 +13736,33 @@ fn test_verify_mir_for_probe_context_lwt_seg6_action_rejects_invalid_action() {
         "unexpected errors: {:?}",
         err
     );
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_lwt_seg6_action_rejects_invalid_param_len_for_action() {
+    for (action, size, expected) in [
+        (
+            2,
+            4,
+            "helper 'bpf_lwt_seg6_action' requires arg3 param_len = 16 for SEG6_LOCAL_ACTION_END_X",
+        ),
+        (
+            3,
+            16,
+            "helper 'bpf_lwt_seg6_action' requires arg3 param_len = 4 for SEG6_LOCAL_ACTION_END_T",
+        ),
+    ] {
+        let (func, types) =
+            make_lwt_buffer_verify_call_with_selector(BpfHelper::LwtSeg6Action, action, size, 16);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::LwtSeg6Local, "demo-route");
+        let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect_err("expected bpf_lwt_seg6_action param_len to be rejected");
+        assert!(
+            err.iter().any(|e| e.message.contains(expected)),
+            "unexpected errors for action {action}: {:?}",
+            err
+        );
+    }
 }
 
 #[test]

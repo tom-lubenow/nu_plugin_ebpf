@@ -538,6 +538,7 @@ impl<'a> VccLowerer<'a> {
         helper_id: u32,
         arg_idx: usize,
         arg: &MirValue,
+        expected: i64,
         trigger: &MirValue,
         trigger_expected: i64,
         message: &str,
@@ -547,7 +548,7 @@ impl<'a> VccLowerer<'a> {
             MirValue::Const(actual) => {
                 if *actual == trigger_expected {
                     self.verify_helper_scalar_const_eq(
-                        helper_id, arg_idx, arg, 0, message, out,
+                        helper_id, arg_idx, arg, expected, message, out,
                     )?;
                 }
                 Ok(())
@@ -572,7 +573,7 @@ impl<'a> VccLowerer<'a> {
                 };
                 out.push(VccInst::AssertConstEqIfConstEq {
                     value,
-                    expected: 0,
+                    expected,
                     when_value: VccValue::Reg(VccReg(vreg.0)),
                     when_expected: trigger_expected,
                     message: message.to_string(),
@@ -1558,6 +1559,7 @@ impl<'a> VccLowerer<'a> {
                 helper_id,
                 arg_idx,
                 arg,
+                0,
                 trigger,
                 0,
                 message,
@@ -1573,11 +1575,30 @@ impl<'a> VccLowerer<'a> {
                 helper_id,
                 arg_idx,
                 arg,
+                0,
                 trigger,
                 trigger_expected,
                 message,
                 out,
             )?;
+        }
+
+        for requirement in helper.scalar_arg_const_requirements_when_arg_const() {
+            if let (Some(arg), Some(trigger)) = (
+                args.get(requirement.arg_idx),
+                args.get(requirement.trigger_arg_idx),
+            ) {
+                self.verify_helper_scalar_const_eq_if_scalar_const_eq(
+                    helper_id,
+                    requirement.arg_idx,
+                    arg,
+                    requirement.expected,
+                    trigger,
+                    requirement.trigger_expected,
+                    requirement.message,
+                    out,
+                )?;
+            }
         }
 
         if matches!(helper, BpfHelper::GetSocketCookie) {

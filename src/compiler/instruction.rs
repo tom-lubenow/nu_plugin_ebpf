@@ -31,6 +31,15 @@ pub struct ScalarArgBitCombinationRequirement {
     pub message: &'static str,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScalarArgConstRequirementWhenArgConst {
+    pub arg_idx: usize,
+    pub expected: i64,
+    pub trigger_arg_idx: usize,
+    pub trigger_expected: i64,
+    pub message: &'static str,
+}
+
 const FIB_LOOKUP_FLAG_COMBINATIONS: &[ScalarArgBitCombinationRequirement] = &[
     ScalarArgBitCombinationRequirement {
         trigger_mask: BPF_FIB_LOOKUP_TBID,
@@ -43,6 +52,23 @@ const FIB_LOOKUP_FLAG_COMBINATIONS: &[ScalarArgBitCombinationRequirement] = &[
         required_mask: 0,
         forbidden_mask: BPF_FIB_LOOKUP_DIRECT,
         message: "helper 'bpf_fib_lookup' requires BPF_FIB_LOOKUP_MARK not to be used with BPF_FIB_LOOKUP_DIRECT",
+    },
+];
+
+const LWT_SEG6_ACTION_PARAM_LEN_REQUIREMENTS: &[ScalarArgConstRequirementWhenArgConst] = &[
+    ScalarArgConstRequirementWhenArgConst {
+        arg_idx: 3,
+        expected: 16,
+        trigger_arg_idx: 1,
+        trigger_expected: 2,
+        message: "helper 'bpf_lwt_seg6_action' requires arg3 param_len = 16 for SEG6_LOCAL_ACTION_END_X",
+    },
+    ScalarArgConstRequirementWhenArgConst {
+        arg_idx: 3,
+        expected: 4,
+        trigger_arg_idx: 1,
+        trigger_expected: 3,
+        message: "helper 'bpf_lwt_seg6_action' requires arg3 param_len = 4 for SEG6_LOCAL_ACTION_END_T",
     },
 ];
 
@@ -1499,6 +1525,15 @@ impl BpfHelper {
                 "helper 'bpf_check_mtu' requires arg3 len_diff to be 0 when arg4 has BPF_MTU_CHK_SEGS",
             )),
             _ => None,
+        }
+    }
+
+    pub const fn scalar_arg_const_requirements_when_arg_const(
+        self,
+    ) -> &'static [ScalarArgConstRequirementWhenArgConst] {
+        match self {
+            Self::LwtSeg6Action => LWT_SEG6_ACTION_PARAM_LEN_REQUIREMENTS,
+            _ => &[],
         }
     }
 

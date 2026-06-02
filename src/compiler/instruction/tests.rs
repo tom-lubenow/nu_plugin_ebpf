@@ -2804,6 +2804,25 @@ fn test_lwt_helpers_contract() {
         message,
         "helper 'bpf_lwt_seg6_action' requires arg1 action to be SEG6_LOCAL_ACTION_END_X, SEG6_LOCAL_ACTION_END_T, SEG6_LOCAL_ACTION_END_B6, or SEG6_LOCAL_ACTION_END_B6_ENCAP"
     );
+    let param_len_requirements =
+        BpfHelper::LwtSeg6Action.scalar_arg_const_requirements_when_arg_const();
+    assert_eq!(param_len_requirements.len(), 2);
+    assert_eq!(param_len_requirements[0].arg_idx, 3);
+    assert_eq!(param_len_requirements[0].expected, 16);
+    assert_eq!(param_len_requirements[0].trigger_arg_idx, 1);
+    assert_eq!(param_len_requirements[0].trigger_expected, 2);
+    assert_eq!(
+        param_len_requirements[0].message,
+        "helper 'bpf_lwt_seg6_action' requires arg3 param_len = 16 for SEG6_LOCAL_ACTION_END_X"
+    );
+    assert_eq!(param_len_requirements[1].arg_idx, 3);
+    assert_eq!(param_len_requirements[1].expected, 4);
+    assert_eq!(param_len_requirements[1].trigger_arg_idx, 1);
+    assert_eq!(param_len_requirements[1].trigger_expected, 3);
+    assert_eq!(
+        param_len_requirements[1].message,
+        "helper 'bpf_lwt_seg6_action' requires arg3 param_len = 4 for SEG6_LOCAL_ACTION_END_T"
+    );
 }
 
 #[test]
