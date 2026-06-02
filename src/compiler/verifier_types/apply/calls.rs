@@ -108,6 +108,7 @@ pub(super) fn apply_call_helper_inst(
         let helper_kfunc_acquire_kind = apply_helper_semantics(
             helper, args, types, state, slot_sizes, program, probe_ctx, errors,
         );
+        clear_stack_slot_value_ranges_for_helper_args(args, state);
 
         let ty = match sig.ret_kind {
             HelperRetKind::Void => VerifierType::Uninit,
@@ -226,6 +227,41 @@ pub(super) fn apply_call_helper_inst(
     state.set_with_range(dst, ty, ValueRange::Unknown);
 }
 
+fn clear_stack_slot_value_ranges_for_helper_args(args: &[MirValue], state: &mut VerifierState) {
+    for arg in args {
+        match arg {
+            MirValue::StackSlot(slot) => state.clear_stack_slot_value_range(*slot),
+            MirValue::VReg(vreg)
+                if matches!(
+                    state.get(*vreg),
+                    VerifierType::Ptr {
+                        space: AddressSpace::Stack,
+                        ..
+                    }
+                ) =>
+            {
+                state.clear_all_stack_slot_value_ranges();
+                return;
+            }
+            MirValue::VReg(_) | MirValue::Const(_) => {}
+        }
+    }
+}
+
+fn clear_stack_slot_value_ranges_for_vreg_args(args: &[VReg], state: &mut VerifierState) {
+    if args.iter().any(|vreg| {
+        matches!(
+            state.get(*vreg),
+            VerifierType::Ptr {
+                space: AddressSpace::Stack,
+                ..
+            }
+        )
+    }) {
+        state.clear_all_stack_slot_value_ranges();
+    }
+}
+
 pub(super) fn apply_call_kfunc_inst(
     dst: VReg,
     kfunc: &str,
@@ -285,6 +321,7 @@ pub(super) fn apply_call_kfunc_inst(
     }
     check_kfunc_semantics(kfunc, args, types, state, errors);
     apply_kfunc_semantics(kfunc, args, types, state, errors);
+    clear_stack_slot_value_ranges_for_vreg_args(args, state);
 
     let ty = match sig.ret_kind {
         KfuncRetKind::Scalar | KfuncRetKind::Void => types
@@ -352,6 +389,7 @@ pub(super) fn apply_call_subfn_inst(
     apply_subfunction_critical_delta(&summary, args, state, errors);
     apply_subfunction_release_summary(&summary, args, state, errors);
     apply_subfunction_map_value_map_fd_requirements(&summary, args, state, errors);
+    clear_stack_slot_value_ranges_for_vreg_args(args, state);
 
     if let Some(idx) = summary.return_arg()
         && let Some(arg) = args.get(idx)

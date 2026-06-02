@@ -86,7 +86,7 @@ pub(super) fn apply_store_inst(
     ptr: VReg,
     offset: i32,
     ty: &MirType,
-    state: &VerifierState,
+    state: &mut VerifierState,
     errors: &mut Vec<VerifierTypeError>,
 ) {
     let access_size = ty.size();
@@ -118,6 +118,15 @@ pub(super) fn apply_store_inst(
         state,
         errors,
     );
+    if matches!(
+        state.get(ptr),
+        VerifierType::Ptr {
+            space: AddressSpace::Stack,
+            ..
+        }
+    ) {
+        state.clear_all_stack_slot_value_ranges();
+    }
 }
 
 pub(super) fn apply_load_slot_inst(
@@ -141,11 +150,19 @@ pub(super) fn apply_load_slot_inst(
 pub(super) fn apply_store_slot_inst(
     slot: StackSlotId,
     offset: i32,
+    val: &MirValue,
     ty: &MirType,
     slot_sizes: &HashMap<StackSlotId, i64>,
+    state: &mut VerifierState,
     errors: &mut Vec<VerifierTypeError>,
 ) {
     check_slot_access(slot, offset, ty.size(), slot_sizes, "store slot", errors);
+    let range = value_range(val, state);
+    if offset == 0 && ty.size() == 4 && matches!(range, ValueRange::Known { .. }) {
+        state.set_stack_slot_value_range(slot, range);
+    } else {
+        state.clear_stack_slot_value_range(slot);
+    }
 }
 
 pub(super) fn apply_list_new_inst(

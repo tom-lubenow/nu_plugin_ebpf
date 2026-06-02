@@ -346,6 +346,12 @@ pub enum VccInst {
         ptr: VccReg,
         op: String,
     },
+    AssertStackSlotZeroIfConstEq {
+        ptr: VccReg,
+        when_value: VccValue,
+        when_expected: i64,
+        message: String,
+    },
     AssertDistinctStackSlots {
         lhs: VccReg,
         rhs: VccReg,
@@ -356,6 +362,7 @@ pub enum VccInst {
         slot: StackSlotId,
         size: i64,
     },
+    ClearStackSlotValueRanges,
     BinOp {
         dst: VccReg,
         op: VccBinOp,

@@ -12,6 +12,7 @@ impl VerifierState {
             && self.ambiguous_map_lookup_sources == other.ambiguous_map_lookup_sources
             && self.ambiguous_map_lookup_maps == other.ambiguous_map_lookup_maps
             && self.map_fd_sources == other.map_fd_sources
+            && self.stack_slot_value_ranges == other.stack_slot_value_ranges
             && self.live_ringbuf_refs == other.live_ringbuf_refs
             && self.released_ringbuf_record_regs == other.released_ringbuf_record_regs
             && self.live_kfunc_refs == other.live_kfunc_refs
@@ -217,6 +218,10 @@ impl VerifierState {
             };
             map_fd_sources.push(merged);
         }
+        let stack_slot_value_ranges = merge_stack_slot_value_ranges(
+            &self.stack_slot_value_ranges,
+            &other.stack_slot_value_ranges,
+        );
         let mut live_ringbuf_refs = Vec::with_capacity(self.live_ringbuf_refs.len());
         for i in 0..self.live_ringbuf_refs.len() {
             live_ringbuf_refs.push(self.live_ringbuf_refs[i] || other.live_ringbuf_refs[i]);
@@ -303,6 +308,7 @@ impl VerifierState {
             ambiguous_map_lookup_sources,
             ambiguous_map_lookup_maps,
             map_fd_sources,
+            stack_slot_value_ranges,
             live_ringbuf_refs,
             released_ringbuf_record_regs,
             live_kfunc_refs,
@@ -540,6 +546,25 @@ fn join_res_spin_lock_stacks(
         return Some(Vec::new());
     }
     None
+}
+
+fn merge_stack_slot_value_ranges(
+    lhs: &HashMap<StackSlotId, ValueRange>,
+    rhs: &HashMap<StackSlotId, ValueRange>,
+) -> HashMap<StackSlotId, ValueRange> {
+    let mut merged = HashMap::new();
+    for slot in lhs.keys().chain(rhs.keys()) {
+        let Some(lhs_range) = lhs.get(slot).copied() else {
+            continue;
+        };
+        let Some(rhs_range) = rhs.get(slot).copied() else {
+            continue;
+        };
+        if let ValueRange::Known { .. } = join_range(lhs_range, rhs_range) {
+            merged.insert(*slot, join_range(lhs_range, rhs_range));
+        }
+    }
+    merged
 }
 
 fn join_slot_depths(

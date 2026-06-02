@@ -21,7 +21,7 @@ const BPF_FIB_LOOKUP_DIRECT: i64 = 1 << 0;
 const BPF_FIB_LOOKUP_TBID: i64 = 1 << 3;
 const BPF_FIB_LOOKUP_MARK: i64 = 1 << 5;
 const BPF_FIB_LOOKUP_SIZE: i64 = 64;
-const BPF_MTU_CHK_SEGS: i64 = 1 << 0;
+pub(crate) const BPF_MTU_CHK_SEGS: i64 = 1 << 0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ScalarArgBitCombinationRequirement {

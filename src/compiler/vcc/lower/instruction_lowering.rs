@@ -1340,6 +1340,15 @@ impl<'a> VccLowerer<'a> {
             }
             MirInst::CallHelper { dst, helper, args } => {
                 self.verify_helper_call(*helper, args, out)?;
+                if args.iter().any(|arg| match arg {
+                    MirValue::StackSlot(_) => true,
+                    MirValue::VReg(vreg) => {
+                        matches!(self.effective_ptr_space(*vreg), Some(VccAddrSpace::Stack(_)))
+                    }
+                    MirValue::Const(_) => false,
+                }) {
+                    out.push(VccInst::ClearStackSlotValueRanges);
+                }
                 let helper_kind = BpfHelper::from_u32(*helper);
                 if matches!(helper_kind, Some(BpfHelper::TimerInit))
                     && let (Some(MirValue::VReg(timer)), Some(MirValue::VReg(map_fd))) =

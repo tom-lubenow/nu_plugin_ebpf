@@ -902,6 +902,35 @@ impl VccVerifier {
             VccInst::AssertStackSlotBase { ptr, op } => {
                 let _ = self.stack_slot_from_reg(state, *ptr, op);
             }
+            VccInst::AssertStackSlotZeroIfConstEq {
+                ptr,
+                when_value,
+                when_expected,
+                message,
+            } => {
+                let when_ty = match state.value_type(*when_value) {
+                    Ok(ty) => ty,
+                    Err(err) => {
+                        self.errors.push(err);
+                        return;
+                    }
+                };
+                if Self::const_scalar_value(*when_value, when_ty) != Some(*when_expected) {
+                    return;
+                }
+                let Some(slot) = self.stack_slot_from_reg(state, *ptr, "helper 'bpf_check_mtu' arg2")
+                else {
+                    return;
+                };
+                if let Some(range) = state.stack_slot_value_range(slot)
+                    && (range.min > 0 || range.max < 0)
+                {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::UnsupportedInstruction,
+                        message.clone(),
+                    ));
+                }
+            }
             VccInst::AssertDistinctStackSlots { lhs, rhs, message } => {
                 let Some(lhs_slot) =
                     self.stack_slot_from_reg(state, *lhs, "kfunc 'bpf_dynptr_clone' arg0")
@@ -945,6 +974,9 @@ impl VccVerifier {
                         kfunc_ref: None,
                     }),
                 );
+            }
+            VccInst::ClearStackSlotValueRanges => {
+                state.stack_slot_value_ranges.clear();
             }
             VccInst::BinOp { dst, op, lhs, rhs } => {
                 let lhs_ty = match state.value_type(*lhs) {
@@ -1501,6 +1533,27 @@ impl VccVerifier {
 
                 if let Err(err) = state.value_type(*src) {
                     self.errors.push(err);
+                    return;
+                }
+                if let VccValueType::Ptr(ptr_info) = ptr_ty
+                    && let VccAddrSpace::Stack(slot) = ptr_info.space
+                {
+                    let src_range = state
+                        .value_type(*src)
+                        .ok()
+                        .and_then(|ty| state.value_range(*src, ty));
+                    let exact_base = ptr_info
+                        .bounds
+                        .is_some_and(|bounds| bounds.min == 0 && bounds.max == 0);
+                    if exact_base && *offset == 0 && *size == 4 {
+                        if let Some(range) = src_range {
+                            state.set_stack_slot_value_range(slot, range);
+                        } else {
+                            state.clear_stack_slot_value_range(slot);
+                        }
+                    } else {
+                        state.clear_stack_slot_value_range(slot);
+                    }
                 }
             }
             VccInst::Phi { dst, args } => {

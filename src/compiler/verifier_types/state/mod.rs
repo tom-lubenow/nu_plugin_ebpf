@@ -176,6 +176,7 @@ pub(super) struct VerifierState {
     ambiguous_map_lookup_sources: Vec<bool>,
     ambiguous_map_lookup_maps: Vec<Option<MapRef>>,
     map_fd_sources: Vec<Option<MapRef>>,
+    stack_slot_value_ranges: HashMap<StackSlotId, ValueRange>,
     live_ringbuf_refs: Vec<bool>,
     released_ringbuf_record_regs: Vec<bool>,
     live_kfunc_refs: Vec<bool>,
@@ -249,6 +250,7 @@ impl VerifierState {
             ambiguous_map_lookup_sources: vec![false; total_vregs],
             ambiguous_map_lookup_maps: vec![None; total_vregs],
             map_fd_sources: vec![None; total_vregs],
+            stack_slot_value_ranges: HashMap::new(),
             live_ringbuf_refs: vec![false; total_vregs],
             released_ringbuf_record_regs: vec![false; total_vregs],
             live_kfunc_refs: vec![false; total_vregs],
@@ -699,6 +701,22 @@ impl VerifierState {
         if let Some(slot) = self.not_equal.get_mut(vreg.0 as usize) {
             slot.retain(|value| range_may_equal(range, *value));
         }
+    }
+
+    pub(super) fn stack_slot_value_range(&self, slot: StackSlotId) -> Option<ValueRange> {
+        self.stack_slot_value_ranges.get(&slot).copied()
+    }
+
+    pub(super) fn set_stack_slot_value_range(&mut self, slot: StackSlotId, range: ValueRange) {
+        self.stack_slot_value_ranges.insert(slot, range);
+    }
+
+    pub(super) fn clear_stack_slot_value_range(&mut self, slot: StackSlotId) {
+        self.stack_slot_value_ranges.remove(&slot);
+    }
+
+    pub(super) fn clear_all_stack_slot_value_ranges(&mut self) {
+        self.stack_slot_value_ranges.clear();
     }
 
     pub(super) fn mark_unreachable(&mut self) {

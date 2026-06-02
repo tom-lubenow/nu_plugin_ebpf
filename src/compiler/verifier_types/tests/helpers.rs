@@ -13023,6 +13023,15 @@ fn make_check_mtu_verify_call_with_len_diff(
     mtu_len_size: usize,
     len_diff: i64,
 ) -> (MirFunction, HashMap<VReg, MirType>) {
+    make_check_mtu_verify_call_with_len_diff_and_mtu_len_value(flags, mtu_len_size, len_diff, None)
+}
+
+fn make_check_mtu_verify_call_with_len_diff_and_mtu_len_value(
+    flags: i64,
+    mtu_len_size: usize,
+    len_diff: i64,
+    mtu_len_value: Option<i64>,
+) -> (MirFunction, HashMap<VReg, MirType>) {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
     func.entry = entry;
@@ -13037,6 +13046,14 @@ fn make_check_mtu_verify_call_with_len_diff(
             field: CtxField::Context,
             slot: None,
         });
+    if let Some(value) = mtu_len_value {
+        func.block_mut(entry).instructions.push(MirInst::StoreSlot {
+            slot: mtu_len,
+            offset: 0,
+            val: MirValue::Const(value),
+            ty: MirType::U32,
+        });
+    }
     func.block_mut(entry)
         .instructions
         .push(MirInst::CallHelper {
@@ -13127,6 +13144,22 @@ fn test_verify_mir_for_probe_context_check_mtu_rejects_len_diff_with_segment_fla
     assert!(
         err.iter().any(|e| e.message.contains(
             "helper 'bpf_check_mtu' requires arg3 len_diff to be 0 when arg4 has BPF_MTU_CHK_SEGS"
+        )),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_check_mtu_rejects_known_mtu_len_with_segment_flags() {
+    let (func, types) =
+        make_check_mtu_verify_call_with_len_diff_and_mtu_len_value(1, 4, 0, Some(1));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected bpf_check_mtu segment flags to reject nonzero mtu_len");
+    assert!(
+        err.iter().any(|e| e.message.contains(
+            "helper 'bpf_check_mtu' requires *arg2 mtu_len to be 0 when arg4 has BPF_MTU_CHK_SEGS"
         )),
         "unexpected errors: {:?}",
         err

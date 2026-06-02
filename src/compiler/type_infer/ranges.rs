@@ -392,6 +392,370 @@ impl<'a> TypeInference<'a> {
             .collect()
     }
 
+    pub(super) fn compute_stack_slot_value_ranges_at_inst_entries(
+        &self,
+        func: &MirFunction,
+        types: &HashMap<VReg, MirType>,
+        list_caps: &HashMap<VReg, usize>,
+    ) -> HashMap<(BlockId, usize), HashMap<StackSlotId, ValueRange>> {
+        let mut slot_caps: HashMap<StackSlotId, usize> = HashMap::new();
+        for slot in &func.stack_slots {
+            if matches!(slot.kind, StackSlotKind::ListBuffer) {
+                let elems = slot.size / 8;
+                slot_caps.insert(slot.id, elems.saturating_sub(1));
+            }
+        }
+
+        let total_vregs = func.vreg_count.max(func.param_count as u32);
+        let mut observed = vec![ValueRange::Unset; total_vregs as usize];
+        let mut in_states: HashMap<BlockId, Vec<ValueRange>> = HashMap::new();
+        let mut in_source_ranges: HashMap<BlockId, HashMap<RangeSource, ValueRange>> =
+            HashMap::new();
+        let mut in_reg_sources: HashMap<BlockId, HashMap<VReg, SlotSourceState>> = HashMap::new();
+        let mut in_slot_sources: HashMap<BlockId, HashMap<StackSlotId, SlotSourceState>> =
+            HashMap::new();
+        let mut in_slot_value_ranges: HashMap<BlockId, HashMap<StackSlotId, ValueRange>> =
+            HashMap::new();
+        let mut inst_entries: HashMap<(BlockId, usize), HashMap<StackSlotId, ValueRange>> =
+            HashMap::new();
+        let mut worklist = VecDeque::new();
+
+        in_states.insert(func.entry, vec![ValueRange::Unset; total_vregs as usize]);
+        in_source_ranges.insert(func.entry, HashMap::new());
+        in_reg_sources.insert(func.entry, HashMap::new());
+        in_slot_sources.insert(func.entry, HashMap::new());
+        in_slot_value_ranges.insert(func.entry, HashMap::new());
+        worklist.push_back(func.entry);
+
+        while let Some(block_id) = worklist.pop_front() {
+            let Some(state_in) = in_states.get(&block_id).cloned() else {
+                continue;
+            };
+            let mut source_ranges = in_source_ranges.get(&block_id).cloned().unwrap_or_default();
+            let mut reg_sources = in_reg_sources.get(&block_id).cloned().unwrap_or_default();
+            let mut slot_sources = in_slot_sources.get(&block_id).cloned().unwrap_or_default();
+            let mut slot_value_ranges = in_slot_value_ranges
+                .get(&block_id)
+                .cloned()
+                .unwrap_or_default();
+            let block = func.block(block_id);
+            let mut state = state_in;
+            let mut guards: HashMap<VReg, RangeGuard> = HashMap::new();
+
+            for (idx, inst) in block.instructions.iter().enumerate() {
+                inst_entries.insert((block_id, idx), slot_value_ranges.clone());
+                self.update_stack_slot_value_ranges_for_inst(
+                    inst,
+                    types,
+                    &state,
+                    &mut slot_value_ranges,
+                );
+                self.apply_range_inst(
+                    inst,
+                    types,
+                    list_caps,
+                    &slot_caps,
+                    &mut state,
+                    &mut source_ranges,
+                    &mut reg_sources,
+                    &mut slot_sources,
+                    &mut observed,
+                    &mut guards,
+                );
+            }
+
+            inst_entries.insert(
+                (block_id, block.instructions.len()),
+                slot_value_ranges.clone(),
+            );
+
+            match &block.terminator {
+                MirInst::Jump { target } => {
+                    self.propagate_range_state(
+                        *target,
+                        &state,
+                        &source_ranges,
+                        &reg_sources,
+                        &slot_sources,
+                        &mut in_states,
+                        &mut in_source_ranges,
+                        &mut in_reg_sources,
+                        &mut in_slot_sources,
+                        &mut worklist,
+                    );
+                    if Self::propagate_stack_slot_value_ranges(
+                        *target,
+                        &slot_value_ranges,
+                        &mut in_slot_value_ranges,
+                    ) {
+                        worklist.push_back(*target);
+                    }
+                }
+                MirInst::Branch {
+                    cond,
+                    if_true,
+                    if_false,
+                } => {
+                    if let Some((true_state, true_fields)) = self.refine_range_branch(
+                        &state,
+                        &source_ranges,
+                        &reg_sources,
+                        *cond,
+                        &guards,
+                        true,
+                    ) {
+                        self.propagate_range_state(
+                            *if_true,
+                            &true_state,
+                            &true_fields,
+                            &reg_sources,
+                            &slot_sources,
+                            &mut in_states,
+                            &mut in_source_ranges,
+                            &mut in_reg_sources,
+                            &mut in_slot_sources,
+                            &mut worklist,
+                        );
+                        if Self::propagate_stack_slot_value_ranges(
+                            *if_true,
+                            &slot_value_ranges,
+                            &mut in_slot_value_ranges,
+                        ) {
+                            worklist.push_back(*if_true);
+                        }
+                    }
+                    if let Some((false_state, false_fields)) = self.refine_range_branch(
+                        &state,
+                        &source_ranges,
+                        &reg_sources,
+                        *cond,
+                        &guards,
+                        false,
+                    ) {
+                        self.propagate_range_state(
+                            *if_false,
+                            &false_state,
+                            &false_fields,
+                            &reg_sources,
+                            &slot_sources,
+                            &mut in_states,
+                            &mut in_source_ranges,
+                            &mut in_reg_sources,
+                            &mut in_slot_sources,
+                            &mut worklist,
+                        );
+                        if Self::propagate_stack_slot_value_ranges(
+                            *if_false,
+                            &slot_value_ranges,
+                            &mut in_slot_value_ranges,
+                        ) {
+                            worklist.push_back(*if_false);
+                        }
+                    }
+                }
+                MirInst::LoopHeader {
+                    counter,
+                    start,
+                    step,
+                    limit,
+                    body,
+                    exit,
+                } => {
+                    let mut body_state = state.clone();
+                    let (min, max) = if *step >= 0 {
+                        let max = if *start < *limit {
+                            limit.saturating_sub(1)
+                        } else {
+                            *start
+                        };
+                        (*start, max)
+                    } else {
+                        let min = if *start > *limit {
+                            limit.saturating_add(1)
+                        } else {
+                            *start
+                        };
+                        (min, *start)
+                    };
+                    let counter_range = ValueRange::known(min, max);
+                    self.set_state_range(&mut body_state, *counter, counter_range);
+                    self.observe_range(&mut observed, *counter, counter_range);
+
+                    self.propagate_range_state(
+                        *body,
+                        &body_state,
+                        &source_ranges,
+                        &reg_sources,
+                        &slot_sources,
+                        &mut in_states,
+                        &mut in_source_ranges,
+                        &mut in_reg_sources,
+                        &mut in_slot_sources,
+                        &mut worklist,
+                    );
+                    if Self::propagate_stack_slot_value_ranges(
+                        *body,
+                        &slot_value_ranges,
+                        &mut in_slot_value_ranges,
+                    ) {
+                        worklist.push_back(*body);
+                    }
+
+                    self.propagate_range_state(
+                        *exit,
+                        &state,
+                        &source_ranges,
+                        &reg_sources,
+                        &slot_sources,
+                        &mut in_states,
+                        &mut in_source_ranges,
+                        &mut in_reg_sources,
+                        &mut in_slot_sources,
+                        &mut worklist,
+                    );
+                    if Self::propagate_stack_slot_value_ranges(
+                        *exit,
+                        &slot_value_ranges,
+                        &mut in_slot_value_ranges,
+                    ) {
+                        worklist.push_back(*exit);
+                    }
+                }
+                MirInst::LoopBack { header, .. } => {
+                    self.propagate_range_state(
+                        *header,
+                        &state,
+                        &source_ranges,
+                        &reg_sources,
+                        &slot_sources,
+                        &mut in_states,
+                        &mut in_source_ranges,
+                        &mut in_reg_sources,
+                        &mut in_slot_sources,
+                        &mut worklist,
+                    );
+                    if Self::propagate_stack_slot_value_ranges(
+                        *header,
+                        &slot_value_ranges,
+                        &mut in_slot_value_ranges,
+                    ) {
+                        worklist.push_back(*header);
+                    }
+                }
+                MirInst::Return { .. } | MirInst::TailCall { .. } | MirInst::Placeholder => {}
+                other => panic!("invalid terminator in stack slot value analysis: {other:?}"),
+            }
+        }
+
+        inst_entries
+    }
+
+    fn update_stack_slot_value_ranges_for_inst(
+        &self,
+        inst: &MirInst,
+        types: &HashMap<VReg, MirType>,
+        state: &[ValueRange],
+        slot_value_ranges: &mut HashMap<StackSlotId, ValueRange>,
+    ) {
+        match inst {
+            MirInst::StoreSlot {
+                slot,
+                offset,
+                val,
+                ty,
+            } => {
+                let range = self.value_range_for_state(val, state);
+                if *offset == 0 && ty.size() == 4 && matches!(range, ValueRange::Known { .. }) {
+                    slot_value_ranges.insert(*slot, range);
+                } else {
+                    slot_value_ranges.remove(slot);
+                }
+            }
+            MirInst::Store { ptr, .. } | MirInst::ReadStr { ptr, .. } => {
+                if Self::vreg_is_stack_pointer(*ptr, types) {
+                    slot_value_ranges.clear();
+                }
+            }
+            MirInst::CallHelper { args, .. } => {
+                if args.iter().any(|arg| {
+                    matches!(arg, MirValue::VReg(vreg) if Self::vreg_is_stack_pointer(*vreg, types))
+                }) {
+                    slot_value_ranges.clear();
+                    return;
+                }
+                for arg in args {
+                    if let MirValue::StackSlot(slot) = arg {
+                        slot_value_ranges.remove(slot);
+                    }
+                }
+            }
+            MirInst::CallKfunc { args, .. } | MirInst::CallSubfn { args, .. } => {
+                if args
+                    .iter()
+                    .any(|arg| Self::vreg_is_stack_pointer(*arg, types))
+                {
+                    slot_value_ranges.clear();
+                }
+            }
+            MirInst::LoadCtxField {
+                slot: Some(slot), ..
+            } => {
+                slot_value_ranges.remove(slot);
+            }
+            MirInst::ListNew { buffer, .. } => {
+                slot_value_ranges.remove(buffer);
+            }
+            _ => {}
+        }
+    }
+
+    fn vreg_is_stack_pointer(vreg: VReg, types: &HashMap<VReg, MirType>) -> bool {
+        matches!(
+            types.get(&vreg),
+            Some(MirType::Ptr {
+                address_space: AddressSpace::Stack,
+                ..
+            })
+        )
+    }
+
+    fn propagate_stack_slot_value_ranges(
+        target: BlockId,
+        incoming: &HashMap<StackSlotId, ValueRange>,
+        in_slot_value_ranges: &mut HashMap<BlockId, HashMap<StackSlotId, ValueRange>>,
+    ) -> bool {
+        let Some(current) = in_slot_value_ranges.get(&target).cloned() else {
+            in_slot_value_ranges.insert(target, incoming.clone());
+            return !incoming.is_empty();
+        };
+
+        let merged = Self::merge_stack_slot_value_ranges(&current, incoming);
+        if merged == current {
+            return false;
+        }
+        in_slot_value_ranges.insert(target, merged);
+        true
+    }
+
+    fn merge_stack_slot_value_ranges(
+        current: &HashMap<StackSlotId, ValueRange>,
+        incoming: &HashMap<StackSlotId, ValueRange>,
+    ) -> HashMap<StackSlotId, ValueRange> {
+        let mut merged = HashMap::new();
+        for slot in current.keys().chain(incoming.keys()) {
+            let Some(current_range) = current.get(slot).copied() else {
+                continue;
+            };
+            let Some(incoming_range) = incoming.get(slot).copied() else {
+                continue;
+            };
+            if let ValueRange::Known { .. } = current_range.merge(incoming_range) {
+                merged.insert(*slot, current_range.merge(incoming_range));
+            }
+        }
+        merged
+    }
+
     pub(super) fn compute_direct_ctx_field_sources(
         &self,
         func: &MirFunction,

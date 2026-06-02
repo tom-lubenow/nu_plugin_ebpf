@@ -1,11 +1,15 @@
 use super::*;
 use crate::compiler::elf::GetSocketCookieArgPolicy;
 use crate::compiler::instruction::{
-    HelperDynptrArgRole, KfuncRefKind, helper_named_arg_shape, helper_pointer_arg_ref_kind,
-    kfunc_ref_kind_from_bpf_type_name, scalar_range_contains_only_allowed_values,
-    scalar_range_contains_only_bitmask, scalar_range_satisfies_bit_combination,
+    BPF_MTU_CHK_SEGS, HelperDynptrArgRole, KfuncRefKind, helper_named_arg_shape,
+    helper_pointer_arg_ref_kind, kfunc_ref_kind_from_bpf_type_name,
+    scalar_range_contains_only_allowed_values, scalar_range_contains_only_bitmask,
+    scalar_range_satisfies_bit_combination,
 };
 use crate::compiler::{EbpfProgramType, ProbeContext, ProgramTypeInfo};
+
+const CHECK_MTU_SEGS_MTU_LEN_ZERO_MESSAGE: &str =
+    "helper 'bpf_check_mtu' requires *arg2 mtu_len to be 0 when arg4 has BPF_MTU_CHK_SEGS";
 
 const BPF_LOAD_HDR_OPT_TCP_SYN: i64 = 1;
 const BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB: i64 = 4;
@@ -672,6 +676,8 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
         }
     }
 
+    validate_check_mtu_mtu_len_zero_when_segment_flags(helper, args, state, errors);
+
     if matches!(helper, BpfHelper::GetSocketCookie) {
         validate_get_socket_cookie_arg_shape(args, types, state, program, probe_ctx, errors);
     }
@@ -1010,6 +1016,56 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
     }
 
     acquire_kind
+}
+
+fn validate_check_mtu_mtu_len_zero_when_segment_flags(
+    helper: BpfHelper,
+    args: &[MirValue],
+    state: &VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    if !matches!(helper, BpfHelper::CheckMtu) {
+        return;
+    }
+    let flags_are_segment_check = args.get(4).is_some_and(|value| {
+        matches!(
+            value_range(value, state),
+            ValueRange::Known { min, max } if min == BPF_MTU_CHK_SEGS && max == BPF_MTU_CHK_SEGS
+        )
+    });
+    if !flags_are_segment_check {
+        return;
+    }
+    let Some(slot) = check_mtu_mtu_len_stack_slot(args.get(2), state) else {
+        return;
+    };
+    let Some(ValueRange::Known { min, max }) = state.stack_slot_value_range(slot) else {
+        return;
+    };
+    if min > 0 || max < 0 {
+        errors.push(VerifierTypeError::new(CHECK_MTU_SEGS_MTU_LEN_ZERO_MESSAGE));
+    }
+}
+
+fn check_mtu_mtu_len_stack_slot(
+    arg: Option<&MirValue>,
+    state: &VerifierState,
+) -> Option<StackSlotId> {
+    match arg? {
+        MirValue::StackSlot(slot) => Some(*slot),
+        MirValue::VReg(vreg) => match state.get(*vreg) {
+            VerifierType::Ptr {
+                space: AddressSpace::Stack,
+                bounds: Some(bounds),
+                ..
+            } => match bounds.origin() {
+                PtrOrigin::Stack(slot) if bounds.min() == 0 && bounds.max() == 0 => Some(slot),
+                _ => None,
+            },
+            _ => None,
+        },
+        MirValue::Const(_) => None,
+    }
 }
 
 fn helper_dynptr_stack_slot_base_from_arg(

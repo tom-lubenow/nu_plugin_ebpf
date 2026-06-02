@@ -45,6 +45,7 @@ struct VccState {
     ambiguous_map_lookup_sources: HashSet<VccReg>,
     ambiguous_map_lookup_maps: HashMap<VccReg, MapRef>,
     map_fd_sources: HashMap<VccReg, MapRef>,
+    stack_slot_value_ranges: HashMap<StackSlotId, VccRange>,
     not_equal_consts: HashMap<VccReg, Vec<i64>>,
     live_ringbuf_refs: HashMap<VccReg, bool>,
     live_kfunc_refs: HashMap<VccReg, Option<KfuncRefKind>>,
@@ -142,6 +143,7 @@ impl VccState {
             ambiguous_map_lookup_sources: HashSet::new(),
             ambiguous_map_lookup_maps: HashMap::new(),
             map_fd_sources: HashMap::new(),
+            stack_slot_value_ranges: HashMap::new(),
             not_equal_consts: HashMap::new(),
             live_ringbuf_refs: HashMap::new(),
             live_kfunc_refs: HashMap::new(),
@@ -376,6 +378,18 @@ impl VccState {
             .get(&reg)
             .map(Vec::as_slice)
             .unwrap_or(&[])
+    }
+
+    fn stack_slot_value_range(&self, slot: StackSlotId) -> Option<VccRange> {
+        self.stack_slot_value_ranges.get(&slot).copied()
+    }
+
+    fn set_stack_slot_value_range(&mut self, slot: StackSlotId, range: VccRange) {
+        self.stack_slot_value_ranges.insert(slot, range);
+    }
+
+    fn clear_stack_slot_value_range(&mut self, slot: StackSlotId) {
+        self.stack_slot_value_ranges.remove(&slot);
     }
 
     fn retain_not_equal_in_range(&mut self, reg: VccReg, range: Option<VccRange>) {
@@ -1675,6 +1689,10 @@ impl VccState {
             ambiguous_map_lookup_sources,
             ambiguous_map_lookup_maps,
             map_fd_sources,
+            stack_slot_value_ranges: merge_stack_slot_value_ranges(
+                &self.stack_slot_value_ranges,
+                &other.stack_slot_value_ranges,
+            ),
             not_equal_consts,
             live_ringbuf_refs,
             live_kfunc_refs,
@@ -1838,6 +1856,7 @@ impl VccState {
             ambiguous_map_lookup_sources: self.ambiguous_map_lookup_sources.clone(),
             ambiguous_map_lookup_maps: self.ambiguous_map_lookup_maps.clone(),
             map_fd_sources: self.map_fd_sources.clone(),
+            stack_slot_value_ranges: self.stack_slot_value_ranges.clone(),
             not_equal_consts: HashMap::new(),
             live_ringbuf_refs: self.live_ringbuf_refs.clone(),
             live_kfunc_refs: self.live_kfunc_refs.clone(),
@@ -2500,6 +2519,29 @@ fn merge_res_spin_lock_stacks(
         return Some(Vec::new());
     }
     None
+}
+
+fn merge_stack_slot_value_ranges(
+    lhs: &HashMap<StackSlotId, VccRange>,
+    rhs: &HashMap<StackSlotId, VccRange>,
+) -> HashMap<StackSlotId, VccRange> {
+    let mut merged = HashMap::new();
+    for slot in lhs.keys().chain(rhs.keys()) {
+        let Some(lhs_range) = lhs.get(slot).copied() else {
+            continue;
+        };
+        let Some(rhs_range) = rhs.get(slot).copied() else {
+            continue;
+        };
+        merged.insert(
+            *slot,
+            VccRange {
+                min: lhs_range.min.min(rhs_range.min),
+                max: lhs_range.max.max(rhs_range.max),
+            },
+        );
+    }
+    merged
 }
 
 fn merge_ringbuf_dynptr_alias_roots(

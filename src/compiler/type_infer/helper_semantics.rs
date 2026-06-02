@@ -1,10 +1,13 @@
 use super::*;
 use crate::compiler::elf::GetSocketCookieArgPolicy;
 use crate::compiler::instruction::{
-    helper_named_arg_shape, scalar_range_contains_only_allowed_values,
+    BPF_MTU_CHK_SEGS, helper_named_arg_shape, scalar_range_contains_only_allowed_values,
     scalar_range_contains_only_bitmask, scalar_range_satisfies_bit_combination,
 };
 use crate::kernel_btf::KernelBtf;
+
+const CHECK_MTU_SEGS_MTU_LEN_ZERO_MESSAGE: &str =
+    "helper 'bpf_check_mtu' requires *arg2 mtu_len to be 0 when arg4 has BPF_MTU_CHK_SEGS";
 
 impl<'a> TypeInference<'a> {
     pub(super) fn mir_type_for_vreg(&self, vreg: VReg, types: &HashMap<VReg, MirType>) -> MirType {
@@ -403,6 +406,7 @@ impl<'a> TypeInference<'a> {
         args: &[MirValue],
         types: &HashMap<VReg, MirType>,
         value_ranges: &HashMap<VReg, ValueRange>,
+        stack_slot_value_ranges: Option<&HashMap<StackSlotId, ValueRange>>,
         direct_ctx_field_sources: &HashMap<VReg, CtxField>,
         stack_bounds: &HashMap<VReg, StackBounds>,
         slot_sizes: &HashMap<StackSlotId, i64>,
@@ -685,6 +689,14 @@ impl<'a> TypeInference<'a> {
             }
         }
 
+        self.validate_check_mtu_mtu_len_zero_when_segment_flags(
+            helper,
+            args,
+            value_ranges,
+            stack_slot_value_ranges,
+            errors,
+        );
+
         for (arg_idx, arg) in args.iter().enumerate() {
             if helper.dynptr_arg_role(arg_idx).is_none() {
                 continue;
@@ -743,6 +755,41 @@ impl<'a> TypeInference<'a> {
                 shape.expected,
                 errors,
             );
+        }
+    }
+
+    fn validate_check_mtu_mtu_len_zero_when_segment_flags(
+        &self,
+        helper: BpfHelper,
+        args: &[MirValue],
+        value_ranges: &HashMap<VReg, ValueRange>,
+        stack_slot_value_ranges: Option<&HashMap<StackSlotId, ValueRange>>,
+        errors: &mut Vec<TypeError>,
+    ) {
+        if !matches!(helper, BpfHelper::CheckMtu) {
+            return;
+        }
+        let flags_are_segment_check = args.get(4).is_some_and(|value| {
+            matches!(
+                self.value_range_for(value, value_ranges),
+                ValueRange::Known { min, max } if min == BPF_MTU_CHK_SEGS && max == BPF_MTU_CHK_SEGS
+            )
+        });
+        if !flags_are_segment_check {
+            return;
+        }
+
+        let Some(MirValue::StackSlot(mtu_len_slot)) = args.get(2) else {
+            return;
+        };
+        let Some(ValueRange::Known { min, max }) = stack_slot_value_ranges
+            .and_then(|ranges| ranges.get(mtu_len_slot))
+            .copied()
+        else {
+            return;
+        };
+        if min > 0 || max < 0 {
+            errors.push(TypeError::new(CHECK_MTU_SEGS_MTU_LEN_ZERO_MESSAGE));
         }
     }
 

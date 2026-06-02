@@ -65,9 +65,12 @@ pub(super) fn apply_inst(
             apply_load_slot_inst(*dst, *slot, *offset, ty, types, slot_sizes, state, errors);
         }
         MirInst::StoreSlot {
-            slot, offset, ty, ..
+            slot,
+            offset,
+            val,
+            ty,
         } => {
-            apply_store_slot_inst(*slot, *offset, ty, slot_sizes, errors);
+            apply_store_slot_inst(*slot, *offset, val, ty, slot_sizes, state, errors);
         }
         MirInst::BinOp { dst, op, lhs, rhs } => {
             apply_binop_inst(*dst, *op, lhs, rhs, slot_sizes, state, errors);

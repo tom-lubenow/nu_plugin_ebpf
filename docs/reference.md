@@ -473,9 +473,10 @@ multi-buffer packet size rather than the linear `ctx.packet_len`. XDP,
 tc_action, TC, TCX, and Netkit also model `helper-call "bpf_check_mtu" $ctx IFINDEX MTU_LEN_PTR LEN_DIFF FLAGS`;
 `MTU_LEN_PTR` must be a stack/map-backed `u32` pointer, and XDP requires
 `FLAGS = 0`. TC/TCX flags may contain only `BPF_MTU_CHK_SEGS` (`0x01`);
-when that segment-check flag is set, `LEN_DIFF` must be `0`. The runtime
-input value stored at `MTU_LEN_PTR` remains kernel-enforced for segment
-checks. XDP, tc_action, TC, TCX, and Netkit also
+when that segment-check flag is set, `LEN_DIFF` must be `0` and statically
+known nonzero stack values stored at `MTU_LEN_PTR` are rejected. Dynamic or
+map-backed runtime values at `MTU_LEN_PTR` remain kernel-enforced for
+segment checks. XDP, tc_action, TC, TCX, and Netkit also
 model `helper-call "bpf_fib_lookup" $ctx PARAMS_PTR PLEN FLAGS`, where
 `PARAMS_PTR` must be a stack/map-backed `bpf_fib_lookup` buffer whose
 accessible size covers `PLEN`, and `PLEN` must be at least the modeled

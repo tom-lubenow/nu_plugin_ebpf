@@ -3390,6 +3390,15 @@ fn make_check_mtu_call_with_len_diff(
     mtu_len_size: usize,
     len_diff: i64,
 ) -> (MirFunction, VReg) {
+    make_check_mtu_call_with_len_diff_and_mtu_len_value(flags, mtu_len_size, len_diff, None)
+}
+
+fn make_check_mtu_call_with_len_diff_and_mtu_len_value(
+    flags: i64,
+    mtu_len_size: usize,
+    len_diff: i64,
+    mtu_len_value: Option<i64>,
+) -> (MirFunction, VReg) {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();
     let dst = func.alloc_vreg();
@@ -3400,6 +3409,14 @@ fn make_check_mtu_call_with_len_diff(
         field: CtxField::Context,
         slot: None,
     });
+    if let Some(value) = mtu_len_value {
+        block.instructions.push(MirInst::StoreSlot {
+            slot: mtu_len,
+            offset: 0,
+            val: MirValue::Const(value),
+            ty: MirType::U32,
+        });
+    }
     block.instructions.push(MirInst::CallHelper {
         dst,
         helper: BpfHelper::CheckMtu as u32,
@@ -3488,6 +3505,23 @@ fn test_type_error_check_mtu_helper_rejects_len_diff_with_segment_flags() {
     assert!(
         errs.iter().any(|e| e.message.contains(
             "helper 'bpf_check_mtu' requires arg3 len_diff to be 0 when arg4 has BPF_MTU_CHK_SEGS"
+        )),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_type_error_check_mtu_helper_rejects_known_mtu_len_with_segment_flags() {
+    let (func, _) = make_check_mtu_call_with_len_diff_and_mtu_len_value(1, 4, 0, Some(1));
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_check_mtu segment flags to reject nonzero mtu_len");
+    assert!(
+        errs.iter().any(|e| e.message.contains(
+            "helper 'bpf_check_mtu' requires *arg2 mtu_len to be 0 when arg4 has BPF_MTU_CHK_SEGS"
         )),
         "unexpected errors: {:?}",
         errs

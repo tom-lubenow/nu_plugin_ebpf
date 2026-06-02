@@ -1,7 +1,7 @@
 use super::*;
 use crate::compiler::elf::GetSocketCookieArgPolicy;
 use crate::compiler::instruction::{
-    KfuncRefKind, helper_named_arg_shape, kfunc_arg_accepts_skb_pointee_name,
+    BPF_MTU_CHK_SEGS, KfuncRefKind, helper_named_arg_shape, kfunc_arg_accepts_skb_pointee_name,
     kfunc_arg_pointee_mismatch, kfunc_arg_requires_skb_context_or_pointer,
     scalar_range_contains_only_bitmask, scalar_value_satisfies_bit_combination,
     unknown_kfunc_signature_message,
@@ -14,6 +14,8 @@ const BPF_SOCK_OPS_PASSIVE_ESTABLISHED_CB: i64 = 5;
 const BPF_SOCK_OPS_PARSE_HDR_OPT_CB: i64 = 13;
 const BPF_SOCK_OPS_HDR_OPT_LEN_CB: i64 = 14;
 const BPF_SOCK_OPS_WRITE_HDR_OPT_CB: i64 = 15;
+const CHECK_MTU_SEGS_MTU_LEN_ZERO_MESSAGE: &str =
+    "helper 'bpf_check_mtu' requires *arg2 mtu_len to be 0 when arg4 has BPF_MTU_CHK_SEGS";
 
 impl<'a> VccLowerer<'a> {
     pub(super) fn verify_helper_call(
@@ -582,6 +584,43 @@ impl<'a> VccLowerer<'a> {
             }
             _ => Ok(()),
         }
+    }
+
+    fn verify_check_mtu_mtu_len_zero_when_segment_flags(
+        &mut self,
+        args: &[MirValue],
+        out: &mut Vec<VccInst>,
+    ) -> Result<(), VccError> {
+        let (Some(mtu_len), Some(flags)) = (args.get(2), args.get(4)) else {
+            return Ok(());
+        };
+        let ptr = match mtu_len {
+            MirValue::StackSlot(slot) => self.stack_addr_temp(*slot, out),
+            MirValue::VReg(vreg)
+                if matches!(
+                    self.effective_ptr_space(*vreg),
+                    Some(VccAddrSpace::Stack(StackSlotId(slot))) if slot != u32::MAX
+                ) =>
+            {
+                VccReg(vreg.0)
+            }
+            MirValue::VReg(_) | MirValue::Const(_) => return Ok(()),
+        };
+        let when_value = match flags {
+            MirValue::Const(value) => VccValue::Imm(*value),
+            MirValue::VReg(vreg) if !self.is_pointer_reg(*vreg) => {
+                self.assert_scalar_reg(*vreg, out);
+                VccValue::Reg(VccReg(vreg.0))
+            }
+            MirValue::VReg(_) | MirValue::StackSlot(_) => return Ok(()),
+        };
+        out.push(VccInst::AssertStackSlotZeroIfConstEq {
+            ptr,
+            when_value,
+            when_expected: BPF_MTU_CHK_SEGS,
+            message: CHECK_MTU_SEGS_MTU_LEN_ZERO_MESSAGE.to_string(),
+        });
+        Ok(())
     }
 
     pub(super) fn verify_helper_arg_value(
@@ -1599,6 +1638,10 @@ impl<'a> VccLowerer<'a> {
                     out,
                 )?;
             }
+        }
+
+        if matches!(helper, BpfHelper::CheckMtu) {
+            self.verify_check_mtu_mtu_len_zero_when_segment_flags(args, out)?;
         }
 
         if matches!(helper, BpfHelper::GetSocketCookie) {
