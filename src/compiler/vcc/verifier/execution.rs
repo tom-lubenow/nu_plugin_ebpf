@@ -1118,6 +1118,12 @@ impl VccVerifier {
                         }
                     }
                     _ => {
+                        if matches!(lhs_ty, VccValueType::StalePacketPtr)
+                            || matches!(rhs_ty, VccValueType::StalePacketPtr)
+                        {
+                            self.errors.push(Self::stale_packet_pointer_error("binop"));
+                            return;
+                        }
                         if lhs_ty.class() != VccTypeClass::Scalar
                             && lhs_ty.class() != VccTypeClass::Bool
                         {

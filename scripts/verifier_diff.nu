@@ -18620,9 +18620,9 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
-        name: "dynptr-record-field-direct-rejects-distinct-projection"
+        name: "dynptr-record-field-direct-tracks-lifecycle"
         category: "helper-state"
-        tags: [kfunc dynptr record source reject]
+        tags: [kfunc dynptr record source accept]
         requires: [kernel-btf]
         target: "raw_tracepoint:sys_enter"
         program: [
@@ -18630,12 +18630,12 @@ const FIXTURES = [
             '  let rec = { d: "0123456789abcdef" }'
             '  helper-call "bpf_ringbuf_reserve_dynptr" events 8 0 $rec.d'
             '  let ptr = (kfunc-call "bpf_dynptr_slice" $rec.d 0 0 4)'
+            '  helper-call "bpf_ringbuf_discard_dynptr" $rec.d 0'
             '  0'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "kfunc 'bpf_dynptr_slice' arg0 requires initialized dynptr stack object"
+        local: "accept"
+        kernel: "accept"
     }
     {
         name: "dynptr-kfunc-slice-rejects-nonzero-buffer"
@@ -32310,9 +32310,9 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
-        name: "source-kptr-xchg-cgroup-clear-rejects-partial-old-release"
+        name: "source-kptr-xchg-cgroup-clear-conditional-null-old-release"
         category: "helper-state"
-        tags: [kfunc helper-call kptr cgroup ref-lifetime phi source reject]
+        tags: [kfunc helper-call kptr cgroup ref-lifetime phi source accept]
         requires: [kernel-btf]
         target: "kprobe:do_exit"
         program: [
@@ -32324,6 +32324,31 @@ const FIXTURES = [
             '    let old = (if $selector == 0 { helper-call "bpf_kptr_xchg" $entry.cgrp 0 } else { 0 })'
             '    if $old {'
             '      $old | kfunc-call "bpf_cgroup_release"'
+            '    }'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "source-kptr-xchg-cgroup-clear-rejects-conditional-old-release"
+        category: "helper-state"
+        tags: [kfunc helper-call kptr cgroup ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "kprobe:do_exit"
+        program: [
+            '{|ctx|'
+            '  map-define cgroup_slots --kind array --key-type u32 --value-type "record{cgrp:kptr:cgroup,cookie:u64}" --max-entries 1'
+            '  let entry = (0 | map-get cgroup_slots --kind array)'
+            '  if $entry {'
+            '    let selector = (helper-call "bpf_get_prandom_u32")'
+            '    let old = (helper-call "bpf_kptr_xchg" $entry.cgrp 0)'
+            '    if $selector == 0 {'
+            '      if $old {'
+            '        $old | kfunc-call "bpf_cgroup_release"'
+            '      }'
             '    }'
             '  }'
             '  0'

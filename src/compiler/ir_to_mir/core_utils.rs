@@ -472,9 +472,18 @@ impl<'a> HirToMirLowering<'a> {
 
     /// Add an instruction to the current block
     pub(super) fn emit(&mut self, inst: MirInst) {
-        if let MirInst::CallHelper { helper, .. } = &inst
-            && BpfHelper::from_u32(*helper).is_some_and(BpfHelper::invalidates_packet_pointers)
-        {
+        let invalidates_packet_pointers = match &inst {
+            MirInst::CallHelper { helper, .. } => {
+                BpfHelper::from_u32(*helper).is_some_and(BpfHelper::invalidates_packet_pointers)
+            }
+            MirInst::CallSubfn { subfn, .. } => {
+                crate::compiler::subfn_summaries::infer_subfunction_summaries(&self.subfunctions)
+                    .get(subfn)
+                    .is_some_and(|summary| summary.changes_packet_data())
+            }
+            _ => false,
+        };
+        if invalidates_packet_pointers {
             self.materialize_packet_ctx_field_aliases_before_invalidation();
         }
         self.current_block_mut().instructions.push(inst);

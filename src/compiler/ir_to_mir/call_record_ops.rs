@@ -940,12 +940,6 @@ impl<'a> HirToMirLowering<'a> {
         let src = if let Some(src) = scalar_constant {
             src
         } else {
-            if field.source_reg.is_some() && field_source_meta.is_none() {
-                return Err(CompileError::UnsupportedInstruction(format!(
-                    "get field '{}' requires a current metadata-backed record field value in eBPF",
-                    field.name
-                )));
-            }
             MirValue::VReg(field.value_vreg)
         };
         self.emit(MirInst::Copy {

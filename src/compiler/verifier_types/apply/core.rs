@@ -247,6 +247,15 @@ pub(super) fn apply_binop_inst(
         return;
     }
 
+    if let Some(reg) = stale_packet_ptr_operand(lhs, rhs, state) {
+        errors.push(VerifierTypeError::new(format!(
+            "binop uses stale packet pointer v{} after a packet-mutating helper; reload ctx.data/data_end before access",
+            reg.0
+        )));
+        state.set(dst, VerifierType::Unknown);
+        return;
+    }
+
     if binop_has_pointer_operand(lhs, rhs, state, slot_sizes) {
         errors.push(VerifierTypeError::new(
             "binop requires scalar operands (pointer used)",
@@ -260,6 +269,15 @@ pub(super) fn apply_binop_inst(
     if let Some(src) = scalar_identity_source(op, lhs, rhs, state, slot_sizes) {
         state.set_scalar_alias(dst, src);
     }
+}
+
+fn stale_packet_ptr_operand(lhs: &MirValue, rhs: &MirValue, state: &VerifierState) -> Option<VReg> {
+    [lhs, rhs].into_iter().find_map(|value| match value {
+        MirValue::VReg(reg) if matches!(state.get(*reg), VerifierType::StalePacketPtr) => {
+            Some(*reg)
+        }
+        _ => None,
+    })
 }
 
 fn binop_has_pointer_operand(
