@@ -4023,7 +4023,7 @@ impl<'a> HirToMirLowering<'a> {
             }
 
             "bits not" => {
-                self.lower_bits_not_signed(&cmd_name, src_dst, dst_vreg, src_dst_had_value)?;
+                self.lower_bits_not(&cmd_name, src_dst, dst_vreg, src_dst_had_value)?;
             }
 
             "bits shl" | "bits shr" => {

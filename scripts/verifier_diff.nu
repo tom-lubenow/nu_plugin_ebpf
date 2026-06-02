@@ -35507,18 +35507,30 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
-        name: "core-scalar-bits-not-default-reject"
+        name: "core-scalar-bits-not-default"
         category: "language-core"
-        tags: [scalar bits "not" reject]
+        tags: [scalar bits "not"]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  4 | bits not'
+            '  (4 | bits not) == 251'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "bits not currently requires --signed"
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-list-bits-not-default"
+        category: "language-core"
+        tags: [aggregate list bits "not"]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ([4 3 2] | bits not | math sum) == 756'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
     }
     {
         name: "core-scalar-bits-shift-signed-i64"

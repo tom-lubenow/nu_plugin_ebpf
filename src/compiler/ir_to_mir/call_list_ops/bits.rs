@@ -1,6 +1,12 @@
 use super::*;
 use crate::compiler::mir::{BinOpKind, UnaryOpKind};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BitsNotMode {
+    Signed,
+    Masked { mask: i64 },
+}
+
 impl<'a> HirToMirLowering<'a> {
     fn bits_binary_op(cmd_name: &str) -> BinOpKind {
         match cmd_name {
@@ -54,6 +60,84 @@ impl<'a> HirToMirLowering<'a> {
                 Some(nu_protocol::Value::Int { val, .. }) => Some(*val),
                 _ => None,
             })
+    }
+
+    fn bits_not_mode(&self, cmd_name: &str) -> Result<BitsNotMode, CompileError> {
+        if !self.positional_args.is_empty() || !self.parser_info_args.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} accepts no positional or parser-info arguments in eBPF"
+            )));
+        }
+
+        let signed = match self.named_flags.as_slice() {
+            [] => false,
+            [flag] if matches!(flag.as_str(), "signed" | "s") => true,
+            _ => {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{cmd_name} supports only --signed or --number-bytes for integer input in eBPF"
+                )));
+            }
+        };
+        if signed {
+            if !self.named_args.is_empty() {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{cmd_name} --signed does not support named arguments in eBPF"
+                )));
+            }
+            return Ok(BitsNotMode::Signed);
+        }
+
+        let mut number_bytes_reg = None;
+        for (name, (_vreg, reg)) in &self.named_args {
+            match name.as_str() {
+                "number-bytes" | "n" => {
+                    if number_bytes_reg.replace(*reg).is_some() {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "{cmd_name} accepts only one --number-bytes argument in eBPF"
+                        )));
+                    }
+                }
+                _ => {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{cmd_name} supports only --number-bytes for masked integer input in eBPF"
+                    )));
+                }
+            }
+        }
+
+        let number_bytes = if let Some(reg) = number_bytes_reg {
+            let meta = self.get_metadata(reg).ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "{cmd_name} requires compile-time --number-bytes in eBPF"
+                ))
+            })?;
+            Self::bits_integer_value_from_metadata(meta).ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "{cmd_name} requires compile-time --number-bytes in eBPF"
+                ))
+            })?
+        } else {
+            1
+        };
+
+        let mask = match number_bytes {
+            1 => 0xff,
+            2 => 0xffff,
+            4 => 0xffff_ffff,
+            _ => {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{cmd_name} masked integer mode supports --number-bytes 1, 2, or 4 in eBPF; got {number_bytes}"
+                )));
+            }
+        };
+        Ok(BitsNotMode::Masked { mask })
+    }
+
+    fn bits_not_output(input: i64, mode: BitsNotMode) -> i64 {
+        match mode {
+            BitsNotMode::Signed => !input,
+            BitsNotMode::Masked { mask } => (!input) & mask,
+        }
     }
 
     fn validate_bits_integer_operand(
@@ -713,7 +797,7 @@ impl<'a> HirToMirLowering<'a> {
         });
     }
 
-    pub(in crate::compiler::ir_to_mir) fn lower_bits_not_signed(
+    pub(in crate::compiler::ir_to_mir) fn lower_bits_not(
         &mut self,
         cmd_name: &str,
         src_dst: RegId,
@@ -732,19 +816,7 @@ impl<'a> HirToMirLowering<'a> {
             dst_vreg
         };
 
-        if !self.positional_args.is_empty()
-            || !self.named_args.is_empty()
-            || !self.parser_info_args.is_empty()
-        {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "{cmd_name} only supports --signed with no arguments in eBPF"
-            )));
-        }
-        if self.named_flags.len() != 1 || self.named_flags[0] != "signed" {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "{cmd_name} currently requires --signed in eBPF because the default command is width-masked"
-            )));
-        }
+        let mode = self.bits_not_mode(cmd_name)?;
 
         let input_reg = input_reg.ok_or_else(|| {
             CompileError::UnsupportedInstruction(format!(
@@ -778,7 +850,7 @@ impl<'a> HirToMirLowering<'a> {
                         }
                     };
                     Ok(nu_protocol::Value::int(
-                        !val,
+                        Self::bits_not_output(val, mode),
                         nu_protocol::Span::unknown(),
                     ))
                 })
@@ -836,11 +908,7 @@ impl<'a> HirToMirLowering<'a> {
                     self.vreg_type_hints.insert(item_vreg, MirType::I64);
 
                     let output_vreg = self.func.alloc_vreg();
-                    self.emit(MirInst::UnaryOp {
-                        dst: output_vreg,
-                        op: UnaryOpKind::BitNot,
-                        src: MirValue::VReg(item_vreg),
-                    });
+                    self.emit_bits_not_value(output_vreg, MirValue::VReg(item_vreg), mode);
                     self.vreg_type_hints.insert(output_vreg, MirType::I64);
                     self.emit(MirInst::ListPush {
                         list: result_vreg,
@@ -861,7 +929,7 @@ impl<'a> HirToMirLowering<'a> {
 
         self.validate_bits_integer_operand(cmd_name, "pipeline input", &input_meta, input_vreg)?;
         if let Some(input) = Self::bits_integer_value_from_metadata(&input_meta) {
-            let output = !input;
+            let output = Self::bits_not_output(input, mode);
             self.emit(MirInst::Copy {
                 dst: result_vreg,
                 src: MirValue::Const(output),
@@ -875,16 +943,29 @@ impl<'a> HirToMirLowering<'a> {
             ));
             out_meta.literal_int = Some(output);
         } else {
-            self.emit(MirInst::UnaryOp {
-                dst: result_vreg,
-                op: UnaryOpKind::BitNot,
-                src: MirValue::VReg(input_vreg),
-            });
+            self.emit_bits_not_value(result_vreg, MirValue::VReg(input_vreg), mode);
             self.reset_call_result_metadata(src_dst);
             self.get_or_create_metadata(src_dst).field_type = Some(MirType::I64);
         }
         self.vreg_type_hints.insert(result_vreg, MirType::I64);
         Ok(())
+    }
+
+    fn emit_bits_not_value(&mut self, dst: VReg, src: MirValue, mode: BitsNotMode) {
+        self.emit(MirInst::UnaryOp {
+            dst,
+            op: UnaryOpKind::BitNot,
+            src,
+        });
+        if let BitsNotMode::Masked { mask } = mode {
+            let mask_value = self.large_const_operand(&MirType::I64, mask);
+            self.emit(MirInst::BinOp {
+                dst,
+                op: BinOpKind::And,
+                lhs: MirValue::VReg(dst),
+                rhs: mask_value,
+            });
+        }
     }
 
     fn lower_bits_binary_runtime_list(
