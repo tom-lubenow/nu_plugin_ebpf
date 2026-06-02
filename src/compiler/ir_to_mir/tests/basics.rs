@@ -230,8 +230,26 @@ fn integer_expr(value: i64) -> Expression {
     }
 }
 
+fn bool_expr_match_pattern(value: bool) -> Pattern {
+    Pattern::Expression(Box::new(Expression {
+        expr: Expr::Bool(value),
+        span: Span::test_data(),
+        span_id: SpanId::new(0),
+        ty: Type::Bool,
+    }))
+}
+
 fn integer_expr_match_pattern(value: i64) -> Pattern {
     Pattern::Expression(Box::new(integer_expr(value)))
+}
+
+fn nothing_expr_match_pattern() -> Pattern {
+    Pattern::Expression(Box::new(Expression {
+        expr: Expr::Nothing,
+        span: Span::test_data(),
+        span_id: SpanId::new(0),
+        ty: Type::Nothing,
+    }))
 }
 
 fn integer_range_expr_match_pattern_with_bounds(
@@ -269,6 +287,53 @@ fn make_integer_match_program(pattern: Pattern) -> HirProgram {
                     stmts: vec![HirStmt::LoadLiteral {
                         dst: RegId::new(0),
                         lit: HirLiteral::Int(42),
+                    }],
+                    terminator: HirTerminator::Match {
+                        pattern: Box::new(pattern),
+                        src: RegId::new(0),
+                        if_true: HirBlockId(1),
+                        if_false: HirBlockId(2),
+                    },
+                },
+                HirBlock {
+                    id: HirBlockId(1),
+                    stmts: vec![HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::Int(7),
+                    }],
+                    terminator: HirTerminator::Return { src: RegId::new(1) },
+                },
+                HirBlock {
+                    id: HirBlockId(2),
+                    stmts: vec![HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::Int(9),
+                    }],
+                    terminator: HirTerminator::Return { src: RegId::new(2) },
+                },
+            ],
+            entry: HirBlockId(0),
+            spans: Vec::new(),
+            ast: Vec::new(),
+            comments: Vec::new(),
+            register_count: 3,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        None,
+    )
+}
+
+fn make_bool_match_program(pattern: Pattern) -> HirProgram {
+    HirProgram::new(
+        HirFunction {
+            blocks: vec![
+                HirBlock {
+                    id: HirBlockId(0),
+                    stmts: vec![HirStmt::LoadLiteral {
+                        dst: RegId::new(0),
+                        lit: HirLiteral::Bool(true),
                     }],
                     terminator: HirTerminator::Match {
                         pattern: Box::new(pattern),
@@ -588,6 +653,57 @@ fn test_lower_match_integer_expression_pattern_compiles() {
 
     compile_mir_to_ebpf_with_hints(&program, None, None)
         .expect("integer expression match pattern should compile through codegen");
+}
+
+#[test]
+fn test_lower_match_bool_pattern_against_integer_source_is_known_non_match() {
+    let hir = make_integer_match_program(bool_expr_match_pattern(true));
+
+    let program = lower_hir_to_mir(&hir, None, &HashMap::new())
+        .expect("bool pattern against integer source should lower to MIR");
+    let entry = program.main.block(BlockId(0));
+    assert!(
+        matches!(entry.terminator, MirInst::Jump { target } if target == BlockId(2)),
+        "known scalar pattern type mismatch should jump to the false arm, got {:?}",
+        entry.terminator
+    );
+
+    compile_mir_to_ebpf_with_hints(&program, None, None)
+        .expect("bool pattern against integer source should compile through codegen");
+}
+
+#[test]
+fn test_lower_match_integer_pattern_against_bool_source_is_known_non_match() {
+    let hir = make_bool_match_program(integer_expr_match_pattern(1));
+
+    let program = lower_hir_to_mir(&hir, None, &HashMap::new())
+        .expect("integer pattern against bool source should lower to MIR");
+    let entry = program.main.block(BlockId(0));
+    assert!(
+        matches!(entry.terminator, MirInst::Jump { target } if target == BlockId(2)),
+        "known scalar pattern type mismatch should jump to the false arm, got {:?}",
+        entry.terminator
+    );
+
+    compile_mir_to_ebpf_with_hints(&program, None, None)
+        .expect("integer pattern against bool source should compile through codegen");
+}
+
+#[test]
+fn test_lower_match_nothing_pattern_against_integer_source_is_known_non_match() {
+    let hir = make_integer_match_program(nothing_expr_match_pattern());
+
+    let program = lower_hir_to_mir(&hir, None, &HashMap::new())
+        .expect("nothing pattern against integer source should lower to MIR");
+    let entry = program.main.block(BlockId(0));
+    assert!(
+        matches!(entry.terminator, MirInst::Jump { target } if target == BlockId(2)),
+        "known scalar pattern type mismatch should jump to the false arm, got {:?}",
+        entry.terminator
+    );
+
+    compile_mir_to_ebpf_with_hints(&program, None, None)
+        .expect("nothing pattern against integer source should compile through codegen");
 }
 
 #[test]

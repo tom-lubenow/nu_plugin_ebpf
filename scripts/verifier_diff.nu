@@ -35518,6 +35518,34 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-runtime-match-bool"
+        category: "language-core"
+        tags: [control-flow "match" scalar bool runtime]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let b = ((random int | bits and 1) == 1)'
+            '  match $b { true => 10, false => 20 }'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-runtime-match-nothing"
+        category: "language-core"
+        tags: [control-flow "match" scalar nothing runtime]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let x = null'
+            '  match $x { null => 10, _ => 20 }'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-runtime-match-integer-or-pattern"
         category: "language-core"
         tags: [control-flow "match" "or-pattern" scalar integer runtime]

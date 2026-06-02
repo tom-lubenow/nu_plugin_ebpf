@@ -14,6 +14,19 @@ mod trampoline;
 
 use trampoline::TypedProjectionStep;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ScalarMatchKind {
+    Bool,
+    Integer,
+    Nothing,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum KnownSourceMatchKind {
+    Scalar(ScalarMatchKind),
+    NonScalar,
+}
+
 impl<'a> HirToMirLowering<'a> {
     pub(super) fn lower_binary_op(
         &mut self,
@@ -211,11 +224,15 @@ impl<'a> HirToMirLowering<'a> {
         let src_vreg = self.get_vreg(src);
 
         match pattern {
-            Pattern::Value(value) => self.lower_match_value(value, src_vreg, if_true, if_false)?,
-            Pattern::Expression(expr) => {
-                self.lower_match_expression(expr, src_vreg, if_true, if_false)?
+            Pattern::Value(value) => {
+                self.lower_match_value(value, src, src_vreg, if_true, if_false)?
             }
-            Pattern::Or(patterns) => self.lower_match_or(patterns, src_vreg, if_true, if_false)?,
+            Pattern::Expression(expr) => {
+                self.lower_match_expression(expr, src, src_vreg, if_true, if_false)?
+            }
+            Pattern::Or(patterns) => {
+                self.lower_match_or(patterns, src, src_vreg, if_true, if_false)?
+            }
             Pattern::Variable(var_id) => {
                 self.bind_variable_to_src_value(*var_id, src, src_vreg)?;
                 self.terminate(MirInst::Jump { target: if_true });
@@ -235,6 +252,7 @@ impl<'a> HirToMirLowering<'a> {
     fn lower_match_or(
         &mut self,
         patterns: &[MatchPattern],
+        src: RegId,
         src_vreg: VReg,
         if_true: BlockId,
         if_false: BlockId,
@@ -259,17 +277,17 @@ impl<'a> HirToMirLowering<'a> {
 
             match &alternative.pattern {
                 Pattern::Value(value) => {
-                    self.lower_match_value(value, src_vreg, if_true, next_false)?
+                    self.lower_match_value(value, src, src_vreg, if_true, next_false)?
                 }
                 Pattern::Expression(expr) => {
-                    self.lower_match_expression(expr, src_vreg, if_true, next_false)?
+                    self.lower_match_expression(expr, src, src_vreg, if_true, next_false)?
                 }
                 Pattern::IgnoreValue => {
                     self.terminate(MirInst::Jump { target: if_true });
                     return Ok(());
                 }
                 Pattern::Or(patterns) => {
-                    self.lower_match_or(patterns, src_vreg, if_true, next_false)?
+                    self.lower_match_or(patterns, src, src_vreg, if_true, next_false)?
                 }
                 pattern => {
                     return Err(CompileError::UnsupportedInstruction(format!(
@@ -327,6 +345,64 @@ impl<'a> HirToMirLowering<'a> {
             if_true,
             if_false,
         });
+    }
+
+    fn terminate_known_match_mismatch(&mut self, if_false: BlockId) {
+        self.terminate(MirInst::Jump { target: if_false });
+    }
+
+    fn scalar_match_kind_for_value(value: &Value) -> Option<ScalarMatchKind> {
+        match value {
+            Value::Bool { .. } => Some(ScalarMatchKind::Bool),
+            Value::Nothing { .. } => Some(ScalarMatchKind::Nothing),
+            Value::Int { .. } | Value::Filesize { .. } | Value::Duration { .. } => {
+                Some(ScalarMatchKind::Integer)
+            }
+            _ => None,
+        }
+    }
+
+    fn known_match_kind_for_mir_type(ty: &MirType) -> Option<KnownSourceMatchKind> {
+        match ty {
+            MirType::Bool => Some(KnownSourceMatchKind::Scalar(ScalarMatchKind::Bool)),
+            MirType::I8
+            | MirType::I16
+            | MirType::I32
+            | MirType::I64
+            | MirType::U8
+            | MirType::U16
+            | MirType::U32
+            | MirType::U64 => Some(KnownSourceMatchKind::Scalar(ScalarMatchKind::Integer)),
+            MirType::Unknown => None,
+            _ => Some(KnownSourceMatchKind::NonScalar),
+        }
+    }
+
+    fn source_match_kind(&self, src: RegId, src_vreg: VReg) -> Option<KnownSourceMatchKind> {
+        if let Some(kind) = self
+            .get_metadata(src)
+            .and_then(|meta| meta.constant_value.as_ref())
+            .and_then(Self::scalar_match_kind_for_value)
+        {
+            return Some(KnownSourceMatchKind::Scalar(kind));
+        }
+
+        self.vreg_type_hints
+            .get(&src_vreg)
+            .and_then(Self::known_match_kind_for_mir_type)
+    }
+
+    fn source_scalar_match_is_known_mismatch(
+        &self,
+        src: RegId,
+        src_vreg: VReg,
+        expected: ScalarMatchKind,
+    ) -> bool {
+        match self.source_match_kind(src, src_vreg) {
+            Some(KnownSourceMatchKind::Scalar(actual)) => actual != expected,
+            Some(KnownSourceMatchKind::NonScalar) => true,
+            None => false,
+        }
     }
 
     fn terminate_i64_range_match(
@@ -427,19 +503,63 @@ impl<'a> HirToMirLowering<'a> {
     fn lower_match_value(
         &mut self,
         value: &Value,
+        src: RegId,
         src_vreg: VReg,
         if_true: BlockId,
         if_false: BlockId,
     ) -> Result<(), CompileError> {
         match value {
-            Value::Bool { val, .. } => self.terminate_bool_match(src_vreg, *val, if_true, if_false),
-            Value::Nothing { .. } => self.terminate_i64_match(src_vreg, 0, if_true, if_false),
-            Value::Int { val, .. } => self.terminate_i64_match(src_vreg, *val, if_true, if_false),
+            Value::Bool { val, .. } => {
+                if self.source_scalar_match_is_known_mismatch(src, src_vreg, ScalarMatchKind::Bool)
+                {
+                    self.terminate_known_match_mismatch(if_false);
+                } else {
+                    self.terminate_bool_match(src_vreg, *val, if_true, if_false);
+                }
+            }
+            Value::Nothing { .. } => {
+                if self.source_scalar_match_is_known_mismatch(
+                    src,
+                    src_vreg,
+                    ScalarMatchKind::Nothing,
+                ) {
+                    self.terminate_known_match_mismatch(if_false);
+                } else {
+                    self.terminate_i64_match(src_vreg, 0, if_true, if_false);
+                }
+            }
+            Value::Int { val, .. } => {
+                if self.source_scalar_match_is_known_mismatch(
+                    src,
+                    src_vreg,
+                    ScalarMatchKind::Integer,
+                ) {
+                    self.terminate_known_match_mismatch(if_false);
+                } else {
+                    self.terminate_i64_match(src_vreg, *val, if_true, if_false);
+                }
+            }
             Value::Filesize { val, .. } => {
-                self.terminate_i64_match(src_vreg, val.get(), if_true, if_false)
+                if self.source_scalar_match_is_known_mismatch(
+                    src,
+                    src_vreg,
+                    ScalarMatchKind::Integer,
+                ) {
+                    self.terminate_known_match_mismatch(if_false);
+                } else {
+                    self.terminate_i64_match(src_vreg, val.get(), if_true, if_false);
+                }
             }
             Value::Duration { val, .. } => {
-                self.terminate_i64_match(src_vreg, *val, if_true, if_false)
+                if self.source_scalar_match_is_known_mismatch(
+                    src,
+                    src_vreg,
+                    ScalarMatchKind::Integer,
+                ) {
+                    self.terminate_known_match_mismatch(if_false);
+                } else {
+                    self.terminate_i64_match(src_vreg, *val, if_true, if_false);
+                }
             }
             _ => {
                 return Err(CompileError::UnsupportedInstruction(format!(
@@ -454,17 +574,53 @@ impl<'a> HirToMirLowering<'a> {
     fn lower_match_expression(
         &mut self,
         expr: &nu_protocol::ast::Expression,
+        src: RegId,
         src_vreg: VReg,
         if_true: BlockId,
         if_false: BlockId,
     ) -> Result<(), CompileError> {
         match &expr.expr {
-            Expr::Bool(val) => self.terminate_bool_match(src_vreg, *val, if_true, if_false),
-            Expr::Int(val) => self.terminate_i64_match(src_vreg, *val, if_true, if_false),
+            Expr::Bool(val) => {
+                if self.source_scalar_match_is_known_mismatch(src, src_vreg, ScalarMatchKind::Bool)
+                {
+                    self.terminate_known_match_mismatch(if_false);
+                } else {
+                    self.terminate_bool_match(src_vreg, *val, if_true, if_false);
+                }
+            }
+            Expr::Int(val) => {
+                if self.source_scalar_match_is_known_mismatch(
+                    src,
+                    src_vreg,
+                    ScalarMatchKind::Integer,
+                ) {
+                    self.terminate_known_match_mismatch(if_false);
+                } else {
+                    self.terminate_i64_match(src_vreg, *val, if_true, if_false);
+                }
+            }
             Expr::Range(range) => {
+                if self.source_scalar_match_is_known_mismatch(
+                    src,
+                    src_vreg,
+                    ScalarMatchKind::Integer,
+                ) {
+                    self.terminate_known_match_mismatch(if_false);
+                    return Ok(());
+                }
                 return self.terminate_i64_range_match(src_vreg, range, if_true, if_false);
             }
-            Expr::Nothing => self.terminate_i64_match(src_vreg, 0, if_true, if_false),
+            Expr::Nothing => {
+                if self.source_scalar_match_is_known_mismatch(
+                    src,
+                    src_vreg,
+                    ScalarMatchKind::Nothing,
+                ) {
+                    self.terminate_known_match_mismatch(if_false);
+                } else {
+                    self.terminate_i64_match(src_vreg, 0, if_true, if_false);
+                }
+            }
             _ => {
                 return Err(CompileError::UnsupportedInstruction(format!(
                     "Match against expression pattern {:?} not supported in eBPF",
