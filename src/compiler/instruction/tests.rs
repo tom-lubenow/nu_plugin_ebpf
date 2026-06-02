@@ -2522,6 +2522,33 @@ fn test_skb_adjust_room_mode_contract() {
             "helper 'bpf_skb_adjust_room' requires arg2 mode to be BPF_ADJ_ROOM_NET or BPF_ADJ_ROOM_MAC"
         ))
     );
+    assert_eq!(
+        BpfHelper::SkbAdjustRoom.scalar_arg_bitmask_requirement(3),
+        Some((
+            BPF_F_ADJ_ROOM_ALLOWED_MASK,
+            "helper 'bpf_skb_adjust_room' requires arg3 flags to contain only modeled BPF_F_ADJ_ROOM_* bits (0x1ff plus BPF_F_ADJ_ROOM_ENCAP_L2(len))"
+        ))
+    );
+    let combinations = BpfHelper::SkbAdjustRoom.scalar_arg_bit_combination_requirements(3);
+    assert_eq!(combinations.len(), 3);
+    assert_eq!(combinations[0].trigger_mask, 0x02);
+    assert_eq!(combinations[0].forbidden_mask, 0x04);
+    assert_eq!(
+        combinations[0].message,
+        "helper 'bpf_skb_adjust_room' requires at most one BPF_F_ADJ_ROOM_ENCAP_L3_* flag"
+    );
+    assert_eq!(combinations[1].trigger_mask, 0x08);
+    assert_eq!(combinations[1].forbidden_mask, 0x10);
+    assert_eq!(
+        combinations[1].message,
+        "helper 'bpf_skb_adjust_room' requires at most one BPF_F_ADJ_ROOM_ENCAP_L4_* flag"
+    );
+    assert_eq!(combinations[2].trigger_mask, 0x80);
+    assert_eq!(combinations[2].forbidden_mask, 0x100);
+    assert_eq!(
+        combinations[2].message,
+        "helper 'bpf_skb_adjust_room' requires at most one BPF_F_ADJ_ROOM_DECAP_L3_* flag"
+    );
 }
 
 #[test]
@@ -3300,6 +3327,17 @@ fn test_helper_get_stack_buffer_contract() {
     assert!(scalar_range_contains_only_bitmask(0, 0x07ff, 0x07ff));
     assert!(!scalar_range_contains_only_bitmask(0, 0x09ff, 0x09ff));
     assert!(scalar_range_contains_only_bitmask(0x08ff, 0x09ff, 0x09ff));
+    let adjust_room_l2_len = (14u64 << 56) as i64;
+    assert!(scalar_range_contains_only_bitmask(
+        adjust_room_l2_len,
+        adjust_room_l2_len,
+        BPF_F_ADJ_ROOM_ALLOWED_MASK
+    ));
+    assert!(!scalar_range_contains_only_bitmask(
+        adjust_room_l2_len | (1 << 20),
+        adjust_room_l2_len | (1 << 20),
+        BPF_F_ADJ_ROOM_ALLOWED_MASK
+    ));
 
     let semantics = BpfHelper::GetStack.semantics();
     assert!(semantics.positive_size_args.is_empty());
@@ -7076,8 +7114,8 @@ fn test_helper_scalar_constraints_are_consistent_with_signatures() {
                     helper, helper_id, &signature, arg_idx, "bitmask", message,
                 );
                 assert!(
-                    mask >= 0,
-                    "{} ({}) bitmask constraint for arg{} must use a nonnegative mask",
+                    mask as u64 != 0,
+                    "{} ({}) bitmask constraint for arg{} must use a nonzero mask bit pattern",
                     helper.name(),
                     helper_id,
                     arg_idx

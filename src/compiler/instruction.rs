@@ -22,6 +22,16 @@ const BPF_FIB_LOOKUP_TBID: i64 = 1 << 3;
 const BPF_FIB_LOOKUP_MARK: i64 = 1 << 5;
 const BPF_FIB_LOOKUP_SIZE: i64 = 64;
 pub(crate) const BPF_MTU_CHK_SEGS: i64 = 1 << 0;
+const BPF_F_ADJ_ROOM_ENCAP_L3_IPV4: i64 = 1 << 1;
+const BPF_F_ADJ_ROOM_ENCAP_L3_IPV6: i64 = 1 << 2;
+const BPF_F_ADJ_ROOM_ENCAP_L4_GRE: i64 = 1 << 3;
+const BPF_F_ADJ_ROOM_ENCAP_L4_UDP: i64 = 1 << 4;
+const BPF_F_ADJ_ROOM_DECAP_L3_IPV4: i64 = 1 << 7;
+const BPF_F_ADJ_ROOM_DECAP_L3_IPV6: i64 = 1 << 8;
+const BPF_ADJ_ROOM_ENCAP_L2_MASK: u64 = 0xff;
+const BPF_ADJ_ROOM_ENCAP_L2_SHIFT: u32 = 56;
+const BPF_F_ADJ_ROOM_ALLOWED_MASK: i64 =
+    (0x1ffu64 | (BPF_ADJ_ROOM_ENCAP_L2_MASK << BPF_ADJ_ROOM_ENCAP_L2_SHIFT)) as i64;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ScalarArgBitCombinationRequirement {
@@ -52,6 +62,27 @@ const FIB_LOOKUP_FLAG_COMBINATIONS: &[ScalarArgBitCombinationRequirement] = &[
         required_mask: 0,
         forbidden_mask: BPF_FIB_LOOKUP_DIRECT,
         message: "helper 'bpf_fib_lookup' requires BPF_FIB_LOOKUP_MARK not to be used with BPF_FIB_LOOKUP_DIRECT",
+    },
+];
+
+const SKB_ADJUST_ROOM_FLAG_COMBINATIONS: &[ScalarArgBitCombinationRequirement] = &[
+    ScalarArgBitCombinationRequirement {
+        trigger_mask: BPF_F_ADJ_ROOM_ENCAP_L3_IPV4,
+        required_mask: 0,
+        forbidden_mask: BPF_F_ADJ_ROOM_ENCAP_L3_IPV6,
+        message: "helper 'bpf_skb_adjust_room' requires at most one BPF_F_ADJ_ROOM_ENCAP_L3_* flag",
+    },
+    ScalarArgBitCombinationRequirement {
+        trigger_mask: BPF_F_ADJ_ROOM_ENCAP_L4_GRE,
+        required_mask: 0,
+        forbidden_mask: BPF_F_ADJ_ROOM_ENCAP_L4_UDP,
+        message: "helper 'bpf_skb_adjust_room' requires at most one BPF_F_ADJ_ROOM_ENCAP_L4_* flag",
+    },
+    ScalarArgBitCombinationRequirement {
+        trigger_mask: BPF_F_ADJ_ROOM_DECAP_L3_IPV4,
+        required_mask: 0,
+        forbidden_mask: BPF_F_ADJ_ROOM_DECAP_L3_IPV6,
+        message: "helper 'bpf_skb_adjust_room' requires at most one BPF_F_ADJ_ROOM_DECAP_L3_* flag",
     },
 ];
 
@@ -98,10 +129,12 @@ pub(crate) fn scalar_range_contains_only_allowed_values(
 }
 
 pub(crate) fn scalar_range_contains_only_bitmask(min: i64, max: i64, mask: i64) -> bool {
-    if min > max || min < 0 || mask < 0 {
+    if min > max {
         return false;
     }
     if let Some(next) = mask.checked_add(1)
+        && mask >= 0
+        && min >= 0
         && mask & next == 0
     {
         return max <= mask;
@@ -112,8 +145,9 @@ pub(crate) fn scalar_range_contains_only_bitmask(min: i64, max: i64, mask: i64) 
     }
 
     let mut value = min;
+    let mask_bits = mask as u64;
     loop {
-        if value & !mask != 0 {
+        if (value as u64) & !mask_bits != 0 {
             return false;
         }
         if value == max {
@@ -127,14 +161,14 @@ pub(crate) fn scalar_value_satisfies_bit_combination(
     value: i64,
     requirement: ScalarArgBitCombinationRequirement,
 ) -> bool {
-    if value < 0 {
-        return false;
-    }
-    if value & requirement.trigger_mask == 0 {
+    let value_bits = value as u64;
+    let trigger_mask = requirement.trigger_mask as u64;
+    let required_mask = requirement.required_mask as u64;
+    let forbidden_mask = requirement.forbidden_mask as u64;
+    if value_bits & trigger_mask == 0 {
         return true;
     }
-    value & requirement.required_mask == requirement.required_mask
-        && value & requirement.forbidden_mask == 0
+    value_bits & required_mask == required_mask && value_bits & forbidden_mask == 0
 }
 
 pub(crate) fn scalar_range_satisfies_bit_combination(
@@ -142,7 +176,7 @@ pub(crate) fn scalar_range_satisfies_bit_combination(
     max: i64,
     requirement: ScalarArgBitCombinationRequirement,
 ) -> bool {
-    if min > max || min < 0 {
+    if min > max {
         return false;
     }
     let range_len = i128::from(max) - i128::from(min) + 1;
@@ -1496,6 +1530,10 @@ impl BpfHelper {
                 0x01,
                 "helper 'bpf_check_mtu' requires arg4 flags to contain only BPF_MTU_CHK_SEGS (0x01)",
             )),
+            (Self::SkbAdjustRoom, 3) => Some((
+                BPF_F_ADJ_ROOM_ALLOWED_MASK,
+                "helper 'bpf_skb_adjust_room' requires arg3 flags to contain only modeled BPF_F_ADJ_ROOM_* bits (0x1ff plus BPF_F_ADJ_ROOM_ENCAP_L2(len))",
+            )),
             (Self::LoadHdrOpt, 3) => Some((
                 0x01,
                 "helper 'bpf_load_hdr_opt' requires arg3 flags to contain only BPF_LOAD_HDR_OPT_TCP_SYN (0x01)",
@@ -1510,6 +1548,7 @@ impl BpfHelper {
     ) -> &'static [ScalarArgBitCombinationRequirement] {
         match (self, arg_idx) {
             (Self::FibLookup, 3) => FIB_LOOKUP_FLAG_COMBINATIONS,
+            (Self::SkbAdjustRoom, 3) => SKB_ADJUST_ROOM_FLAG_COMBINATIONS,
             _ => &[],
         }
     }

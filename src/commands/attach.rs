@@ -226,7 +226,10 @@ Context parameter syntax (recommended):
     are the preferred first-class skb relayout surfaces, selecting
     `bpf_skb_change_{head,tail}`, `bpf_skb_pull_data`, and
     `bpf_skb_adjust_room` automatically; `--room --mode` must be
-    `BPF_ADJ_ROOM_NET` (`0`) or `BPF_ADJ_ROOM_MAC` (`1`). LWT programs also support
+    `BPF_ADJ_ROOM_NET` (`0`) or `BPF_ADJ_ROOM_MAC` (`1`), and
+    `--room --flags` may contain only modeled `BPF_F_ADJ_ROOM_*` bits. On
+    `sk_skb` and `sk_skb_parser`, the stream-skb adjust-room variant
+    requires `--mode 0` and `--flags 0`. LWT programs also support
     `adjust-packet --pull LEN`. After XDP adjust helpers,
     reload `ctx.data`, `ctx.data_meta`, and `ctx.data_end` before
     reading packet bytes again; after skb relayout helpers, reload

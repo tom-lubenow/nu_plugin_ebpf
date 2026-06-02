@@ -971,6 +971,18 @@ const HELPER_ZERO_ARG_REQUIREMENTS: &[HelperZeroArgRequirementSpec] = &[
         arg_idx: 4,
         error_message: "helper 'bpf_check_mtu' requires arg4 = 0 in xdp programs",
     },
+    HelperZeroArgRequirementSpec {
+        helper: BpfHelper::SkbAdjustRoom,
+        program_type: EbpfProgramType::SkSkb,
+        arg_idx: 2,
+        error_message: "helper 'bpf_skb_adjust_room' requires arg2 mode = 0 in sk_skb programs",
+    },
+    HelperZeroArgRequirementSpec {
+        helper: BpfHelper::SkbAdjustRoom,
+        program_type: EbpfProgramType::SkSkbParser,
+        arg_idx: 2,
+        error_message: "helper 'bpf_skb_adjust_room' requires arg2 mode = 0 in sk_skb_parser programs",
+    },
 ];
 const HELPER_CONST_ARG_REQUIREMENTS: &[HelperConstArgRequirementSpec] = &[
     HelperConstArgRequirementSpec {
@@ -979,6 +991,20 @@ const HELPER_CONST_ARG_REQUIREMENTS: &[HelperConstArgRequirementSpec] = &[
         arg_idx: 1,
         expected: 2,
         error_message: "helper 'bpf_lwt_push_encap' requires arg1 type = BPF_LWT_ENCAP_IP in lwt_xmit programs",
+    },
+    HelperConstArgRequirementSpec {
+        helper: BpfHelper::SkbAdjustRoom,
+        program_type: EbpfProgramType::SkSkb,
+        arg_idx: 3,
+        expected: 0,
+        error_message: "helper 'bpf_skb_adjust_room' requires arg3 flags = 0 in sk_skb programs",
+    },
+    HelperConstArgRequirementSpec {
+        helper: BpfHelper::SkbAdjustRoom,
+        program_type: EbpfProgramType::SkSkbParser,
+        arg_idx: 3,
+        expected: 0,
+        error_message: "helper 'bpf_skb_adjust_room' requires arg3 flags = 0 in sk_skb_parser programs",
     },
 ];
 

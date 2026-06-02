@@ -3978,6 +3978,20 @@ fn test_program_type_helper_zero_arg_requirement_uses_program_surface() {
         None
     );
     assert_eq!(
+        EbpfProgramType::SkSkb.helper_zero_arg_requirement(BpfHelper::SkbAdjustRoom),
+        Some((
+            2,
+            "helper 'bpf_skb_adjust_room' requires arg2 mode = 0 in sk_skb programs"
+        ))
+    );
+    assert_eq!(
+        EbpfProgramType::SkSkbParser.helper_zero_arg_requirement(BpfHelper::SkbAdjustRoom),
+        Some((
+            2,
+            "helper 'bpf_skb_adjust_room' requires arg2 mode = 0 in sk_skb_parser programs"
+        ))
+    );
+    assert_eq!(
         EbpfProgramType::SkLookup.helper_zero_arg_requirement(BpfHelper::SkAssign),
         None
     );
@@ -3996,6 +4010,22 @@ fn test_program_type_helper_const_arg_requirement_uses_program_surface() {
     assert_eq!(
         EbpfProgramType::LwtIn.helper_const_arg_requirement(BpfHelper::LwtPushEncap),
         None
+    );
+    assert_eq!(
+        EbpfProgramType::SkSkb.helper_const_arg_requirement(BpfHelper::SkbAdjustRoom),
+        Some((
+            3,
+            0,
+            "helper 'bpf_skb_adjust_room' requires arg3 flags = 0 in sk_skb programs"
+        ))
+    );
+    assert_eq!(
+        EbpfProgramType::SkSkbParser.helper_const_arg_requirement(BpfHelper::SkbAdjustRoom),
+        Some((
+            3,
+            0,
+            "helper 'bpf_skb_adjust_room' requires arg3 flags = 0 in sk_skb_parser programs"
+        ))
     );
     assert_eq!(
         EbpfProgramType::Tc.helper_const_arg_requirement(BpfHelper::LwtPushEncap),
@@ -4198,6 +4228,14 @@ fn test_probe_context_helper_zero_arg_requirement_uses_program_type() {
         ))
     );
     assert_eq!(tc.helper_zero_arg_requirement(BpfHelper::CheckMtu), None);
+    let sk_skb = ProbeContext::new(EbpfProgramType::SkSkb, "/sys/fs/bpf/demo_sockmap");
+    assert_eq!(
+        sk_skb.helper_zero_arg_requirement(BpfHelper::SkbAdjustRoom),
+        Some((
+            2,
+            "helper 'bpf_skb_adjust_room' requires arg2 mode = 0 in sk_skb programs"
+        ))
+    );
     assert_eq!(
         sk_lookup.helper_zero_arg_requirement(BpfHelper::SkAssign),
         None
@@ -4220,6 +4258,15 @@ fn test_probe_context_helper_const_arg_requirement_uses_program_type() {
     assert_eq!(
         lwt_in.helper_const_arg_requirement(BpfHelper::LwtPushEncap),
         None
+    );
+    let sk_skb = ProbeContext::new(EbpfProgramType::SkSkb, "/sys/fs/bpf/demo_sockmap");
+    assert_eq!(
+        sk_skb.helper_const_arg_requirement(BpfHelper::SkbAdjustRoom),
+        Some((
+            3,
+            0,
+            "helper 'bpf_skb_adjust_room' requires arg3 flags = 0 in sk_skb programs"
+        ))
     );
 }
 

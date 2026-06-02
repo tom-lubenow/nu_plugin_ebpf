@@ -8051,6 +8051,13 @@ fn test_verify_mir_for_program_lwt_skb_helpers() {
 }
 
 fn make_skb_adjust_room_verify_call(mode: i64) -> (MirFunction, HashMap<VReg, MirType>) {
+    make_skb_adjust_room_verify_call_with_flags(mode, 0)
+}
+
+fn make_skb_adjust_room_verify_call_with_flags(
+    mode: i64,
+    flags: i64,
+) -> (MirFunction, HashMap<VReg, MirType>) {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
     func.entry = entry;
@@ -8073,7 +8080,7 @@ fn make_skb_adjust_room_verify_call(mode: i64) -> (MirFunction, HashMap<VReg, Mi
                 MirValue::VReg(ctx),
                 MirValue::Const(14),
                 MirValue::Const(mode),
-                MirValue::Const(0),
+                MirValue::Const(flags),
             ],
         });
     func.block_mut(entry).terminator = MirInst::Return { val: None };
@@ -8101,6 +8108,58 @@ fn test_verify_mir_for_probe_context_skb_adjust_room_rejects_invalid_mode() {
         err.iter().any(|e| e
             .message
             .contains("helper 'bpf_skb_adjust_room' requires arg2 mode")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_skb_adjust_room_rejects_invalid_flags() {
+    let (func, types) = make_skb_adjust_room_verify_call_with_flags(0, 1 << 20);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected bpf_skb_adjust_room flags to be rejected");
+    assert!(
+        err.iter().any(|e| e.message.contains(
+            "helper 'bpf_skb_adjust_room' requires arg3 flags to contain only modeled BPF_F_ADJ_ROOM_* bits"
+        )),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_skb_adjust_room_rejects_incompatible_flags() {
+    let (func, types) = make_skb_adjust_room_verify_call_with_flags(0, 0x18);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected bpf_skb_adjust_room incompatible flags to be rejected");
+    assert!(
+        err.iter().any(|e| e.message.contains(
+            "helper 'bpf_skb_adjust_room' requires at most one BPF_F_ADJ_ROOM_ENCAP_L4_* flag"
+        )),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_skb_adjust_room_rejects_sk_skb_nonzero_mode_and_flags() {
+    let (func, types) = make_skb_adjust_room_verify_call_with_flags(1, 1);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkSkb, "/sys/fs/bpf/demo_sockmap");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected sk_skb bpf_skb_adjust_room mode/flags to be rejected");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_skb_adjust_room' requires arg2 mode = 0 in sk_skb programs")),
+        "unexpected errors: {:?}",
+        err
+    );
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_skb_adjust_room' requires arg3 flags = 0 in sk_skb programs")),
         "unexpected errors: {:?}",
         err
     );

@@ -2790,6 +2790,22 @@ fn test_type_error_skb_packet_mutation_helpers_reject_invalid_programs() {
 
 #[test]
 fn test_type_error_skb_adjust_room_helper_rejects_invalid_mode() {
+    let func = make_skb_adjust_room_type_call(2, 0);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_skb_adjust_room mode to be rejected");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_skb_adjust_room' requires arg2 mode")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+fn make_skb_adjust_room_type_call(mode: i64, flags: i64) -> MirFunction {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();
     let dst = func.alloc_vreg();
@@ -2805,21 +2821,67 @@ fn test_type_error_skb_adjust_room_helper_rejects_invalid_mode() {
         args: vec![
             MirValue::VReg(ctx),
             MirValue::Const(14),
-            MirValue::Const(2),
-            MirValue::Const(0),
+            MirValue::Const(mode),
+            MirValue::Const(flags),
         ],
     });
     block.terminator = MirInst::Return { val: None };
+    func
+}
 
+#[test]
+fn test_type_error_skb_adjust_room_helper_rejects_invalid_flags() {
+    let func = make_skb_adjust_room_type_call(0, 1 << 20);
     let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
     let mut ti = TypeInference::new(Some(probe_ctx));
     let errs = ti
         .infer(&func)
-        .expect_err("expected bpf_skb_adjust_room mode to be rejected");
+        .expect_err("expected bpf_skb_adjust_room flags to be rejected");
+    assert!(
+        errs.iter().any(|e| e.message.contains(
+            "helper 'bpf_skb_adjust_room' requires arg3 flags to contain only modeled BPF_F_ADJ_ROOM_* bits"
+        )),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_type_error_skb_adjust_room_helper_rejects_incompatible_flags() {
+    let func = make_skb_adjust_room_type_call(0, 0x06);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_skb_adjust_room incompatible flags to be rejected");
+    assert!(
+        errs.iter().any(|e| e.message.contains(
+            "helper 'bpf_skb_adjust_room' requires at most one BPF_F_ADJ_ROOM_ENCAP_L3_* flag"
+        )),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_type_error_skb_adjust_room_helper_rejects_sk_skb_nonzero_mode_and_flags() {
+    let func = make_skb_adjust_room_type_call(1, 1);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkSkb, "/sys/fs/bpf/demo_sockmap");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected sk_skb bpf_skb_adjust_room mode/flags to be rejected");
     assert!(
         errs.iter().any(|e| e
             .message
-            .contains("helper 'bpf_skb_adjust_room' requires arg2 mode")),
+            .contains("helper 'bpf_skb_adjust_room' requires arg2 mode = 0 in sk_skb programs")),
+        "unexpected errors: {:?}",
+        errs
+    );
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_skb_adjust_room' requires arg3 flags = 0 in sk_skb programs")),
         "unexpected errors: {:?}",
         errs
     );
