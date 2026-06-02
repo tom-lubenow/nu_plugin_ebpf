@@ -47,6 +47,7 @@ const BPF_ADJ_ROOM_ENCAP_L2_MASK: u64 = 0xff;
 const BPF_ADJ_ROOM_ENCAP_L2_SHIFT: u32 = 56;
 const BPF_F_ADJ_ROOM_ALLOWED_MASK: i64 =
     (0x1ffu64 | (BPF_ADJ_ROOM_ENCAP_L2_MASK << BPF_ADJ_ROOM_ENCAP_L2_SHIFT)) as i64;
+const BPF_SKB_ADJUST_ROOM_MAX_LEN_DIFF: i64 = 0xfff;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ScalarArgBitCombinationRequirement {
@@ -1535,6 +1536,11 @@ impl BpfHelper {
                 0,
                 1,
                 "helper 'bpf_skb_load_bytes_relative' requires arg4 start_header to be BPF_HDR_START_MAC or BPF_HDR_START_NET",
+            )),
+            (Self::SkbAdjustRoom, 1) => Some((
+                -BPF_SKB_ADJUST_ROOM_MAX_LEN_DIFF,
+                BPF_SKB_ADJUST_ROOM_MAX_LEN_DIFF,
+                "helper 'bpf_skb_adjust_room' requires arg1 len_diff to be between -0xfff and 0xfff",
             )),
             (Self::SkbAdjustRoom, 2) => Some((
                 0,

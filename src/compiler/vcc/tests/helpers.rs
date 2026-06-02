@@ -8234,6 +8234,14 @@ fn make_skb_adjust_room_vcc_call_with_flags(
     mode: i64,
     flags: i64,
 ) -> (MirFunction, HashMap<VReg, MirType>) {
+    make_skb_adjust_room_vcc_call_with_len_diff(14, mode, flags)
+}
+
+fn make_skb_adjust_room_vcc_call_with_len_diff(
+    len_diff: i64,
+    mode: i64,
+    flags: i64,
+) -> (MirFunction, HashMap<VReg, MirType>) {
     let (mut func, entry) = new_mir_function();
     let ctx = func.alloc_vreg();
     let dst = func.alloc_vreg();
@@ -8252,7 +8260,7 @@ fn make_skb_adjust_room_vcc_call_with_flags(
             helper: BpfHelper::SkbAdjustRoom as u32,
             args: vec![
                 MirValue::VReg(ctx),
-                MirValue::Const(14),
+                MirValue::Const(len_diff),
                 MirValue::Const(mode),
                 MirValue::Const(flags),
             ],
@@ -8285,6 +8293,23 @@ fn test_verify_mir_for_probe_context_skb_adjust_room_rejects_invalid_mode() {
         "unexpected errors: {:?}",
         err
     );
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_skb_adjust_room_rejects_len_diff_out_of_range() {
+    for len_diff in [0x1000_i64, -0x1000] {
+        let (func, types) = make_skb_adjust_room_vcc_call_with_len_diff(len_diff, 0, 0);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+        let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect_err("expected bpf_skb_adjust_room len_diff to be rejected");
+        assert!(
+            err.iter().any(|e| e.message.contains(
+                "helper 'bpf_skb_adjust_room' requires arg1 len_diff to be between -0xfff and 0xfff"
+            )),
+            "unexpected errors for len_diff {len_diff}: {:?}",
+            err
+        );
+    }
 }
 
 #[test]

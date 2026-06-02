@@ -2589,6 +2589,14 @@ fn test_skb_load_bytes_relative_start_header_contract() {
 #[test]
 fn test_skb_adjust_room_mode_contract() {
     assert_eq!(
+        BpfHelper::SkbAdjustRoom.scalar_arg_range_requirement(1),
+        Some((
+            -0xfff,
+            0xfff,
+            "helper 'bpf_skb_adjust_room' requires arg1 len_diff to be between -0xfff and 0xfff"
+        ))
+    );
+    assert_eq!(
         BpfHelper::SkbAdjustRoom.scalar_arg_range_requirement(2),
         Some((
             0,

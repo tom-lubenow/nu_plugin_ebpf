@@ -452,14 +452,14 @@ header-field size is `0`, `from` must also be `0`.
 Raw `bpf_csum_level` calls require the `level` selector to be
 `BPF_CSUM_LEVEL_QUERY`, `BPF_CSUM_LEVEL_INC`, `BPF_CSUM_LEVEL_DEC`, or
 `BPF_CSUM_LEVEL_RESET`.
-`bpf_skb_adjust_room` mode must be
-`BPF_ADJ_ROOM_NET` or `BPF_ADJ_ROOM_MAC`, and generic skb adjust-room
-flags may contain only the modeled `BPF_F_ADJ_ROOM_*` bits, including
-the high-byte `BPF_F_ADJ_ROOM_ENCAP_L2(len)` field. The compiler also
-rejects statically known combinations that set both L3 encap flags, both
-L4 encap flags, or both L3 decap flags. On `sk_skb` and `sk_skb_parser`,
-the kernel's stream-skb adjust-room variant requires `MODE = 0` and
-`FLAGS = 0`.
+`bpf_skb_adjust_room` `len_diff` must be between `-0xfff` and `0xfff`,
+mode must be `BPF_ADJ_ROOM_NET` or `BPF_ADJ_ROOM_MAC`, and generic skb
+adjust-room flags may contain only the modeled `BPF_F_ADJ_ROOM_*` bits,
+including the high-byte `BPF_F_ADJ_ROOM_ENCAP_L2(len)` field. The
+compiler also rejects statically known combinations that set both L3
+encap flags, both L4 encap flags, or both L3 decap flags. On `sk_skb`
+and `sk_skb_parser`, the kernel's stream-skb adjust-room variant requires
+`MODE = 0` and `FLAGS = 0`.
 These skb mutation helpers invalidate guarded
 direct packet-pointer facts when the kernel helper contract says the
 underlying packet buffer may change. Raw packet-copy helpers are modeled too:
