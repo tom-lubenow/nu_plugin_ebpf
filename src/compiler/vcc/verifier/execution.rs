@@ -642,6 +642,59 @@ impl VccVerifier {
                     ));
                 }
             }
+            VccInst::AssertConstEqIfMaskedConstEq {
+                value,
+                expected,
+                when_value,
+                when_mask,
+                when_expected,
+                message,
+            } => {
+                let when_ty = match state.value_type(*when_value) {
+                    Ok(ty) => ty,
+                    Err(err) => {
+                        self.errors.push(err);
+                        return;
+                    }
+                };
+                let Some(when_actual) = Self::const_scalar_value(*when_value, when_ty) else {
+                    return;
+                };
+                if ((when_actual as u64) & (*when_mask as u64)) != *when_expected as u64 {
+                    return;
+                }
+
+                let ty = match state.value_type(*value) {
+                    Ok(ty) => ty,
+                    Err(err) => {
+                        self.errors.push(err);
+                        return;
+                    }
+                };
+                if ty.class() != VccTypeClass::Scalar && ty.class() != VccTypeClass::Bool {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::TypeMismatch {
+                            expected: VccTypeClass::Scalar,
+                            actual: ty.class(),
+                        },
+                        "expected scalar value",
+                    ));
+                    return;
+                }
+                let Some(range) = state.value_range(*value, ty) else {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::UnsupportedInstruction,
+                        message.clone(),
+                    ));
+                    return;
+                };
+                if range.min != *expected || range.max != *expected {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::UnsupportedInstruction,
+                        message.clone(),
+                    ));
+                }
+            }
             VccInst::AssertCtxFieldLoadGuard { field, guard } => {
                 if !state.proves_ctx_field_value_range(&guard.witness_field(), |value| {
                     guard.allows_value(value)

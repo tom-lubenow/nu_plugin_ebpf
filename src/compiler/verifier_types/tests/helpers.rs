@@ -8514,6 +8514,7 @@ fn test_verify_mir_for_probe_context_skb_store_bytes_rejects_invalid_flags() {
 fn make_csum_replace_verify_call(
     helper: BpfHelper,
     offset: i64,
+    from: i64,
     flags: i64,
 ) -> (MirFunction, HashMap<VReg, MirType>) {
     let mut func = MirFunction::new();
@@ -8530,7 +8531,7 @@ fn make_csum_replace_verify_call(
             args: vec![
                 MirValue::VReg(ctx),
                 MirValue::Const(offset),
-                MirValue::Const(0),
+                MirValue::Const(from),
                 MirValue::Const(0),
                 MirValue::Const(flags),
             ],
@@ -8573,13 +8574,32 @@ fn test_verify_mir_for_probe_context_csum_replace_helpers_reject_invalid_flags()
             "checksum replacement helpers require BPF_F_HDR_FIELD_MASK size",
         ),
     ] {
-        let (func, types) = make_csum_replace_verify_call(helper, 0, flags);
+        let (func, types) = make_csum_replace_verify_call(helper, 0, 0, flags);
         let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
         let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
             .expect_err("expected checksum replacement helper flag validation error");
         assert!(
             err.iter().any(|e| e.message.contains(expected)),
             "expected {expected:?}, got {err:?}"
+        );
+    }
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_csum_replace_helpers_reject_nonzero_from_with_diff_size() {
+    for (helper, flags) in [
+        (BpfHelper::L3CsumReplace, 0),
+        (BpfHelper::L4CsumReplace, 0x10),
+    ] {
+        let (func, types) = make_csum_replace_verify_call(helper, 0, 1, flags);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+        let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect_err("expected checksum replacement helper from validation error");
+        assert!(
+            err.iter().any(|e| e.message.contains(
+                "checksum replacement helpers require arg2 from to be 0 when BPF_F_HDR_FIELD_MASK size is 0"
+            )),
+            "got {err:?}"
         );
     }
 }
@@ -8598,7 +8618,7 @@ fn test_verify_mir_for_probe_context_csum_replace_helpers_reject_invalid_offsets
             "checksum replacement helpers require arg1 offset to be between 0 and 0xffff",
         ),
     ] {
-        let (func, types) = make_csum_replace_verify_call(helper, offset, 2);
+        let (func, types) = make_csum_replace_verify_call(helper, offset, 0, 2);
         let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
         let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
             .expect_err("expected checksum replacement helper offset validation error");

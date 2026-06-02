@@ -65,6 +65,16 @@ pub struct ScalarArgConstRequirementWhenArgConst {
     pub message: &'static str,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScalarArgConstRequirementWhenArgMaskedConst {
+    pub arg_idx: usize,
+    pub expected: i64,
+    pub trigger_arg_idx: usize,
+    pub trigger_mask: i64,
+    pub trigger_expected: i64,
+    pub message: &'static str,
+}
+
 const FIB_LOOKUP_FLAG_COMBINATIONS: &[ScalarArgBitCombinationRequirement] = &[
     ScalarArgBitCombinationRequirement {
         trigger_mask: BPF_FIB_LOOKUP_TBID,
@@ -119,6 +129,17 @@ const CSUM_REPLACE_HDR_FIELD_COMBINATIONS: &[ScalarArgBitCombinationRequirement]
         required_mask: 0,
         forbidden_mask: BPF_F_HDR_FIELD_SIZE_BIT_2,
         message: "checksum replacement helpers require BPF_F_HDR_FIELD_MASK size to be 0, 2, or 4",
+    },
+];
+
+const CSUM_REPLACE_FROM_REQUIREMENTS: &[ScalarArgConstRequirementWhenArgMaskedConst] = &[
+    ScalarArgConstRequirementWhenArgMaskedConst {
+        arg_idx: 2,
+        expected: 0,
+        trigger_arg_idx: 4,
+        trigger_mask: BPF_F_HDR_FIELD_MASK,
+        trigger_expected: 0,
+        message: "checksum replacement helpers require arg2 from to be 0 when BPF_F_HDR_FIELD_MASK size is 0",
     },
 ];
 
@@ -1626,6 +1647,15 @@ impl BpfHelper {
     ) -> &'static [ScalarArgConstRequirementWhenArgConst] {
         match self {
             Self::LwtSeg6Action => LWT_SEG6_ACTION_PARAM_LEN_REQUIREMENTS,
+            _ => &[],
+        }
+    }
+
+    pub const fn scalar_arg_const_requirements_when_arg_masked_const(
+        self,
+    ) -> &'static [ScalarArgConstRequirementWhenArgMaskedConst] {
+        match self {
+            Self::L3CsumReplace | Self::L4CsumReplace => CSUM_REPLACE_FROM_REQUIREMENTS,
             _ => &[],
         }
     }

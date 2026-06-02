@@ -607,6 +607,15 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
             )
         })
     };
+    let arg_is_known_masked_const = |arg_idx, mask: i64, expected: i64| {
+        args.get(arg_idx).is_some_and(|value| {
+            matches!(
+                value_range(value, state),
+                ValueRange::Known { min, max }
+                    if min == max && ((min as u64) & (mask as u64)) == (expected as u64)
+            )
+        })
+    };
 
     if let Some((arg_idx, message)) = probe_ctx
         .and_then(|ctx| ctx.helper_zero_arg_requirement(helper))
@@ -671,6 +680,17 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
     for requirement in helper.scalar_arg_const_requirements_when_arg_const() {
         if arg_is_known_const(requirement.trigger_arg_idx, requirement.trigger_expected)
             && !arg_is_known_const(requirement.arg_idx, requirement.expected)
+        {
+            errors.push(VerifierTypeError::new(requirement.message));
+        }
+    }
+
+    for requirement in helper.scalar_arg_const_requirements_when_arg_masked_const() {
+        if arg_is_known_masked_const(
+            requirement.trigger_arg_idx,
+            requirement.trigger_mask,
+            requirement.trigger_expected,
+        ) && !arg_is_known_const(requirement.arg_idx, requirement.expected)
         {
             errors.push(VerifierTypeError::new(requirement.message));
         }

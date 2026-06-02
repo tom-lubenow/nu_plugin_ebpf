@@ -447,7 +447,8 @@ packet-edit helpers through the ordinary helper surface, including
 `BPF_F_MARK_MANGLED_0`, `BPF_F_MARK_ENFORCE`, `BPF_F_PSEUDO_HDR`,
 `BPF_F_HDR_FIELD_MASK`, and `BPF_F_IPV6`. For both checksum replacement
 helpers, the offset must be even and fit `0..0xffff`, and the masked
-header-field size must be `0`, `2`, or `4`.
+header-field size must be `0`, `2`, or `4`. When that masked
+header-field size is `0`, `from` must also be `0`.
 Raw `bpf_csum_level` calls require the `level` selector to be
 `BPF_CSUM_LEVEL_QUERY`, `BPF_CSUM_LEVEL_INC`, `BPF_CSUM_LEVEL_DEC`, or
 `BPF_CSUM_LEVEL_RESET`.

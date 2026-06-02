@@ -312,6 +312,14 @@ pub enum VccInst {
         when_expected: i64,
         message: String,
     },
+    AssertConstEqIfMaskedConstEq {
+        value: VccValue,
+        expected: i64,
+        when_value: VccValue,
+        when_mask: i64,
+        when_expected: i64,
+        message: String,
+    },
     AssertCtxFieldLoadGuard {
         field: CtxField,
         guard: ContextFieldLoadGuard,

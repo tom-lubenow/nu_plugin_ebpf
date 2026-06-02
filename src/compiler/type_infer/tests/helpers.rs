@@ -3042,7 +3042,7 @@ fn test_type_error_skb_store_bytes_rejects_invalid_flags() {
     }));
 }
 
-fn make_csum_replace_call(helper: BpfHelper, offset: i64, flags: i64) -> MirFunction {
+fn make_csum_replace_call(helper: BpfHelper, offset: i64, from: i64, flags: i64) -> MirFunction {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();
     let dst = func.alloc_vreg();
@@ -3058,7 +3058,7 @@ fn make_csum_replace_call(helper: BpfHelper, offset: i64, flags: i64) -> MirFunc
         args: vec![
             MirValue::VReg(ctx),
             MirValue::Const(offset),
-            MirValue::Const(0),
+            MirValue::Const(from),
             MirValue::Const(0),
             MirValue::Const(flags),
         ],
@@ -3091,7 +3091,7 @@ fn test_type_error_csum_replace_helpers_reject_invalid_flags() {
             "checksum replacement helpers require BPF_F_HDR_FIELD_MASK size",
         ),
     ] {
-        let func = make_csum_replace_call(helper, 0, flags);
+        let func = make_csum_replace_call(helper, 0, 0, flags);
         let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
         let mut ti = TypeInference::new(Some(probe_ctx));
         let errs = ti
@@ -3100,6 +3100,27 @@ fn test_type_error_csum_replace_helpers_reject_invalid_flags() {
         assert!(
             errs.iter().any(|e| e.message.contains(expected)),
             "expected {expected:?}, got {errs:?}"
+        );
+    }
+}
+
+#[test]
+fn test_type_error_csum_replace_helpers_reject_nonzero_from_with_diff_size() {
+    for (helper, flags) in [
+        (BpfHelper::L3CsumReplace, 0),
+        (BpfHelper::L4CsumReplace, 0x10),
+    ] {
+        let func = make_csum_replace_call(helper, 0, 1, flags);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected checksum replacement helper from validation error");
+        assert!(
+            errs.iter().any(|e| e.message.contains(
+                "checksum replacement helpers require arg2 from to be 0 when BPF_F_HDR_FIELD_MASK size is 0"
+            )),
+            "got {errs:?}"
         );
     }
 }
@@ -3118,7 +3139,7 @@ fn test_type_error_csum_replace_helpers_reject_invalid_offsets() {
             "checksum replacement helpers require arg1 offset to be between 0 and 0xffff",
         ),
     ] {
-        let func = make_csum_replace_call(helper, offset, 2);
+        let func = make_csum_replace_call(helper, offset, 0, 2);
         let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
         let mut ti = TypeInference::new(Some(probe_ctx));
         let errs = ti

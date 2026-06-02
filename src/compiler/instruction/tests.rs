@@ -2559,6 +2559,18 @@ fn test_checksum_replacement_helper_flag_contracts() {
             requirement.message
                 == "checksum replacement helpers require BPF_F_HDR_FIELD_MASK size to be 0, 2, or 4"
         }));
+
+        let from_requirements = helper.scalar_arg_const_requirements_when_arg_masked_const();
+        assert_eq!(from_requirements.len(), 1);
+        assert_eq!(from_requirements[0].arg_idx, 2);
+        assert_eq!(from_requirements[0].expected, 0);
+        assert_eq!(from_requirements[0].trigger_arg_idx, 4);
+        assert_eq!(from_requirements[0].trigger_mask, BPF_F_HDR_FIELD_MASK);
+        assert_eq!(from_requirements[0].trigger_expected, 0);
+        assert_eq!(
+            from_requirements[0].message,
+            "checksum replacement helpers require arg2 from to be 0 when BPF_F_HDR_FIELD_MASK size is 0"
+        );
     }
 }
 
