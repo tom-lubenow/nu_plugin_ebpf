@@ -389,7 +389,15 @@ impl<'a> VccLowerer<'a> {
                         if matches!(src, MirValue::Const(0))
                             && self.types.get(dst).and_then(ptr_info_from_mir).is_some()
                         {
-                            self.ptr_regs.insert(dst_reg, null_wildcard_ptr_info());
+                            let mut null_ptr = null_wildcard_ptr_info();
+                            if let Some(existing) = self.ptr_regs.get(&dst_reg).copied()
+                                && (existing.ringbuf_ref.is_some() || existing.kfunc_ref.is_some())
+                            {
+                                null_ptr.space = existing.space;
+                                null_ptr.ringbuf_ref = existing.ringbuf_ref;
+                                null_ptr.kfunc_ref = existing.kfunc_ref;
+                            }
+                            self.ptr_regs.insert(dst_reg, null_ptr);
                             self.direct_ctx_field_regs.remove(&dst_reg);
                         } else if let Some(ptr) = self.value_ptr_info(src) {
                             self.ptr_regs.insert(dst_reg, ptr);

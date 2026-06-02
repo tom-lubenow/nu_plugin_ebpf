@@ -263,6 +263,16 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         if let Some(src_meta) = self.get_metadata(src).cloned()
+            && src_meta.materialized_record_dirty
+            && let Some((materialized_vreg, materialized_meta)) =
+                self.materialize_runtime_record_pointer_value(&src_meta, src_vreg)?
+        {
+            self.var_mappings.insert(var_id, materialized_vreg);
+            self.var_metadata.insert(var_id, materialized_meta);
+            return Ok(());
+        }
+
+        if let Some(src_meta) = self.get_metadata(src).cloned()
             && let Some((materialized_vreg, materialized_meta)) =
                 self.materialize_metadata_record_value(&src_meta)?
         {
@@ -802,6 +812,58 @@ impl<'a> HirToMirLowering<'a> {
         Ok(Some((record_ptr, materialized_meta)))
     }
 
+    pub(super) fn materialize_runtime_record_pointer_value(
+        &mut self,
+        meta: &RegMetadata,
+        src_vreg: VReg,
+    ) -> Result<Option<(VReg, RegMetadata)>, CompileError> {
+        let Some(record_ty) = Self::metadata_record_layout(meta) else {
+            return Ok(None);
+        };
+        let Some(MirType::Ptr {
+            pointee,
+            address_space: AddressSpace::Stack | AddressSpace::Map,
+        }) = self.vreg_type_hints.get(&src_vreg).cloned()
+        else {
+            return Ok(None);
+        };
+        if pointee.as_ref() != &record_ty {
+            return Ok(None);
+        }
+
+        let size = record_ty.size();
+        if size == 0 {
+            return Err(CompileError::UnsupportedInstruction(
+                "storing an empty record value is not supported in eBPF".into(),
+            ));
+        }
+
+        let slot = self
+            .func
+            .alloc_stack_slot(align_to_eight(size), 8, StackSlotKind::Local);
+        self.record_stack_slot_type(slot, record_ty.clone());
+
+        let record_ptr = self.func.alloc_vreg();
+        self.emit(MirInst::Copy {
+            dst: record_ptr,
+            src: MirValue::StackSlot(slot),
+        });
+        self.vreg_type_hints.insert(
+            record_ptr,
+            MirType::Ptr {
+                pointee: Box::new(record_ty.clone()),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        self.emit_ptr_copy_with_offsets(record_ptr, 0, src_vreg, 0, size)?;
+
+        let mut materialized_meta = meta.clone();
+        materialized_meta.field_type = Some(record_ty);
+        materialized_meta.source_var = None;
+        materialized_meta.materialized_record_dirty = true;
+        Ok(Some((record_ptr, materialized_meta)))
+    }
+
     pub(super) fn materialized_record_field_value_vreg(
         &mut self,
         record_field: &RecordField,
@@ -853,6 +915,21 @@ impl<'a> HirToMirLowering<'a> {
         src_reg: RegId,
         src_vreg: VReg,
     ) -> Result<VReg, CompileError> {
+        if let Some(src_meta) = self.get_metadata(src_reg).cloned()
+            && src_meta.materialized_record_dirty
+            && Self::metadata_record_layout(&src_meta).is_some_and(|record_ty| {
+                matches!(
+                    self.vreg_type_hints.get(&src_vreg),
+                    Some(MirType::Ptr {
+                        pointee,
+                        address_space: AddressSpace::Stack | AddressSpace::Map,
+                    }) if pointee.as_ref() == &record_ty
+                )
+            })
+        {
+            return Ok(src_vreg);
+        }
+
         if let Some(src_meta) = self.get_metadata(src_reg).cloned()
             && let Some((materialized_vreg, _materialized_meta)) =
                 self.materialize_metadata_record_value(&src_meta)?

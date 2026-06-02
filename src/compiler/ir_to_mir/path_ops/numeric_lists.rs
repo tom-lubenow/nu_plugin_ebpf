@@ -372,6 +372,7 @@ impl<'a> HirToMirLowering<'a> {
 
         let meta = self.get_or_create_metadata(src_dst);
         meta.field_type = Some(pointee_ty.clone());
+        meta.materialized_record_dirty = true;
         if list_path.is_empty() {
             meta.annotated_semantics = Some(AnnotatedValueSemantics::NumericList {
                 max_len,

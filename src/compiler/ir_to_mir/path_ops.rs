@@ -841,6 +841,16 @@ impl<'a> HirToMirLowering<'a> {
 
         let had_source_vreg = self.reg_map.contains_key(&src_dst.get());
         let source_dst_vreg = self.get_vreg(src_dst);
+        let source_record_dirty = self
+            .get_metadata(src_dst)
+            .is_some_and(|meta| meta.materialized_record_dirty);
+        let source_is_materialized_aggregate = matches!(
+            self.typed_value_runtime_type(src_dst, source_dst_vreg),
+            Some(MirType::Ptr {
+                address_space: AddressSpace::Stack | AddressSpace::Map,
+                ..
+            })
+        );
 
         let record_context_remaining_path = if !self.is_context_reg(src_dst) {
             match path.members.first() {
@@ -889,7 +899,10 @@ impl<'a> HirToMirLowering<'a> {
                 }
                 _ => None,
             };
-            if let Some(record_field) = numeric_list_field_projection {
+            if let Some(record_field) = numeric_list_field_projection
+                && !source_is_materialized_aggregate
+                && !source_record_dirty
+            {
                 let constant_value = self
                     .get_metadata(src_dst)
                     .and_then(|meta| meta.constant_value.as_ref())
@@ -964,7 +977,23 @@ impl<'a> HirToMirLowering<'a> {
                 let current_function_field_vreg = record_field
                     .source_reg
                     .is_some_and(|reg| self.get_metadata(reg).is_some());
-                if known_terminal_scalar || current_function_field_vreg {
+                let stack_identity_field = remaining_members.is_empty()
+                    && matches!(
+                        self.vreg_type_hints.get(&record_field.value_vreg),
+                        Some(MirType::Ptr {
+                            address_space: AddressSpace::Stack,
+                            ..
+                        })
+                    )
+                    && (matches!(
+                        record_field.semantics,
+                        Some(AnnotatedValueSemantics::String { .. })
+                    ) || record_field.ty.is_bpf_dynptr_struct());
+                if (known_terminal_scalar && !source_record_dirty)
+                    || (current_function_field_vreg
+                        && !source_record_dirty
+                        && (!source_is_materialized_aggregate || stack_identity_field))
+                {
                     return self.lower_record_field_projection_from_metadata(
                         src_dst,
                         source_dst_vreg,
@@ -2972,6 +3001,8 @@ impl<'a> HirToMirLowering<'a> {
                         )?;
                     }
                     self.clear_source_var(src_dst);
+                    self.get_or_create_metadata(src_dst)
+                        .materialized_record_dirty = true;
                     self.set_reg_constant_value(src_dst, constant_value.clone());
                     return Ok(());
                 }
@@ -3047,6 +3078,7 @@ impl<'a> HirToMirLowering<'a> {
         meta.field_type = Some(pointee.as_ref().clone());
         meta.kernel_btf_field_addr = None;
         meta.source_var = None;
+        meta.materialized_record_dirty = true;
         self.set_reg_constant_value(src_dst, constant_value);
         Ok(())
     }

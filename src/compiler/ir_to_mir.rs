@@ -256,6 +256,8 @@ struct RegMetadata {
     dynamic_map_ref: Option<MapRef>,
     /// Closure block ID (for inline execution in where/each)
     closure_block_id: Option<nu_protocol::BlockId>,
+    /// The aggregate storage was mutated in place, so field descriptors may be stale.
+    materialized_record_dirty: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
