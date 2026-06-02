@@ -10,7 +10,9 @@ use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::{AddressSpace, BYTES_COUNTER_MAP_NAME, COUNTER_MAP_NAME};
 use crate::compiler::passes::optimize_with_ssa_hints;
 use crate::kernel_btf::{KernelBtf, TrampolineFieldSelector, TypeInfo};
-use nu_protocol::ast::{CellPath, Expr, Expression, MatchPattern, Pattern, RangeInclusion};
+use nu_protocol::ast::{
+    CellPath, Expr, Expression, MatchPattern, Pattern, Range, RangeInclusion, RangeOperator,
+};
 use nu_protocol::{DeclId, Record, RegId, Span, SpanId, Type, Value, VarId};
 use std::collections::HashMap;
 
@@ -219,12 +221,34 @@ fn make_random_int_pow_program(random_decl: DeclId, exponent: i64) -> HirProgram
     )
 }
 
-fn integer_expr_match_pattern(value: i64) -> Pattern {
-    Pattern::Expression(Box::new(Expression {
+fn integer_expr(value: i64) -> Expression {
+    Expression {
         expr: Expr::Int(value),
         span: Span::test_data(),
         span_id: SpanId::new(0),
         ty: Type::Int,
+    }
+}
+
+fn integer_expr_match_pattern(value: i64) -> Pattern {
+    Pattern::Expression(Box::new(integer_expr(value)))
+}
+
+fn integer_range_expr_match_pattern(start: i64, end: i64, inclusion: RangeInclusion) -> Pattern {
+    Pattern::Expression(Box::new(Expression {
+        expr: Expr::Range(Box::new(Range {
+            from: Some(integer_expr(start)),
+            next: None,
+            to: Some(integer_expr(end)),
+            operator: RangeOperator {
+                inclusion,
+                span: Span::test_data(),
+                next_op_span: Span::test_data(),
+            },
+        })),
+        span: Span::test_data(),
+        span_id: SpanId::new(0),
+        ty: Type::Range,
     }))
 }
 
@@ -538,6 +562,106 @@ fn test_lower_match_integer_or_expression_pattern_compiles() {
 
     compile_mir_to_ebpf_with_hints(&program, None, None)
         .expect("integer expression match or-pattern should compile through codegen");
+}
+
+#[test]
+fn test_lower_match_integer_inclusive_range_pattern_compiles() {
+    let hir = make_integer_match_program(integer_range_expr_match_pattern(
+        0,
+        2,
+        RangeInclusion::Inclusive,
+    ));
+
+    let program = lower_hir_to_mir(&hir, None, &HashMap::new())
+        .expect("integer inclusive range match pattern should lower to MIR");
+    let instructions: Vec<_> = program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect();
+    assert!(instructions.iter().any(|inst| {
+        matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::Ge,
+                rhs: MirValue::Const(0),
+                ..
+            }
+        )
+    }));
+    assert!(instructions.iter().any(|inst| {
+        matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::Le,
+                rhs: MirValue::Const(2),
+                ..
+            }
+        )
+    }));
+    assert!(instructions.iter().any(|inst| {
+        matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::And,
+                ..
+            }
+        )
+    }));
+
+    compile_mir_to_ebpf_with_hints(&program, None, None)
+        .expect("integer inclusive range match pattern should compile through codegen");
+}
+
+#[test]
+fn test_lower_match_integer_right_exclusive_range_pattern_compiles() {
+    let hir = make_integer_match_program(integer_range_expr_match_pattern(
+        0,
+        2,
+        RangeInclusion::RightExclusive,
+    ));
+
+    let program = lower_hir_to_mir(&hir, None, &HashMap::new())
+        .expect("integer right-exclusive range match pattern should lower to MIR");
+    let instructions: Vec<_> = program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect();
+    assert!(instructions.iter().any(|inst| {
+        matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::Ge,
+                rhs: MirValue::Const(0),
+                ..
+            }
+        )
+    }));
+    assert!(instructions.iter().any(|inst| {
+        matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::Lt,
+                rhs: MirValue::Const(2),
+                ..
+            }
+        )
+    }));
+    assert!(instructions.iter().any(|inst| {
+        matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::And,
+                ..
+            }
+        )
+    }));
+
+    compile_mir_to_ebpf_with_hints(&program, None, None)
+        .expect("integer right-exclusive range match pattern should compile through codegen");
 }
 
 #[test]

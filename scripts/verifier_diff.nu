@@ -35532,6 +35532,34 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-runtime-match-integer-range"
+        category: "language-core"
+        tags: [control-flow "match" range scalar integer runtime]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let n = (random int | bits and 3)'
+            '  match $n { 0..2 => 10, _ => 20 }'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-runtime-match-integer-range-right-exclusive"
+        category: "language-core"
+        tags: [control-flow "match" range scalar integer runtime]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let n = (random int | bits and 3)'
+            '  match $n { 0..<2 => 10, _ => 20 }'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-math-abs-sum"
         category: "language-core"
         tags: [aggregate list math abs sum]

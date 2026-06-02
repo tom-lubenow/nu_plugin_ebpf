@@ -6,7 +6,7 @@ use crate::kernel_btf::{
     TrampolineBitfieldInfo, TrampolineFieldProjection, TrampolineFieldSelector,
     TrampolineValueKind, TrampolineValueSpec, TypeInfo,
 };
-use nu_protocol::ast::{Expr, MatchPattern};
+use nu_protocol::ast::{Expr, MatchPattern, Range};
 
 mod context_helpers;
 mod packet;
@@ -329,6 +329,87 @@ impl<'a> HirToMirLowering<'a> {
         });
     }
 
+    fn terminate_i64_range_match(
+        &mut self,
+        src_vreg: VReg,
+        range: &Range,
+        if_true: BlockId,
+        if_false: BlockId,
+    ) -> Result<(), CompileError> {
+        if range.next.is_some() {
+            return Err(CompileError::UnsupportedInstruction(
+                "Match range patterns with explicit steps are not supported in eBPF".into(),
+            ));
+        }
+        let start = range
+            .from
+            .as_ref()
+            .and_then(Self::match_expression_i64_literal)
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "Match range patterns require a literal integer start in eBPF".into(),
+                )
+            })?;
+        let end = range
+            .to
+            .as_ref()
+            .and_then(Self::match_expression_i64_literal)
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "Match range patterns require a literal integer end in eBPF".into(),
+                )
+            })?;
+
+        let (lower_op, lower_bound, upper_op, upper_bound) = if start <= end {
+            let upper_op = match range.operator.inclusion {
+                RangeInclusion::Inclusive => BinOpKind::Le,
+                RangeInclusion::RightExclusive => BinOpKind::Lt,
+            };
+            (BinOpKind::Ge, start, upper_op, end)
+        } else {
+            let lower_op = match range.operator.inclusion {
+                RangeInclusion::Inclusive => BinOpKind::Ge,
+                RangeInclusion::RightExclusive => BinOpKind::Gt,
+            };
+            (lower_op, end, BinOpKind::Le, start)
+        };
+
+        let lower_cmp = self.func.alloc_vreg();
+        self.emit(MirInst::BinOp {
+            dst: lower_cmp,
+            op: lower_op,
+            lhs: MirValue::VReg(src_vreg),
+            rhs: MirValue::Const(lower_bound),
+        });
+        let upper_cmp = self.func.alloc_vreg();
+        self.emit(MirInst::BinOp {
+            dst: upper_cmp,
+            op: upper_op,
+            lhs: MirValue::VReg(src_vreg),
+            rhs: MirValue::Const(upper_bound),
+        });
+        let in_range = self.func.alloc_vreg();
+        self.emit(MirInst::BinOp {
+            dst: in_range,
+            op: BinOpKind::And,
+            lhs: MirValue::VReg(lower_cmp),
+            rhs: MirValue::VReg(upper_cmp),
+        });
+        self.terminate(MirInst::Branch {
+            cond: in_range,
+            if_true,
+            if_false,
+        });
+        Ok(())
+    }
+
+    fn match_expression_i64_literal(expr: &nu_protocol::ast::Expression) -> Option<i64> {
+        match &expr.expr {
+            Expr::Int(value) => Some(*value),
+            _ => None,
+        }
+    }
+
     fn lower_match_value(
         &mut self,
         value: &Value,
@@ -366,6 +447,9 @@ impl<'a> HirToMirLowering<'a> {
         match &expr.expr {
             Expr::Bool(val) => self.terminate_bool_match(src_vreg, *val, if_true, if_false),
             Expr::Int(val) => self.terminate_i64_match(src_vreg, *val, if_true, if_false),
+            Expr::Range(range) => {
+                return self.terminate_i64_range_match(src_vreg, range, if_true, if_false);
+            }
             Expr::Nothing => self.terminate_i64_match(src_vreg, 0, if_true, if_false),
             _ => {
                 return Err(CompileError::UnsupportedInstruction(format!(
