@@ -862,7 +862,7 @@ eBPF layout and verifier bounds are explicit:
 | `seq` | Compile-time known integer one-, two-, or three-argument forms, producing a stack-backed numeric list up to 60 items; floats, `seq char`, `seq date`, pipeline input, named options, extra arguments, and longer outputs are not supported |
 | `fill` | Compile-time known string or string-list input with optional compile-time `--width`, `--alignment`, and `--character`, returning padded fixed strings; runtime input, numeric input, filesize input, and closure-derived options are not supported |
 | `is-empty` / `is-not-empty` | Stack-backed lists, tracked strings, literal null, literal list constants, and metadata-backed fixed records |
-| `describe` | No-input or compiler-known inputs, producing a bounded tracked string with Nushell's type description |
+| `describe` | No-input, compile-time known values, tracked runtime scalars, tracked strings, tracked records, and stack-backed numeric lists, producing a bounded tracked string with Nushell's type description |
 | `bytes length` | Compile-time known binary input returning its byte length, or compile-time known list<binary> input returning a numeric list of byte lengths |
 | `bytes starts-with` / `bytes ends-with` | Compile-time known binary input and binary pattern, returning a constant boolean |
 | `bytes index-of` | Compile-time known binary input and non-empty binary pattern, returning the first byte index or `-1`; `--end` returns the last index |

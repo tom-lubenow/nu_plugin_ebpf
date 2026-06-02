@@ -2296,6 +2296,90 @@ impl<'a> HirToMirLowering<'a> {
         Ok(())
     }
 
+    fn describe_metadata_type(meta: &RegMetadata, type_hint: Option<&MirType>) -> Option<String> {
+        if let Some(value) = meta.constant_value.as_ref() {
+            return Some(value.get_type().to_string());
+        }
+        if let Some(output) = meta
+            .annotated_semantics
+            .as_ref()
+            .and_then(Self::describe_annotated_semantics_type)
+        {
+            return Some(output);
+        }
+        if meta.list_buffer.is_some() {
+            return Some("list<int>".to_string());
+        }
+        if meta.string_slot.is_some()
+            || meta.string_len_vreg.is_some()
+            || meta.string_len_bound.is_some()
+        {
+            return Some("string".to_string());
+        }
+        if !meta.record_fields.is_empty() {
+            return Self::describe_record_fields_type(&meta.record_fields);
+        }
+        meta.field_type
+            .as_ref()
+            .or(type_hint)
+            .and_then(Self::describe_mir_type)
+    }
+
+    fn describe_record_fields_type(fields: &[RecordField]) -> Option<String> {
+        if fields.is_empty() {
+            return Some("record".to_string());
+        }
+        let mut parts = Vec::with_capacity(fields.len());
+        for field in fields {
+            let field_type = field
+                .semantics
+                .as_ref()
+                .and_then(Self::describe_annotated_semantics_type)
+                .or_else(|| Self::describe_mir_type(&field.ty))?;
+            parts.push(format!("{}: {field_type}", field.name));
+        }
+        Some(format!("record<{}>", parts.join(", ")))
+    }
+
+    fn describe_annotated_semantics_type(semantics: &AnnotatedValueSemantics) -> Option<String> {
+        match semantics {
+            AnnotatedValueSemantics::String { .. } => Some("string".to_string()),
+            AnnotatedValueSemantics::NumericList { .. } => Some("list<int>".to_string()),
+            AnnotatedValueSemantics::Record(fields) => {
+                if fields.is_empty() {
+                    return Some("record".to_string());
+                }
+                let mut parts = Vec::with_capacity(fields.len());
+                for (name, field_semantics) in fields {
+                    let field_type = Self::describe_annotated_semantics_type(field_semantics)?;
+                    parts.push(format!("{name}: {field_type}"));
+                }
+                Some(format!("record<{}>", parts.join(", ")))
+            }
+            AnnotatedValueSemantics::FixedArray { .. } => None,
+        }
+    }
+
+    fn describe_mir_type(ty: &MirType) -> Option<String> {
+        match ty {
+            MirType::I8
+            | MirType::I16
+            | MirType::I32
+            | MirType::I64
+            | MirType::U8
+            | MirType::U16
+            | MirType::U32
+            | MirType::U64 => Some("int".to_string()),
+            MirType::Bool => Some("bool".to_string()),
+            MirType::Ptr { .. }
+            | MirType::Array { .. }
+            | MirType::Struct { .. }
+            | MirType::MapRef { .. }
+            | MirType::Subprogram { .. }
+            | MirType::Unknown => None,
+        }
+    }
+
     pub(super) fn lower_describe(
         &mut self,
         src_dst: RegId,
@@ -2321,17 +2405,18 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         let output = if let Some(input_reg) = input_reg {
-            let meta = self.get_metadata(input_reg).ok_or_else(|| {
-                CompileError::UnsupportedInstruction(
-                    "describe requires compile-time known input in eBPF".into(),
-                )
-            })?;
-            let value = meta.constant_value.as_ref().ok_or_else(|| {
-                CompileError::UnsupportedInstruction(
-                    "describe requires compile-time known input in eBPF".into(),
-                )
-            })?;
-            value.get_type().to_string()
+            let type_hint = self
+                .reg_map
+                .get(&input_reg.get())
+                .and_then(|vreg| self.vreg_type_hints.get(vreg));
+            self.get_metadata(input_reg)
+                .and_then(|meta| Self::describe_metadata_type(meta, type_hint))
+                .or_else(|| type_hint.and_then(Self::describe_mir_type))
+                .ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(
+                        "describe requires compiler-tracked input in eBPF".into(),
+                    )
+                })?
         } else {
             "nothing".to_string()
         };

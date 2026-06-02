@@ -1013,6 +1013,124 @@ fn make_describe_no_input_then_length_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_runtime_scalar_describe_then_starts_with_program(
+    random_decl: DeclId,
+    describe_decl: DeclId,
+    starts_with_decl: DeclId,
+    prefix: &str,
+) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::Call {
+                    decl_id: random_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs::default(),
+                },
+                HirStmt::Call {
+                    decl_id: describe_decl,
+                    src_dst: RegId::new(1),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadValue {
+                    dst: RegId::new(2),
+                    val: Box::new(Value::string(prefix, Span::test_data())),
+                },
+                HirStmt::Call {
+                    decl_id: starts_with_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(2)],
+                        pipeline_input: Some(RegId::new(1)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(3) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 4,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_runtime_list_describe_then_starts_with_program(
+    random_decl: DeclId,
+    append_decl: DeclId,
+    describe_decl: DeclId,
+    starts_with_decl: DeclId,
+    prefix: &str,
+) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::list(
+                        vec![
+                            Value::int(10, Span::test_data()),
+                            Value::int(20, Span::test_data()),
+                        ],
+                        Span::test_data(),
+                    )),
+                },
+                HirStmt::Call {
+                    decl_id: random_decl,
+                    src_dst: RegId::new(1),
+                    args: HirCallArgs::default(),
+                },
+                HirStmt::Call {
+                    decl_id: append_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: describe_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(2)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadValue {
+                    dst: RegId::new(4),
+                    val: Box::new(Value::string(prefix, Span::test_data())),
+                },
+                HirStmt::Call {
+                    decl_id: starts_with_decl,
+                    src_dst: RegId::new(5),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(4)],
+                        pipeline_input: Some(RegId::new(3)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(5) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 6,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_string_arg_pipeline_call_program(decl_id: DeclId, value: &str, arg: &str) -> HirProgram {
     make_string_arg_pipeline_call_program_with_flags(decl_id, value, arg, Vec::new())
 }
@@ -7712,6 +7830,115 @@ fn test_lower_describe_no_input_materializes_nothing_type_string() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("describe no-input output consumed by str length should compile through codegen");
+}
+
+#[test]
+fn test_lower_describe_on_runtime_integer_uses_type_hint() {
+    let random_decl = DeclId::new(210);
+    let describe_decl = DeclId::new(211);
+    let starts_with_decl = DeclId::new(212);
+    let hir = make_runtime_scalar_describe_then_starts_with_program(
+        random_decl,
+        describe_decl,
+        starts_with_decl,
+        "int",
+    );
+    let decl_names = HashMap::from([
+        (random_decl, "random int".to_string()),
+        (describe_decl, "describe".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("describe should lower runtime integer metadata as Nushell int");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"int\0")
+            )),
+        "expected describe to materialize 'int' for runtime integer input"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "describe runtime integer output consumed by str starts-with should compile through codegen",
+    );
+}
+
+#[test]
+fn test_lower_describe_on_runtime_numeric_list_uses_metadata_type() {
+    let random_decl = DeclId::new(213);
+    let append_decl = DeclId::new(214);
+    let describe_decl = DeclId::new(215);
+    let starts_with_decl = DeclId::new(216);
+    let hir = make_runtime_list_describe_then_starts_with_program(
+        random_decl,
+        append_decl,
+        describe_decl,
+        starts_with_decl,
+        "list<int>",
+    );
+    let decl_names = HashMap::from([
+        (random_decl, "random int".to_string()),
+        (append_decl, "append".to_string()),
+        (describe_decl, "describe".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("describe should lower runtime stack numeric list metadata as Nushell list<int>");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"list<int>\0")
+            )),
+        "expected describe to materialize 'list<int>' for runtime numeric list input"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::ListPush { .. })),
+        "runtime numeric list test should exercise stack list materialization"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "describe runtime list output consumed by str starts-with should compile through codegen",
+    );
 }
 
 #[test]

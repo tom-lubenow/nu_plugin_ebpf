@@ -37512,6 +37512,20 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-runtime-list-describe"
+        category: "language-core"
+        tags: [describe aggregate list runtime string]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let n = random int'
+            '  seq 10 10 20 | append $n | describe | str starts-with "list<int>"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-record-values-non-integer-reject"
         category: "language-core"
         tags: [aggregate record values reject]
