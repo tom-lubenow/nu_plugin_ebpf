@@ -35560,6 +35560,20 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-runtime-match-integer-range-descending-right-exclusive"
+        category: "language-core"
+        tags: [control-flow "match" range scalar integer runtime]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let n = (random int | bits and 3)'
+            '  match $n { 2..<0 => 10, _ => 20 }'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-runtime-match-integer-range-open-lower"
         category: "language-core"
         tags: [control-flow "match" range scalar integer runtime]

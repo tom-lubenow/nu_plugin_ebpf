@@ -381,11 +381,11 @@ impl<'a> HirToMirLowering<'a> {
             };
             (BinOpKind::Ge, start, upper_op, end)
         } else {
-            let lower_op = match range.operator.inclusion {
-                RangeInclusion::Inclusive => BinOpKind::Ge,
-                RangeInclusion::RightExclusive => BinOpKind::Gt,
+            let upper_op = match range.operator.inclusion {
+                RangeInclusion::Inclusive => BinOpKind::Le,
+                RangeInclusion::RightExclusive => BinOpKind::Lt,
             };
-            (lower_op, end, BinOpKind::Le, start)
+            (BinOpKind::Ge, end, upper_op, start)
         };
 
         let lower_cmp = self.func.alloc_vreg();

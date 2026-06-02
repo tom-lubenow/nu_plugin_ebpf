@@ -734,6 +734,62 @@ fn test_lower_match_integer_right_exclusive_range_pattern_compiles() {
 }
 
 #[test]
+fn test_lower_match_integer_descending_right_exclusive_range_pattern_excludes_start() {
+    let hir = make_integer_match_program(integer_range_expr_match_pattern(
+        2,
+        0,
+        RangeInclusion::RightExclusive,
+    ));
+
+    let program = lower_hir_to_mir(&hir, None, &HashMap::new())
+        .expect("integer descending right-exclusive range match pattern should lower to MIR");
+    let instructions: Vec<_> = program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect();
+    assert!(instructions.iter().any(|inst| {
+        matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::Ge,
+                rhs: MirValue::Const(0),
+                ..
+            }
+        )
+    }));
+    assert!(instructions.iter().any(|inst| {
+        matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::Lt,
+                rhs: MirValue::Const(2),
+                ..
+            }
+        )
+    }));
+    assert!(!instructions.iter().any(|inst| {
+        matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::Gt,
+                rhs: MirValue::Const(0),
+                ..
+            } | MirInst::BinOp {
+                op: BinOpKind::Le,
+                rhs: MirValue::Const(2),
+                ..
+            }
+        )
+    }));
+
+    compile_mir_to_ebpf_with_hints(&program, None, None).expect(
+        "integer descending right-exclusive range match pattern should compile through codegen",
+    );
+}
+
+#[test]
 fn test_lower_match_integer_open_lower_range_pattern_defaults_to_zero() {
     let hir = make_integer_match_program(integer_range_expr_match_pattern_with_bounds(
         None,
