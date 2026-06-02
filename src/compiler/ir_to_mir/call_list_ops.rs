@@ -1,6 +1,7 @@
 use super::*;
 use crate::compiler::mir::AddressSpace;
 
+mod bits;
 mod compact;
 mod dedupe;
 mod find;

@@ -10115,6 +10115,41 @@ fn make_math_abs_program(abs_decl: DeclId, input: i64) -> HirProgram {
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_bits_binary_program(bits_decl: DeclId, input: i64, target: i64) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Int(input),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(target),
+                },
+                HirStmt::Call {
+                    decl_id: bits_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        positional: vec![RegId::new(1)],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(2) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_integer_list_pipeline_call_program(decl_id: DeclId, values: &[i64]) -> HirProgram {
     let func = HirFunction {
         blocks: vec![HirBlock {
@@ -10151,6 +10186,60 @@ fn make_integer_list_pipeline_call_program(decl_id: DeclId, values: &[i64]) -> H
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_bits_binary_list_sum_program(
+    bits_decl: DeclId,
+    sum_decl: DeclId,
+    values: &[i64],
+    target: i64,
+) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::list(
+                        values
+                            .iter()
+                            .map(|value| Value::int(*value, Span::test_data()))
+                            .collect(),
+                        Span::test_data(),
+                    )),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(target),
+                },
+                HirStmt::Call {
+                    decl_id: bits_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        positional: vec![RegId::new(1)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: sum_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(2)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(3) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 4,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_value_list_pipeline_call_program(decl_id: DeclId, values: Vec<Value>) -> HirProgram {
     let func = HirFunction {
         blocks: vec![HirBlock {
@@ -10176,6 +10265,45 @@ fn make_value_list_pipeline_call_program(decl_id: DeclId, values: Vec<Value>) ->
         ast: Vec::new(),
         comments: Vec::new(),
         register_count: 2,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_bits_binary_value_list_program(
+    bits_decl: DeclId,
+    values: Vec<Value>,
+    target: i64,
+) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::list(values, Span::test_data())),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(target),
+                },
+                HirStmt::Call {
+                    decl_id: bits_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        positional: vec![RegId::new(1)],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(2) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
         file_count: 0,
     };
     HirProgram::new(func, HashMap::new(), vec![], None)
@@ -10726,6 +10854,128 @@ fn test_lower_math_integer_identity_rejects_constant_list_output_over_capacity()
 }
 
 #[test]
+fn test_lower_bits_binary_commands_on_known_integer_inputs() {
+    for (offset, command_name, target, expected) in [
+        (0, "bits and", 3, 1),
+        (1, "bits or", 2, 7),
+        (2, "bits xor", 3, 6),
+    ] {
+        let decl = DeclId::new(291 + offset);
+        let hir = make_bits_binary_program(decl, 5, target);
+        let decl_names = HashMap::from([(decl, command_name.to_string())]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("{command_name} should lower integer input: {err}"));
+
+        assert_program_returns_constant(&result.program, expected, command_name);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{command_name} should compile through codegen: {err}"));
+    }
+}
+
+#[test]
+fn test_lower_bits_binary_commands_on_known_integer_lists() {
+    for (offset, command_name, target, expected_values) in [
+        (0, "bits and", 2, vec![0i64, 2, 2]),
+        (1, "bits or", 2, vec![6i64, 3, 2]),
+        (2, "bits xor", 2, vec![6i64, 1, 0]),
+    ] {
+        let bits_decl = DeclId::new(294 + offset);
+        let sum_decl = DeclId::new(297 + offset);
+        let hir = make_bits_binary_list_sum_program(bits_decl, sum_decl, &[4, 3, 2], target);
+        let decl_names = HashMap::from([
+            (bits_decl, command_name.to_string()),
+            (sum_decl, "math sum".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("{command_name} should lower integer-list input: {err}"));
+        let expected = expected_values
+            .into_iter()
+            .flat_map(|value| value.to_le_bytes())
+            .collect::<Vec<_>>();
+
+        assert!(
+            result
+                .readonly_globals
+                .iter()
+                .any(|global| global.data == expected),
+            "expected {command_name} to materialize the transformed integer list"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{command_name} should compile through codegen: {err}"));
+    }
+}
+
+#[test]
+fn test_lower_bits_binary_rejects_non_integer_list_items() {
+    let bits_decl = DeclId::new(300);
+    let hir = make_bits_binary_value_list_program(
+        bits_decl,
+        vec![
+            Value::int(1, Span::test_data()),
+            Value::bool(true, Span::test_data()),
+        ],
+        1,
+    );
+    let decl_names = HashMap::from([(bits_decl, "bits and".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("bits and should reject non-integer list items");
+
+    assert!(
+        err.to_string()
+            .contains("bits and requires integer list items"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_bits_binary_rejects_constant_list_output_over_capacity() {
+    let bits_decl = DeclId::new(301);
+    let values = (0..=60).collect::<Vec<_>>();
+    let hir = make_bits_binary_list_sum_program(bits_decl, DeclId::new(302), &values, 1);
+    let decl_names = HashMap::from([(bits_decl, "bits xor".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("bits xor output over the stack-list capacity should be rejected");
+
+    assert!(
+        err.to_string()
+            .contains("bits xor output exceeds stack-backed numeric list capacity 60"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn test_lower_math_abs_on_known_integer_list_materializes_absolute_values() {
     let abs_decl = DeclId::new(264);
     let sum_decl = DeclId::new(265);
@@ -10864,6 +11114,63 @@ fn make_runtime_math_unary_list_length_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_runtime_bits_binary_list_length_program(
+    bits_decl: DeclId,
+    length_decl: DeclId,
+    random_decl: DeclId,
+    target: i64,
+) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::List { capacity: 1 },
+                },
+                HirStmt::Call {
+                    decl_id: random_decl,
+                    src_dst: RegId::new(1),
+                    args: HirCallArgs::default(),
+                },
+                HirStmt::ListPush {
+                    src_dst: RegId::new(0),
+                    item: RegId::new(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(target),
+                },
+                HirStmt::Call {
+                    decl_id: bits_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        positional: vec![RegId::new(2)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: length_decl,
+                    src_dst: RegId::new(4),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(3)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(4) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 5,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 #[test]
 fn test_lower_math_abs_on_runtime_stack_numeric_list() {
     let abs_decl = DeclId::new(268);
@@ -10939,6 +11246,68 @@ fn test_lower_math_integer_identity_commands_on_runtime_stack_numeric_lists() {
             panic!("{command_name} should lower on runtime stack-backed numeric lists: {err}")
         });
 
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!(
+                    "{command_name} runtime list output consumed by length should compile: {err}"
+                )
+            });
+    }
+}
+
+#[test]
+fn test_lower_bits_binary_commands_on_runtime_stack_numeric_lists() {
+    for (offset, command_name, expected_op) in [
+        (0, "bits and", BinOpKind::And),
+        (1, "bits or", BinOpKind::Or),
+        (2, "bits xor", BinOpKind::Xor),
+    ] {
+        let bits_decl = DeclId::new(303 + offset);
+        let length_decl = DeclId::new(306 + offset);
+        let random_decl = DeclId::new(309 + offset);
+        let hir =
+            make_runtime_bits_binary_list_length_program(bits_decl, length_decl, random_decl, 3);
+        let decl_names = HashMap::from([
+            (bits_decl, command_name.to_string()),
+            (length_decl, "length".to_string()),
+            (random_decl, "random int".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("{command_name} should lower on runtime stack-backed numeric lists: {err}")
+        });
+        let instructions = result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .collect::<Vec<_>>();
+
+        assert!(
+            instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op,
+                    ..
+                } if *op == expected_op
+            )),
+            "expected runtime {command_name} to emit {expected_op:?}"
+        );
+        assert!(
+            instructions
+                .iter()
+                .any(|inst| matches!(inst, MirInst::ListPush { .. })),
+            "expected runtime {command_name} to materialize an output list"
+        );
         compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
             .unwrap_or_else(|err| {
                 panic!(

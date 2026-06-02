@@ -892,6 +892,7 @@ eBPF layout and verifier bounds are explicit:
 | `str reverse` / `str capitalize` | Compile-time known string or string-list input in the default whole-string transform mode |
 | `str camel-case` / `str kebab-case` / `str pascal-case` / `str screaming-snake-case` / `str snake-case` / `str title-case` | Compile-time known string or string-list input in the default whole-string case-conversion mode |
 | `length` | Stack-backed numeric lists, compile-time known list constants, literal binary, and literal null values |
+| `bits and` / `bits or` / `bits xor` | Integer scalar input and integer stack-backed or compile-time known lists with one integer target argument; binary input, endian options, `bits not`, shifts, and rotates are not supported |
 | `math sum` / `math product` / `math min` / `math max` | Stack-backed numeric lists with known non-empty length; empty-list input is rejected to match Nushell semantics |
 | `math median` | Compile-time known odd-length integer lists, returning the integer median; empty lists, even-length lists, runtime lists, and float medians are not supported |
 | `math mode` | Compile-time known integer lists, returning a sorted stack-backed numeric list of up to 60 most-frequent values; empty lists return an empty list, while runtime lists and non-integer items are not supported |

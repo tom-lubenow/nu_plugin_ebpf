@@ -15,7 +15,7 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
-    fn mir_type_is_integer(ty: &MirType) -> bool {
+    pub(super) fn mir_type_is_integer(ty: &MirType) -> bool {
         matches!(
             ty,
             MirType::I8

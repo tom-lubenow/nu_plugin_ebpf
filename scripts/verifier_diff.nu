@@ -35400,6 +35400,45 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-scalar-bits-binary"
+        category: "language-core"
+        tags: [scalar bits and or xor]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ((5 | bits and 3) == 1) and ((5 | bits or 2) == 7) and ((5 | bits xor 3) == 6)'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-list-bits-binary"
+        category: "language-core"
+        tags: [aggregate list bits and or xor]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ([4 3 2] | bits and 2 | bits or 8 | bits xor 1 | math sum) == 31'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-list-bits-binary-runtime"
+        category: "language-core"
+        tags: [aggregate list bits and or xor runtime]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ([(random int)] | bits and 3 | bits or 4 | bits xor 1 | length) == 1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-null-length"
         category: "language-core"
         tags: ["null" length]
