@@ -622,10 +622,12 @@ impl<'a> HirToMirLowering<'a> {
                 .is_some_and(|meta| meta.mutable_global_runtime);
 
         if remaining_members.is_empty() {
-            self.emit(MirInst::Copy {
-                dst: dst_vreg,
-                src: MirValue::VReg(source_vreg),
-            });
+            let src = constant_value
+                .as_ref()
+                .and_then(Self::constant_scalar_i64)
+                .map(MirValue::Const)
+                .unwrap_or(MirValue::VReg(source_vreg));
+            self.emit(MirInst::Copy { dst: dst_vreg, src });
             self.vreg_type_hints
                 .insert(dst_vreg, base_runtime_ty.clone());
             let meta = self.get_or_create_metadata(src_dst);
@@ -934,6 +936,45 @@ impl<'a> HirToMirLowering<'a> {
                     &path.members,
                     constant_value,
                 );
+            }
+
+            let record_field_projection = match path.members.first() {
+                Some(PathMember::String { val, .. }) => {
+                    self.get_metadata(src_dst).and_then(|meta| {
+                        meta.record_fields
+                            .iter()
+                            .find(|field| field.name == *val)
+                            .cloned()
+                    })
+                }
+                _ => None,
+            };
+            if let Some(record_field) = record_field_projection {
+                let constant_value = self
+                    .get_metadata(src_dst)
+                    .and_then(|meta| meta.constant_value.as_ref())
+                    .and_then(|value| Self::constant_follow_cell_path(value, &path));
+                let remaining_members: Vec<PathMember> =
+                    path.members.iter().skip(1).cloned().collect();
+                let known_terminal_scalar = remaining_members.is_empty()
+                    && constant_value
+                        .as_ref()
+                        .and_then(Self::constant_scalar_i64)
+                        .is_some();
+                let current_function_field_vreg = record_field
+                    .source_reg
+                    .is_some_and(|reg| self.get_metadata(reg).is_some());
+                if known_terminal_scalar || current_function_field_vreg {
+                    return self.lower_record_field_projection_from_metadata(
+                        src_dst,
+                        source_dst_vreg,
+                        had_source_vreg,
+                        record_field,
+                        &remaining_members,
+                        &path.members,
+                        constant_value,
+                    );
+                }
             }
         }
 

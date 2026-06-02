@@ -7772,6 +7772,150 @@ fn test_helper_call_user_ringbuf_drain_closure_lowers_and_compiles() {
 }
 
 #[test]
+fn test_helper_call_user_ringbuf_drain_callback_returns_record_ctx_constant_field() {
+    use crate::compiler::ir_to_mir::tests::helpers::string_member;
+
+    let closure_block_id = nu_protocol::BlockId::new(10);
+    let closure = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: VarId::new(10),
+                },
+                HirStmt::LoadVariable {
+                    dst: RegId::new(1),
+                    var_id: VarId::new(11),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![string_member("limit")],
+                    })),
+                },
+                HirStmt::CloneCellPath {
+                    dst: RegId::new(3),
+                    src: RegId::new(1),
+                    path: RegId::new(2),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(3) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 4,
+        file_count: 0,
+    };
+
+    let main = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String(b"bpf_user_ringbuf_drain".to_vec()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String(b"user_events".to_vec()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::Closure(closure_block_id),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::Record { capacity: 1 },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(5),
+                    lit: HirLiteral::String(b"limit".to_vec()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(6),
+                    lit: HirLiteral::Int(1),
+                },
+                HirStmt::RecordInsert {
+                    src_dst: RegId::new(4),
+                    key: RegId::new(5),
+                    val: RegId::new(6),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(7),
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::Call {
+                    decl_id: DeclId::new(42),
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![
+                            RegId::new(1),
+                            RegId::new(2),
+                            RegId::new(3),
+                            RegId::new(4),
+                            RegId::new(7),
+                        ],
+                        ..Default::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 8,
+        file_count: 0,
+    };
+
+    let mut hir_program = HirProgram::new(
+        main,
+        HashMap::from([(closure_block_id, closure)]),
+        vec![],
+        None,
+    );
+    hir_program.closure_param_sources.insert(
+        closure_block_id,
+        HirClosureParamSource {
+            params: vec![
+                HirClosureParam {
+                    name: "dynptr".to_string(),
+                    var_id: Some(VarId::new(10)),
+                },
+                HirClosureParam {
+                    name: "cb".to_string(),
+                    var_id: Some(VarId::new(11)),
+                },
+            ],
+        },
+    );
+    let decl_names = HashMap::from([(DeclId::new(42), "helper-call".to_string())]);
+    let hir_types = infer_hir_types(&hir_program, &decl_names)
+        .expect("user_ringbuf_drain record callback ctx should type-check");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        None,
+        &decl_names,
+        Some(&hir_types),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("user_ringbuf_drain record callback ctx should lower");
+
+    assert_eq!(
+        result.program.subfunctions[0].required_return_range,
+        Some(ScalarValueRange::new(0, 1))
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("record callback ctx constant field return should satisfy callback range");
+}
+
+#[test]
 fn test_helper_call_task_storage_literal_lowers_and_compiles() {
     let func = HirFunction {
         blocks: vec![HirBlock {

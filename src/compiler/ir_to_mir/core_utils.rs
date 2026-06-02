@@ -192,6 +192,16 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
+    pub(super) fn constant_scalar_i64(value: &Value) -> Option<i64> {
+        match value {
+            Value::Bool { val, .. } => Some(i64::from(*val)),
+            Value::Int { val, .. } => Some(*val),
+            Value::Filesize { val, .. } => Some(val.get()),
+            Value::Duration { val, .. } => Some(*val),
+            _ => None,
+        }
+    }
+
     fn constant_literal_int(value: &Value) -> Option<i64> {
         match value {
             Value::Int { val, .. } => Some(*val),
