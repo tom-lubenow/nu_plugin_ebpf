@@ -367,6 +367,8 @@ pub struct HirToMirLowering<'a> {
     pipeline_input_reg: Option<RegId>,
     /// Positional arguments for the next call (vreg, source RegId for metadata)
     positional_args: Vec<(VReg, RegId)>,
+    /// Current call result is only used by consumers that fold compile-time metadata.
+    current_call_result_metadata_only: bool,
     /// Named flags for the next call (e.g., --verbose)
     named_flags: Vec<String>,
     /// Named arguments with values for the next call (e.g., --count 5)
@@ -543,6 +545,7 @@ impl<'a> HirToMirLowering<'a> {
             pipeline_input: None,
             pipeline_input_reg: None,
             positional_args: Vec::new(),
+            current_call_result_metadata_only: false,
             named_flags: Vec::new(),
             named_args: HashMap::new(),
             parser_info_args: Vec::new(),

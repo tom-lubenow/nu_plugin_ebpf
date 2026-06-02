@@ -19710,6 +19710,122 @@ fn make_bytes_split_collect_then_starts_with_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_bytes_split_collect_then_length_program(
+    split_decl: DeclId,
+    collect_decl: DeclId,
+    length_decl: DeclId,
+    input: Vec<u8>,
+    separator: HirLiteral,
+    collect_separator: Option<Vec<u8>>,
+) -> HirProgram {
+    let mut stmts = vec![
+        HirStmt::LoadLiteral {
+            dst: RegId::new(0),
+            lit: HirLiteral::Binary(input),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: separator,
+        },
+        HirStmt::Call {
+            decl_id: split_decl,
+            src_dst: RegId::new(2),
+            args: HirCallArgs {
+                positional: vec![RegId::new(1)],
+                pipeline_input: Some(RegId::new(0)),
+                ..HirCallArgs::default()
+            },
+        },
+    ];
+    let mut collect_args = HirCallArgs {
+        pipeline_input: Some(RegId::new(2)),
+        ..HirCallArgs::default()
+    };
+    if let Some(collect_separator) = collect_separator {
+        stmts.push(HirStmt::LoadLiteral {
+            dst: RegId::new(3),
+            lit: HirLiteral::Binary(collect_separator),
+        });
+        collect_args.positional.push(RegId::new(3));
+    }
+    stmts.push(HirStmt::Call {
+        decl_id: collect_decl,
+        src_dst: RegId::new(4),
+        args: collect_args,
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: length_decl,
+        src_dst: RegId::new(5),
+        args: HirCallArgs {
+            pipeline_input: Some(RegId::new(4)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(5) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 6,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_bytes_split_then_pipeline_call_program(
+    split_decl: DeclId,
+    consumer_decl: DeclId,
+    input: Vec<u8>,
+    separator: HirLiteral,
+) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Binary(input),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: separator,
+                },
+                HirStmt::Call {
+                    decl_id: split_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: consumer_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(2)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(3) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 4,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_bytes_split_program(
     split_decl: DeclId,
     input: Vec<u8>,
@@ -19829,6 +19945,134 @@ fn test_lower_bytes_split_string_separator_materializes_binary_list() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("bytes split string separator output consumed by bytes collect should compile");
+}
+
+#[test]
+fn test_lower_bytes_split_folds_empty_and_unequal_parts_for_bytes_collect() {
+    let scenarios = [
+        (
+            "leading separator",
+            vec![0x20, 0x61],
+            HirLiteral::Binary(vec![0x20]),
+            1,
+        ),
+        (
+            "only separator",
+            vec![0x20],
+            HirLiteral::Binary(vec![0x20]),
+            0,
+        ),
+        (
+            "unequal parts",
+            vec![0x61, 0x20, 0x62, 0x62],
+            HirLiteral::Binary(vec![0x20]),
+            3,
+        ),
+        (
+            "string separator with empty part",
+            vec![0x2d, 0x2d, 0x61],
+            HirLiteral::String(b"--".to_vec()),
+            1,
+        ),
+    ];
+
+    for (index, (context, input, separator, expected_len)) in scenarios.into_iter().enumerate() {
+        let base_decl = 262 + index * 3;
+        let bytes_split_decl = DeclId::new(base_decl);
+        let bytes_collect_decl = DeclId::new(base_decl + 1);
+        let bytes_length_decl = DeclId::new(base_decl + 2);
+        let hir = make_bytes_split_collect_then_length_program(
+            bytes_split_decl,
+            bytes_collect_decl,
+            bytes_length_decl,
+            input,
+            separator,
+            None,
+        );
+        let decl_names = HashMap::from([
+            (bytes_split_decl, "bytes split".to_string()),
+            (bytes_collect_decl, "bytes collect".to_string()),
+            (bytes_length_decl, "bytes length".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("bytes split should fold {context} through bytes collect: {err}")
+        });
+
+        assert_program_returns_constant(&result.program, expected_len, context);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("bytes split {context} consumed by bytes collect should compile: {err}")
+            });
+    }
+}
+
+#[test]
+fn test_lower_bytes_split_folds_empty_parts_for_list_metadata_consumers() {
+    let scenarios = [
+        (
+            "empty input length",
+            "length",
+            vec![],
+            HirLiteral::Binary(vec![0x20]),
+            1,
+        ),
+        (
+            "only separator length",
+            "length",
+            vec![0x20],
+            HirLiteral::Binary(vec![0x20]),
+            2,
+        ),
+        (
+            "empty input is-empty",
+            "is-empty",
+            vec![],
+            HirLiteral::Binary(vec![0x20]),
+            0,
+        ),
+    ];
+
+    for (index, (context, command, input, separator, expected)) in scenarios.into_iter().enumerate()
+    {
+        let base_decl = 274 + index * 2;
+        let bytes_split_decl = DeclId::new(base_decl);
+        let consumer_decl = DeclId::new(base_decl + 1);
+        let hir = make_bytes_split_then_pipeline_call_program(
+            bytes_split_decl,
+            consumer_decl,
+            input,
+            separator,
+        );
+        let decl_names = HashMap::from([
+            (bytes_split_decl, "bytes split".to_string()),
+            (consumer_decl, command.to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("bytes split should fold {context} through {command}: {err}"));
+
+        assert_program_returns_constant(&result.program, expected, context);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("bytes split {context} consumed by {command} should compile: {err}")
+            });
+    }
 }
 
 #[test]

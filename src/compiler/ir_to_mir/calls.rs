@@ -3880,12 +3880,14 @@ impl<'a> HirToMirLowering<'a> {
                         "bytes split requires at least one binary part in eBPF".into(),
                     ));
                 };
-                if first_part_len == 0 || parts.iter().any(Vec::is_empty) {
+                let has_empty_part = first_part_len == 0 || parts.iter().any(Vec::is_empty);
+                let has_unequal_part_len = parts.iter().any(|part| part.len() != first_part_len);
+                if has_empty_part && !self.current_call_result_metadata_only {
                     return Err(CompileError::UnsupportedInstruction(
                         "bytes split requires non-empty binary parts in eBPF".into(),
                     ));
                 }
-                if parts.iter().any(|part| part.len() != first_part_len) {
+                if has_unequal_part_len && !self.current_call_result_metadata_only {
                     return Err(CompileError::UnsupportedInstruction(
                         "bytes split requires equal-length binary parts in eBPF".into(),
                     ));
@@ -3896,10 +3898,12 @@ impl<'a> HirToMirLowering<'a> {
                     .map(|part| nu_protocol::Value::binary(part, nu_protocol::Span::unknown()))
                     .collect();
                 self.reset_call_result_metadata(src_dst);
-                self.lower_constant_value(
-                    src_dst,
-                    &nu_protocol::Value::list(values, nu_protocol::Span::unknown()),
-                )?;
+                let value = nu_protocol::Value::list(values, nu_protocol::Span::unknown());
+                if has_empty_part || has_unequal_part_len {
+                    self.lower_compile_time_only_constant_value(src_dst, &value);
+                } else {
+                    self.lower_constant_value(src_dst, &value)?;
+                }
             }
 
             "str length" => {
