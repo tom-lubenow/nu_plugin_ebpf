@@ -48,6 +48,7 @@ const BPF_ADJ_ROOM_ENCAP_L2_SHIFT: u32 = 56;
 const BPF_F_ADJ_ROOM_ALLOWED_MASK: i64 =
     (0x1ffu64 | (BPF_ADJ_ROOM_ENCAP_L2_MASK << BPF_ADJ_ROOM_ENCAP_L2_SHIFT)) as i64;
 const BPF_SKB_ADJUST_ROOM_MAX_LEN_DIFF: i64 = 0xfff;
+const PACKET_OTHERHOST: i64 = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ScalarArgBitCombinationRequirement {
@@ -1413,6 +1414,11 @@ impl BpfHelper {
                 "helper 'bpf_loop' requires arg0 nr_loops to be between 0 and BPF_MAX_LOOPS (8 * 1024 * 1024)",
             )),
             (Self::BpfLoop, 3) => Some((0, 0, "helper 'bpf_loop' requires arg3 flags to be 0")),
+            (Self::SkbChangeType, 1) => Some((
+                0,
+                PACKET_OTHERHOST,
+                "helper 'bpf_skb_change_type' requires arg1 type to be PACKET_HOST, PACKET_BROADCAST, PACKET_MULTICAST, or PACKET_OTHERHOST",
+            )),
             (Self::SysctlGetName, 3) => Some((
                 0,
                 1,

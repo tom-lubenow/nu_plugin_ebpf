@@ -8469,6 +8469,10 @@ fn make_skb_change_proto_vcc_call(flags: i64) -> (MirFunction, HashMap<VReg, Mir
 }
 
 fn make_skb_change_type_vcc_call() -> (MirFunction, HashMap<VReg, MirType>) {
+    make_skb_change_type_vcc_call_with_type(0)
+}
+
+fn make_skb_change_type_vcc_call_with_type(pkt_type: i64) -> (MirFunction, HashMap<VReg, MirType>) {
     let (mut func, entry) = new_mir_function();
     let ctx = func.alloc_vreg();
     let dst = func.alloc_vreg();
@@ -8485,7 +8489,7 @@ fn make_skb_change_type_vcc_call() -> (MirFunction, HashMap<VReg, MirType>) {
         .push(MirInst::CallHelper {
             dst,
             helper: BpfHelper::SkbChangeType as u32,
-            args: vec![MirValue::VReg(ctx), MirValue::Const(0)],
+            args: vec![MirValue::VReg(ctx), MirValue::Const(pkt_type)],
         });
     func.block_mut(entry).terminator = MirInst::Return { val: None };
 
@@ -8539,6 +8543,17 @@ fn test_verify_mir_for_probe_context_skb_change_proto_and_type_reject_non_tc_pro
             .expect_err("expected skb change helper to be rejected outside tc");
         assert!(err.iter().any(|e| e.message.contains(expected)));
     }
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_skb_change_type_rejects_invalid_type() {
+    let (func, types) = make_skb_change_type_vcc_call_with_type(4);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected bpf_skb_change_type type to be rejected");
+    assert!(err.iter().any(|e| e.message.contains(
+        "helper 'bpf_skb_change_type' requires arg1 type to be PACKET_HOST, PACKET_BROADCAST, PACKET_MULTICAST, or PACKET_OTHERHOST"
+    )));
 }
 
 #[test]

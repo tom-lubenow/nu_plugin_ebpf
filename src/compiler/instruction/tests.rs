@@ -2680,6 +2680,14 @@ fn test_helpers_with_reserved_zero_flags() {
         ))
     );
     assert_eq!(BpfHelper::SkbChangeType.zero_scalar_arg_requirement(), None);
+    assert_eq!(
+        BpfHelper::SkbChangeType.scalar_arg_range_requirement(1),
+        Some((
+            0,
+            3,
+            "helper 'bpf_skb_change_type' requires arg1 type to be PACKET_HOST, PACKET_BROADCAST, PACKET_MULTICAST, or PACKET_OTHERHOST"
+        ))
+    );
     assert_eq!(BpfHelper::CheckMtu.zero_scalar_arg_requirement(), None);
     assert_eq!(
         BpfHelper::SkbGetTunnelKey.zero_scalar_arg_requirement(),

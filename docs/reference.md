@@ -582,8 +582,10 @@ current kernel UAPI uses `0` for `BPF_SKB_TSTAMP_UNSPEC` and `1` for
 model `helper-call "bpf_skb_ecn_set_ce" $ctx` for setting IPv4/IPv6 ECN
 CE when the packet is ECN-capable. `tc_action`, TC, TCX, and Netkit model
 `helper-call "bpf_skb_change_proto" $ctx PROTO 0` and
-`helper-call "bpf_skb_change_type" $ctx TYPE`; protocol changes can resize
-the skb, so packet pointers must be reloaded and re-guarded afterward.
+`helper-call "bpf_skb_change_type" $ctx TYPE`; change-type calls accept
+only `PACKET_HOST`, `PACKET_BROADCAST`, `PACKET_MULTICAST`, or
+`PACKET_OTHERHOST` (`0..3`). Protocol changes can resize the skb, so packet
+pointers must be reloaded and re-guarded afterward.
 The initial `socket_filter` surface
 uses targets like `socket_filter:udp4:127.0.0.1:31337`,
 `socket_filter:udp6:[::1]:31337`, `socket_filter:tcp4:127.0.0.1:31337`,
