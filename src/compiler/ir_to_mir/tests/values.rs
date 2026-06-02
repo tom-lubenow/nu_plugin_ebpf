@@ -10645,6 +10645,37 @@ fn make_math_abs_program(abs_decl: DeclId, input: i64) -> HirProgram {
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_runtime_scalar_math_abs_program(abs_decl: DeclId, random_decl: DeclId) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::Call {
+                    decl_id: random_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs::default(),
+                },
+                HirStmt::Call {
+                    decl_id: abs_decl,
+                    src_dst: RegId::new(1),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 2,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_bits_binary_program(bits_decl: DeclId, input: i64, target: i64) -> HirProgram {
     make_bits_binary_program_with_endian(bits_decl, input, target, None)
 }
@@ -12352,6 +12383,47 @@ fn test_lower_math_abs_on_i64_min_wraps_like_nushell() {
             )),
         "expected math abs to materialize i64::MIN unchanged"
     );
+}
+
+#[test]
+fn test_lower_math_abs_on_runtime_scalar_integer_uses_negation_branch() {
+    let abs_decl = DeclId::new(264);
+    let random_decl = DeclId::new(265);
+    let hir = make_runtime_scalar_math_abs_program(abs_decl, random_decl);
+    let decl_names = HashMap::from([
+        (abs_decl, "math abs".to_string()),
+        (random_decl, "random int".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("math abs should lower runtime integer scalar input");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::UnaryOp {
+                op: UnaryOpKind::Neg,
+                ..
+            }
+        )),
+        "expected runtime scalar math abs to emit a signed negation path"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("runtime scalar math abs should compile through codegen");
 }
 
 fn make_math_abs_list_sum_program(

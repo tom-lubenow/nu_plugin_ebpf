@@ -186,17 +186,12 @@ impl<'a> HirToMirLowering<'a> {
             ));
         }
 
-        let input_meta = input_reg
-            .and_then(|reg| self.get_metadata(reg))
-            .cloned()
-            .ok_or_else(|| {
-                CompileError::UnsupportedInstruction(
-                    "math abs requires integer, integer-list, or stack-backed numeric-list input in eBPF"
-                        .into(),
-                )
-            })?;
+        let input_meta = input_reg.and_then(|reg| self.get_metadata(reg)).cloned();
 
-        if let Some(nu_protocol::Value::List { vals, .. }) = input_meta.constant_value.clone() {
+        if let Some(nu_protocol::Value::List { vals, .. }) = input_meta
+            .as_ref()
+            .and_then(|meta| meta.constant_value.clone())
+        {
             if vals.len() > MAX_ABS_STACK_LIST_CAPACITY {
                 return Err(CompileError::UnsupportedInstruction(format!(
                     "math abs output exceeds stack-backed numeric list capacity {MAX_ABS_STACK_LIST_CAPACITY} in eBPF"
@@ -228,7 +223,9 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(());
         }
 
-        if let Some((_input_slot, max_len)) = input_meta.list_buffer {
+        if let Some(input_meta) = input_meta.as_ref()
+            && let Some((_input_slot, max_len)) = input_meta.list_buffer
+        {
             let (out_slot, out_ty) = self.create_stack_numeric_list_result(result_vreg, max_len);
 
             if max_len > 0 {
@@ -312,40 +309,113 @@ impl<'a> HirToMirLowering<'a> {
                 }
             }
 
-            let known_len = Self::numeric_list_known_len(&input_meta).map(|len| len.min(max_len));
+            let known_len = Self::numeric_list_known_len(input_meta).map(|len| len.min(max_len));
             self.install_stack_numeric_list_result_metadata(
                 src_dst, out_slot, out_ty, max_len, known_len,
             );
             return Ok(());
         }
 
-        let input = input_meta
-            .literal_int
-            .or_else(|| match input_meta.constant_value.as_ref() {
-                Some(nu_protocol::Value::Int { val, .. }) => Some(*val),
-                _ => None,
-            })
+        if let Some(input) = input_meta.as_ref().and_then(|meta| {
+            meta.literal_int
+                .or_else(|| match meta.constant_value.as_ref() {
+                    Some(nu_protocol::Value::Int { val, .. }) => Some(*val),
+                    _ => None,
+                })
+        }) {
+            let output = input.wrapping_abs();
+
+            self.emit(MirInst::Copy {
+                dst: result_vreg,
+                src: MirValue::Const(output),
+            });
+            self.reset_call_result_metadata(src_dst);
+            let out_meta = self.get_or_create_metadata(src_dst);
+            out_meta.field_type = Some(MirType::I64);
+            out_meta.constant_value = Some(nu_protocol::Value::int(
+                output,
+                nu_protocol::Span::unknown(),
+            ));
+            out_meta.literal_int = Some(output);
+            self.vreg_type_hints.insert(result_vreg, MirType::I64);
+            return Ok(());
+        }
+
+        let input_ty = input_meta
+            .as_ref()
+            .and_then(|meta| meta.field_type.clone())
+            .or_else(|| self.vreg_type_hints.get(&input_vreg).cloned())
             .ok_or_else(|| {
                 CompileError::UnsupportedInstruction(
                     "math abs requires integer, integer-list, or stack-backed numeric-list input in eBPF"
                         .into(),
                 )
             })?;
-        let output = input.wrapping_abs();
+        if !Self::mir_type_is_integer(&input_ty) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "math abs currently supports integer input only in eBPF; input has MIR type {input_ty:?}"
+            )));
+        }
 
-        self.emit(MirInst::Copy {
-            dst: result_vreg,
-            src: MirValue::Const(output),
-        });
+        let unsigned_input = matches!(
+            &input_ty,
+            MirType::U8 | MirType::U16 | MirType::U32 | MirType::U64
+        );
+        let output_ty = if unsigned_input {
+            input_ty.clone()
+        } else {
+            MirType::I64
+        };
+
+        if unsigned_input {
+            self.emit(MirInst::Copy {
+                dst: result_vreg,
+                src: MirValue::VReg(input_vreg),
+            });
+        } else {
+            let negative_block = self.func.alloc_block();
+            let non_negative_block = self.func.alloc_block();
+            let continuation_block = self.func.alloc_block();
+            let is_negative_vreg = self.func.alloc_vreg();
+            self.emit(MirInst::BinOp {
+                dst: is_negative_vreg,
+                op: BinOpKind::Lt,
+                lhs: MirValue::VReg(input_vreg),
+                rhs: MirValue::Const(0),
+            });
+            self.vreg_type_hints.insert(is_negative_vreg, MirType::Bool);
+            self.terminate(MirInst::Branch {
+                cond: is_negative_vreg,
+                if_true: negative_block,
+                if_false: non_negative_block,
+            });
+
+            self.current_block = negative_block;
+            self.emit(MirInst::UnaryOp {
+                dst: result_vreg,
+                op: UnaryOpKind::Neg,
+                src: MirValue::VReg(input_vreg),
+            });
+            self.terminate(MirInst::Jump {
+                target: continuation_block,
+            });
+
+            self.current_block = non_negative_block;
+            self.emit(MirInst::Copy {
+                dst: result_vreg,
+                src: MirValue::VReg(input_vreg),
+            });
+            self.terminate(MirInst::Jump {
+                target: continuation_block,
+            });
+
+            self.current_block = continuation_block;
+        }
+
         self.reset_call_result_metadata(src_dst);
         let out_meta = self.get_or_create_metadata(src_dst);
-        out_meta.field_type = Some(MirType::I64);
-        out_meta.constant_value = Some(nu_protocol::Value::int(
-            output,
-            nu_protocol::Span::unknown(),
-        ));
-        out_meta.literal_int = Some(output);
-        self.vreg_type_hints.insert(result_vreg, MirType::I64);
+        out_meta.field_type = Some(output_ty.clone());
+        self.vreg_type_hints.insert(result_vreg, output_ty);
         Ok(())
     }
 

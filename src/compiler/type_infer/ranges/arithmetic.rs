@@ -29,7 +29,10 @@ impl<'a> TypeInference<'a> {
     ) -> ValueRange {
         match op {
             UnaryOpKind::Neg => match src {
-                ValueRange::Known { min, max } => ValueRange::known(-max, -min),
+                ValueRange::Known { min: i64::MIN, .. } => ValueRange::known(i64::MIN, i64::MAX),
+                ValueRange::Known { min, max } => {
+                    ValueRange::known(-(max as i128) as i64, -(min as i128) as i64)
+                }
                 ValueRange::Unknown | ValueRange::Unset => ValueRange::Unknown,
             },
             UnaryOpKind::Not => ValueRange::known(0, 1),

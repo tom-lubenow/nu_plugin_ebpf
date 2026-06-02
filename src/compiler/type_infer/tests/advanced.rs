@@ -414,6 +414,10 @@ fn test_range_add_and_sub_clamp_instead_of_panicking_on_i64_overflow() {
         ),
         ValueRange::known(i64::MIN, i64::MIN)
     );
+    assert_eq!(
+        ti.range_for_unary(UnaryOpKind::Neg, ValueRange::known(i64::MIN, i64::MIN)),
+        ValueRange::known(i64::MIN, i64::MAX)
+    );
 }
 
 #[test]
