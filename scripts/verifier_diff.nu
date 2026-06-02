@@ -35953,6 +35953,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-binary-bytes-reverse-empty-length"
+        category: "language-core"
+        tags: [binary bytes reverse empty length]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  0x[] | bytes reverse | bytes length'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-binary-bytes-build-starts-with"
         category: "language-core"
         tags: [binary bytes build starts-with]

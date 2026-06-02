@@ -866,7 +866,7 @@ eBPF layout and verifier bounds are explicit:
 | `bytes length` | Compile-time known binary input returning its byte length, or compile-time known list<binary> input returning a numeric list of byte lengths |
 | `bytes starts-with` / `bytes ends-with` | Compile-time known binary input and binary pattern, returning a constant boolean |
 | `bytes index-of` | Compile-time known binary input and non-empty binary pattern, returning the first byte index or `-1`; `--end` returns the last index |
-| `bytes reverse` | Compile-time known non-empty binary input, returning a reversed fixed binary value |
+| `bytes reverse` | Compile-time known binary input, returning a reversed binary value |
 | `bytes build` | Compile-time known binary fragments and integer byte arguments, returning a non-empty fixed binary value |
 | `bytes at` | Compile-time known binary or list<binary> input and unit-step range, returning a non-empty fixed binary slice or fixed list of non-empty equal-length binary slices |
 | `bytes add` | Compile-time known binary or list<binary> input/data with optional non-negative `--index` and `--end`, returning a non-empty fixed binary value or fixed list of non-empty equal-length binary values |

@@ -3266,11 +3266,6 @@ impl<'a> HirToMirLowering<'a> {
                             "bytes reverse requires compile-time known binary input in eBPF".into(),
                         )
                     })?;
-                if output.is_empty() {
-                    return Err(CompileError::UnsupportedInstruction(
-                        "bytes reverse requires non-empty binary input in eBPF".into(),
-                    ));
-                }
                 output.reverse();
 
                 self.reset_call_result_metadata(src_dst);

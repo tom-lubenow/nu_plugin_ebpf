@@ -16624,36 +16624,6 @@ fn make_bytes_predicate_program(decl_id: DeclId, input: Vec<u8>, pattern: Vec<u8
     make_bytes_arg_pipeline_call_program_with_flags(decl_id, input, pattern, Vec::new())
 }
 
-fn make_bytes_no_arg_pipeline_call_program(decl_id: DeclId, input: Vec<u8>) -> HirProgram {
-    let func = HirFunction {
-        blocks: vec![HirBlock {
-            id: HirBlockId(0),
-            stmts: vec![
-                HirStmt::LoadLiteral {
-                    dst: RegId::new(0),
-                    lit: HirLiteral::Binary(input),
-                },
-                HirStmt::Call {
-                    decl_id,
-                    src_dst: RegId::new(1),
-                    args: HirCallArgs {
-                        pipeline_input: Some(RegId::new(0)),
-                        ..HirCallArgs::default()
-                    },
-                },
-            ],
-            terminator: HirTerminator::Return { src: RegId::new(1) },
-        }],
-        entry: HirBlockId(0),
-        spans: Vec::new(),
-        ast: Vec::new(),
-        comments: Vec::new(),
-        register_count: 2,
-        file_count: 0,
-    };
-    HirProgram::new(func, HashMap::new(), vec![], None)
-}
-
 fn make_bytes_arg_pipeline_call_program_with_flags(
     decl_id: DeclId,
     input: Vec<u8>,
@@ -17006,12 +16976,50 @@ fn test_lower_bytes_reverse_on_binary_materializes_reversed_bytes() {
 }
 
 #[test]
-fn test_lower_bytes_reverse_rejects_empty_binary() {
+fn test_lower_bytes_reverse_accepts_empty_binary() {
     let bytes_reverse_decl = DeclId::new(219);
-    let hir = make_bytes_no_arg_pipeline_call_program(bytes_reverse_decl, Vec::new());
-    let decl_names = HashMap::from([(bytes_reverse_decl, "bytes reverse".to_string())]);
+    let bytes_length_decl = DeclId::new(220);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Binary(Vec::new()),
+                },
+                HirStmt::Call {
+                    decl_id: bytes_reverse_decl,
+                    src_dst: RegId::new(1),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: bytes_length_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(1)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(2) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+    let decl_names = HashMap::from([
+        (bytes_reverse_decl, "bytes reverse".to_string()),
+        (bytes_length_decl, "bytes length".to_string()),
+    ]);
 
-    let err = lower_hir_to_mir_with_hints(
+    let result = lower_hir_to_mir_with_hints(
         &hir,
         None,
         &decl_names,
@@ -17019,13 +17027,11 @@ fn test_lower_bytes_reverse_rejects_empty_binary() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("bytes reverse should reject empty binary input");
+    .expect("bytes reverse should lower on empty literal binaries");
 
-    assert!(
-        err.to_string()
-            .contains("bytes reverse requires non-empty binary input"),
-        "unexpected error: {err}"
-    );
+    assert_program_returns_constant(&result.program, 0, "empty bytes reverse length");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("empty bytes reverse output consumed by bytes length should compile");
 }
 
 fn make_bytes_build_then_starts_with_program(
