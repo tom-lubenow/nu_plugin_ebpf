@@ -2,6 +2,163 @@ use super::*;
 use crate::compiler::mir::UnaryOpKind;
 
 impl<'a> HirToMirLowering<'a> {
+    fn math_identity_value_for_integer_command(
+        cmd_name: &str,
+        value: nu_protocol::Value,
+    ) -> Result<nu_protocol::Value, CompileError> {
+        match value {
+            nu_protocol::Value::Int { .. } => Ok(value),
+            other => Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} currently supports integer input only in eBPF; input has type {}",
+                other.get_type()
+            ))),
+        }
+    }
+
+    fn mir_type_is_integer(ty: &MirType) -> bool {
+        matches!(
+            ty,
+            MirType::I8
+                | MirType::I16
+                | MirType::I32
+                | MirType::I64
+                | MirType::U8
+                | MirType::U16
+                | MirType::U32
+                | MirType::U64
+        )
+    }
+
+    pub(in crate::compiler::ir_to_mir) fn lower_integer_identity_math(
+        &mut self,
+        cmd_name: &str,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+    ) -> Result<(), CompileError> {
+        const MAX_IDENTITY_STACK_LIST_CAPACITY: usize = 60;
+
+        let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
+        let input_reg = self
+            .pipeline_input_reg
+            .or(src_dst_had_value.then_some(src_dst));
+
+        if !self.named_flags.is_empty()
+            || !self.named_args.is_empty()
+            || !self.positional_args.is_empty()
+        {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} does not accept arguments in eBPF"
+            )));
+        }
+
+        let input_reg = input_reg.ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires integer or integer-list input in eBPF"
+            ))
+        })?;
+        let input_meta = self.get_metadata(input_reg).cloned().ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires tracked integer or integer-list input in eBPF"
+            ))
+        })?;
+
+        if let Some(nu_protocol::Value::List { vals, .. }) = input_meta.constant_value.clone() {
+            if vals.len() > MAX_IDENTITY_STACK_LIST_CAPACITY {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{cmd_name} output exceeds stack-backed numeric list capacity {MAX_IDENTITY_STACK_LIST_CAPACITY} in eBPF"
+                )));
+            }
+
+            let vals = vals
+                .into_iter()
+                .enumerate()
+                .map(|(index, value)| {
+                    let nu_protocol::Value::Int { .. } = value else {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "{cmd_name} requires integer list items in eBPF; item {index} has type {}",
+                            value.get_type()
+                        )));
+                    };
+                    Ok(value)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+
+            self.reset_call_result_metadata(src_dst);
+            self.lower_constant_value(
+                src_dst,
+                &nu_protocol::Value::list(vals, nu_protocol::Span::unknown()),
+            )?;
+            return Ok(());
+        }
+
+        if input_meta.list_buffer.is_some() {
+            let result_vreg = if src_dst_had_value {
+                self.assign_fresh_vreg(src_dst)
+            } else {
+                dst_vreg
+            };
+            self.emit(MirInst::Copy {
+                dst: result_vreg,
+                src: MirValue::VReg(input_vreg),
+            });
+            self.propagate_passthrough_reg_metadata(src_dst, result_vreg, input_reg, input_vreg);
+            return Ok(());
+        }
+
+        if let Some(value) = input_meta.constant_value {
+            let value = Self::math_identity_value_for_integer_command(cmd_name, value)?;
+            let nu_protocol::Value::Int { val, .. } = value else {
+                unreachable!("integer identity helper returns only integer values")
+            };
+
+            let result_vreg = if src_dst_had_value {
+                self.assign_fresh_vreg(src_dst)
+            } else {
+                dst_vreg
+            };
+            self.emit(MirInst::Copy {
+                dst: result_vreg,
+                src: MirValue::Const(val),
+            });
+            self.reset_call_result_metadata(src_dst);
+            let out_meta = self.get_or_create_metadata(src_dst);
+            out_meta.field_type = Some(MirType::I64);
+            out_meta.constant_value =
+                Some(nu_protocol::Value::int(val, nu_protocol::Span::unknown()));
+            out_meta.literal_int = Some(val);
+            self.vreg_type_hints.insert(result_vreg, MirType::I64);
+            return Ok(());
+        }
+
+        let input_ty = input_meta
+            .field_type
+            .as_ref()
+            .or_else(|| self.vreg_type_hints.get(&input_vreg))
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "{cmd_name} requires compiler-known integer input in eBPF"
+                ))
+            })?;
+        if !Self::mir_type_is_integer(input_ty) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} currently supports integer input only in eBPF; input has MIR type {input_ty:?}"
+            )));
+        }
+
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+        self.emit(MirInst::Copy {
+            dst: result_vreg,
+            src: MirValue::VReg(input_vreg),
+        });
+        self.propagate_passthrough_reg_metadata(src_dst, result_vreg, input_reg, input_vreg);
+        Ok(())
+    }
+
     pub(in crate::compiler::ir_to_mir) fn lower_math_abs(
         &mut self,
         src_dst: RegId,

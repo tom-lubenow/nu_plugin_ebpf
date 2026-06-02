@@ -4014,6 +4014,10 @@ impl<'a> HirToMirLowering<'a> {
                 self.lower_stack_list_math_reduce(&cmd_name, src_dst, dst_vreg, src_dst_had_value)?;
             }
 
+            "math ceil" | "math floor" | "math round" => {
+                self.lower_integer_identity_math(&cmd_name, src_dst, dst_vreg, src_dst_had_value)?;
+            }
+
             "math median" => {
                 self.lower_compile_time_math_median(src_dst, dst_vreg, src_dst_had_value)?;
             }

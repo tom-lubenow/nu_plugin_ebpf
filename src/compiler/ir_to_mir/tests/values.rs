@@ -10598,6 +10598,134 @@ fn make_math_abs_list_program(abs_decl: DeclId, values: Vec<i64>) -> HirProgram 
 }
 
 #[test]
+fn test_lower_math_integer_identity_commands_on_known_integer_inputs() {
+    for (offset, command_name) in [(0, "math ceil"), (1, "math floor"), (2, "math round")] {
+        let decl = DeclId::new(271 + offset);
+        let hir = make_math_abs_program(decl, -7);
+        let decl_names = HashMap::from([(decl, command_name.to_string())]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("{command_name} should lower integer input: {err}"));
+
+        assert!(
+            result
+                .program
+                .main
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .any(|inst| matches!(
+                    inst,
+                    MirInst::Copy {
+                        src: MirValue::Const(-7),
+                        ..
+                    }
+                )),
+            "expected {command_name} to preserve the integer input"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{command_name} should compile through codegen: {err}"));
+    }
+}
+
+#[test]
+fn test_lower_math_integer_identity_commands_on_known_integer_lists() {
+    for (offset, command_name) in [(0, "math ceil"), (1, "math floor"), (2, "math round")] {
+        let decl = DeclId::new(274 + offset);
+        let sum_decl = DeclId::new(277 + offset);
+        let hir = make_integer_list_two_call_program(decl, sum_decl, &[-2, 0, 3]);
+        let decl_names = HashMap::from([
+            (decl, command_name.to_string()),
+            (sum_decl, "math sum".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("{command_name} should lower integer-list input: {err}"));
+        let expected = [-2i64, 0, 3]
+            .into_iter()
+            .flat_map(|value| value.to_le_bytes())
+            .collect::<Vec<_>>();
+
+        assert!(
+            result
+                .readonly_globals
+                .iter()
+                .any(|global| global.data == expected),
+            "expected {command_name} to materialize the unchanged integer list"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{command_name} should compile through codegen: {err}"));
+    }
+}
+
+#[test]
+fn test_lower_math_integer_identity_rejects_non_integer_list_items() {
+    let round_decl = DeclId::new(280);
+    let hir = make_value_list_pipeline_call_program(
+        round_decl,
+        vec![
+            Value::int(1, Span::test_data()),
+            Value::bool(true, Span::test_data()),
+        ],
+    );
+    let decl_names = HashMap::from([(round_decl, "math round".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("math round should reject non-integer list items");
+
+    assert!(
+        err.to_string()
+            .contains("math round requires integer list items"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_math_integer_identity_rejects_constant_list_output_over_capacity() {
+    let round_decl = DeclId::new(281);
+    let values = (0..=60).collect::<Vec<_>>();
+    let hir = make_math_abs_list_program(round_decl, values);
+    let decl_names = HashMap::from([(round_decl, "math round".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("math round output over the stack-list capacity should be rejected");
+
+    assert!(
+        err.to_string()
+            .contains("math round output exceeds stack-backed numeric list capacity 60"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn test_lower_math_abs_on_known_integer_list_materializes_absolute_values() {
     let abs_decl = DeclId::new(264);
     let sum_decl = DeclId::new(265);
@@ -10685,8 +10813,8 @@ fn test_lower_math_abs_rejects_constant_list_output_over_capacity() {
     );
 }
 
-fn make_runtime_math_abs_list_length_program(
-    abs_decl: DeclId,
+fn make_runtime_math_unary_list_length_program(
+    command_decl: DeclId,
     length_decl: DeclId,
     random_decl: DeclId,
 ) -> HirProgram {
@@ -10708,7 +10836,7 @@ fn make_runtime_math_abs_list_length_program(
                     item: RegId::new(1),
                 },
                 HirStmt::Call {
-                    decl_id: abs_decl,
+                    decl_id: command_decl,
                     src_dst: RegId::new(2),
                     args: HirCallArgs {
                         pipeline_input: Some(RegId::new(0)),
@@ -10741,7 +10869,7 @@ fn test_lower_math_abs_on_runtime_stack_numeric_list() {
     let abs_decl = DeclId::new(268);
     let length_decl = DeclId::new(269);
     let random_decl = DeclId::new(270);
-    let hir = make_runtime_math_abs_list_length_program(abs_decl, length_decl, random_decl);
+    let hir = make_runtime_math_unary_list_length_program(abs_decl, length_decl, random_decl);
     let decl_names = HashMap::from([
         (abs_decl, "math abs".to_string()),
         (length_decl, "length".to_string()),
@@ -10783,6 +10911,41 @@ fn test_lower_math_abs_on_runtime_stack_numeric_list() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("runtime math abs output consumed by length should compile");
+}
+
+#[test]
+fn test_lower_math_integer_identity_commands_on_runtime_stack_numeric_lists() {
+    for (offset, command_name) in [(0, "math ceil"), (1, "math floor"), (2, "math round")] {
+        let command_decl = DeclId::new(282 + offset);
+        let length_decl = DeclId::new(285 + offset);
+        let random_decl = DeclId::new(288 + offset);
+        let hir =
+            make_runtime_math_unary_list_length_program(command_decl, length_decl, random_decl);
+        let decl_names = HashMap::from([
+            (command_decl, command_name.to_string()),
+            (length_decl, "length".to_string()),
+            (random_decl, "random int".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("{command_name} should lower on runtime stack-backed numeric lists: {err}")
+        });
+
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!(
+                    "{command_name} runtime list output consumed by length should compile: {err}"
+                )
+            });
+    }
 }
 
 #[test]

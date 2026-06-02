@@ -35374,6 +35374,32 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-list-math-integer-identity"
+        category: "language-core"
+        tags: [aggregate list math ceil floor round]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ([-2 0 3] | math ceil | math floor | math round | math sum) == 1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-list-math-integer-identity-runtime"
+        category: "language-core"
+        tags: [aggregate list math ceil floor round runtime]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ([(random int)] | math ceil | math floor | math round | length) == 1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-null-length"
         category: "language-core"
         tags: ["null" length]
