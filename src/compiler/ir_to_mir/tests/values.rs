@@ -10680,6 +10680,46 @@ fn make_bits_binary_program(bits_decl: DeclId, input: i64, target: i64) -> HirPr
     make_bits_binary_program_with_endian(bits_decl, input, target, None)
 }
 
+fn make_runtime_scalar_bits_binary_program(
+    bits_decl: DeclId,
+    random_decl: DeclId,
+    target: i64,
+) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::Call {
+                    decl_id: random_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs::default(),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(target),
+                },
+                HirStmt::Call {
+                    decl_id: bits_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        positional: vec![RegId::new(1)],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(2) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_bits_binary_program_with_endian(
     bits_decl: DeclId,
     input: i64,
@@ -12709,6 +12749,57 @@ fn test_lower_bits_binary_commands_on_known_integer_inputs() {
         assert_program_returns_constant(&result.program, expected, command_name);
         compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
             .unwrap_or_else(|err| panic!("{command_name} should compile through codegen: {err}"));
+    }
+}
+
+#[test]
+fn test_lower_bits_binary_commands_on_runtime_scalar_integer_inputs() {
+    for (offset, command_name, target, expected_op) in [
+        (0, "bits and", 3, BinOpKind::And),
+        (1, "bits or", 2, BinOpKind::Or),
+        (2, "bits xor", 1, BinOpKind::Xor),
+    ] {
+        let bits_decl = DeclId::new(29200 + offset);
+        let random_decl = DeclId::new(29210 + offset);
+        let hir = make_runtime_scalar_bits_binary_program(bits_decl, random_decl, target);
+        let decl_names = HashMap::from([
+            (bits_decl, command_name.to_string()),
+            (random_decl, "random int".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("{command_name} should lower runtime integer scalar input: {err}")
+        });
+        let instructions = result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .collect::<Vec<_>>();
+
+        assert!(
+            instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op,
+                    ..
+                } if *op == expected_op
+            )),
+            "expected runtime scalar {command_name} to emit {expected_op:?}"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("{command_name} runtime scalar input should compile through codegen: {err}")
+            });
     }
 }
 

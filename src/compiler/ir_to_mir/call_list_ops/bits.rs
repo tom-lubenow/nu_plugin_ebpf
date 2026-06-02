@@ -567,6 +567,31 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
+    fn validate_bits_integer_operand_optional_metadata(
+        &self,
+        cmd_name: &str,
+        role: &str,
+        meta: Option<&RegMetadata>,
+        vreg: VReg,
+    ) -> Result<(), CompileError> {
+        if let Some(meta) = meta {
+            return self.validate_bits_integer_operand(cmd_name, role, meta, vreg);
+        }
+
+        let ty = self.vreg_type_hints.get(&vreg).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires compiler-known integer {role} in eBPF"
+            ))
+        })?;
+        if Self::mir_type_is_integer(ty) {
+            Ok(())
+        } else {
+            Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires integer {role} in eBPF; got MIR type {ty:?}"
+            )))
+        }
+    }
+
     fn bits_fixed_width_mode(number_bytes: i64, signed: bool) -> Option<BitsShiftMode> {
         match (number_bytes, signed) {
             (1, false) => Some(BitsShiftMode::FixedWidth {
@@ -986,23 +1011,22 @@ impl<'a> HirToMirLowering<'a> {
                 "{cmd_name} requires integer, binary, integer-list, or binary-list pipeline input in eBPF"
             ))
         })?;
-        let input_meta = self.get_metadata(input_reg).cloned().ok_or_else(|| {
-            CompileError::UnsupportedInstruction(format!(
-                "{cmd_name} requires tracked integer, binary, integer-list, or binary-list input in eBPF"
-            ))
-        })?;
+        let input_meta = self.get_metadata(input_reg).cloned();
 
         let (rhs_vreg, rhs_reg) = self.positional_args[0];
-        let rhs_meta = self.get_metadata(rhs_reg).cloned().ok_or_else(|| {
-            CompileError::UnsupportedInstruction(format!(
-                "{cmd_name} requires tracked integer or binary target argument in eBPF"
-            ))
-        })?;
-        let rhs_const = Self::bits_integer_value_from_metadata(&rhs_meta);
-        let rhs_binary_const = Self::bits_binary_value_from_metadata(&rhs_meta);
+        let rhs_meta = self.get_metadata(rhs_reg).cloned();
+        let rhs_const = rhs_meta
+            .as_ref()
+            .and_then(Self::bits_integer_value_from_metadata);
+        let rhs_binary_const = rhs_meta
+            .as_ref()
+            .and_then(Self::bits_binary_value_from_metadata);
         let op = Self::bits_binary_op(cmd_name);
 
-        if let Some(nu_protocol::Value::List { vals, .. }) = input_meta.constant_value.clone() {
+        if let Some(nu_protocol::Value::List { vals, .. }) = input_meta
+            .as_ref()
+            .and_then(|meta| meta.constant_value.clone())
+        {
             if !vals.is_empty()
                 && vals
                     .iter()
@@ -1061,9 +1085,16 @@ impl<'a> HirToMirLowering<'a> {
                 )));
             }
 
-            self.validate_bits_integer_operand(cmd_name, "target argument", &rhs_meta, rhs_vreg)?;
+            self.validate_bits_integer_operand_optional_metadata(
+                cmd_name,
+                "target argument",
+                rhs_meta.as_ref(),
+                rhs_vreg,
+            )?;
             let Some(rhs) = rhs_const else {
-                if input_meta.list_buffer.is_some() {
+                if let Some(input_meta) = input_meta.as_ref()
+                    && input_meta.list_buffer.is_some()
+                {
                     // A numeric constant list is also available as a stack-backed
                     // list, so runtime list lowering below can reuse the RHS vreg.
                     return self.lower_bits_binary_runtime_list(
@@ -1071,7 +1102,7 @@ impl<'a> HirToMirLowering<'a> {
                         src_dst,
                         input_vreg,
                         result_vreg,
-                        &input_meta,
+                        input_meta,
                         op,
                         MirValue::VReg(rhs_vreg),
                     );
@@ -1108,20 +1139,30 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(());
         }
 
-        if input_meta.list_buffer.is_some() {
-            self.validate_bits_integer_operand(cmd_name, "target argument", &rhs_meta, rhs_vreg)?;
+        if let Some(input_meta) = input_meta.as_ref()
+            && input_meta.list_buffer.is_some()
+        {
+            self.validate_bits_integer_operand_optional_metadata(
+                cmd_name,
+                "target argument",
+                rhs_meta.as_ref(),
+                rhs_vreg,
+            )?;
             return self.lower_bits_binary_runtime_list(
                 cmd_name,
                 src_dst,
                 input_vreg,
                 result_vreg,
-                &input_meta,
+                input_meta,
                 op,
                 rhs_const.map_or(MirValue::VReg(rhs_vreg), MirValue::Const),
             );
         }
 
-        if let Some(nu_protocol::Value::Binary { val, .. }) = input_meta.constant_value.as_ref() {
+        if let Some(nu_protocol::Value::Binary { val, .. }) = input_meta
+            .as_ref()
+            .and_then(|meta| meta.constant_value.as_ref())
+        {
             let Some(rhs_binary) = rhs_binary_const.as_ref() else {
                 return Err(CompileError::UnsupportedInstruction(format!(
                     "{cmd_name} requires a compile-time binary target argument for binary input in eBPF"
@@ -1142,15 +1183,24 @@ impl<'a> HirToMirLowering<'a> {
             )));
         }
 
-        self.validate_bits_integer_operand(cmd_name, "target argument", &rhs_meta, rhs_vreg)?;
-        self.validate_bits_integer_operand(cmd_name, "pipeline input", &input_meta, input_vreg)?;
+        self.validate_bits_integer_operand_optional_metadata(
+            cmd_name,
+            "target argument",
+            rhs_meta.as_ref(),
+            rhs_vreg,
+        )?;
+        self.validate_bits_integer_operand_optional_metadata(
+            cmd_name,
+            "pipeline input",
+            input_meta.as_ref(),
+            input_vreg,
+        )?;
         let rhs_value = rhs_const.map_or(MirValue::VReg(rhs_vreg), MirValue::Const);
-        let lhs_value = Self::bits_integer_value_from_metadata(&input_meta)
-            .map_or(MirValue::VReg(input_vreg), MirValue::Const);
-        let constant_output = match (
-            Self::bits_integer_value_from_metadata(&input_meta),
-            rhs_const,
-        ) {
+        let lhs_const = input_meta
+            .as_ref()
+            .and_then(Self::bits_integer_value_from_metadata);
+        let lhs_value = lhs_const.map_or(MirValue::VReg(input_vreg), MirValue::Const);
+        let constant_output = match (lhs_const, rhs_const) {
             (Some(lhs), Some(rhs)) => Some(Self::bits_binary_output(cmd_name, lhs, rhs)),
             _ => None,
         };

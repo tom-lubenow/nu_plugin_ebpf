@@ -35495,6 +35495,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-scalar-bits-binary-runtime"
+        category: "language-core"
+        tags: [scalar bits and or xor runtime]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ((random int | bits and 3) + (random int | bits or 2) + (random int | bits xor 1)) >= 0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-bits-binary"
         category: "language-core"
         tags: [aggregate list bits and or xor]
