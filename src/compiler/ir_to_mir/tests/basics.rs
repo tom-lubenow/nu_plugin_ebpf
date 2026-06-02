@@ -181,6 +181,83 @@ fn make_random_int_range_call_program(decl_id: DeclId, start: i64, end: i64) -> 
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_random_int_pow_program(random_decl: DeclId, exponent: i64) -> HirProgram {
+    use nu_protocol::ast::{Math, Operator};
+
+    HirProgram::new(
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::Call {
+                        decl_id: random_decl,
+                        src_dst: RegId::new(0),
+                        args: HirCallArgs::default(),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::Int(exponent),
+                    },
+                    HirStmt::BinaryOp {
+                        lhs_dst: RegId::new(0),
+                        op: Operator::Math(Math::Pow),
+                        rhs: RegId::new(1),
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            }],
+            entry: HirBlockId(0),
+            spans: Vec::new(),
+            ast: Vec::new(),
+            comments: Vec::new(),
+            register_count: 2,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        None,
+    )
+}
+
+fn make_random_int_runtime_pow_exponent_program(random_decl: DeclId) -> HirProgram {
+    use nu_protocol::ast::{Math, Operator};
+
+    HirProgram::new(
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::Call {
+                        decl_id: random_decl,
+                        src_dst: RegId::new(0),
+                        args: HirCallArgs::default(),
+                    },
+                    HirStmt::Call {
+                        decl_id: random_decl,
+                        src_dst: RegId::new(1),
+                        args: HirCallArgs::default(),
+                    },
+                    HirStmt::BinaryOp {
+                        lhs_dst: RegId::new(0),
+                        op: Operator::Math(Math::Pow),
+                        rhs: RegId::new(1),
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            }],
+            entry: HirBlockId(0),
+            spans: Vec::new(),
+            ast: Vec::new(),
+            comments: Vec::new(),
+            register_count: 2,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        None,
+    )
+}
+
 #[test]
 fn test_mir_function_creation() {
     let mut func = MirFunction::new();
@@ -265,10 +342,60 @@ fn test_lower_random_int_bounded_range_scales_prandom_result() {
 }
 
 #[test]
-fn test_unsupported_runtime_operator_message_mentions_compile_time_constant_escape_hatch() {
+fn test_lower_runtime_integer_pow_with_constant_exponent_uses_multiply_chain() {
     use nu_protocol::ast::{Math, Operator};
 
-    let hir_program = HirProgram::new(
+    let random_decl = DeclId::new(43);
+    let hir_program = make_random_int_pow_program(random_decl, 3);
+    let decl_names = HashMap::from([(random_decl, "random int".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("runtime integer pow with constant exponent should lower");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::CallHelper {
+                helper,
+                args,
+                ..
+            } if *helper == BpfHelper::GetPrandomU32 as u32 && args.is_empty()
+        )),
+        "expected runtime pow base to come from random int"
+    );
+    assert_eq!(
+        instructions
+            .iter()
+            .filter(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op: BinOpKind::Mul,
+                    ..
+                }
+            ))
+            .count(),
+        3,
+        "expected exponentiation by squaring for exponent 3"
+    );
+
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("runtime pow with constant exponent should compile through codegen");
+
+    let literal_pow = HirProgram::new(
         HirFunction {
             blocks: vec![HirBlock {
                 id: HirBlockId(0),
@@ -301,6 +428,144 @@ fn test_unsupported_runtime_operator_message_mentions_compile_time_constant_esca
         None,
     );
 
+    let literal_result = lower_hir_to_mir_with_hints(
+        &literal_pow,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("literal integer pow should lower through the same runtime-safe path");
+    compile_mir_to_ebpf_with_hints(
+        &literal_result.program,
+        None,
+        Some(&literal_result.type_hints),
+    )
+    .expect("literal integer pow should compile through codegen");
+}
+
+#[test]
+fn test_lower_runtime_integer_pow_zero_exponent_returns_one() {
+    let random_decl = DeclId::new(44);
+    let hir_program = make_random_int_pow_program(random_decl, 0);
+    let decl_names = HashMap::from([(random_decl, "random int".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("runtime integer pow with zero exponent should lower");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Copy {
+                    src: MirValue::Const(1),
+                    ..
+                }
+            )),
+        "expected pow exponent zero to materialize constant 1"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("pow exponent zero should compile through codegen");
+}
+
+#[test]
+fn test_lower_runtime_integer_pow_negative_exponent_is_rejected() {
+    let random_decl = DeclId::new(45);
+    let hir_program = make_random_int_pow_program(random_decl, -1);
+    let decl_names = HashMap::from([(random_decl, "random int".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir_program,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("negative integer pow exponent should be rejected");
+
+    assert!(
+        err.to_string().contains(
+            "Operator ** requires a non-negative integer exponent in eBPF runtime lowering"
+        ),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_runtime_integer_pow_runtime_exponent_is_rejected() {
+    let random_decl = DeclId::new(46);
+    let hir_program = make_random_int_runtime_pow_exponent_program(random_decl);
+    let decl_names = HashMap::from([(random_decl, "random int".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir_program,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("runtime integer pow exponent should be rejected");
+
+    assert!(
+        err.to_string().contains(
+            "Operator ** requires a compile-time known integer exponent in eBPF runtime lowering"
+        ),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_unsupported_runtime_operator_message_mentions_compile_time_constant_escape_hatch() {
+    use nu_protocol::ast::{Math, Operator};
+
+    let hir_program = HirProgram::new(
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(0),
+                        lit: HirLiteral::Int(2),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::Int(3),
+                    },
+                    HirStmt::BinaryOp {
+                        lhs_dst: RegId::new(0),
+                        op: Operator::Math(Math::FloorDivide),
+                        rhs: RegId::new(1),
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            }],
+            entry: HirBlockId(0),
+            spans: Vec::new(),
+            ast: Vec::new(),
+            comments: Vec::new(),
+            register_count: 2,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        None,
+    );
+
     let err = lower_hir_to_mir_with_hints(
         &hir_program,
         None,
@@ -309,11 +574,11 @@ fn test_unsupported_runtime_operator_message_mentions_compile_time_constant_esca
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("runtime-only pow lowering should be rejected");
+    .expect_err("runtime-only floor-divide lowering should be rejected");
 
     let message = err.to_string();
     assert!(
-        message.contains("Operator ** is not supported in eBPF runtime lowering"),
+        message.contains("Operator // is not supported in eBPF runtime lowering"),
         "unexpected error message: {message}"
     );
     assert!(

@@ -59,6 +59,11 @@ impl<'a> HirToMirLowering<'a> {
             ));
         }
 
+        if matches!(op, Operator::Math(Math::Pow)) {
+            self.lower_integer_pow(lhs_dst, lhs_vreg, rhs, constant_value)?;
+            return Ok(());
+        }
+
         let mir_op = match op {
             Operator::Math(Math::Add) => BinOpKind::Add,
             Operator::Math(Math::Subtract) => BinOpKind::Sub,
@@ -98,6 +103,87 @@ impl<'a> HirToMirLowering<'a> {
         self.set_reg_constant_value(lhs_dst, constant_value);
 
         Ok(())
+    }
+
+    fn lower_integer_pow(
+        &mut self,
+        lhs_dst: RegId,
+        lhs_vreg: VReg,
+        rhs: RegId,
+        constant_value: Option<Value>,
+    ) -> Result<(), CompileError> {
+        let exponent = self
+            .compile_time_integer_value(rhs)
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "Operator ** requires a compile-time known integer exponent in eBPF runtime lowering"
+                        .into(),
+                )
+            })?;
+        if exponent < 0 {
+            return Err(CompileError::UnsupportedInstruction(
+                "Operator ** requires a non-negative integer exponent in eBPF runtime lowering"
+                    .into(),
+            ));
+        }
+
+        if exponent == 0 {
+            self.emit(MirInst::Copy {
+                dst: lhs_vreg,
+                src: MirValue::Const(1),
+            });
+            self.clear_source_var(lhs_dst);
+            self.set_reg_constant_value(lhs_dst, Some(Value::int(1, nu_protocol::Span::unknown())));
+            self.vreg_type_hints.insert(lhs_vreg, MirType::I64);
+            return Ok(());
+        }
+
+        let power_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::Copy {
+            dst: power_vreg,
+            src: MirValue::VReg(lhs_vreg),
+        });
+        self.emit(MirInst::Copy {
+            dst: lhs_vreg,
+            src: MirValue::Const(1),
+        });
+
+        let mut remaining = exponent as u64;
+        while remaining > 0 {
+            if remaining & 1 == 1 {
+                self.emit(MirInst::BinOp {
+                    dst: lhs_vreg,
+                    op: BinOpKind::Mul,
+                    lhs: MirValue::VReg(lhs_vreg),
+                    rhs: MirValue::VReg(power_vreg),
+                });
+            }
+            remaining >>= 1;
+            if remaining > 0 {
+                self.emit(MirInst::BinOp {
+                    dst: power_vreg,
+                    op: BinOpKind::Mul,
+                    lhs: MirValue::VReg(power_vreg),
+                    rhs: MirValue::VReg(power_vreg),
+                });
+            }
+        }
+
+        self.clear_source_var(lhs_dst);
+        self.set_reg_constant_value(lhs_dst, constant_value);
+        self.vreg_type_hints.insert(lhs_vreg, MirType::I64);
+        self.vreg_type_hints.insert(power_vreg, MirType::I64);
+        Ok(())
+    }
+
+    fn compile_time_integer_value(&self, reg: RegId) -> Option<i64> {
+        self.get_metadata(reg).and_then(|meta| {
+            meta.literal_int
+                .or_else(|| match meta.constant_value.as_ref() {
+                    Some(Value::Int { val, .. }) => Some(*val),
+                    _ => None,
+                })
+        })
     }
 
     /// Lower Match instruction (used for pattern matching and short-circuit boolean evaluation)

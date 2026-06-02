@@ -35482,6 +35482,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-scalar-integer-pow-runtime-base"
+        category: "language-core"
+        tags: [scalar math pow runtime]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  (((random int | bits and 255) ** 2) >= 0)'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-scalar-bits-binary"
         category: "language-core"
         tags: [scalar bits and or xor]
