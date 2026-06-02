@@ -14194,7 +14194,10 @@ fn test_verify_mir_for_probe_context_msg_data_helpers_invalidate_prior_packet_po
     }
 }
 
-fn make_msg_pull_data_verify_call(flags: i64) -> (MirFunction, HashMap<VReg, MirType>) {
+fn make_msg_data_verify_call(
+    helper: BpfHelper,
+    flags: i64,
+) -> (MirFunction, HashMap<VReg, MirType>) {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
     func.entry = entry;
@@ -14212,7 +14215,7 @@ fn make_msg_pull_data_verify_call(flags: i64) -> (MirFunction, HashMap<VReg, Mir
         .instructions
         .push(MirInst::CallHelper {
             dst,
-            helper: BpfHelper::MsgPullData as u32,
+            helper: helper as u32,
             args: vec![
                 MirValue::VReg(ctx),
                 MirValue::Const(0),
@@ -14236,18 +14239,25 @@ fn make_msg_pull_data_verify_call(flags: i64) -> (MirFunction, HashMap<VReg, Mir
 }
 
 #[test]
-fn test_verify_mir_for_probe_context_msg_pull_data_rejects_nonzero_flags() {
-    let (func, types) = make_msg_pull_data_verify_call(1);
-    let probe_ctx = ProbeContext::new(EbpfProgramType::SkMsg, "/sys/fs/bpf/demo_sockmap");
-    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
-        .expect_err("expected bpf_msg_pull_data flags error");
-    assert!(
-        err.iter().any(|e| e
-            .message
-            .contains("helper 'bpf_msg_pull_data' requires arg3 = 0")),
-        "unexpected errors: {:?}",
-        err
-    );
+fn test_verify_mir_for_probe_context_msg_data_helpers_reject_nonzero_flags() {
+    for helper in [
+        BpfHelper::MsgPullData,
+        BpfHelper::MsgPushData,
+        BpfHelper::MsgPopData,
+    ] {
+        let (func, types) = make_msg_data_verify_call(helper, 1);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::SkMsg, "/sys/fs/bpf/demo_sockmap");
+        let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect_err("expected message data helper flags error");
+        assert!(
+            err.iter().any(|e| e
+                .message
+                .contains("message data reshaping helpers require arg3 flags to be 0")),
+            "{} produced unexpected errors: {:?}",
+            helper.name(),
+            err
+        );
+    }
 }
 
 #[test]

@@ -604,8 +604,9 @@ Context parameter syntax (recommended):
     `adjust-message --push START LEN [--flags FLAGS]`, and
     `adjust-message --pop START LEN [--flags FLAGS]`. The raw
     `helper-call "bpf_msg_*"` forms remain available as escape hatches.
-    After `adjust-message --pull`, reload `ctx.data` and `ctx.data_end`
-    before reading packet bytes again. Socket helper-backed projections are
+    Pull/push/pop flags are reserved and must be `0`. After
+    `adjust-message --pull`, `--push`, or `--pop`, reload `ctx.data` and
+    `ctx.data_end` before reading packet bytes again. Socket helper-backed projections are
     available through ordinary `ctx.sk.full.<field>`, `ctx.sk.listener.<field>`,
     and `ctx.sk.tcp.<field>` paths when the corresponding helper is valid; the
     helper-returned pointer can also be bound and used for truthiness.

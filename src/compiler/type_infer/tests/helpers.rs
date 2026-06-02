@@ -4292,7 +4292,7 @@ fn test_type_error_msg_helpers_reject_non_sk_msg_programs() {
     }
 }
 
-fn make_msg_pull_data_call(flags: i64) -> (MirFunction, VReg) {
+fn make_msg_data_call(helper: BpfHelper, flags: i64) -> (MirFunction, VReg) {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();
     let dst = func.alloc_vreg();
@@ -4304,7 +4304,7 @@ fn make_msg_pull_data_call(flags: i64) -> (MirFunction, VReg) {
     });
     block.instructions.push(MirInst::CallHelper {
         dst,
-        helper: BpfHelper::MsgPullData as u32,
+        helper: helper as u32,
         args: vec![
             MirValue::VReg(ctx),
             MirValue::Const(0),
@@ -4317,20 +4317,27 @@ fn make_msg_pull_data_call(flags: i64) -> (MirFunction, VReg) {
 }
 
 #[test]
-fn test_type_error_msg_pull_data_rejects_nonzero_flags() {
-    let (func, _) = make_msg_pull_data_call(1);
-    let probe_ctx = ProbeContext::new(EbpfProgramType::SkMsg, "/sys/fs/bpf/demo_sockmap");
-    let mut ti = TypeInference::new(Some(probe_ctx));
-    let errs = ti
-        .infer(&func)
-        .expect_err("expected bpf_msg_pull_data flags error");
-    assert!(
-        errs.iter().any(|e| e
-            .message
-            .contains("helper 'bpf_msg_pull_data' requires arg3 = 0")),
-        "unexpected errors: {:?}",
-        errs
-    );
+fn test_type_error_msg_data_helpers_reject_nonzero_flags() {
+    for helper in [
+        BpfHelper::MsgPullData,
+        BpfHelper::MsgPushData,
+        BpfHelper::MsgPopData,
+    ] {
+        let (func, _) = make_msg_data_call(helper, 1);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::SkMsg, "/sys/fs/bpf/demo_sockmap");
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected message data helper flags error");
+        assert!(
+            errs.iter().any(|e| e
+                .message
+                .contains("message data reshaping helpers require arg3 flags to be 0")),
+            "{} produced unexpected errors: {:?}",
+            helper.name(),
+            errs
+        );
+    }
 }
 
 #[test]

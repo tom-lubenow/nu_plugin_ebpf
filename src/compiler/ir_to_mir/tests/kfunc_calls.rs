@@ -6415,6 +6415,103 @@ fn test_adjust_message_intrinsic_lowers_to_msg_pull_data_on_sk_msg() {
 }
 
 #[test]
+fn test_adjust_message_intrinsic_rejects_push_pop_nonzero_flags_at_compile() {
+    for (flag_name, expected_helper) in [
+        (b"push".to_vec(), BpfHelper::MsgPushData),
+        (b"pop".to_vec(), BpfHelper::MsgPopData),
+    ] {
+        let func = HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::Int(0),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::Int(8),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(3),
+                        lit: HirLiteral::Int(1),
+                    },
+                    HirStmt::Call {
+                        decl_id: DeclId::new(42),
+                        src_dst: RegId::new(0),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(1), RegId::new(2)],
+                            named: vec![(b"flags".to_vec(), RegId::new(3))],
+                            flags: vec![flag_name.clone()],
+                            ..Default::default()
+                        },
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            }],
+            entry: HirBlockId(0),
+            spans: vec![],
+            ast: vec![],
+            comments: vec![],
+            register_count: 4,
+            file_count: 0,
+        };
+
+        let ctx_var = VarId::new(0);
+        let hir_program = HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var));
+        let decl_names = HashMap::from([(DeclId::new(42), "adjust-message".to_string())]);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::SkMsg, "/sys/fs/bpf/demo_sockmap");
+        let hir_types = infer_hir_types(&hir_program, &decl_names)
+            .expect("adjust-message intrinsic should type-check on sk_msg");
+
+        let mut result = lower_hir_to_mir_with_hints(
+            &hir_program,
+            Some(&probe_ctx),
+            &decl_names,
+            Some(&hir_types),
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .expect("adjust-message --push/--pop should lower on sk_msg");
+
+        let entry = result.program.main.entry;
+        let block = result.program.main.block(entry);
+        assert!(block.instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::CallHelper {
+                helper,
+                args,
+                ..
+            } if *helper == expected_helper as u32
+                && args.len() == 4
+                && matches!(args.get(3), Some(MirValue::Const(1)))
+        )));
+
+        optimize_with_ssa_hints(
+            &mut result.program.main,
+            Some(&probe_ctx),
+            &mut result.type_hints.main,
+            &result.type_hints.main_stack_slots,
+            &result.type_hints.generic_map_value_types,
+        );
+        let err = match compile_mir_to_ebpf_with_hints(
+            &result.program,
+            Some(&probe_ctx),
+            Some(&result.type_hints),
+        ) {
+            Ok(_) => panic!("adjust-message nonzero push/pop flags should be rejected"),
+            Err(err) => err,
+        };
+        assert!(
+            err.to_string()
+                .contains("message data reshaping helpers require arg3 flags to be 0"),
+            "{} produced unexpected error: {err}",
+            expected_helper.name()
+        );
+    }
+}
+
+#[test]
 fn test_adjust_message_materializes_bound_ctx_data_before_invalidating_helper() {
     let ctx_var = VarId::new(0);
     let data_var = VarId::new(1);
