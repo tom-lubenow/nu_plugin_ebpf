@@ -49,11 +49,19 @@ impl<'a> HirToMirLowering<'a> {
         input_vreg: VReg,
     ) -> Option<&[nu_protocol::Value]> {
         let meta = self.get_metadata(input_reg)?;
-        let value @ nu_protocol::Value::List { .. } = meta.constant_value.as_ref()? else {
+        let value @ nu_protocol::Value::List { vals, .. } = meta.constant_value.as_ref()? else {
             return None;
         };
-        if crate::compiler::hir::supports_numeric_constant_list(value) {
+        if meta.list_buffer.is_some() {
             return None;
+        }
+        if crate::compiler::hir::supports_numeric_constant_list(value)
+            && matches!(
+                meta.annotated_semantics,
+                Some(AnnotatedValueSemantics::NumericList { .. })
+            )
+        {
+            return Some(vals);
         }
         self.direct_list_builder_values(input_reg, input_vreg)
     }

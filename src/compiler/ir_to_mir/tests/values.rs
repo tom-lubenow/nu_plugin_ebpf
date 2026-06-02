@@ -72,6 +72,46 @@ fn make_numeric_list_pipeline_call_program(decl_id: DeclId, count: Option<i64>) 
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_numeric_list_in_place_scalar_call_program(decl_id: DeclId) -> HirProgram {
+    let mut stmts = vec![HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List { capacity: 3 },
+    }];
+    for value in [10, 20, 30] {
+        stmts.push(HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: HirLiteral::Int(value),
+        });
+        stmts.push(HirStmt::ListPush {
+            src_dst: RegId::new(0),
+            item: RegId::new(1),
+        });
+    }
+    stmts.push(HirStmt::Call {
+        decl_id,
+        src_dst: RegId::new(0),
+        args: HirCallArgs {
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 2,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_runtime_numeric_list_pipeline_call_program(
     decl_id: DeclId,
     append_decl: DeclId,
@@ -3786,6 +3826,93 @@ fn make_record_get_nested_list_item_program(get_decl: DeclId) -> HirProgram {
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_source_record_get_nested_list_item_program(get_decl: DeclId) -> HirProgram {
+    let stmts = vec![
+        HirStmt::LoadLiteral {
+            dst: RegId::new(0),
+            lit: HirLiteral::Record { capacity: 1 },
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: HirLiteral::String(b"samples".to_vec()),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(2),
+            lit: HirLiteral::List { capacity: 2 },
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(3),
+            lit: HirLiteral::Int(11),
+        },
+        HirStmt::ListPush {
+            src_dst: RegId::new(2),
+            item: RegId::new(3),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(3),
+            lit: HirLiteral::Int(22),
+        },
+        HirStmt::ListPush {
+            src_dst: RegId::new(2),
+            item: RegId::new(3),
+        },
+        HirStmt::RecordInsert {
+            src_dst: RegId::new(0),
+            key: RegId::new(1),
+            val: RegId::new(2),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: HirLiteral::CellPath(Box::new(CellPath {
+                members: vec![string_member("samples")],
+            })),
+        },
+        HirStmt::Call {
+            decl_id: get_decl,
+            src_dst: RegId::new(0),
+            args: HirCallArgs {
+                positional: vec![RegId::new(1)],
+                pipeline_input: Some(RegId::new(0)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: HirLiteral::CellPath(Box::new(CellPath {
+                members: vec![PathMember::Int {
+                    val: 1,
+                    span: Span::unknown(),
+                    optional: false,
+                }],
+            })),
+        },
+        HirStmt::Call {
+            decl_id: get_decl,
+            src_dst: RegId::new(0),
+            args: HirCallArgs {
+                positional: vec![RegId::new(1)],
+                pipeline_input: Some(RegId::new(0)),
+                ..HirCallArgs::default()
+            },
+        },
+    ];
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 4,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_record_values_then_get_program(
     values_decl: DeclId,
     get_decl: DeclId,
@@ -4149,6 +4276,94 @@ fn test_lower_last_on_numeric_list_gets_length_minus_one() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("last on stack-backed numeric list should compile through codegen");
+}
+
+fn assert_returned_scalar_i64_or_const(result: &MirLoweringResult, expected_const: i64) {
+    let return_value = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .find_map(|block| match &block.terminator {
+            MirInst::Return { val: Some(value) } => Some(value),
+            _ => None,
+        })
+        .expect("expected scalar result to be returned");
+
+    match return_value {
+        MirValue::Const(value) => assert_eq!(
+            *value, expected_const,
+            "expected scalar constant return value"
+        ),
+        MirValue::VReg(vreg) => assert_eq!(
+            result.type_hints.main.get(vreg),
+            Some(&MirType::I64),
+            "expected scalar result vreg to have an i64 type hint"
+        ),
+        other => panic!("expected scalar return value, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_lower_first_on_in_place_numeric_list_returns_scalar_result() {
+    let first_decl = DeclId::new(80);
+    let hir = make_numeric_list_in_place_scalar_call_program(first_decl);
+    let decl_names = HashMap::from([(first_decl, "first".to_string())]);
+    let hir_types = crate::compiler::hir_type_infer::infer_hir_types(&hir, &decl_names)
+        .expect("source-like first HIR should type-check");
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+
+    let mut result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        Some(&hir_types),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("first should lower when the source IR reuses the list register as src_dst");
+
+    optimize_with_ssa_hints(
+        &mut result.program.main,
+        Some(&probe_ctx),
+        &mut result.type_hints.main,
+        &result.type_hints.main_stack_slots,
+        &result.type_hints.generic_map_value_types,
+    );
+    assert_returned_scalar_i64_or_const(&result, 10);
+    compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+        .expect("optimized in-place first should compile through codegen");
+}
+
+#[test]
+fn test_lower_last_on_in_place_numeric_list_returns_scalar_result() {
+    let last_decl = DeclId::new(81);
+    let hir = make_numeric_list_in_place_scalar_call_program(last_decl);
+    let decl_names = HashMap::from([(last_decl, "last".to_string())]);
+    let hir_types = crate::compiler::hir_type_infer::infer_hir_types(&hir, &decl_names)
+        .expect("source-like last HIR should type-check");
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+
+    let mut result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        Some(&hir_types),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("last should lower when the source IR reuses the list register as src_dst");
+
+    optimize_with_ssa_hints(
+        &mut result.program.main,
+        Some(&probe_ctx),
+        &mut result.type_hints.main,
+        &result.type_hints.main_stack_slots,
+        &result.type_hints.generic_map_value_types,
+    );
+    assert_returned_scalar_i64_or_const(&result, 30);
+    compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+        .expect("optimized in-place last should compile through codegen");
 }
 
 #[test]
@@ -22617,6 +22832,37 @@ fn test_lower_get_metadata_record_list_field_preserves_list_metadata() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("metadata-backed record list field get should compile through codegen");
+}
+
+#[test]
+fn test_lower_source_record_list_field_get_projects_fixed_layout_list_item() {
+    let get_decl = DeclId::new(117);
+    let hir = make_source_record_get_nested_list_item_program(get_decl);
+    let decl_names = HashMap::from([(get_decl, "get".to_string())]);
+    let hir_types = crate::compiler::hir_type_infer::infer_hir_types(&hir, &decl_names)
+        .expect("source-like record list get HIR should type-check");
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+
+    let mut result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        Some(&hir_types),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("source-built record list field get should lower");
+
+    optimize_with_ssa_hints(
+        &mut result.program.main,
+        Some(&probe_ctx),
+        &mut result.type_hints.main,
+        &result.type_hints.main_stack_slots,
+        &result.type_hints.generic_map_value_types,
+    );
+    assert_returned_scalar_i64_or_const(&result, 22);
+    compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+        .expect("optimized source-built record list field get should compile through codegen");
 }
 
 #[test]
