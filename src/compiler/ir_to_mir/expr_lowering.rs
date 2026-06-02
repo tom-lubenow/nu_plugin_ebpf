@@ -6,7 +6,7 @@ use crate::kernel_btf::{
     TrampolineBitfieldInfo, TrampolineFieldProjection, TrampolineFieldSelector,
     TrampolineValueKind, TrampolineValueSpec, TypeInfo,
 };
-use nu_protocol::ast::Expr;
+use nu_protocol::ast::{Expr, MatchPattern};
 
 mod context_helpers;
 mod packet;
@@ -215,6 +215,7 @@ impl<'a> HirToMirLowering<'a> {
             Pattern::Expression(expr) => {
                 self.lower_match_expression(expr, src_vreg, if_true, if_false)?
             }
+            Pattern::Or(patterns) => self.lower_match_or(patterns, src_vreg, if_true, if_false)?,
             Pattern::Variable(var_id) => {
                 self.var_mappings.insert(*var_id, src_vreg);
                 self.terminate(MirInst::Jump { target: if_true });
@@ -228,6 +229,60 @@ impl<'a> HirToMirLowering<'a> {
                 )));
             }
         }
+        Ok(())
+    }
+
+    fn lower_match_or(
+        &mut self,
+        patterns: &[MatchPattern],
+        src_vreg: VReg,
+        if_true: BlockId,
+        if_false: BlockId,
+    ) -> Result<(), CompileError> {
+        if patterns.is_empty() {
+            self.terminate(MirInst::Jump { target: if_false });
+            return Ok(());
+        }
+
+        for (idx, alternative) in patterns.iter().enumerate() {
+            if alternative.guard.is_some() {
+                return Err(CompileError::UnsupportedInstruction(
+                    "Match or-pattern guards are not supported in eBPF".into(),
+                ));
+            }
+
+            let next_false = if idx + 1 == patterns.len() {
+                if_false
+            } else {
+                self.func.alloc_block()
+            };
+
+            match &alternative.pattern {
+                Pattern::Value(value) => {
+                    self.lower_match_value(value, src_vreg, if_true, next_false)?
+                }
+                Pattern::Expression(expr) => {
+                    self.lower_match_expression(expr, src_vreg, if_true, next_false)?
+                }
+                Pattern::IgnoreValue => {
+                    self.terminate(MirInst::Jump { target: if_true });
+                    return Ok(());
+                }
+                Pattern::Or(patterns) => {
+                    self.lower_match_or(patterns, src_vreg, if_true, next_false)?
+                }
+                pattern => {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "Match or-pattern alternative {pattern:?} is not supported in eBPF"
+                    )));
+                }
+            }
+
+            if idx + 1 < patterns.len() {
+                self.current_block = next_false;
+            }
+        }
+
         Ok(())
     }
 
