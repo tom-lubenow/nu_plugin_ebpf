@@ -35282,6 +35282,32 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-list-math-mode"
+        category: "language-core"
+        tags: [aggregate list math mode]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [5 1 5 2 1] | math mode | str join "-" | str starts-with "1-5"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-list-math-mode-empty"
+        category: "language-core"
+        tags: [aggregate list math mode empty]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ([] | math mode | length) == 0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-math-min-single"
         category: "language-core"
         tags: [aggregate list math min]

@@ -4018,6 +4018,10 @@ impl<'a> HirToMirLowering<'a> {
                 self.lower_compile_time_math_median(src_dst, dst_vreg, src_dst_had_value)?;
             }
 
+            "math mode" => {
+                self.lower_compile_time_math_mode(src_dst, src_dst_had_value)?;
+            }
+
             "math abs" => {
                 let input_reg = self
                     .pipeline_input_reg

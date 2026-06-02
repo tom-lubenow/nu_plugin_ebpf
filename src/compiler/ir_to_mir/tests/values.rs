@@ -10151,6 +10151,206 @@ fn make_integer_list_pipeline_call_program(decl_id: DeclId, values: &[i64]) -> H
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_value_list_pipeline_call_program(decl_id: DeclId, values: Vec<Value>) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::list(values, Span::test_data())),
+                },
+                HirStmt::Call {
+                    decl_id,
+                    src_dst: RegId::new(1),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 2,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_integer_list_two_call_program(
+    first_decl: DeclId,
+    second_decl: DeclId,
+    values: &[i64],
+) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::list(
+                        values
+                            .iter()
+                            .map(|value| Value::int(*value, Span::test_data()))
+                            .collect(),
+                        Span::test_data(),
+                    )),
+                },
+                HirStmt::Call {
+                    decl_id: first_decl,
+                    src_dst: RegId::new(1),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: second_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(1)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(2) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+#[test]
+fn test_lower_math_mode_on_known_integer_list_materializes_sorted_modes() {
+    let mode_decl = DeclId::new(525);
+    let sum_decl = DeclId::new(526);
+    let hir = make_integer_list_two_call_program(mode_decl, sum_decl, &[5, 1, 5, 2, 1]);
+    let decl_names = HashMap::from([
+        (mode_decl, "math mode".to_string()),
+        (sum_decl, "math sum".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("math mode should lower compile-time known integer-list input");
+    let expected_modes = [1i64, 5]
+        .into_iter()
+        .flat_map(|value| value.to_le_bytes())
+        .collect::<Vec<_>>();
+
+    assert!(
+        result
+            .readonly_globals
+            .iter()
+            .any(|global| global.data == expected_modes),
+        "expected math mode to materialize sorted mode values"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("math mode output consumed by math sum should compile through codegen");
+}
+
+#[test]
+fn test_lower_math_mode_on_empty_integer_list_returns_empty_list() {
+    let mode_decl = DeclId::new(527);
+    let length_decl = DeclId::new(528);
+    let hir = make_integer_list_two_call_program(mode_decl, length_decl, &[]);
+    let decl_names = HashMap::from([
+        (mode_decl, "math mode".to_string()),
+        (length_decl, "length".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("math mode should return an empty list for empty input");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::ListNew { max_len: 0, .. })),
+        "expected math mode on empty input to allocate an empty numeric list"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("empty math mode output consumed by length should compile through codegen");
+}
+
+#[test]
+fn test_lower_math_mode_rejects_non_integer_list_items() {
+    let mode_decl = DeclId::new(529);
+    let hir = make_value_list_pipeline_call_program(
+        mode_decl,
+        vec![
+            Value::int(1, Span::test_data()),
+            Value::bool(true, Span::test_data()),
+        ],
+    );
+    let decl_names = HashMap::from([(mode_decl, "math mode".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("math mode should reject non-integer list items");
+
+    assert!(
+        err.to_string()
+            .contains("math mode requires integer list items"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_math_mode_rejects_output_over_capacity() {
+    let mode_decl = DeclId::new(530);
+    let values = (0..=60).collect::<Vec<_>>();
+    let hir = make_integer_list_pipeline_call_program(mode_decl, &values);
+    let decl_names = HashMap::from([(mode_decl, "math mode".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("math mode output over the stack-list capacity should be rejected");
+
+    assert!(
+        err.to_string()
+            .contains("math mode output exceeds stack-backed numeric list capacity 60"),
+        "unexpected error: {err}"
+    );
+}
+
 #[test]
 fn test_lower_math_median_on_known_odd_integer_list_materializes_median() {
     let median_decl = DeclId::new(520);

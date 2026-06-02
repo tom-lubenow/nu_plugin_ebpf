@@ -94,6 +94,7 @@ const NU_CLOSURE_COMMANDS: &[&str] = &[
     "math max",
     "math median",
     "math min",
+    "math mode",
     "math product",
     "math sum",
     "math abs",

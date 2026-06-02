@@ -1,6 +1,67 @@
 use super::*;
 
 impl<'a> HirToMirLowering<'a> {
+    pub(in crate::compiler::ir_to_mir) fn lower_compile_time_math_mode(
+        &mut self,
+        src_dst: RegId,
+        src_dst_had_value: bool,
+    ) -> Result<(), CompileError> {
+        const MAX_MODE_STACK_LIST_CAPACITY: usize = 60;
+
+        let input_reg = self
+            .pipeline_input_reg
+            .or(src_dst_had_value.then_some(src_dst));
+
+        if !self.named_flags.is_empty()
+            || !self.named_args.is_empty()
+            || !self.positional_args.is_empty()
+        {
+            return Err(CompileError::UnsupportedInstruction(
+                "math mode does not accept arguments in eBPF".into(),
+            ));
+        }
+
+        let input_meta = input_reg
+            .and_then(|reg| self.get_metadata(reg).cloned())
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "math mode requires compile-time known integer-list input in eBPF".into(),
+                )
+            })?;
+        let Some(nu_protocol::Value::List { vals, .. }) = input_meta.constant_value else {
+            return Err(CompileError::UnsupportedInstruction(
+                "math mode requires compile-time known integer-list input in eBPF".into(),
+            ));
+        };
+
+        let mut counts = std::collections::BTreeMap::<i64, usize>::new();
+        for (index, value) in vals.into_iter().enumerate() {
+            let nu_protocol::Value::Int { val, .. } = value else {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "math mode requires integer list items in eBPF; item {index} has type {}",
+                    value.get_type()
+                )));
+            };
+            *counts.entry(val).or_default() += 1;
+        }
+
+        let max_count = counts.values().copied().max().unwrap_or(0);
+        let modes = counts
+            .into_iter()
+            .filter_map(|(value, count)| {
+                (count == max_count).then_some(nu_protocol::Value::int(value, Span::unknown()))
+            })
+            .collect::<Vec<_>>();
+        if modes.len() > MAX_MODE_STACK_LIST_CAPACITY {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "math mode output exceeds stack-backed numeric list capacity {MAX_MODE_STACK_LIST_CAPACITY} in eBPF"
+            )));
+        }
+
+        self.reset_call_result_metadata(src_dst);
+        self.lower_constant_value(src_dst, &nu_protocol::Value::list(modes, Span::unknown()))
+    }
+
     pub(in crate::compiler::ir_to_mir) fn lower_compile_time_math_median(
         &mut self,
         src_dst: RegId,
