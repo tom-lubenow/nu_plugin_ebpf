@@ -3537,6 +3537,54 @@ fn test_probe_context_helper_call_error_refines_tcp_congestion_struct_ops_helper
 }
 
 #[test]
+fn test_probe_context_helper_call_error_refines_ima_hash_lsm_sleepable_policy() {
+    let sleepable_lsm = ProbeContext::from_program_spec(
+        ProgramSpec::parse("lsm.s:file_open").expect("sleepable lsm spec should parse"),
+    );
+    assert_eq!(
+        sleepable_lsm.helper_call_error(BpfHelper::ImaInodeHash),
+        None
+    );
+    assert_eq!(
+        sleepable_lsm.helper_call_error(BpfHelper::ImaFileHash),
+        None
+    );
+
+    let non_sleepable_lsm = ProbeContext::from_program_spec(
+        ProgramSpec::parse("lsm:file_open").expect("lsm spec should parse"),
+    );
+    assert_eq!(
+        non_sleepable_lsm.helper_call_error(BpfHelper::ImaInodeHash),
+        Some(
+            "helper 'bpf_ima_inode_hash' is only valid in lsm.s programs attached to sleepable LSM hooks"
+                .to_string()
+        )
+    );
+
+    let non_sleepable_hook = ProbeContext::from_program_spec(
+        ProgramSpec::parse("lsm.s:task_free").expect("sleepable lsm target should parse"),
+    );
+    assert_eq!(
+        non_sleepable_hook.helper_call_error(BpfHelper::ImaFileHash),
+        Some(
+            "helper 'bpf_ima_file_hash' is only valid in lsm.s programs attached to sleepable LSM hooks"
+                .to_string()
+        )
+    );
+
+    let lsm_cgroup = ProbeContext::from_program_spec(
+        ProgramSpec::parse("lsm_cgroup:socket_bind").expect("lsm_cgroup spec should parse"),
+    );
+    assert_eq!(
+        lsm_cgroup.helper_call_error(BpfHelper::ImaInodeHash),
+        Some(
+            "helper 'bpf_ima_inode_hash' is only valid in lsm.s programs attached to sleepable LSM hooks"
+                .to_string()
+        )
+    );
+}
+
+#[test]
 fn test_current_task_under_cgroup_is_base_helper_surface() {
     for program_type in [
         EbpfProgramType::Kprobe,

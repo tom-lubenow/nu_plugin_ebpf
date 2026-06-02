@@ -227,6 +227,99 @@ pub(crate) fn struct_ops_callback_is_sleepable(value_type_name: &str, callback_n
     StructOpsFamily::from_value_type_name(value_type_name).callback_is_sleepable(callback_name)
 }
 
+pub(crate) fn lsm_hook_is_sleepable(hook_name: &str) -> bool {
+    matches!(
+        hook_name,
+        "bpf"
+            | "bpf_map"
+            | "bpf_map_create"
+            | "bpf_map_free"
+            | "bpf_prog"
+            | "bpf_prog_load"
+            | "bpf_prog_free"
+            | "bpf_token_create"
+            | "bpf_token_free"
+            | "bpf_token_cmd"
+            | "bpf_token_capable"
+            | "bprm_check_security"
+            | "bprm_committed_creds"
+            | "bprm_committing_creds"
+            | "bprm_creds_for_exec"
+            | "bprm_creds_from_file"
+            | "capget"
+            | "capset"
+            | "cred_prepare"
+            | "file_ioctl"
+            | "file_lock"
+            | "file_open"
+            | "file_post_open"
+            | "file_receive"
+            | "inode_create"
+            | "inode_free_security"
+            | "inode_getattr"
+            | "inode_getxattr"
+            | "inode_mknod"
+            | "inode_need_killpriv"
+            | "inode_post_setxattr"
+            | "inode_post_removexattr"
+            | "inode_readlink"
+            | "inode_removexattr"
+            | "inode_rename"
+            | "inode_rmdir"
+            | "inode_setattr"
+            | "inode_setxattr"
+            | "inode_symlink"
+            | "inode_unlink"
+            | "kernel_module_request"
+            | "kernel_read_file"
+            | "kernfs_init_security"
+            | "path_unlink"
+            | "path_mkdir"
+            | "path_rmdir"
+            | "path_truncate"
+            | "path_symlink"
+            | "path_link"
+            | "path_rename"
+            | "path_chmod"
+            | "path_chown"
+            | "mmap_file"
+            | "netlink_send"
+            | "path_notify"
+            | "release_secctx"
+            | "sb_alloc_security"
+            | "sb_eat_lsm_opts"
+            | "sb_kern_mount"
+            | "sb_mount"
+            | "sb_remount"
+            | "sb_set_mnt_opts"
+            | "sb_show_options"
+            | "sb_statfs"
+            | "sb_umount"
+            | "settime"
+            | "socket_accept"
+            | "socket_bind"
+            | "socket_connect"
+            | "socket_create"
+            | "socket_getpeername"
+            | "socket_getpeersec_dgram"
+            | "socket_getsockname"
+            | "socket_getsockopt"
+            | "socket_listen"
+            | "socket_post_create"
+            | "socket_recvmsg"
+            | "socket_sendmsg"
+            | "socket_shutdown"
+            | "socket_socketpair"
+            | "syslog"
+            | "task_alloc"
+            | "task_prctl"
+            | "task_setscheduler"
+            | "userns_create"
+            | "bdev_alloc_security"
+            | "bdev_setintegrity"
+    )
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProgramLiveAttachStatus {
     DefaultAllowed,
@@ -2640,6 +2733,13 @@ pub(crate) enum ProgramAttachShape {
         priority: i32,
         defrag: bool,
     },
+    Lsm {
+        sleepable: bool,
+        sleepable_hook: bool,
+    },
+    LsmCgroup {
+        sleepable_hook: bool,
+    },
     Tc {
         ingress: bool,
     },
@@ -2751,6 +2851,17 @@ impl ProgramAttachShape {
     pub(crate) fn struct_ops_callback(self) -> Option<(StructOpsFamily, bool)> {
         match self {
             Self::StructOpsCallback { family, sleepable } => Some((family, sleepable)),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn lsm(self) -> Option<(bool, bool)> {
+        match self {
+            Self::Lsm {
+                sleepable,
+                sleepable_hook,
+            } => Some((sleepable, sleepable_hook)),
+            Self::LsmCgroup { sleepable_hook } => Some((false, sleepable_hook)),
             _ => None,
         }
     }
@@ -3722,6 +3833,13 @@ impl ProgramSpec {
                 priority: target.priority,
                 defrag: target.defrag,
             },
+            ProgramSpec::Lsm { hook, sleepable } => ProgramAttachShape::Lsm {
+                sleepable: *sleepable,
+                sleepable_hook: lsm_hook_is_sleepable(hook),
+            },
+            ProgramSpec::LsmCgroup { hook } => ProgramAttachShape::LsmCgroup {
+                sleepable_hook: lsm_hook_is_sleepable(hook),
+            },
             ProgramSpec::LircMode2 { .. } => ProgramAttachShape::LircMode2,
             ProgramSpec::StructOps { value_type_name } => ProgramAttachShape::StructOps {
                 family: StructOpsFamily::from_value_type_name(value_type_name),
@@ -3885,6 +4003,13 @@ mod tests {
         let lwt_out = ProgramSpec::parse("lwt_out:demo-route").expect("lwt_out spec should parse");
         let netfilter = ProgramSpec::parse("netfilter:ipv6:local_out:priority=-100:defrag")
             .expect("netfilter spec should parse");
+        let lsm = ProgramSpec::parse("lsm:file_open").expect("lsm spec should parse");
+        let lsm_sleepable =
+            ProgramSpec::parse("lsm.s:file_open").expect("sleepable lsm spec should parse");
+        let lsm_non_sleepable_hook =
+            ProgramSpec::parse("lsm.s:task_free").expect("sleepable lsm target should parse");
+        let lsm_cgroup =
+            ProgramSpec::parse("lsm_cgroup:socket_bind").expect("lsm_cgroup spec should parse");
         let cgroup_skb = ProgramSpec::from_program_type_target(
             EbpfProgramType::CgroupSkb,
             "/sys/fs/cgroup:egress",
@@ -4011,6 +4136,40 @@ mod tests {
                 defrag: true,
             }
         );
+        assert_eq!(
+            lsm.attach_shape(),
+            ProgramAttachShape::Lsm {
+                sleepable: false,
+                sleepable_hook: true,
+            }
+        );
+        assert_eq!(lsm.attach_shape().lsm(), Some((false, true)));
+        assert_eq!(
+            lsm_sleepable.attach_shape(),
+            ProgramAttachShape::Lsm {
+                sleepable: true,
+                sleepable_hook: true,
+            }
+        );
+        assert_eq!(lsm_sleepable.attach_shape().lsm(), Some((true, true)));
+        assert_eq!(
+            lsm_non_sleepable_hook.attach_shape(),
+            ProgramAttachShape::Lsm {
+                sleepable: true,
+                sleepable_hook: false,
+            }
+        );
+        assert_eq!(
+            lsm_non_sleepable_hook.attach_shape().lsm(),
+            Some((true, false))
+        );
+        assert_eq!(
+            lsm_cgroup.attach_shape(),
+            ProgramAttachShape::LsmCgroup {
+                sleepable_hook: true,
+            }
+        );
+        assert_eq!(lsm_cgroup.attach_shape().lsm(), Some((false, true)));
         assert_eq!(netkit.section_name(), "netkit/primary");
         assert_eq!(
             cgroup_skb.attach_shape(),
@@ -4104,6 +4263,15 @@ mod tests {
         );
         assert_eq!(sched_ext_select_cpu.section_name(), "struct_ops/select_cpu");
         assert_eq!(sched_ext_init.section_name(), "struct_ops.s/init");
+    }
+
+    #[test]
+    fn test_lsm_hook_is_sleepable_matches_modeled_kernel_set() {
+        assert!(lsm_hook_is_sleepable("file_open"));
+        assert!(lsm_hook_is_sleepable("socket_bind"));
+        assert!(lsm_hook_is_sleepable("bpf_prog_load"));
+        assert!(!lsm_hook_is_sleepable("task_free"));
+        assert!(!lsm_hook_is_sleepable("inode_permission"));
     }
 
     #[test]

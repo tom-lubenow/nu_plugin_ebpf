@@ -924,6 +924,7 @@ const TC_EGRESS_ONLY_HELPERS: &[BpfHelper] = &[
 ];
 const CGROUP_SOCK_ADDR_INET_CONNECT_ONLY_HELPERS: &[BpfHelper] = &[BpfHelper::Bind];
 const CGROUP_RETVAL_HELPERS: &[BpfHelper] = &[BpfHelper::GetRetval, BpfHelper::SetRetval];
+const IMA_HASH_HELPERS: &[BpfHelper] = &[BpfHelper::ImaInodeHash, BpfHelper::ImaFileHash];
 const SYSCALL_MODELED_HELPERS: &[BpfHelper] = &[
     BpfHelper::SysBpf,
     BpfHelper::BtfFindByNameKind,
@@ -1442,6 +1443,16 @@ impl ProgramSpec {
             {
                 Some(format!(
                     "helper '{}' is only valid in tcp_congestion_ops struct_ops programs",
+                    helper.name()
+                ))
+            }
+            _ if attach_shape
+                .lsm()
+                .is_some_and(|(sleepable, sleepable_hook)| !(sleepable && sleepable_hook))
+                && helper_list_contains(IMA_HASH_HELPERS, helper) =>
+            {
+                Some(format!(
+                    "helper '{}' is only valid in lsm.s programs attached to sleepable LSM hooks",
                     helper.name()
                 ))
             }
@@ -2253,6 +2264,7 @@ mod tests {
             CGROUP_SOCK_ADDR_INET_CONNECT_ONLY_HELPERS,
         );
         assert_unique_helpers("cgroup retval helpers", CGROUP_RETVAL_HELPERS);
+        assert_unique_helpers("IMA hash helpers", IMA_HASH_HELPERS);
         assert_unique_helpers("syscall modeled helpers", SYSCALL_MODELED_HELPERS);
     }
 }

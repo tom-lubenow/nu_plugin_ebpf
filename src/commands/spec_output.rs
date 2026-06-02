@@ -649,6 +649,27 @@ fn attach_shape_record(spec: &crate::program_spec::ProgramSpec, span: Span) -> V
             },
             span,
         ),
+        ProgramAttachShape::Lsm {
+            sleepable,
+            sleepable_hook,
+        } => Value::record(
+            record! {
+                "kind" => Value::string("lsm", span),
+                "hook" => Value::string(spec.target_string(), span),
+                "sleepable" => Value::bool(sleepable, span),
+                "sleepable_hook" => Value::bool(sleepable_hook, span),
+            },
+            span,
+        ),
+        ProgramAttachShape::LsmCgroup { sleepable_hook } => Value::record(
+            record! {
+                "kind" => Value::string("lsm-cgroup", span),
+                "hook" => Value::string(spec.target_string(), span),
+                "sleepable" => Value::bool(false, span),
+                "sleepable_hook" => Value::bool(sleepable_hook, span),
+            },
+            span,
+        ),
         ProgramAttachShape::Tc { ingress } => Value::record(
             record! {
                 "kind" => Value::string("tc", span),

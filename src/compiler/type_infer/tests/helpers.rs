@@ -10945,7 +10945,7 @@ fn test_infer_helper_ima_hash_helpers_return_i64() {
         (BpfHelper::ImaFileHash, "file"),
     ] {
         let (func, _, dst, hints) = make_ima_hash_call(helper, object_type_name, 16, 16);
-        let probe_ctx = ProbeContext::new(EbpfProgramType::Lsm, "file_open");
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Lsm, "lsm.s:file_open");
         let mut ti = TypeInference::new_with_env(Some(probe_ctx), None, None, Some(&hints), None);
         let types = ti.infer(&func).expect("expected IMA helper to infer");
         assert_eq!(types.get(&dst), Some(&MirType::I64));
@@ -10953,9 +10953,32 @@ fn test_infer_helper_ima_hash_helpers_return_i64() {
 }
 
 #[test]
+fn test_type_error_ima_hash_helpers_require_sleepable_lsm_hook() {
+    for (target, helper, object_type_name) in [
+        ("file_open", BpfHelper::ImaInodeHash, "inode"),
+        ("lsm.s:task_free", BpfHelper::ImaFileHash, "file"),
+    ] {
+        let (func, _, _, hints) = make_ima_hash_call(helper, object_type_name, 16, 16);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Lsm, target);
+        let mut ti = TypeInference::new_with_env(Some(probe_ctx), None, None, Some(&hints), None);
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected IMA helper LSM sleepable policy error");
+        assert!(
+            errs.iter().any(|e| {
+                e.message
+                    .contains("is only valid in lsm.s programs attached to sleepable LSM hooks")
+            }),
+            "unexpected errors for {target}: {:?}",
+            errs
+        );
+    }
+}
+
+#[test]
 fn test_type_error_ima_inode_hash_rejects_small_buffer() {
     let (func, _, _, hints) = make_ima_hash_call(BpfHelper::ImaInodeHash, "inode", 16, 8);
-    let probe_ctx = ProbeContext::new(EbpfProgramType::Lsm, "file_open");
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Lsm, "lsm.s:file_open");
     let mut ti = TypeInference::new_with_env(Some(probe_ctx), None, None, Some(&hints), None);
     let errs = ti
         .infer(&func)
@@ -10972,7 +10995,7 @@ fn test_type_error_ima_inode_hash_rejects_small_buffer() {
 #[test]
 fn test_type_error_ima_file_hash_requires_positive_size() {
     let (func, _, _, hints) = make_ima_hash_call(BpfHelper::ImaFileHash, "file", 0, 16);
-    let probe_ctx = ProbeContext::new(EbpfProgramType::Lsm, "file_open");
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Lsm, "lsm.s:file_open");
     let mut ti = TypeInference::new_with_env(Some(probe_ctx), None, None, Some(&hints), None);
     let errs = ti
         .infer(&func)
@@ -10988,7 +11011,7 @@ fn test_type_error_ima_file_hash_requires_positive_size() {
 #[test]
 fn test_type_error_ima_file_hash_rejects_inode_arg() {
     let (func, _, _, hints) = make_ima_hash_call(BpfHelper::ImaFileHash, "inode", 16, 16);
-    let probe_ctx = ProbeContext::new(EbpfProgramType::Lsm, "file_open");
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Lsm, "lsm.s:file_open");
     let mut ti = TypeInference::new_with_env(Some(probe_ctx), None, None, Some(&hints), None);
     let errs = ti
         .infer(&func)
