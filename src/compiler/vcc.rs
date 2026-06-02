@@ -311,6 +311,18 @@ pub enum VccInst {
         field: CtxField,
         guard: ContextFieldLoadGuard,
     },
+    AssertCtxFieldAllowedValues {
+        field: CtxField,
+        allowed: Vec<i64>,
+        message: String,
+    },
+    AssertCtxFieldAllowedValuesUnlessBitSet {
+        field: CtxField,
+        allowed: Vec<i64>,
+        unless_value: VccValue,
+        unless_mask: i64,
+        message: String,
+    },
     AssertKnownConst {
         value: VccValue,
         message: String,

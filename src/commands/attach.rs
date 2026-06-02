@@ -560,11 +560,13 @@ Context parameter syntax (recommended):
     `kfunc-call "bpf_sock_ops_enable_tx_tstamp" $ctx 0` is modeled for
     `BPF_SOCK_OPS_TSTAMP_SENDMSG_CB`, with callback/flag details still
     enforced by the kernel.
-    Those helpers still follow the kernel's ordinary callback-sensitive
-    runtime rules, so unsupported `ctx.op` combinations can return `-EPERM`.
+    The verifier models the kernel callback/flag rules for header-option
+    helpers: unflagged `bpf_load_hdr_opt` requires a packet-data `ctx.op`,
+    `bpf_store_hdr_opt` requires `ctx.op == 15`, `bpf_reserve_hdr_opt`
+    requires `ctx.op == 14`, and `bpf_load_hdr_opt` with
+    `BPF_LOAD_HDR_OPT_TCP_SYN` skips the packet-data proof.
     Packet-data and packet-metadata fields likewise require a proven
-    packet-aware `ctx.op` branch before use. The finer flag-sensitive
-    `bpf_load_hdr_opt` subcases still remain kernel-enforced.
+    packet-aware `ctx.op` branch before use.
 
   sk_msg fields:
     {|ctx| $ctx.cpu }     - Get current CPU ID

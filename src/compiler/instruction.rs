@@ -1377,6 +1377,10 @@ impl BpfHelper {
                 0x3f,
                 "helper 'bpf_fib_lookup' requires arg3 flags to contain only modeled BPF_FIB_LOOKUP_* bits (0x3f)",
             )),
+            (Self::LoadHdrOpt, 3) => Some((
+                0x01,
+                "helper 'bpf_load_hdr_opt' requires arg3 flags to contain only BPF_LOAD_HDR_OPT_TCP_SYN (0x01)",
+            )),
             _ => None,
         }
     }

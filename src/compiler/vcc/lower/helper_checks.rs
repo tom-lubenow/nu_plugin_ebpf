@@ -5,6 +5,14 @@ use crate::compiler::instruction::{
     kfunc_arg_pointee_mismatch, kfunc_arg_requires_skb_context_or_pointer,
     scalar_range_contains_only_bitmask, unknown_kfunc_signature_message,
 };
+use crate::compiler::EbpfProgramType;
+
+const BPF_LOAD_HDR_OPT_TCP_SYN: i64 = 1;
+const BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB: i64 = 4;
+const BPF_SOCK_OPS_PASSIVE_ESTABLISHED_CB: i64 = 5;
+const BPF_SOCK_OPS_PARSE_HDR_OPT_CB: i64 = 13;
+const BPF_SOCK_OPS_HDR_OPT_LEN_CB: i64 = 14;
+const BPF_SOCK_OPS_WRITE_HDR_OPT_CB: i64 = 15;
 
 impl<'a> VccLowerer<'a> {
     pub(super) fn verify_helper_call(
@@ -939,11 +947,74 @@ impl<'a> VccLowerer<'a> {
                         },
                         format!("helper {} arg{} expects pointer value", helper_id, arg_idx),
                     ));
-                }
             }
         }
+    }
 
         Ok(())
+    }
+
+    fn current_program_type(&self) -> Option<EbpfProgramType> {
+        self.probe_ctx
+            .map(ProbeContext::program_type)
+            .or_else(|| self.program.map(|program| program.program_type))
+    }
+
+    fn verify_sock_ops_hdr_opt_callback(
+        &mut self,
+        helper: BpfHelper,
+        args: &[MirValue],
+        out: &mut Vec<VccInst>,
+    ) {
+        if !matches!(
+            helper,
+            BpfHelper::LoadHdrOpt | BpfHelper::StoreHdrOpt | BpfHelper::ReserveHdrOpt
+        ) || self.current_program_type() != Some(EbpfProgramType::SockOps)
+        {
+            return;
+        }
+
+        let (allowed, message): (&[i64], &str) = match helper {
+            BpfHelper::LoadHdrOpt => (
+                &[
+                    BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB,
+                    BPF_SOCK_OPS_PASSIVE_ESTABLISHED_CB,
+                    BPF_SOCK_OPS_PARSE_HDR_OPT_CB,
+                    BPF_SOCK_OPS_WRITE_HDR_OPT_CB,
+                ],
+                "helper 'bpf_load_hdr_opt' without BPF_LOAD_HDR_OPT_TCP_SYN requires proving a packet-data ctx.op callback",
+            ),
+            BpfHelper::StoreHdrOpt => (
+                &[BPF_SOCK_OPS_WRITE_HDR_OPT_CB],
+                "helper 'bpf_store_hdr_opt' requires proving ctx.op == BPF_SOCK_OPS_WRITE_HDR_OPT_CB",
+            ),
+            BpfHelper::ReserveHdrOpt => (
+                &[BPF_SOCK_OPS_HDR_OPT_LEN_CB],
+                "helper 'bpf_reserve_hdr_opt' requires proving ctx.op == BPF_SOCK_OPS_HDR_OPT_LEN_CB",
+            ),
+            _ => return,
+        };
+
+        if helper == BpfHelper::LoadHdrOpt {
+            let Some(flags) = args.get(3) else {
+                return;
+            };
+            let flags = self.lower_value(flags, out);
+            out.push(VccInst::AssertCtxFieldAllowedValuesUnlessBitSet {
+                field: CtxField::SockOp,
+                allowed: allowed.to_vec(),
+                unless_value: flags,
+                unless_mask: BPF_LOAD_HDR_OPT_TCP_SYN,
+                message: message.to_string(),
+            });
+            return;
+        }
+
+        out.push(VccInst::AssertCtxFieldAllowedValues {
+            field: CtxField::SockOp,
+            allowed: allowed.to_vec(),
+            message: message.to_string(),
+        });
     }
 
     fn is_local_helper_map_ref_arg(
@@ -1398,6 +1469,8 @@ impl<'a> VccLowerer<'a> {
         {
             self.verify_helper_scalar_const_eq(helper_id, arg_idx, arg, 0, message, out)?;
         }
+
+        self.verify_sock_ops_hdr_opt_callback(helper, args, out);
 
         if let Some((arg_idx, expected, message)) = helper.scalar_arg_const_requirement()
             && let Some(arg) = args.get(arg_idx)

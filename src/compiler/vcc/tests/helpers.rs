@@ -6,6 +6,7 @@ use crate::compiler::subfn_summaries::{
 use crate::compiler::test_mir_builders::dynptr_from_mem_join_reinitialize_mir;
 use crate::compiler::{EbpfProgramType, MapRef, ProbeContext, ProgramCapability, ProgramTypeInfo};
 
+const BPF_LOAD_HDR_OPT_TCP_SYN: i64 = 1;
 const BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB: i64 = 4;
 const BPF_SOCK_OPS_HDR_OPT_LEN_CB: i64 = 14;
 const BPF_SOCK_OPS_WRITE_HDR_OPT_CB: i64 = 15;
@@ -21865,18 +21866,62 @@ fn test_verify_mir_helper_sock_ops_hdr_opt_helpers_accept_sock_ops_context_when_
 
 #[test]
 fn test_verify_mir_helper_sock_ops_callback_sensitive_helpers_without_static_callback_proof() {
-    for helper in [
-        BpfHelper::SockOpsCbFlagsSet,
-        BpfHelper::LoadHdrOpt,
-        BpfHelper::StoreHdrOpt,
-        BpfHelper::ReserveHdrOpt,
+    let (mut func, entry) = new_mir_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::SockOpsCbFlagsSet as u32,
+            args: vec![MirValue::VReg(ctx), MirValue::Const(0)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected sock_ops cb_flags_set helper to verify without callback proof");
+}
+
+#[test]
+fn test_verify_mir_helper_sock_ops_hdr_opt_helpers_without_static_callback_proof() {
+    for (helper, expected) in [
+        (
+            BpfHelper::LoadHdrOpt,
+            "helper 'bpf_load_hdr_opt' without BPF_LOAD_HDR_OPT_TCP_SYN requires proving a packet-data ctx.op callback",
+        ),
+        (
+            BpfHelper::StoreHdrOpt,
+            "helper 'bpf_store_hdr_opt' requires proving ctx.op == BPF_SOCK_OPS_WRITE_HDR_OPT_CB",
+        ),
+        (
+            BpfHelper::ReserveHdrOpt,
+            "helper 'bpf_reserve_hdr_opt' requires proving ctx.op == BPF_SOCK_OPS_HDR_OPT_LEN_CB",
+        ),
     ] {
         let (mut func, entry) = new_mir_function();
         let ctx = func.alloc_vreg();
         let dst = func.alloc_vreg();
         let buf_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
         let args = match helper {
-            BpfHelper::SockOpsCbFlagsSet => vec![MirValue::VReg(ctx), MirValue::Const(0)],
             BpfHelper::LoadHdrOpt | BpfHelper::StoreHdrOpt => vec![
                 MirValue::VReg(ctx),
                 MirValue::StackSlot(buf_slot),
@@ -21916,9 +21961,125 @@ fn test_verify_mir_helper_sock_ops_callback_sensitive_helpers_without_static_cal
         types.insert(dst, MirType::I64);
 
         let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
-        verify_mir_for_probe_context(&func, &types, &probe_ctx)
-            .expect("expected sock_ops callback-sensitive helper to verify");
+        let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect_err("expected sock_ops header-option helper to require callback proof");
+        assert!(
+            err.iter().any(|e| e.message.contains(expected)),
+            "unexpected errors for {helper:?}: {:?}",
+            err
+        );
     }
+}
+
+#[test]
+fn test_verify_mir_helper_load_hdr_opt_accepts_tcp_syn_flag_without_callback_proof() {
+    let (mut func, entry) = new_mir_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let buf_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::LoadHdrOpt as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(buf_slot),
+                MirValue::Const(16),
+                MirValue::Const(BPF_LOAD_HDR_OPT_TCP_SYN),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected bpf_load_hdr_opt TCP_SYN mode to verify without callback proof");
+}
+
+#[test]
+fn test_verify_mir_helper_load_hdr_opt_accepts_guarded_tcp_syn_vreg_without_callback_proof() {
+    let (mut func, entry) = new_mir_function();
+    let guarded = func.alloc_block();
+    let done = func.alloc_block();
+    let flags = func.alloc_vreg();
+    let matches = func.alloc_vreg();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let buf_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: flags,
+            helper: BpfHelper::GetPrandomU32 as u32,
+            args: vec![],
+        });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: matches,
+        op: BinOpKind::Eq,
+        lhs: MirValue::VReg(flags),
+        rhs: MirValue::Const(BPF_LOAD_HDR_OPT_TCP_SYN),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: matches,
+        if_true: guarded,
+        if_false: done,
+    };
+    func.block_mut(guarded)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(guarded)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::LoadHdrOpt as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(buf_slot),
+                MirValue::Const(16),
+                MirValue::VReg(flags),
+            ],
+        });
+    func.block_mut(guarded).terminator = MirInst::Jump { target: done };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(flags, MirType::U32);
+    types.insert(matches, MirType::Bool);
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+    verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect("expected guarded bpf_load_hdr_opt TCP_SYN flag to verify without callback proof");
 }
 
 #[test]

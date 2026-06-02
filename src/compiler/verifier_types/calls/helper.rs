@@ -5,7 +5,14 @@ use crate::compiler::instruction::{
     kfunc_ref_kind_from_bpf_type_name, scalar_range_contains_only_allowed_values,
     scalar_range_contains_only_bitmask,
 };
-use crate::compiler::{ProbeContext, ProgramTypeInfo};
+use crate::compiler::{EbpfProgramType, ProbeContext, ProgramTypeInfo};
+
+const BPF_LOAD_HDR_OPT_TCP_SYN: i64 = 1;
+const BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB: i64 = 4;
+const BPF_SOCK_OPS_PASSIVE_ESTABLISHED_CB: i64 = 5;
+const BPF_SOCK_OPS_PARSE_HDR_OPT_CB: i64 = 13;
+const BPF_SOCK_OPS_HDR_OPT_LEN_CB: i64 = 14;
+const BPF_SOCK_OPS_WRITE_HDR_OPT_CB: i64 = 15;
 
 pub(in crate::compiler::verifier_types) fn check_helper_arg(
     helper_id: u32,
@@ -236,6 +243,71 @@ fn validate_helper_scalar_bitmask(
     if let ValueRange::Known { min, max } = value_range(value, state)
         && !scalar_range_contains_only_bitmask(min, max, mask)
     {
+        errors.push(VerifierTypeError::new(message));
+    }
+}
+
+fn current_program_type(
+    program: Option<&ProgramTypeInfo>,
+    probe_ctx: Option<&ProbeContext>,
+) -> Option<EbpfProgramType> {
+    probe_ctx
+        .map(ProbeContext::program_type)
+        .or_else(|| program.map(|program| program.program_type))
+}
+
+fn sock_ops_callback_has_packet_data(op: i64) -> bool {
+    matches!(
+        op,
+        BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB
+            | BPF_SOCK_OPS_PASSIVE_ESTABLISHED_CB
+            | BPF_SOCK_OPS_PARSE_HDR_OPT_CB
+            | BPF_SOCK_OPS_WRITE_HDR_OPT_CB
+    )
+}
+
+fn load_hdr_opt_uses_tcp_syn(args: &[MirValue], state: &VerifierState) -> bool {
+    matches!(
+        args.get(3).map(|arg| value_range(arg, state)),
+        Some(ValueRange::Known { min, max })
+            if min == max && min & BPF_LOAD_HDR_OPT_TCP_SYN != 0
+    )
+}
+
+fn validate_sock_ops_hdr_opt_callback(
+    helper: BpfHelper,
+    args: &[MirValue],
+    state: &VerifierState,
+    program: Option<&ProgramTypeInfo>,
+    probe_ctx: Option<&ProbeContext>,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    if !matches!(
+        helper,
+        BpfHelper::LoadHdrOpt | BpfHelper::StoreHdrOpt | BpfHelper::ReserveHdrOpt
+    ) || current_program_type(program, probe_ctx) != Some(EbpfProgramType::SockOps)
+    {
+        return;
+    }
+
+    let (allows_op, message): (fn(i64) -> bool, &str) = match helper {
+        BpfHelper::LoadHdrOpt if load_hdr_opt_uses_tcp_syn(args, state) => return,
+        BpfHelper::LoadHdrOpt => (
+            sock_ops_callback_has_packet_data,
+            "helper 'bpf_load_hdr_opt' without BPF_LOAD_HDR_OPT_TCP_SYN requires proving a packet-data ctx.op callback",
+        ),
+        BpfHelper::StoreHdrOpt => (
+            |op| op == BPF_SOCK_OPS_WRITE_HDR_OPT_CB,
+            "helper 'bpf_store_hdr_opt' requires proving ctx.op == BPF_SOCK_OPS_WRITE_HDR_OPT_CB",
+        ),
+        BpfHelper::ReserveHdrOpt => (
+            |op| op == BPF_SOCK_OPS_HDR_OPT_LEN_CB,
+            "helper 'bpf_reserve_hdr_opt' requires proving ctx.op == BPF_SOCK_OPS_HDR_OPT_LEN_CB",
+        ),
+        _ => return,
+    };
+
+    if !state.proves_ctx_field_value_range(&CtxField::SockOp, allows_op) {
         errors.push(VerifierTypeError::new(message));
     }
 }
@@ -530,6 +602,8 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
     {
         errors.push(VerifierTypeError::new(message));
     }
+
+    validate_sock_ops_hdr_opt_callback(helper, args, state, program, probe_ctx, errors);
 
     if let Some((arg_idx, expected, message)) = helper.scalar_arg_const_requirement()
         && !arg_is_known_const(arg_idx, expected)

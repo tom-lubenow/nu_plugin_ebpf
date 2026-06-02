@@ -620,6 +620,56 @@ impl VccVerifier {
                     ));
                 }
             }
+            VccInst::AssertCtxFieldAllowedValues {
+                field,
+                allowed,
+                message,
+            } => {
+                if !state.proves_ctx_field_value_range(field, |value| allowed.contains(&value)) {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::UnsupportedInstruction,
+                        message.clone(),
+                    ));
+                }
+            }
+            VccInst::AssertCtxFieldAllowedValuesUnlessBitSet {
+                field,
+                allowed,
+                unless_value,
+                unless_mask,
+                message,
+            } => {
+                let ty = match state.value_type(*unless_value) {
+                    Ok(ty) => ty,
+                    Err(err) => {
+                        self.errors.push(err);
+                        return;
+                    }
+                };
+                if ty.class() != VccTypeClass::Scalar && ty.class() != VccTypeClass::Bool {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::TypeMismatch {
+                            expected: VccTypeClass::Scalar,
+                            actual: ty.class(),
+                        },
+                        "expected scalar value",
+                    ));
+                    return;
+                }
+                if let Some(range) = state.value_range(*unless_value, ty) {
+                    let width = range.max.saturating_sub(range.min);
+                    if width <= 64 && (range.min..=range.max).all(|value| value & unless_mask != 0)
+                    {
+                        return;
+                    }
+                }
+                if !state.proves_ctx_field_value_range(field, |value| allowed.contains(&value)) {
+                    self.errors.push(VccError::new(
+                        VccErrorKind::UnsupportedInstruction,
+                        message.clone(),
+                    ));
+                }
+            }
             VccInst::AssertKnownConst { value, message } => {
                 let ty = match state.value_type(*value) {
                     Ok(ty) => ty,
