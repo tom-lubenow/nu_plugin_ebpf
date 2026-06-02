@@ -3382,6 +3382,14 @@ fn test_infer_skb_set_tstamp_helper_in_tc_program() {
 }
 
 fn make_check_mtu_call(flags: i64, mtu_len_size: usize) -> (MirFunction, VReg) {
+    make_check_mtu_call_with_len_diff(flags, mtu_len_size, 0)
+}
+
+fn make_check_mtu_call_with_len_diff(
+    flags: i64,
+    mtu_len_size: usize,
+    len_diff: i64,
+) -> (MirFunction, VReg) {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();
     let dst = func.alloc_vreg();
@@ -3399,7 +3407,7 @@ fn make_check_mtu_call(flags: i64, mtu_len_size: usize) -> (MirFunction, VReg) {
             MirValue::VReg(ctx),
             MirValue::Const(0),
             MirValue::StackSlot(mtu_len),
-            MirValue::Const(0),
+            MirValue::Const(len_diff),
             MirValue::Const(flags),
         ],
     });
@@ -3464,6 +3472,23 @@ fn test_type_error_check_mtu_helper_rejects_unknown_tc_flags() {
         errs.iter().any(|e| e
             .message
             .contains("helper 'bpf_check_mtu' requires arg4 flags")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_type_error_check_mtu_helper_rejects_len_diff_with_segment_flags() {
+    let (func, _) = make_check_mtu_call_with_len_diff(1, 4, 1);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_check_mtu segment flags to reject len_diff");
+    assert!(
+        errs.iter().any(|e| e.message.contains(
+            "helper 'bpf_check_mtu' requires arg3 len_diff to be 0 when arg4 has BPF_MTU_CHK_SEGS"
+        )),
         "unexpected errors: {:?}",
         errs
     );

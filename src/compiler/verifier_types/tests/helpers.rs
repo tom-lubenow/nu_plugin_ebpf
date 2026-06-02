@@ -13015,6 +13015,14 @@ fn make_check_mtu_verify_call(
     flags: i64,
     mtu_len_size: usize,
 ) -> (MirFunction, HashMap<VReg, MirType>) {
+    make_check_mtu_verify_call_with_len_diff(flags, mtu_len_size, 0)
+}
+
+fn make_check_mtu_verify_call_with_len_diff(
+    flags: i64,
+    mtu_len_size: usize,
+    len_diff: i64,
+) -> (MirFunction, HashMap<VReg, MirType>) {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
     func.entry = entry;
@@ -13038,7 +13046,7 @@ fn make_check_mtu_verify_call(
                 MirValue::VReg(ctx),
                 MirValue::Const(0),
                 MirValue::StackSlot(mtu_len),
-                MirValue::Const(0),
+                MirValue::Const(len_diff),
                 MirValue::Const(flags),
             ],
         });
@@ -13105,6 +13113,21 @@ fn test_verify_mir_for_probe_context_check_mtu_rejects_unknown_tc_flags() {
         err.iter().any(|e| e
             .message
             .contains("helper 'bpf_check_mtu' requires arg4 flags")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_check_mtu_rejects_len_diff_with_segment_flags() {
+    let (func, types) = make_check_mtu_verify_call_with_len_diff(1, 4, 1);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected bpf_check_mtu segment flags to reject len_diff");
+    assert!(
+        err.iter().any(|e| e.message.contains(
+            "helper 'bpf_check_mtu' requires arg3 len_diff to be 0 when arg4 has BPF_MTU_CHK_SEGS"
+        )),
         "unexpected errors: {:?}",
         err
     );

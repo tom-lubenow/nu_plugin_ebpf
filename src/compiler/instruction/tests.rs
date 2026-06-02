@@ -2640,6 +2640,15 @@ fn test_fib_lookup_helper_contract() {
             "helper 'bpf_check_mtu' requires arg4 flags to contain only BPF_MTU_CHK_SEGS (0x01)"
         ))
     );
+    assert_eq!(
+        BpfHelper::CheckMtu.zero_scalar_arg_requirement_when_arg_const(),
+        Some((
+            3,
+            4,
+            1,
+            "helper 'bpf_check_mtu' requires arg3 len_diff to be 0 when arg4 has BPF_MTU_CHK_SEGS"
+        ))
+    );
 }
 
 #[test]

@@ -656,6 +656,14 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
         errors.push(VerifierTypeError::new(message));
     }
 
+    if let Some((arg_idx, trigger_arg_idx, trigger_expected, message)) =
+        helper.zero_scalar_arg_requirement_when_arg_const()
+        && arg_is_known_const(trigger_arg_idx, trigger_expected)
+        && !arg_is_known_zero(arg_idx)
+    {
+        errors.push(VerifierTypeError::new(message));
+    }
+
     if matches!(helper, BpfHelper::GetSocketCookie) {
         validate_get_socket_cookie_arg_shape(args, types, state, program, probe_ctx, errors);
     }

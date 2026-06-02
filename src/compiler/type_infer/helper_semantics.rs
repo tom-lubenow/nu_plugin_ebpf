@@ -669,6 +669,14 @@ impl<'a> TypeInference<'a> {
             errors.push(TypeError::new(message));
         }
 
+        if let Some((arg_idx, trigger_arg_idx, trigger_expected, message)) =
+            helper.zero_scalar_arg_requirement_when_arg_const()
+            && arg_is_known_const(trigger_arg_idx, trigger_expected)
+            && !arg_is_known_zero(arg_idx)
+        {
+            errors.push(TypeError::new(message));
+        }
+
         for (arg_idx, arg) in args.iter().enumerate() {
             if helper.dynptr_arg_role(arg_idx).is_none() {
                 continue;

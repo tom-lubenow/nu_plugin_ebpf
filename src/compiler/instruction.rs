@@ -20,6 +20,7 @@ const BPF_FIB_LOOKUP_DIRECT: i64 = 1 << 0;
 const BPF_FIB_LOOKUP_TBID: i64 = 1 << 3;
 const BPF_FIB_LOOKUP_MARK: i64 = 1 << 5;
 const BPF_FIB_LOOKUP_SIZE: i64 = 64;
+const BPF_MTU_CHK_SEGS: i64 = 1 << 0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ScalarArgBitCombinationRequirement {
@@ -1483,6 +1484,20 @@ impl BpfHelper {
         match (self, arg_idx) {
             (Self::FibLookup, 3) => FIB_LOOKUP_FLAG_COMBINATIONS,
             _ => &[],
+        }
+    }
+
+    pub const fn zero_scalar_arg_requirement_when_arg_const(
+        self,
+    ) -> Option<(usize, usize, i64, &'static str)> {
+        match self {
+            Self::CheckMtu => Some((
+                3,
+                4,
+                BPF_MTU_CHK_SEGS,
+                "helper 'bpf_check_mtu' requires arg3 len_diff to be 0 when arg4 has BPF_MTU_CHK_SEGS",
+            )),
+            _ => None,
         }
     }
 

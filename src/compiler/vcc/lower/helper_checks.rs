@@ -1565,6 +1565,21 @@ impl<'a> VccLowerer<'a> {
             )?;
         }
 
+        if let Some((arg_idx, trigger_arg_idx, trigger_expected, message)) =
+            helper.zero_scalar_arg_requirement_when_arg_const()
+            && let (Some(arg), Some(trigger)) = (args.get(arg_idx), args.get(trigger_arg_idx))
+        {
+            self.verify_helper_scalar_const_eq_if_scalar_const_eq(
+                helper_id,
+                arg_idx,
+                arg,
+                trigger,
+                trigger_expected,
+                message,
+                out,
+            )?;
+        }
+
         if matches!(helper, BpfHelper::GetSocketCookie) {
             self.verify_get_socket_cookie_arg_shape(args)?;
         }
