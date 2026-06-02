@@ -3042,7 +3042,7 @@ fn test_type_error_skb_store_bytes_rejects_invalid_flags() {
     }));
 }
 
-fn make_csum_replace_call(helper: BpfHelper, flags: i64) -> MirFunction {
+fn make_csum_replace_call(helper: BpfHelper, offset: i64, flags: i64) -> MirFunction {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();
     let dst = func.alloc_vreg();
@@ -3057,7 +3057,7 @@ fn make_csum_replace_call(helper: BpfHelper, flags: i64) -> MirFunction {
         helper: helper as u32,
         args: vec![
             MirValue::VReg(ctx),
-            MirValue::Const(0),
+            MirValue::Const(offset),
             MirValue::Const(0),
             MirValue::Const(0),
             MirValue::Const(flags),
@@ -3091,12 +3091,39 @@ fn test_type_error_csum_replace_helpers_reject_invalid_flags() {
             "checksum replacement helpers require BPF_F_HDR_FIELD_MASK size",
         ),
     ] {
-        let func = make_csum_replace_call(helper, flags);
+        let func = make_csum_replace_call(helper, 0, flags);
         let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
         let mut ti = TypeInference::new(Some(probe_ctx));
         let errs = ti
             .infer(&func)
             .expect_err("expected checksum replacement helper flag validation error");
+        assert!(
+            errs.iter().any(|e| e.message.contains(expected)),
+            "expected {expected:?}, got {errs:?}"
+        );
+    }
+}
+
+#[test]
+fn test_type_error_csum_replace_helpers_reject_invalid_offsets() {
+    for (helper, offset, expected) in [
+        (
+            BpfHelper::L3CsumReplace,
+            0x1,
+            "checksum replacement helpers require arg1 offset to be even",
+        ),
+        (
+            BpfHelper::L4CsumReplace,
+            0x1_0000,
+            "checksum replacement helpers require arg1 offset to be between 0 and 0xffff",
+        ),
+    ] {
+        let func = make_csum_replace_call(helper, offset, 2);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected checksum replacement helper offset validation error");
         assert!(
             errs.iter().any(|e| e.message.contains(expected)),
             "expected {expected:?}, got {errs:?}"

@@ -2513,6 +2513,24 @@ fn test_skb_store_bytes_helper_flag_contract() {
 
 #[test]
 fn test_checksum_replacement_helper_flag_contracts() {
+    for helper in [BpfHelper::L3CsumReplace, BpfHelper::L4CsumReplace] {
+        assert_eq!(
+            helper.scalar_arg_range_requirement(1),
+            Some((
+                0,
+                0xffff,
+                "checksum replacement helpers require arg1 offset to be between 0 and 0xffff"
+            ))
+        );
+        assert_eq!(
+            helper.scalar_arg_multiple_of_requirement(1),
+            Some((
+                2,
+                "checksum replacement helpers require arg1 offset to be even"
+            ))
+        );
+    }
+
     assert_eq!(
         BpfHelper::L3CsumReplace.scalar_arg_bitmask_requirement(4),
         Some((

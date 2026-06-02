@@ -1312,6 +1312,10 @@ impl BpfHelper {
                 4,
                 "helper 'bpf_csum_diff' requires arg3 to be a multiple of 4",
             )),
+            (Self::L3CsumReplace | Self::L4CsumReplace, 1) => Some((
+                2,
+                "checksum replacement helpers require arg1 offset to be even",
+            )),
             (Self::Snprintf, 4) => Some((
                 8,
                 "helper 'bpf_snprintf' requires arg4 to be a multiple of 8",
@@ -1520,6 +1524,11 @@ impl BpfHelper {
                 0,
                 2,
                 "helper 'bpf_lwt_push_encap' requires arg1 type to be BPF_LWT_ENCAP_SEG6, BPF_LWT_ENCAP_SEG6_INLINE, or BPF_LWT_ENCAP_IP",
+            )),
+            (Self::L3CsumReplace | Self::L4CsumReplace, 1) => Some((
+                0,
+                0xffff,
+                "checksum replacement helpers require arg1 offset to be between 0 and 0xffff",
             )),
             (Self::SkbSetTstamp, 2) => Some((
                 0,

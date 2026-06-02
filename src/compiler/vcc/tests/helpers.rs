@@ -8683,6 +8683,7 @@ fn test_verify_mir_for_probe_context_skb_store_bytes_rejects_invalid_flags() {
 
 fn make_csum_replace_vcc_call(
     helper: BpfHelper,
+    offset: i64,
     flags: i64,
 ) -> (MirFunction, HashMap<VReg, MirType>) {
     let (mut func, entry) = new_mir_function();
@@ -8696,7 +8697,7 @@ fn make_csum_replace_vcc_call(
             helper: helper as u32,
             args: vec![
                 MirValue::VReg(ctx),
-                MirValue::Const(0),
+                MirValue::Const(offset),
                 MirValue::Const(0),
                 MirValue::Const(0),
                 MirValue::Const(flags),
@@ -8740,10 +8741,35 @@ fn test_verify_mir_for_probe_context_csum_replace_helpers_reject_invalid_flags()
             "checksum replacement helpers require BPF_F_HDR_FIELD_MASK size",
         ),
     ] {
-        let (func, types) = make_csum_replace_vcc_call(helper, flags);
+        let (func, types) = make_csum_replace_vcc_call(helper, 0, flags);
         let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
         let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
             .expect_err("expected checksum replacement helper flag validation error");
+        assert!(
+            err.iter().any(|e| e.message.contains(expected)),
+            "expected {expected:?}, got {err:?}"
+        );
+    }
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_csum_replace_helpers_reject_invalid_offsets() {
+    for (helper, offset, expected) in [
+        (
+            BpfHelper::L3CsumReplace,
+            0x1,
+            "checksum replacement helpers require arg1 offset to be even",
+        ),
+        (
+            BpfHelper::L4CsumReplace,
+            0x1_0000,
+            "checksum replacement helpers require arg1 offset to be between 0 and 0xffff",
+        ),
+    ] {
+        let (func, types) = make_csum_replace_vcc_call(helper, offset, 2);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+        let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect_err("expected checksum replacement helper offset validation error");
         assert!(
             err.iter().any(|e| e.message.contains(expected)),
             "expected {expected:?}, got {err:?}"
