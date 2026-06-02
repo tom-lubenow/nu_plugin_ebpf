@@ -17135,6 +17135,110 @@ fn test_lower_bytes_build_materializes_binary_from_binary_and_int_args() {
         .expect("bytes build output consumed by bytes starts-with should compile through codegen");
 }
 
+fn make_bytes_build_then_length_program(
+    build_decl: DeclId,
+    length_decl: DeclId,
+    args: Vec<HirLiteral>,
+) -> HirProgram {
+    let arg_count = args.len() as u32;
+    let build_reg = RegId::new(arg_count);
+    let length_reg = RegId::new(arg_count + 1);
+    let positional = (0..arg_count).map(RegId::new).collect::<Vec<_>>();
+
+    let mut stmts = Vec::new();
+    for (index, lit) in args.into_iter().enumerate() {
+        stmts.push(HirStmt::LoadLiteral {
+            dst: RegId::new(index as u32),
+            lit,
+        });
+    }
+    stmts.push(HirStmt::Call {
+        decl_id: build_decl,
+        src_dst: build_reg,
+        args: HirCallArgs {
+            positional,
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: length_decl,
+        src_dst: length_reg,
+        args: HirCallArgs {
+            pipeline_input: Some(build_reg),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: length_reg },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: arg_count + 2,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+#[test]
+fn test_lower_bytes_build_accepts_no_arguments() {
+    let bytes_build_decl = DeclId::new(640);
+    let bytes_length_decl = DeclId::new(641);
+    let hir = make_bytes_build_then_length_program(bytes_build_decl, bytes_length_decl, vec![]);
+    let decl_names = HashMap::from([
+        (bytes_build_decl, "bytes build".to_string()),
+        (bytes_length_decl, "bytes length".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bytes build should lower with no arguments");
+
+    assert_program_returns_constant(&result.program, 0, "empty bytes build length");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("no-argument bytes build output consumed by bytes length should compile");
+}
+
+#[test]
+fn test_lower_bytes_build_accepts_empty_binary_argument() {
+    let bytes_build_decl = DeclId::new(642);
+    let bytes_length_decl = DeclId::new(643);
+    let hir = make_bytes_build_then_length_program(
+        bytes_build_decl,
+        bytes_length_decl,
+        vec![HirLiteral::Binary(Vec::new())],
+    );
+    let decl_names = HashMap::from([
+        (bytes_build_decl, "bytes build".to_string()),
+        (bytes_length_decl, "bytes length".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bytes build should lower empty binary arguments");
+
+    assert_program_returns_constant(&result.program, 0, "empty bytes build argument length");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("empty-argument bytes build output consumed by bytes length should compile");
+}
+
 #[test]
 fn test_lower_bytes_build_rejects_out_of_range_integer() {
     let bytes_build_decl = DeclId::new(223);

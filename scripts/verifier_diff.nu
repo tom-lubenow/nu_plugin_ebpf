@@ -35979,6 +35979,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-binary-bytes-build-empty-length"
+        category: "language-core"
+        tags: [binary bytes build empty length]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  bytes build | bytes length'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-binary-bytes-at-starts-with"
         category: "language-core"
         tags: [binary bytes at starts-with]

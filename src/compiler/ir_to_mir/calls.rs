@@ -3286,11 +3286,6 @@ impl<'a> HirToMirLowering<'a> {
                             .into(),
                     ));
                 }
-                if self.positional_args.is_empty() {
-                    return Err(CompileError::UnsupportedInstruction(
-                        "bytes build requires at least one argument in eBPF".into(),
-                    ));
-                }
 
                 let mut output = Vec::new();
                 for (_, arg_reg) in &self.positional_args {
@@ -3321,11 +3316,6 @@ impl<'a> HirToMirLowering<'a> {
                             ));
                         }
                     }
-                }
-                if output.is_empty() {
-                    return Err(CompileError::UnsupportedInstruction(
-                        "bytes build requires a non-empty binary result in eBPF".into(),
-                    ));
                 }
 
                 self.reset_call_result_metadata(src_dst);
