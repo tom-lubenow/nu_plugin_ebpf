@@ -35492,6 +35492,59 @@ const FIXTURES = [
         error_contains: "bits not currently requires --signed"
     }
     {
+        name: "core-scalar-bits-shift-signed-i64"
+        category: "language-core"
+        tags: [scalar bits shl shr signed]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ((4 | bits shl 1 --signed --number-bytes 8) == 8) and ((-8 | bits shr 1 --signed --number-bytes 8) == -4)'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-list-bits-shift-signed-i64"
+        category: "language-core"
+        tags: [aggregate list bits shl signed]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ([4 3 2] | bits shl 1 --signed --number-bytes 8 | math sum) == 18'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-list-bits-shift-signed-i64-runtime"
+        category: "language-core"
+        tags: [aggregate list bits shr signed runtime]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ([(random int)] | bits shr 1 --signed --number-bytes 8 | length) == 1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-scalar-bits-shift-default-reject"
+        category: "language-core"
+        tags: [scalar bits shl reject]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  4 | bits shl 1'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "bits shl currently requires --signed --number-bytes 8"
+    }
+    {
         name: "core-null-length"
         category: "language-core"
         tags: ["null" length]

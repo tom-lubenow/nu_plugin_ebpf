@@ -20,6 +20,24 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
+    fn bits_shift_op(cmd_name: &str) -> BinOpKind {
+        match cmd_name {
+            "bits shl" => BinOpKind::Shl,
+            "bits shr" => BinOpKind::Shr,
+            _ => unreachable!("validated bits shift command"),
+        }
+    }
+
+    fn bits_shift_output(cmd_name: &str, lhs: i64, rhs: i64) -> i64 {
+        debug_assert!((0..64).contains(&rhs));
+        let shift = rhs as u32;
+        match cmd_name {
+            "bits shl" => lhs.wrapping_shl(shift),
+            "bits shr" => lhs >> shift,
+            _ => unreachable!("validated bits shift command"),
+        }
+    }
+
     fn bits_integer_value_from_metadata(meta: &RegMetadata) -> Option<i64> {
         meta.literal_int
             .or_else(|| match meta.constant_value.as_ref() {
@@ -55,6 +73,82 @@ impl<'a> HirToMirLowering<'a> {
                 "{cmd_name} requires integer {role} in eBPF; got MIR type {ty:?}"
             )))
         }
+    }
+
+    fn bits_shift_signed_i64_count(&self, cmd_name: &str) -> Result<i64, CompileError> {
+        if !self.parser_info_args.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} currently requires --signed --number-bytes 8 in eBPF"
+            )));
+        }
+        if self.positional_args.len() != 1 {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires exactly one compile-time shift-count argument in eBPF"
+            )));
+        }
+        if self.named_flags.len() != 1 || !matches!(self.named_flags[0].as_str(), "signed" | "s") {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} currently requires --signed --number-bytes 8 in eBPF because other forms are byte-width masked"
+            )));
+        }
+
+        let mut number_bytes_reg = None;
+        for (name, (_vreg, reg)) in &self.named_args {
+            match name.as_str() {
+                "number-bytes" | "n" => {
+                    if number_bytes_reg.replace(*reg).is_some() {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "{cmd_name} accepts only one --number-bytes argument in eBPF"
+                        )));
+                    }
+                }
+                _ => {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{cmd_name} currently requires --signed --number-bytes 8 in eBPF"
+                    )));
+                }
+            }
+        }
+
+        let Some(number_bytes_reg) = number_bytes_reg else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} currently requires --signed --number-bytes 8 in eBPF because other forms are byte-width masked"
+            )));
+        };
+        let number_bytes_meta = self.get_metadata(number_bytes_reg).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires compile-time --number-bytes 8 in eBPF"
+            ))
+        })?;
+        let Some(number_bytes) = Self::bits_integer_value_from_metadata(number_bytes_meta) else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires compile-time --number-bytes 8 in eBPF"
+            )));
+        };
+        if number_bytes != 8 {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} currently requires --number-bytes 8 in eBPF; got {number_bytes}"
+            )));
+        }
+
+        let (_shift_vreg, shift_reg) = self.positional_args[0];
+        let shift_meta = self.get_metadata(shift_reg).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires a compile-time integer shift count in eBPF"
+            ))
+        })?;
+        let Some(shift_count) = Self::bits_integer_value_from_metadata(shift_meta) else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires a compile-time integer shift count in eBPF"
+            )));
+        };
+        if !(0..64).contains(&shift_count) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires a shift count from 0 through 63 in eBPF; got {shift_count}"
+            )));
+        }
+
+        Ok(shift_count)
     }
 
     pub(in crate::compiler::ir_to_mir) fn lower_bits_binary(
@@ -189,6 +283,119 @@ impl<'a> HirToMirLowering<'a> {
         };
 
         if let Some(output) = constant_output {
+            self.emit(MirInst::Copy {
+                dst: result_vreg,
+                src: MirValue::Const(output),
+            });
+            self.reset_call_result_metadata(src_dst);
+            let out_meta = self.get_or_create_metadata(src_dst);
+            out_meta.field_type = Some(MirType::I64);
+            out_meta.constant_value = Some(nu_protocol::Value::int(
+                output,
+                nu_protocol::Span::unknown(),
+            ));
+            out_meta.literal_int = Some(output);
+        } else {
+            self.emit(MirInst::BinOp {
+                dst: result_vreg,
+                op,
+                lhs: lhs_value,
+                rhs: rhs_value,
+            });
+            self.reset_call_result_metadata(src_dst);
+            self.get_or_create_metadata(src_dst).field_type = Some(MirType::I64);
+        }
+        self.vreg_type_hints.insert(result_vreg, MirType::I64);
+        Ok(())
+    }
+
+    pub(in crate::compiler::ir_to_mir) fn lower_bits_shift_signed_i64(
+        &mut self,
+        cmd_name: &str,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+    ) -> Result<(), CompileError> {
+        const MAX_BITS_STACK_LIST_CAPACITY: usize = 60;
+
+        let shift_count = self.bits_shift_signed_i64_count(cmd_name)?;
+        let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
+        let input_reg = self
+            .pipeline_input_reg
+            .or(src_dst_had_value.then_some(src_dst));
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+
+        let input_reg = input_reg.ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires integer or integer-list pipeline input in eBPF"
+            ))
+        })?;
+        let input_meta = self.get_metadata(input_reg).cloned().ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires tracked integer or integer-list input in eBPF"
+            ))
+        })?;
+
+        let op = Self::bits_shift_op(cmd_name);
+        let rhs_value = MirValue::Const(shift_count);
+
+        if let Some(nu_protocol::Value::List { vals, .. }) = input_meta.constant_value.clone() {
+            if vals.len() > MAX_BITS_STACK_LIST_CAPACITY {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{cmd_name} output exceeds stack-backed numeric list capacity {MAX_BITS_STACK_LIST_CAPACITY} in eBPF"
+                )));
+            }
+
+            let output = vals
+                .into_iter()
+                .enumerate()
+                .map(|(index, value)| {
+                    let lhs = match value {
+                        nu_protocol::Value::Int { val, .. } => val,
+                        other => {
+                            return Err(CompileError::UnsupportedInstruction(format!(
+                                "{cmd_name} requires integer list items in eBPF; item {index} has type {}",
+                                other.get_type()
+                            )));
+                        }
+                    };
+                    Ok(nu_protocol::Value::int(
+                        Self::bits_shift_output(cmd_name, lhs, shift_count),
+                        nu_protocol::Span::unknown(),
+                    ))
+                })
+                .collect::<Result<Vec<_>, CompileError>>()?;
+
+            self.reset_call_result_metadata(src_dst);
+            self.lower_constant_value(
+                src_dst,
+                &nu_protocol::Value::list(output, nu_protocol::Span::unknown()),
+            )?;
+            return Ok(());
+        }
+
+        if input_meta.list_buffer.is_some() {
+            return self.lower_bits_binary_runtime_list(
+                cmd_name,
+                src_dst,
+                input_vreg,
+                result_vreg,
+                &input_meta,
+                op,
+                rhs_value,
+            );
+        }
+
+        self.validate_bits_integer_operand(cmd_name, "pipeline input", &input_meta, input_vreg)?;
+        let lhs_value = Self::bits_integer_value_from_metadata(&input_meta)
+            .map_or(MirValue::VReg(input_vreg), MirValue::Const);
+
+        if let Some(input) = Self::bits_integer_value_from_metadata(&input_meta) {
+            let output = Self::bits_shift_output(cmd_name, input, shift_count);
             self.emit(MirInst::Copy {
                 dst: result_vreg,
                 src: MirValue::Const(output),
