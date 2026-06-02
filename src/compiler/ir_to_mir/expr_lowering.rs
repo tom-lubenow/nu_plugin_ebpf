@@ -20,7 +20,7 @@ impl<'a> HirToMirLowering<'a> {
         op: nu_protocol::ast::Operator,
         rhs: RegId,
     ) -> Result<(), CompileError> {
-        use nu_protocol::ast::{Boolean, Comparison, Math, Operator};
+        use nu_protocol::ast::{Math, Operator};
 
         let constant_value = self
             .get_metadata(lhs_dst)
@@ -64,33 +64,18 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(());
         }
 
-        let mir_op = match op {
-            Operator::Math(Math::Add) => BinOpKind::Add,
-            Operator::Math(Math::Subtract) => BinOpKind::Sub,
-            Operator::Math(Math::Multiply) => BinOpKind::Mul,
-            Operator::Math(Math::Divide) => BinOpKind::Div,
-            Operator::Math(Math::Modulo) => BinOpKind::Mod,
-            Operator::Comparison(Comparison::Equal) => BinOpKind::Eq,
-            Operator::Comparison(Comparison::NotEqual) => BinOpKind::Ne,
-            Operator::Comparison(Comparison::LessThan) => BinOpKind::Lt,
-            Operator::Comparison(Comparison::LessThanOrEqual) => BinOpKind::Le,
-            Operator::Comparison(Comparison::GreaterThan) => BinOpKind::Gt,
-            Operator::Comparison(Comparison::GreaterThanOrEqual) => BinOpKind::Ge,
-            Operator::Bits(nu_protocol::ast::Bits::BitAnd) => BinOpKind::And,
-            Operator::Bits(nu_protocol::ast::Bits::BitOr) => BinOpKind::Or,
-            Operator::Bits(nu_protocol::ast::Bits::BitXor) => BinOpKind::Xor,
-            Operator::Bits(nu_protocol::ast::Bits::ShiftLeft) => BinOpKind::Shl,
-            Operator::Bits(nu_protocol::ast::Bits::ShiftRight) => BinOpKind::Shr,
-            // Logical and/or - use bitwise ops since comparisons return 0 or 1
-            Operator::Boolean(Boolean::And) => BinOpKind::And,
-            Operator::Boolean(Boolean::Or) => BinOpKind::Or,
-            Operator::Boolean(Boolean::Xor) => BinOpKind::Xor,
-            _ => {
-                return Err(CompileError::UnsupportedInstruction(format!(
-                    "Operator {op} is not supported in eBPF runtime lowering. \
-                     It may still be used when the expression is compile-time constant."
-                )));
-            }
+        if let Some(value) = constant_value.as_ref()
+            && Self::runtime_binop_kind(op).is_none()
+        {
+            self.lower_constant_value(lhs_dst, value)?;
+            return Ok(());
+        }
+
+        let Some(mir_op) = Self::runtime_binop_kind(op) else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "Operator {op} is not supported in eBPF runtime lowering. \
+                 It may still be used when the expression is compile-time constant."
+            )));
         };
 
         self.emit(MirInst::BinOp {
@@ -103,6 +88,34 @@ impl<'a> HirToMirLowering<'a> {
         self.set_reg_constant_value(lhs_dst, constant_value);
 
         Ok(())
+    }
+
+    fn runtime_binop_kind(op: nu_protocol::ast::Operator) -> Option<BinOpKind> {
+        use nu_protocol::ast::{Bits, Boolean, Comparison, Math, Operator};
+
+        Some(match op {
+            Operator::Math(Math::Add) => BinOpKind::Add,
+            Operator::Math(Math::Subtract) => BinOpKind::Sub,
+            Operator::Math(Math::Multiply) => BinOpKind::Mul,
+            Operator::Math(Math::Divide) => BinOpKind::Div,
+            Operator::Math(Math::Modulo) => BinOpKind::Mod,
+            Operator::Comparison(Comparison::Equal) => BinOpKind::Eq,
+            Operator::Comparison(Comparison::NotEqual) => BinOpKind::Ne,
+            Operator::Comparison(Comparison::LessThan) => BinOpKind::Lt,
+            Operator::Comparison(Comparison::LessThanOrEqual) => BinOpKind::Le,
+            Operator::Comparison(Comparison::GreaterThan) => BinOpKind::Gt,
+            Operator::Comparison(Comparison::GreaterThanOrEqual) => BinOpKind::Ge,
+            Operator::Bits(Bits::BitAnd) => BinOpKind::And,
+            Operator::Bits(Bits::BitOr) => BinOpKind::Or,
+            Operator::Bits(Bits::BitXor) => BinOpKind::Xor,
+            Operator::Bits(Bits::ShiftLeft) => BinOpKind::Shl,
+            Operator::Bits(Bits::ShiftRight) => BinOpKind::Shr,
+            // Logical and/or - use bitwise ops since comparisons return 0 or 1
+            Operator::Boolean(Boolean::And) => BinOpKind::And,
+            Operator::Boolean(Boolean::Or) => BinOpKind::Or,
+            Operator::Boolean(Boolean::Xor) => BinOpKind::Xor,
+            _ => return None,
+        })
     }
 
     fn lower_integer_pow(

@@ -35482,6 +35482,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-scalar-floor-divide-constant"
+        category: "language-core"
+        tags: [scalar math floor-divide constant]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  (5 // 2) == 2'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-scalar-integer-pow-runtime-base"
         category: "language-core"
         tags: [scalar math pow runtime]

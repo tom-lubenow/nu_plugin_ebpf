@@ -258,6 +258,79 @@ fn make_random_int_runtime_pow_exponent_program(random_decl: DeclId) -> HirProgr
     )
 }
 
+fn make_literal_binary_op_program(
+    lhs: HirLiteral,
+    op: nu_protocol::ast::Operator,
+    rhs: HirLiteral,
+) -> HirProgram {
+    HirProgram::new(
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(0),
+                        lit: lhs,
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: rhs,
+                    },
+                    HirStmt::BinaryOp {
+                        lhs_dst: RegId::new(0),
+                        op,
+                        rhs: RegId::new(1),
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            }],
+            entry: HirBlockId(0),
+            spans: Vec::new(),
+            ast: Vec::new(),
+            comments: Vec::new(),
+            register_count: 2,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        None,
+    )
+}
+
+fn assert_mir_returns_constant(program: &MirProgram, expected: i64, context: &str) {
+    let returns_expected = program
+        .main
+        .blocks
+        .iter()
+        .any(|block| match &block.terminator {
+            MirInst::Return {
+                val: Some(MirValue::Const(value)),
+            } => *value == expected,
+            MirInst::Return {
+                val: Some(MirValue::VReg(return_vreg)),
+            } => program
+                .main
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .any(|inst| {
+                    matches!(
+                        inst,
+                        MirInst::Copy {
+                            dst,
+                            src: MirValue::Const(value),
+                        } if dst == return_vreg && *value == expected
+                    )
+                }),
+            _ => false,
+        });
+
+    assert!(
+        returns_expected,
+        "expected {context} to return constant {expected}"
+    );
+}
+
 #[test]
 fn test_mir_function_creation() {
     let mut func = MirFunction::new();
@@ -530,17 +603,59 @@ fn test_lower_runtime_integer_pow_runtime_exponent_is_rejected() {
 }
 
 #[test]
+fn test_lower_unsupported_runtime_binary_operator_with_constant_operands() {
+    use nu_protocol::ast::{Comparison, Math, Operator};
+
+    for (hir_program, expected, context) in [
+        (
+            make_literal_binary_op_program(
+                HirLiteral::Int(5),
+                Operator::Math(Math::FloorDivide),
+                HirLiteral::Int(2),
+            ),
+            2,
+            "constant floor divide",
+        ),
+        (
+            make_literal_binary_op_program(
+                HirLiteral::String(b"kernel".to_vec()),
+                Operator::Comparison(Comparison::StartsWith),
+                HirLiteral::String(b"kern".to_vec()),
+            ),
+            1,
+            "constant starts-with",
+        ),
+    ] {
+        let result = lower_hir_to_mir_with_hints(
+            &hir_program,
+            None,
+            &HashMap::new(),
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("{context} should lower: {err}"));
+
+        assert_mir_returns_constant(&result.program, expected, context);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{context} should compile through codegen: {err}"));
+    }
+}
+
+#[test]
 fn test_unsupported_runtime_operator_message_mentions_compile_time_constant_escape_hatch() {
     use nu_protocol::ast::{Math, Operator};
 
+    let random_decl = DeclId::new(47);
     let hir_program = HirProgram::new(
         HirFunction {
             blocks: vec![HirBlock {
                 id: HirBlockId(0),
                 stmts: vec![
-                    HirStmt::LoadLiteral {
-                        dst: RegId::new(0),
-                        lit: HirLiteral::Int(2),
+                    HirStmt::Call {
+                        decl_id: random_decl,
+                        src_dst: RegId::new(0),
+                        args: HirCallArgs::default(),
                     },
                     HirStmt::LoadLiteral {
                         dst: RegId::new(1),
@@ -565,11 +680,12 @@ fn test_unsupported_runtime_operator_message_mentions_compile_time_constant_esca
         vec![],
         None,
     );
+    let decl_names = HashMap::from([(random_decl, "random int".to_string())]);
 
     let err = lower_hir_to_mir_with_hints(
         &hir_program,
         None,
-        &HashMap::new(),
+        &decl_names,
         None,
         &HashMap::new(),
         &HashMap::new(),
