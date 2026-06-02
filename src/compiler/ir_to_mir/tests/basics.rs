@@ -234,12 +234,16 @@ fn integer_expr_match_pattern(value: i64) -> Pattern {
     Pattern::Expression(Box::new(integer_expr(value)))
 }
 
-fn integer_range_expr_match_pattern(start: i64, end: i64, inclusion: RangeInclusion) -> Pattern {
+fn integer_range_expr_match_pattern_with_bounds(
+    start: Option<i64>,
+    end: Option<i64>,
+    inclusion: RangeInclusion,
+) -> Pattern {
     Pattern::Expression(Box::new(Expression {
         expr: Expr::Range(Box::new(Range {
-            from: Some(integer_expr(start)),
+            from: start.map(integer_expr),
             next: None,
-            to: Some(integer_expr(end)),
+            to: end.map(integer_expr),
             operator: RangeOperator {
                 inclusion,
                 span: Span::test_data(),
@@ -250,6 +254,10 @@ fn integer_range_expr_match_pattern(start: i64, end: i64, inclusion: RangeInclus
         span_id: SpanId::new(0),
         ty: Type::Range,
     }))
+}
+
+fn integer_range_expr_match_pattern(start: i64, end: i64, inclusion: RangeInclusion) -> Pattern {
+    integer_range_expr_match_pattern_with_bounds(Some(start), Some(end), inclusion)
 }
 
 fn make_integer_match_program(pattern: Pattern) -> HirProgram {
@@ -723,6 +731,138 @@ fn test_lower_match_integer_right_exclusive_range_pattern_compiles() {
 
     compile_mir_to_ebpf_with_hints(&program, None, None)
         .expect("integer right-exclusive range match pattern should compile through codegen");
+}
+
+#[test]
+fn test_lower_match_integer_open_lower_range_pattern_defaults_to_zero() {
+    let hir = make_integer_match_program(integer_range_expr_match_pattern_with_bounds(
+        None,
+        Some(2),
+        RangeInclusion::Inclusive,
+    ));
+
+    let program = lower_hir_to_mir(&hir, None, &HashMap::new())
+        .expect("integer open-lower range match pattern should lower to MIR");
+    let instructions: Vec<_> = program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect();
+    assert!(instructions.iter().any(|inst| {
+        matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::Ge,
+                rhs: MirValue::Const(0),
+                ..
+            }
+        )
+    }));
+    assert!(instructions.iter().any(|inst| {
+        matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::Le,
+                rhs: MirValue::Const(2),
+                ..
+            }
+        )
+    }));
+    assert!(instructions.iter().any(|inst| {
+        matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::And,
+                ..
+            }
+        )
+    }));
+
+    compile_mir_to_ebpf_with_hints(&program, None, None)
+        .expect("integer open-lower range match pattern should compile through codegen");
+}
+
+#[test]
+fn test_lower_match_integer_open_lower_right_exclusive_range_pattern_defaults_to_zero() {
+    let hir = make_integer_match_program(integer_range_expr_match_pattern_with_bounds(
+        None,
+        Some(2),
+        RangeInclusion::RightExclusive,
+    ));
+
+    let program = lower_hir_to_mir(&hir, None, &HashMap::new())
+        .expect("integer open-lower right-exclusive range match pattern should lower to MIR");
+    let instructions: Vec<_> = program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect();
+    assert!(instructions.iter().any(|inst| {
+        matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::Ge,
+                rhs: MirValue::Const(0),
+                ..
+            }
+        )
+    }));
+    assert!(instructions.iter().any(|inst| {
+        matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::Lt,
+                rhs: MirValue::Const(2),
+                ..
+            }
+        )
+    }));
+
+    compile_mir_to_ebpf_with_hints(&program, None, None).expect(
+        "integer open-lower right-exclusive range match pattern should compile through codegen",
+    );
+}
+
+#[test]
+fn test_lower_match_integer_open_upper_range_pattern_emits_lower_bound_only() {
+    let hir = make_integer_match_program(integer_range_expr_match_pattern_with_bounds(
+        Some(1),
+        None,
+        RangeInclusion::Inclusive,
+    ));
+
+    let program = lower_hir_to_mir(&hir, None, &HashMap::new())
+        .expect("integer open-upper range match pattern should lower to MIR");
+    let instructions: Vec<_> = program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect();
+    assert!(instructions.iter().any(|inst| {
+        matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::Ge,
+                rhs: MirValue::Const(1),
+                ..
+            }
+        )
+    }));
+    assert!(!instructions.iter().any(|inst| {
+        matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::And,
+                ..
+            }
+        )
+    }));
+
+    compile_mir_to_ebpf_with_hints(&program, None, None)
+        .expect("integer open-upper range match pattern should compile through codegen");
 }
 
 #[test]

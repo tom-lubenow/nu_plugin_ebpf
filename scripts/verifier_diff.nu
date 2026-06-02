@@ -35560,6 +35560,48 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-runtime-match-integer-range-open-lower"
+        category: "language-core"
+        tags: [control-flow "match" range scalar integer runtime]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let n = (random int | bits and 3)'
+            '  match $n { ..2 => 10, _ => 20 }'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-runtime-match-integer-range-open-lower-right-exclusive"
+        category: "language-core"
+        tags: [control-flow "match" range scalar integer runtime]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let n = (random int | bits and 3)'
+            '  match $n { ..<2 => 10, _ => 20 }'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-runtime-match-integer-range-open-upper"
+        category: "language-core"
+        tags: [control-flow "match" range scalar integer runtime]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let n = (random int | bits and 3)'
+            '  match $n { 1.. => 10, _ => 20 }'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-runtime-match-variable-binding"
         category: "language-core"
         tags: [control-flow "match" binding scalar integer runtime]

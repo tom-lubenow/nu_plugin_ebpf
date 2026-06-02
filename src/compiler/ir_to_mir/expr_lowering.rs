@@ -341,24 +341,38 @@ impl<'a> HirToMirLowering<'a> {
                 "Match range patterns with explicit steps are not supported in eBPF".into(),
             ));
         }
-        let start = range
-            .from
-            .as_ref()
-            .and_then(Self::match_expression_i64_literal)
-            .ok_or_else(|| {
+        let start = match &range.from {
+            Some(expr) => Self::match_expression_i64_literal(expr).ok_or_else(|| {
                 CompileError::UnsupportedInstruction(
                     "Match range patterns require a literal integer start in eBPF".into(),
                 )
-            })?;
-        let end = range
-            .to
-            .as_ref()
-            .and_then(Self::match_expression_i64_literal)
-            .ok_or_else(|| {
+            })?,
+            None => 0,
+        };
+        let end = match &range.to {
+            Some(expr) => Some(Self::match_expression_i64_literal(expr).ok_or_else(|| {
                 CompileError::UnsupportedInstruction(
                     "Match range patterns require a literal integer end in eBPF".into(),
                 )
-            })?;
+            })?),
+            None => None,
+        };
+
+        let Some(end) = end else {
+            let lower_cmp = self.func.alloc_vreg();
+            self.emit(MirInst::BinOp {
+                dst: lower_cmp,
+                op: BinOpKind::Ge,
+                lhs: MirValue::VReg(src_vreg),
+                rhs: MirValue::Const(start),
+            });
+            self.terminate(MirInst::Branch {
+                cond: lower_cmp,
+                if_true,
+                if_false,
+            });
+            return Ok(());
+        };
 
         let (lower_op, lower_bound, upper_op, upper_bound) = if start <= end {
             let upper_op = match range.operator.inclusion {
