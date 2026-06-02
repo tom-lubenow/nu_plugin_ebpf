@@ -12094,8 +12094,10 @@ fn test_verify_mir_for_probe_context_xdp_adjust_meta_allows_reloaded_packet_poin
         .expect("expected reloaded packet pointers to verify after xdp_adjust_meta");
 }
 
-#[test]
-fn test_verify_mir_for_probe_context_skb_change_head_requires_zero_flags() {
+fn make_skb_change_head_vcc_call(
+    head_room: i64,
+    flags: i64,
+) -> (MirFunction, HashMap<VReg, MirType>) {
     let (mut func, entry) = new_mir_function();
     let ctx = func.alloc_vreg();
     let dst = func.alloc_vreg();
@@ -12112,7 +12114,11 @@ fn test_verify_mir_for_probe_context_skb_change_head_requires_zero_flags() {
         .push(MirInst::CallHelper {
             dst,
             helper: BpfHelper::SkbChangeHead as u32,
-            args: vec![MirValue::VReg(ctx), MirValue::Const(14), MirValue::Const(1)],
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::Const(head_room),
+                MirValue::Const(flags),
+            ],
         });
     func.block_mut(entry).terminator = MirInst::Return { val: None };
 
@@ -12126,6 +12132,12 @@ fn test_verify_mir_for_probe_context_skb_change_head_requires_zero_flags() {
     );
     types.insert(dst, MirType::I64);
 
+    (func, types)
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_skb_change_head_requires_zero_flags() {
+    let (func, types) = make_skb_change_head_vcc_call(14, 1);
     let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
     let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
         .expect_err("expected bpf_skb_change_head flags to require zero");
@@ -12133,6 +12145,23 @@ fn test_verify_mir_for_probe_context_skb_change_head_requires_zero_flags() {
         e.message
             .contains("helper 'bpf_skb_change_head' requires arg2 = 0")
     }));
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_skb_change_head_rejects_invalid_head_room() {
+    for head_room in [-1_i64, 0x8000_0000] {
+        let (func, types) = make_skb_change_head_vcc_call(head_room, 0);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+        let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect_err("expected bpf_skb_change_head head_room to be rejected");
+        assert!(
+            err.iter().any(|e| e.message.contains(
+                "helper 'bpf_skb_change_head' requires arg1 head_room to be between 0 and i32::MAX"
+            )),
+            "unexpected errors for head_room {head_room}: {:?}",
+            err
+        );
+    }
 }
 
 #[test]

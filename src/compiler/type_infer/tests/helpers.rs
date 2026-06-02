@@ -3004,8 +3004,7 @@ fn test_infer_void_helper_accepts_statement_position_call() {
         .expect("expected statement-position void helper call to infer");
 }
 
-#[test]
-fn test_type_error_skb_change_head_helper_requires_zero_flags() {
+fn make_skb_change_head_call(head_room: i64, flags: i64) -> MirFunction {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();
     let dst = func.alloc_vreg();
@@ -3018,10 +3017,19 @@ fn test_type_error_skb_change_head_helper_requires_zero_flags() {
     block.instructions.push(MirInst::CallHelper {
         dst,
         helper: BpfHelper::SkbChangeHead as u32,
-        args: vec![MirValue::VReg(ctx), MirValue::Const(14), MirValue::Const(1)],
+        args: vec![
+            MirValue::VReg(ctx),
+            MirValue::Const(head_room),
+            MirValue::Const(flags),
+        ],
     });
     block.terminator = MirInst::Return { val: None };
+    func
+}
 
+#[test]
+fn test_type_error_skb_change_head_helper_requires_zero_flags() {
+    let func = make_skb_change_head_call(14, 1);
     let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
     let mut ti = TypeInference::new(Some(probe_ctx));
     let errs = ti
@@ -3031,6 +3039,25 @@ fn test_type_error_skb_change_head_helper_requires_zero_flags() {
         e.message
             .contains("helper 'bpf_skb_change_head' requires arg2 = 0")
     }));
+}
+
+#[test]
+fn test_type_error_skb_change_head_helper_rejects_invalid_head_room() {
+    for head_room in [-1_i64, 0x8000_0000] {
+        let func = make_skb_change_head_call(head_room, 0);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected bpf_skb_change_head head_room to be rejected");
+        assert!(
+            errs.iter().any(|e| e.message.contains(
+                "helper 'bpf_skb_change_head' requires arg1 head_room to be between 0 and i32::MAX"
+            )),
+            "unexpected errors for head_room {head_room}: {:?}",
+            errs
+        );
+    }
 }
 
 #[test]

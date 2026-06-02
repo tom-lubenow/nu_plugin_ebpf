@@ -427,7 +427,9 @@ and materializes the XDP context pointer automatically. On `tc_action`, `tc`,
 are the preferred first-class skb relayout surfaces; `lwt_*` programs
 also support the `--pull` form. These lower to `bpf_skb_change_head`,
 `bpf_skb_change_tail`, `bpf_skb_pull_data`, and `bpf_skb_adjust_room`
-with the ambient skb context pointer materialized automatically. After XDP adjust helpers, previously
+with the ambient skb context pointer materialized automatically. Raw
+`bpf_skb_change_head` calls require `head_room` to be `0..i32::MAX`
+and flags to be `0`. After XDP adjust helpers, previously
 loaded packet pointers are invalid and must be reloaded from
 `ctx.data`, `ctx.data_meta`, and `ctx.data_end` before further packet
 access. After skb relayout helpers, reload `ctx.data` and

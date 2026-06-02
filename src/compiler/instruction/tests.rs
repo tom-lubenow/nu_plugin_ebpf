@@ -2644,6 +2644,14 @@ fn test_helpers_with_reserved_zero_flags() {
         Some((2, "helper 'bpf_skb_change_head' requires arg2 = 0"))
     );
     assert_eq!(
+        BpfHelper::SkbChangeHead.scalar_arg_range_requirement(1),
+        Some((
+            0,
+            i32::MAX as i64,
+            "helper 'bpf_skb_change_head' requires arg1 head_room to be between 0 and i32::MAX"
+        ))
+    );
+    assert_eq!(
         BpfHelper::SkbChangeProto.zero_scalar_arg_requirement(),
         Some((2, "helper 'bpf_skb_change_proto' requires arg2 = 0"))
     );
