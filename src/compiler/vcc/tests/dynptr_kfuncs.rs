@@ -232,8 +232,15 @@ fn test_verify_mir_kfunc_dynptr_clone_rejects_destination_initialized_on_one_pat
     );
 }
 
+#[derive(Clone, Copy)]
+enum RingbufDynptrReleaseTarget {
+    Source,
+    Clone,
+}
+
 fn make_ringbuf_dynptr_clone_release_function(
-    read_source_after_release: bool,
+    release_target: RingbufDynptrReleaseTarget,
+    read_other_after_release: bool,
 ) -> (MirFunction, HashMap<VReg, MirType>) {
     let (mut func, entry) = new_mir_function();
     let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
@@ -277,14 +284,23 @@ fn make_ringbuf_dynptr_clone_release_function(
         .push(MirInst::CallHelper {
             dst: submit_ret,
             helper: BpfHelper::RingbufSubmitDynptr as u32,
-            args: vec![MirValue::StackSlot(clone_slot), MirValue::Const(0)],
+            args: vec![
+                MirValue::StackSlot(match release_target {
+                    RingbufDynptrReleaseTarget::Source => dynptr_slot,
+                    RingbufDynptrReleaseTarget::Clone => clone_slot,
+                }),
+                MirValue::Const(0),
+            ],
         });
-    if read_source_after_release {
+    if read_other_after_release {
         func.block_mut(entry).instructions.push(MirInst::CallKfunc {
             dst: size_ret,
             kfunc: "bpf_dynptr_size".to_string(),
             btf_id: None,
-            args: vec![dynptr_ptr],
+            args: vec![match release_target {
+                RingbufDynptrReleaseTarget::Source => clone_ptr,
+                RingbufDynptrReleaseTarget::Clone => dynptr_ptr,
+            }],
         });
     }
     func.block_mut(entry).terminator = MirInst::Return { val: None };
@@ -299,14 +315,30 @@ fn make_ringbuf_dynptr_clone_release_function(
 
 #[test]
 fn test_verify_mir_kfunc_dynptr_clone_submit_through_clone_is_balanced() {
-    let (func, types) = make_ringbuf_dynptr_clone_release_function(false);
+    let (func, types) =
+        make_ringbuf_dynptr_clone_release_function(RingbufDynptrReleaseTarget::Clone, false);
     verify_mir(&func, &types).expect("expected ringbuf dynptr release through clone to pass");
 }
 
 #[test]
 fn test_verify_mir_kfunc_dynptr_clone_submit_through_clone_invalidates_source() {
-    let (func, types) = make_ringbuf_dynptr_clone_release_function(true);
+    let (func, types) =
+        make_ringbuf_dynptr_clone_release_function(RingbufDynptrReleaseTarget::Clone, true);
     let err = verify_mir(&func, &types).expect_err("expected source dynptr invalidation error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("kfunc 'bpf_dynptr_size' arg0 requires initialized dynptr stack object")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_kfunc_dynptr_clone_submit_source_invalidates_clone() {
+    let (func, types) =
+        make_ringbuf_dynptr_clone_release_function(RingbufDynptrReleaseTarget::Source, true);
+    let err = verify_mir(&func, &types).expect_err("expected clone dynptr invalidation error");
     assert!(
         err.iter().any(|e| e
             .message
