@@ -18498,6 +18498,64 @@ fn make_bytes_collect_then_starts_with_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_bytes_collect_then_length_program(
+    collect_decl: DeclId,
+    length_decl: DeclId,
+    items: Vec<Vec<u8>>,
+    separator: Option<Vec<u8>>,
+) -> HirProgram {
+    let mut stmts = vec![HirStmt::LoadValue {
+        dst: RegId::new(0),
+        val: Box::new(Value::list(
+            items
+                .into_iter()
+                .map(|item| Value::binary(item, Span::test_data()))
+                .collect(),
+            Span::test_data(),
+        )),
+    }];
+    let mut positional = Vec::new();
+    if let Some(separator) = separator {
+        stmts.push(HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: HirLiteral::Binary(separator),
+        });
+        positional.push(RegId::new(1));
+    }
+    stmts.push(HirStmt::Call {
+        decl_id: collect_decl,
+        src_dst: RegId::new(2),
+        args: HirCallArgs {
+            positional,
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: length_decl,
+        src_dst: RegId::new(3),
+        args: HirCallArgs {
+            pipeline_input: Some(RegId::new(2)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(3) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 4,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn assert_no_runtime_list_operations(program: &MirProgram, context: &str) {
     assert!(
         program
@@ -18594,6 +18652,81 @@ fn make_binary_list_builder_pipeline_call_program(decl_id: DeclId, items: &[&[u8
         ast: Vec::new(),
         comments: Vec::new(),
         register_count: item_count_u32 + 2,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_binary_list_builder_collect_then_length_program(
+    collect_decl: DeclId,
+    length_decl: DeclId,
+    items: &[&[u8]],
+    separator: Option<&[u8]>,
+) -> HirProgram {
+    let item_count = items.len();
+    let item_count_u32 = u32::try_from(item_count).expect("test binary-list length fits in u32");
+    let mut stmts = vec![HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List {
+            capacity: item_count,
+        },
+    }];
+
+    for (index, item) in items.iter().enumerate() {
+        let item_reg = RegId::new(u32::try_from(index).expect("test index fits in u32") + 2);
+        stmts.push(HirStmt::LoadLiteral {
+            dst: item_reg,
+            lit: HirLiteral::Binary(item.to_vec()),
+        });
+        stmts.push(HirStmt::ListPush {
+            src_dst: RegId::new(0),
+            item: item_reg,
+        });
+    }
+
+    let mut next_reg = item_count_u32 + 2;
+    let mut positional = Vec::new();
+    if let Some(separator) = separator {
+        let separator_reg = RegId::new(next_reg);
+        stmts.push(HirStmt::LoadLiteral {
+            dst: separator_reg,
+            lit: HirLiteral::Binary(separator.to_vec()),
+        });
+        positional.push(separator_reg);
+        next_reg += 1;
+    }
+
+    let collect_reg = RegId::new(next_reg);
+    let length_reg = RegId::new(next_reg + 1);
+    stmts.push(HirStmt::Call {
+        decl_id: collect_decl,
+        src_dst: collect_reg,
+        args: HirCallArgs {
+            positional,
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: length_decl,
+        src_dst: length_reg,
+        args: HirCallArgs {
+            pipeline_input: Some(collect_reg),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: length_reg },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: length_reg.get() + 1,
         file_count: 0,
     };
     HirProgram::new(func, HashMap::new(), vec![], None)
@@ -19440,22 +19573,21 @@ fn test_lower_binary_list_builder_item_access_starts_with_constant_values() {
 }
 
 #[test]
-fn test_lower_bytes_collect_rejects_empty_result() {
+fn test_lower_bytes_collect_accepts_empty_results() {
     let bytes_collect_decl = DeclId::new(251);
-    let bytes_starts_with_decl = DeclId::new(252);
-    let hir = make_bytes_collect_then_starts_with_program(
+    let bytes_length_decl = DeclId::new(252);
+    let hir = make_bytes_collect_then_length_program(
         bytes_collect_decl,
-        bytes_starts_with_decl,
+        bytes_length_decl,
         Vec::new(),
         None,
-        vec![0x11],
     );
     let decl_names = HashMap::from([
         (bytes_collect_decl, "bytes collect".to_string()),
-        (bytes_starts_with_decl, "bytes starts-with".to_string()),
+        (bytes_length_decl, "bytes length".to_string()),
     ]);
 
-    let err = lower_hir_to_mir_with_hints(
+    let result = lower_hir_to_mir_with_hints(
         &hir,
         None,
         &decl_names,
@@ -19463,13 +19595,50 @@ fn test_lower_bytes_collect_rejects_empty_result() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("bytes collect should reject empty binary results");
+    .expect("bytes collect should accept empty list results");
 
-    assert!(
-        err.to_string()
-            .contains("bytes collect requires a non-empty binary result"),
-        "unexpected error: {err}"
-    );
+    assert_program_returns_constant(&result.program, 0, "empty list");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("bytes collect empty list output consumed by bytes length should compile");
+
+    let builder_scenarios: Vec<(&str, Vec<&[u8]>, Option<&[u8]>)> = vec![
+        ("empty binary item", vec![&[][..]], None),
+        ("empty separator", vec![&[][..], &[][..]], Some(&[][..])),
+    ];
+
+    for (index, (context, items, separator)) in builder_scenarios.into_iter().enumerate() {
+        let bytes_collect_decl = DeclId::new(253 + index * 2);
+        let bytes_length_decl = DeclId::new(254 + index * 2);
+        let hir = make_binary_list_builder_collect_then_length_program(
+            bytes_collect_decl,
+            bytes_length_decl,
+            &items,
+            separator,
+        );
+        let decl_names = HashMap::from([
+            (bytes_collect_decl, "bytes collect".to_string()),
+            (bytes_length_decl, "bytes length".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("bytes collect should accept {context}: {err}"));
+
+        assert_program_returns_constant(&result.program, 0, context);
+        assert_no_runtime_list_operations(&result.program, context);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!(
+                    "bytes collect {context} output consumed by bytes length should compile: {err}"
+                )
+            });
+    }
 }
 
 fn make_bytes_split_collect_then_starts_with_program(

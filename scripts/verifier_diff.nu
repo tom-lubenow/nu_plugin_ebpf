@@ -36109,6 +36109,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-binary-bytes-collect-empty-length"
+        category: "language-core"
+        tags: [binary bytes collect empty length]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [0x[]] | bytes collect | bytes length'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-binary-list-sort-collect"
         category: "language-core"
         tags: [binary list sort bytes collect]

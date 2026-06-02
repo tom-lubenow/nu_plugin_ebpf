@@ -3797,12 +3797,6 @@ impl<'a> HirToMirLowering<'a> {
                     }
                     output.extend_from_slice(val);
                 }
-                if output.is_empty() {
-                    return Err(CompileError::UnsupportedInstruction(
-                        "bytes collect requires a non-empty binary result in eBPF".into(),
-                    ));
-                }
-
                 self.reset_call_result_metadata(src_dst);
                 self.lower_constant_value(
                     src_dst,
