@@ -10676,6 +10676,147 @@ fn make_bits_binary_bytes_list_collect_starts_with_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_bits_not_binary_bytes_starts_with_program(
+    bits_decl: DeclId,
+    starts_with_decl: DeclId,
+    input: &[u8],
+    prefix: &[u8],
+    signed: bool,
+    number_bytes: Option<i64>,
+) -> HirProgram {
+    let mut stmts = vec![HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::Binary(input.to_vec()),
+    }];
+    let named = if let Some(number_bytes) = number_bytes {
+        stmts.push(HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: HirLiteral::Int(number_bytes),
+        });
+        vec![(b"number-bytes".to_vec(), RegId::new(1))]
+    } else {
+        Vec::new()
+    };
+    stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(2),
+        lit: HirLiteral::Binary(prefix.to_vec()),
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: {
+                stmts.push(HirStmt::Call {
+                    decl_id: bits_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        named,
+                        flags: signed.then(|| b"signed".to_vec()).into_iter().collect(),
+                        ..HirCallArgs::default()
+                    },
+                });
+                stmts.push(HirStmt::Call {
+                    decl_id: starts_with_decl,
+                    src_dst: RegId::new(4),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(3)),
+                        positional: vec![RegId::new(2)],
+                        ..HirCallArgs::default()
+                    },
+                });
+                stmts
+            },
+            terminator: HirTerminator::Return { src: RegId::new(4) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 5,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_bits_not_binary_bytes_list_collect_starts_with_program(
+    bits_decl: DeclId,
+    collect_decl: DeclId,
+    starts_with_decl: DeclId,
+    values: Vec<Vec<u8>>,
+    prefix: &[u8],
+    signed: bool,
+    number_bytes: Option<i64>,
+) -> HirProgram {
+    let mut stmts = vec![HirStmt::LoadValue {
+        dst: RegId::new(0),
+        val: Box::new(Value::list(
+            values
+                .into_iter()
+                .map(|value| Value::binary(value, Span::test_data()))
+                .collect(),
+            Span::test_data(),
+        )),
+    }];
+    let named = if let Some(number_bytes) = number_bytes {
+        stmts.push(HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: HirLiteral::Int(number_bytes),
+        });
+        vec![(b"number-bytes".to_vec(), RegId::new(1))]
+    } else {
+        Vec::new()
+    };
+    stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(2),
+        lit: HirLiteral::Binary(prefix.to_vec()),
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: {
+                stmts.push(HirStmt::Call {
+                    decl_id: bits_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        named,
+                        flags: signed.then(|| b"signed".to_vec()).into_iter().collect(),
+                        ..HirCallArgs::default()
+                    },
+                });
+                stmts.push(HirStmt::Call {
+                    decl_id: collect_decl,
+                    src_dst: RegId::new(4),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(3)),
+                        ..HirCallArgs::default()
+                    },
+                });
+                stmts.push(HirStmt::Call {
+                    decl_id: starts_with_decl,
+                    src_dst: RegId::new(5),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(4)),
+                        positional: vec![RegId::new(2)],
+                        ..HirCallArgs::default()
+                    },
+                });
+                stmts
+            },
+            terminator: HirTerminator::Return { src: RegId::new(5) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 6,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_bits_not_program(bits_decl: DeclId, input: i64, signed: bool) -> HirProgram {
     make_bits_not_program_with_number_bytes(bits_decl, input, signed, None)
 }
@@ -12402,6 +12543,31 @@ fn test_lower_bits_not_signed_on_known_integer_inputs() {
 }
 
 #[test]
+fn test_lower_bits_not_signed_accepts_number_bytes_on_known_integer_inputs() {
+    for (offset, number_bytes) in [1, 2, 4, 8].into_iter().enumerate() {
+        let bits_decl = DeclId::new(31310 + offset);
+        let hir = make_bits_not_program_with_number_bytes(bits_decl, 4, true, Some(number_bytes));
+        let decl_names = HashMap::from([(bits_decl, "bits not".to_string())]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("bits not --signed --number-bytes {number_bytes} should lower: {err}")
+        });
+
+        assert_program_returns_constant(&result.program, -5, "bits not --signed --number-bytes");
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .expect("bits not --signed --number-bytes should compile through codegen");
+    }
+}
+
+#[test]
 fn test_lower_bits_not_signed_on_known_integer_lists() {
     let bits_decl = DeclId::new(315);
     let sum_decl = DeclId::new(316);
@@ -12548,6 +12714,86 @@ fn test_lower_bits_not_default_on_known_integer_lists() {
 }
 
 #[test]
+fn test_lower_bits_not_on_known_binary_inputs() {
+    for (offset, input, signed, number_bytes, expected_prefix) in [
+        (
+            0,
+            vec![0xff, 0x00, 0x7f],
+            false,
+            None,
+            vec![0x00, 0xff, 0x80],
+        ),
+        (1, vec![0x0f, 0xf0], true, None, vec![0xf0, 0x0f]),
+        (2, vec![0xaa, 0x55], false, Some(8), vec![0x55, 0xaa]),
+        (3, vec![0xc3], true, Some(8), vec![0x3c]),
+    ] {
+        let bits_decl = DeclId::new(31740 + offset);
+        let starts_with_decl = DeclId::new(31750 + offset);
+        let hir = make_bits_not_binary_bytes_starts_with_program(
+            bits_decl,
+            starts_with_decl,
+            &input,
+            &expected_prefix,
+            signed,
+            number_bytes,
+        );
+        let decl_names = HashMap::from([
+            (bits_decl, "bits not".to_string()),
+            (starts_with_decl, "bytes starts-with".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("bits not should lower binary input: {err}"));
+
+        assert_program_returns_constant(&result.program, 1, "bits not binary");
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .expect("bits not binary output should compile through codegen");
+    }
+}
+
+#[test]
+fn test_lower_bits_not_on_known_binary_lists() {
+    let bits_decl = DeclId::new(31760);
+    let collect_decl = DeclId::new(31761);
+    let starts_with_decl = DeclId::new(31762);
+    let hir = make_bits_not_binary_bytes_list_collect_starts_with_program(
+        bits_decl,
+        collect_decl,
+        starts_with_decl,
+        vec![vec![0xff, 0x00], vec![0x7f, 0x80]],
+        &[0x00, 0xff, 0x80, 0x7f],
+        true,
+        Some(8),
+    );
+    let decl_names = HashMap::from([
+        (bits_decl, "bits not".to_string()),
+        (collect_decl, "bytes collect".to_string()),
+        (starts_with_decl, "bytes starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bits not should lower compile-time known binary-list input");
+
+    assert_program_returns_constant(&result.program, 1, "bits not binary list");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("bits not binary-list output should compile through codegen");
+}
+
+#[test]
 fn test_lower_bits_not_rejects_unsupported_number_bytes() {
     let bits_decl = DeclId::new(3174);
     let hir = make_bits_not_program_with_number_bytes(bits_decl, 4, false, Some(8));
@@ -12566,6 +12812,40 @@ fn test_lower_bits_not_rejects_unsupported_number_bytes() {
     assert!(
         err.to_string()
             .contains("bits not masked integer mode supports --number-bytes 1, 2, or 4"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_bits_not_binary_rejects_unsupported_number_bytes() {
+    let bits_decl = DeclId::new(31741);
+    let starts_with_decl = DeclId::new(31742);
+    let hir = make_bits_not_binary_bytes_starts_with_program(
+        bits_decl,
+        starts_with_decl,
+        &[0xff],
+        &[0x00],
+        false,
+        Some(3),
+    );
+    let decl_names = HashMap::from([
+        (bits_decl, "bits not".to_string()),
+        (starts_with_decl, "bytes starts-with".to_string()),
+    ]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("bits not binary input should reject unsupported --number-bytes values");
+
+    assert!(
+        err.to_string()
+            .contains("bits not binary input supports --number-bytes 1, 2, 4, or 8"),
         "unexpected error: {err}"
     );
 }

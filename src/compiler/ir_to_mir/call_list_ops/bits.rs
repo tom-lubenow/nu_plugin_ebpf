@@ -97,6 +97,10 @@ impl<'a> HirToMirLowering<'a> {
         output
     }
 
+    fn bits_not_binary_bytes_output(input: &[u8]) -> Vec<u8> {
+        input.iter().map(|byte| !byte).collect()
+    }
+
     fn bits_shift_op(cmd_name: &str, mode: BitsShiftMode) -> BinOpKind {
         match cmd_name {
             "bits shl" => BinOpKind::Shl,
@@ -258,14 +262,8 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
-    fn bits_not_mode(&self, cmd_name: &str) -> Result<BitsNotMode, CompileError> {
-        if !self.positional_args.is_empty() || !self.parser_info_args.is_empty() {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "{cmd_name} accepts no positional or parser-info arguments in eBPF"
-            )));
-        }
-
-        let signed = match self.named_flags.as_slice() {
+    fn bits_not_signed_flag(&self, cmd_name: &str) -> Result<bool, CompileError> {
+        Ok(match self.named_flags.as_slice() {
             [] => false,
             [flag] if matches!(flag.as_str(), "signed" | "s") => true,
             _ => {
@@ -273,16 +271,10 @@ impl<'a> HirToMirLowering<'a> {
                     "{cmd_name} supports only --signed or --number-bytes for integer input in eBPF"
                 )));
             }
-        };
-        if signed {
-            if !self.named_args.is_empty() {
-                return Err(CompileError::UnsupportedInstruction(format!(
-                    "{cmd_name} --signed does not support named arguments in eBPF"
-                )));
-            }
-            return Ok(BitsNotMode::Signed);
-        }
+        })
+    }
 
+    fn bits_not_number_bytes_arg(&self, cmd_name: &str) -> Result<Option<i64>, CompileError> {
         let mut number_bytes_reg = None;
         for (name, (_vreg, reg)) in &self.named_args {
             match name.as_str() {
@@ -295,14 +287,14 @@ impl<'a> HirToMirLowering<'a> {
                 }
                 _ => {
                     return Err(CompileError::UnsupportedInstruction(format!(
-                        "{cmd_name} supports only --number-bytes for masked integer input in eBPF"
+                        "{cmd_name} supports only --number-bytes for bits-not width control in eBPF"
                     )));
                 }
             }
         }
 
         let Some(reg) = number_bytes_reg else {
-            return Ok(BitsNotMode::Auto);
+            return Ok(None);
         };
         let number_bytes = {
             let meta = self.get_metadata(reg).ok_or_else(|| {
@@ -316,6 +308,32 @@ impl<'a> HirToMirLowering<'a> {
                 ))
             })?
         };
+        Ok(Some(number_bytes))
+    }
+
+    fn bits_not_mode(&self, cmd_name: &str) -> Result<BitsNotMode, CompileError> {
+        if !self.positional_args.is_empty() || !self.parser_info_args.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} accepts no positional or parser-info arguments in eBPF"
+            )));
+        }
+
+        let signed = self.bits_not_signed_flag(cmd_name)?;
+        let number_bytes = self.bits_not_number_bytes_arg(cmd_name)?;
+        if signed {
+            if let Some(number_bytes) = number_bytes {
+                if !matches!(number_bytes, 1 | 2 | 4 | 8) {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{cmd_name} --signed supports --number-bytes 1, 2, 4, or 8 in eBPF; got {number_bytes}"
+                    )));
+                }
+            }
+            return Ok(BitsNotMode::Signed);
+        }
+
+        let Some(number_bytes) = number_bytes else {
+            return Ok(BitsNotMode::Auto);
+        };
 
         let mask = match number_bytes {
             1 => 0xff,
@@ -328,6 +346,24 @@ impl<'a> HirToMirLowering<'a> {
             }
         };
         Ok(BitsNotMode::Masked { mask })
+    }
+
+    fn validate_bits_not_binary_flags(&self, cmd_name: &str) -> Result<(), CompileError> {
+        if !self.positional_args.is_empty() || !self.parser_info_args.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} accepts no positional or parser-info arguments in eBPF"
+            )));
+        }
+
+        self.bits_not_signed_flag(cmd_name)?;
+        if let Some(number_bytes) = self.bits_not_number_bytes_arg(cmd_name)? {
+            if !matches!(number_bytes, 1 | 2 | 4 | 8) {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{cmd_name} binary input supports --number-bytes 1, 2, 4, or 8 in eBPF; got {number_bytes}"
+                )));
+            }
+        }
+        Ok(())
     }
 
     fn bits_not_output(cmd_name: &str, input: i64, mode: BitsNotMode) -> Result<i64, CompileError> {
@@ -1520,20 +1556,67 @@ impl<'a> HirToMirLowering<'a> {
             dst_vreg
         };
 
-        let mode = self.bits_not_mode(cmd_name)?;
-
         let input_reg = input_reg.ok_or_else(|| {
             CompileError::UnsupportedInstruction(format!(
-                "{cmd_name} requires integer or integer-list pipeline input in eBPF"
+                "{cmd_name} requires integer, binary, integer-list, or binary-list pipeline input in eBPF"
             ))
         })?;
         let input_meta = self.get_metadata(input_reg).cloned().ok_or_else(|| {
             CompileError::UnsupportedInstruction(format!(
-                "{cmd_name} requires tracked integer or integer-list input in eBPF"
+                "{cmd_name} requires tracked integer, binary, integer-list, or binary-list input in eBPF"
             ))
         })?;
 
         if let Some(nu_protocol::Value::List { vals, .. }) = input_meta.constant_value.clone() {
+            if !vals.is_empty()
+                && vals
+                    .iter()
+                    .all(|value| matches!(value, nu_protocol::Value::Binary { .. }))
+            {
+                self.validate_bits_not_binary_flags(cmd_name)?;
+                let output = vals
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, value)| {
+                        let nu_protocol::Value::Binary { val, .. } = value else {
+                            return Err(CompileError::UnsupportedInstruction(format!(
+                                "{cmd_name} requires binary list items in eBPF; item {index} has type {}",
+                                value.get_type()
+                            )));
+                        };
+                        Ok(nu_protocol::Value::binary(
+                            Self::bits_not_binary_bytes_output(&val),
+                            nu_protocol::Span::unknown(),
+                        ))
+                    })
+                    .collect::<Result<Vec<_>, CompileError>>()?;
+                let output_len = output
+                    .first()
+                    .and_then(|value| match value {
+                        nu_protocol::Value::Binary { val, .. } => Some(val.len()),
+                        _ => None,
+                    })
+                    .unwrap_or(0);
+                let equal_non_empty_output = output_len > 0
+                    && output.iter().all(|value| match value {
+                        nu_protocol::Value::Binary { val, .. } => val.len() == output_len,
+                        _ => false,
+                    });
+                if !equal_non_empty_output {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{cmd_name} binary list output requires non-empty equal-length binary items in eBPF"
+                    )));
+                }
+
+                self.reset_call_result_metadata(src_dst);
+                self.lower_constant_value(
+                    src_dst,
+                    &nu_protocol::Value::list(output, nu_protocol::Span::unknown()),
+                )?;
+                return Ok(());
+            }
+
+            let mode = self.bits_not_mode(cmd_name)?;
             if vals.len() > MAX_BITS_STACK_LIST_CAPACITY {
                 return Err(CompileError::UnsupportedInstruction(format!(
                     "{cmd_name} output exceeds stack-backed numeric list capacity {MAX_BITS_STACK_LIST_CAPACITY} in eBPF"
@@ -1568,6 +1651,18 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(());
         }
 
+        if let Some(nu_protocol::Value::Binary { val, .. }) = input_meta.constant_value.as_ref() {
+            self.validate_bits_not_binary_flags(cmd_name)?;
+            let output = Self::bits_not_binary_bytes_output(val);
+            self.reset_call_result_metadata(src_dst);
+            self.lower_constant_value(
+                src_dst,
+                &nu_protocol::Value::binary(output, nu_protocol::Span::unknown()),
+            )?;
+            return Ok(());
+        }
+
+        let mode = self.bits_not_mode(cmd_name)?;
         if let Some((_input_slot, max_len)) = input_meta.list_buffer {
             if mode == BitsNotMode::Auto {
                 return Err(CompileError::UnsupportedInstruction(format!(

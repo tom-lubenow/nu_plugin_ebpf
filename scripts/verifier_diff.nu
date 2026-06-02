@@ -35533,6 +35533,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-scalar-bits-not-binary-bytes"
+        category: "language-core"
+        tags: [scalar binary bits "not" signed number-bytes]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  (0x[ff 00 7f] | bits not | bytes starts-with 0x[00 ff 80]) and (0x[aa 55] | bits not --number-bytes 8 | bytes starts-with 0x[55 aa]) and (0x[c3] | bits not --signed --number-bytes 8 | bytes starts-with 0x[3c])'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-bits-not-default"
         category: "language-core"
         tags: [aggregate list bits "not"]
