@@ -349,6 +349,103 @@ impl<'a> HirToMirLowering<'a> {
         Ok(())
     }
 
+    fn lower_seq_constant(&mut self, src_dst: RegId) -> Result<(), CompileError> {
+        const MAX_SEQ_STACK_LIST_CAPACITY: usize = 60;
+
+        if self.pipeline_input.is_some() || self.pipeline_input_reg.is_some() {
+            return Err(CompileError::UnsupportedInstruction(
+                "seq does not accept pipeline input in eBPF".into(),
+            ));
+        }
+        if !self.named_flags.is_empty() || !self.named_args.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(
+                "seq does not accept named flags or arguments in eBPF".into(),
+            ));
+        }
+        if !(1..=3).contains(&self.positional_args.len()) {
+            return Err(CompileError::UnsupportedInstruction(
+                "seq supports one to three integer arguments in eBPF".into(),
+            ));
+        }
+
+        let args = self
+            .positional_args
+            .iter()
+            .map(|(_, reg)| self.seq_integer_arg(*reg))
+            .collect::<Result<Vec<_>, _>>()?;
+        let values = match args.as_slice() {
+            [value] => vec![nu_protocol::Value::int(*value, Span::unknown())],
+            [start, end] => Self::seq_integer_values(*start, 1, *end, MAX_SEQ_STACK_LIST_CAPACITY)?,
+            [start, step, end] => {
+                Self::seq_integer_values(*start, *step, *end, MAX_SEQ_STACK_LIST_CAPACITY)?
+            }
+            _ => unreachable!("seq argument count was validated"),
+        };
+
+        self.lower_constant_value(src_dst, &nu_protocol::Value::list(values, Span::unknown()))
+    }
+
+    fn seq_integer_arg(&self, reg: RegId) -> Result<i64, CompileError> {
+        self.get_metadata(reg)
+            .and_then(|meta| {
+                meta.literal_int
+                    .or_else(|| match meta.constant_value.as_ref() {
+                        Some(nu_protocol::Value::Int { val, .. }) => Some(*val),
+                        _ => None,
+                    })
+            })
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "seq arguments must be compile-time known integers in eBPF".into(),
+                )
+            })
+    }
+
+    fn seq_integer_values(
+        start: i64,
+        step: i64,
+        end: i64,
+        max_len: usize,
+    ) -> Result<Vec<nu_protocol::Value>, CompileError> {
+        if step == 0 {
+            return Ok(Vec::new());
+        }
+
+        let mut values = Vec::new();
+        let mut current = start;
+        loop {
+            let in_range = if step > 0 {
+                current <= end
+            } else {
+                current >= end
+            };
+            if !in_range {
+                break;
+            }
+            if values.len() >= max_len {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "seq output exceeds stack-backed numeric list capacity {max_len} in eBPF"
+                )));
+            }
+            values.push(nu_protocol::Value::int(current, Span::unknown()));
+
+            let next = (current as i128) + (step as i128);
+            let next_is_in_range = if step > 0 {
+                next <= end as i128
+            } else {
+                next >= end as i128
+            };
+            if !next_is_in_range {
+                break;
+            }
+            current = i64::try_from(next).map_err(|_| {
+                CompileError::UnsupportedInstruction("seq overflows i64 in eBPF".into())
+            })?;
+        }
+
+        Ok(values)
+    }
+
     pub(super) fn lower_call(
         &mut self,
         decl_id: DeclId,
@@ -566,6 +663,10 @@ impl<'a> HirToMirLowering<'a> {
                 }
                 self.needs_timestamp_map = true;
                 self.emit(MirInst::StopTimer { dst: dst_vreg });
+            }
+
+            "seq" => {
+                self.lower_seq_constant(src_dst)?;
             }
 
             "random int" => {

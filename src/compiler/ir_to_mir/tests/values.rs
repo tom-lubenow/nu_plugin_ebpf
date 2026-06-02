@@ -226,6 +226,103 @@ fn make_numeric_list_call_then_length_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_seq_pipeline_call_program(
+    seq_decl: DeclId,
+    consumer_decl: DeclId,
+    seq_args: &[i64],
+) -> HirProgram {
+    let mut stmts = Vec::new();
+    let mut positional = Vec::new();
+    for (index, value) in seq_args.iter().enumerate() {
+        let reg = RegId::new(u32::try_from(index).expect("test index fits in u32"));
+        stmts.push(HirStmt::LoadLiteral {
+            dst: reg,
+            lit: HirLiteral::Int(*value),
+        });
+        positional.push(reg);
+    }
+
+    let seq_reg = RegId::new(u32::try_from(seq_args.len()).expect("test length fits in u32"));
+    let consumer_reg = RegId::new(
+        u32::try_from(seq_args.len())
+            .expect("test length fits in u32")
+            .saturating_add(1),
+    );
+    stmts.push(HirStmt::Call {
+        decl_id: seq_decl,
+        src_dst: seq_reg,
+        args: HirCallArgs {
+            positional,
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: consumer_decl,
+        src_dst: consumer_reg,
+        args: HirCallArgs {
+            pipeline_input: Some(seq_reg),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: consumer_reg },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: u32::try_from(seq_args.len())
+            .expect("test length fits in u32")
+            .saturating_add(2),
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_seq_program(seq_decl: DeclId, seq_args: &[HirLiteral]) -> HirProgram {
+    let mut stmts = Vec::new();
+    let mut positional = Vec::new();
+    for (index, lit) in seq_args.iter().enumerate() {
+        let reg = RegId::new(u32::try_from(index).expect("test index fits in u32"));
+        stmts.push(HirStmt::LoadLiteral {
+            dst: reg,
+            lit: lit.clone(),
+        });
+        positional.push(reg);
+    }
+
+    let seq_reg = RegId::new(u32::try_from(seq_args.len()).expect("test length fits in u32"));
+    stmts.push(HirStmt::Call {
+        decl_id: seq_decl,
+        src_dst: seq_reg,
+        args: HirCallArgs {
+            positional,
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: seq_reg },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: u32::try_from(seq_args.len())
+            .expect("test length fits in u32")
+            .saturating_add(1),
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_numeric_list_get_program(get_decl: DeclId, get_index: i64) -> HirProgram {
     let func = HirFunction {
         blocks: vec![HirBlock {
@@ -9737,6 +9834,163 @@ fn test_lower_math_sum_on_numeric_list_accumulates_items() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("math sum should compile through codegen");
+}
+
+#[test]
+fn test_lower_seq_two_arg_integer_range_feeds_math_sum() {
+    let seq_decl = DeclId::new(512);
+    let sum_decl = DeclId::new(513);
+    let hir = make_seq_pipeline_call_program(seq_decl, sum_decl, &[1, 5]);
+    let decl_names = HashMap::from([
+        (seq_decl, "seq".to_string()),
+        (sum_decl, "math sum".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("seq two-argument integer range should feed math sum");
+
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+    assert!(
+        instructions
+            .iter()
+            .any(|inst| matches!(inst, MirInst::ListNew { max_len: 5, .. })),
+        "expected seq 1 5 to allocate a five-item numeric list"
+    );
+    assert!(
+        instructions
+            .iter()
+            .any(|inst| matches!(inst, MirInst::ListLen { .. })),
+        "expected math sum to consume seq output as a stack-backed list"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("seq output consumed by math sum should compile through codegen");
+}
+
+#[test]
+fn test_lower_seq_negative_step_integer_range_feeds_math_sum() {
+    let seq_decl = DeclId::new(514);
+    let sum_decl = DeclId::new(515);
+    let hir = make_seq_pipeline_call_program(seq_decl, sum_decl, &[5, -2, 1]);
+    let decl_names = HashMap::from([
+        (seq_decl, "seq".to_string()),
+        (sum_decl, "math sum".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("seq negative-step integer range should feed math sum");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::ListNew { max_len: 3, .. })),
+        "expected seq 5 -2 1 to allocate a three-item numeric list"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("negative-step seq output consumed by math sum should compile through codegen");
+}
+
+#[test]
+fn test_lower_seq_zero_step_returns_empty_numeric_list() {
+    let seq_decl = DeclId::new(516);
+    let length_decl = DeclId::new(517);
+    let hir = make_seq_pipeline_call_program(seq_decl, length_decl, &[1, 0, 5]);
+    let decl_names = HashMap::from([
+        (seq_decl, "seq".to_string()),
+        (length_decl, "length".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("seq zero-step range should materialize an empty numeric list");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::ListNew { max_len: 0, .. })),
+        "expected seq zero-step range to allocate an empty numeric list"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("empty seq output consumed by length should compile through codegen");
+}
+
+#[test]
+fn test_lower_seq_rejects_output_over_capacity() {
+    let seq_decl = DeclId::new(518);
+    let hir = make_seq_program(seq_decl, &[HirLiteral::Int(1), HirLiteral::Int(61)]);
+    let decl_names = HashMap::from([(seq_decl, "seq".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("seq output over the stack-list capacity should be rejected");
+
+    assert!(
+        err.to_string()
+            .contains("seq output exceeds stack-backed numeric list capacity 60"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_seq_rejects_non_integer_arguments() {
+    let seq_decl = DeclId::new(519);
+    let hir = make_seq_program(seq_decl, &[HirLiteral::String(b"5".to_vec())]);
+    let decl_names = HashMap::from([(seq_decl, "seq".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("seq non-integer arguments should be rejected");
+
+    assert!(
+        err.to_string()
+            .contains("seq arguments must be compile-time known integers"),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]
