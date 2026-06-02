@@ -385,6 +385,60 @@ impl<'a> HirToMirLowering<'a> {
         self.lower_constant_value(src_dst, &nu_protocol::Value::list(values, Span::unknown()))
     }
 
+    fn lower_seq_char_constant(&mut self, src_dst: RegId) -> Result<(), CompileError> {
+        const MAX_SEQ_STRING_LIST_CAPACITY: usize = 60;
+
+        if self.pipeline_input.is_some() || self.pipeline_input_reg.is_some() {
+            return Err(CompileError::UnsupportedInstruction(
+                "seq char does not accept pipeline input in eBPF".into(),
+            ));
+        }
+        if !self.named_flags.is_empty() || !self.named_args.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(
+                "seq char does not accept named flags or arguments in eBPF".into(),
+            ));
+        }
+        if self.positional_args.len() != 2 {
+            return Err(CompileError::UnsupportedInstruction(
+                "seq char supports exactly two ASCII character arguments in eBPF".into(),
+            ));
+        }
+
+        let start = self.seq_char_arg(self.positional_args[0].1)?;
+        let end = self.seq_char_arg(self.positional_args[1].1)?;
+        let len = usize::from(start.abs_diff(end)) + 1;
+        if len > MAX_SEQ_STRING_LIST_CAPACITY {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "seq char output exceeds fixed string-list capacity {MAX_SEQ_STRING_LIST_CAPACITY}"
+            )));
+        }
+
+        let values = if start <= end {
+            (start..=end).collect::<Vec<_>>()
+        } else {
+            (end..=start).rev().collect::<Vec<_>>()
+        }
+        .into_iter()
+        .map(|byte| {
+            nu_protocol::Value::string(char::from(byte).to_string(), nu_protocol::Span::unknown())
+        })
+        .collect();
+
+        self.lower_constant_value(src_dst, &nu_protocol::Value::list(values, Span::unknown()))
+    }
+
+    fn seq_char_arg(&self, reg: RegId) -> Result<u8, CompileError> {
+        let value = self.literal_string_arg(reg, "seq char")?;
+        let bytes = value.as_bytes();
+        if bytes.len() == 1 && bytes[0].is_ascii() {
+            Ok(bytes[0])
+        } else {
+            Err(CompileError::UnsupportedInstruction(
+                "seq char requires individual ASCII character arguments in eBPF".into(),
+            ))
+        }
+    }
+
     fn seq_integer_arg(&self, reg: RegId) -> Result<i64, CompileError> {
         self.get_metadata(reg)
             .and_then(|meta| {
@@ -667,6 +721,10 @@ impl<'a> HirToMirLowering<'a> {
 
             "seq" => {
                 self.lower_seq_constant(src_dst)?;
+            }
+
+            "seq char" => {
+                self.lower_seq_char_constant(src_dst)?;
             }
 
             "random int" => {

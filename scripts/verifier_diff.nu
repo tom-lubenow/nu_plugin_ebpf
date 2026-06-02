@@ -35217,6 +35217,33 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-seq-char-join"
+        category: "language-core"
+        tags: [aggregate list seq char str join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  seq char e a | str join "-" | str starts-with "e-d-c-b-a"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-seq-char-over-capacity-reject"
+        category: "language-core"
+        tags: [aggregate list seq char reject]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  seq char A ~ | str join ""'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "seq char output exceeds fixed string-list capacity 60"
+    }
+    {
         name: "core-list-math-product"
         category: "language-core"
         tags: [aggregate list math product]

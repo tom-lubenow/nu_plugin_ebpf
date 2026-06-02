@@ -445,6 +445,76 @@ fn make_seq_program(seq_decl: DeclId, seq_args: &[HirLiteral]) -> HirProgram {
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_seq_char_join_then_starts_with_program(
+    seq_char_decl: DeclId,
+    join_decl: DeclId,
+    starts_with_decl: DeclId,
+    start: &str,
+    end: &str,
+    separator: &str,
+    expected_prefix: &str,
+) -> HirProgram {
+    let stmts = vec![
+        HirStmt::LoadLiteral {
+            dst: RegId::new(0),
+            lit: HirLiteral::String(start.as_bytes().to_vec()),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: HirLiteral::String(end.as_bytes().to_vec()),
+        },
+        HirStmt::Call {
+            decl_id: seq_char_decl,
+            src_dst: RegId::new(2),
+            args: HirCallArgs {
+                positional: vec![RegId::new(0), RegId::new(1)],
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(3),
+            lit: HirLiteral::String(separator.as_bytes().to_vec()),
+        },
+        HirStmt::Call {
+            decl_id: join_decl,
+            src_dst: RegId::new(4),
+            args: HirCallArgs {
+                positional: vec![RegId::new(3)],
+                pipeline_input: Some(RegId::new(2)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(5),
+            lit: HirLiteral::String(expected_prefix.as_bytes().to_vec()),
+        },
+        HirStmt::Call {
+            decl_id: starts_with_decl,
+            src_dst: RegId::new(6),
+            args: HirCallArgs {
+                positional: vec![RegId::new(5)],
+                pipeline_input: Some(RegId::new(4)),
+                ..HirCallArgs::default()
+            },
+        },
+    ];
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(6) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 7,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_numeric_list_get_program(get_decl: DeclId, get_index: i64) -> HirProgram {
     let func = HirFunction {
         blocks: vec![HirBlock {
@@ -10260,6 +10330,117 @@ fn test_lower_seq_negative_step_integer_range_feeds_math_sum() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("negative-step seq output consumed by math sum should compile through codegen");
+}
+
+#[test]
+fn test_lower_seq_char_range_feeds_str_join() {
+    let scenarios = [
+        ("ascending", "a", "e", "", "abcde"),
+        ("descending", "e", "a", "-", "e-d-c-b-a"),
+    ];
+
+    for (index, (context, start, end, separator, expected)) in scenarios.into_iter().enumerate() {
+        let base_decl = 700 + index * 3;
+        let seq_char_decl = DeclId::new(base_decl);
+        let join_decl = DeclId::new(base_decl + 1);
+        let starts_with_decl = DeclId::new(base_decl + 2);
+        let hir = make_seq_char_join_then_starts_with_program(
+            seq_char_decl,
+            join_decl,
+            starts_with_decl,
+            start,
+            end,
+            separator,
+            expected,
+        );
+        let decl_names = HashMap::from([
+            (seq_char_decl, "seq char".to_string()),
+            (join_decl, "str join".to_string()),
+            (starts_with_decl, "str starts-with".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("seq char {context} range should lower: {err}"));
+
+        assert!(
+            result
+                .program
+                .main
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .any(|inst| matches!(
+                    inst,
+                    MirInst::StringAppend {
+                        val_type: StringAppendType::Literal { bytes },
+                        ..
+                    } if bytes.starts_with(format!("{expected}\0").as_bytes())
+                )),
+            "expected seq char {context} range to feed str join with {expected}"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("seq char {context} range should compile: {err}"));
+    }
+}
+
+#[test]
+fn test_lower_seq_char_rejects_invalid_arguments() {
+    let scenarios = [
+        (
+            "multi-character start",
+            vec![
+                HirLiteral::String(b"aa".to_vec()),
+                HirLiteral::String(b"c".to_vec()),
+            ],
+            "seq char requires individual ASCII character arguments",
+        ),
+        (
+            "non-ascii start",
+            vec![
+                HirLiteral::String("é".as_bytes().to_vec()),
+                HirLiteral::String(b"z".to_vec()),
+            ],
+            "seq char requires individual ASCII character arguments",
+        ),
+        (
+            "over capacity",
+            vec![
+                HirLiteral::String(b"A".to_vec()),
+                HirLiteral::String(b"~".to_vec()),
+            ],
+            "seq char output exceeds fixed string-list capacity 60",
+        ),
+    ];
+
+    for (index, (context, args, expected_error)) in scenarios.into_iter().enumerate() {
+        let seq_char_decl = DeclId::new(706 + index);
+        let hir = make_seq_program(seq_char_decl, &args);
+        let decl_names = HashMap::from([(seq_char_decl, "seq char".to_string())]);
+
+        let err = match lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        ) {
+            Ok(_) => panic!("seq char should reject {context}"),
+            Err(err) => err,
+        };
+
+        assert!(
+            err.to_string().contains(expected_error),
+            "unexpected error for {context}: {err}"
+        );
+    }
 }
 
 #[test]

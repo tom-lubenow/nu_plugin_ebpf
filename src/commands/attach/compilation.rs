@@ -48,6 +48,7 @@ const NU_CLOSURE_COMMANDS: &[&str] = &[
     "prepend",
     "char",
     "seq",
+    "seq char",
     "fill",
     "is-empty",
     "is-not-empty",
