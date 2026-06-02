@@ -35664,6 +35664,45 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-scalar-bits-rotate-number-bytes"
+        category: "language-core"
+        tags: [scalar bits rol ror number-bytes]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ((127 | bits rol 1 --number-bytes 1) == 254) and ((-65 | bits ror 1 --number-bytes 1) == -33) and ((1 | bits ror 32 --number-bytes 4) == 1)'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-list-bits-rotate-number-bytes"
+        category: "language-core"
+        tags: [aggregate list bits rol number-bytes]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ([127 128 -129] | bits rol 1 --number-bytes 1 | math sum) == 253'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-list-bits-rotate-number-bytes-runtime"
+        category: "language-core"
+        tags: [aggregate list bits ror number-bytes runtime]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ([(random int)] | bits ror 1 --number-bytes 1 | length) == 1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-scalar-bits-rotate-default-reject"
         category: "language-core"
         tags: [scalar bits rol reject]
@@ -35675,7 +35714,7 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "bits rol currently requires --signed --number-bytes 8"
+        error_contains: "bits rol default auto-width rotates are not supported"
     }
     {
         name: "core-null-length"

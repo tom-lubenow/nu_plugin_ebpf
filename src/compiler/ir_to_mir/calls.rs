@@ -4031,7 +4031,7 @@ impl<'a> HirToMirLowering<'a> {
             }
 
             "bits rol" | "bits ror" => {
-                self.lower_bits_rotate_signed_i64(&cmd_name, src_dst, dst_vreg, src_dst_had_value)?;
+                self.lower_bits_rotate(&cmd_name, src_dst, dst_vreg, src_dst_had_value)?;
             }
 
             "math median" => {
