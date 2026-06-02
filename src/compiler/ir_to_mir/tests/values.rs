@@ -18066,6 +18066,72 @@ fn make_bytes_pattern_transform_then_starts_with_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_bytes_pattern_transform_then_length_program(
+    transform_decl: DeclId,
+    length_decl: DeclId,
+    command: &str,
+    input: Vec<u8>,
+    pattern: Vec<u8>,
+    replacement: Option<Vec<u8>>,
+    flags: Vec<&str>,
+) -> HirProgram {
+    let mut stmts = vec![
+        HirStmt::LoadLiteral {
+            dst: RegId::new(0),
+            lit: HirLiteral::Binary(input),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: HirLiteral::Binary(pattern),
+        },
+    ];
+    let mut positional = vec![RegId::new(1)];
+    if command == "bytes replace" {
+        let replacement = replacement.expect("bytes replace requires replacement fixture data");
+        stmts.push(HirStmt::LoadLiteral {
+            dst: RegId::new(2),
+            lit: HirLiteral::Binary(replacement),
+        });
+        positional.push(RegId::new(2));
+    }
+    stmts.push(HirStmt::Call {
+        decl_id: transform_decl,
+        src_dst: RegId::new(3),
+        args: HirCallArgs {
+            positional,
+            pipeline_input: Some(RegId::new(0)),
+            flags: flags
+                .into_iter()
+                .map(|flag| flag.as_bytes().to_vec())
+                .collect(),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: length_decl,
+        src_dst: RegId::new(4),
+        args: HirCallArgs {
+            pipeline_input: Some(RegId::new(3)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(4) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 5,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 #[test]
 fn test_lower_bytes_remove_materializes_first_removed_binary() {
     let bytes_remove_decl = DeclId::new(233);
@@ -18187,6 +18253,39 @@ fn test_lower_bytes_remove_all_materializes_all_removed_binary() {
 }
 
 #[test]
+fn test_lower_bytes_remove_accepts_empty_result() {
+    let bytes_remove_decl = DeclId::new(644);
+    let bytes_length_decl = DeclId::new(645);
+    let hir = make_bytes_pattern_transform_then_length_program(
+        bytes_remove_decl,
+        bytes_length_decl,
+        "bytes remove",
+        vec![0x10],
+        vec![0x10],
+        None,
+        Vec::new(),
+    );
+    let decl_names = HashMap::from([
+        (bytes_remove_decl, "bytes remove".to_string()),
+        (bytes_length_decl, "bytes length".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bytes remove should lower empty binary results");
+
+    assert_program_returns_constant(&result.program, 0, "empty bytes remove length");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("empty bytes remove output consumed by bytes length should compile");
+}
+
+#[test]
 fn test_lower_bytes_replace_materializes_first_replaced_binary() {
     let bytes_replace_decl = DeclId::new(239);
     let bytes_starts_with_decl = DeclId::new(240);
@@ -18303,25 +18402,24 @@ fn test_lower_bytes_remove_rejects_empty_pattern() {
 }
 
 #[test]
-fn test_lower_bytes_replace_rejects_empty_result() {
+fn test_lower_bytes_replace_accepts_empty_result() {
     let bytes_replace_decl = DeclId::new(245);
-    let bytes_starts_with_decl = DeclId::new(246);
-    let hir = make_bytes_pattern_transform_then_starts_with_program(
+    let bytes_length_decl = DeclId::new(246);
+    let hir = make_bytes_pattern_transform_then_length_program(
         bytes_replace_decl,
-        bytes_starts_with_decl,
+        bytes_length_decl,
         "bytes replace",
         vec![0x10],
         vec![0x10],
         Some(Vec::new()),
         Vec::new(),
-        vec![0x10],
     );
     let decl_names = HashMap::from([
         (bytes_replace_decl, "bytes replace".to_string()),
-        (bytes_starts_with_decl, "bytes starts-with".to_string()),
+        (bytes_length_decl, "bytes length".to_string()),
     ]);
 
-    let err = lower_hir_to_mir_with_hints(
+    let result = lower_hir_to_mir_with_hints(
         &hir,
         None,
         &decl_names,
@@ -18329,13 +18427,11 @@ fn test_lower_bytes_replace_rejects_empty_result() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("bytes replace should reject empty binary results");
+    .expect("bytes replace should lower empty binary results");
 
-    assert!(
-        err.to_string()
-            .contains("bytes replace requires a non-empty binary result"),
-        "unexpected error: {err}"
-    );
+    assert_program_returns_constant(&result.program, 0, "empty bytes replace length");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("empty bytes replace output consumed by bytes length should compile");
 }
 
 fn make_bytes_collect_then_starts_with_program(

@@ -870,8 +870,8 @@ eBPF layout and verifier bounds are explicit:
 | `bytes build` | Compile-time known binary fragments and integer byte arguments, returning a binary value |
 | `bytes at` | Compile-time known binary or list<binary> input and unit-step range, returning a non-empty fixed binary slice or fixed list of non-empty equal-length binary slices |
 | `bytes add` | Compile-time known binary or list<binary> input/data with optional non-negative `--index` and `--end`, returning a non-empty fixed binary value or fixed list of non-empty equal-length binary values |
-| `bytes remove` | Compile-time known binary input and non-empty binary pattern with optional `--all` and `--end`, returning a non-empty fixed binary value |
-| `bytes replace` | Compile-time known binary input, non-empty binary pattern, and binary replacement with optional `--all`, returning a non-empty fixed binary value |
+| `bytes remove` | Compile-time known binary input and non-empty binary pattern with optional `--all` and `--end`, returning a binary value |
+| `bytes replace` | Compile-time known binary input, non-empty binary pattern, and binary replacement with optional `--all`, returning a binary value |
 | `bytes collect` | Compile-time known list of binary values and optional binary separator, returning a non-empty fixed binary value |
 | `bytes split` | Compile-time known binary input and non-empty binary/string separator, returning a fixed list of non-empty equal-length binary parts |
 | `str length` | Tracked strings and literal strings, returning the byte length tracked by the string buffer; compile-time known string-list input returns a numeric list, including `--grapheme-clusters` |

@@ -3730,12 +3730,6 @@ impl<'a> HirToMirLowering<'a> {
                     }
                 }
 
-                if output.is_empty() {
-                    return Err(CompileError::UnsupportedInstruction(format!(
-                        "{cmd_name} requires a non-empty binary result in eBPF"
-                    )));
-                }
-
                 self.reset_call_result_metadata(src_dst);
                 self.lower_constant_value(
                     src_dst,

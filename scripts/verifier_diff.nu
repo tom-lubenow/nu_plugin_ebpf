@@ -36057,6 +36057,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-binary-bytes-remove-empty-length"
+        category: "language-core"
+        tags: [binary bytes remove empty length]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  0x[10] | bytes remove 0x[10] | bytes length'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-binary-bytes-replace-starts-with"
         category: "language-core"
         tags: [binary bytes replace starts-with]
@@ -36064,6 +36077,19 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  0x[10 aa 10 bb 10] | bytes replace --all 0x[10] 0x[a0] | bytes starts-with 0x[a0 aa a0]'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-binary-bytes-replace-empty-length"
+        category: "language-core"
+        tags: [binary bytes replace empty length]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  0x[10] | bytes replace 0x[10] 0x[] | bytes length'
             '}'
         ]
         local: "accept"
