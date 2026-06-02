@@ -2713,6 +2713,14 @@ fn test_helpers_with_reserved_zero_flags() {
         ))
     );
     assert_eq!(
+        BpfHelper::MsgPullData.scalar_arg_greater_than_requirements(),
+        &[ScalarArgGreaterThanRequirement {
+            arg_idx: 2,
+            lower_bound_arg_idx: 1,
+            message: "helper 'bpf_msg_pull_data' requires arg2 end to be greater than arg1 start"
+        }]
+    );
+    assert_eq!(
         BpfHelper::MsgPushData.zero_scalar_arg_requirement(),
         Some((
             3,

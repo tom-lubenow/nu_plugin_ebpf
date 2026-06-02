@@ -83,6 +83,13 @@ pub struct ScalarArgConstRequirementWhenArgMaskedConst {
     pub message: &'static str,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScalarArgGreaterThanRequirement {
+    pub arg_idx: usize,
+    pub lower_bound_arg_idx: usize,
+    pub message: &'static str,
+}
+
 const FIB_LOOKUP_FLAG_COMBINATIONS: &[ScalarArgBitCombinationRequirement] = &[
     ScalarArgBitCombinationRequirement {
         trigger_mask: BPF_FIB_LOOKUP_TBID,
@@ -150,6 +157,13 @@ const CSUM_REPLACE_FROM_REQUIREMENTS: &[ScalarArgConstRequirementWhenArgMaskedCo
         message: "checksum replacement helpers require arg2 from to be 0 when BPF_F_HDR_FIELD_MASK size is 0",
     },
 ];
+
+const MSG_PULL_DATA_ARG_ORDER_REQUIREMENTS: &[ScalarArgGreaterThanRequirement] =
+    &[ScalarArgGreaterThanRequirement {
+        arg_idx: 2,
+        lower_bound_arg_idx: 1,
+        message: "helper 'bpf_msg_pull_data' requires arg2 end to be greater than arg1 start",
+    }];
 
 const LWT_SEG6_ACTION_PARAM_LEN_REQUIREMENTS: &[ScalarArgConstRequirementWhenArgConst] = &[
     ScalarArgConstRequirementWhenArgConst {
@@ -1704,6 +1718,15 @@ impl BpfHelper {
     ) -> &'static [ScalarArgConstRequirementWhenArgMaskedConst] {
         match self {
             Self::L3CsumReplace | Self::L4CsumReplace => CSUM_REPLACE_FROM_REQUIREMENTS,
+            _ => &[],
+        }
+    }
+
+    pub const fn scalar_arg_greater_than_requirements(
+        self,
+    ) -> &'static [ScalarArgGreaterThanRequirement] {
+        match self {
+            Self::MsgPullData => MSG_PULL_DATA_ARG_ORDER_REQUIREMENTS,
             _ => &[],
         }
     }

@@ -392,6 +392,30 @@ impl<'a> TypeInference<'a> {
         }
     }
 
+    fn validate_helper_scalar_arg_order(
+        &self,
+        helper: BpfHelper,
+        args: &[MirValue],
+        value_ranges: &HashMap<VReg, ValueRange>,
+        errors: &mut Vec<TypeError>,
+    ) {
+        for requirement in helper.scalar_arg_greater_than_requirements() {
+            let (Some(value), Some(lower_bound)) = (
+                args.get(requirement.arg_idx),
+                args.get(requirement.lower_bound_arg_idx),
+            ) else {
+                continue;
+            };
+            if let (ValueRange::Known { max, .. }, ValueRange::Known { min: lower_min, .. }) = (
+                self.value_range_for(value, value_ranges),
+                self.value_range_for(lower_bound, value_ranges),
+            ) && max <= lower_min
+            {
+                errors.push(TypeError::new(requirement.message));
+            }
+        }
+    }
+
     fn known_const_vreg(
         &self,
         vreg: VReg,
@@ -471,6 +495,7 @@ impl<'a> TypeInference<'a> {
                 errors,
             );
         }
+        self.validate_helper_scalar_arg_order(helper, args, value_ranges, errors);
 
         for rule in semantics.ptr_arg_rules {
             let Some(arg) = args.get(rule.arg_idx) else {

@@ -1503,6 +1503,30 @@ impl<'a> VccLowerer<'a> {
         }
     }
 
+    fn verify_helper_scalar_arg_order(
+        &self,
+        helper: BpfHelper,
+        args: &[MirValue],
+    ) -> Result<(), VccError> {
+        for requirement in helper.scalar_arg_greater_than_requirements() {
+            let (Some(value), Some(lower_bound)) = (
+                args.get(requirement.arg_idx),
+                args.get(requirement.lower_bound_arg_idx),
+            ) else {
+                continue;
+            };
+            if let (MirValue::Const(actual), MirValue::Const(lower)) = (value, lower_bound)
+                && actual <= lower
+            {
+                return Err(VccError::new(
+                    VccErrorKind::UnsupportedInstruction,
+                    requirement.message,
+                ));
+            }
+        }
+        Ok(())
+    }
+
     pub(super) fn verify_helper_semantics(
         &mut self,
         helper_id: u32,
@@ -1529,6 +1553,7 @@ impl<'a> VccLowerer<'a> {
             self.verify_helper_scalar_bitmask(helper_id, helper, arg_idx, value, out)?;
             self.verify_helper_scalar_bit_combinations(helper_id, helper, arg_idx, value, out)?;
         }
+        self.verify_helper_scalar_arg_order(helper, args)?;
 
         if matches!(helper, BpfHelper::GetSocketCookie) {
             self.verify_get_socket_cookie_arg_shape(args)?;

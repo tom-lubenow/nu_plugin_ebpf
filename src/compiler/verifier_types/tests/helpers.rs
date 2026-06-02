@@ -14690,6 +14690,15 @@ fn make_msg_data_verify_call(
     helper: BpfHelper,
     flags: i64,
 ) -> (MirFunction, HashMap<VReg, MirType>) {
+    make_msg_data_verify_call_with_range(helper, 0, 8, flags)
+}
+
+fn make_msg_data_verify_call_with_range(
+    helper: BpfHelper,
+    start: i64,
+    end: i64,
+    flags: i64,
+) -> (MirFunction, HashMap<VReg, MirType>) {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
     func.entry = entry;
@@ -14710,8 +14719,8 @@ fn make_msg_data_verify_call(
             helper: helper as u32,
             args: vec![
                 MirValue::VReg(ctx),
-                MirValue::Const(0),
-                MirValue::Const(8),
+                MirValue::Const(start),
+                MirValue::Const(end),
                 MirValue::Const(flags),
             ],
         });
@@ -14747,6 +14756,24 @@ fn test_verify_mir_for_probe_context_msg_data_helpers_reject_nonzero_flags() {
                 .contains("message data reshaping helpers require arg3 flags to be 0")),
             "{} produced unexpected errors: {:?}",
             helper.name(),
+            err
+        );
+    }
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_msg_pull_data_rejects_invalid_range() {
+    for (start, end) in [(8, 8), (9, 8)] {
+        let (func, types) =
+            make_msg_data_verify_call_with_range(BpfHelper::MsgPullData, start, end, 0);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::SkMsg, "/sys/fs/bpf/demo_sockmap");
+        let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect_err("expected bpf_msg_pull_data range error");
+        assert!(
+            err.iter().any(|e| e.message.contains(
+                "helper 'bpf_msg_pull_data' requires arg2 end to be greater than arg1 start"
+            )),
+            "start={start} end={end} produced unexpected errors: {:?}",
             err
         );
     }

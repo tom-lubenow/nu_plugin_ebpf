@@ -295,6 +295,28 @@ fn validate_helper_scalar_bit_combinations(
     }
 }
 
+fn validate_helper_scalar_arg_order(
+    helper: BpfHelper,
+    args: &[MirValue],
+    state: &VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    for requirement in helper.scalar_arg_greater_than_requirements() {
+        let (Some(value), Some(lower_bound)) = (
+            args.get(requirement.arg_idx),
+            args.get(requirement.lower_bound_arg_idx),
+        ) else {
+            continue;
+        };
+        if let (ValueRange::Known { max, .. }, ValueRange::Known { min: lower_min, .. }) =
+            (value_range(value, state), value_range(lower_bound, state))
+            && max <= lower_min
+        {
+            errors.push(VerifierTypeError::new(requirement.message));
+        }
+    }
+}
+
 fn current_program_type(
     program: Option<&ProgramTypeInfo>,
     probe_ctx: Option<&ProbeContext>,
@@ -545,6 +567,7 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
         validate_helper_scalar_bitmask(helper, arg_idx, value, state, errors);
         validate_helper_scalar_bit_combinations(helper, arg_idx, value, state, errors);
     }
+    validate_helper_scalar_arg_order(helper, args, state, errors);
 
     for rule in semantics.ptr_arg_rules {
         let Some(arg) = args.get(rule.arg_idx) else {
