@@ -35282,6 +35282,21 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-runtime-list-math-median"
+        category: "language-core"
+        tags: [aggregate list math median runtime]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let n = random int'
+            '  let m = (seq 10 10 20 | append $n | math median)'
+            '  ($m >= 10) and ($m <= 20)'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-math-mode"
         category: "language-core"
         tags: [aggregate list math mode]

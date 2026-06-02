@@ -410,12 +410,15 @@ impl<'a> HirToMirLowering<'a> {
         self.lower_constant_value(src_dst, &nu_protocol::Value::list(modes, Span::unknown()))
     }
 
-    pub(in crate::compiler::ir_to_mir) fn lower_compile_time_math_median(
+    pub(in crate::compiler::ir_to_mir) fn lower_math_median(
         &mut self,
         src_dst: RegId,
         dst_vreg: VReg,
         src_dst_had_value: bool,
     ) -> Result<(), CompileError> {
+        const MAX_MEDIAN_STACK_LIST_LEN: usize = 16;
+
+        let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
         let input_reg = self
             .pipeline_input_reg
             .or(src_dst_had_value.then_some(src_dst));
@@ -436,49 +439,118 @@ impl<'a> HirToMirLowering<'a> {
                     "math median requires compile-time known integer-list input in eBPF".into(),
                 )
             })?;
-        let Some(nu_protocol::Value::List { vals, .. }) = input_meta.constant_value else {
-            return Err(CompileError::UnsupportedInstruction(
-                "math median requires compile-time known integer-list input in eBPF".into(),
-            ));
-        };
-        if vals.is_empty() {
-            return Err(CompileError::UnsupportedInstruction(
-                "math median requires a non-empty integer list in eBPF".into(),
-            ));
-        }
-        if vals.len() % 2 == 0 {
-            return Err(CompileError::UnsupportedInstruction(
-                "math median requires an odd-length integer list in eBPF because even-length medians are floats in Nushell".into(),
-            ));
+
+        if let Some(nu_protocol::Value::List { vals, .. }) = input_meta.constant_value.clone() {
+            if vals.is_empty() {
+                return Err(CompileError::UnsupportedInstruction(
+                    "math median requires a non-empty integer list in eBPF".into(),
+                ));
+            }
+            if vals.len() % 2 == 0 {
+                return Err(CompileError::UnsupportedInstruction(
+                    "math median requires an odd-length integer list in eBPF because even-length medians are floats in Nushell".into(),
+                ));
+            }
+
+            let mut ints = Vec::with_capacity(vals.len());
+            for (index, value) in vals.into_iter().enumerate() {
+                let nu_protocol::Value::Int { val, .. } = value else {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "math median requires integer list items in eBPF; item {index} has type {}",
+                        value.get_type()
+                    )));
+                };
+                ints.push(val);
+            }
+            ints.sort_unstable();
+            let median = ints[ints.len() / 2];
+
+            let result_vreg = if src_dst_had_value {
+                self.assign_fresh_vreg(src_dst)
+            } else {
+                dst_vreg
+            };
+            self.emit(MirInst::Copy {
+                dst: result_vreg,
+                src: MirValue::Const(median),
+            });
+            self.reset_call_result_metadata(src_dst);
+            let out_meta = self.get_or_create_metadata(src_dst);
+            out_meta.field_type = Some(MirType::I64);
+            out_meta.literal_int = Some(median);
+            out_meta.constant_value = Some(nu_protocol::Value::int(median, Span::unknown()));
+            self.vreg_type_hints.insert(result_vreg, MirType::I64);
+            return Ok(());
         }
 
-        let mut ints = Vec::with_capacity(vals.len());
-        for (index, value) in vals.into_iter().enumerate() {
-            let nu_protocol::Value::Int { val, .. } = value else {
-                return Err(CompileError::UnsupportedInstruction(format!(
-                    "math median requires integer list items in eBPF; item {index} has type {}",
-                    value.get_type()
-                )));
-            };
-            ints.push(val);
+        let Some((_input_slot, max_len)) = input_meta.list_buffer else {
+            return Err(CompileError::UnsupportedInstruction(
+                "math median requires compile-time known integer-list or stack-backed numeric-list input in eBPF".into(),
+            ));
+        };
+        let Some(known_len) = Self::numeric_list_known_len(&input_meta) else {
+            return Err(CompileError::UnsupportedInstruction(
+                "math median requires a stack-backed numeric list with known odd length in eBPF"
+                    .into(),
+            ));
+        };
+        if known_len == 0 {
+            return Err(CompileError::UnsupportedInstruction(
+                "math median requires a non-empty stack-backed numeric list in eBPF".into(),
+            ));
         }
-        ints.sort_unstable();
-        let median = ints[ints.len() / 2];
+        if known_len % 2 == 0 {
+            return Err(CompileError::UnsupportedInstruction(
+                "math median requires an odd-length stack-backed numeric list in eBPF because even-length medians are floats in Nushell".into(),
+            ));
+        }
+        if known_len > max_len {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "math median known length {known_len} exceeds stack-backed numeric list capacity {max_len} in eBPF"
+            )));
+        }
+        if known_len > MAX_MEDIAN_STACK_LIST_LEN {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "math median supports stack-backed numeric lists with known odd length <= {MAX_MEDIAN_STACK_LIST_LEN} in eBPF"
+            )));
+        }
+
+        let sorted_vreg = self.func.alloc_vreg();
+        let (sorted_slot, _sorted_ty) =
+            self.create_stack_numeric_list_result(sorted_vreg, known_len);
+        for source_index in 0..known_len {
+            let item_vreg = self.func.alloc_vreg();
+            self.emit(MirInst::ListGet {
+                dst: item_vreg,
+                list: input_vreg,
+                idx: MirValue::Const(source_index as i64),
+            });
+            self.vreg_type_hints.insert(item_vreg, MirType::I64);
+            self.emit(MirInst::ListPush {
+                list: sorted_vreg,
+                item: item_vreg,
+            });
+        }
+
+        for pass in 0..known_len {
+            for left_index in 0..known_len.saturating_sub(1 + pass) {
+                self.emit_stack_list_compare_swap(sorted_slot, left_index, left_index + 1, false);
+            }
+        }
 
         let result_vreg = if src_dst_had_value {
             self.assign_fresh_vreg(src_dst)
         } else {
             dst_vreg
         };
-        self.emit(MirInst::Copy {
+        self.emit(MirInst::ListGet {
             dst: result_vreg,
-            src: MirValue::Const(median),
+            list: sorted_vreg,
+            idx: MirValue::Const((known_len / 2) as i64),
         });
         self.reset_call_result_metadata(src_dst);
         let out_meta = self.get_or_create_metadata(src_dst);
         out_meta.field_type = Some(MirType::I64);
-        out_meta.literal_int = Some(median);
-        out_meta.constant_value = Some(nu_protocol::Value::int(median, Span::unknown()));
         self.vreg_type_hints.insert(result_vreg, MirType::I64);
         Ok(())
     }

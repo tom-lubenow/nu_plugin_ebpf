@@ -72,6 +72,63 @@ fn make_numeric_list_pipeline_call_program(decl_id: DeclId, count: Option<i64>) 
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_runtime_numeric_list_pipeline_call_program(
+    decl_id: DeclId,
+    append_decl: DeclId,
+    random_decl: DeclId,
+    trailing_values: &[i64],
+) -> HirProgram {
+    let mut stmts = vec![HirStmt::LoadValue {
+        dst: RegId::new(0),
+        val: Box::new(Value::list(
+            trailing_values
+                .iter()
+                .map(|value| Value::int(*value, Span::test_data()))
+                .collect(),
+            Span::test_data(),
+        )),
+    }];
+
+    stmts.push(HirStmt::Call {
+        decl_id: random_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs::default(),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: append_decl,
+        src_dst: RegId::new(2),
+        args: HirCallArgs {
+            pipeline_input: Some(RegId::new(0)),
+            positional: vec![RegId::new(1)],
+            ..HirCallArgs::default()
+        },
+    });
+
+    stmts.push(HirStmt::Call {
+        decl_id,
+        src_dst: RegId::new(3),
+        args: HirCallArgs {
+            pipeline_input: Some(RegId::new(2)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(3) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 4,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_empty_numeric_list_pipeline_call_program(decl_id: DeclId) -> HirProgram {
     let func = HirFunction {
         blocks: vec![HirBlock {
@@ -10787,6 +10844,68 @@ fn test_lower_math_median_on_seq_output_materializes_median() {
 }
 
 #[test]
+fn test_lower_math_median_on_runtime_stack_numeric_list_uses_bounded_sort() {
+    let median_decl = DeclId::new(531);
+    let append_decl = DeclId::new(532);
+    let random_decl = DeclId::new(533);
+    let hir = make_runtime_numeric_list_pipeline_call_program(
+        median_decl,
+        append_decl,
+        random_decl,
+        &[20, 10],
+    );
+    let decl_names = HashMap::from([
+        (median_decl, "math median".to_string()),
+        (append_decl, "append".to_string()),
+        (random_decl, "random int".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("math median should lower known odd-length stack-backed numeric-list input");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+
+    assert!(
+        instructions
+            .iter()
+            .any(|inst| matches!(inst, MirInst::ListNew { max_len: 3, .. })),
+        "expected runtime math median to copy into a three-item sortable stack list"
+    );
+    assert!(
+        instructions
+            .iter()
+            .filter(|inst| matches!(inst, MirInst::ListGet { .. }))
+            .count()
+            >= 4,
+        "expected runtime math median to copy items and read the middle sorted item"
+    );
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::Gt,
+                ..
+            }
+        )),
+        "expected runtime math median to lower ascending compare-swap comparisons"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("runtime math median should compile through codegen");
+}
+
+#[test]
 fn test_lower_math_median_rejects_even_length_integer_list() {
     let median_decl = DeclId::new(523);
     let hir = make_integer_list_pipeline_call_program(median_decl, &[1, 3]);
@@ -10810,6 +10929,40 @@ fn test_lower_math_median_rejects_even_length_integer_list() {
 }
 
 #[test]
+fn test_lower_math_median_rejects_even_length_stack_numeric_list() {
+    let median_decl = DeclId::new(534);
+    let append_decl = DeclId::new(535);
+    let random_decl = DeclId::new(536);
+    let hir = make_runtime_numeric_list_pipeline_call_program(
+        median_decl,
+        append_decl,
+        random_decl,
+        &[20],
+    );
+    let decl_names = HashMap::from([
+        (median_decl, "math median".to_string()),
+        (append_decl, "append".to_string()),
+        (random_decl, "random int".to_string()),
+    ]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("math median should reject even-length stack-backed numeric lists");
+
+    assert!(
+        err.to_string()
+            .contains("math median requires an odd-length stack-backed numeric list"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn test_lower_math_median_rejects_empty_integer_list() {
     let median_decl = DeclId::new(524);
     let hir = make_integer_list_pipeline_call_program(median_decl, &[]);
@@ -10828,6 +10981,42 @@ fn test_lower_math_median_rejects_empty_integer_list() {
     assert!(
         err.to_string()
             .contains("math median requires a non-empty integer list"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_math_median_rejects_large_stack_numeric_list() {
+    let median_decl = DeclId::new(537);
+    let append_decl = DeclId::new(538);
+    let random_decl = DeclId::new(539);
+    let trailing_values = (0..16).collect::<Vec<_>>();
+    let hir = make_runtime_numeric_list_pipeline_call_program(
+        median_decl,
+        append_decl,
+        random_decl,
+        &trailing_values,
+    );
+    let decl_names = HashMap::from([
+        (median_decl, "math median".to_string()),
+        (append_decl, "append".to_string()),
+        (random_decl, "random int".to_string()),
+    ]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("math median should reject stack-backed numeric lists over the bounded sort limit");
+
+    assert!(
+        err.to_string().contains(
+            "math median supports stack-backed numeric lists with known odd length <= 16"
+        ),
         "unexpected error: {err}"
     );
 }

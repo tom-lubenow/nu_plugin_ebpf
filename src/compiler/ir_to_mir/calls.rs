@@ -4035,7 +4035,7 @@ impl<'a> HirToMirLowering<'a> {
             }
 
             "math median" => {
-                self.lower_compile_time_math_median(src_dst, dst_vreg, src_dst_had_value)?;
+                self.lower_math_median(src_dst, dst_vreg, src_dst_had_value)?;
             }
 
             "math mode" => {

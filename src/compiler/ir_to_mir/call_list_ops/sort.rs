@@ -185,7 +185,7 @@ impl<'a> HirToMirLowering<'a> {
         Ok(())
     }
 
-    fn emit_stack_list_compare_swap(
+    pub(super) fn emit_stack_list_compare_swap(
         &mut self,
         slot: StackSlotId,
         left_index: usize,
