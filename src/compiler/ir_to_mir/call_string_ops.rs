@@ -27,6 +27,197 @@ enum FillAlignment {
 }
 
 impl<'a> HirToMirLowering<'a> {
+    pub(super) fn lower_char(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+    ) -> Result<(), CompileError> {
+        if src_dst_had_value || self.pipeline_input_reg.is_some() {
+            return Err(CompileError::UnsupportedInstruction(
+                "char does not accept pipeline input in eBPF".into(),
+            ));
+        }
+        if !self.named_args.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(
+                "char does not accept named arguments in eBPF".into(),
+            ));
+        }
+
+        for flag in &self.named_flags {
+            if !matches!(flag.as_str(), "unicode" | "integer" | "list") {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "char --{flag} is not supported in eBPF"
+                )));
+            }
+        }
+        if self.named_flags.iter().any(|flag| flag == "list") {
+            return Err(CompileError::UnsupportedInstruction(
+                "char --list produces a table and is not supported in eBPF".into(),
+            ));
+        }
+        let unicode = self.named_flags.iter().any(|flag| flag == "unicode");
+        let integer = self.named_flags.iter().any(|flag| flag == "integer");
+        if unicode && integer {
+            return Err(CompileError::UnsupportedInstruction(
+                "char supports only one of --unicode or --integer in eBPF".into(),
+            ));
+        }
+        if self.positional_args.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(
+                "char requires at least one character argument in eBPF".into(),
+            ));
+        }
+
+        let output = if unicode {
+            self.lower_char_unicode_output()?
+        } else if integer {
+            self.lower_char_integer_output()?
+        } else {
+            if self.positional_args.len() != 1 {
+                return Err(CompileError::UnsupportedInstruction(
+                    "char named-character form supports exactly one argument in eBPF".into(),
+                ));
+            }
+            let name = self.literal_string_arg(self.positional_args[0].1, "char")?;
+            Self::known_named_char(&name).ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "char named character '{name}' is not supported in eBPF"
+                ))
+            })?
+        };
+        if output.bytes().any(|byte| byte == 0) {
+            return Err(CompileError::UnsupportedInstruction(
+                "char output containing NUL bytes is not supported in eBPF".into(),
+            ));
+        }
+
+        self.lower_known_string_result(src_dst, dst_vreg, output)
+    }
+
+    fn lower_char_unicode_output(&self) -> Result<String, CompileError> {
+        let mut output = String::new();
+        for (_, reg) in &self.positional_args {
+            let raw = self.literal_string_arg(*reg, "char --unicode")?;
+            let codepoint = u32::from_str_radix(raw.trim(), 16).map_err(|_| {
+                CompileError::UnsupportedInstruction(format!(
+                    "char --unicode requires hexadecimal codepoints in eBPF, got '{raw}'"
+                ))
+            })?;
+            output.push(Self::char_from_codepoint(codepoint, "char --unicode")?);
+        }
+        Ok(output)
+    }
+
+    fn lower_char_integer_output(&self) -> Result<String, CompileError> {
+        let mut output = String::new();
+        for (_, reg) in &self.positional_args {
+            let codepoint = self
+                .get_metadata(*reg)
+                .and_then(|meta| {
+                    meta.literal_int
+                        .or_else(|| match meta.constant_value.as_ref() {
+                            Some(nu_protocol::Value::Int { val, .. }) => Some(*val),
+                            _ => None,
+                        })
+                })
+                .ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(
+                        "char --integer requires compile-time known integer codepoints in eBPF"
+                            .into(),
+                    )
+                })?;
+            let codepoint = u32::try_from(codepoint).map_err(|_| {
+                CompileError::UnsupportedInstruction(format!(
+                    "char --integer codepoint {codepoint} is outside the valid Unicode range in eBPF"
+                ))
+            })?;
+            output.push(Self::char_from_codepoint(codepoint, "char --integer")?);
+        }
+        Ok(output)
+    }
+
+    fn known_named_char(name: &str) -> Option<String> {
+        let hex = match name {
+            "nul" | "null_byte" | "zero_byte" => "0",
+            "newline" | "enter" | "nl" | "line_feed" | "lf" | "eol" | "lsep" | "line_sep" => "a",
+            "carriage_return" | "cr" => "d",
+            "crlf" => "d a",
+            "tab" => "9",
+            "sp" | "space" => "20",
+            "pipe" => "7c",
+            "left_brace" | "lbrace" => "7b",
+            "right_brace" | "rbrace" => "7d",
+            "left_paren" | "lp" | "lparen" => "28",
+            "right_paren" | "rparen" | "rp" => "29",
+            "left_bracket" | "lbracket" => "5b",
+            "right_bracket" | "rbracket" => "5d",
+            "single_quote" | "squote" | "sq" => "27",
+            "double_quote" | "dquote" | "dq" => "22",
+            "path_sep" | "psep" | "separator" => "2f",
+            "esep" | "env_sep" => "3a",
+            "tilde" | "twiddle" | "squiggly" | "home" => "7e",
+            "hash" | "hashtag" | "pound_sign" | "sharp" | "root" => "23",
+            "nf_branch" => "e0a0",
+            "nf_segment" | "nf_left_segment" => "e0b0",
+            "nf_left_segment_thin" => "e0b1",
+            "nf_right_segment" => "e0b2",
+            "nf_right_segment_thin" => "e0b3",
+            "nf_git" => "f1d3",
+            "nf_git_branch" => "e709 e0a0",
+            "nf_folder1" => "f07c",
+            "nf_folder2" => "f115",
+            "nf_house1" => "f015",
+            "nf_house2" => "f7db",
+            "identical_to" | "hamburger" => "2261",
+            "not_identical_to" | "branch_untracked" => "2262",
+            "strictly_equivalent_to" | "branch_identical" => "2263",
+            "upwards_arrow" | "branch_ahead" => "2191",
+            "downwards_arrow" | "branch_behind" => "2193",
+            "up_down_arrow" | "branch_ahead_behind" => "2195",
+            "black_right_pointing_triangle" | "prompt" => "25b6",
+            "vector_or_cross_product" | "failed" => "2a2f",
+            "high_voltage_sign" | "elevated" => "26a1",
+            "sun" | "sunny" | "sunrise" => "2600 fe0f",
+            "moon" => "1f31b",
+            "cloudy" | "cloud" | "clouds" => "2601 fe0f",
+            "rainy" | "rain" => "1f326 fe0f",
+            "foggy" | "fog" => "1f32b fe0f",
+            "mist" | "haze" => "2591",
+            "snowy" | "snow" => "2744 fe0f",
+            "thunderstorm" | "thunder" => "1f329 fe0f",
+            "bel" => "7",
+            "backspace" => "8",
+            "file_separator" | "file_sep" | "fs" => "1c",
+            "group_separator" | "group_sep" | "gs" => "1d",
+            "record_separator" | "record_sep" | "rs" => "1e",
+            "unit_separator" | "unit_sep" | "us" => "1f",
+            _ => return None,
+        };
+        Self::chars_from_hex_sequence(hex).ok()
+    }
+
+    fn chars_from_hex_sequence(hex: &str) -> Result<String, CompileError> {
+        let mut output = String::new();
+        for part in hex.split_whitespace() {
+            let codepoint = u32::from_str_radix(part, 16).map_err(|_| {
+                CompileError::UnsupportedInstruction(format!(
+                    "invalid char codepoint '{part}' in eBPF"
+                ))
+            })?;
+            output.push(Self::char_from_codepoint(codepoint, "char")?);
+        }
+        Ok(output)
+    }
+
+    fn char_from_codepoint(codepoint: u32, context: &str) -> Result<char, CompileError> {
+        char::from_u32(codepoint).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "{context} codepoint U+{codepoint:X} is outside the valid Unicode range in eBPF"
+            ))
+        })
+    }
+
     pub(super) fn lower_string_length(
         &mut self,
         src_dst: RegId,

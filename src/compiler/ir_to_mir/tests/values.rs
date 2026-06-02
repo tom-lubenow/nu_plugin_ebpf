@@ -2664,6 +2664,85 @@ fn make_string_list_fill_join_then_starts_with_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+enum CharTestArg<'a> {
+    String(&'a str),
+    Int(i64),
+}
+
+fn make_char_then_starts_with_program(
+    char_decl: DeclId,
+    starts_with_decl: DeclId,
+    flags: Vec<Vec<u8>>,
+    args: &[CharTestArg<'_>],
+    prefix: &str,
+) -> HirProgram {
+    let mut next_reg = 0u32;
+    let mut stmts = Vec::new();
+    let mut positional = Vec::new();
+    for arg in args {
+        let reg = RegId::new(next_reg);
+        next_reg += 1;
+        match arg {
+            CharTestArg::String(value) => stmts.push(HirStmt::LoadValue {
+                dst: reg,
+                val: Box::new(Value::string(*value, Span::test_data())),
+            }),
+            CharTestArg::Int(value) => stmts.push(HirStmt::LoadLiteral {
+                dst: reg,
+                lit: HirLiteral::Int(*value),
+            }),
+        }
+        positional.push(reg);
+    }
+
+    let char_result_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::Call {
+        decl_id: char_decl,
+        src_dst: char_result_reg,
+        args: HirCallArgs {
+            positional,
+            flags,
+            ..HirCallArgs::default()
+        },
+    });
+
+    let prefix_reg = RegId::new(next_reg);
+    next_reg += 1;
+    let starts_with_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::LoadValue {
+        dst: prefix_reg,
+        val: Box::new(Value::string(prefix, Span::test_data())),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: starts_with_decl,
+        src_dst: starts_with_reg,
+        args: HirCallArgs {
+            positional: vec![prefix_reg],
+            pipeline_input: Some(char_result_reg),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return {
+                src: starts_with_reg,
+            },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: next_reg,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_string_substring_then_starts_with_program(
     substring_decl: DeclId,
     starts_with_decl: DeclId,
@@ -8574,6 +8653,183 @@ fn test_lower_str_trim_right_char_on_known_string_materializes_trimmed_literal()
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
         "str trim --right --char result consumed by str starts-with should compile through codegen",
+    );
+}
+
+#[test]
+fn test_lower_char_named_character_materializes_literal() {
+    let char_decl = DeclId::new(504);
+    let starts_with_decl = DeclId::new(505);
+    let hir = make_char_then_starts_with_program(
+        char_decl,
+        starts_with_decl,
+        Vec::new(),
+        &[CharTestArg::String("prompt")],
+        "▶",
+    );
+    let decl_names = HashMap::from([
+        (char_decl, "char".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("char named character should lower as a compile-time string");
+
+    let expected = "▶\0".as_bytes();
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(expected)
+            )),
+        "expected char named character to materialize the prompt glyph"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("char named character result should compile through codegen");
+}
+
+#[test]
+fn test_lower_char_unicode_codepoints_materialize_literal() {
+    let char_decl = DeclId::new(506);
+    let starts_with_decl = DeclId::new(507);
+    let hir = make_char_then_starts_with_program(
+        char_decl,
+        starts_with_decl,
+        vec![b"unicode".to_vec()],
+        &[
+            CharTestArg::String("1F468"),
+            CharTestArg::String("200D"),
+            CharTestArg::String("1F466"),
+        ],
+        "👨‍👦",
+    );
+    let decl_names = HashMap::from([
+        (char_decl, "char".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("char --unicode should lower compile-time hex codepoints");
+
+    let expected = "👨‍👦\0".as_bytes();
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(expected)
+            )),
+        "expected char --unicode to materialize the joined codepoints"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("char --unicode result should compile through codegen");
+}
+
+#[test]
+fn test_lower_char_integer_codepoints_materialize_literal() {
+    let char_decl = DeclId::new(508);
+    let starts_with_decl = DeclId::new(509);
+    let hir = make_char_then_starts_with_program(
+        char_decl,
+        starts_with_decl,
+        vec![b"integer".to_vec()],
+        &[CharTestArg::Int(65), CharTestArg::Int(66)],
+        "AB",
+    );
+    let decl_names = HashMap::from([
+        (char_decl, "char".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("char --integer should lower compile-time integer codepoints");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"AB\0")
+            )),
+        "expected char --integer to materialize the joined codepoints"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("char --integer result should compile through codegen");
+}
+
+#[test]
+fn test_lower_char_rejects_nul_output() {
+    let char_decl = DeclId::new(510);
+    let starts_with_decl = DeclId::new(511);
+    let hir = make_char_then_starts_with_program(
+        char_decl,
+        starts_with_decl,
+        vec![b"integer".to_vec()],
+        &[CharTestArg::Int(0)],
+        "",
+    );
+    let decl_names = HashMap::from([
+        (char_decl, "char".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("char should reject NUL output until string lowering supports embedded NUL");
+
+    assert!(
+        err.to_string()
+            .contains("char output containing NUL bytes is not supported"),
+        "unexpected error: {err}"
     );
 }
 

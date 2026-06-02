@@ -858,6 +858,7 @@ eBPF layout and verifier bounds are explicit:
 | `compact` | Stack-backed numeric lists as an identity operation because numeric-list elements cannot be null or empty; compile-time known fixed lists are filtered as constants, with `--empty` also removing known empty strings/binaries/lists/records; top-level column arguments are supported for compile-time known fixed lists of records |
 | `find` | Stack-backed numeric lists with one numeric search argument, returning a bounded equality-filtered stack list; compile-time known fixed lists with one compile-time constant search argument |
 | `append` / `prepend` | Stack-backed numeric lists with scalar numeric items when the output fits the modeled capacity; compile-time known fixed lists with compile-time constant items |
+| `char` | Compile-time named characters, `--unicode` hexadecimal string codepoints, and `--integer` codepoints, returning a fixed string; `--list`, pipeline input, mixed mode flags, and NUL-byte output are not supported |
 | `fill` | Compile-time known string or string-list input with optional compile-time `--width`, `--alignment`, and `--character`, returning padded fixed strings; runtime input, numeric input, filesize input, and closure-derived options are not supported |
 | `is-empty` / `is-not-empty` | Stack-backed lists, tracked strings, literal null, literal list constants, and metadata-backed fixed records |
 | `describe` | No-input or compiler-known inputs, producing a bounded tracked string with Nushell's type description |
