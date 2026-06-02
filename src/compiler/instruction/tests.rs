@@ -2647,6 +2647,14 @@ fn test_helpers_with_reserved_zero_flags() {
         BpfHelper::SkbChangeProto.zero_scalar_arg_requirement(),
         Some((2, "helper 'bpf_skb_change_proto' requires arg2 = 0"))
     );
+    let (allowed_protocols, change_proto_message) = BpfHelper::SkbChangeProto
+        .scalar_arg_allowed_values_requirement(1)
+        .expect("expected skb_change_proto protocol requirement");
+    assert_eq!(allowed_protocols, &[0x0800, 0x86dd]);
+    assert_eq!(
+        change_proto_message,
+        "helper 'bpf_skb_change_proto' requires arg1 proto to be ETH_P_IP or ETH_P_IPV6"
+    );
     assert_eq!(
         BpfHelper::MsgPullData.zero_scalar_arg_requirement(),
         Some((

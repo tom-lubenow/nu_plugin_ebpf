@@ -3381,6 +3381,10 @@ fn test_type_error_skb_ecn_set_ce_helper_rejects_non_tc_cgroup_skb_program() {
 }
 
 fn make_skb_change_proto_call(flags: i64) -> (MirFunction, VReg) {
+    make_skb_change_proto_call_with_proto(0x86dd, flags)
+}
+
+fn make_skb_change_proto_call_with_proto(proto: i64, flags: i64) -> (MirFunction, VReg) {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();
     let dst = func.alloc_vreg();
@@ -3395,7 +3399,7 @@ fn make_skb_change_proto_call(flags: i64) -> (MirFunction, VReg) {
         helper: BpfHelper::SkbChangeProto as u32,
         args: vec![
             MirValue::VReg(ctx),
-            MirValue::Const(0x86dd),
+            MirValue::Const(proto),
             MirValue::Const(flags),
         ],
     });
@@ -3461,6 +3465,19 @@ fn test_type_error_skb_change_proto_and_type_helpers_reject_non_tc_programs() {
             .expect_err("expected skb change helper to be rejected outside tc");
         assert!(errs.iter().any(|e| e.message.contains(expected)));
     }
+}
+
+#[test]
+fn test_type_error_skb_change_proto_helper_rejects_invalid_proto() {
+    let (func, _) = make_skb_change_proto_call_with_proto(0x0806, 0);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_skb_change_proto proto to be rejected");
+    assert!(errs.iter().any(|e| e.message.contains(
+        "helper 'bpf_skb_change_proto' requires arg1 proto to be ETH_P_IP or ETH_P_IPV6"
+    )));
 }
 
 #[test]
