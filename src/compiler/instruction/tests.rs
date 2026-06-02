@@ -2692,6 +2692,20 @@ fn test_skb_tunnel_helpers_contract() {
         get_flags_message,
         "helper 'bpf_skb_get_tunnel_key' requires arg3 flags to be one of 0, BPF_F_TUNINFO_IPV6, BPF_F_TUNINFO_FLAGS, or both"
     );
+    for helper in [BpfHelper::SkbGetTunnelKey, BpfHelper::SkbSetTunnelKey] {
+        let (allowed_sizes, size_message) = helper
+            .scalar_arg_allowed_values_requirement(2)
+            .expect("expected skb tunnel key size requirement");
+        assert_eq!(allowed_sizes, &[8, 22, 24, 28, 44]);
+        assert_eq!(
+            size_message,
+            "skb tunnel key helpers require arg2 size to be one of 8, 22, 24, 28, or 44 bytes"
+        );
+        assert_eq!(
+            helper.scalar_arg_known_const_requirement(2),
+            Some("skb tunnel key helpers require arg2 size to be a known constant")
+        );
+    }
     assert_eq!(
         BpfHelper::SkbSetTunnelKey.scalar_arg_range_requirement(3),
         Some((

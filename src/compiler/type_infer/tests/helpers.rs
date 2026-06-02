@@ -3707,7 +3707,15 @@ fn test_infer_skb_tunnel_helpers_in_tc_and_lwt_xmit_programs() {
             ProbeContext::new(EbpfProgramType::TcAction, "demo-action"),
             ProbeContext::new(EbpfProgramType::LwtXmit, "lwt-xmit"),
         ] {
-            let (func, dst) = make_skb_tunnel_helper_call(helper, 16, 16, 0);
+            let size = if matches!(
+                helper,
+                BpfHelper::SkbGetTunnelKey | BpfHelper::SkbSetTunnelKey
+            ) {
+                44
+            } else {
+                16
+            };
+            let (func, dst) = make_skb_tunnel_helper_call(helper, size, size as usize, 0);
             let mut ti = TypeInference::new(Some(probe_ctx));
             let types = ti
                 .infer(&func)
@@ -3719,7 +3727,7 @@ fn test_infer_skb_tunnel_helpers_in_tc_and_lwt_xmit_programs() {
 
 #[test]
 fn test_type_error_skb_tunnel_helpers_reject_non_tc_lwt_xmit_program() {
-    let (func, _) = make_skb_tunnel_helper_call(BpfHelper::SkbGetTunnelKey, 16, 16, 0);
+    let (func, _) = make_skb_tunnel_helper_call(BpfHelper::SkbGetTunnelKey, 44, 44, 0);
     let probe_ctx = ProbeContext::new(EbpfProgramType::LwtOut, "lwt-out");
     let mut ti = TypeInference::new(Some(probe_ctx));
     let errs = ti
@@ -3748,6 +3756,67 @@ fn test_type_error_skb_tunnel_helper_rejects_small_buffer() {
 }
 
 #[test]
+fn test_type_error_skb_tunnel_key_helpers_reject_invalid_size() {
+    let (func, _) = make_skb_tunnel_helper_call(BpfHelper::SkbGetTunnelKey, 16, 16, 0);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected skb tunnel key size validation error");
+    assert!(
+        errs.iter().any(|e| e.message.contains(
+            "skb tunnel key helpers require arg2 size to be one of 8, 22, 24, 28, or 44 bytes"
+        )),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_type_error_skb_tunnel_key_helpers_require_constant_size() {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let size = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let buffer = func.alloc_stack_slot(44, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst: size,
+        helper: BpfHelper::GetPrandomU32 as u32,
+        args: vec![],
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SkbSetTunnelKey as u32,
+        args: vec![
+            MirValue::VReg(ctx),
+            MirValue::StackSlot(buffer),
+            MirValue::VReg(size),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected skb tunnel key constant size error");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("skb tunnel key helpers require arg2 size to be a known constant")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
 fn test_type_error_skb_tunnel_key_helpers_reject_invalid_flags() {
     for (helper, flags, expected) in [
         (
@@ -3761,7 +3830,7 @@ fn test_type_error_skb_tunnel_key_helpers_reject_invalid_flags() {
             "helper 'bpf_skb_set_tunnel_key' requires arg3 flags",
         ),
     ] {
-        let (func, _) = make_skb_tunnel_helper_call(helper, 16, 16, flags);
+        let (func, _) = make_skb_tunnel_helper_call(helper, 44, 44, flags);
         let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
         let mut ti = TypeInference::new(Some(probe_ctx));
         let errs = ti

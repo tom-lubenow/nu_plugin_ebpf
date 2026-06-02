@@ -12328,7 +12328,15 @@ fn test_verify_mir_for_probe_context_skb_tunnel_helpers_accept_tc_and_lwt_xmit_p
             ProbeContext::new(EbpfProgramType::TcAction, "demo-action"),
             ProbeContext::new(EbpfProgramType::LwtXmit, "lwt-xmit"),
         ] {
-            let (func, types) = make_skb_tunnel_vcc_call(helper, 16, 16, 0);
+            let size = if matches!(
+                helper,
+                BpfHelper::SkbGetTunnelKey | BpfHelper::SkbSetTunnelKey
+            ) {
+                44
+            } else {
+                16
+            };
+            let (func, types) = make_skb_tunnel_vcc_call(helper, size, size as usize, 0);
             verify_mir_for_probe_context(&func, &types, &probe_ctx)
                 .expect("expected skb tunnel helper to verify");
         }
@@ -12348,12 +12356,27 @@ fn test_verify_mir_for_probe_context_skb_tunnel_helpers_reject_non_tc_lwt_xmit_p
 
 #[test]
 fn test_verify_mir_for_probe_context_skb_tunnel_helper_rejects_small_buffer() {
-    let (func, types) = make_skb_tunnel_vcc_call(BpfHelper::SkbGetTunnelKey, 16, 8, 0);
+    let (func, types) = make_skb_tunnel_vcc_call(BpfHelper::SkbGetTunnelKey, 44, 8, 0);
     let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
     let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
         .expect_err("expected skb tunnel buffer bounds error");
     assert!(
         err.iter().any(|e| e.kind == VccErrorKind::PointerBounds),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_skb_tunnel_key_helpers_reject_invalid_size() {
+    let (func, types) = make_skb_tunnel_vcc_call(BpfHelper::SkbGetTunnelKey, 16, 16, 0);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected skb tunnel key size validation error");
+    assert!(
+        err.iter().any(|e| e.message.contains(
+            "skb tunnel key helpers require arg2 size to be one of 8, 22, 24, 28, or 44 bytes"
+        )),
         "unexpected errors: {:?}",
         err
     );
@@ -12373,7 +12396,7 @@ fn test_verify_mir_for_probe_context_skb_tunnel_key_helpers_reject_invalid_flags
             "helper 'bpf_skb_set_tunnel_key' requires arg3 flags",
         ),
     ] {
-        let (func, types) = make_skb_tunnel_vcc_call(helper, 16, 16, flags);
+        let (func, types) = make_skb_tunnel_vcc_call(helper, 44, 44, flags);
         let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
         let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
             .expect_err("expected skb tunnel flag validation error");

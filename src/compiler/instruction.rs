@@ -11,6 +11,7 @@ use crate::compiler::mir::{MapKind, MirType, ScalarValueRange};
 
 const STRTOX_BASE_FLAGS: &[i64] = &[0, 8, 10, 16];
 const SKB_GET_TUNNEL_KEY_FLAGS: &[i64] = &[0, 1, 16, 17];
+const SKB_TUNNEL_KEY_SIZES: &[i64] = &[8, 22, 24, 28, 44];
 const MAP_UPDATE_FLAGS: &[i64] = &[0, 1, 2];
 const MAP_PUSH_FLAGS: &[i64] = &[0, 2];
 const TIMER_INIT_FLAGS: &[i64] = &[0, 1, 7];
@@ -1518,6 +1519,10 @@ impl BpfHelper {
                 SKB_GET_TUNNEL_KEY_FLAGS,
                 "helper 'bpf_skb_get_tunnel_key' requires arg3 flags to be one of 0, BPF_F_TUNINFO_IPV6, BPF_F_TUNINFO_FLAGS, or both",
             )),
+            (Self::SkbGetTunnelKey | Self::SkbSetTunnelKey, 2) => Some((
+                SKB_TUNNEL_KEY_SIZES,
+                "skb tunnel key helpers require arg2 size to be one of 8, 22, 24, 28, or 44 bytes",
+            )),
             (Self::MapUpdateElem, 3) => Some((
                 MAP_UPDATE_FLAGS,
                 "helper 'bpf_map_update_elem' requires arg3 flags to be BPF_ANY, BPF_NOEXIST, or BPF_EXIST",
@@ -1568,6 +1573,9 @@ impl BpfHelper {
     pub const fn scalar_arg_known_const_requirement(self, arg_idx: usize) -> Option<&'static str> {
         match (self, arg_idx) {
             (Self::DynptrData, 2) => Some("helper 'bpf_dynptr_data' arg2 must be known constant"),
+            (Self::SkbGetTunnelKey | Self::SkbSetTunnelKey, 2) => {
+                Some("skb tunnel key helpers require arg2 size to be a known constant")
+            }
             _ => None,
         }
     }

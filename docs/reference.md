@@ -489,10 +489,13 @@ the skb tunnel metadata helpers:
 `helper-call "bpf_skb_get_tunnel_opt" $ctx OPT_PTR SIZE`, and
 `helper-call "bpf_skb_set_tunnel_opt" $ctx OPT_PTR SIZE`. `KEY_PTR` and
 `OPT_PTR` must be stack/map-backed buffers whose accessible size covers
-`SIZE`; `bpf_skb_get_tunnel_key` accepts only `BPF_F_TUNINFO_IPV6` and
-`BPF_F_TUNINFO_FLAGS`, while `bpf_skb_set_tunnel_key` accepts only the
-kernel's tunnel-key flag bits through `0x1f`. Detailed tunnel-key struct
-sizes remain kernel-enforced. `tc_action`, TC, TCX, and Netkit also model
+`SIZE`. For tunnel-key helpers, `SIZE` must be a known constant and one
+of the modeled kernel-compatible `struct bpf_tunnel_key` prefix sizes
+(`8`, `22`, `24`, `28`, or `44` bytes). `bpf_skb_get_tunnel_key` accepts only
+`BPF_F_TUNINFO_IPV6` and `BPF_F_TUNINFO_FLAGS`, while
+`bpf_skb_set_tunnel_key` accepts only the kernel's tunnel-key flag bits
+through `0x1f`. Runtime tunnel address-family compatibility remains
+kernel-enforced. `tc_action`, TC, TCX, and Netkit also model
 `helper-call "bpf_skb_get_xfrm_state" $ctx INDEX XFRM_STATE_PTR SIZE 0`;
 `XFRM_STATE_PTR` must be a stack/map-backed output buffer whose
 accessible size covers `SIZE`, and the final reserved flags argument
