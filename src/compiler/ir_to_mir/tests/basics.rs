@@ -10,8 +10,8 @@ use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::{AddressSpace, BYTES_COUNTER_MAP_NAME, COUNTER_MAP_NAME};
 use crate::compiler::passes::optimize_with_ssa_hints;
 use crate::kernel_btf::{KernelBtf, TrampolineFieldSelector, TypeInfo};
-use nu_protocol::ast::{CellPath, RangeInclusion};
-use nu_protocol::{DeclId, Record, RegId, Span, Type, Value, VarId};
+use nu_protocol::ast::{CellPath, Expr, Expression, Pattern, RangeInclusion};
+use nu_protocol::{DeclId, Record, RegId, Span, SpanId, Type, Value, VarId};
 use std::collections::HashMap;
 
 fn find_tracepoint_pointer_field_candidate() -> Option<(String, String)> {
@@ -412,6 +412,81 @@ fn test_lower_random_int_bounded_range_scales_prandom_result() {
             }
         )
     }));
+}
+
+#[test]
+fn test_lower_match_integer_expression_pattern_compiles() {
+    let hir = HirProgram::new(
+        HirFunction {
+            blocks: vec![
+                HirBlock {
+                    id: HirBlockId(0),
+                    stmts: vec![HirStmt::LoadLiteral {
+                        dst: RegId::new(0),
+                        lit: HirLiteral::Int(42),
+                    }],
+                    terminator: HirTerminator::Match {
+                        pattern: Box::new(Pattern::Expression(Box::new(Expression {
+                            expr: Expr::Int(42),
+                            span: Span::test_data(),
+                            span_id: SpanId::new(0),
+                            ty: Type::Int,
+                        }))),
+                        src: RegId::new(0),
+                        if_true: HirBlockId(1),
+                        if_false: HirBlockId(2),
+                    },
+                },
+                HirBlock {
+                    id: HirBlockId(1),
+                    stmts: vec![HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::Int(7),
+                    }],
+                    terminator: HirTerminator::Return { src: RegId::new(1) },
+                },
+                HirBlock {
+                    id: HirBlockId(2),
+                    stmts: vec![HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::Int(9),
+                    }],
+                    terminator: HirTerminator::Return { src: RegId::new(2) },
+                },
+            ],
+            entry: HirBlockId(0),
+            spans: Vec::new(),
+            ast: Vec::new(),
+            comments: Vec::new(),
+            register_count: 3,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        None,
+    );
+
+    let program = lower_hir_to_mir(&hir, None, &HashMap::new())
+        .expect("integer expression match pattern should lower to MIR");
+    let emitted_eq = program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .any(|inst| {
+            matches!(
+                inst,
+                MirInst::BinOp {
+                    op: BinOpKind::Eq,
+                    rhs: MirValue::Const(42),
+                    ..
+                }
+            )
+        });
+    assert!(emitted_eq, "integer match should emit scalar equality");
+
+    compile_mir_to_ebpf_with_hints(&program, None, None)
+        .expect("integer expression match pattern should compile through codegen");
 }
 
 #[test]

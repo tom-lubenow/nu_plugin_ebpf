@@ -6,6 +6,7 @@ use crate::kernel_btf::{
     TrampolineBitfieldInfo, TrampolineFieldProjection, TrampolineFieldSelector,
     TrampolineValueKind, TrampolineValueSpec, TypeInfo,
 };
+use nu_protocol::ast::Expr;
 
 mod context_helpers;
 mod packet;
@@ -210,43 +211,10 @@ impl<'a> HirToMirLowering<'a> {
         let src_vreg = self.get_vreg(src);
 
         match pattern {
-            Pattern::Value(value) => match value {
-                Value::Bool { val, .. } => {
-                    if *val {
-                        self.terminate(MirInst::Branch {
-                            cond: src_vreg,
-                            if_true,
-                            if_false,
-                        });
-                    } else {
-                        self.terminate(MirInst::Branch {
-                            cond: src_vreg,
-                            if_true: if_false,
-                            if_false: if_true,
-                        });
-                    }
-                }
-                Value::Nothing { .. } => {
-                    let cmp_result = self.func.alloc_vreg();
-                    self.emit(MirInst::BinOp {
-                        dst: cmp_result,
-                        op: BinOpKind::Eq,
-                        lhs: MirValue::VReg(src_vreg),
-                        rhs: MirValue::Const(0),
-                    });
-                    self.terminate(MirInst::Branch {
-                        cond: cmp_result,
-                        if_true,
-                        if_false,
-                    });
-                }
-                _ => {
-                    return Err(CompileError::UnsupportedInstruction(format!(
-                        "Match against value type {:?} not supported in eBPF",
-                        value.get_type()
-                    )));
-                }
-            },
+            Pattern::Value(value) => self.lower_match_value(value, src_vreg, if_true, if_false)?,
+            Pattern::Expression(expr) => {
+                self.lower_match_expression(expr, src_vreg, if_true, if_false)?
+            }
             Pattern::Variable(var_id) => {
                 self.var_mappings.insert(*var_id, src_vreg);
                 self.terminate(MirInst::Jump { target: if_true });
@@ -255,9 +223,100 @@ impl<'a> HirToMirLowering<'a> {
                 self.terminate(MirInst::Jump { target: if_true });
             }
             _ => {
-                return Err(CompileError::UnsupportedInstruction(
-                    "Pattern matching not supported in eBPF".into(),
-                ));
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "Pattern matching not supported in eBPF: {pattern:?}"
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    fn terminate_bool_match(
+        &mut self,
+        src_vreg: VReg,
+        expected: bool,
+        if_true: BlockId,
+        if_false: BlockId,
+    ) {
+        if expected {
+            self.terminate(MirInst::Branch {
+                cond: src_vreg,
+                if_true,
+                if_false,
+            });
+        } else {
+            self.terminate(MirInst::Branch {
+                cond: src_vreg,
+                if_true: if_false,
+                if_false: if_true,
+            });
+        }
+    }
+
+    fn terminate_i64_match(
+        &mut self,
+        src_vreg: VReg,
+        expected: i64,
+        if_true: BlockId,
+        if_false: BlockId,
+    ) {
+        let cmp_result = self.func.alloc_vreg();
+        self.emit(MirInst::BinOp {
+            dst: cmp_result,
+            op: BinOpKind::Eq,
+            lhs: MirValue::VReg(src_vreg),
+            rhs: MirValue::Const(expected),
+        });
+        self.terminate(MirInst::Branch {
+            cond: cmp_result,
+            if_true,
+            if_false,
+        });
+    }
+
+    fn lower_match_value(
+        &mut self,
+        value: &Value,
+        src_vreg: VReg,
+        if_true: BlockId,
+        if_false: BlockId,
+    ) -> Result<(), CompileError> {
+        match value {
+            Value::Bool { val, .. } => self.terminate_bool_match(src_vreg, *val, if_true, if_false),
+            Value::Nothing { .. } => self.terminate_i64_match(src_vreg, 0, if_true, if_false),
+            Value::Int { val, .. } => self.terminate_i64_match(src_vreg, *val, if_true, if_false),
+            Value::Filesize { val, .. } => {
+                self.terminate_i64_match(src_vreg, val.get(), if_true, if_false)
+            }
+            Value::Duration { val, .. } => {
+                self.terminate_i64_match(src_vreg, *val, if_true, if_false)
+            }
+            _ => {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "Match against value type {:?} not supported in eBPF",
+                    value.get_type()
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    fn lower_match_expression(
+        &mut self,
+        expr: &nu_protocol::ast::Expression,
+        src_vreg: VReg,
+        if_true: BlockId,
+        if_false: BlockId,
+    ) -> Result<(), CompileError> {
+        match &expr.expr {
+            Expr::Bool(val) => self.terminate_bool_match(src_vreg, *val, if_true, if_false),
+            Expr::Int(val) => self.terminate_i64_match(src_vreg, *val, if_true, if_false),
+            Expr::Nothing => self.terminate_i64_match(src_vreg, 0, if_true, if_false),
+            _ => {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "Match against expression pattern {:?} not supported in eBPF",
+                    expr.expr
+                )));
             }
         }
         Ok(())
