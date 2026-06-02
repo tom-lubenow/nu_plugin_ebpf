@@ -16,6 +16,7 @@ const MAP_UPDATE_FLAGS: &[i64] = &[0, 1, 2];
 const MAP_PUSH_FLAGS: &[i64] = &[0, 2];
 const TIMER_INIT_FLAGS: &[i64] = &[0, 1, 7];
 const LWT_SEG6_ACTIONS: &[i64] = &[2, 3, 9, 10];
+const BPF_CSUM_LEVELS: &[i64] = &[0, 1, 2, 3];
 const BPF_F_HDR_FIELD_MASK: i64 = 0x0f;
 const BPF_F_HDR_FIELD_SIZE_BIT_0: i64 = 1 << 0;
 const BPF_F_HDR_FIELD_SIZE_BIT_1: i64 = 1 << 1;
@@ -1660,6 +1661,10 @@ impl BpfHelper {
             (Self::LwtSeg6Action, 1) => Some((
                 LWT_SEG6_ACTIONS,
                 "helper 'bpf_lwt_seg6_action' requires arg1 action to be SEG6_LOCAL_ACTION_END_X, SEG6_LOCAL_ACTION_END_T, SEG6_LOCAL_ACTION_END_B6, or SEG6_LOCAL_ACTION_END_B6_ENCAP",
+            )),
+            (Self::CsumLevel, 1) => Some((
+                BPF_CSUM_LEVELS,
+                "helper 'bpf_csum_level' requires arg1 level to be BPF_CSUM_LEVEL_QUERY, BPF_CSUM_LEVEL_INC, BPF_CSUM_LEVEL_DEC, or BPF_CSUM_LEVEL_RESET",
             )),
             _ => None,
         }

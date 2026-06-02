@@ -2333,6 +2333,17 @@ fn test_helper_signatures_skb_packet_mutation_helpers() {
 }
 
 #[test]
+fn test_csum_level_helper_level_contract() {
+    assert_eq!(
+        BpfHelper::CsumLevel.scalar_arg_allowed_values_requirement(1),
+        Some((
+            BPF_CSUM_LEVELS,
+            "helper 'bpf_csum_level' requires arg1 level to be BPF_CSUM_LEVEL_QUERY, BPF_CSUM_LEVEL_INC, BPF_CSUM_LEVEL_DEC, or BPF_CSUM_LEVEL_RESET"
+        ))
+    );
+}
+
+#[test]
 fn test_helper_signature_get_stack() {
     let sig = HelperSignature::for_id(BpfHelper::GetStack as u32)
         .expect("expected bpf_get_stack helper signature");

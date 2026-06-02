@@ -8583,6 +8583,46 @@ fn test_verify_mir_for_probe_context_csum_replace_helpers_reject_invalid_flags()
     }
 }
 
+fn make_csum_level_verify_call(level: i64) -> (MirFunction, HashMap<VReg, MirType>) {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::CsumLevel as u32,
+            args: vec![MirValue::VReg(ctx), MirValue::Const(level)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+    (func, types)
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_csum_level_helper_rejects_invalid_level() {
+    let (func, types) = make_csum_level_verify_call(4);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected bpf_csum_level invalid level error");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_csum_level' requires arg1 level")
+    }));
+}
+
 #[test]
 fn test_verify_mir_for_probe_context_csum_diff_allows_null_zero_side() {
     let mut func = MirFunction::new();

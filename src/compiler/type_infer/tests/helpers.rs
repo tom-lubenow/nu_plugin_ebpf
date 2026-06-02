@@ -3104,6 +3104,39 @@ fn test_type_error_csum_replace_helpers_reject_invalid_flags() {
     }
 }
 
+fn make_csum_level_call(level: i64) -> MirFunction {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::CsumLevel as u32,
+        args: vec![MirValue::VReg(ctx), MirValue::Const(level)],
+    });
+    block.terminator = MirInst::Return { val: None };
+    func
+}
+
+#[test]
+fn test_type_error_csum_level_helper_rejects_invalid_level() {
+    let func = make_csum_level_call(4);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_csum_level invalid level error");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_csum_level' requires arg1 level")
+    }));
+}
+
 #[test]
 fn test_infer_skb_packet_mutation_helpers_in_supported_programs() {
     for (probe_ctx, helper, extra_args) in [
