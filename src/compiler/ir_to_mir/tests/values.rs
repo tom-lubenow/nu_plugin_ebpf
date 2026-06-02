@@ -13195,6 +13195,71 @@ fn test_lower_bits_shift_number_bytes_on_known_integer_inputs() {
 }
 
 #[test]
+fn test_lower_bits_shift_signed_fixed_width_on_known_integer_inputs() {
+    for (offset, command_name, input, shift_count, number_bytes, expected) in [
+        (0, "bits shl", 127, 1, 1, -2),
+        (1, "bits shr", 128, 1, 1, -64),
+        (2, "bits shl", -65, 1, 1, 126),
+        (3, "bits shr", 32_768, 1, 2, -16_384),
+    ] {
+        let bits_decl = DeclId::new(70020 + offset);
+        let hir = make_bits_shift_program(bits_decl, input, shift_count, true, Some(number_bytes));
+        let decl_names = HashMap::from([(bits_decl, command_name.to_string())]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!(
+                "{command_name} --signed --number-bytes {number_bytes} should lower integer input: {err}"
+            )
+        });
+
+        assert_program_returns_constant(
+            &result.program,
+            expected,
+            &format!("{command_name} --signed --number-bytes {number_bytes}"),
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{command_name} should compile through codegen: {err}"));
+    }
+}
+
+#[test]
+fn test_lower_bits_shift_signed_without_number_bytes_on_known_integer_inputs() {
+    for (offset, command_name, input, shift_count, expected) in
+        [(0, "bits shl", 4, 1, 8), (1, "bits shr", -8, 1, -4)]
+    {
+        let bits_decl = DeclId::new(70030 + offset);
+        let hir = make_bits_shift_program(bits_decl, input, shift_count, true, None);
+        let decl_names = HashMap::from([(bits_decl, command_name.to_string())]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("{command_name} --signed should lower: {err}"));
+
+        assert_program_returns_constant(
+            &result.program,
+            expected,
+            &format!("{command_name} --signed"),
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{command_name} --signed should compile: {err}"));
+    }
+}
+
+#[test]
 fn test_lower_bits_shift_signed_i64_on_known_integer_lists() {
     for (offset, command_name, values, expected_values) in [
         (0, "bits shl", vec![4i64, 3, 2], vec![8i64, 6, 4]),
@@ -13286,6 +13351,56 @@ fn test_lower_bits_shift_number_bytes_on_known_integer_lists() {
 }
 
 #[test]
+fn test_lower_bits_shift_default_on_known_integer_lists() {
+    for (offset, command_name, values, expected_values) in [
+        (
+            0,
+            "bits shl",
+            vec![127i64, 128, -129, 256],
+            vec![254i64, 0, -258, 512],
+        ),
+        (
+            1,
+            "bits shr",
+            vec![255i64, -129, 4_294_967_296],
+            vec![127i64, -65, 2_147_483_648],
+        ),
+    ] {
+        let bits_decl = DeclId::new(70120 + offset);
+        let sum_decl = DeclId::new(70220 + offset);
+        let hir = make_bits_shift_list_sum_program(bits_decl, sum_decl, &values, 1, false, None);
+        let decl_names = HashMap::from([
+            (bits_decl, command_name.to_string()),
+            (sum_decl, "math sum".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("default {command_name} should lower integer lists: {err}"));
+        let expected = expected_values
+            .into_iter()
+            .flat_map(|value| value.to_le_bytes())
+            .collect::<Vec<_>>();
+
+        assert!(
+            result
+                .readonly_globals
+                .iter()
+                .any(|global| global.data == expected),
+            "expected default {command_name} to materialize the shifted integer list"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("default {command_name} should compile: {err}"));
+    }
+}
+
+#[test]
 fn test_lower_bits_shift_commands_on_known_binary_lists() {
     for (offset, command_name, values, count, expected_prefix) in [
         (
@@ -13339,26 +13454,36 @@ fn test_lower_bits_shift_commands_on_known_binary_lists() {
 }
 
 #[test]
-fn test_lower_bits_shift_default_is_rejected() {
-    let bits_decl = DeclId::new(7030);
-    let hir = make_bits_binary_program(bits_decl, 4, 1);
-    let decl_names = HashMap::from([(bits_decl, "bits shl".to_string())]);
+fn test_lower_bits_shift_default_on_known_integer_inputs() {
+    for (offset, command_name, input, shift_count, expected) in [
+        (0, "bits shl", 127, 1, 254),
+        (1, "bits shl", 128, 1, 0),
+        (2, "bits shl", 256, 1, 512),
+        (3, "bits shl", -65, 1, 126),
+        (4, "bits shl", -129, 1, -258),
+        (5, "bits shr", 255, 1, 127),
+        (6, "bits shr", -129, 1, -65),
+        (7, "bits shl", 4_294_967_296, 1, 8_589_934_592),
+        (8, "bits shr", 4_294_967_296, 1, 2_147_483_648),
+    ] {
+        let bits_decl = DeclId::new(7030 + offset);
+        let hir = make_bits_shift_program(bits_decl, input, shift_count, false, None);
+        let decl_names = HashMap::from([(bits_decl, command_name.to_string())]);
 
-    let err = lower_hir_to_mir_with_hints(
-        &hir,
-        None,
-        &decl_names,
-        None,
-        &HashMap::new(),
-        &HashMap::new(),
-    )
-    .expect_err("default bits shl should reject because it is byte-width masked");
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("default {command_name} should lower: {err}"));
 
-    assert!(
-        err.to_string()
-            .contains("bits shl default auto-width shifts are not supported"),
-        "unexpected error: {err}"
-    );
+        assert_program_returns_constant(&result.program, expected, command_name);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("default {command_name} should compile: {err}"));
+    }
 }
 
 #[test]
@@ -13443,9 +13568,48 @@ fn test_lower_bits_shift_number_bytes_rejects_out_of_range_shift_count() {
 }
 
 #[test]
-fn test_lower_bits_shift_rejects_unsupported_number_bytes() {
-    let bits_decl = DeclId::new(70312);
-    let hir = make_bits_shift_program(bits_decl, 1, 1, false, Some(8));
+fn test_lower_bits_shift_unsigned_i64_on_known_integer_inputs() {
+    for (offset, command_name, input, shift_count, expected) in [
+        (0, "bits shl", 4_294_967_296, 1, 8_589_934_592),
+        (
+            1,
+            "bits shr",
+            9_223_372_036_854_775_807,
+            1,
+            4_611_686_018_427_387_903,
+        ),
+        (2, "bits shr", -2, 1, -1),
+    ] {
+        let bits_decl = DeclId::new(70312 + offset);
+        let hir = make_bits_shift_program(bits_decl, input, shift_count, false, Some(8));
+        let decl_names = HashMap::from([(bits_decl, command_name.to_string())]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("{command_name} --number-bytes 8 should lower compile-time input: {err}")
+        });
+
+        assert_program_returns_constant(
+            &result.program,
+            expected,
+            &format!("{command_name} --number-bytes 8"),
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{command_name} should compile through codegen: {err}"));
+    }
+}
+
+#[test]
+fn test_lower_bits_shift_unsigned_i64_rejects_out_of_range_output() {
+    let bits_decl = DeclId::new(70316);
+    let hir = make_bits_shift_program(bits_decl, i64::MAX, 1, false, Some(8));
     let decl_names = HashMap::from([(bits_decl, "bits shl".to_string())]);
 
     let err = lower_hir_to_mir_with_hints(
@@ -13456,11 +13620,11 @@ fn test_lower_bits_shift_rejects_unsupported_number_bytes() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("bits shl --number-bytes 8 without --signed should remain unsupported");
+    .expect_err("bits shl --number-bytes 8 should reject unsigned outputs above i64::MAX");
 
     assert!(
         err.to_string()
-            .contains("bits shl explicit-width integer mode supports --number-bytes 1, 2, or 4"),
+            .contains("bits shl unsigned 8-byte output exceeds Nushell's integer range"),
         "unexpected error: {err}"
     );
 }
@@ -13645,6 +13809,71 @@ fn test_lower_bits_rotate_number_bytes_on_known_integer_inputs() {
 }
 
 #[test]
+fn test_lower_bits_rotate_signed_fixed_width_on_known_integer_inputs() {
+    for (offset, command_name, input, rotate_count, number_bytes, expected) in [
+        (0, "bits rol", 127, 1, 1, -2),
+        (1, "bits ror", 1, 1, 1, -128),
+        (2, "bits rol", -65, 1, 1, 127),
+        (3, "bits ror", 1, 1, 2, -32_768),
+    ] {
+        let bits_decl = DeclId::new(70720 + offset);
+        let hir = make_bits_shift_program(bits_decl, input, rotate_count, true, Some(number_bytes));
+        let decl_names = HashMap::from([(bits_decl, command_name.to_string())]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!(
+                "{command_name} --signed --number-bytes {number_bytes} should lower integer input: {err}"
+            )
+        });
+
+        assert_program_returns_constant(
+            &result.program,
+            expected,
+            &format!("{command_name} --signed --number-bytes {number_bytes}"),
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{command_name} should compile through codegen: {err}"));
+    }
+}
+
+#[test]
+fn test_lower_bits_rotate_signed_without_number_bytes_on_known_integer_inputs() {
+    for (offset, command_name, input, rotate_count, expected) in
+        [(0, "bits rol", 1, 1, 2), (1, "bits ror", 1, 1, i64::MIN)]
+    {
+        let bits_decl = DeclId::new(70730 + offset);
+        let hir = make_bits_shift_program(bits_decl, input, rotate_count, true, None);
+        let decl_names = HashMap::from([(bits_decl, command_name.to_string())]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("{command_name} --signed should lower: {err}"));
+
+        assert_program_returns_constant(
+            &result.program,
+            expected,
+            &format!("{command_name} --signed"),
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{command_name} --signed should compile: {err}"));
+    }
+}
+
+#[test]
 fn test_lower_bits_rotate_signed_i64_on_known_integer_lists() {
     for (offset, command_name, values, expected_values) in [
         (0, "bits rol", vec![4i64, 3, 2], vec![8i64, 6, 4]),
@@ -13731,6 +13960,56 @@ fn test_lower_bits_rotate_number_bytes_on_known_integer_lists() {
 }
 
 #[test]
+fn test_lower_bits_rotate_default_on_known_integer_lists() {
+    for (offset, command_name, values, expected_values) in [
+        (
+            0,
+            "bits rol",
+            vec![127i64, 128, -129, 256],
+            vec![254i64, 1, -257, 512],
+        ),
+        (
+            1,
+            "bits ror",
+            vec![1i64, 256, -129, 4_294_967_296],
+            vec![128i64, 128, -65, 2_147_483_648],
+        ),
+    ] {
+        let bits_decl = DeclId::new(70820 + offset);
+        let sum_decl = DeclId::new(70920 + offset);
+        let hir = make_bits_shift_list_sum_program(bits_decl, sum_decl, &values, 1, false, None);
+        let decl_names = HashMap::from([
+            (bits_decl, command_name.to_string()),
+            (sum_decl, "math sum".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("default {command_name} should lower integer lists: {err}"));
+        let expected = expected_values
+            .into_iter()
+            .flat_map(|value| value.to_le_bytes())
+            .collect::<Vec<_>>();
+
+        assert!(
+            result
+                .readonly_globals
+                .iter()
+                .any(|global| global.data == expected),
+            "expected default {command_name} to materialize the rotated integer list"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("default {command_name} should compile: {err}"));
+    }
+}
+
+#[test]
 fn test_lower_bits_rotate_commands_on_known_binary_lists() {
     for (offset, command_name, values, count, expected_prefix) in [
         (
@@ -13784,26 +14063,36 @@ fn test_lower_bits_rotate_commands_on_known_binary_lists() {
 }
 
 #[test]
-fn test_lower_bits_rotate_default_is_rejected() {
-    let bits_decl = DeclId::new(7100);
-    let hir = make_bits_shift_program(bits_decl, 4, 1, false, None);
-    let decl_names = HashMap::from([(bits_decl, "bits rol".to_string())]);
+fn test_lower_bits_rotate_default_on_known_integer_inputs() {
+    for (offset, command_name, input, rotate_count, expected) in [
+        (0, "bits rol", 127, 1, 254),
+        (1, "bits rol", 128, 1, 1),
+        (2, "bits rol", -65, 1, 127),
+        (3, "bits rol", -129, 1, -257),
+        (4, "bits ror", 1, 1, 128),
+        (5, "bits ror", 256, 1, 128),
+        (6, "bits ror", -65, 1, -33),
+        (7, "bits rol", 4_294_967_296, 1, 8_589_934_592),
+        (8, "bits ror", 4_294_967_296, 1, 2_147_483_648),
+    ] {
+        let bits_decl = DeclId::new(7100 + offset);
+        let hir = make_bits_shift_program(bits_decl, input, rotate_count, false, None);
+        let decl_names = HashMap::from([(bits_decl, command_name.to_string())]);
 
-    let err = lower_hir_to_mir_with_hints(
-        &hir,
-        None,
-        &decl_names,
-        None,
-        &HashMap::new(),
-        &HashMap::new(),
-    )
-    .expect_err("default bits rol should reject because it is byte-width masked");
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("default {command_name} should lower: {err}"));
 
-    assert!(
-        err.to_string()
-            .contains("bits rol default auto-width rotates are not supported"),
-        "unexpected error: {err}"
-    );
+        assert_program_returns_constant(&result.program, expected, command_name);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("default {command_name} should compile: {err}"));
+    }
 }
 
 #[test]
@@ -13888,10 +14177,43 @@ fn test_lower_bits_rotate_number_bytes_rejects_out_of_range_rotate_count() {
 }
 
 #[test]
-fn test_lower_bits_rotate_rejects_unsupported_number_bytes() {
-    let bits_decl = DeclId::new(71012);
-    let hir = make_bits_shift_program(bits_decl, 1, 1, false, Some(8));
-    let decl_names = HashMap::from([(bits_decl, "bits ror".to_string())]);
+fn test_lower_bits_rotate_unsigned_i64_on_known_integer_inputs() {
+    for (offset, command_name, input, rotate_count, expected) in [
+        (0, "bits rol", 4_294_967_296, 1, 8_589_934_592),
+        (1, "bits ror", 4_294_967_296, 1, 2_147_483_648),
+        (2, "bits ror", -1, 1, -1),
+    ] {
+        let bits_decl = DeclId::new(71012 + offset);
+        let hir = make_bits_shift_program(bits_decl, input, rotate_count, false, Some(8));
+        let decl_names = HashMap::from([(bits_decl, command_name.to_string())]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("{command_name} --number-bytes 8 should lower compile-time input: {err}")
+        });
+
+        assert_program_returns_constant(
+            &result.program,
+            expected,
+            &format!("{command_name} --number-bytes 8"),
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{command_name} should compile through codegen: {err}"));
+    }
+}
+
+#[test]
+fn test_lower_bits_rotate_unsigned_i64_rejects_out_of_range_output() {
+    let bits_decl = DeclId::new(71016);
+    let hir = make_bits_shift_program(bits_decl, i64::MAX, 1, false, Some(8));
+    let decl_names = HashMap::from([(bits_decl, "bits rol".to_string())]);
 
     let err = lower_hir_to_mir_with_hints(
         &hir,
@@ -13901,11 +14223,11 @@ fn test_lower_bits_rotate_rejects_unsupported_number_bytes() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("bits ror --number-bytes 8 without --signed should remain unsupported");
+    .expect_err("bits rol --number-bytes 8 should reject unsigned outputs above i64::MAX");
 
     assert!(
         err.to_string()
-            .contains("bits ror explicit-width integer mode supports --number-bytes 1, 2, or 4"),
+            .contains("bits rol unsigned 8-byte output exceeds Nushell's integer range"),
         "unexpected error: {err}"
     );
 }
@@ -14778,6 +15100,159 @@ fn test_lower_bits_shift_number_bytes_on_runtime_stack_numeric_lists() {
 }
 
 #[test]
+fn test_lower_bits_shift_signed_fixed_width_on_runtime_stack_numeric_lists() {
+    for (offset, command_name, expected_shift_op) in [
+        (0, "bits shl", BinOpKind::Shl),
+        (1, "bits shr", BinOpKind::ArShr),
+    ] {
+        let bits_decl = DeclId::new(71920 + offset);
+        let length_decl = DeclId::new(71930 + offset);
+        let random_decl = DeclId::new(71940 + offset);
+        let hir = make_runtime_bits_shift_list_length_program(
+            bits_decl,
+            length_decl,
+            random_decl,
+            1,
+            true,
+            Some(1),
+        );
+        let decl_names = HashMap::from([
+            (bits_decl, command_name.to_string()),
+            (length_decl, "length".to_string()),
+            (random_decl, "random int".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!(
+                "{command_name} --signed --number-bytes 1 should lower on runtime stack-backed numeric lists: {err}"
+            )
+        });
+        let instructions = result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .collect::<Vec<_>>();
+
+        assert!(
+            instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op: BinOpKind::And,
+                    ..
+                }
+            )),
+            "expected runtime {command_name} --signed --number-bytes 1 to mask values"
+        );
+        assert!(
+            instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op,
+                    ..
+                } if *op == expected_shift_op
+            )),
+            "expected runtime {command_name} --signed --number-bytes 1 to emit {expected_shift_op:?}"
+        );
+        assert!(
+            instructions
+                .iter()
+                .any(|inst| matches!(inst, MirInst::ListPush { .. })),
+            "expected runtime {command_name} --signed --number-bytes 1 to materialize an output list"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!(
+                    "{command_name} --signed --number-bytes 1 runtime list output consumed by length should compile: {err}"
+                )
+            });
+    }
+}
+
+#[test]
+fn test_lower_bits_shift_default_rejects_runtime_stack_numeric_lists() {
+    let bits_decl = DeclId::new(71950);
+    let length_decl = DeclId::new(71951);
+    let random_decl = DeclId::new(71952);
+    let hir = make_runtime_bits_shift_list_length_program(
+        bits_decl,
+        length_decl,
+        random_decl,
+        1,
+        false,
+        None,
+    );
+    let decl_names = HashMap::from([
+        (bits_decl, "bits shl".to_string()),
+        (length_decl, "length".to_string()),
+        (random_decl, "random int".to_string()),
+    ]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("default bits shl should reject runtime stack-backed numeric lists");
+
+    assert!(
+        err.to_string().contains(
+            "bits shl default auto-width shifts require compile-time known integer input"
+        ),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_bits_shift_unsigned_i64_rejects_runtime_stack_numeric_lists() {
+    let bits_decl = DeclId::new(71960);
+    let length_decl = DeclId::new(71961);
+    let random_decl = DeclId::new(71962);
+    let hir = make_runtime_bits_shift_list_length_program(
+        bits_decl,
+        length_decl,
+        random_decl,
+        1,
+        false,
+        Some(8),
+    );
+    let decl_names = HashMap::from([
+        (bits_decl, "bits shr".to_string()),
+        (length_decl, "length".to_string()),
+        (random_decl, "random int".to_string()),
+    ]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("bits shr --number-bytes 8 should reject runtime stack-backed numeric lists");
+
+    assert!(
+        err.to_string().contains(
+            "bits shr unsigned --number-bytes 8 requires compile-time known integer input"
+        ),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn test_lower_bits_rotate_signed_i64_on_runtime_stack_numeric_lists() {
     for (offset, command_name) in [(0, "bits rol"), (1, "bits ror")] {
         let bits_decl = DeclId::new(7110 + offset);
@@ -14928,6 +15403,158 @@ fn test_lower_bits_rotate_number_bytes_on_runtime_stack_numeric_lists() {
                 )
             });
     }
+}
+
+#[test]
+fn test_lower_bits_rotate_signed_fixed_width_on_runtime_stack_numeric_lists() {
+    for (offset, command_name) in [(0, "bits rol"), (1, "bits ror")] {
+        let bits_decl = DeclId::new(71970 + offset);
+        let length_decl = DeclId::new(71980 + offset);
+        let random_decl = DeclId::new(71990 + offset);
+        let hir = make_runtime_bits_shift_list_length_program(
+            bits_decl,
+            length_decl,
+            random_decl,
+            1,
+            true,
+            Some(1),
+        );
+        let decl_names = HashMap::from([
+            (bits_decl, command_name.to_string()),
+            (length_decl, "length".to_string()),
+            (random_decl, "random int".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!(
+                "{command_name} --signed --number-bytes 1 should lower on runtime stack-backed numeric lists: {err}"
+            )
+        });
+        let instructions = result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .collect::<Vec<_>>();
+
+        assert!(
+            instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op: BinOpKind::And,
+                    ..
+                }
+            )),
+            "expected runtime {command_name} --signed --number-bytes 1 to mask values"
+        );
+        for expected_op in [BinOpKind::Shl, BinOpKind::Shr, BinOpKind::Or] {
+            assert!(
+                instructions.iter().any(|inst| matches!(
+                    inst,
+                    MirInst::BinOp {
+                        op,
+                        ..
+                    } if *op == expected_op
+                )),
+                "expected runtime {command_name} --signed --number-bytes 1 to emit {expected_op:?}"
+            );
+        }
+        assert!(
+            instructions
+                .iter()
+                .any(|inst| matches!(inst, MirInst::ListPush { .. })),
+            "expected runtime {command_name} --signed --number-bytes 1 to materialize an output list"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!(
+                    "{command_name} --signed --number-bytes 1 runtime list output consumed by length should compile: {err}"
+                )
+            });
+    }
+}
+
+#[test]
+fn test_lower_bits_rotate_default_rejects_runtime_stack_numeric_lists() {
+    let bits_decl = DeclId::new(719100);
+    let length_decl = DeclId::new(719101);
+    let random_decl = DeclId::new(719102);
+    let hir = make_runtime_bits_shift_list_length_program(
+        bits_decl,
+        length_decl,
+        random_decl,
+        1,
+        false,
+        None,
+    );
+    let decl_names = HashMap::from([
+        (bits_decl, "bits rol".to_string()),
+        (length_decl, "length".to_string()),
+        (random_decl, "random int".to_string()),
+    ]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("default bits rol should reject runtime stack-backed numeric lists");
+
+    assert!(
+        err.to_string().contains(
+            "bits rol default auto-width rotates require compile-time known integer input"
+        ),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_bits_rotate_unsigned_i64_rejects_runtime_stack_numeric_lists() {
+    let bits_decl = DeclId::new(719110);
+    let length_decl = DeclId::new(719111);
+    let random_decl = DeclId::new(719112);
+    let hir = make_runtime_bits_shift_list_length_program(
+        bits_decl,
+        length_decl,
+        random_decl,
+        1,
+        false,
+        Some(8),
+    );
+    let decl_names = HashMap::from([
+        (bits_decl, "bits ror".to_string()),
+        (length_decl, "length".to_string()),
+        (random_decl, "random int".to_string()),
+    ]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("bits ror --number-bytes 8 should reject runtime stack-backed numeric lists");
+
+    assert!(
+        err.to_string().contains(
+            "bits ror unsigned --number-bytes 8 requires compile-time known integer input"
+        ),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]

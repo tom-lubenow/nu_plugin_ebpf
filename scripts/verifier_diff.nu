@@ -35600,11 +35600,11 @@ const FIXTURES = [
     {
         name: "core-scalar-bits-shift-number-bytes"
         category: "language-core"
-        tags: [scalar bits shl shr number-bytes]
+        tags: [scalar bits shl shr signed number-bytes]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  ((255 | bits shl 1 --number-bytes 1) == 254) and ((-65 | bits shr 1 --number-bytes 1) == -33) and ((65536 | bits shl 1 --number-bytes 4) == 131072)'
+            '  ((255 | bits shl 1 --number-bytes 1) == 254) and ((-65 | bits shr 1 --number-bytes 1) == -33) and ((127 | bits shl 1 --signed --number-bytes 1) == -2) and ((128 | bits shr 1 --signed --number-bytes 1) == -64) and ((4294967296 | bits shl 1 --number-bytes 8) == 8589934592)'
             '}'
         ]
         local: "accept"
@@ -35650,18 +35650,58 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
-        name: "core-scalar-bits-shift-default-reject"
+        name: "core-list-bits-shift-signed-fixed-runtime"
         category: "language-core"
-        tags: [scalar bits shl reject]
+        tags: [aggregate list bits shl signed number-bytes runtime]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  4 | bits shl 1'
+            '  ([(random int)] | bits shl 1 --signed --number-bytes 1 | length) == 1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-scalar-bits-shift-default"
+        category: "language-core"
+        tags: [scalar bits shl shr default]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ((128 | bits shl 1) == 0) and ((-129 | bits shr 1) == -65) and ((4294967296 | bits shl 1) == 8589934592)'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-scalar-bits-shift-default-runtime-reject"
+        category: "language-core"
+        tags: [scalar bits shl default runtime reject]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  (random int) | bits shl 1'
             '}'
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "bits shl default auto-width shifts are not supported"
+        error_contains: "bits shl default auto-width shifts require compile-time known integer input"
+    }
+    {
+        name: "core-scalar-bits-shift-unsigned-i64-runtime-reject"
+        category: "language-core"
+        tags: [scalar bits shr number-bytes runtime reject]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  (random int) | bits shr 1 --number-bytes 8'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "bits shr unsigned --number-bytes 8 requires compile-time known integer input"
     }
     {
         name: "core-scalar-bits-rotate-signed-i64"
@@ -35705,11 +35745,11 @@ const FIXTURES = [
     {
         name: "core-scalar-bits-rotate-number-bytes"
         category: "language-core"
-        tags: [scalar bits rol ror number-bytes]
+        tags: [scalar bits rol ror signed number-bytes]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  ((127 | bits rol 1 --number-bytes 1) == 254) and ((-65 | bits ror 1 --number-bytes 1) == -33) and ((1 | bits ror 32 --number-bytes 4) == 1)'
+            '  ((127 | bits rol 1 --number-bytes 1) == 254) and ((-65 | bits ror 1 --number-bytes 1) == -33) and ((1 | bits ror 32 --number-bytes 4) == 1) and ((1 | bits ror 1 --signed --number-bytes 1) == -128) and ((4294967296 | bits ror 1 --number-bytes 8) == 2147483648)'
             '}'
         ]
         local: "accept"
@@ -35742,18 +35782,58 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
-        name: "core-scalar-bits-rotate-default-reject"
+        name: "core-list-bits-rotate-signed-fixed-runtime"
         category: "language-core"
-        tags: [scalar bits rol reject]
+        tags: [aggregate list bits ror signed number-bytes runtime]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  4 | bits rol 1'
+            '  ([(random int)] | bits ror 1 --signed --number-bytes 1 | length) == 1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-scalar-bits-rotate-default"
+        category: "language-core"
+        tags: [scalar bits rol ror default]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ((128 | bits rol 1) == 1) and ((-129 | bits rol 1) == -257) and ((4294967296 | bits ror 1) == 2147483648)'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-scalar-bits-rotate-default-runtime-reject"
+        category: "language-core"
+        tags: [scalar bits rol default runtime reject]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  (random int) | bits rol 1'
             '}'
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "bits rol default auto-width rotates are not supported"
+        error_contains: "bits rol default auto-width rotates require compile-time known integer input"
+    }
+    {
+        name: "core-scalar-bits-rotate-unsigned-i64-runtime-reject"
+        category: "language-core"
+        tags: [scalar bits ror number-bytes runtime reject]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  (random int) | bits ror 1 --number-bytes 8'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "bits ror unsigned --number-bytes 8 requires compile-time known integer input"
     }
     {
         name: "core-null-length"
