@@ -2525,6 +2525,16 @@ fn test_skb_store_bytes_helper_flag_contract() {
             "helper 'bpf_skb_store_bytes' requires arg4 flags to contain only BPF_F_RECOMPUTE_CSUM/BPF_F_INVALIDATE_HASH bits (0x03)"
         ))
     );
+    for helper in [BpfHelper::SkbStoreBytes, BpfHelper::SkbLoadBytes] {
+        assert_eq!(
+            helper.scalar_arg_range_requirement(1),
+            Some((
+                0,
+                i32::MAX as i64,
+                "skb byte helpers require arg1 offset to be between 0 and i32::MAX"
+            ))
+        );
+    }
 }
 
 #[test]
@@ -2592,6 +2602,14 @@ fn test_checksum_replacement_helper_flag_contracts() {
 
 #[test]
 fn test_skb_load_bytes_relative_start_header_contract() {
+    assert_eq!(
+        BpfHelper::SkbLoadBytesRelative.scalar_arg_range_requirement(1),
+        Some((
+            0,
+            0xffff,
+            "helper 'bpf_skb_load_bytes_relative' requires arg1 offset to be between 0 and 0xffff"
+        ))
+    );
     assert_eq!(
         BpfHelper::SkbLoadBytesRelative.scalar_arg_range_requirement(4),
         Some((

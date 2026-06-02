@@ -8448,6 +8448,75 @@ fn test_type_error_packet_byte_helpers_reject_invalid_programs() {
     }
 }
 
+fn make_skb_bytes_helper_call(helper: BpfHelper, offset: i64) -> MirFunction {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let buf_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    let mut args = vec![
+        MirValue::VReg(ctx),
+        MirValue::Const(offset),
+        MirValue::StackSlot(buf_slot),
+        MirValue::Const(4),
+    ];
+    if matches!(
+        helper,
+        BpfHelper::SkbStoreBytes | BpfHelper::SkbLoadBytesRelative
+    ) {
+        args.push(MirValue::Const(0));
+    }
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: helper as u32,
+        args,
+    });
+    block.terminator = MirInst::Return { val: None };
+    func
+}
+
+#[test]
+fn test_type_error_skb_byte_helpers_reject_invalid_offsets() {
+    for (helper, offset, expected) in [
+        (
+            BpfHelper::SkbStoreBytes,
+            -1,
+            "skb byte helpers require arg1 offset to be between 0 and i32::MAX",
+        ),
+        (
+            BpfHelper::SkbLoadBytes,
+            0x8000_0000,
+            "skb byte helpers require arg1 offset to be between 0 and i32::MAX",
+        ),
+        (
+            BpfHelper::SkbLoadBytesRelative,
+            -1,
+            "helper 'bpf_skb_load_bytes_relative' requires arg1 offset to be between 0 and 0xffff",
+        ),
+        (
+            BpfHelper::SkbLoadBytesRelative,
+            0x1_0000,
+            "helper 'bpf_skb_load_bytes_relative' requires arg1 offset to be between 0 and 0xffff",
+        ),
+    ] {
+        let func = make_skb_bytes_helper_call(helper, offset);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected skb byte helper scalar range validation error");
+        assert!(
+            errs.iter().any(|e| e.message.contains(expected)),
+            "expected {expected:?}, got {errs:?}"
+        );
+    }
+}
+
 fn make_xdp_bytes_helper_call(helper: BpfHelper, offset: i64, len: i64) -> MirFunction {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();

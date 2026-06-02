@@ -467,14 +467,16 @@ direct packet-pointer facts when the kernel helper contract says the
 underlying packet buffer may change. Raw packet-copy helpers are modeled too:
 `bpf_skb_load_bytes` works on `flow_dissector`, `socket_filter`, `lwt_*`,
 `tc`, `tcx`, `netkit`, `cgroup_skb`, `sk_reuseport`, `sk_skb`, and `sk_skb_parser`;
+`bpf_skb_load_bytes` / `bpf_skb_store_bytes` offsets must fit `0..i32::MAX`.
 `bpf_skb_load_bytes_relative` works on `socket_filter`, `tc`, `tcx`, `netkit`, `cgroup_skb`,
-and `sk_reuseport`, with `start_header` limited to `BPF_HDR_START_MAC` or
-`BPF_HDR_START_NET`; and `bpf_xdp_get_buff_len`, `bpf_xdp_load_bytes`, and
-`bpf_xdp_store_bytes` are XDP-only. XDP byte helper offsets and lengths
-must fit `0..0xffff`. XDP targets default to SKB/generic attach mode for
-safer development attaches; that explicit attach-mode flag requires Linux
-4.12. Driver mode also requires Linux 4.12, and hardware offload mode
-requires Linux 4.13. Use `xdp:IFACE:drv` or `xdp:IFACE:hw`
+and `sk_reuseport`, with `offset` limited to `0..0xffff` and `start_header`
+limited to `BPF_HDR_START_MAC` or `BPF_HDR_START_NET`; and
+`bpf_xdp_get_buff_len`, `bpf_xdp_load_bytes`, and `bpf_xdp_store_bytes` are
+XDP-only. XDP byte helper offsets and lengths must fit `0..0xffff`. XDP
+targets default to SKB/generic attach mode for safer development attaches;
+that explicit attach-mode flag requires Linux 4.12. Driver mode also
+requires Linux 4.12, and hardware offload mode requires Linux 4.13. Use
+`xdp:IFACE:drv` or `xdp:IFACE:hw`
 when driver or hardware mode is intentional. Append
 `:frags`, for example `xdp:IFACE:drv:frags`, when the program needs the
 kernel `xdp.frags` section for multi-buffer packets. `xdp:devmap` and

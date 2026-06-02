@@ -9256,6 +9256,92 @@ fn test_verify_mir_for_program_packet_byte_helpers_accept_allowed_programs() {
     }
 }
 
+fn make_skb_bytes_verify_call(
+    helper: BpfHelper,
+    offset: i64,
+) -> (MirFunction, HashMap<VReg, MirType>) {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let buf_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    let mut args = vec![
+        MirValue::VReg(ctx),
+        MirValue::Const(offset),
+        MirValue::StackSlot(buf_slot),
+        MirValue::Const(4),
+    ];
+    if matches!(
+        helper,
+        BpfHelper::SkbStoreBytes | BpfHelper::SkbLoadBytesRelative
+    ) {
+        args.push(MirValue::Const(0));
+    }
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: helper as u32,
+            args,
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+    (func, types)
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_skb_byte_helpers_reject_invalid_offsets() {
+    for (helper, offset, expected) in [
+        (
+            BpfHelper::SkbStoreBytes,
+            -1,
+            "skb byte helpers require arg1 offset to be between 0 and i32::MAX",
+        ),
+        (
+            BpfHelper::SkbLoadBytes,
+            0x8000_0000,
+            "skb byte helpers require arg1 offset to be between 0 and i32::MAX",
+        ),
+        (
+            BpfHelper::SkbLoadBytesRelative,
+            -1,
+            "helper 'bpf_skb_load_bytes_relative' requires arg1 offset to be between 0 and 0xffff",
+        ),
+        (
+            BpfHelper::SkbLoadBytesRelative,
+            0x1_0000,
+            "helper 'bpf_skb_load_bytes_relative' requires arg1 offset to be between 0 and 0xffff",
+        ),
+    ] {
+        let (func, types) = make_skb_bytes_verify_call(helper, offset);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+        let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect_err("expected skb byte helper scalar range validation error");
+        assert!(
+            err.iter().any(|e| e.message.contains(expected)),
+            "expected {expected:?}, got {err:?}"
+        );
+    }
+}
+
 fn make_xdp_bytes_verify_call(
     helper: BpfHelper,
     offset: i64,
