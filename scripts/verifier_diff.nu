@@ -35361,6 +35361,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-list-math-abs-runtime"
+        category: "language-core"
+        tags: [aggregate list math abs runtime]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ([(random int)] | math abs | length) == 1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-null-length"
         category: "language-core"
         tags: ["null" length]

@@ -1,6 +1,197 @@
 use super::*;
+use crate::compiler::mir::UnaryOpKind;
 
 impl<'a> HirToMirLowering<'a> {
+    pub(in crate::compiler::ir_to_mir) fn lower_math_abs(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+    ) -> Result<(), CompileError> {
+        const MAX_ABS_STACK_LIST_CAPACITY: usize = 60;
+
+        let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
+        let input_reg = self
+            .pipeline_input_reg
+            .or(src_dst_had_value.then_some(src_dst));
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+
+        if !self.named_flags.is_empty()
+            || !self.named_args.is_empty()
+            || !self.positional_args.is_empty()
+        {
+            return Err(CompileError::UnsupportedInstruction(
+                "math abs does not accept arguments in eBPF".into(),
+            ));
+        }
+
+        let input_meta = input_reg
+            .and_then(|reg| self.get_metadata(reg))
+            .cloned()
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "math abs requires integer, integer-list, or stack-backed numeric-list input in eBPF"
+                        .into(),
+                )
+            })?;
+
+        if let Some(nu_protocol::Value::List { vals, .. }) = input_meta.constant_value.clone() {
+            if vals.len() > MAX_ABS_STACK_LIST_CAPACITY {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "math abs output exceeds stack-backed numeric list capacity {MAX_ABS_STACK_LIST_CAPACITY} in eBPF"
+                )));
+            }
+
+            let mut output = Vec::with_capacity(vals.len());
+            for (index, item) in vals.into_iter().enumerate() {
+                let val = match item {
+                    nu_protocol::Value::Int { val, .. } => val,
+                    other => {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "math abs requires integer list items in eBPF; item {index} has type {}",
+                            other.get_type()
+                        )));
+                    }
+                };
+                output.push(nu_protocol::Value::int(
+                    val.wrapping_abs(),
+                    nu_protocol::Span::unknown(),
+                ));
+            }
+
+            self.reset_call_result_metadata(src_dst);
+            self.lower_constant_value(
+                src_dst,
+                &nu_protocol::Value::list(output, nu_protocol::Span::unknown()),
+            )?;
+            return Ok(());
+        }
+
+        if let Some((_input_slot, max_len)) = input_meta.list_buffer {
+            let (out_slot, out_ty) = self.create_stack_numeric_list_result(result_vreg, max_len);
+
+            if max_len > 0 {
+                let len_vreg = self.func.alloc_vreg();
+                self.emit(MirInst::ListLen {
+                    dst: len_vreg,
+                    list: input_vreg,
+                });
+                self.vreg_type_hints.insert(len_vreg, MirType::U64);
+
+                let continuation_block = self.func.alloc_block();
+                for index in 0..max_len {
+                    let load_block = self.func.alloc_block();
+                    let negative_block = self.func.alloc_block();
+                    let non_negative_block = self.func.alloc_block();
+                    let next_block = if index + 1 == max_len {
+                        continuation_block
+                    } else {
+                        self.func.alloc_block()
+                    };
+
+                    let in_bounds_vreg = self.func.alloc_vreg();
+                    self.emit(MirInst::BinOp {
+                        dst: in_bounds_vreg,
+                        op: BinOpKind::Lt,
+                        lhs: MirValue::Const(index as i64),
+                        rhs: MirValue::VReg(len_vreg),
+                    });
+                    self.vreg_type_hints.insert(in_bounds_vreg, MirType::Bool);
+                    self.terminate(MirInst::Branch {
+                        cond: in_bounds_vreg,
+                        if_true: load_block,
+                        if_false: next_block,
+                    });
+
+                    self.current_block = load_block;
+                    let item_vreg = self.func.alloc_vreg();
+                    self.emit(MirInst::ListGet {
+                        dst: item_vreg,
+                        list: input_vreg,
+                        idx: MirValue::Const(index as i64),
+                    });
+                    self.vreg_type_hints.insert(item_vreg, MirType::I64);
+
+                    let is_negative_vreg = self.func.alloc_vreg();
+                    self.emit(MirInst::BinOp {
+                        dst: is_negative_vreg,
+                        op: BinOpKind::Lt,
+                        lhs: MirValue::VReg(item_vreg),
+                        rhs: MirValue::Const(0),
+                    });
+                    self.vreg_type_hints.insert(is_negative_vreg, MirType::Bool);
+                    self.terminate(MirInst::Branch {
+                        cond: is_negative_vreg,
+                        if_true: negative_block,
+                        if_false: non_negative_block,
+                    });
+
+                    self.current_block = negative_block;
+                    let abs_vreg = self.func.alloc_vreg();
+                    self.emit(MirInst::UnaryOp {
+                        dst: abs_vreg,
+                        op: UnaryOpKind::Neg,
+                        src: MirValue::VReg(item_vreg),
+                    });
+                    self.vreg_type_hints.insert(abs_vreg, MirType::I64);
+                    self.emit(MirInst::ListPush {
+                        list: result_vreg,
+                        item: abs_vreg,
+                    });
+                    self.terminate(MirInst::Jump { target: next_block });
+
+                    self.current_block = non_negative_block;
+                    self.emit(MirInst::ListPush {
+                        list: result_vreg,
+                        item: item_vreg,
+                    });
+                    self.terminate(MirInst::Jump { target: next_block });
+
+                    self.current_block = next_block;
+                }
+            }
+
+            let known_len = Self::numeric_list_known_len(&input_meta).map(|len| len.min(max_len));
+            self.install_stack_numeric_list_result_metadata(
+                src_dst, out_slot, out_ty, max_len, known_len,
+            );
+            return Ok(());
+        }
+
+        let input = input_meta
+            .literal_int
+            .or_else(|| match input_meta.constant_value.as_ref() {
+                Some(nu_protocol::Value::Int { val, .. }) => Some(*val),
+                _ => None,
+            })
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "math abs requires integer, integer-list, or stack-backed numeric-list input in eBPF"
+                        .into(),
+                )
+            })?;
+        let output = input.wrapping_abs();
+
+        self.emit(MirInst::Copy {
+            dst: result_vreg,
+            src: MirValue::Const(output),
+        });
+        self.reset_call_result_metadata(src_dst);
+        let out_meta = self.get_or_create_metadata(src_dst);
+        out_meta.field_type = Some(MirType::I64);
+        out_meta.constant_value = Some(nu_protocol::Value::int(
+            output,
+            nu_protocol::Span::unknown(),
+        ));
+        out_meta.literal_int = Some(output);
+        self.vreg_type_hints.insert(result_vreg, MirType::I64);
+        Ok(())
+    }
+
     pub(in crate::compiler::ir_to_mir) fn lower_compile_time_math_mode(
         &mut self,
         src_dst: RegId,

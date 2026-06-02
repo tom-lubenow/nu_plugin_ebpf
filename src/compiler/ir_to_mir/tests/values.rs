@@ -2,7 +2,7 @@ use super::*;
 use crate::compiler::hir::{
     HirBlock, HirBlockId, HirFunction, HirLiteral, HirProgram, HirStmt, HirTerminator,
 };
-use crate::compiler::mir::{AddressSpace, MirProgram};
+use crate::compiler::mir::{AddressSpace, MirProgram, UnaryOpKind};
 use crate::compiler::passes::optimize_with_ssa_hints;
 use crate::compiler::{EbpfProgramType, compile_mir_to_ebpf_with_hints};
 use nu_protocol::ast::{
@@ -10480,12 +10480,12 @@ fn test_lower_math_abs_on_known_integer_returns_absolute_value() {
 }
 
 #[test]
-fn test_lower_math_abs_rejects_i64_min_overflow() {
+fn test_lower_math_abs_on_i64_min_wraps_like_nushell() {
     let abs_decl = DeclId::new(263);
     let hir = make_math_abs_program(abs_decl, i64::MIN);
     let decl_names = HashMap::from([(abs_decl, "math abs".to_string())]);
 
-    let err = lower_hir_to_mir_with_hints(
+    let result = lower_hir_to_mir_with_hints(
         &hir,
         None,
         &decl_names,
@@ -10493,12 +10493,23 @@ fn test_lower_math_abs_rejects_i64_min_overflow() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("math abs should reject i64::MIN overflow");
+    .expect("math abs should preserve Nushell's wrapping i64::MIN behavior");
 
     assert!(
-        err.to_string()
-            .contains("math abs cannot represent the absolute value of i64::MIN"),
-        "unexpected error: {err}"
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Copy {
+                    src: MirValue::Const(value),
+                    ..
+                } if *value == i64::MIN
+            )),
+        "expected math abs to materialize i64::MIN unchanged"
     );
 }
 
@@ -10622,9 +10633,39 @@ fn test_lower_math_abs_on_known_integer_list_materializes_absolute_values() {
 }
 
 #[test]
-fn test_lower_math_abs_on_integer_list_rejects_i64_min_overflow() {
+fn test_lower_math_abs_on_integer_list_wraps_i64_min_like_nushell() {
     let abs_decl = DeclId::new(266);
     let hir = make_math_abs_list_program(abs_decl, vec![1, i64::MIN]);
+    let decl_names = HashMap::from([(abs_decl, "math abs".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("math abs should preserve Nushell's wrapping i64::MIN list behavior");
+    let expected = [1i64, i64::MIN]
+        .into_iter()
+        .flat_map(|value| value.to_le_bytes())
+        .collect::<Vec<_>>();
+
+    assert!(
+        result
+            .readonly_globals
+            .iter()
+            .any(|global| global.data == expected),
+        "expected math abs on list to materialize i64::MIN unchanged"
+    );
+}
+
+#[test]
+fn test_lower_math_abs_rejects_constant_list_output_over_capacity() {
+    let abs_decl = DeclId::new(267);
+    let values = (0..=60).map(|value| -(value as i64)).collect::<Vec<_>>();
+    let hir = make_math_abs_list_program(abs_decl, values);
     let decl_names = HashMap::from([(abs_decl, "math abs".to_string())]);
 
     let err = lower_hir_to_mir_with_hints(
@@ -10635,13 +10676,113 @@ fn test_lower_math_abs_on_integer_list_rejects_i64_min_overflow() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("math abs should reject i64::MIN in integer lists");
+    .expect_err("math abs output over the stack-list capacity should be rejected");
 
     assert!(
         err.to_string()
-            .contains("math abs cannot represent the absolute value of i64::MIN"),
+            .contains("math abs output exceeds stack-backed numeric list capacity 60"),
         "unexpected error: {err}"
     );
+}
+
+fn make_runtime_math_abs_list_length_program(
+    abs_decl: DeclId,
+    length_decl: DeclId,
+    random_decl: DeclId,
+) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::List { capacity: 1 },
+                },
+                HirStmt::Call {
+                    decl_id: random_decl,
+                    src_dst: RegId::new(1),
+                    args: HirCallArgs::default(),
+                },
+                HirStmt::ListPush {
+                    src_dst: RegId::new(0),
+                    item: RegId::new(1),
+                },
+                HirStmt::Call {
+                    decl_id: abs_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: length_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(2)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(3) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 4,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+#[test]
+fn test_lower_math_abs_on_runtime_stack_numeric_list() {
+    let abs_decl = DeclId::new(268);
+    let length_decl = DeclId::new(269);
+    let random_decl = DeclId::new(270);
+    let hir = make_runtime_math_abs_list_length_program(abs_decl, length_decl, random_decl);
+    let decl_names = HashMap::from([
+        (abs_decl, "math abs".to_string()),
+        (length_decl, "length".to_string()),
+        (random_decl, "random int".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("math abs should lower on runtime stack-backed numeric lists");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::UnaryOp {
+                op: UnaryOpKind::Neg,
+                ..
+            }
+        )),
+        "expected runtime math abs to emit a negation path"
+    );
+    assert!(
+        instructions
+            .iter()
+            .any(|inst| matches!(inst, MirInst::ListPush { .. })),
+        "expected runtime math abs to materialize an output list"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("runtime math abs output consumed by length should compile");
 }
 
 #[test]
