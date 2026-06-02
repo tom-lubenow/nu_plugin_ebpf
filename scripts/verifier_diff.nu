@@ -35560,6 +35560,60 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-constant-match-filesize"
+        category: "language-core"
+        tags: [control-flow "match" scalar filesize constant]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let size = 1kb'
+            '  match $size { 1kb => 10, _ => 20 }'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-constant-equality-filesize-int"
+        category: "language-core"
+        tags: [scalar comparison filesize constant]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  if (1kb == 1000) { 10 } else { 20 }'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-constant-match-duration"
+        category: "language-core"
+        tags: [control-flow "match" scalar duration constant]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let elapsed = 1ns'
+            '  match $elapsed { 1ns => 10, _ => 20 }'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-constant-equality-duration-int"
+        category: "language-core"
+        tags: [scalar comparison duration constant]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  if (1ns == 1) { 10 } else { 20 }'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-runtime-match-integer-or-pattern"
         category: "language-core"
         tags: [control-flow "match" "or-pattern" scalar integer runtime]

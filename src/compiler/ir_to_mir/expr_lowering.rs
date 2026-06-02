@@ -17,7 +17,9 @@ use trampoline::TypedProjectionStep;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ScalarMatchKind {
     Bool,
-    Integer,
+    Int,
+    Filesize,
+    Duration,
     Nothing,
     String,
 }
@@ -25,6 +27,7 @@ enum ScalarMatchKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum KnownSourceMatchKind {
     Scalar(ScalarMatchKind),
+    NumericScalar,
     NonScalar,
 }
 
@@ -35,7 +38,7 @@ impl<'a> HirToMirLowering<'a> {
         op: nu_protocol::ast::Operator,
         rhs: RegId,
     ) -> Result<(), CompileError> {
-        use nu_protocol::ast::{Math, Operator};
+        use nu_protocol::ast::{Comparison, Math, Operator};
 
         let constant_value = self
             .get_metadata(lhs_dst)
@@ -48,6 +51,60 @@ impl<'a> HirToMirLowering<'a> {
 
         let lhs_vreg = self.get_vreg(lhs_dst);
         let rhs_vreg = self.get_vreg(rhs);
+
+        if matches!(
+            op,
+            Operator::Comparison(Comparison::Equal | Comparison::NotEqual)
+        ) {
+            if let Some(value @ Value::Bool { .. }) = constant_value.as_ref()
+                && self
+                    .get_metadata(lhs_dst)
+                    .is_some_and(|meta| meta.constant_value.is_some())
+                && self
+                    .get_metadata(rhs)
+                    .is_some_and(|meta| meta.constant_value.is_some())
+            {
+                self.lower_constant_value(lhs_dst, value)?;
+                return Ok(());
+            }
+
+            match (
+                self.source_match_kind(lhs_dst, lhs_vreg),
+                self.source_match_kind(rhs, rhs_vreg),
+            ) {
+                (
+                    Some(KnownSourceMatchKind::Scalar(lhs_kind)),
+                    Some(KnownSourceMatchKind::Scalar(rhs_kind)),
+                ) if lhs_kind != rhs_kind => {
+                    let result = matches!(op, Operator::Comparison(Comparison::NotEqual));
+                    self.lower_constant_value(lhs_dst, &Value::bool(result, Span::unknown()))?;
+                    return Ok(());
+                }
+                (
+                    Some(KnownSourceMatchKind::Scalar(lhs_kind)),
+                    Some(KnownSourceMatchKind::NumericScalar),
+                )
+                | (
+                    Some(KnownSourceMatchKind::NumericScalar),
+                    Some(KnownSourceMatchKind::Scalar(lhs_kind)),
+                ) if !Self::scalar_match_kind_is_numeric(lhs_kind) => {
+                    let result = matches!(op, Operator::Comparison(Comparison::NotEqual));
+                    self.lower_constant_value(lhs_dst, &Value::bool(result, Span::unknown()))?;
+                    return Ok(());
+                }
+                (
+                    Some(KnownSourceMatchKind::Scalar(ScalarMatchKind::String)),
+                    Some(KnownSourceMatchKind::Scalar(ScalarMatchKind::String)),
+                )
+                | (Some(KnownSourceMatchKind::Scalar(ScalarMatchKind::String)), _)
+                | (_, Some(KnownSourceMatchKind::Scalar(ScalarMatchKind::String))) => {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "string equality requires compile-time constant operands in eBPF".into(),
+                    ));
+                }
+                _ => {}
+            }
+        }
 
         if let Some(Value::String { val, .. } | Value::Glob { val, .. }) = constant_value.as_ref() {
             self.lower_string_like_literal(lhs_dst, lhs_vreg, val.as_bytes())?;
@@ -399,9 +456,9 @@ impl<'a> HirToMirLowering<'a> {
         match value {
             Value::Bool { .. } => Some(ScalarMatchKind::Bool),
             Value::Nothing { .. } => Some(ScalarMatchKind::Nothing),
-            Value::Int { .. } | Value::Filesize { .. } | Value::Duration { .. } => {
-                Some(ScalarMatchKind::Integer)
-            }
+            Value::Int { .. } => Some(ScalarMatchKind::Int),
+            Value::Filesize { .. } => Some(ScalarMatchKind::Filesize),
+            Value::Duration { .. } => Some(ScalarMatchKind::Duration),
             Value::String { .. } | Value::Glob { .. } => Some(ScalarMatchKind::String),
             _ => None,
         }
@@ -417,10 +474,17 @@ impl<'a> HirToMirLowering<'a> {
             | MirType::U8
             | MirType::U16
             | MirType::U32
-            | MirType::U64 => Some(KnownSourceMatchKind::Scalar(ScalarMatchKind::Integer)),
+            | MirType::U64 => Some(KnownSourceMatchKind::NumericScalar),
             MirType::Unknown => None,
             _ => Some(KnownSourceMatchKind::NonScalar),
         }
+    }
+
+    fn scalar_match_kind_is_numeric(kind: ScalarMatchKind) -> bool {
+        matches!(
+            kind,
+            ScalarMatchKind::Int | ScalarMatchKind::Filesize | ScalarMatchKind::Duration
+        )
     }
 
     fn source_match_kind(&self, src: RegId, src_vreg: VReg) -> Option<KnownSourceMatchKind> {
@@ -452,6 +516,9 @@ impl<'a> HirToMirLowering<'a> {
     ) -> bool {
         match self.source_match_kind(src, src_vreg) {
             Some(KnownSourceMatchKind::Scalar(actual)) => actual != expected,
+            Some(KnownSourceMatchKind::NumericScalar) => {
+                !Self::scalar_match_kind_is_numeric(expected)
+            }
             Some(KnownSourceMatchKind::NonScalar) => true,
             None => false,
         }
@@ -552,6 +619,14 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
+    fn match_expression_unit_value(expr: &nu_protocol::ast::Expression) -> Option<Value> {
+        let Expr::ValueWithUnit(value_with_unit) = &expr.expr else {
+            return None;
+        };
+        let size = Self::match_expression_i64_literal(&value_with_unit.expr)?;
+        value_with_unit.unit.item.build_value(size, expr.span).ok()
+    }
+
     fn lower_match_value(
         &mut self,
         value: &Value,
@@ -581,11 +656,7 @@ impl<'a> HirToMirLowering<'a> {
                 }
             }
             Value::Int { val, .. } => {
-                if self.source_scalar_match_is_known_mismatch(
-                    src,
-                    src_vreg,
-                    ScalarMatchKind::Integer,
-                ) {
+                if self.source_scalar_match_is_known_mismatch(src, src_vreg, ScalarMatchKind::Int) {
                     self.terminate_known_match_mismatch(if_false);
                 } else {
                     self.terminate_i64_match(src_vreg, *val, if_true, if_false);
@@ -595,7 +666,7 @@ impl<'a> HirToMirLowering<'a> {
                 if self.source_scalar_match_is_known_mismatch(
                     src,
                     src_vreg,
-                    ScalarMatchKind::Integer,
+                    ScalarMatchKind::Filesize,
                 ) {
                     self.terminate_known_match_mismatch(if_false);
                 } else {
@@ -606,7 +677,7 @@ impl<'a> HirToMirLowering<'a> {
                 if self.source_scalar_match_is_known_mismatch(
                     src,
                     src_vreg,
-                    ScalarMatchKind::Integer,
+                    ScalarMatchKind::Duration,
                 ) {
                     self.terminate_known_match_mismatch(if_false);
                 } else {
@@ -644,22 +715,14 @@ impl<'a> HirToMirLowering<'a> {
                 }
             }
             Expr::Int(val) => {
-                if self.source_scalar_match_is_known_mismatch(
-                    src,
-                    src_vreg,
-                    ScalarMatchKind::Integer,
-                ) {
+                if self.source_scalar_match_is_known_mismatch(src, src_vreg, ScalarMatchKind::Int) {
                     self.terminate_known_match_mismatch(if_false);
                 } else {
                     self.terminate_i64_match(src_vreg, *val, if_true, if_false);
                 }
             }
             Expr::Range(range) => {
-                if self.source_scalar_match_is_known_mismatch(
-                    src,
-                    src_vreg,
-                    ScalarMatchKind::Integer,
-                ) {
+                if self.source_scalar_match_is_known_mismatch(src, src_vreg, ScalarMatchKind::Int) {
                     self.terminate_known_match_mismatch(if_false);
                     return Ok(());
                 }
@@ -682,6 +745,14 @@ impl<'a> HirToMirLowering<'a> {
             | Expr::Directory(val, _)
             | Expr::GlobPattern(val, _) => {
                 self.lower_match_string(val, src, src_vreg, if_true, if_false)?;
+            }
+            Expr::ValueWithUnit(_) => {
+                let value = Self::match_expression_unit_value(expr).ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(
+                        "Match unit patterns require a literal integer value in eBPF".into(),
+                    )
+                })?;
+                self.lower_match_value(&value, src, src_vreg, if_true, if_false)?;
             }
             _ => {
                 return Err(CompileError::UnsupportedInstruction(format!(

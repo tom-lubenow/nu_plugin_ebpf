@@ -909,6 +909,7 @@ impl<'a> HirToMirLowering<'a> {
         match lit {
             HirLiteral::Int(val) => {
                 self.lower_const_i64_literal(dst, dst_vreg, *val);
+                self.set_reg_constant_value(dst, Some(Value::int(*val, Span::unknown())));
             }
 
             HirLiteral::Bool(val) => {
@@ -918,14 +919,17 @@ impl<'a> HirToMirLowering<'a> {
                     src: MirValue::Const(if *val { 1 } else { 0 }),
                 });
                 self.get_or_create_metadata(dst).field_type = Some(MirType::Bool);
+                self.set_reg_constant_value(dst, Some(Value::bool(*val, Span::unknown())));
             }
 
             HirLiteral::Filesize(val) => {
                 self.lower_const_i64_literal(dst, dst_vreg, val.get());
+                self.set_reg_constant_value(dst, Some(Value::filesize(*val, Span::unknown())));
             }
 
             HirLiteral::Duration(val) => {
                 self.lower_const_i64_literal(dst, dst_vreg, *val);
+                self.set_reg_constant_value(dst, Some(Value::duration(*val, Span::unknown())));
             }
 
             HirLiteral::Nothing => {
@@ -941,12 +945,31 @@ impl<'a> HirToMirLowering<'a> {
                 meta.constant_value = Some(Value::nothing(Span::unknown()));
             }
 
-            HirLiteral::String(bytes)
-            | HirLiteral::RawString(bytes)
-            | HirLiteral::Filepath { val: bytes, .. }
-            | HirLiteral::Directory { val: bytes, .. }
-            | HirLiteral::GlobPattern { val: bytes, .. } => {
+            HirLiteral::String(bytes) | HirLiteral::RawString(bytes) => {
                 self.lower_string_like_literal(dst, dst_vreg, bytes)?;
+                if let Ok(value) = String::from_utf8(bytes.clone()) {
+                    self.set_reg_constant_value(dst, Some(Value::string(value, Span::unknown())));
+                }
+            }
+
+            HirLiteral::Filepath { val: bytes, .. } | HirLiteral::Directory { val: bytes, .. } => {
+                self.lower_string_like_literal(dst, dst_vreg, bytes)?;
+                if let Ok(value) = String::from_utf8(bytes.clone()) {
+                    self.set_reg_constant_value(dst, Some(Value::string(value, Span::unknown())));
+                }
+            }
+
+            HirLiteral::GlobPattern {
+                val: bytes,
+                no_expand,
+            } => {
+                self.lower_string_like_literal(dst, dst_vreg, bytes)?;
+                if let Ok(value) = String::from_utf8(bytes.clone()) {
+                    self.set_reg_constant_value(
+                        dst,
+                        Some(Value::glob(value, *no_expand, Span::unknown())),
+                    );
+                }
             }
 
             HirLiteral::Binary(bytes) => {

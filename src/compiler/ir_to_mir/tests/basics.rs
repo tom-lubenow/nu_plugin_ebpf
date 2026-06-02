@@ -11,9 +11,12 @@ use crate::compiler::mir::{AddressSpace, BYTES_COUNTER_MAP_NAME, COUNTER_MAP_NAM
 use crate::compiler::passes::optimize_with_ssa_hints;
 use crate::kernel_btf::{KernelBtf, TrampolineFieldSelector, TypeInfo};
 use nu_protocol::ast::{
-    CellPath, Expr, Expression, MatchPattern, Pattern, Range, RangeInclusion, RangeOperator,
+    CellPath, Expr, Expression, MatchPattern, Pattern, Range, RangeInclusion, RangeOperator, Unit,
+    ValueWithUnit,
 };
-use nu_protocol::{DeclId, Record, RegId, Span, SpanId, Type, Value, VarId};
+use nu_protocol::{
+    DeclId, Filesize, FilesizeUnit, Record, RegId, Span, SpanId, Spanned, Type, Value, VarId,
+};
 use std::collections::HashMap;
 
 fn find_tracepoint_pointer_field_candidate() -> Option<(String, String)> {
@@ -261,6 +264,36 @@ fn string_expr_match_pattern(value: &str) -> Pattern {
     }))
 }
 
+fn filesize_expr_match_pattern(bytes: i64) -> Pattern {
+    Pattern::Expression(Box::new(Expression {
+        expr: Expr::ValueWithUnit(Box::new(ValueWithUnit {
+            expr: integer_expr(bytes),
+            unit: Spanned {
+                item: Unit::Filesize(FilesizeUnit::B),
+                span: Span::test_data(),
+            },
+        })),
+        span: Span::test_data(),
+        span_id: SpanId::new(0),
+        ty: Type::Filesize,
+    }))
+}
+
+fn duration_expr_match_pattern(nanoseconds: i64) -> Pattern {
+    Pattern::Expression(Box::new(Expression {
+        expr: Expr::ValueWithUnit(Box::new(ValueWithUnit {
+            expr: integer_expr(nanoseconds),
+            unit: Spanned {
+                item: Unit::Nanosecond,
+                span: Span::test_data(),
+            },
+        })),
+        span: Span::test_data(),
+        span_id: SpanId::new(0),
+        ty: Type::Duration,
+    }))
+}
+
 fn integer_range_expr_match_pattern_with_bounds(
     start: Option<i64>,
     end: Option<i64>,
@@ -296,6 +329,54 @@ fn make_integer_match_program(pattern: Pattern) -> HirProgram {
                     stmts: vec![HirStmt::LoadLiteral {
                         dst: RegId::new(0),
                         lit: HirLiteral::Int(42),
+                    }],
+                    terminator: HirTerminator::Match {
+                        pattern: Box::new(pattern),
+                        src: RegId::new(0),
+                        if_true: HirBlockId(1),
+                        if_false: HirBlockId(2),
+                    },
+                },
+                HirBlock {
+                    id: HirBlockId(1),
+                    stmts: vec![HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::Int(7),
+                    }],
+                    terminator: HirTerminator::Return { src: RegId::new(1) },
+                },
+                HirBlock {
+                    id: HirBlockId(2),
+                    stmts: vec![HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::Int(9),
+                    }],
+                    terminator: HirTerminator::Return { src: RegId::new(2) },
+                },
+            ],
+            entry: HirBlockId(0),
+            spans: Vec::new(),
+            ast: Vec::new(),
+            comments: Vec::new(),
+            register_count: 3,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        None,
+    )
+}
+
+fn make_random_int_match_program(decl_id: DeclId, pattern: Pattern) -> HirProgram {
+    HirProgram::new(
+        HirFunction {
+            blocks: vec![
+                HirBlock {
+                    id: HirBlockId(0),
+                    stmts: vec![HirStmt::Call {
+                        decl_id,
+                        src_dst: RegId::new(0),
+                        args: HirCallArgs::default(),
                     }],
                     terminator: HirTerminator::Match {
                         pattern: Box::new(pattern),
@@ -390,6 +471,100 @@ fn make_string_match_program(source: &str, pattern: Pattern) -> HirProgram {
                     stmts: vec![HirStmt::LoadLiteral {
                         dst: RegId::new(0),
                         lit: HirLiteral::String(source.as_bytes().to_vec()),
+                    }],
+                    terminator: HirTerminator::Match {
+                        pattern: Box::new(pattern),
+                        src: RegId::new(0),
+                        if_true: HirBlockId(1),
+                        if_false: HirBlockId(2),
+                    },
+                },
+                HirBlock {
+                    id: HirBlockId(1),
+                    stmts: vec![HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::Int(7),
+                    }],
+                    terminator: HirTerminator::Return { src: RegId::new(1) },
+                },
+                HirBlock {
+                    id: HirBlockId(2),
+                    stmts: vec![HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::Int(9),
+                    }],
+                    terminator: HirTerminator::Return { src: RegId::new(2) },
+                },
+            ],
+            entry: HirBlockId(0),
+            spans: Vec::new(),
+            ast: Vec::new(),
+            comments: Vec::new(),
+            register_count: 3,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        None,
+    )
+}
+
+fn make_filesize_match_program(bytes: i64, pattern: Pattern) -> HirProgram {
+    HirProgram::new(
+        HirFunction {
+            blocks: vec![
+                HirBlock {
+                    id: HirBlockId(0),
+                    stmts: vec![HirStmt::LoadLiteral {
+                        dst: RegId::new(0),
+                        lit: HirLiteral::Filesize(Filesize::new(bytes)),
+                    }],
+                    terminator: HirTerminator::Match {
+                        pattern: Box::new(pattern),
+                        src: RegId::new(0),
+                        if_true: HirBlockId(1),
+                        if_false: HirBlockId(2),
+                    },
+                },
+                HirBlock {
+                    id: HirBlockId(1),
+                    stmts: vec![HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::Int(7),
+                    }],
+                    terminator: HirTerminator::Return { src: RegId::new(1) },
+                },
+                HirBlock {
+                    id: HirBlockId(2),
+                    stmts: vec![HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::Int(9),
+                    }],
+                    terminator: HirTerminator::Return { src: RegId::new(2) },
+                },
+            ],
+            entry: HirBlockId(0),
+            spans: Vec::new(),
+            ast: Vec::new(),
+            comments: Vec::new(),
+            register_count: 3,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        None,
+    )
+}
+
+fn make_duration_match_program(nanoseconds: i64, pattern: Pattern) -> HirProgram {
+    HirProgram::new(
+        HirFunction {
+            blocks: vec![
+                HirBlock {
+                    id: HirBlockId(0),
+                    stmts: vec![HirStmt::LoadLiteral {
+                        dst: RegId::new(0),
+                        lit: HirLiteral::Duration(nanoseconds),
                     }],
                     terminator: HirTerminator::Match {
                         pattern: Box::new(pattern),
@@ -760,6 +935,203 @@ fn test_lower_match_string_pattern_against_integer_source_is_known_non_match() {
 
     compile_mir_to_ebpf_with_hints(&program, None, None)
         .expect("string pattern against integer source should compile through codegen");
+}
+
+#[test]
+fn test_lower_match_integer_pattern_against_filesize_source_is_known_non_match() {
+    let hir = make_filesize_match_program(1000, integer_expr_match_pattern(1000));
+
+    let program = lower_hir_to_mir(&hir, None, &HashMap::new())
+        .expect("integer pattern against filesize source should lower to MIR");
+    let entry = program.main.block(BlockId(0));
+    assert!(
+        matches!(entry.terminator, MirInst::Jump { target } if target == BlockId(2)),
+        "known scalar pattern type mismatch should jump to the false arm, got {:?}",
+        entry.terminator
+    );
+
+    compile_mir_to_ebpf_with_hints(&program, None, None)
+        .expect("integer pattern against filesize source should compile through codegen");
+}
+
+#[test]
+fn test_lower_match_filesize_pattern_against_integer_source_is_known_non_match() {
+    let hir = make_integer_match_program(filesize_expr_match_pattern(1000));
+
+    let program = lower_hir_to_mir(&hir, None, &HashMap::new())
+        .expect("filesize pattern against integer source should lower to MIR");
+    let entry = program.main.block(BlockId(0));
+    assert!(
+        matches!(entry.terminator, MirInst::Jump { target } if target == BlockId(2)),
+        "known scalar pattern type mismatch should jump to the false arm, got {:?}",
+        entry.terminator
+    );
+
+    compile_mir_to_ebpf_with_hints(&program, None, None)
+        .expect("filesize pattern against integer source should compile through codegen");
+}
+
+#[test]
+fn test_lower_match_filesize_pattern_against_filesize_source_compiles() {
+    let hir = make_filesize_match_program(1000, filesize_expr_match_pattern(1000));
+
+    let program = lower_hir_to_mir(&hir, None, &HashMap::new())
+        .expect("filesize pattern against filesize source should lower to MIR");
+    let emitted_eq = program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .any(|inst| {
+            matches!(
+                inst,
+                MirInst::BinOp {
+                    op: BinOpKind::Eq,
+                    rhs: MirValue::Const(1000),
+                    ..
+                }
+            )
+        });
+    assert!(emitted_eq, "filesize match should emit scalar equality");
+
+    compile_mir_to_ebpf_with_hints(&program, None, None)
+        .expect("filesize pattern against filesize source should compile through codegen");
+}
+
+#[test]
+fn test_lower_match_filesize_pattern_against_runtime_numeric_source_emits_equality() {
+    let random_decl = DeclId::new(70);
+    let hir = make_random_int_match_program(random_decl, filesize_expr_match_pattern(1000));
+    let decl_names = HashMap::from([(random_decl, "random int".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("filesize pattern against runtime numeric source should lower to MIR");
+    assert!(
+        !matches!(
+            result.program.main.block(BlockId(0)).terminator,
+            MirInst::Jump { target } if target == BlockId(2)
+        ),
+        "runtime numeric source has no exact filesize/int semantic kind and must not fold false"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| {
+                matches!(
+                    inst,
+                    MirInst::BinOp {
+                        op: BinOpKind::Eq,
+                        rhs: MirValue::Const(1000),
+                        ..
+                    }
+                )
+            }),
+        "filesize pattern against runtime numeric source should emit scalar equality"
+    );
+
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("filesize pattern against runtime numeric source should compile through codegen");
+}
+
+#[test]
+fn test_lower_match_duration_pattern_against_integer_source_is_known_non_match() {
+    let hir = make_integer_match_program(duration_expr_match_pattern(1000));
+
+    let program = lower_hir_to_mir(&hir, None, &HashMap::new())
+        .expect("duration pattern against integer source should lower to MIR");
+    let entry = program.main.block(BlockId(0));
+    assert!(
+        matches!(entry.terminator, MirInst::Jump { target } if target == BlockId(2)),
+        "known scalar pattern type mismatch should jump to the false arm, got {:?}",
+        entry.terminator
+    );
+
+    compile_mir_to_ebpf_with_hints(&program, None, None)
+        .expect("duration pattern against integer source should compile through codegen");
+}
+
+#[test]
+fn test_lower_match_duration_pattern_against_duration_source_compiles() {
+    let hir = make_duration_match_program(1000, duration_expr_match_pattern(1000));
+
+    let program = lower_hir_to_mir(&hir, None, &HashMap::new())
+        .expect("duration pattern against duration source should lower to MIR");
+    let emitted_eq = program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .any(|inst| {
+            matches!(
+                inst,
+                MirInst::BinOp {
+                    op: BinOpKind::Eq,
+                    rhs: MirValue::Const(1000),
+                    ..
+                }
+            )
+        });
+    assert!(emitted_eq, "duration match should emit scalar equality");
+
+    compile_mir_to_ebpf_with_hints(&program, None, None)
+        .expect("duration pattern against duration source should compile through codegen");
+}
+
+#[test]
+fn test_lower_match_duration_pattern_against_runtime_numeric_source_emits_equality() {
+    let random_decl = DeclId::new(71);
+    let hir = make_random_int_match_program(random_decl, duration_expr_match_pattern(1000));
+    let decl_names = HashMap::from([(random_decl, "random int".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("duration pattern against runtime numeric source should lower to MIR");
+    assert!(
+        !matches!(
+            result.program.main.block(BlockId(0)).terminator,
+            MirInst::Jump { target } if target == BlockId(2)
+        ),
+        "runtime numeric source has no exact duration/int semantic kind and must not fold false"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| {
+                matches!(
+                    inst,
+                    MirInst::BinOp {
+                        op: BinOpKind::Eq,
+                        rhs: MirValue::Const(1000),
+                        ..
+                    }
+                )
+            }),
+        "duration pattern against runtime numeric source should emit scalar equality"
+    );
+
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("duration pattern against runtime numeric source should compile through codegen");
 }
 
 #[test]
@@ -1374,6 +1746,73 @@ fn test_lower_unsupported_runtime_binary_operator_with_constant_operands() {
             ),
             1,
             "constant starts-with",
+        ),
+    ] {
+        let result = lower_hir_to_mir_with_hints(
+            &hir_program,
+            None,
+            &HashMap::new(),
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("{context} should lower: {err}"));
+
+        assert_mir_returns_constant(&result.program, expected, context);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{context} should compile through codegen: {err}"));
+    }
+}
+
+#[test]
+fn test_lower_constant_equality_respects_scalar_semantic_types() {
+    use nu_protocol::ast::{Comparison, Operator};
+
+    for (hir_program, expected, context) in [
+        (
+            make_literal_binary_op_program(
+                HirLiteral::Filesize(Filesize::new(1000)),
+                Operator::Comparison(Comparison::Equal),
+                HirLiteral::Int(1000),
+            ),
+            0,
+            "filesize == int",
+        ),
+        (
+            make_literal_binary_op_program(
+                HirLiteral::Filesize(Filesize::new(1000)),
+                Operator::Comparison(Comparison::NotEqual),
+                HirLiteral::Int(1000),
+            ),
+            1,
+            "filesize != int",
+        ),
+        (
+            make_literal_binary_op_program(
+                HirLiteral::Bool(true),
+                Operator::Comparison(Comparison::Equal),
+                HirLiteral::Int(1),
+            ),
+            0,
+            "bool == int",
+        ),
+        (
+            make_literal_binary_op_program(
+                HirLiteral::Duration(1000),
+                Operator::Comparison(Comparison::Equal),
+                HirLiteral::Int(1000),
+            ),
+            0,
+            "duration == int",
+        ),
+        (
+            make_literal_binary_op_program(
+                HirLiteral::String(b"hi".to_vec()),
+                Operator::Comparison(Comparison::Equal),
+                HirLiteral::String(b"hi".to_vec()),
+            ),
+            1,
+            "string == string",
         ),
     ] {
         let result = lower_hir_to_mir_with_hints(
