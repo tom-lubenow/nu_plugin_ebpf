@@ -210,6 +210,12 @@ impl<'a> VccLowerer<'a> {
         rhs: VccPointerInfo,
     ) -> Option<VccPointerInfo> {
         if lhs.space != rhs.space && !Self::kernel_spaces_compatible(lhs.space, rhs.space) {
+            if lhs.space == VccAddrSpace::Unknown && lhs.nullability == VccNullability::Null {
+                return Some(Self::merge_null_wildcard_ptr_info(rhs, lhs));
+            }
+            if rhs.space == VccAddrSpace::Unknown && rhs.nullability == VccNullability::Null {
+                return Some(Self::merge_null_wildcard_ptr_info(lhs, rhs));
+            }
             return None;
         }
         Some(VccPointerInfo {
@@ -237,9 +243,52 @@ impl<'a> VccLowerer<'a> {
                 .then_some(lhs.context_buffer_root)
                 .flatten(),
             context_buffer_end: lhs.context_buffer_end && rhs.context_buffer_end,
-            ringbuf_ref: Self::join_ref_for_phi(lhs.ringbuf_ref, rhs.ringbuf_ref),
-            kfunc_ref: Self::join_ref_for_phi(lhs.kfunc_ref, rhs.kfunc_ref),
+            ringbuf_ref: Self::join_ref_for_phi(
+                lhs.ringbuf_ref,
+                lhs.nullability,
+                rhs.ringbuf_ref,
+                rhs.nullability,
+            ),
+            kfunc_ref: Self::join_ref_for_phi(
+                lhs.kfunc_ref,
+                lhs.nullability,
+                rhs.kfunc_ref,
+                rhs.nullability,
+            ),
         })
+    }
+
+    fn merge_null_wildcard_ptr_info(
+        concrete: VccPointerInfo,
+        null_ptr: VccPointerInfo,
+    ) -> VccPointerInfo {
+        VccPointerInfo {
+            space: concrete.space,
+            nullability: Self::join_nullability_for_phi(
+                concrete.nullability,
+                null_ptr.nullability,
+            ),
+            bounds: concrete.bounds,
+            packet_root: concrete.packet_root,
+            packet_root_field: concrete.packet_root_field,
+            packet_ctx_field: concrete.packet_ctx_field,
+            packet_end: concrete.packet_end,
+            map_root: concrete.map_root,
+            context_buffer_root: concrete.context_buffer_root,
+            context_buffer_end: concrete.context_buffer_end,
+            ringbuf_ref: Self::join_ref_for_phi(
+                concrete.ringbuf_ref,
+                concrete.nullability,
+                null_ptr.ringbuf_ref,
+                null_ptr.nullability,
+            ),
+            kfunc_ref: Self::join_ref_for_phi(
+                concrete.kfunc_ref,
+                concrete.nullability,
+                null_ptr.kfunc_ref,
+                null_ptr.nullability,
+            ),
+        }
     }
 
     fn kernel_spaces_compatible(lhs: VccAddrSpace, rhs: VccAddrSpace) -> bool {
@@ -261,9 +310,16 @@ impl<'a> VccLowerer<'a> {
         }
     }
 
-    fn join_ref_for_phi<T: Copy + Eq>(lhs: Option<T>, rhs: Option<T>) -> Option<T> {
+    fn join_ref_for_phi<T: Copy + Eq>(
+        lhs: Option<T>,
+        lhs_nullability: VccNullability,
+        rhs: Option<T>,
+        rhs_nullability: VccNullability,
+    ) -> Option<T> {
         match (lhs, rhs) {
             (Some(lhs), Some(rhs)) if lhs == rhs => Some(lhs),
+            (Some(lhs), None) if rhs_nullability == VccNullability::Null => Some(lhs),
+            (None, Some(rhs)) if lhs_nullability == VccNullability::Null => Some(rhs),
             _ => None,
         }
     }
@@ -330,11 +386,21 @@ impl<'a> VccLowerer<'a> {
                             dst: dst_reg,
                             src: vcc_src,
                         });
-                        if let Some(ptr) = self.value_ptr_info(src) {
+                        if matches!(src, MirValue::Const(0))
+                            && self.types.get(dst).and_then(ptr_info_from_mir).is_some()
+                        {
+                            self.ptr_regs.insert(dst_reg, null_wildcard_ptr_info());
+                            self.direct_ctx_field_regs.remove(&dst_reg);
+                        } else if let Some(ptr) = self.value_ptr_info(src) {
                             self.ptr_regs.insert(dst_reg, ptr);
+                        } else {
+                            self.ptr_regs.remove(&dst_reg);
+                            self.direct_ctx_field_regs.remove(&dst_reg);
                         }
                         if let Some(field) = self.direct_ctx_field_for_value(src) {
                             self.direct_ctx_field_regs.insert(dst_reg, field);
+                        } else if !matches!(src, MirValue::Const(0)) {
+                            self.direct_ctx_field_regs.remove(&dst_reg);
                         }
                         if let MirValue::VReg(src_reg) = src {
                             if self.vreg_is_scalar_aliasable(*dst) {

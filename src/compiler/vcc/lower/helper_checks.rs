@@ -986,6 +986,10 @@ impl<'a> VccLowerer<'a> {
             )
         })?;
 
+        if ptr.space == VccAddrSpace::Unknown {
+            return Ok(());
+        }
+
         if ptr.space != VccAddrSpace::RingBuf {
             return Err(VccError::new(
                 VccErrorKind::PointerBounds,

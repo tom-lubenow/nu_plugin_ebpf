@@ -15968,7 +15968,7 @@ const FIXTURES = [
     {
         name: "ringbuf-submit-rejects-partial-reserve-submit"
         category: "helper-state"
-        tags: [ringbuf ref-lifetime phi reject]
+        tags: [ringbuf ref-lifetime phi accept]
         target: "raw_tracepoint:sys_enter"
         program: [
             '{|ctx|'
@@ -15980,9 +15980,8 @@ const FIXTURES = [
             '  0'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "unreleased ringbuf record reference"
+        local: "accept"
+        kernel: "accept"
     }
     {
         name: "ringbuf-reserve-rejects-nonzero-flags"
@@ -27354,7 +27353,7 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "requires arg1 map 'timers'"
+        error_contains: "requires arg0 to be a bpf_timer field projected from a concrete map value"
     }
     {
         name: "timer-callback-uses-trailing-value-param"
@@ -34594,7 +34593,7 @@ const FIXTURES = [
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  [0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16] | sort | length'
+            '  seq 0 16 | sort | length'
             '}'
         ]
         local: "reject"
@@ -34923,7 +34922,7 @@ const FIXTURES = [
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  [0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59] | append 60 | get 60'
+            '  seq 0 59 | append 60 | get 60'
             '}'
         ]
         local: "reject"

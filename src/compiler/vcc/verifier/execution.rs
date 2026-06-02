@@ -2677,22 +2677,9 @@ impl VccVerifier {
             VccValueType::Scalar {
                 range: Some(VccRange { min: 0, max: 0 })
             }
-        ) && let Some(info) = dst_ptr_hint
+        ) && dst_ptr_hint.is_some()
         {
-            return VccValueType::Ptr(VccPointerInfo {
-                space: info.space,
-                nullability: VccNullability::Null,
-                bounds: None,
-                packet_root: None,
-                packet_root_field: None,
-                packet_ctx_field: None,
-                packet_end: false,
-                map_root: None,
-                context_buffer_root: None,
-                context_buffer_end: false,
-                ringbuf_ref: None,
-                kfunc_ref: None,
-            });
+            return VccValueType::Ptr(null_wildcard_ptr_info());
         }
         ty
     }
@@ -2948,20 +2935,7 @@ enum PhiMapValueSource {
 
 fn typed_null_copy_type(ty: VccValueType) -> Option<VccValueType> {
     match ty {
-        VccValueType::Ptr(ptr) => Some(VccValueType::Ptr(VccPointerInfo {
-            space: ptr.space,
-            nullability: VccNullability::Null,
-            bounds: None,
-            packet_root: None,
-            packet_root_field: None,
-            packet_ctx_field: None,
-            packet_end: false,
-            map_root: None,
-            context_buffer_root: None,
-            context_buffer_end: false,
-            ringbuf_ref: None,
-            kfunc_ref: None,
-        })),
+        VccValueType::Ptr(_) => Some(VccValueType::Ptr(null_wildcard_ptr_info())),
         _ => None,
     }
 }

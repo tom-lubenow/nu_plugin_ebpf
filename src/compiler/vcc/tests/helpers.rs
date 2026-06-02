@@ -13312,6 +13312,194 @@ fn test_verify_mir_helper_ringbuf_submit_rejected_after_partial_reserve_join() {
 }
 
 #[test]
+fn test_verify_mir_helper_ringbuf_submit_accepts_explicit_null_phi_after_reserve_join() {
+    let (mut func, entry) = new_mir_function();
+    let reserve_path = func.alloc_block();
+    let null_path = func.alloc_block();
+    let join = func.alloc_block();
+    let submit = func.alloc_block();
+    let done = func.alloc_block();
+    func.param_count = 1;
+
+    let selector = func.alloc_vreg();
+    let select_cond = func.alloc_vreg();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let reserved = func.alloc_vreg();
+    let null_record = func.alloc_vreg();
+    let record = func.alloc_vreg();
+    let submit_cond = func.alloc_vreg();
+    let submit_ret = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: select_cond,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(selector),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: select_cond,
+        if_true: reserve_path,
+        if_false: null_path,
+    };
+
+    func.block_mut(reserve_path)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: reserved,
+            helper: BpfHelper::RingbufReserve as u32,
+            args: vec![
+                MirValue::StackSlot(map_slot),
+                MirValue::Const(8),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(reserve_path).terminator = MirInst::Jump { target: join };
+
+    func.block_mut(null_path).instructions.push(MirInst::Copy {
+        dst: null_record,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(null_path).terminator = MirInst::Jump { target: join };
+
+    func.block_mut(join).instructions.push(MirInst::Phi {
+        dst: record,
+        args: vec![(reserve_path, reserved), (null_path, null_record)],
+    });
+    func.block_mut(join).instructions.push(MirInst::BinOp {
+        dst: submit_cond,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(record),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(join).terminator = MirInst::Branch {
+        cond: submit_cond,
+        if_true: submit,
+        if_false: done,
+    };
+
+    func.block_mut(submit)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: submit_ret,
+            helper: BpfHelper::RingbufSubmit as u32,
+            args: vec![MirValue::VReg(record), MirValue::Const(0)],
+        });
+    func.block_mut(submit).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(selector, MirType::I64);
+    types.insert(select_cond, MirType::Bool);
+    types.insert(null_record, MirType::I64);
+    types.insert(
+        record,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Map,
+        },
+    );
+    types.insert(submit_cond, MirType::Bool);
+    types.insert(submit_ret, MirType::I64);
+
+    verify_mir(&func, &types)
+        .expect("explicit null/ringbuf record phi should preserve release identity until guard");
+}
+
+#[test]
+fn test_verify_mir_helper_ringbuf_submit_accepts_explicit_null_copy_join_after_reserve() {
+    let (mut func, entry) = new_mir_function();
+    let reserve_path = func.alloc_block();
+    let null_path = func.alloc_block();
+    let join = func.alloc_block();
+    let submit = func.alloc_block();
+    let done = func.alloc_block();
+    func.param_count = 1;
+
+    let selector = func.alloc_vreg();
+    let select_cond = func.alloc_vreg();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let reserved = func.alloc_vreg();
+    let record = func.alloc_vreg();
+    let submit_cond = func.alloc_vreg();
+    let submit_ret = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: select_cond,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(selector),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: select_cond,
+        if_true: reserve_path,
+        if_false: null_path,
+    };
+
+    func.block_mut(reserve_path)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: reserved,
+            helper: BpfHelper::RingbufReserve as u32,
+            args: vec![
+                MirValue::StackSlot(map_slot),
+                MirValue::Const(8),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(reserve_path)
+        .instructions
+        .push(MirInst::Copy {
+            dst: record,
+            src: MirValue::VReg(reserved),
+        });
+    func.block_mut(reserve_path).terminator = MirInst::Jump { target: join };
+
+    func.block_mut(null_path).instructions.push(MirInst::Copy {
+        dst: record,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(null_path).terminator = MirInst::Jump { target: join };
+
+    func.block_mut(join).instructions.push(MirInst::BinOp {
+        dst: submit_cond,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(record),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(join).terminator = MirInst::Branch {
+        cond: submit_cond,
+        if_true: submit,
+        if_false: done,
+    };
+
+    func.block_mut(submit)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: submit_ret,
+            helper: BpfHelper::RingbufSubmit as u32,
+            args: vec![MirValue::VReg(record), MirValue::Const(0)],
+        });
+    func.block_mut(submit).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(selector, MirType::I64);
+    types.insert(select_cond, MirType::Bool);
+    types.insert(
+        record,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Map,
+        },
+    );
+    types.insert(submit_cond, MirType::Bool);
+    types.insert(submit_ret, MirType::I64);
+
+    verify_mir(&func, &types)
+        .expect("explicit null/ringbuf record copy join should preserve release identity");
+}
+
+#[test]
 fn test_verify_mir_helper_ringbuf_reserve_without_release_rejected() {
     let (mut func, entry) = new_mir_function();
     let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);

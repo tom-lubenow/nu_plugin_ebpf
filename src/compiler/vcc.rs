@@ -897,6 +897,23 @@ fn ptr_info_from_mir(ty: &MirType) -> Option<VccPointerInfo> {
     }
 }
 
+fn null_wildcard_ptr_info() -> VccPointerInfo {
+    VccPointerInfo {
+        space: VccAddrSpace::Unknown,
+        nullability: VccNullability::Null,
+        bounds: None,
+        packet_root: None,
+        packet_root_field: None,
+        packet_ctx_field: None,
+        packet_end: false,
+        map_root: None,
+        context_buffer_root: None,
+        context_buffer_end: false,
+        ringbuf_ref: None,
+        kfunc_ref: None,
+    }
+}
+
 fn to_vcc_binop(op: BinOpKind) -> VccBinOp {
     match op {
         BinOpKind::Add => VccBinOp::Add,
