@@ -868,7 +868,7 @@ eBPF layout and verifier bounds are explicit:
 | `bytes index-of` | Compile-time known binary input and non-empty binary pattern, returning the first byte index or `-1`; `--end` returns the last index |
 | `bytes reverse` | Compile-time known binary input, returning a reversed binary value |
 | `bytes build` | Compile-time known binary fragments and integer byte arguments, returning a binary value |
-| `bytes at` | Compile-time known binary or list<binary> input and unit-step range, returning a non-empty fixed binary slice or fixed list of non-empty equal-length binary slices |
+| `bytes at` | Compile-time known binary or list<binary> input and unit-step range; scalar input returns a fixed binary slice, while materialized list output requires non-empty equal-length binary slices and empty or unequal list slices are supported when folded by `bytes collect`, `length`, or empty predicates |
 | `bytes add` | Compile-time known binary or list<binary> input/data with optional non-negative `--index` and `--end`, returning a non-empty fixed binary value or fixed list of non-empty equal-length binary values |
 | `bytes remove` | Compile-time known binary input and non-empty binary pattern with optional `--all` and `--end`, returning a binary value |
 | `bytes replace` | Compile-time known binary input, non-empty binary pattern, and binary replacement with optional `--all`, returning a binary value |

@@ -36005,6 +36005,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-binary-bytes-at-empty-length"
+        category: "language-core"
+        tags: [binary bytes at empty length]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  0x[01 02] | bytes at 1..0 | bytes length'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-binary-list-bytes-at-collect"
         category: "language-core"
         tags: [binary list bytes at collect starts-with]
@@ -36012,6 +36025,32 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  [0x[01 02] 0x[03 04]] | bytes at 0..0 | bytes collect | bytes starts-with 0x[01 03]'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-binary-list-bytes-at-empty-collect-length"
+        category: "language-core"
+        tags: [binary list bytes at empty collect length]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [0x[01] 0x[02]] | bytes at 1..0 | bytes collect | bytes length'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-binary-list-bytes-at-unequal-collect-length"
+        category: "language-core"
+        tags: [binary list bytes at unequal collect length]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [0x[01] 0x[02 03]] | bytes at 0..2 | bytes collect | bytes length'
             '}'
         ]
         local: "accept"
