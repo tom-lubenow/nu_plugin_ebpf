@@ -3042,6 +3042,68 @@ fn test_type_error_skb_store_bytes_rejects_invalid_flags() {
     }));
 }
 
+fn make_csum_replace_call(helper: BpfHelper, flags: i64) -> MirFunction {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: helper as u32,
+        args: vec![
+            MirValue::VReg(ctx),
+            MirValue::Const(0),
+            MirValue::Const(0),
+            MirValue::Const(0),
+            MirValue::Const(flags),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+    func
+}
+
+#[test]
+fn test_type_error_csum_replace_helpers_reject_invalid_flags() {
+    for (helper, flags, expected) in [
+        (
+            BpfHelper::L3CsumReplace,
+            0x10,
+            "helper 'bpf_l3_csum_replace' requires arg4 flags",
+        ),
+        (
+            BpfHelper::L4CsumReplace,
+            0x100,
+            "helper 'bpf_l4_csum_replace' requires arg4 flags",
+        ),
+        (
+            BpfHelper::L3CsumReplace,
+            0x01,
+            "checksum replacement helpers require BPF_F_HDR_FIELD_MASK size",
+        ),
+        (
+            BpfHelper::L4CsumReplace,
+            0x06,
+            "checksum replacement helpers require BPF_F_HDR_FIELD_MASK size",
+        ),
+    ] {
+        let func = make_csum_replace_call(helper, flags);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected checksum replacement helper flag validation error");
+        assert!(
+            errs.iter().any(|e| e.message.contains(expected)),
+            "expected {expected:?}, got {errs:?}"
+        );
+    }
+}
+
 #[test]
 fn test_infer_skb_packet_mutation_helpers_in_supported_programs() {
     for (probe_ctx, helper, extra_args) in [

@@ -16,6 +16,20 @@ const MAP_UPDATE_FLAGS: &[i64] = &[0, 1, 2];
 const MAP_PUSH_FLAGS: &[i64] = &[0, 2];
 const TIMER_INIT_FLAGS: &[i64] = &[0, 1, 7];
 const LWT_SEG6_ACTIONS: &[i64] = &[2, 3, 9, 10];
+const BPF_F_HDR_FIELD_MASK: i64 = 0x0f;
+const BPF_F_HDR_FIELD_SIZE_BIT_0: i64 = 1 << 0;
+const BPF_F_HDR_FIELD_SIZE_BIT_1: i64 = 1 << 1;
+const BPF_F_HDR_FIELD_SIZE_BIT_2: i64 = 1 << 2;
+const BPF_F_HDR_FIELD_SIZE_BIT_3: i64 = 1 << 3;
+const BPF_F_PSEUDO_HDR: i64 = 1 << 4;
+const BPF_F_MARK_MANGLED_0: i64 = 1 << 5;
+const BPF_F_MARK_ENFORCE: i64 = 1 << 6;
+const BPF_F_IPV6: i64 = 1 << 7;
+const BPF_F_L4_CSUM_REPLACE_ALLOWED_MASK: i64 = BPF_F_HDR_FIELD_MASK
+    | BPF_F_PSEUDO_HDR
+    | BPF_F_MARK_MANGLED_0
+    | BPF_F_MARK_ENFORCE
+    | BPF_F_IPV6;
 const BPF_MAX_LOOPS: i64 = 8 * 1024 * 1024;
 const BPF_FIB_LOOKUP_DIRECT: i64 = 1 << 0;
 const BPF_FIB_LOOKUP_TBID: i64 = 1 << 3;
@@ -83,6 +97,27 @@ const SKB_ADJUST_ROOM_FLAG_COMBINATIONS: &[ScalarArgBitCombinationRequirement] =
         required_mask: 0,
         forbidden_mask: BPF_F_ADJ_ROOM_DECAP_L3_IPV6,
         message: "helper 'bpf_skb_adjust_room' requires at most one BPF_F_ADJ_ROOM_DECAP_L3_* flag",
+    },
+];
+
+const CSUM_REPLACE_HDR_FIELD_COMBINATIONS: &[ScalarArgBitCombinationRequirement] = &[
+    ScalarArgBitCombinationRequirement {
+        trigger_mask: BPF_F_HDR_FIELD_SIZE_BIT_0,
+        required_mask: 0,
+        forbidden_mask: BPF_F_HDR_FIELD_SIZE_BIT_0,
+        message: "checksum replacement helpers require BPF_F_HDR_FIELD_MASK size to be 0, 2, or 4",
+    },
+    ScalarArgBitCombinationRequirement {
+        trigger_mask: BPF_F_HDR_FIELD_SIZE_BIT_3,
+        required_mask: 0,
+        forbidden_mask: BPF_F_HDR_FIELD_SIZE_BIT_3,
+        message: "checksum replacement helpers require BPF_F_HDR_FIELD_MASK size to be 0, 2, or 4",
+    },
+    ScalarArgBitCombinationRequirement {
+        trigger_mask: BPF_F_HDR_FIELD_SIZE_BIT_1,
+        required_mask: 0,
+        forbidden_mask: BPF_F_HDR_FIELD_SIZE_BIT_2,
+        message: "checksum replacement helpers require BPF_F_HDR_FIELD_MASK size to be 0, 2, or 4",
     },
 ];
 
@@ -1522,6 +1557,14 @@ impl BpfHelper {
                 0x1b,
                 "helper 'bpf_redirect_map' requires arg2 flags to contain only fallback return-code bits plus BPF_F_BROADCAST/BPF_F_EXCLUDE_INGRESS (0x1b)",
             )),
+            (Self::L3CsumReplace, 4) => Some((
+                BPF_F_HDR_FIELD_MASK,
+                "helper 'bpf_l3_csum_replace' requires arg4 flags to contain only BPF_F_HDR_FIELD_MASK bits (0x0f)",
+            )),
+            (Self::L4CsumReplace, 4) => Some((
+                BPF_F_L4_CSUM_REPLACE_ALLOWED_MASK,
+                "helper 'bpf_l4_csum_replace' requires arg4 flags to contain only BPF_F_MARK_MANGLED_0/BPF_F_MARK_ENFORCE/BPF_F_PSEUDO_HDR/BPF_F_HDR_FIELD_MASK/BPF_F_IPV6 bits (0xff)",
+            )),
             (Self::FibLookup, 3) => Some((
                 0x3f,
                 "helper 'bpf_fib_lookup' requires arg3 flags to contain only modeled BPF_FIB_LOOKUP_* bits (0x3f)",
@@ -1549,6 +1592,7 @@ impl BpfHelper {
         match (self, arg_idx) {
             (Self::FibLookup, 3) => FIB_LOOKUP_FLAG_COMBINATIONS,
             (Self::SkbAdjustRoom, 3) => SKB_ADJUST_ROOM_FLAG_COMBINATIONS,
+            (Self::L3CsumReplace | Self::L4CsumReplace, 4) => CSUM_REPLACE_HDR_FIELD_COMBINATIONS,
             _ => &[],
         }
     }

@@ -2501,6 +2501,39 @@ fn test_skb_store_bytes_helper_flag_contract() {
 }
 
 #[test]
+fn test_checksum_replacement_helper_flag_contracts() {
+    assert_eq!(
+        BpfHelper::L3CsumReplace.scalar_arg_bitmask_requirement(4),
+        Some((
+            BPF_F_HDR_FIELD_MASK,
+            "helper 'bpf_l3_csum_replace' requires arg4 flags to contain only BPF_F_HDR_FIELD_MASK bits (0x0f)"
+        ))
+    );
+    assert_eq!(
+        BpfHelper::L4CsumReplace.scalar_arg_bitmask_requirement(4),
+        Some((
+            BPF_F_L4_CSUM_REPLACE_ALLOWED_MASK,
+            "helper 'bpf_l4_csum_replace' requires arg4 flags to contain only BPF_F_MARK_MANGLED_0/BPF_F_MARK_ENFORCE/BPF_F_PSEUDO_HDR/BPF_F_HDR_FIELD_MASK/BPF_F_IPV6 bits (0xff)"
+        ))
+    );
+
+    for helper in [BpfHelper::L3CsumReplace, BpfHelper::L4CsumReplace] {
+        let combinations = helper.scalar_arg_bit_combination_requirements(4);
+        assert_eq!(combinations.len(), 3);
+        assert_eq!(combinations[0].trigger_mask, 0x01);
+        assert_eq!(combinations[0].forbidden_mask, 0x01);
+        assert_eq!(combinations[1].trigger_mask, 0x08);
+        assert_eq!(combinations[1].forbidden_mask, 0x08);
+        assert_eq!(combinations[2].trigger_mask, 0x02);
+        assert_eq!(combinations[2].forbidden_mask, 0x04);
+        assert!(combinations.iter().all(|requirement| {
+            requirement.message
+                == "checksum replacement helpers require BPF_F_HDR_FIELD_MASK size to be 0, 2, or 4"
+        }));
+    }
+}
+
+#[test]
 fn test_skb_load_bytes_relative_start_header_contract() {
     assert_eq!(
         BpfHelper::SkbLoadBytesRelative.scalar_arg_range_requirement(4),

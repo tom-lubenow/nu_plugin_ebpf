@@ -442,7 +442,12 @@ packet-edit helpers through the ordinary helper surface, including
 `sk_skb`, and `sk_skb_parser` additionally model `bpf_skb_vlan_push`,
 `bpf_skb_vlan_pop`, `bpf_skb_adjust_room`, and `bpf_set_hash`.
 `bpf_skb_store_bytes` flags may contain only `BPF_F_RECOMPUTE_CSUM` and
-`BPF_F_INVALIDATE_HASH`; `bpf_skb_adjust_room` mode must be
+`BPF_F_INVALIDATE_HASH`; `bpf_l3_csum_replace` flags may contain only
+`BPF_F_HDR_FIELD_MASK`, and `bpf_l4_csum_replace` flags may contain only
+`BPF_F_MARK_MANGLED_0`, `BPF_F_MARK_ENFORCE`, `BPF_F_PSEUDO_HDR`,
+`BPF_F_HDR_FIELD_MASK`, and `BPF_F_IPV6`. For both checksum replacement
+helpers, the masked header-field size must be `0`, `2`, or `4`.
+`bpf_skb_adjust_room` mode must be
 `BPF_ADJ_ROOM_NET` or `BPF_ADJ_ROOM_MAC`, and generic skb adjust-room
 flags may contain only the modeled `BPF_F_ADJ_ROOM_*` bits, including
 the high-byte `BPF_F_ADJ_ROOM_ENCAP_L2(len)` field. The compiler also
