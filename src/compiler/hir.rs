@@ -872,6 +872,16 @@ fn compile_time_value_consumer_matches(
                                 matches!(flag.as_slice(), b"utf-8-bytes" | b"grapheme-clusters")
                             })
                     }
+                    "fill" => {
+                        args.positional.is_empty()
+                            && args.named.iter().all(|(name, _)| {
+                                matches!(
+                                    name.as_slice(),
+                                    b"width" | b"w" | b"alignment" | b"a" | b"character" | b"c"
+                                )
+                            })
+                            && args.flags.is_empty()
+                    }
                     "str downcase"
                     | "str upcase"
                     | "str reverse"

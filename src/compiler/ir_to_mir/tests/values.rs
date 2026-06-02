@@ -2468,6 +2468,202 @@ fn make_str_trim_then_starts_with_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_fill_then_starts_with_program(
+    fill_decl: DeclId,
+    starts_with_decl: DeclId,
+    value: &str,
+    prefix: &str,
+    width: Option<i64>,
+    alignment: Option<&str>,
+    character: Option<&str>,
+) -> HirProgram {
+    let mut next_reg = 2u32;
+    let mut stmts = vec![HirStmt::LoadValue {
+        dst: RegId::new(0),
+        val: Box::new(Value::string(value, Span::test_data())),
+    }];
+    let mut named = Vec::new();
+
+    if let Some(width) = width {
+        let reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadLiteral {
+            dst: reg,
+            lit: HirLiteral::Int(width),
+        });
+        named.push((b"width".to_vec(), reg));
+    }
+    if let Some(alignment) = alignment {
+        let reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadValue {
+            dst: reg,
+            val: Box::new(Value::string(alignment, Span::test_data())),
+        });
+        named.push((b"alignment".to_vec(), reg));
+    }
+    if let Some(character) = character {
+        let reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadValue {
+            dst: reg,
+            val: Box::new(Value::string(character, Span::test_data())),
+        });
+        named.push((b"character".to_vec(), reg));
+    }
+
+    stmts.push(HirStmt::Call {
+        decl_id: fill_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            named,
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let prefix_reg = RegId::new(next_reg);
+    next_reg += 1;
+    let starts_with_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::LoadValue {
+        dst: prefix_reg,
+        val: Box::new(Value::string(prefix, Span::test_data())),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: starts_with_decl,
+        src_dst: starts_with_reg,
+        args: HirCallArgs {
+            positional: vec![prefix_reg],
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return {
+                src: starts_with_reg,
+            },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: next_reg,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_string_list_fill_join_then_starts_with_program(
+    fill_decl: DeclId,
+    join_decl: DeclId,
+    starts_with_decl: DeclId,
+    values: &[&str],
+    width: i64,
+    alignment: &str,
+    character: &str,
+    prefix: &str,
+) -> HirProgram {
+    let mut next_reg = 2u32;
+    let mut stmts = vec![HirStmt::LoadValue {
+        dst: RegId::new(0),
+        val: Box::new(Value::list(
+            values
+                .iter()
+                .map(|value| Value::string(*value, Span::test_data()))
+                .collect(),
+            Span::test_data(),
+        )),
+    }];
+
+    let width_reg = RegId::new(next_reg);
+    next_reg += 1;
+    let alignment_reg = RegId::new(next_reg);
+    next_reg += 1;
+    let character_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::LoadLiteral {
+        dst: width_reg,
+        lit: HirLiteral::Int(width),
+    });
+    stmts.push(HirStmt::LoadValue {
+        dst: alignment_reg,
+        val: Box::new(Value::string(alignment, Span::test_data())),
+    });
+    stmts.push(HirStmt::LoadValue {
+        dst: character_reg,
+        val: Box::new(Value::string(character, Span::test_data())),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: fill_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            named: vec![
+                (b"width".to_vec(), width_reg),
+                (b"alignment".to_vec(), alignment_reg),
+                (b"character".to_vec(), character_reg),
+            ],
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let separator_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::LoadValue {
+        dst: separator_reg,
+        val: Box::new(Value::string(",", Span::test_data())),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: join_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional: vec![separator_reg],
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let prefix_reg = RegId::new(next_reg);
+    next_reg += 1;
+    let starts_with_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::LoadValue {
+        dst: prefix_reg,
+        val: Box::new(Value::string(prefix, Span::test_data())),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: starts_with_decl,
+        src_dst: starts_with_reg,
+        args: HirCallArgs {
+            positional: vec![prefix_reg],
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return {
+                src: starts_with_reg,
+            },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: next_reg,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_string_substring_then_starts_with_program(
     substring_decl: DeclId,
     starts_with_decl: DeclId,
@@ -8378,6 +8574,153 @@ fn test_lower_str_trim_right_char_on_known_string_materializes_trimmed_literal()
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
         "str trim --right --char result consumed by str starts-with should compile through codegen",
+    );
+}
+
+#[test]
+fn test_lower_fill_right_on_known_string_materializes_padded_literal() {
+    let fill_decl = DeclId::new(497);
+    let starts_with_decl = DeclId::new(498);
+    let hir = make_fill_then_starts_with_program(
+        fill_decl,
+        starts_with_decl,
+        "ab",
+        "000ab",
+        Some(5),
+        Some("right"),
+        Some("0"),
+    );
+    let decl_names = HashMap::from([
+        (fill_decl, "fill".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("fill should lower for compile-time known string input");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"000ab\0")
+            )),
+        "expected fill to materialize the padded string"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("fill result consumed by str starts-with should compile through codegen");
+}
+
+#[test]
+fn test_lower_fill_center_on_known_string_list_materializes_padded_literals() {
+    let fill_decl = DeclId::new(499);
+    let join_decl = DeclId::new(500);
+    let starts_with_decl = DeclId::new(501);
+    let hir = make_string_list_fill_join_then_starts_with_program(
+        fill_decl,
+        join_decl,
+        starts_with_decl,
+        &["a", "bc"],
+        4,
+        "center",
+        "_",
+        "_a__,_bc_",
+    );
+    let decl_names = HashMap::from([
+        (fill_decl, "fill".to_string()),
+        (join_decl, "str join".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("fill should lower for compile-time known string-list input");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"_a__,_bc_\0")
+            )),
+        "expected fill list output to feed str join with padded strings"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .all(|inst| !matches!(
+                inst,
+                MirInst::ListGet { .. } | MirInst::ListLen { .. } | MirInst::ListPush { .. }
+            )),
+        "expected compile-time fill string-list input not to use runtime list operations"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("fill string-list result consumed by str join should compile through codegen");
+}
+
+#[test]
+fn test_lower_fill_rejects_negative_width() {
+    let fill_decl = DeclId::new(502);
+    let starts_with_decl = DeclId::new(503);
+    let hir = make_fill_then_starts_with_program(
+        fill_decl,
+        starts_with_decl,
+        "ab",
+        "ab",
+        Some(-1),
+        None,
+        Some("_"),
+    );
+    let decl_names = HashMap::from([
+        (fill_decl, "fill".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("fill should reject negative widths");
+
+    assert!(
+        err.to_string()
+            .contains("fill --width requires a non-negative integer"),
+        "unexpected error: {err}"
     );
 }
 

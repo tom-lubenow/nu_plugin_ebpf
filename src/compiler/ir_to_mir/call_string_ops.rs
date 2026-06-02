@@ -18,6 +18,14 @@ struct KnownStringSearchOperands {
 
 const MAX_STRING_EXPAND_RESULTS: usize = 60;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FillAlignment {
+    Left,
+    Right,
+    Center,
+    CenterRight,
+}
+
 impl<'a> HirToMirLowering<'a> {
     pub(super) fn lower_string_length(
         &mut self,
@@ -1813,6 +1821,133 @@ impl<'a> HirToMirLowering<'a> {
             (None, false, true) => input.trim_end().to_string(),
             (None, _, _) => input.trim().to_string(),
         }
+    }
+
+    pub(super) fn lower_fill(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+    ) -> Result<(), CompileError> {
+        let input_reg = self
+            .pipeline_input_reg
+            .or(src_dst_had_value.then_some(src_dst));
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+
+        if !self.named_flags.is_empty() || !self.positional_args.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(
+                "fill supports only named options in eBPF".into(),
+            ));
+        }
+        for key in self.named_args.keys() {
+            if !matches!(
+                key.as_str(),
+                "width" | "w" | "alignment" | "a" | "character" | "c"
+            ) {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "fill does not support named argument --{key} in eBPF"
+                )));
+            }
+        }
+
+        let width = self.fill_width()?;
+        let alignment = self.fill_alignment()?;
+        let fill = self.fill_character()?;
+
+        if let Some(input) = self.exact_string_list_input(input_reg, "fill")? {
+            let output = input
+                .into_iter()
+                .map(|item| Self::fill_known_string(&item, width, alignment, &fill))
+                .collect();
+            return self.lower_known_string_list_result(src_dst, result_vreg, output);
+        }
+
+        let input = self.exact_string_input(input_reg, "fill")?;
+        let output = Self::fill_known_string(&input, width, alignment, &fill);
+        self.lower_known_string_result(src_dst, result_vreg, output)
+    }
+
+    fn fill_width(&self) -> Result<usize, CompileError> {
+        let Some((_, width_reg)) = self
+            .named_args
+            .get("width")
+            .or_else(|| self.named_args.get("w"))
+            .copied()
+        else {
+            return Ok(1);
+        };
+        let width = self
+            .get_metadata(width_reg)
+            .and_then(|meta| meta.literal_int)
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "fill --width requires a compile-time known integer in eBPF".into(),
+                )
+            })?;
+        usize::try_from(width).map_err(|_| {
+            CompileError::UnsupportedInstruction(
+                "fill --width requires a non-negative integer in eBPF".into(),
+            )
+        })
+    }
+
+    fn fill_alignment(&self) -> Result<FillAlignment, CompileError> {
+        let Some((_, alignment_reg)) = self
+            .named_args
+            .get("alignment")
+            .or_else(|| self.named_args.get("a"))
+            .copied()
+        else {
+            return Ok(FillAlignment::Left);
+        };
+        let alignment = self.literal_string_arg(alignment_reg, "fill --alignment")?;
+        Ok(match alignment.to_ascii_lowercase().as_str() {
+            "right" | "r" => FillAlignment::Right,
+            "center" | "middle" | "c" | "m" => FillAlignment::Center,
+            "cr" | "mr" => FillAlignment::CenterRight,
+            _ => FillAlignment::Left,
+        })
+    }
+
+    fn fill_character(&self) -> Result<String, CompileError> {
+        let Some((_, character_reg)) = self
+            .named_args
+            .get("character")
+            .or_else(|| self.named_args.get("c"))
+            .copied()
+        else {
+            return Ok(" ".to_string());
+        };
+        self.literal_string_arg(character_reg, "fill --character")
+    }
+
+    fn fill_known_string(
+        input: &str,
+        width: usize,
+        alignment: FillAlignment,
+        fill: &str,
+    ) -> String {
+        let input_width = input.chars().count();
+        let pad_width = width.saturating_sub(input_width);
+        if pad_width == 0 || fill.is_empty() {
+            return input.to_string();
+        }
+
+        let (left_pad, right_pad) = match alignment {
+            FillAlignment::Left => (0, pad_width),
+            FillAlignment::Right => (pad_width, 0),
+            FillAlignment::Center => (pad_width / 2, pad_width - (pad_width / 2)),
+            FillAlignment::CenterRight => (pad_width.div_ceil(2), pad_width / 2),
+        };
+        let mut output = String::with_capacity(input.len() + fill.len() * pad_width);
+        output.push_str(&fill.repeat(left_pad));
+        output.push_str(input);
+        output.push_str(&fill.repeat(right_pad));
+        output
     }
 
     pub(super) fn lower_known_string_transform(

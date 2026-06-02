@@ -46,6 +46,7 @@ const NU_CLOSURE_COMMANDS: &[&str] = &[
     "find",
     "append",
     "prepend",
+    "fill",
     "is-empty",
     "is-not-empty",
     "describe",

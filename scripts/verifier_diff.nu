@@ -36011,6 +36011,32 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-string-fill-right"
+        category: "language-core"
+        tags: [string fill right]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "ab" | fill --alignment right --character "0" --width 5 | str starts-with "000ab"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-string-list-fill-center-join"
+        category: "language-core"
+        tags: [string list fill center join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ["a" "bc"] | fill --alignment center --character "_" --width 4 | str join "," | str starts-with "_a__,_bc_"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-split-list-string-group-join"
         category: "language-core"
         tags: [list split-list string join]

@@ -3888,6 +3888,10 @@ impl<'a> HirToMirLowering<'a> {
                 self.lower_string_trim(src_dst, dst_vreg, src_dst_had_value)?;
             }
 
+            "fill" => {
+                self.lower_fill(src_dst, dst_vreg, src_dst_had_value)?;
+            }
+
             "str downcase"
             | "str upcase"
             | "str reverse"
