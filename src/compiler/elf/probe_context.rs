@@ -1067,6 +1067,13 @@ impl ProbeContext {
         self.program_type().helper_zero_arg_requirement(helper)
     }
 
+    pub(crate) fn helper_const_arg_requirement(
+        &self,
+        helper: BpfHelper,
+    ) -> Option<(usize, i64, &'static str)> {
+        self.program_type().helper_const_arg_requirement(helper)
+    }
+
     pub(crate) fn get_socket_cookie_arg_policy(&self) -> Option<GetSocketCookieArgPolicy> {
         self.program_type().get_socket_cookie_arg_policy()
     }

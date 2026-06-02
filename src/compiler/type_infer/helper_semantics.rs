@@ -604,6 +604,15 @@ impl<'a> TypeInference<'a> {
             errors.push(TypeError::new(message));
         }
 
+        if let Some((arg_idx, expected, message)) = self
+            .probe_ctx
+            .as_ref()
+            .and_then(|ctx| ctx.helper_const_arg_requirement(helper))
+            && !arg_is_known_const(arg_idx, expected)
+        {
+            errors.push(TypeError::new(message));
+        }
+
         if let Some((arg_idx, message)) = helper.zero_scalar_arg_requirement()
             && !arg_is_known_zero(arg_idx)
         {

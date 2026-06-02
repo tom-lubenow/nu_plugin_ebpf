@@ -597,6 +597,16 @@ pub(in crate::compiler::verifier_types) fn apply_helper_semantics(
         errors.push(VerifierTypeError::new(message));
     }
 
+    if let Some((arg_idx, expected, message)) = probe_ctx
+        .and_then(|ctx| ctx.helper_const_arg_requirement(helper))
+        .or_else(|| {
+            program.and_then(|program| program.program_type.helper_const_arg_requirement(helper))
+        })
+        && !arg_is_known_const(arg_idx, expected)
+    {
+        errors.push(VerifierTypeError::new(message));
+    }
+
     if let Some((arg_idx, message)) = helper.zero_scalar_arg_requirement()
         && !arg_is_known_zero(arg_idx)
     {

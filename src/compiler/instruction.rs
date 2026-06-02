@@ -14,6 +14,7 @@ const SKB_GET_TUNNEL_KEY_FLAGS: &[i64] = &[0, 1, 16, 17];
 const MAP_UPDATE_FLAGS: &[i64] = &[0, 1, 2];
 const MAP_PUSH_FLAGS: &[i64] = &[0, 2];
 const TIMER_INIT_FLAGS: &[i64] = &[0, 1, 7];
+const LWT_SEG6_ACTIONS: &[i64] = &[2, 3, 9, 10];
 const BPF_MAX_LOOPS: i64 = 8 * 1024 * 1024;
 
 pub(crate) fn scalar_range_contains_only_allowed_values(
@@ -1341,6 +1342,11 @@ impl BpfHelper {
                 1,
                 "helper 'bpf_skb_adjust_room' requires arg2 mode to be BPF_ADJ_ROOM_NET or BPF_ADJ_ROOM_MAC",
             )),
+            (Self::LwtPushEncap, 1) => Some((
+                0,
+                2,
+                "helper 'bpf_lwt_push_encap' requires arg1 type to be BPF_LWT_ENCAP_SEG6, BPF_LWT_ENCAP_SEG6_INLINE, or BPF_LWT_ENCAP_IP",
+            )),
             (Self::SkbSetTstamp, 2) => Some((
                 0,
                 1,
@@ -1426,6 +1432,10 @@ impl BpfHelper {
             (Self::TimerInit, 2) => Some((
                 TIMER_INIT_FLAGS,
                 "helper 'bpf_timer_init' requires arg2 flags to be CLOCK_REALTIME, CLOCK_MONOTONIC, or CLOCK_BOOTTIME",
+            )),
+            (Self::LwtSeg6Action, 1) => Some((
+                LWT_SEG6_ACTIONS,
+                "helper 'bpf_lwt_seg6_action' requires arg1 action to be SEG6_LOCAL_ACTION_END_X, SEG6_LOCAL_ACTION_END_T, SEG6_LOCAL_ACTION_END_B6, or SEG6_LOCAL_ACTION_END_B6_ENCAP",
             )),
             _ => None,
         }

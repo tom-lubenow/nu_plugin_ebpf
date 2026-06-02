@@ -3936,6 +3936,26 @@ fn test_program_type_helper_zero_arg_requirement_uses_program_surface() {
 }
 
 #[test]
+fn test_program_type_helper_const_arg_requirement_uses_program_surface() {
+    assert_eq!(
+        EbpfProgramType::LwtXmit.helper_const_arg_requirement(BpfHelper::LwtPushEncap),
+        Some((
+            1,
+            2,
+            "helper 'bpf_lwt_push_encap' requires arg1 type = BPF_LWT_ENCAP_IP in lwt_xmit programs"
+        ))
+    );
+    assert_eq!(
+        EbpfProgramType::LwtIn.helper_const_arg_requirement(BpfHelper::LwtPushEncap),
+        None
+    );
+    assert_eq!(
+        EbpfProgramType::Tc.helper_const_arg_requirement(BpfHelper::LwtPushEncap),
+        None
+    );
+}
+
+#[test]
 fn test_program_type_get_socket_cookie_arg_policy_tracks_program_model() {
     assert_eq!(
         EbpfProgramType::SocketFilter.get_socket_cookie_arg_policy(),
@@ -4132,6 +4152,25 @@ fn test_probe_context_helper_zero_arg_requirement_uses_program_type() {
     assert_eq!(tc.helper_zero_arg_requirement(BpfHelper::CheckMtu), None);
     assert_eq!(
         sk_lookup.helper_zero_arg_requirement(BpfHelper::SkAssign),
+        None
+    );
+}
+
+#[test]
+fn test_probe_context_helper_const_arg_requirement_uses_program_type() {
+    let lwt_xmit = ProbeContext::new(EbpfProgramType::LwtXmit, "demo-route");
+    let lwt_in = ProbeContext::new(EbpfProgramType::LwtIn, "demo-route");
+
+    assert_eq!(
+        lwt_xmit.helper_const_arg_requirement(BpfHelper::LwtPushEncap),
+        Some((
+            1,
+            2,
+            "helper 'bpf_lwt_push_encap' requires arg1 type = BPF_LWT_ENCAP_IP in lwt_xmit programs"
+        ))
+    );
+    assert_eq!(
+        lwt_in.helper_const_arg_requirement(BpfHelper::LwtPushEncap),
         None
     );
 }

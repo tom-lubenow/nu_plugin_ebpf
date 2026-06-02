@@ -2733,6 +2733,22 @@ fn test_lwt_helpers_contract() {
     assert!(!skb.allowed.allow_user);
     assert_eq!(skb.fixed_size, None);
     assert_eq!(skb.size_from_arg, None);
+    assert_eq!(
+        BpfHelper::LwtPushEncap.scalar_arg_range_requirement(1),
+        Some((
+            0,
+            2,
+            "helper 'bpf_lwt_push_encap' requires arg1 type to be BPF_LWT_ENCAP_SEG6, BPF_LWT_ENCAP_SEG6_INLINE, or BPF_LWT_ENCAP_IP"
+        ))
+    );
+    let (actions, message) = BpfHelper::LwtSeg6Action
+        .scalar_arg_allowed_values_requirement(1)
+        .expect("expected lwt_seg6_action action contract");
+    assert_eq!(actions, &[2, 3, 9, 10]);
+    assert_eq!(
+        message,
+        "helper 'bpf_lwt_seg6_action' requires arg1 action to be SEG6_LOCAL_ACTION_END_X, SEG6_LOCAL_ACTION_END_T, SEG6_LOCAL_ACTION_END_B6, or SEG6_LOCAL_ACTION_END_B6_ENCAP"
+    );
 }
 
 #[test]

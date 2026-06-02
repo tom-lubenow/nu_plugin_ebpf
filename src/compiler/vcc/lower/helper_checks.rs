@@ -1464,6 +1464,20 @@ impl<'a> VccLowerer<'a> {
             self.verify_helper_scalar_const_eq(helper_id, arg_idx, arg, 0, message, out)?;
         }
 
+        if let Some((arg_idx, expected, message)) = self
+            .probe_ctx
+            .and_then(|ctx| ctx.helper_const_arg_requirement(helper))
+            .or_else(|| {
+                self.program
+                    .and_then(|program| program.program_type.helper_const_arg_requirement(helper))
+            })
+            && let Some(arg) = args.get(arg_idx)
+        {
+            self.verify_helper_scalar_const_eq(
+                helper_id, arg_idx, arg, expected, message, out,
+            )?;
+        }
+
         if let Some((arg_idx, message)) = helper.zero_scalar_arg_requirement()
             && let Some(arg) = args.get(arg_idx)
         {

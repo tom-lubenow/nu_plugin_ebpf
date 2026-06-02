@@ -22,6 +22,15 @@ struct HelperZeroArgRequirementSpec {
 }
 
 #[derive(Debug, Clone, Copy)]
+struct HelperConstArgRequirementSpec {
+    helper: BpfHelper,
+    program_type: EbpfProgramType,
+    arg_idx: usize,
+    expected: i64,
+    error_message: &'static str,
+}
+
+#[derive(Debug, Clone, Copy)]
 struct GetSocketCookieArgPolicySpec {
     policy: GetSocketCookieArgPolicy,
     program_types: &'static [EbpfProgramType],
@@ -962,6 +971,15 @@ const HELPER_ZERO_ARG_REQUIREMENTS: &[HelperZeroArgRequirementSpec] = &[
         error_message: "helper 'bpf_check_mtu' requires arg4 = 0 in xdp programs",
     },
 ];
+const HELPER_CONST_ARG_REQUIREMENTS: &[HelperConstArgRequirementSpec] = &[
+    HelperConstArgRequirementSpec {
+        helper: BpfHelper::LwtPushEncap,
+        program_type: EbpfProgramType::LwtXmit,
+        arg_idx: 1,
+        expected: 2,
+        error_message: "helper 'bpf_lwt_push_encap' requires arg1 type = BPF_LWT_ENCAP_IP in lwt_xmit programs",
+    },
+];
 
 fn helper_program_surface_spec(helper: BpfHelper) -> Option<HelperProgramSurfaceSpec> {
     Some(match helper {
@@ -1242,6 +1260,16 @@ impl EbpfProgramType {
             .iter()
             .find(|spec| helper_ids_equal(spec.helper, helper) && spec.program_type == *self)
             .map(|spec| (spec.arg_idx, spec.error_message))
+    }
+
+    pub(crate) fn helper_const_arg_requirement(
+        &self,
+        helper: BpfHelper,
+    ) -> Option<(usize, i64, &'static str)> {
+        HELPER_CONST_ARG_REQUIREMENTS
+            .iter()
+            .find(|spec| helper_ids_equal(spec.helper, helper) && spec.program_type == *self)
+            .map(|spec| (spec.arg_idx, spec.expected, spec.error_message))
     }
 
     pub(crate) fn get_socket_cookie_arg_policy(&self) -> Option<GetSocketCookieArgPolicy> {
@@ -2173,6 +2201,46 @@ mod tests {
                     .helper_zero_arg_requirement(requirement.helper),
                 Some((requirement.arg_idx, requirement.error_message)),
                 "zero-arg helper requirement for '{}' / {:?} must be reachable through the public lookup",
+                requirement.helper.name(),
+                requirement.program_type
+            );
+        }
+
+        let mut const_arg_requirements = HashSet::new();
+        for requirement in HELPER_CONST_ARG_REQUIREMENTS {
+            let key = (
+                requirement.helper as u32,
+                requirement.program_type,
+                requirement.arg_idx,
+            );
+            assert!(
+                const_arg_requirements.insert(key),
+                "duplicate const-arg helper requirement for {} / {:?} arg{}",
+                requirement.helper.name(),
+                requirement.program_type,
+                requirement.arg_idx
+            );
+            assert!(
+                !requirement.error_message.is_empty(),
+                "const-arg helper requirement must have an error message"
+            );
+            assert!(
+                requirement.arg_idx < requirement.helper.signature().max_args,
+                "const-arg helper requirement for '{}' references arg{} but helper has {} args",
+                requirement.helper.name(),
+                requirement.arg_idx,
+                requirement.helper.signature().max_args
+            );
+            assert_eq!(
+                requirement
+                    .program_type
+                    .helper_const_arg_requirement(requirement.helper),
+                Some((
+                    requirement.arg_idx,
+                    requirement.expected,
+                    requirement.error_message
+                )),
+                "const-arg helper requirement for '{}' / {:?} must be reachable through the public lookup",
                 requirement.helper.name(),
                 requirement.program_type
             );

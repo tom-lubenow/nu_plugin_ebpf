@@ -13402,8 +13402,9 @@ fn test_verify_mir_for_probe_context_skb_get_xfrm_state_rejects_small_buffer() {
     );
 }
 
-fn make_lwt_buffer_verify_call(
+fn make_lwt_buffer_verify_call_with_selector(
     helper: BpfHelper,
+    selector: i64,
     size: i64,
     buffer_size: usize,
 ) -> (MirFunction, HashMap<VReg, MirType>) {
@@ -13428,7 +13429,7 @@ fn make_lwt_buffer_verify_call(
             helper: helper as u32,
             args: vec![
                 MirValue::VReg(ctx),
-                MirValue::Const(0),
+                MirValue::Const(selector),
                 MirValue::StackSlot(buffer),
                 MirValue::Const(size),
             ],
@@ -13446,6 +13447,19 @@ fn make_lwt_buffer_verify_call(
     types.insert(dst, MirType::I64);
 
     (func, types)
+}
+
+fn make_lwt_buffer_verify_call(
+    helper: BpfHelper,
+    size: i64,
+    buffer_size: usize,
+) -> (MirFunction, HashMap<VReg, MirType>) {
+    let selector = match helper {
+        BpfHelper::LwtPushEncap => 2,
+        BpfHelper::LwtSeg6Action => 2,
+        _ => 0,
+    };
+    make_lwt_buffer_verify_call_with_selector(helper, selector, size, buffer_size)
 }
 
 fn make_lwt_seg6_adjust_srh_verify_call() -> (MirFunction, HashMap<VReg, MirType>) {
@@ -13510,6 +13524,38 @@ fn test_verify_mir_for_probe_context_lwt_push_encap_rejects_non_lwt_in_xmit_prog
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_lwt_push_encap_rejects_invalid_type() {
+    let (func, types) =
+        make_lwt_buffer_verify_call_with_selector(BpfHelper::LwtPushEncap, 3, 16, 16);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::LwtIn, "demo-route");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected bpf_lwt_push_encap type to be rejected");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_lwt_push_encap' requires arg1 type")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_lwt_push_encap_requires_ip_type_on_lwt_xmit() {
+    let (func, types) =
+        make_lwt_buffer_verify_call_with_selector(BpfHelper::LwtPushEncap, 0, 16, 16);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::LwtXmit, "demo-route");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected lwt_xmit bpf_lwt_push_encap type to be rejected");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_lwt_push_encap' requires arg1 type = BPF_LWT_ENCAP_IP")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_lwt_seg6_helpers_accept_lwt_seg6local_programs() {
     for (func, types) in [
         make_lwt_buffer_verify_call(BpfHelper::LwtSeg6StoreBytes, 16, 16),
@@ -13532,6 +13578,22 @@ fn test_verify_mir_for_probe_context_lwt_seg6_helpers_reject_non_lwt_seg6local_p
         e.message
             .contains("helper 'bpf_lwt_seg6_action' is only valid in lwt_seg6local programs")
     }));
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_lwt_seg6_action_rejects_invalid_action() {
+    let (func, types) =
+        make_lwt_buffer_verify_call_with_selector(BpfHelper::LwtSeg6Action, 4, 16, 16);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::LwtSeg6Local, "demo-route");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected bpf_lwt_seg6_action action to be rejected");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_lwt_seg6_action' requires arg1 action")),
+        "unexpected errors: {:?}",
+        err
+    );
 }
 
 #[test]
