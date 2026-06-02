@@ -35456,6 +35456,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-scalar-math-integer-identity-runtime"
+        category: "language-core"
+        tags: [scalar math ceil floor round runtime]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  (random int | math ceil | math floor | math round) >= 0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-math-integer-identity-runtime"
         category: "language-core"
         tags: [aggregate list math ceil floor round runtime]

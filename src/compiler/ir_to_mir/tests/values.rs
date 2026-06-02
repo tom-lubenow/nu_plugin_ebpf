@@ -10645,7 +10645,7 @@ fn make_math_abs_program(abs_decl: DeclId, input: i64) -> HirProgram {
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
-fn make_runtime_scalar_math_abs_program(abs_decl: DeclId, random_decl: DeclId) -> HirProgram {
+fn make_runtime_scalar_math_unary_program(math_decl: DeclId, random_decl: DeclId) -> HirProgram {
     let func = HirFunction {
         blocks: vec![HirBlock {
             id: HirBlockId(0),
@@ -10656,7 +10656,7 @@ fn make_runtime_scalar_math_abs_program(abs_decl: DeclId, random_decl: DeclId) -
                     args: HirCallArgs::default(),
                 },
                 HirStmt::Call {
-                    decl_id: abs_decl,
+                    decl_id: math_decl,
                     src_dst: RegId::new(1),
                     args: HirCallArgs {
                         pipeline_input: Some(RegId::new(0)),
@@ -12389,7 +12389,7 @@ fn test_lower_math_abs_on_i64_min_wraps_like_nushell() {
 fn test_lower_math_abs_on_runtime_scalar_integer_uses_negation_branch() {
     let abs_decl = DeclId::new(264);
     let random_decl = DeclId::new(265);
-    let hir = make_runtime_scalar_math_abs_program(abs_decl, random_decl);
+    let hir = make_runtime_scalar_math_unary_program(abs_decl, random_decl);
     let decl_names = HashMap::from([
         (abs_decl, "math abs".to_string()),
         (random_decl, "random int".to_string()),
@@ -12545,6 +12545,53 @@ fn test_lower_math_integer_identity_commands_on_known_integer_inputs() {
         );
         compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
             .unwrap_or_else(|err| panic!("{command_name} should compile through codegen: {err}"));
+    }
+}
+
+#[test]
+fn test_lower_math_integer_identity_commands_on_runtime_scalar_integers() {
+    for (offset, command_name) in [(0, "math ceil"), (1, "math floor"), (2, "math round")] {
+        let command_decl = DeclId::new(266 + offset);
+        let random_decl = DeclId::new(269 + offset);
+        let hir = make_runtime_scalar_math_unary_program(command_decl, random_decl);
+        let decl_names = HashMap::from([
+            (command_decl, command_name.to_string()),
+            (random_decl, "random int".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("{command_name} should lower runtime integer scalar input: {err}")
+        });
+        let instructions = result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .collect::<Vec<_>>();
+
+        assert!(
+            instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::Copy {
+                    src: MirValue::VReg(_),
+                    ..
+                }
+            )),
+            "expected {command_name} on runtime scalar input to emit a pass-through copy"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("{command_name} runtime scalar input should compile through codegen: {err}")
+            });
     }
 }
 

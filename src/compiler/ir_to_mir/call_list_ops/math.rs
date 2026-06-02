@@ -57,13 +57,12 @@ impl<'a> HirToMirLowering<'a> {
                 "{cmd_name} requires integer or integer-list input in eBPF"
             ))
         })?;
-        let input_meta = self.get_metadata(input_reg).cloned().ok_or_else(|| {
-            CompileError::UnsupportedInstruction(format!(
-                "{cmd_name} requires tracked integer or integer-list input in eBPF"
-            ))
-        })?;
+        let input_meta = self.get_metadata(input_reg).cloned();
 
-        if let Some(nu_protocol::Value::List { vals, .. }) = input_meta.constant_value.clone() {
+        if let Some(nu_protocol::Value::List { vals, .. }) = input_meta
+            .as_ref()
+            .and_then(|meta| meta.constant_value.clone())
+        {
             if vals.len() > MAX_IDENTITY_STACK_LIST_CAPACITY {
                 return Err(CompileError::UnsupportedInstruction(format!(
                     "{cmd_name} output exceeds stack-backed numeric list capacity {MAX_IDENTITY_STACK_LIST_CAPACITY} in eBPF"
@@ -92,7 +91,10 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(());
         }
 
-        if input_meta.list_buffer.is_some() {
+        if input_meta
+            .as_ref()
+            .is_some_and(|meta| meta.list_buffer.is_some())
+        {
             let result_vreg = if src_dst_had_value {
                 self.assign_fresh_vreg(src_dst)
             } else {
@@ -106,7 +108,10 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(());
         }
 
-        if let Some(value) = input_meta.constant_value {
+        if let Some(value) = input_meta
+            .as_ref()
+            .and_then(|meta| meta.constant_value.clone())
+        {
             let value = Self::math_identity_value_for_integer_command(cmd_name, value)?;
             let nu_protocol::Value::Int { val, .. } = value else {
                 unreachable!("integer identity helper returns only integer values")
@@ -132,8 +137,8 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         let input_ty = input_meta
-            .field_type
             .as_ref()
+            .and_then(|meta| meta.field_type.as_ref())
             .or_else(|| self.vreg_type_hints.get(&input_vreg))
             .ok_or_else(|| {
                 CompileError::UnsupportedInstruction(format!(
