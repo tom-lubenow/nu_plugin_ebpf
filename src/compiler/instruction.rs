@@ -1336,6 +1336,11 @@ impl BpfHelper {
                 1,
                 "helper 'bpf_skb_load_bytes_relative' requires arg4 start_header to be BPF_HDR_START_MAC or BPF_HDR_START_NET",
             )),
+            (Self::SkbAdjustRoom, 2) => Some((
+                0,
+                1,
+                "helper 'bpf_skb_adjust_room' requires arg2 mode to be BPF_ADJ_ROOM_NET or BPF_ADJ_ROOM_MAC",
+            )),
             (Self::SkbSetTstamp, 2) => Some((
                 0,
                 1,
@@ -1376,6 +1381,10 @@ impl BpfHelper {
             (Self::FibLookup, 3) => Some((
                 0x3f,
                 "helper 'bpf_fib_lookup' requires arg3 flags to contain only modeled BPF_FIB_LOOKUP_* bits (0x3f)",
+            )),
+            (Self::CheckMtu, 4) => Some((
+                0x01,
+                "helper 'bpf_check_mtu' requires arg4 flags to contain only BPF_MTU_CHK_SEGS (0x01)",
             )),
             (Self::LoadHdrOpt, 3) => Some((
                 0x01,

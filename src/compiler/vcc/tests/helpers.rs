@@ -8179,6 +8179,60 @@ fn test_verify_mir_for_probe_context_lwt_skb_helpers() {
     }
 }
 
+fn make_skb_adjust_room_vcc_call(mode: i64) -> (MirFunction, HashMap<VReg, MirType>) {
+    let (mut func, entry) = new_mir_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::SkbAdjustRoom as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::Const(14),
+                MirValue::Const(mode),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    (func, types)
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_skb_adjust_room_rejects_invalid_mode() {
+    let (func, types) = make_skb_adjust_room_vcc_call(2);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected bpf_skb_adjust_room mode to be rejected");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_skb_adjust_room' requires arg2 mode")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
 fn make_skb_ecn_set_ce_vcc_call() -> (MirFunction, HashMap<VReg, MirType>) {
     let (mut func, entry) = new_mir_function();
     let ctx = func.alloc_vreg();
@@ -11961,6 +12015,21 @@ fn test_verify_mir_for_probe_context_check_mtu_requires_zero_flags_in_xdp() {
         e.message
             .contains("helper 'bpf_check_mtu' requires arg4 = 0 in xdp programs")
     }));
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_check_mtu_rejects_unknown_tc_flags() {
+    let (func, types) = make_check_mtu_vcc_call(0x02, 4);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected bpf_check_mtu unknown flags to be rejected");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_check_mtu' requires arg4 flags")),
+        "unexpected errors: {:?}",
+        err
+    );
 }
 
 #[test]

@@ -2789,6 +2789,43 @@ fn test_type_error_skb_packet_mutation_helpers_reject_invalid_programs() {
 }
 
 #[test]
+fn test_type_error_skb_adjust_room_helper_rejects_invalid_mode() {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SkbAdjustRoom as u32,
+        args: vec![
+            MirValue::VReg(ctx),
+            MirValue::Const(14),
+            MirValue::Const(2),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_skb_adjust_room mode to be rejected");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_skb_adjust_room' requires arg2 mode")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
 fn test_type_error_void_helper_return_value_cannot_be_used() {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();
@@ -3413,6 +3450,23 @@ fn test_type_error_check_mtu_helper_requires_zero_flags_in_xdp() {
         e.message
             .contains("helper 'bpf_check_mtu' requires arg4 = 0 in xdp programs")
     }));
+}
+
+#[test]
+fn test_type_error_check_mtu_helper_rejects_unknown_tc_flags() {
+    let (func, _) = make_check_mtu_call(0x02, 4);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_check_mtu unknown flags to be rejected");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_check_mtu' requires arg4 flags")),
+        "unexpected errors: {:?}",
+        errs
+    );
 }
 
 #[test]

@@ -2505,6 +2505,18 @@ fn test_skb_load_bytes_relative_start_header_contract() {
 }
 
 #[test]
+fn test_skb_adjust_room_mode_contract() {
+    assert_eq!(
+        BpfHelper::SkbAdjustRoom.scalar_arg_range_requirement(2),
+        Some((
+            0,
+            1,
+            "helper 'bpf_skb_adjust_room' requires arg2 mode to be BPF_ADJ_ROOM_NET or BPF_ADJ_ROOM_MAC"
+        ))
+    );
+}
+
+#[test]
 fn test_helpers_with_reserved_zero_flags() {
     assert_eq!(
         BpfHelper::SkbChangeTail.zero_scalar_arg_requirement(),
@@ -2587,6 +2599,13 @@ fn test_fib_lookup_helper_contract() {
         Some((
             0x3f,
             "helper 'bpf_fib_lookup' requires arg3 flags to contain only modeled BPF_FIB_LOOKUP_* bits (0x3f)"
+        ))
+    );
+    assert_eq!(
+        BpfHelper::CheckMtu.scalar_arg_bitmask_requirement(4),
+        Some((
+            0x01,
+            "helper 'bpf_check_mtu' requires arg4 flags to contain only BPF_MTU_CHK_SEGS (0x01)"
         ))
     );
 }

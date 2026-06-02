@@ -225,7 +225,8 @@ Context parameter syntax (recommended):
     and `adjust-packet --room LEN_DIFF --mode MODE [--flags FLAGS]`
     are the preferred first-class skb relayout surfaces, selecting
     `bpf_skb_change_{head,tail}`, `bpf_skb_pull_data`, and
-    `bpf_skb_adjust_room` automatically; LWT programs also support
+    `bpf_skb_adjust_room` automatically; `--room --mode` must be
+    `BPF_ADJ_ROOM_NET` (`0`) or `BPF_ADJ_ROOM_MAC` (`1`). LWT programs also support
     `adjust-packet --pull LEN`. After XDP adjust helpers,
     reload `ctx.data`, `ctx.data_meta`, and `ctx.data_end` before
     reading packet bytes again; after skb relayout helpers, reload

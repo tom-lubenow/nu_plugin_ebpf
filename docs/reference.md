@@ -442,7 +442,8 @@ packet-edit helpers through the ordinary helper surface, including
 `sk_skb`, and `sk_skb_parser` additionally model `bpf_skb_vlan_push`,
 `bpf_skb_vlan_pop`, `bpf_skb_adjust_room`, and `bpf_set_hash`.
 `bpf_skb_store_bytes` flags may contain only `BPF_F_RECOMPUTE_CSUM` and
-`BPF_F_INVALIDATE_HASH`.
+`BPF_F_INVALIDATE_HASH`; `bpf_skb_adjust_room` mode must be
+`BPF_ADJ_ROOM_NET` or `BPF_ADJ_ROOM_MAC`.
 These skb mutation helpers invalidate guarded
 direct packet-pointer facts when the kernel helper contract says the
 underlying packet buffer may change. Raw packet-copy helpers are modeled too:
@@ -471,7 +472,8 @@ when the paired size is zero. `ctx.xdp_buff_len` exposes
 multi-buffer packet size rather than the linear `ctx.packet_len`. XDP,
 tc_action, TC, TCX, and Netkit also model `helper-call "bpf_check_mtu" $ctx IFINDEX MTU_LEN_PTR LEN_DIFF FLAGS`;
 `MTU_LEN_PTR` must be a stack/map-backed `u32` pointer, and XDP requires
-`FLAGS = 0`. TC/TCX flag combinations that depend on runtime `mtu_len` /
+`FLAGS = 0`. TC/TCX flags may contain only `BPF_MTU_CHK_SEGS` (`0x01`);
+flag combinations that depend on runtime `mtu_len` /
 `len_diff` values remain kernel-enforced. XDP, tc_action, TC, TCX, and Netkit also
 model `helper-call "bpf_fib_lookup" $ctx PARAMS_PTR PLEN FLAGS`, where
 `PARAMS_PTR` must be a stack/map-backed `bpf_fib_lookup` buffer whose
