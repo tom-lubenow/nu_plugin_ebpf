@@ -35546,6 +35546,20 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-constant-match-string"
+        category: "language-core"
+        tags: [control-flow "match" scalar string constant]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let s = "hi"'
+            '  match $s { "hi" => 10, _ => 20 }'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-runtime-match-integer-or-pattern"
         category: "language-core"
         tags: [control-flow "match" "or-pattern" scalar integer runtime]

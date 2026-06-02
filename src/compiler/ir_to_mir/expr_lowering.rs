@@ -19,6 +19,7 @@ enum ScalarMatchKind {
     Bool,
     Integer,
     Nothing,
+    String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -351,6 +352,49 @@ impl<'a> HirToMirLowering<'a> {
         self.terminate(MirInst::Jump { target: if_false });
     }
 
+    fn terminate_known_match_result(&mut self, matched: bool, if_true: BlockId, if_false: BlockId) {
+        self.terminate(MirInst::Jump {
+            target: if matched { if_true } else { if_false },
+        });
+    }
+
+    fn source_literal_string(&self, src: RegId) -> Option<String> {
+        let meta = self.get_metadata(src)?;
+        if let Some(Value::String { val, .. } | Value::Glob { val, .. }) =
+            meta.constant_value.as_ref()
+        {
+            return Some(val.clone());
+        }
+        if meta.string_slot.is_some() {
+            return meta.literal_string.clone();
+        }
+        None
+    }
+
+    fn lower_match_string(
+        &mut self,
+        expected: &str,
+        src: RegId,
+        src_vreg: VReg,
+        if_true: BlockId,
+        if_false: BlockId,
+    ) -> Result<(), CompileError> {
+        if self.source_scalar_match_is_known_mismatch(src, src_vreg, ScalarMatchKind::String) {
+            self.terminate_known_match_mismatch(if_false);
+            return Ok(());
+        }
+
+        let Some(actual) = self.source_literal_string(src) else {
+            return Err(CompileError::UnsupportedInstruction(
+                "Match against string patterns requires a compile-time known source string in eBPF"
+                    .into(),
+            ));
+        };
+
+        self.terminate_known_match_result(actual == expected, if_true, if_false);
+        Ok(())
+    }
+
     fn scalar_match_kind_for_value(value: &Value) -> Option<ScalarMatchKind> {
         match value {
             Value::Bool { .. } => Some(ScalarMatchKind::Bool),
@@ -358,6 +402,7 @@ impl<'a> HirToMirLowering<'a> {
             Value::Int { .. } | Value::Filesize { .. } | Value::Duration { .. } => {
                 Some(ScalarMatchKind::Integer)
             }
+            Value::String { .. } | Value::Glob { .. } => Some(ScalarMatchKind::String),
             _ => None,
         }
     }
@@ -385,6 +430,13 @@ impl<'a> HirToMirLowering<'a> {
             .and_then(Self::scalar_match_kind_for_value)
         {
             return Some(KnownSourceMatchKind::Scalar(kind));
+        }
+
+        if self
+            .get_metadata(src)
+            .is_some_and(|meta| meta.string_slot.is_some())
+        {
+            return Some(KnownSourceMatchKind::Scalar(ScalarMatchKind::String));
         }
 
         self.vreg_type_hints
@@ -561,6 +613,9 @@ impl<'a> HirToMirLowering<'a> {
                     self.terminate_i64_match(src_vreg, *val, if_true, if_false);
                 }
             }
+            Value::String { val, .. } | Value::Glob { val, .. } => {
+                self.lower_match_string(val, src, src_vreg, if_true, if_false)?;
+            }
             _ => {
                 return Err(CompileError::UnsupportedInstruction(format!(
                     "Match against value type {:?} not supported in eBPF",
@@ -620,6 +675,13 @@ impl<'a> HirToMirLowering<'a> {
                 } else {
                     self.terminate_i64_match(src_vreg, 0, if_true, if_false);
                 }
+            }
+            Expr::String(val)
+            | Expr::RawString(val)
+            | Expr::Filepath(val, _)
+            | Expr::Directory(val, _)
+            | Expr::GlobPattern(val, _) => {
+                self.lower_match_string(val, src, src_vreg, if_true, if_false)?;
             }
             _ => {
                 return Err(CompileError::UnsupportedInstruction(format!(

@@ -252,6 +252,15 @@ fn nothing_expr_match_pattern() -> Pattern {
     }))
 }
 
+fn string_expr_match_pattern(value: &str) -> Pattern {
+    Pattern::Expression(Box::new(Expression {
+        expr: Expr::String(value.to_string()),
+        span: Span::test_data(),
+        span_id: SpanId::new(0),
+        ty: Type::String,
+    }))
+}
+
 fn integer_range_expr_match_pattern_with_bounds(
     start: Option<i64>,
     end: Option<i64>,
@@ -334,6 +343,53 @@ fn make_bool_match_program(pattern: Pattern) -> HirProgram {
                     stmts: vec![HirStmt::LoadLiteral {
                         dst: RegId::new(0),
                         lit: HirLiteral::Bool(true),
+                    }],
+                    terminator: HirTerminator::Match {
+                        pattern: Box::new(pattern),
+                        src: RegId::new(0),
+                        if_true: HirBlockId(1),
+                        if_false: HirBlockId(2),
+                    },
+                },
+                HirBlock {
+                    id: HirBlockId(1),
+                    stmts: vec![HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::Int(7),
+                    }],
+                    terminator: HirTerminator::Return { src: RegId::new(1) },
+                },
+                HirBlock {
+                    id: HirBlockId(2),
+                    stmts: vec![HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::Int(9),
+                    }],
+                    terminator: HirTerminator::Return { src: RegId::new(2) },
+                },
+            ],
+            entry: HirBlockId(0),
+            spans: Vec::new(),
+            ast: Vec::new(),
+            comments: Vec::new(),
+            register_count: 3,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        None,
+    )
+}
+
+fn make_string_match_program(source: &str, pattern: Pattern) -> HirProgram {
+    HirProgram::new(
+        HirFunction {
+            blocks: vec![
+                HirBlock {
+                    id: HirBlockId(0),
+                    stmts: vec![HirStmt::LoadLiteral {
+                        dst: RegId::new(0),
+                        lit: HirLiteral::String(source.as_bytes().to_vec()),
                     }],
                     terminator: HirTerminator::Match {
                         pattern: Box::new(pattern),
@@ -653,6 +709,57 @@ fn test_lower_match_integer_expression_pattern_compiles() {
 
     compile_mir_to_ebpf_with_hints(&program, None, None)
         .expect("integer expression match pattern should compile through codegen");
+}
+
+#[test]
+fn test_lower_match_constant_string_expression_pattern_jumps_true() {
+    let hir = make_string_match_program("hi", string_expr_match_pattern("hi"));
+
+    let program = lower_hir_to_mir(&hir, None, &HashMap::new())
+        .expect("constant string expression match pattern should lower to MIR");
+    let entry = program.main.block(BlockId(0));
+    assert!(
+        matches!(entry.terminator, MirInst::Jump { target } if target == BlockId(1)),
+        "known string match should jump to the true arm, got {:?}",
+        entry.terminator
+    );
+
+    compile_mir_to_ebpf_with_hints(&program, None, None)
+        .expect("constant string expression match pattern should compile through codegen");
+}
+
+#[test]
+fn test_lower_match_constant_string_expression_pattern_jumps_false() {
+    let hir = make_string_match_program("hi", string_expr_match_pattern("bye"));
+
+    let program = lower_hir_to_mir(&hir, None, &HashMap::new())
+        .expect("constant string expression match non-match should lower to MIR");
+    let entry = program.main.block(BlockId(0));
+    assert!(
+        matches!(entry.terminator, MirInst::Jump { target } if target == BlockId(2)),
+        "known string non-match should jump to the false arm, got {:?}",
+        entry.terminator
+    );
+
+    compile_mir_to_ebpf_with_hints(&program, None, None)
+        .expect("constant string expression match non-match should compile through codegen");
+}
+
+#[test]
+fn test_lower_match_string_pattern_against_integer_source_is_known_non_match() {
+    let hir = make_integer_match_program(string_expr_match_pattern("42"));
+
+    let program = lower_hir_to_mir(&hir, None, &HashMap::new())
+        .expect("string pattern against integer source should lower to MIR");
+    let entry = program.main.block(BlockId(0));
+    assert!(
+        matches!(entry.terminator, MirInst::Jump { target } if target == BlockId(2)),
+        "known scalar pattern type mismatch should jump to the false arm, got {:?}",
+        entry.terminator
+    );
+
+    compile_mir_to_ebpf_with_hints(&program, None, None)
+        .expect("string pattern against integer source should compile through codegen");
 }
 
 #[test]
