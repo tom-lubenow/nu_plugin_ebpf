@@ -12035,7 +12035,14 @@ fn test_lower_bits_not_signed_on_known_integer_lists() {
 #[test]
 fn test_lower_bits_not_default_on_known_integer_inputs() {
     let bits_decl = DeclId::new(317);
-    for (input, expected) in [(4, 251), (-5, 4)] {
+    for (input, expected) in [
+        (4, 251),
+        (256, 65279),
+        (65_536, 4_294_901_759),
+        (-5, 4),
+        (-129, 128),
+        (-32_769, 32_768),
+    ] {
         let hir = make_bits_not_program(bits_decl, input, false);
         let decl_names = HashMap::from([(bits_decl, "bits not".to_string())]);
 
@@ -12053,6 +12060,30 @@ fn test_lower_bits_not_default_on_known_integer_inputs() {
         compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
             .expect("default bits not should compile through codegen");
     }
+}
+
+#[test]
+fn test_lower_bits_not_default_rejects_unmodeled_positive_i64_auto_width() {
+    let bits_decl = DeclId::new(31701);
+    let hir = make_bits_not_program(bits_decl, 4_294_967_296, false);
+    let decl_names = HashMap::from([(bits_decl, "bits not".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("default bits not should reject positive values requiring unmodeled 8-byte mode");
+
+    assert!(
+        err.to_string().contains(
+            "bits not default auto-width integer mode supports non-negative values up to u32::MAX"
+        ),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]
@@ -12080,7 +12111,8 @@ fn test_lower_bits_not_number_bytes_on_known_integer_input() {
 fn test_lower_bits_not_default_on_known_integer_lists() {
     let bits_decl = DeclId::new(3172);
     let sum_decl = DeclId::new(3173);
-    let hir = make_bits_not_list_sum_program_with_flags(bits_decl, sum_decl, &[4, 3, 2], false);
+    let hir =
+        make_bits_not_list_sum_program_with_flags(bits_decl, sum_decl, &[4, 256, -129], false);
     let decl_names = HashMap::from([
         (bits_decl, "bits not".to_string()),
         (sum_decl, "math sum".to_string()),
@@ -12095,7 +12127,7 @@ fn test_lower_bits_not_default_on_known_integer_lists() {
         &HashMap::new(),
     )
     .expect("default bits not should lower integer-list input");
-    let expected = [251i64, 252, 253]
+    let expected = [251i64, 65_279, 128]
         .into_iter()
         .flat_map(|value| value.to_le_bytes())
         .collect::<Vec<_>>();
@@ -12744,48 +12776,78 @@ fn make_runtime_bits_not_list_length_program(
     random_decl: DeclId,
     signed: bool,
 ) -> HirProgram {
+    make_runtime_bits_not_list_length_program_with_number_bytes(
+        bits_decl,
+        length_decl,
+        random_decl,
+        signed,
+        None,
+    )
+}
+
+fn make_runtime_bits_not_list_length_program_with_number_bytes(
+    bits_decl: DeclId,
+    length_decl: DeclId,
+    random_decl: DeclId,
+    signed: bool,
+    number_bytes: Option<i64>,
+) -> HirProgram {
+    let mut stmts = vec![
+        HirStmt::LoadLiteral {
+            dst: RegId::new(0),
+            lit: HirLiteral::List { capacity: 1 },
+        },
+        HirStmt::Call {
+            decl_id: random_decl,
+            src_dst: RegId::new(1),
+            args: HirCallArgs::default(),
+        },
+        HirStmt::ListPush {
+            src_dst: RegId::new(0),
+            item: RegId::new(1),
+        },
+    ];
+    let named = if let Some(number_bytes) = number_bytes {
+        stmts.push(HirStmt::LoadLiteral {
+            dst: RegId::new(2),
+            lit: HirLiteral::Int(number_bytes),
+        });
+        vec![(b"number-bytes".to_vec(), RegId::new(2))]
+    } else {
+        Vec::new()
+    };
+
     let func = HirFunction {
         blocks: vec![HirBlock {
             id: HirBlockId(0),
-            stmts: vec![
-                HirStmt::LoadLiteral {
-                    dst: RegId::new(0),
-                    lit: HirLiteral::List { capacity: 1 },
-                },
-                HirStmt::Call {
-                    decl_id: random_decl,
-                    src_dst: RegId::new(1),
-                    args: HirCallArgs::default(),
-                },
-                HirStmt::ListPush {
-                    src_dst: RegId::new(0),
-                    item: RegId::new(1),
-                },
-                HirStmt::Call {
+            stmts: {
+                stmts.push(HirStmt::Call {
                     decl_id: bits_decl,
-                    src_dst: RegId::new(2),
+                    src_dst: RegId::new(3),
                     args: HirCallArgs {
                         pipeline_input: Some(RegId::new(0)),
+                        named,
                         flags: signed.then(|| b"signed".to_vec()).into_iter().collect(),
                         ..HirCallArgs::default()
                     },
-                },
-                HirStmt::Call {
+                });
+                stmts.push(HirStmt::Call {
                     decl_id: length_decl,
-                    src_dst: RegId::new(3),
+                    src_dst: RegId::new(4),
                     args: HirCallArgs {
-                        pipeline_input: Some(RegId::new(2)),
+                        pipeline_input: Some(RegId::new(3)),
                         ..HirCallArgs::default()
                     },
-                },
-            ],
-            terminator: HirTerminator::Return { src: RegId::new(3) },
+                });
+                stmts
+            },
+            terminator: HirTerminator::Return { src: RegId::new(4) },
         }],
         entry: HirBlockId(0),
         spans: Vec::new(),
         ast: Vec::new(),
         comments: Vec::new(),
-        register_count: 4,
+        register_count: 5,
         file_count: 0,
     };
     HirProgram::new(func, HashMap::new(), vec![], None)
@@ -13050,11 +13112,17 @@ fn test_lower_bits_not_signed_on_runtime_stack_numeric_lists() {
 }
 
 #[test]
-fn test_lower_bits_not_default_on_runtime_stack_numeric_lists() {
+fn test_lower_bits_not_number_bytes_on_runtime_stack_numeric_lists() {
     let bits_decl = DeclId::new(3231);
     let length_decl = DeclId::new(3232);
     let random_decl = DeclId::new(3233);
-    let hir = make_runtime_bits_not_list_length_program(bits_decl, length_decl, random_decl, false);
+    let hir = make_runtime_bits_not_list_length_program_with_number_bytes(
+        bits_decl,
+        length_decl,
+        random_decl,
+        false,
+        Some(1),
+    );
     let decl_names = HashMap::from([
         (bits_decl, "bits not".to_string()),
         (length_decl, "length".to_string()),
@@ -13069,7 +13137,7 @@ fn test_lower_bits_not_default_on_runtime_stack_numeric_lists() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect("default bits not should lower on runtime stack-backed numeric lists");
+    .expect("bits not --number-bytes should lower on runtime stack-backed numeric lists");
     let instructions = result
         .program
         .main
@@ -13086,7 +13154,7 @@ fn test_lower_bits_not_default_on_runtime_stack_numeric_lists() {
                 ..
             }
         )),
-        "expected runtime default bits not to emit BitNot"
+        "expected runtime bits not --number-bytes to emit BitNot"
     );
     assert!(
         instructions.iter().any(|inst| matches!(
@@ -13096,16 +13164,45 @@ fn test_lower_bits_not_default_on_runtime_stack_numeric_lists() {
                 ..
             }
         )),
-        "expected runtime default bits not to apply the byte-width mask"
+        "expected runtime bits not --number-bytes to apply the byte-width mask"
     );
     assert!(
         instructions
             .iter()
             .any(|inst| matches!(inst, MirInst::ListPush { .. })),
-        "expected runtime default bits not to materialize an output list"
+        "expected runtime bits not --number-bytes to materialize an output list"
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
-        .expect("runtime default bits not output consumed by length should compile");
+        .expect("runtime bits not --number-bytes output consumed by length should compile");
+}
+
+#[test]
+fn test_lower_bits_not_default_rejects_runtime_stack_numeric_lists() {
+    let bits_decl = DeclId::new(3234);
+    let length_decl = DeclId::new(3235);
+    let random_decl = DeclId::new(3236);
+    let hir = make_runtime_bits_not_list_length_program(bits_decl, length_decl, random_decl, false);
+    let decl_names = HashMap::from([
+        (bits_decl, "bits not".to_string()),
+        (length_decl, "length".to_string()),
+        (random_decl, "random int".to_string()),
+    ]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("default bits not should reject runtime stack-backed numeric lists");
+
+    assert!(
+        err.to_string()
+            .contains("bits not default auto-width integer mode requires compile-time known input"),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]

@@ -4,6 +4,7 @@ use crate::compiler::mir::{BinOpKind, UnaryOpKind};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum BitsNotMode {
     Signed,
+    Auto,
     Masked { mask: i64 },
 }
 
@@ -105,7 +106,10 @@ impl<'a> HirToMirLowering<'a> {
             }
         }
 
-        let number_bytes = if let Some(reg) = number_bytes_reg {
+        let Some(reg) = number_bytes_reg else {
+            return Ok(BitsNotMode::Auto);
+        };
+        let number_bytes = {
             let meta = self.get_metadata(reg).ok_or_else(|| {
                 CompileError::UnsupportedInstruction(format!(
                     "{cmd_name} requires compile-time --number-bytes in eBPF"
@@ -116,8 +120,6 @@ impl<'a> HirToMirLowering<'a> {
                     "{cmd_name} requires compile-time --number-bytes in eBPF"
                 ))
             })?
-        } else {
-            1
         };
 
         let mask = match number_bytes {
@@ -133,11 +135,30 @@ impl<'a> HirToMirLowering<'a> {
         Ok(BitsNotMode::Masked { mask })
     }
 
-    fn bits_not_output(input: i64, mode: BitsNotMode) -> i64 {
+    fn bits_not_output(cmd_name: &str, input: i64, mode: BitsNotMode) -> Result<i64, CompileError> {
         match mode {
-            BitsNotMode::Signed => !input,
-            BitsNotMode::Masked { mask } => (!input) & mask,
+            BitsNotMode::Signed => Ok(!input),
+            BitsNotMode::Auto => Self::bits_not_auto_output(cmd_name, input),
+            BitsNotMode::Masked { mask } => Ok((!input) & mask),
         }
+    }
+
+    fn bits_not_auto_output(cmd_name: &str, input: i64) -> Result<i64, CompileError> {
+        if input < 0 {
+            return Ok(!input);
+        }
+
+        let mask = match input {
+            0..=0xff => 0xff,
+            0x100..=0xffff => 0xffff,
+            0x1_0000..=0xffff_ffff => 0xffff_ffff,
+            _ => {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{cmd_name} default auto-width integer mode supports non-negative values up to u32::MAX in eBPF; use --number-bytes 1, 2, or 4 for wider truncation"
+                )));
+            }
+        };
+        Ok((!input) & mask)
     }
 
     fn validate_bits_integer_operand(
@@ -850,7 +871,7 @@ impl<'a> HirToMirLowering<'a> {
                         }
                     };
                     Ok(nu_protocol::Value::int(
-                        Self::bits_not_output(val, mode),
+                        Self::bits_not_output(cmd_name, val, mode)?,
                         nu_protocol::Span::unknown(),
                     ))
                 })
@@ -865,6 +886,11 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         if let Some((_input_slot, max_len)) = input_meta.list_buffer {
+            if mode == BitsNotMode::Auto {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{cmd_name} default auto-width integer mode requires compile-time known input in eBPF; use --number-bytes 1, 2, or 4 for runtime input"
+                )));
+            }
             let (out_slot, out_ty) = self.create_stack_numeric_list_result(result_vreg, max_len);
 
             if max_len > 0 {
@@ -929,7 +955,7 @@ impl<'a> HirToMirLowering<'a> {
 
         self.validate_bits_integer_operand(cmd_name, "pipeline input", &input_meta, input_vreg)?;
         if let Some(input) = Self::bits_integer_value_from_metadata(&input_meta) {
-            let output = Self::bits_not_output(input, mode);
+            let output = Self::bits_not_output(cmd_name, input, mode)?;
             self.emit(MirInst::Copy {
                 dst: result_vreg,
                 src: MirValue::Const(output),
@@ -943,6 +969,11 @@ impl<'a> HirToMirLowering<'a> {
             ));
             out_meta.literal_int = Some(output);
         } else {
+            if mode == BitsNotMode::Auto {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{cmd_name} default auto-width integer mode requires compile-time known input in eBPF; use --number-bytes 1, 2, or 4 for runtime input"
+                )));
+            }
             self.emit_bits_not_value(result_vreg, MirValue::VReg(input_vreg), mode);
             self.reset_call_result_metadata(src_dst);
             self.get_or_create_metadata(src_dst).field_type = Some(MirType::I64);
@@ -952,6 +983,7 @@ impl<'a> HirToMirLowering<'a> {
     }
 
     fn emit_bits_not_value(&mut self, dst: VReg, src: MirValue, mode: BitsNotMode) {
+        debug_assert_ne!(mode, BitsNotMode::Auto);
         self.emit(MirInst::UnaryOp {
             dst,
             op: UnaryOpKind::BitNot,

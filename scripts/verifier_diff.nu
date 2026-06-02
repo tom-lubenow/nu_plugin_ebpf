@@ -35513,7 +35513,7 @@ const FIXTURES = [
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  (4 | bits not) == 251'
+            '  ((4 | bits not) == 251) and ((256 | bits not) == 65279) and ((65536 | bits not) == 4294901759)'
             '}'
         ]
         local: "accept"
@@ -35526,7 +35526,7 @@ const FIXTURES = [
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  ([4 3 2] | bits not | math sum) == 756'
+            '  ([4 256 -129] | bits not | math sum) == 65658'
             '}'
         ]
         local: "accept"
