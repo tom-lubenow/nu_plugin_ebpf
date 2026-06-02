@@ -92,6 +92,7 @@ const NU_CLOSURE_COMMANDS: &[&str] = &[
     "str title-case",
     "length",
     "bits and",
+    "bits not",
     "bits or",
     "bits xor",
     "math max",

@@ -4022,6 +4022,10 @@ impl<'a> HirToMirLowering<'a> {
                 self.lower_bits_binary(&cmd_name, src_dst, dst_vreg, src_dst_had_value)?;
             }
 
+            "bits not" => {
+                self.lower_bits_not_signed(&cmd_name, src_dst, dst_vreg, src_dst_had_value)?;
+            }
+
             "math median" => {
                 self.lower_compile_time_math_median(src_dst, dst_vreg, src_dst_had_value)?;
             }
