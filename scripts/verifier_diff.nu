@@ -35490,6 +35490,20 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-runtime-if-logical-not"
+        category: "language-core"
+        tags: [control-flow "if" scalar logical "not" runtime]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let n = (random int | bits and 1)'
+            '  if (not ($n == 0)) { $n + 1 } else { 0 }'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-math-abs-sum"
         category: "language-core"
         tags: [aggregate list math abs sum]
