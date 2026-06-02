@@ -2432,6 +2432,22 @@ fn test_helper_signatures_xdp_adjust_helpers() {
         assert_eq!(sig.arg_kind(2), HelperArgKind::Pointer);
         assert_eq!(sig.arg_kind(3), HelperArgKind::Scalar);
         assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+        assert_eq!(
+            helper.scalar_arg_range_requirement(1),
+            Some((
+                0,
+                0xffff,
+                "xdp byte helpers require arg1 offset to be between 0 and 0xffff"
+            ))
+        );
+        assert_eq!(
+            helper.scalar_arg_range_requirement(3),
+            Some((
+                0,
+                0xffff,
+                "xdp byte helpers require arg3 len to be between 0 and 0xffff"
+            ))
+        );
     }
 }
 

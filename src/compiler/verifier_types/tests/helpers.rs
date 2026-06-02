@@ -9256,6 +9256,90 @@ fn test_verify_mir_for_program_packet_byte_helpers_accept_allowed_programs() {
     }
 }
 
+fn make_xdp_bytes_verify_call(
+    helper: BpfHelper,
+    offset: i64,
+    len: i64,
+) -> (MirFunction, HashMap<VReg, MirType>) {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let buf_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: helper as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::Const(offset),
+                MirValue::StackSlot(buf_slot),
+                MirValue::Const(len),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+    (func, types)
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_xdp_byte_helpers_reject_invalid_offset_or_len() {
+    for (helper, offset, len, expected) in [
+        (
+            BpfHelper::XdpLoadBytes,
+            -1,
+            16,
+            "xdp byte helpers require arg1 offset to be between 0 and 0xffff",
+        ),
+        (
+            BpfHelper::XdpStoreBytes,
+            0x1_0000,
+            16,
+            "xdp byte helpers require arg1 offset to be between 0 and 0xffff",
+        ),
+        (
+            BpfHelper::XdpLoadBytes,
+            0,
+            -1,
+            "xdp byte helpers require arg3 len to be between 0 and 0xffff",
+        ),
+        (
+            BpfHelper::XdpStoreBytes,
+            0,
+            0x1_0000,
+            "xdp byte helpers require arg3 len to be between 0 and 0xffff",
+        ),
+    ] {
+        let (func, types) = make_xdp_bytes_verify_call(helper, offset, len);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+        let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect_err("expected xdp byte helper scalar range validation error");
+        assert!(
+            err.iter().any(|e| e.message.contains(expected)),
+            "expected {expected:?}, got {err:?}"
+        );
+    }
+}
+
 #[test]
 fn test_verify_mir_for_program_skb_load_bytes_relative_rejects_invalid_start_header() {
     let mut func = MirFunction::new();

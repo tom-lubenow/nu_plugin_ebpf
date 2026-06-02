@@ -8448,6 +8448,72 @@ fn test_type_error_packet_byte_helpers_reject_invalid_programs() {
     }
 }
 
+fn make_xdp_bytes_helper_call(helper: BpfHelper, offset: i64, len: i64) -> MirFunction {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let buf_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: helper as u32,
+        args: vec![
+            MirValue::VReg(ctx),
+            MirValue::Const(offset),
+            MirValue::StackSlot(buf_slot),
+            MirValue::Const(len),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+    func
+}
+
+#[test]
+fn test_type_error_xdp_byte_helpers_reject_invalid_offset_or_len() {
+    for (helper, offset, len, expected) in [
+        (
+            BpfHelper::XdpLoadBytes,
+            -1,
+            16,
+            "xdp byte helpers require arg1 offset to be between 0 and 0xffff",
+        ),
+        (
+            BpfHelper::XdpStoreBytes,
+            0x1_0000,
+            16,
+            "xdp byte helpers require arg1 offset to be between 0 and 0xffff",
+        ),
+        (
+            BpfHelper::XdpLoadBytes,
+            0,
+            -1,
+            "xdp byte helpers require arg3 len to be between 0 and 0xffff",
+        ),
+        (
+            BpfHelper::XdpStoreBytes,
+            0,
+            0x1_0000,
+            "xdp byte helpers require arg3 len to be between 0 and 0xffff",
+        ),
+    ] {
+        let func = make_xdp_bytes_helper_call(helper, offset, len);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected xdp byte helper scalar range validation error");
+        assert!(
+            errs.iter().any(|e| e.message.contains(expected)),
+            "expected {expected:?}, got {errs:?}"
+        );
+    }
+}
+
 #[test]
 fn test_type_error_skb_load_bytes_relative_rejects_invalid_start_header() {
     let mut func = make_test_function();

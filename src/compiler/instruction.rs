@@ -50,6 +50,7 @@ const BPF_F_ADJ_ROOM_ALLOWED_MASK: i64 =
     (0x1ffu64 | (BPF_ADJ_ROOM_ENCAP_L2_MASK << BPF_ADJ_ROOM_ENCAP_L2_SHIFT)) as i64;
 const BPF_SKB_ADJUST_ROOM_MAX_LEN_DIFF: i64 = 0xfff;
 const BPF_SKB_CHANGE_HEAD_MAX_HEAD_ROOM: i64 = i32::MAX as i64;
+const BPF_XDP_BYTE_MAX_OFFSET_OR_LEN: i64 = 0xffff;
 const PACKET_OTHERHOST: i64 = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1549,6 +1550,16 @@ impl BpfHelper {
                 0,
                 1,
                 "helper 'bpf_skb_load_bytes_relative' requires arg4 start_header to be BPF_HDR_START_MAC or BPF_HDR_START_NET",
+            )),
+            (Self::XdpLoadBytes | Self::XdpStoreBytes, 1) => Some((
+                0,
+                BPF_XDP_BYTE_MAX_OFFSET_OR_LEN,
+                "xdp byte helpers require arg1 offset to be between 0 and 0xffff",
+            )),
+            (Self::XdpLoadBytes | Self::XdpStoreBytes, 3) => Some((
+                0,
+                BPF_XDP_BYTE_MAX_OFFSET_OR_LEN,
+                "xdp byte helpers require arg3 len to be between 0 and 0xffff",
             )),
             (Self::SkbAdjustRoom, 1) => Some((
                 -BPF_SKB_ADJUST_ROOM_MAX_LEN_DIFF,
