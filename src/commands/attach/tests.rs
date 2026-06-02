@@ -16890,6 +16890,60 @@ fn test_compile_socket_redirect_kind_programs() {
 }
 
 #[test]
+fn test_compile_socket_redirect_rejects_reuseport_nonzero_flags() {
+    let decl_names = HashMap::from([(DeclId::new(42), "redirect-socket".to_string())]);
+    let hir = make_intrinsic_call_return_program(
+        DeclId::new(42),
+        vec![
+            HirLiteral::String(b"demo_reuseport".to_vec()),
+            HirLiteral::Int(0),
+        ],
+        vec![
+            (
+                b"kind".to_vec(),
+                HirLiteral::String(b"reuseport-sockarray".to_vec()),
+            ),
+            (b"flags".to_vec(), HirLiteral::Int(1)),
+        ],
+        vec![],
+        HirLiteral::Int(1),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkReuseport, "select");
+
+    let mut lowering = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("reuseport redirect-socket should lower before helper flags validation");
+
+    optimize_with_ssa_hints(
+        &mut lowering.program.main,
+        Some(&probe_ctx),
+        &mut lowering.type_hints.main,
+        &lowering.type_hints.main_stack_slots,
+        &lowering.type_hints.generic_map_value_types,
+    );
+
+    let err = match compile_mir_to_ebpf_with_hints(
+        &lowering.program,
+        Some(&probe_ctx),
+        Some(&lowering.type_hints),
+    ) {
+        Ok(_) => panic!("reuseport redirect-socket should reject nonzero flags"),
+        Err(err) => err,
+    };
+    let message = err.to_string();
+    assert!(
+        message.contains("helper 'bpf_sk_select_reuseport' requires arg3 flags to be 0"),
+        "{message}"
+    );
+}
+
+#[test]
 fn test_compile_sock_ops_socket_map_update_programs() {
     let decl_names = HashMap::from([(DeclId::new(42), "map-put".to_string())]);
 

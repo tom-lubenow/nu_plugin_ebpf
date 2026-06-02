@@ -1378,6 +1378,11 @@ impl BpfHelper {
                 1,
                 "skb/message redirect helpers require flags to contain only BPF_F_INGRESS (0x01)",
             )),
+            (Self::SkSelectReuseport, 3) => Some((
+                0,
+                0,
+                "helper 'bpf_sk_select_reuseport' requires arg3 flags to be 0",
+            )),
             (Self::SkAssign, 2) => Some((
                 0,
                 3,

@@ -1511,6 +1511,14 @@ fn test_helper_signatures_socket_map_helpers() {
     assert_eq!(sk_select_reuseport_sig.arg_kind(2), HelperArgKind::Pointer);
     assert_eq!(sk_select_reuseport_sig.arg_kind(3), HelperArgKind::Scalar);
     assert_eq!(sk_select_reuseport_sig.ret_kind, HelperRetKind::Scalar);
+    assert_eq!(
+        BpfHelper::SkSelectReuseport.scalar_arg_range_requirement(3),
+        Some((
+            0,
+            0,
+            "helper 'bpf_sk_select_reuseport' requires arg3 flags to be 0"
+        ))
+    );
 }
 
 #[test]

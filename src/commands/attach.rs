@@ -256,7 +256,7 @@ Context parameter syntax (recommended):
     On `sk_reuseport`, `redirect-socket MAP KEY --kind reuseport-sockarray`
     selects a socket from a `BPF_MAP_TYPE_REUSEPORT_SOCKARRAY` using
     `bpf_sk_select_reuseport`; `KEY` is materialized as the helper's u32
-    key pointer automatically.
+    key pointer automatically, and `--flags` must be `0`.
     Raw numeric return codes still work. Packet reads
     currently support scalar byte access through `get`/indexing, direct
     `u16be`/`u32be` cell-path scalar loads, and typed header views `eth`,
@@ -899,7 +899,7 @@ Context parameter syntax (recommended):
     {|ctx| $ctx.bind_inany } - Get bind-in-any state
     {|ctx| $ctx.sk.bound_dev_if } - Project the selected socket through a typed bpf_sock pointer
     {|ctx| $ctx.migrating_sk.bound_dev_if } - Project the migrating socket on sk_reuseport:migrate
-    {|ctx| redirect-socket sockets 0 --kind reuseport-sockarray } - Select a socket by reuseport-sockarray index
+    {|ctx| redirect-socket sockets 0 --kind reuseport-sockarray } - Select a socket by reuseport-sockarray index (`--flags` must be 0)
     Note: `sk_reuseport:select` emits a `sk_reuseport` section and
     `sk_reuseport:migrate` emits `sk_reuseport/migrate`. Current Aya loader
     support is compile/dry-run only, so live attach returns a clear

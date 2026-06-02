@@ -6823,6 +6823,53 @@ fn test_verify_mir_for_program_socket_map_helpers_accept_supported_programs() {
 }
 
 #[test]
+fn test_verify_mir_for_program_sk_select_reuseport_rejects_nonzero_flags() {
+    let (mut func, entry) = new_mir_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let key_slot = func.alloc_stack_slot(4, 4, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::SkSelectReuseport as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(map_slot),
+                MirValue::StackSlot(key_slot),
+                MirValue::Const(1),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let err = verify_mir_for_program(&func, &types, EbpfProgramType::SkReuseport.info())
+        .expect_err("expected sk_select_reuseport helper invalid flags error");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_sk_select_reuseport' requires arg3 flags to be 0")
+    }));
+}
+
+#[test]
 fn test_verify_mir_for_program_redirect_map_helper_rejects_invalid_programs() {
     let (mut func, entry) = new_mir_function();
     let map = func.alloc_vreg();

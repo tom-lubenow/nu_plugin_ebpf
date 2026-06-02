@@ -5045,6 +5045,43 @@ fn test_infer_socket_map_helpers_in_supported_programs() {
 }
 
 #[test]
+fn test_type_error_sk_select_reuseport_rejects_nonzero_flags() {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let key_slot = func.alloc_stack_slot(4, 4, StackSlotKind::StringBuffer);
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SkSelectReuseport as u32,
+        args: vec![
+            MirValue::VReg(ctx),
+            MirValue::StackSlot(map_slot),
+            MirValue::StackSlot(key_slot),
+            MirValue::Const(1),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::SkReuseport, "select");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected sk_select_reuseport helper invalid flags error");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_sk_select_reuseport' requires arg3 flags to be 0")
+    }));
+}
+
+#[test]
 fn test_type_error_redirect_map_helper_rejects_invalid_programs() {
     let mut func = make_test_function();
     let map = func.alloc_vreg();
