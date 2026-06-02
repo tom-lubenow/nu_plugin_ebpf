@@ -1680,6 +1680,161 @@ fn test_kfunc_call_bpf_wq_init_materializes_owning_map_fd() {
 }
 
 #[test]
+fn test_kfunc_call_bpf_wq_init_accepts_phi_joined_same_map_value_source() {
+    let main = HirFunction {
+        blocks: vec![
+            HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::String(b"work_items".to_vec()),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::Int(0),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(3),
+                        lit: HirLiteral::String(b"hash".to_vec()),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(4),
+                        lit: HirLiteral::Int(1),
+                    },
+                ],
+                terminator: HirTerminator::BranchIf {
+                    cond: RegId::new(4),
+                    if_true: HirBlockId(1),
+                    if_false: HirBlockId(2),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(1),
+                stmts: vec![HirStmt::Call {
+                    decl_id: DeclId::new(42),
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1), RegId::new(2)],
+                        named: vec![(b"kind".to_vec(), RegId::new(3))],
+                        ..Default::default()
+                    },
+                }],
+                terminator: HirTerminator::Jump {
+                    target: HirBlockId(3),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(2),
+                stmts: vec![HirStmt::Call {
+                    decl_id: DeclId::new(42),
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1), RegId::new(2)],
+                        named: vec![(b"kind".to_vec(), RegId::new(3))],
+                        ..Default::default()
+                    },
+                }],
+                terminator: HirTerminator::Jump {
+                    target: HirBlockId(3),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(3),
+                stmts: vec![
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(5),
+                        lit: HirLiteral::CellPath(Box::new(CellPath {
+                            members: vec![nu_protocol::ast::PathMember::test_string(
+                                "work".to_string(),
+                                false,
+                                nu_protocol::casing::Casing::Sensitive,
+                            )],
+                        })),
+                    },
+                    HirStmt::FollowCellPath {
+                        src_dst: RegId::new(0),
+                        path: RegId::new(5),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(6),
+                        lit: HirLiteral::String(b"bpf_wq_init".to_vec()),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(7),
+                        lit: HirLiteral::Int(0),
+                    },
+                    HirStmt::Call {
+                        decl_id: DeclId::new(43),
+                        src_dst: RegId::new(8),
+                        args: HirCallArgs {
+                            positional: vec![
+                                RegId::new(6),
+                                RegId::new(0),
+                                RegId::new(1),
+                                RegId::new(7),
+                            ],
+                            ..Default::default()
+                        },
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(8) },
+            },
+        ],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 9,
+        file_count: 0,
+    };
+
+    let map_ref = MapRef {
+        name: "work_items".to_string(),
+        kind: MapKind::Hash,
+    };
+    let value_ty = MirType::Struct {
+        name: Some("wq_value".to_string()),
+        kernel_btf_type_id: None,
+        fields: vec![StructField {
+            name: "work".to_string(),
+            ty: MirType::bpf_wq_struct(),
+            offset: 0,
+            synthetic: false,
+            bitfield: None,
+        }],
+    };
+    let hir_program = HirProgram::new(main, HashMap::new(), vec![], None);
+    let decl_names = HashMap::from([
+        (DeclId::new(42), "map-get".to_string()),
+        (DeclId::new(43), "kfunc-call".to_string()),
+    ]);
+    let result = lower_hir_to_mir_with_hints_and_maps(
+        &hir_program,
+        None,
+        &decl_names,
+        None,
+        Some(&HashMap::from([(map_ref.clone(), value_ty)])),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("phi-joined same-map bpf_wq_init kfunc-call should lower");
+
+    assert!(result.program.main.blocks.iter().any(|block| {
+        block.instructions.iter().any(|inst| {
+            matches!(
+                inst,
+                MirInst::CallKfunc {
+                    kfunc,
+                    args,
+                    ..
+                } if kfunc == "bpf_wq_init" && args.len() == 3
+            )
+        })
+    }));
+}
+
+#[test]
 fn test_kfunc_call_bpf_wq_set_callback_lowers_callback_subprogram() {
     let closure_block_id = nu_protocol::BlockId::new(7);
     let (mut hir_program, map_schemas) = wq_set_callback_hir_program(closure_block_id);

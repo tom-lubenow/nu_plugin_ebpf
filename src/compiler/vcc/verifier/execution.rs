@@ -261,6 +261,12 @@ impl VccVerifier {
                         VccValue::Reg(src_reg) => state.map_value_source_is_ambiguous(*src_reg),
                         _ => false,
                     };
+                    let src_ambiguous_map = match src {
+                        VccValue::Reg(src_reg) => {
+                            state.map_value_ambiguous_map_source(*src_reg).cloned()
+                        }
+                        _ => None,
+                    };
                     let src_released_kfunc_ref = matches!(src, VccValue::Reg(src_reg) if state.is_released_kfunc_ref(*src_reg));
                     let src_scalar_alias = match src {
                         VccValue::Reg(src_reg)
@@ -283,7 +289,11 @@ impl VccVerifier {
                         state.set_map_fd_source(*dst, map);
                     }
                     if src_map_lookup_ambiguous {
-                        state.set_ambiguous_map_lookup_source(*dst);
+                        if let Some(map) = src_ambiguous_map {
+                            state.set_ambiguous_map_lookup_source_with_map(*dst, map);
+                        } else {
+                            state.set_ambiguous_map_lookup_source(*dst);
+                        }
                     } else if let Some(source) = src_map_lookup_source {
                         state.set_map_lookup_source(*dst, source.map, source.key);
                     }
@@ -316,8 +326,12 @@ impl VccVerifier {
             VccInst::MapLookupSource { root, map, key } => {
                 state.set_map_lookup_source(*root, map.clone(), *key);
             }
-            VccInst::AmbiguousMapLookupSource { root } => {
-                state.set_ambiguous_map_lookup_source(*root);
+            VccInst::AmbiguousMapLookupSource { root, map } => {
+                if let Some(map) = map {
+                    state.set_ambiguous_map_lookup_source_with_map(*root, map.clone());
+                } else {
+                    state.set_ambiguous_map_lookup_source(*root);
+                }
             }
             VccInst::MapFdSource { map_fd, map } => {
                 state.set_map_fd_source(*map_fd, map.clone());
@@ -333,6 +347,24 @@ impl VccVerifier {
                     return;
                 };
                 if state.map_value_source_is_ambiguous(*map_value) {
+                    if let Some(map_value_map) =
+                        state.map_value_ambiguous_map_source(*map_value).cloned()
+                    {
+                        if map_value_map != *map_fd_source {
+                            self.errors.push(VccError::new(
+                                VccErrorKind::PointerBounds,
+                                format!(
+                                    "{} {} '{}' does not match {} '{}'",
+                                    call,
+                                    map_fd_label,
+                                    map_fd_source.name,
+                                    map_value_label,
+                                    map_value_map.name
+                                ),
+                            ));
+                        }
+                        return;
+                    }
                     self.errors.push(VccError::new(
                         VccErrorKind::PointerBounds,
                         format!(
@@ -1451,6 +1483,9 @@ impl VccVerifier {
                     PhiMapValueSource::None => {}
                     PhiMapValueSource::Known(source) => {
                         state.set_map_lookup_source(*dst, source.map, source.key);
+                    }
+                    PhiMapValueSource::KnownMap(map) => {
+                        state.set_ambiguous_map_lookup_source_with_map(*dst, map);
                     }
                     PhiMapValueSource::Ambiguous => {
                         state.set_ambiguous_map_lookup_source(*dst);
@@ -2856,33 +2891,58 @@ impl VccVerifier {
         state: &VccState,
     ) -> PhiMapValueSource {
         let mut source: Option<VccMapLookupSource> = None;
+        let mut source_map: Option<MapRef> = None;
+        let mut exact_key_source = true;
         for (_, reg) in args {
-            if state.map_value_source_is_ambiguous(*reg) {
-                return PhiMapValueSource::Ambiguous;
-            }
-            let Some(next) = state.map_value_source(*reg).cloned() else {
+            let next_source = state.map_value_source(*reg).cloned();
+            let next_map = if state.map_value_source_is_ambiguous(*reg) {
+                let Some(map) = state.map_value_ambiguous_map_source(*reg).cloned() else {
+                    return PhiMapValueSource::Ambiguous;
+                };
+                exact_key_source = false;
+                map
+            } else if let Some(source) = next_source.as_ref() {
+                source.map.clone()
+            } else {
                 return PhiMapValueSource::None;
             };
-            source = Some(match source {
-                None => next,
-                Some(existing)
-                    if existing.map == next.map
-                        && state.map_lookup_keys_may_alias(existing.key, next.key) =>
-                {
-                    existing
-                }
-                _ => return PhiMapValueSource::Ambiguous,
-            });
+            match &source_map {
+                Some(existing) if *existing != next_map => return PhiMapValueSource::Ambiguous,
+                None => source_map = Some(next_map.clone()),
+                _ => {}
+            }
+            if exact_key_source {
+                source = match (source, next_source) {
+                    (None, Some(next)) => Some(next),
+                    (Some(existing), Some(next))
+                        if existing.map == next.map
+                            && state.map_lookup_keys_may_alias(existing.key, next.key) =>
+                    {
+                        Some(existing)
+                    }
+                    _ => {
+                        exact_key_source = false;
+                        None
+                    }
+                };
+            }
         }
-        source
-            .map(PhiMapValueSource::Known)
-            .unwrap_or(PhiMapValueSource::None)
+        if exact_key_source {
+            source
+                .map(PhiMapValueSource::Known)
+                .unwrap_or(PhiMapValueSource::None)
+        } else {
+            source_map
+                .map(PhiMapValueSource::KnownMap)
+                .unwrap_or(PhiMapValueSource::None)
+        }
     }
 }
 
 enum PhiMapValueSource {
     None,
     Known(VccMapLookupSource),
+    KnownMap(MapRef),
     Ambiguous,
 }
 

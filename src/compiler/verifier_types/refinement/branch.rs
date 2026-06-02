@@ -40,6 +40,7 @@ pub(in crate::compiler::verifier_types) fn refine_on_branch(
                     };
                     let map_lookup_source = next.map_lookup_source(ptr).cloned();
                     let map_lookup_ambiguous = next.map_value_source_is_ambiguous(ptr);
+                    let ambiguous_map = next.map_value_ambiguous_map_source(ptr).cloned();
                     if !wants_non_null {
                         if let Some(ref_id) = ringbuf_ref {
                             next.set_live_ringbuf_ref(ref_id, false);
@@ -60,7 +61,11 @@ pub(in crate::compiler::verifier_types) fn refine_on_branch(
                     );
                     next.set_ctx_field_source(ptr, ctx_field_source.clone());
                     if map_lookup_ambiguous {
-                        next.set_ambiguous_map_lookup_source(ptr);
+                        if let Some(map) = ambiguous_map {
+                            next.set_ambiguous_map_lookup_source_with_map(ptr, &map);
+                        } else {
+                            next.set_ambiguous_map_lookup_source(ptr);
+                        }
                     } else if let Some(source) = map_lookup_source {
                         next.set_map_lookup_source(ptr, &source.map, source.key);
                     }

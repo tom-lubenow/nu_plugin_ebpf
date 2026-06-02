@@ -4,6 +4,7 @@ use crate::compiler::mir::BlockId;
 enum MapLookupPhiSource {
     None,
     Known(MapRef, VccReg),
+    KnownMap(MapRef),
     Ambiguous,
 }
 
@@ -128,25 +129,43 @@ impl<'a> VccLowerer<'a> {
 
     fn map_lookup_source_for_phi(&self, args: &[(BlockId, VReg)]) -> MapLookupPhiSource {
         let mut source = None;
+        let mut source_map = None;
+        let mut exact_key_source = true;
         for (_, vreg) in args {
             let Some(candidate) = self.map_lookup_regs.get(&VccReg(vreg.0)).cloned() else {
                 return MapLookupPhiSource::None;
             };
-            match &source {
-                Some((existing_map, existing_key))
-                    if *existing_map != candidate.0
-                        || self.scalar_alias_root_for_reg(*existing_key)
-                            != self.scalar_alias_root_for_reg(candidate.1) =>
-                {
-                    return MapLookupPhiSource::Ambiguous;
-                }
-                Some(_) => {}
-                None => source = Some(candidate),
+            match &source_map {
+                Some(existing) if *existing != candidate.0 => return MapLookupPhiSource::Ambiguous,
+                None => source_map = Some(candidate.0.clone()),
+                _ => {}
+            }
+            if exact_key_source {
+                source = match source {
+                    None => Some(candidate),
+                    Some((existing_map, existing_key))
+                        if existing_map == candidate.0
+                            && self.scalar_alias_root_for_reg(existing_key)
+                                == self.scalar_alias_root_for_reg(candidate.1) =>
+                    {
+                        Some((existing_map, existing_key))
+                    }
+                    _ => {
+                        exact_key_source = false;
+                        None
+                    }
+                };
             }
         }
-        source
-            .map(|(map, key)| MapLookupPhiSource::Known(map, key))
-            .unwrap_or(MapLookupPhiSource::None)
+        if exact_key_source {
+            source
+                .map(|(map, key)| MapLookupPhiSource::Known(map, key))
+                .unwrap_or(MapLookupPhiSource::None)
+        } else {
+            source_map
+                .map(MapLookupPhiSource::KnownMap)
+                .unwrap_or(MapLookupPhiSource::None)
+        }
     }
 
     fn ptr_info_for_phi(&self, dst: VReg, args: &[(BlockId, VReg)]) -> Option<VccPointerInfo> {
@@ -584,9 +603,17 @@ impl<'a> VccLowerer<'a> {
                         });
                         self.map_lookup_regs.insert(VccReg(dst.0), (map, key));
                     }
+                    MapLookupPhiSource::KnownMap(map) => {
+                        out.push(VccInst::AmbiguousMapLookupSource {
+                            root: VccReg(dst.0),
+                            map: Some(map),
+                        });
+                        self.map_lookup_regs.remove(&VccReg(dst.0));
+                    }
                     MapLookupPhiSource::Ambiguous => {
                         out.push(VccInst::AmbiguousMapLookupSource {
                             root: VccReg(dst.0),
+                            map: None,
                         });
                         self.map_lookup_regs.remove(&VccReg(dst.0));
                     }

@@ -906,6 +906,8 @@ impl<'a> HirToMirLowering<'a> {
             }
 
             let dst = self.func.alloc_vreg();
+            let dst_metadata =
+                Self::phi_metadata_for_incoming_reg(reg_id, &available, exit_reg_metadata);
             let dst_hint = self
                 .phi_type_hint_for_incoming(&incoming)
                 .or_else(|| self.current_type_hints.get(&reg_id).cloned());
@@ -935,6 +937,9 @@ impl<'a> HirToMirLowering<'a> {
                 self.vreg_type_hints.insert(dst, hint);
             }
             merged_reg_map.insert(reg_id, dst);
+            if let Some(meta) = dst_metadata {
+                merged_metadata.insert(reg_id, meta);
+            }
         }
 
         self.reg_map = merged_reg_map;
@@ -957,6 +962,59 @@ impl<'a> HirToMirLowering<'a> {
             fallback.get_or_insert(hint);
         }
         fallback
+    }
+
+    fn phi_metadata_for_incoming_reg(
+        reg_id: u32,
+        available: &[(HirBlockId, &HashMap<u32, VReg>)],
+        exit_reg_metadata: &HashMap<HirBlockId, HashMap<u32, RegMetadata>>,
+    ) -> Option<RegMetadata> {
+        let mut incoming = Vec::with_capacity(available.len());
+        for (pred, _) in available {
+            incoming.push(exit_reg_metadata.get(pred)?.get(&reg_id)?);
+        }
+        let first = *incoming.first()?;
+
+        let mut merged = RegMetadata::default();
+        let mut has_metadata = false;
+
+        if let Some(origin) = &first.map_value_origin
+            && incoming
+                .iter()
+                .all(|meta| meta.map_value_origin.as_ref() == Some(origin))
+        {
+            merged.map_value_origin = Some(origin.clone());
+            has_metadata = true;
+        }
+
+        if let Some(field_type) = &first.field_type
+            && incoming
+                .iter()
+                .all(|meta| meta.field_type.as_ref() == Some(field_type))
+        {
+            merged.field_type = Some(field_type.clone());
+            has_metadata = true;
+        }
+
+        if let Some(semantics) = &first.annotated_semantics
+            && incoming
+                .iter()
+                .all(|meta| meta.annotated_semantics.as_ref() == Some(semantics))
+        {
+            merged.annotated_semantics = Some(semantics.clone());
+            has_metadata = true;
+        }
+
+        if let Some(map_ref) = &first.dynamic_map_ref
+            && incoming
+                .iter()
+                .all(|meta| meta.dynamic_map_ref.as_ref() == Some(map_ref))
+        {
+            merged.dynamic_map_ref = Some(map_ref.clone());
+            has_metadata = true;
+        }
+
+        if has_metadata { Some(merged) } else { None }
     }
 
     fn record_hir_block_exit(

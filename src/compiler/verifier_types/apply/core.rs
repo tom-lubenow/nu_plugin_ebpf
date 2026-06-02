@@ -32,6 +32,10 @@ pub(super) fn apply_copy_inst(
         MirValue::VReg(vreg) => state.map_value_source_is_ambiguous(*vreg),
         _ => false,
     };
+    let src_ambiguous_map = match src {
+        MirValue::VReg(vreg) => state.map_value_ambiguous_map_source(*vreg).cloned(),
+        _ => None,
+    };
     let src_guard = match src {
         MirValue::VReg(vreg) => state.guard(*vreg),
         _ => None,
@@ -67,7 +71,11 @@ pub(super) fn apply_copy_inst(
         state.set_map_fd_source(dst, &map);
     }
     if src_map_value_ambiguous {
-        state.set_ambiguous_map_lookup_source(dst);
+        if let Some(map) = src_ambiguous_map {
+            state.set_ambiguous_map_lookup_source_with_map(dst, &map);
+        } else {
+            state.set_ambiguous_map_lookup_source(dst);
+        }
     } else if let Some(source) = src_map_value_source {
         state.set_map_lookup_source(dst, &source.map, source.key);
     }
@@ -96,6 +104,7 @@ pub(super) fn apply_phi_edge_inst(
     let src_map_fd = state.map_fd_source(src).cloned();
     let src_map_value_source = state.map_value_source(src).cloned();
     let src_map_value_ambiguous = state.map_value_source_is_ambiguous(src);
+    let src_ambiguous_map = state.map_value_ambiguous_map_source(src).cloned();
     let src_guard = state.guard(src);
     let src_non_zero = state.is_non_zero(src);
     let src_not_equal = state.not_equal_consts(src).to_vec();
@@ -115,7 +124,11 @@ pub(super) fn apply_phi_edge_inst(
         state.set_map_fd_source(dst, &map);
     }
     if src_map_value_ambiguous {
-        state.set_ambiguous_map_lookup_source(dst);
+        if let Some(map) = src_ambiguous_map {
+            state.set_ambiguous_map_lookup_source_with_map(dst, &map);
+        } else {
+            state.set_ambiguous_map_lookup_source(dst);
+        }
     } else if let Some(source) = src_map_value_source {
         state.set_map_lookup_source(dst, &source.map, source.key);
     }
@@ -477,6 +490,9 @@ pub(super) fn apply_phi_inst(
         PhiMapValueSource::Known(source) => {
             state.set_map_lookup_source(dst, &source.map, source.key);
         }
+        PhiMapValueSource::KnownMap(map) => {
+            state.set_ambiguous_map_lookup_source_with_map(dst, &map);
+        }
         PhiMapValueSource::Ambiguous => {
             state.set_ambiguous_map_lookup_source(dst);
         }
@@ -545,32 +561,57 @@ fn scalar_alias_root_for_phi(
 
 fn map_value_source_for_phi(args: &[(BlockId, VReg)], state: &VerifierState) -> PhiMapValueSource {
     let mut source: Option<MapLookupSource> = None;
+    let mut source_map: Option<MapRef> = None;
+    let mut exact_key_source = true;
     for (_, reg) in args {
-        if state.map_value_source_is_ambiguous(*reg) {
-            return PhiMapValueSource::Ambiguous;
-        }
-        let Some(next) = state.map_value_source(*reg).cloned() else {
+        let next_source = state.map_value_source(*reg).cloned();
+        let next_map = if state.map_value_source_is_ambiguous(*reg) {
+            let Some(map) = state.map_value_ambiguous_map_source(*reg).cloned() else {
+                return PhiMapValueSource::Ambiguous;
+            };
+            exact_key_source = false;
+            map
+        } else if let Some(source) = next_source.as_ref() {
+            source.map.clone()
+        } else {
             return PhiMapValueSource::None;
         };
-        source = Some(match source {
-            None => next,
-            Some(existing)
-                if existing.map == next.map
-                    && state.map_lookup_keys_may_alias(existing.key, next.key) =>
-            {
-                existing
-            }
-            _ => return PhiMapValueSource::Ambiguous,
-        });
+        match &source_map {
+            Some(existing) if *existing != next_map => return PhiMapValueSource::Ambiguous,
+            None => source_map = Some(next_map.clone()),
+            _ => {}
+        }
+        if exact_key_source {
+            source = match (source, next_source) {
+                (None, Some(next)) => Some(next),
+                (Some(existing), Some(next))
+                    if existing.map == next.map
+                        && state.map_lookup_keys_may_alias(existing.key, next.key) =>
+                {
+                    Some(existing)
+                }
+                _ => {
+                    exact_key_source = false;
+                    None
+                }
+            };
+        }
     }
-    source
-        .map(PhiMapValueSource::Known)
-        .unwrap_or(PhiMapValueSource::None)
+    if exact_key_source {
+        source
+            .map(PhiMapValueSource::Known)
+            .unwrap_or(PhiMapValueSource::None)
+    } else {
+        source_map
+            .map(PhiMapValueSource::KnownMap)
+            .unwrap_or(PhiMapValueSource::None)
+    }
 }
 
 enum PhiMapValueSource {
     None,
     Known(MapLookupSource),
+    KnownMap(MapRef),
     Ambiguous,
 }
 

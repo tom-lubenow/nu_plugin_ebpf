@@ -305,6 +305,52 @@ fn test_verify_mir_wq_init_accepts_phi_same_map_value_source() {
 }
 
 #[test]
+fn test_verify_mir_wq_init_accepts_phi_same_map_value_source_with_copied_keys() {
+    let (mut func, entry) = new_mir_function();
+    let PhiLookup {
+        checked,
+        value: wq,
+        mut types,
+    } = emit_branch_phi_map_lookup(
+        &mut func,
+        entry,
+        workqueue_map("work_items"),
+        workqueue_map("work_items"),
+        workqueue_map_ptr_ty(),
+        true,
+    );
+    let map_fd = func.alloc_vreg();
+    let flags = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(checked)
+        .instructions
+        .push(MirInst::LoadMapFd {
+            dst: map_fd,
+            map: workqueue_map("work_items"),
+        });
+    func.block_mut(checked).instructions.push(MirInst::Copy {
+        dst: flags,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(checked)
+        .instructions
+        .push(MirInst::CallKfunc {
+            dst,
+            kfunc: "bpf_wq_init".to_string(),
+            btf_id: None,
+            args: vec![wq, map_fd, flags],
+        });
+    func.block_mut(checked).terminator = MirInst::Return { val: None };
+
+    types.insert(map_fd, workqueue_map_ref_ty());
+    types.insert(flags, MirType::I64);
+    types.insert(dst, MirType::I64);
+
+    verify_mir(&func, &types).expect("expected copied-key same-map workqueue phi to verify");
+}
+
+#[test]
 fn test_verify_mir_wq_init_rejects_phi_different_map_value_source() {
     let (mut func, entry) = new_mir_function();
     let PhiLookup {

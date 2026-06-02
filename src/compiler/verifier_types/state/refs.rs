@@ -1041,6 +1041,17 @@ impl VerifierState {
         self.map_lookup_source_is_ambiguous(root)
     }
 
+    pub(in crate::compiler::verifier_types) fn map_value_ambiguous_map_source(
+        &self,
+        reg: VReg,
+    ) -> Option<&MapRef> {
+        if let Some(map) = self.ambiguous_map_lookup_source_map(reg) {
+            return Some(map);
+        }
+        let (root, _) = self.map_value_root_and_bounds(reg)?;
+        self.ambiguous_map_lookup_source_map(root)
+    }
+
     pub(in crate::compiler::verifier_types) fn has_bpf_spin_lock_for_map_root(
         &self,
         reg: VReg,

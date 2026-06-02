@@ -1165,6 +1165,19 @@ fn validate_helper_map_fd_matches_map_value(
         return;
     };
     if state.map_value_source_is_ambiguous(*map_value) {
+        if let Some(map_value_map) = state.map_value_ambiguous_map_source(*map_value) {
+            if map_value_map != map_fd_source {
+                errors.push(VerifierTypeError::new(format!(
+                    "helper '{}' arg{} map '{}' does not match arg{} map value '{}'",
+                    helper.name(),
+                    map_fd_arg_idx,
+                    map_fd_source.name,
+                    map_value_arg_idx,
+                    map_value_map.name
+                )));
+            }
+            return;
+        }
         errors.push(VerifierTypeError::new(format!(
             "helper '{}' arg{} map value may come from multiple maps and cannot be matched to arg{} map '{}'",
             helper.name(),

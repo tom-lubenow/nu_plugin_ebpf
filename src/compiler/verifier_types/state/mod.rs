@@ -174,6 +174,7 @@ pub(super) struct VerifierState {
     ctx_field_sources: Vec<Option<CtxField>>,
     map_lookup_sources: Vec<Option<MapLookupSource>>,
     ambiguous_map_lookup_sources: Vec<bool>,
+    ambiguous_map_lookup_maps: Vec<Option<MapRef>>,
     map_fd_sources: Vec<Option<MapRef>>,
     live_ringbuf_refs: Vec<bool>,
     released_ringbuf_record_regs: Vec<bool>,
@@ -246,6 +247,7 @@ impl VerifierState {
             ctx_field_sources: vec![None; total_vregs],
             map_lookup_sources: vec![None; total_vregs],
             ambiguous_map_lookup_sources: vec![false; total_vregs],
+            ambiguous_map_lookup_maps: vec![None; total_vregs],
             map_fd_sources: vec![None; total_vregs],
             live_ringbuf_refs: vec![false; total_vregs],
             released_ringbuf_record_regs: vec![false; total_vregs],
@@ -394,6 +396,9 @@ impl VerifierState {
         if let Some(slot) = self.ambiguous_map_lookup_sources.get_mut(vreg.0 as usize) {
             *slot = false;
         }
+        if let Some(slot) = self.ambiguous_map_lookup_maps.get_mut(vreg.0 as usize) {
+            *slot = None;
+        }
         if let Some(slot) = self.map_fd_sources.get_mut(vreg.0 as usize) {
             *slot = None;
         }
@@ -428,6 +433,9 @@ impl VerifierState {
         if let Some(slot) = self.ambiguous_map_lookup_sources.get_mut(root.0 as usize) {
             *slot = false;
         }
+        if let Some(slot) = self.ambiguous_map_lookup_maps.get_mut(root.0 as usize) {
+            *slot = None;
+        }
     }
 
     pub(super) fn map_lookup_source(&self, root: VReg) -> Option<&MapLookupSource> {
@@ -443,6 +451,16 @@ impl VerifierState {
         if let Some(slot) = self.ambiguous_map_lookup_sources.get_mut(root.0 as usize) {
             *slot = true;
         }
+        if let Some(slot) = self.ambiguous_map_lookup_maps.get_mut(root.0 as usize) {
+            *slot = None;
+        }
+    }
+
+    pub(super) fn set_ambiguous_map_lookup_source_with_map(&mut self, root: VReg, map: &MapRef) {
+        self.set_ambiguous_map_lookup_source(root);
+        if let Some(slot) = self.ambiguous_map_lookup_maps.get_mut(root.0 as usize) {
+            *slot = Some(map.clone());
+        }
     }
 
     pub(super) fn map_lookup_source_is_ambiguous(&self, root: VReg) -> bool {
@@ -450,6 +468,12 @@ impl VerifierState {
             .get(root.0 as usize)
             .copied()
             .unwrap_or(false)
+    }
+
+    pub(super) fn ambiguous_map_lookup_source_map(&self, root: VReg) -> Option<&MapRef> {
+        self.ambiguous_map_lookup_maps
+            .get(root.0 as usize)
+            .and_then(|map| map.as_ref())
     }
 
     pub(super) fn set_map_fd_source(&mut self, fd: VReg, map: &MapRef) {

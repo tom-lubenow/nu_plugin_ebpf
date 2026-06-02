@@ -27037,7 +27037,7 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "kfunc-call 'bpf_wq_init' requires arg1 map 'work_items'"
+        error_contains: "kfunc-call 'bpf_wq_init' requires arg0 to be a bpf_wq field projected from a concrete map value"
     }
     {
         name: "bpf-wq-start-rejects-nonzero-flags"

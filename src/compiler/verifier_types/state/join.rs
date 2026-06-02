@@ -10,6 +10,7 @@ impl VerifierState {
             && self.ctx_field_sources == other.ctx_field_sources
             && self.map_lookup_sources == other.map_lookup_sources
             && self.ambiguous_map_lookup_sources == other.ambiguous_map_lookup_sources
+            && self.ambiguous_map_lookup_maps == other.ambiguous_map_lookup_maps
             && self.map_fd_sources == other.map_fd_sources
             && self.live_ringbuf_refs == other.live_ringbuf_refs
             && self.released_ringbuf_record_regs == other.released_ringbuf_record_regs
@@ -142,12 +143,32 @@ impl VerifierState {
         let mut map_lookup_sources = Vec::with_capacity(self.map_lookup_sources.len());
         let mut ambiguous_map_lookup_sources =
             Vec::with_capacity(self.ambiguous_map_lookup_sources.len());
+        let mut ambiguous_map_lookup_maps =
+            Vec::with_capacity(self.ambiguous_map_lookup_maps.len());
         for i in 0..self.map_lookup_sources.len() {
             let left_ambiguous = self.ambiguous_map_lookup_sources[i];
             let right_ambiguous = other.ambiguous_map_lookup_sources[i];
             let same_lookup = |left: &MapLookupSource, right: &MapLookupSource| {
                 left.map == right.map
                     && self.join_map_lookup_keys_may_alias(other, left.key, right.key)
+            };
+            let left_map = if left_ambiguous {
+                self.ambiguous_map_lookup_maps[i].clone()
+            } else {
+                self.map_lookup_sources[i]
+                    .as_ref()
+                    .map(|source| source.map.clone())
+            };
+            let right_map = if right_ambiguous {
+                other.ambiguous_map_lookup_maps[i].clone()
+            } else {
+                other.map_lookup_sources[i]
+                    .as_ref()
+                    .map(|source| source.map.clone())
+            };
+            let same_known_map = match (&left_map, &right_map) {
+                (Some(left), Some(right)) if left == right => Some(left.clone()),
+                _ => None,
             };
             let merged = match (&self.map_lookup_sources[i], &other.map_lookup_sources[i]) {
                 _ if left_ambiguous || right_ambiguous => None,
@@ -167,8 +188,20 @@ impl VerifierState {
                     (&self.map_lookup_sources[i], &other.map_lookup_sources[i]),
                     (Some(left), Some(right)) if !same_lookup(left, right)
                 );
+            let ambiguous_map = if ambiguous {
+                if left_ambiguous && matches!(other.regs[i], VerifierType::Uninit) {
+                    left_map
+                } else if right_ambiguous && matches!(self.regs[i], VerifierType::Uninit) {
+                    right_map
+                } else {
+                    same_known_map
+                }
+            } else {
+                None
+            };
             map_lookup_sources.push(merged);
             ambiguous_map_lookup_sources.push(ambiguous);
+            ambiguous_map_lookup_maps.push(ambiguous_map);
         }
         let mut map_fd_sources = Vec::with_capacity(self.map_fd_sources.len());
         for i in 0..self.map_fd_sources.len() {
@@ -268,6 +301,7 @@ impl VerifierState {
             ctx_field_sources,
             map_lookup_sources,
             ambiguous_map_lookup_sources,
+            ambiguous_map_lookup_maps,
             map_fd_sources,
             live_ringbuf_refs,
             released_ringbuf_record_regs,

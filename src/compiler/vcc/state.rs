@@ -43,6 +43,7 @@ struct VccState {
     ctx_field_sources: HashMap<VccReg, CtxField>,
     map_lookup_sources: HashMap<VccReg, VccMapLookupSource>,
     ambiguous_map_lookup_sources: HashSet<VccReg>,
+    ambiguous_map_lookup_maps: HashMap<VccReg, MapRef>,
     map_fd_sources: HashMap<VccReg, MapRef>,
     not_equal_consts: HashMap<VccReg, Vec<i64>>,
     live_ringbuf_refs: HashMap<VccReg, bool>,
@@ -139,6 +140,7 @@ impl VccState {
             ctx_field_sources: HashMap::new(),
             map_lookup_sources: HashMap::new(),
             ambiguous_map_lookup_sources: HashSet::new(),
+            ambiguous_map_lookup_maps: HashMap::new(),
             map_fd_sources: HashMap::new(),
             not_equal_consts: HashMap::new(),
             live_ringbuf_refs: HashMap::new(),
@@ -212,6 +214,7 @@ impl VccState {
         self.ctx_field_sources.remove(&reg);
         self.map_lookup_sources.remove(&reg);
         self.ambiguous_map_lookup_sources.remove(&reg);
+        self.ambiguous_map_lookup_maps.remove(&reg);
         self.map_fd_sources.remove(&reg);
         self.not_equal_consts.remove(&reg);
         self.released_kfunc_ref_regs.remove(&reg);
@@ -241,6 +244,7 @@ impl VccState {
 
     fn set_map_lookup_source(&mut self, root: VccReg, map: MapRef, key: VccReg) {
         self.ambiguous_map_lookup_sources.remove(&root);
+        self.ambiguous_map_lookup_maps.remove(&root);
         self.map_lookup_sources
             .insert(root, VccMapLookupSource { map, key });
     }
@@ -252,10 +256,20 @@ impl VccState {
     fn set_ambiguous_map_lookup_source(&mut self, root: VccReg) {
         self.map_lookup_sources.remove(&root);
         self.ambiguous_map_lookup_sources.insert(root);
+        self.ambiguous_map_lookup_maps.remove(&root);
+    }
+
+    fn set_ambiguous_map_lookup_source_with_map(&mut self, root: VccReg, map: MapRef) {
+        self.set_ambiguous_map_lookup_source(root);
+        self.ambiguous_map_lookup_maps.insert(root, map);
     }
 
     fn map_lookup_source_is_ambiguous(&self, root: VccReg) -> bool {
         self.ambiguous_map_lookup_sources.contains(&root)
+    }
+
+    fn ambiguous_map_lookup_source_map(&self, root: VccReg) -> Option<&MapRef> {
+        self.ambiguous_map_lookup_maps.get(&root)
     }
 
     fn set_map_fd_source(&mut self, fd: VccReg, map: MapRef) {
@@ -973,6 +987,14 @@ impl VccState {
         self.map_lookup_source_is_ambiguous(root)
     }
 
+    fn map_value_ambiguous_map_source(&self, reg: VccReg) -> Option<&MapRef> {
+        if let Some(map) = self.ambiguous_map_lookup_source_map(reg) {
+            return Some(map);
+        }
+        let (root, _) = self.map_value_root_and_bounds(reg)?;
+        self.ambiguous_map_lookup_source_map(root)
+    }
+
     fn has_bpf_spin_lock_for_map_root(&self, reg: VccReg) -> bool {
         if !self.has_live_bpf_spin_lock() {
             return false;
@@ -1467,8 +1489,11 @@ impl VccState {
         map_lookup_source_regs.extend(other.map_lookup_sources.keys().copied());
         map_lookup_source_regs.extend(self.ambiguous_map_lookup_sources.iter().copied());
         map_lookup_source_regs.extend(other.ambiguous_map_lookup_sources.iter().copied());
+        map_lookup_source_regs.extend(self.ambiguous_map_lookup_maps.keys().copied());
+        map_lookup_source_regs.extend(other.ambiguous_map_lookup_maps.keys().copied());
         let mut map_lookup_sources = HashMap::new();
         let mut ambiguous_map_lookup_sources = HashSet::new();
+        let mut ambiguous_map_lookup_maps = HashMap::new();
         for reg in map_lookup_source_regs {
             let left_absent_or_uninit = !self.reg_types.contains_key(&reg)
                 || matches!(self.reg_types.get(&reg), Some(VccValueType::Uninit));
@@ -1476,30 +1501,65 @@ impl VccState {
                 || matches!(other.reg_types.get(&reg), Some(VccValueType::Uninit));
             let left_ambiguous = self.ambiguous_map_lookup_sources.contains(&reg);
             let right_ambiguous = other.ambiguous_map_lookup_sources.contains(&reg);
-            if left_ambiguous || right_ambiguous {
-                ambiguous_map_lookup_sources.insert(reg);
-                continue;
-            }
             let same_lookup = |left: &VccMapLookupSource, right: &VccMapLookupSource| {
                 left.map == right.map
                     && (self.map_lookup_keys_may_alias(left.key, right.key)
                         || other.map_lookup_keys_may_alias(left.key, right.key))
             };
+            let left_map = if left_ambiguous {
+                self.ambiguous_map_lookup_maps.get(&reg).cloned()
+            } else {
+                self.map_lookup_sources
+                    .get(&reg)
+                    .map(|source| source.map.clone())
+            };
+            let right_map = if right_ambiguous {
+                other.ambiguous_map_lookup_maps.get(&reg).cloned()
+            } else {
+                other
+                    .map_lookup_sources
+                    .get(&reg)
+                    .map(|source| source.map.clone())
+            };
+            let same_known_map = match (&left_map, &right_map) {
+                (Some(left), Some(right)) if left == right => Some(left.clone()),
+                _ => None,
+            };
             let merged = match (
                 self.map_lookup_sources.get(&reg),
                 other.map_lookup_sources.get(&reg),
             ) {
+                _ if left_ambiguous || right_ambiguous => None,
                 (Some(left), Some(right)) if same_lookup(left, right) => Some(left.clone()),
-                (Some(_), Some(_)) => {
-                    ambiguous_map_lookup_sources.insert(reg);
-                    None
-                }
+                (Some(_), Some(_)) => None,
                 (Some(left), None)
                     if right_absent_or_uninit => Some(left.clone()),
                 (None, Some(right))
                     if left_absent_or_uninit => Some(right.clone()),
                 _ => None,
             };
+            let ambiguous = left_ambiguous
+                || right_ambiguous
+                || matches!(
+                    (
+                        self.map_lookup_sources.get(&reg),
+                        other.map_lookup_sources.get(&reg)
+                    ),
+                    (Some(left), Some(right)) if !same_lookup(left, right)
+                );
+            if ambiguous {
+                ambiguous_map_lookup_sources.insert(reg);
+                let ambiguous_map = if left_ambiguous && right_absent_or_uninit {
+                    left_map
+                } else if right_ambiguous && left_absent_or_uninit {
+                    right_map
+                } else {
+                    same_known_map
+                };
+                if let Some(map) = ambiguous_map {
+                    ambiguous_map_lookup_maps.insert(reg, map);
+                }
+            }
             if let Some(source) = merged {
                 map_lookup_sources.insert(reg, source);
             }
@@ -1613,6 +1673,7 @@ impl VccState {
             ctx_field_sources,
             map_lookup_sources,
             ambiguous_map_lookup_sources,
+            ambiguous_map_lookup_maps,
             map_fd_sources,
             not_equal_consts,
             live_ringbuf_refs,
@@ -1775,6 +1836,7 @@ impl VccState {
             ctx_field_sources: self.ctx_field_sources.clone(),
             map_lookup_sources: self.map_lookup_sources.clone(),
             ambiguous_map_lookup_sources: self.ambiguous_map_lookup_sources.clone(),
+            ambiguous_map_lookup_maps: self.ambiguous_map_lookup_maps.clone(),
             map_fd_sources: self.map_fd_sources.clone(),
             not_equal_consts: HashMap::new(),
             live_ringbuf_refs: self.live_ringbuf_refs.clone(),
