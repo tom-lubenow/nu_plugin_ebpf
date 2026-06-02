@@ -35468,6 +35468,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-scalar-bits-binary-bytes"
+        category: "language-core"
+        tags: [scalar binary bits and or xor endian]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  (0x[ab cd] | bits and 0x[99 99] | bytes starts-with 0x[89 89]) and (0x[c0 ff ee] | bits or 0x[ff] --endian big | bytes starts-with 0x[c0 ff ff]) and (0x[ff] | bits xor 0x[12 34 56] --endian little | bytes starts-with 0x[ed 34 56])'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-scalar-bits-not-signed"
         category: "language-core"
         tags: [scalar bits "not" signed]

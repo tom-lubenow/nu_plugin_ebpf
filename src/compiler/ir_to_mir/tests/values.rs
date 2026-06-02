@@ -10465,35 +10465,212 @@ fn make_math_abs_program(abs_decl: DeclId, input: i64) -> HirProgram {
 }
 
 fn make_bits_binary_program(bits_decl: DeclId, input: i64, target: i64) -> HirProgram {
+    make_bits_binary_program_with_endian(bits_decl, input, target, None)
+}
+
+fn make_bits_binary_program_with_endian(
+    bits_decl: DeclId,
+    input: i64,
+    target: i64,
+    endian: Option<&str>,
+) -> HirProgram {
+    let mut stmts = vec![
+        HirStmt::LoadLiteral {
+            dst: RegId::new(0),
+            lit: HirLiteral::Int(input),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: HirLiteral::Int(target),
+        },
+    ];
+    let named = if let Some(endian) = endian {
+        stmts.push(HirStmt::LoadLiteral {
+            dst: RegId::new(2),
+            lit: HirLiteral::String(endian.as_bytes().to_vec()),
+        });
+        vec![(b"endian".to_vec(), RegId::new(2))]
+    } else {
+        Vec::new()
+    };
+    let result_reg = RegId::new(if endian.is_some() { 3 } else { 2 });
+
     let func = HirFunction {
         blocks: vec![HirBlock {
             id: HirBlockId(0),
-            stmts: vec![
-                HirStmt::LoadLiteral {
-                    dst: RegId::new(0),
-                    lit: HirLiteral::Int(input),
-                },
-                HirStmt::LoadLiteral {
-                    dst: RegId::new(1),
-                    lit: HirLiteral::Int(target),
-                },
-                HirStmt::Call {
+            stmts: {
+                stmts.push(HirStmt::Call {
                     decl_id: bits_decl,
-                    src_dst: RegId::new(2),
+                    src_dst: result_reg,
                     args: HirCallArgs {
                         pipeline_input: Some(RegId::new(0)),
                         positional: vec![RegId::new(1)],
+                        named,
                         ..HirCallArgs::default()
                     },
-                },
-            ],
-            terminator: HirTerminator::Return { src: RegId::new(2) },
+                });
+                stmts
+            },
+            terminator: HirTerminator::Return { src: result_reg },
         }],
         entry: HirBlockId(0),
         spans: Vec::new(),
         ast: Vec::new(),
         comments: Vec::new(),
-        register_count: 3,
+        register_count: if endian.is_some() { 4 } else { 3 },
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_bits_binary_bytes_starts_with_program(
+    bits_decl: DeclId,
+    starts_with_decl: DeclId,
+    input: &[u8],
+    target: &[u8],
+    prefix: &[u8],
+    endian: Option<&str>,
+) -> HirProgram {
+    let mut stmts = vec![
+        HirStmt::LoadLiteral {
+            dst: RegId::new(0),
+            lit: HirLiteral::Binary(input.to_vec()),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: HirLiteral::Binary(target.to_vec()),
+        },
+    ];
+    let named = if let Some(endian) = endian {
+        stmts.push(HirStmt::LoadLiteral {
+            dst: RegId::new(2),
+            lit: HirLiteral::String(endian.as_bytes().to_vec()),
+        });
+        vec![(b"endian".to_vec(), RegId::new(2))]
+    } else {
+        Vec::new()
+    };
+    stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(3),
+        lit: HirLiteral::Binary(prefix.to_vec()),
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: {
+                stmts.push(HirStmt::Call {
+                    decl_id: bits_decl,
+                    src_dst: RegId::new(4),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        positional: vec![RegId::new(1)],
+                        named,
+                        ..HirCallArgs::default()
+                    },
+                });
+                stmts.push(HirStmt::Call {
+                    decl_id: starts_with_decl,
+                    src_dst: RegId::new(5),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(4)),
+                        positional: vec![RegId::new(3)],
+                        ..HirCallArgs::default()
+                    },
+                });
+                stmts
+            },
+            terminator: HirTerminator::Return { src: RegId::new(5) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 6,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_bits_binary_bytes_list_collect_starts_with_program(
+    bits_decl: DeclId,
+    collect_decl: DeclId,
+    starts_with_decl: DeclId,
+    values: Vec<Vec<u8>>,
+    target: &[u8],
+    prefix: &[u8],
+    endian: Option<&str>,
+) -> HirProgram {
+    let mut stmts = vec![
+        HirStmt::LoadValue {
+            dst: RegId::new(0),
+            val: Box::new(Value::list(
+                values
+                    .into_iter()
+                    .map(|value| Value::binary(value, Span::test_data()))
+                    .collect(),
+                Span::test_data(),
+            )),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: HirLiteral::Binary(target.to_vec()),
+        },
+    ];
+    let named = if let Some(endian) = endian {
+        stmts.push(HirStmt::LoadLiteral {
+            dst: RegId::new(2),
+            lit: HirLiteral::String(endian.as_bytes().to_vec()),
+        });
+        vec![(b"endian".to_vec(), RegId::new(2))]
+    } else {
+        Vec::new()
+    };
+    stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(3),
+        lit: HirLiteral::Binary(prefix.to_vec()),
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: {
+                stmts.push(HirStmt::Call {
+                    decl_id: bits_decl,
+                    src_dst: RegId::new(4),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        positional: vec![RegId::new(1)],
+                        named,
+                        ..HirCallArgs::default()
+                    },
+                });
+                stmts.push(HirStmt::Call {
+                    decl_id: collect_decl,
+                    src_dst: RegId::new(5),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(4)),
+                        ..HirCallArgs::default()
+                    },
+                });
+                stmts.push(HirStmt::Call {
+                    decl_id: starts_with_decl,
+                    src_dst: RegId::new(6),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(5)),
+                        positional: vec![RegId::new(3)],
+                        ..HirCallArgs::default()
+                    },
+                });
+                stmts
+            },
+            terminator: HirTerminator::Return { src: RegId::new(6) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 7,
         file_count: 0,
     };
     HirProgram::new(func, HashMap::new(), vec![], None)
@@ -11938,6 +12115,96 @@ fn test_lower_bits_binary_commands_on_known_integer_inputs() {
 }
 
 #[test]
+fn test_lower_bits_binary_accepts_endian_on_known_integer_inputs() {
+    for (offset, command_name, target, endian, expected) in [
+        (0, "bits and", 3, "big", 1),
+        (1, "bits or", 2, "little", 7),
+        (2, "bits xor", 3, "native", 6),
+    ] {
+        let decl = DeclId::new(2910 + offset);
+        let hir = make_bits_binary_program_with_endian(decl, 5, target, Some(endian));
+        let decl_names = HashMap::from([(decl, command_name.to_string())]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("{command_name} --endian {endian} should lower integer input: {err}")
+        });
+
+        assert_program_returns_constant(&result.program, expected, command_name);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{command_name} should compile through codegen: {err}"));
+    }
+}
+
+#[test]
+fn test_lower_bits_binary_commands_on_known_binary_inputs() {
+    for (offset, command_name, input, target, endian, expected_prefix) in [
+        (
+            0,
+            "bits and",
+            vec![0xab, 0xcd],
+            vec![0x99, 0x99],
+            None,
+            vec![0x89, 0x89],
+        ),
+        (
+            1,
+            "bits or",
+            vec![0xc0, 0xff, 0xee],
+            vec![0xff],
+            Some("big"),
+            vec![0xc0, 0xff, 0xff],
+        ),
+        (
+            2,
+            "bits xor",
+            vec![0xff],
+            vec![0x12, 0x34, 0x56],
+            Some("little"),
+            vec![0xed, 0x34, 0x56],
+        ),
+    ] {
+        let bits_decl = DeclId::new(29100 + offset);
+        let starts_with_decl = DeclId::new(29110 + offset);
+        let hir = make_bits_binary_bytes_starts_with_program(
+            bits_decl,
+            starts_with_decl,
+            &input,
+            &target,
+            &expected_prefix,
+            endian,
+        );
+        let decl_names = HashMap::from([
+            (bits_decl, command_name.to_string()),
+            (starts_with_decl, "bytes starts-with".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("{command_name} should lower compile-time known binary input: {err}")
+        });
+
+        assert_program_returns_constant(&result.program, 1, command_name);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{command_name} should compile through codegen: {err}"));
+    }
+}
+
+#[test]
 fn test_lower_bits_binary_commands_on_known_integer_lists() {
     for (offset, command_name, target, expected_values) in [
         (0, "bits and", 2, vec![0i64, 2, 2]),
@@ -11973,6 +12240,62 @@ fn test_lower_bits_binary_commands_on_known_integer_lists() {
                 .any(|global| global.data == expected),
             "expected {command_name} to materialize the transformed integer list"
         );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{command_name} should compile through codegen: {err}"));
+    }
+}
+
+#[test]
+fn test_lower_bits_binary_commands_on_known_binary_lists() {
+    for (offset, command_name, values, target, endian, expected_prefix) in [
+        (
+            0,
+            "bits and",
+            vec![vec![0x7f, 0xff], vec![0xff, 0xf0]],
+            vec![0x99, 0x99],
+            None,
+            vec![0x19, 0x99, 0x99, 0x90],
+        ),
+        (
+            1,
+            "bits or",
+            vec![vec![0xc0, 0xff, 0xee], vec![0x10, 0x20, 0x30]],
+            vec![0xff],
+            Some("big"),
+            vec![0xc0, 0xff, 0xff, 0x10, 0x20, 0xff],
+        ),
+    ] {
+        let bits_decl = DeclId::new(2940 + offset);
+        let collect_decl = DeclId::new(29410 + offset);
+        let starts_with_decl = DeclId::new(29420 + offset);
+        let hir = make_bits_binary_bytes_list_collect_starts_with_program(
+            bits_decl,
+            collect_decl,
+            starts_with_decl,
+            values,
+            &target,
+            &expected_prefix,
+            endian,
+        );
+        let decl_names = HashMap::from([
+            (bits_decl, command_name.to_string()),
+            (collect_decl, "bytes collect".to_string()),
+            (starts_with_decl, "bytes starts-with".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("{command_name} should lower compile-time known binary-list input: {err}")
+        });
+
+        assert_program_returns_constant(&result.program, 1, command_name);
         compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
             .unwrap_or_else(|err| panic!("{command_name} should compile through codegen: {err}"));
     }
@@ -12028,6 +12351,29 @@ fn test_lower_bits_binary_rejects_constant_list_output_over_capacity() {
     assert!(
         err.to_string()
             .contains("bits xor output exceeds stack-backed numeric list capacity 60"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_bits_binary_rejects_unsupported_endian() {
+    let bits_decl = DeclId::new(303);
+    let hir = make_bits_binary_program_with_endian(bits_decl, 5, 3, Some("middle"));
+    let decl_names = HashMap::from([(bits_decl, "bits and".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("bits and should reject unsupported endian values");
+
+    assert!(
+        err.to_string()
+            .contains("bits and --endian supports only native, little, or big"),
         "unexpected error: {err}"
     );
 }

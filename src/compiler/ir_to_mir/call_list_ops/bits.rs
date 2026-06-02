@@ -15,6 +15,12 @@ enum BitsShiftMode {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BitsBinaryEndian {
+    Little,
+    Big,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct BitsShiftSpec {
     count: i64,
     mode: BitsShiftMode,
@@ -43,6 +49,52 @@ impl<'a> HirToMirLowering<'a> {
             "bits xor" => lhs ^ rhs,
             _ => unreachable!("validated bits binary command"),
         }
+    }
+
+    fn bits_binary_byte_output(cmd_name: &str, lhs: u8, rhs: u8) -> u8 {
+        match cmd_name {
+            "bits and" => lhs & rhs,
+            "bits or" => lhs | rhs,
+            "bits xor" => lhs ^ rhs,
+            _ => unreachable!("validated bits binary command"),
+        }
+    }
+
+    fn bits_binary_bytes_output(
+        cmd_name: &str,
+        lhs: &[u8],
+        rhs: &[u8],
+        endian: BitsBinaryEndian,
+    ) -> Vec<u8> {
+        let len = lhs.len().max(rhs.len());
+        let mut output = Vec::with_capacity(len);
+        match endian {
+            BitsBinaryEndian::Little => {
+                for index in 0..len {
+                    let lhs_byte = lhs.get(index).copied().unwrap_or(0);
+                    let rhs_byte = rhs.get(index).copied().unwrap_or(0);
+                    output.push(Self::bits_binary_byte_output(cmd_name, lhs_byte, rhs_byte));
+                }
+            }
+            BitsBinaryEndian::Big => {
+                let lhs_padding = len.saturating_sub(lhs.len());
+                let rhs_padding = len.saturating_sub(rhs.len());
+                for index in 0..len {
+                    let lhs_byte = index
+                        .checked_sub(lhs_padding)
+                        .and_then(|lhs_index| lhs.get(lhs_index))
+                        .copied()
+                        .unwrap_or(0);
+                    let rhs_byte = index
+                        .checked_sub(rhs_padding)
+                        .and_then(|rhs_index| rhs.get(rhs_index))
+                        .copied()
+                        .unwrap_or(0);
+                    output.push(Self::bits_binary_byte_output(cmd_name, lhs_byte, rhs_byte));
+                }
+            }
+        }
+        output
     }
 
     fn bits_shift_op(cmd_name: &str, mode: BitsShiftMode) -> BinOpKind {
@@ -145,6 +197,65 @@ impl<'a> HirToMirLowering<'a> {
                 Some(nu_protocol::Value::Int { val, .. }) => Some(*val),
                 _ => None,
             })
+    }
+
+    fn bits_binary_endian(&self, cmd_name: &str) -> Result<BitsBinaryEndian, CompileError> {
+        if !self.parser_info_args.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} does not support parser-info arguments in eBPF"
+            )));
+        }
+        if !self.named_flags.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} supports only --endian for binary input in eBPF"
+            )));
+        }
+
+        let mut endian_reg = None;
+        for (name, (_vreg, reg)) in &self.named_args {
+            match name.as_str() {
+                "endian" | "e" => {
+                    if endian_reg.replace(*reg).is_some() {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "{cmd_name} accepts only one --endian argument in eBPF"
+                        )));
+                    }
+                }
+                _ => {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{cmd_name} supports only --endian for binary input in eBPF"
+                    )));
+                }
+            }
+        }
+
+        let Some(endian_reg) = endian_reg else {
+            return Ok(Self::native_bits_binary_endian());
+        };
+        let endian = self.literal_string_arg(endian_reg, &format!("{cmd_name} --endian"))?;
+        match endian.as_str() {
+            "native" => Ok(Self::native_bits_binary_endian()),
+            "little" => Ok(BitsBinaryEndian::Little),
+            "big" => Ok(BitsBinaryEndian::Big),
+            _ => Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} --endian supports only native, little, or big in eBPF; got {endian:?}"
+            ))),
+        }
+    }
+
+    fn native_bits_binary_endian() -> BitsBinaryEndian {
+        if cfg!(target_endian = "big") {
+            BitsBinaryEndian::Big
+        } else {
+            BitsBinaryEndian::Little
+        }
+    }
+
+    fn bits_binary_value_from_metadata(meta: &RegMetadata) -> Option<Vec<u8>> {
+        match meta.constant_value.as_ref() {
+            Some(nu_protocol::Value::Binary { val, .. }) => Some(val.clone()),
+            _ => None,
+        }
     }
 
     fn bits_not_mode(&self, cmd_name: &str) -> Result<BitsNotMode, CompileError> {
@@ -528,49 +639,94 @@ impl<'a> HirToMirLowering<'a> {
             dst_vreg
         };
 
-        if !self.named_flags.is_empty()
-            || !self.named_args.is_empty()
-            || !self.parser_info_args.is_empty()
-        {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "{cmd_name} does not support flags or named arguments in eBPF"
-            )));
-        }
+        let endian = self.bits_binary_endian(cmd_name)?;
         if self.positional_args.len() != 1 {
             return Err(CompileError::UnsupportedInstruction(format!(
-                "{cmd_name} requires exactly one integer target argument in eBPF"
+                "{cmd_name} requires exactly one integer or binary target argument in eBPF"
             )));
         }
 
         let input_reg = input_reg.ok_or_else(|| {
             CompileError::UnsupportedInstruction(format!(
-                "{cmd_name} requires integer or integer-list pipeline input in eBPF"
+                "{cmd_name} requires integer, binary, integer-list, or binary-list pipeline input in eBPF"
             ))
         })?;
         let input_meta = self.get_metadata(input_reg).cloned().ok_or_else(|| {
             CompileError::UnsupportedInstruction(format!(
-                "{cmd_name} requires tracked integer or integer-list input in eBPF"
+                "{cmd_name} requires tracked integer, binary, integer-list, or binary-list input in eBPF"
             ))
         })?;
 
         let (rhs_vreg, rhs_reg) = self.positional_args[0];
         let rhs_meta = self.get_metadata(rhs_reg).cloned().ok_or_else(|| {
             CompileError::UnsupportedInstruction(format!(
-                "{cmd_name} requires tracked integer target argument in eBPF"
+                "{cmd_name} requires tracked integer or binary target argument in eBPF"
             ))
         })?;
-        self.validate_bits_integer_operand(cmd_name, "target argument", &rhs_meta, rhs_vreg)?;
         let rhs_const = Self::bits_integer_value_from_metadata(&rhs_meta);
-        let rhs_value = rhs_const.map_or(MirValue::VReg(rhs_vreg), MirValue::Const);
+        let rhs_binary_const = Self::bits_binary_value_from_metadata(&rhs_meta);
         let op = Self::bits_binary_op(cmd_name);
 
         if let Some(nu_protocol::Value::List { vals, .. }) = input_meta.constant_value.clone() {
+            if !vals.is_empty()
+                && vals
+                    .iter()
+                    .all(|value| matches!(value, nu_protocol::Value::Binary { .. }))
+            {
+                let Some(rhs_binary) = rhs_binary_const.as_ref() else {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{cmd_name} requires a compile-time binary target argument for binary-list input in eBPF"
+                    )));
+                };
+                let output = vals
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, value)| {
+                        let nu_protocol::Value::Binary { val, .. } = value else {
+                            return Err(CompileError::UnsupportedInstruction(format!(
+                                "{cmd_name} requires binary list items in eBPF; item {index} has type {}",
+                                value.get_type()
+                            )));
+                        };
+                        Ok(nu_protocol::Value::binary(
+                            Self::bits_binary_bytes_output(cmd_name, &val, rhs_binary, endian),
+                            nu_protocol::Span::unknown(),
+                        ))
+                    })
+                    .collect::<Result<Vec<_>, CompileError>>()?;
+                let output_len = output
+                    .first()
+                    .and_then(|value| match value {
+                        nu_protocol::Value::Binary { val, .. } => Some(val.len()),
+                        _ => None,
+                    })
+                    .unwrap_or(0);
+                let equal_non_empty_output = output_len > 0
+                    && output.iter().all(|value| match value {
+                        nu_protocol::Value::Binary { val, .. } => val.len() == output_len,
+                        _ => false,
+                    });
+                if !equal_non_empty_output {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{cmd_name} binary list output requires non-empty equal-length binary items in eBPF"
+                    )));
+                }
+
+                self.reset_call_result_metadata(src_dst);
+                self.lower_constant_value(
+                    src_dst,
+                    &nu_protocol::Value::list(output, nu_protocol::Span::unknown()),
+                )?;
+                return Ok(());
+            }
+
             if vals.len() > MAX_BITS_STACK_LIST_CAPACITY {
                 return Err(CompileError::UnsupportedInstruction(format!(
                     "{cmd_name} output exceeds stack-backed numeric list capacity {MAX_BITS_STACK_LIST_CAPACITY} in eBPF"
                 )));
             }
 
+            self.validate_bits_integer_operand(cmd_name, "target argument", &rhs_meta, rhs_vreg)?;
             let Some(rhs) = rhs_const else {
                 if input_meta.list_buffer.is_some() {
                     // A numeric constant list is also available as a stack-backed
@@ -582,7 +738,7 @@ impl<'a> HirToMirLowering<'a> {
                         result_vreg,
                         &input_meta,
                         op,
-                        rhs_value,
+                        MirValue::VReg(rhs_vreg),
                     );
                 }
                 return Err(CompileError::UnsupportedInstruction(format!(
@@ -618,6 +774,7 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         if input_meta.list_buffer.is_some() {
+            self.validate_bits_integer_operand(cmd_name, "target argument", &rhs_meta, rhs_vreg)?;
             return self.lower_bits_binary_runtime_list(
                 cmd_name,
                 src_dst,
@@ -625,11 +782,34 @@ impl<'a> HirToMirLowering<'a> {
                 result_vreg,
                 &input_meta,
                 op,
-                rhs_value,
+                rhs_const.map_or(MirValue::VReg(rhs_vreg), MirValue::Const),
             );
         }
 
+        if let Some(nu_protocol::Value::Binary { val, .. }) = input_meta.constant_value.as_ref() {
+            let Some(rhs_binary) = rhs_binary_const.as_ref() else {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{cmd_name} requires a compile-time binary target argument for binary input in eBPF"
+                )));
+            };
+            let output = Self::bits_binary_bytes_output(cmd_name, val, rhs_binary, endian);
+            self.reset_call_result_metadata(src_dst);
+            self.lower_constant_value(
+                src_dst,
+                &nu_protocol::Value::binary(output, nu_protocol::Span::unknown()),
+            )?;
+            return Ok(());
+        }
+
+        if rhs_binary_const.is_some() {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires binary pipeline input when the target argument is binary in eBPF"
+            )));
+        }
+
+        self.validate_bits_integer_operand(cmd_name, "target argument", &rhs_meta, rhs_vreg)?;
         self.validate_bits_integer_operand(cmd_name, "pipeline input", &input_meta, input_vreg)?;
+        let rhs_value = rhs_const.map_or(MirValue::VReg(rhs_vreg), MirValue::Const);
         let lhs_value = Self::bits_integer_value_from_metadata(&input_meta)
             .map_or(MirValue::VReg(input_vreg), MirValue::Const);
         let constant_output = match (
