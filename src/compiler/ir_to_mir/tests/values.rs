@@ -11278,6 +11278,55 @@ fn make_bits_not_program_with_number_bytes(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_runtime_scalar_bits_not_program(
+    bits_decl: DeclId,
+    random_decl: DeclId,
+    signed: bool,
+    number_bytes: Option<i64>,
+) -> HirProgram {
+    let mut stmts = vec![HirStmt::Call {
+        decl_id: random_decl,
+        src_dst: RegId::new(0),
+        args: HirCallArgs::default(),
+    }];
+    let named = if let Some(number_bytes) = number_bytes {
+        stmts.push(HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: HirLiteral::Int(number_bytes),
+        });
+        vec![(b"number-bytes".to_vec(), RegId::new(1))]
+    } else {
+        Vec::new()
+    };
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: {
+                stmts.push(HirStmt::Call {
+                    decl_id: bits_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        named,
+                        flags: signed.then(|| b"signed".to_vec()).into_iter().collect(),
+                        ..HirCallArgs::default()
+                    },
+                });
+                stmts
+            },
+            terminator: HirTerminator::Return { src: RegId::new(2) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_bits_shift_signed_i64_program(
     bits_decl: DeclId,
     input: i64,
@@ -13116,6 +13165,98 @@ fn test_lower_bits_not_signed_accepts_number_bytes_on_known_integer_inputs() {
 }
 
 #[test]
+fn test_lower_bits_not_signed_on_runtime_scalar_integer_input() {
+    let bits_decl = DeclId::new(31320);
+    let random_decl = DeclId::new(31321);
+    let hir = make_runtime_scalar_bits_not_program(bits_decl, random_decl, true, None);
+    let decl_names = HashMap::from([
+        (bits_decl, "bits not".to_string()),
+        (random_decl, "random int".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bits not --signed should lower runtime integer scalar input");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::UnaryOp {
+                op: UnaryOpKind::BitNot,
+                ..
+            }
+        )),
+        "expected runtime scalar bits not --signed to emit BitNot"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("bits not --signed runtime scalar input should compile through codegen");
+}
+
+#[test]
+fn test_lower_bits_not_number_bytes_on_runtime_scalar_integer_input() {
+    let bits_decl = DeclId::new(31330);
+    let random_decl = DeclId::new(31331);
+    let hir = make_runtime_scalar_bits_not_program(bits_decl, random_decl, false, Some(1));
+    let decl_names = HashMap::from([
+        (bits_decl, "bits not".to_string()),
+        (random_decl, "random int".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bits not --number-bytes should lower runtime integer scalar input");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::UnaryOp {
+                op: UnaryOpKind::BitNot,
+                ..
+            }
+        )),
+        "expected runtime scalar bits not --number-bytes to emit BitNot"
+    );
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::And,
+                ..
+            }
+        )),
+        "expected runtime scalar bits not --number-bytes to apply the byte-width mask"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("bits not --number-bytes runtime scalar input should compile through codegen");
+}
+
+#[test]
 fn test_lower_bits_not_signed_on_known_integer_lists() {
     let bits_decl = DeclId::new(315);
     let sum_decl = DeclId::new(316);
@@ -13200,6 +13341,33 @@ fn test_lower_bits_not_default_rejects_unmodeled_positive_i64_auto_width() {
         err.to_string().contains(
             "bits not default auto-width integer mode supports non-negative values up to u32::MAX"
         ),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_bits_not_default_rejects_runtime_scalar_integer_input() {
+    let bits_decl = DeclId::new(31702);
+    let random_decl = DeclId::new(31703);
+    let hir = make_runtime_scalar_bits_not_program(bits_decl, random_decl, false, None);
+    let decl_names = HashMap::from([
+        (bits_decl, "bits not".to_string()),
+        (random_decl, "random int".to_string()),
+    ]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("default bits not should reject runtime integer scalar input");
+
+    assert!(
+        err.to_string()
+            .contains("bits not default auto-width integer mode requires compile-time known input"),
         "unexpected error: {err}"
     );
 }

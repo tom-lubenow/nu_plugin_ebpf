@@ -35560,6 +35560,32 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-scalar-bits-not-signed-runtime"
+        category: "language-core"
+        tags: [scalar bits "not" signed runtime]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  (random int | bits not --signed) != 0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-scalar-bits-not-number-bytes-runtime"
+        category: "language-core"
+        tags: [scalar bits "not" number-bytes runtime]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  (random int | bits not --number-bytes 1) >= 0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-bits-not-signed"
         category: "language-core"
         tags: [aggregate list bits "not" signed]
@@ -35584,6 +35610,20 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
+    }
+    {
+        name: "core-scalar-bits-not-default-runtime-reject"
+        category: "language-core"
+        tags: [scalar bits "not" default runtime reject]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  random int | bits not'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "bits not default auto-width integer mode requires compile-time known input"
     }
     {
         name: "core-scalar-bits-not-default"

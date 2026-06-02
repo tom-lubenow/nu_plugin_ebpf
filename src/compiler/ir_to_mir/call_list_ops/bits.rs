@@ -2114,13 +2114,12 @@ impl<'a> HirToMirLowering<'a> {
                 "{cmd_name} requires integer, binary, integer-list, or binary-list pipeline input in eBPF"
             ))
         })?;
-        let input_meta = self.get_metadata(input_reg).cloned().ok_or_else(|| {
-            CompileError::UnsupportedInstruction(format!(
-                "{cmd_name} requires tracked integer, binary, integer-list, or binary-list input in eBPF"
-            ))
-        })?;
+        let input_meta = self.get_metadata(input_reg).cloned();
 
-        if let Some(nu_protocol::Value::List { vals, .. }) = input_meta.constant_value.clone() {
+        if let Some(nu_protocol::Value::List { vals, .. }) = input_meta
+            .as_ref()
+            .and_then(|meta| meta.constant_value.clone())
+        {
             if !vals.is_empty()
                 && vals
                     .iter()
@@ -2204,7 +2203,10 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(());
         }
 
-        if let Some(nu_protocol::Value::Binary { val, .. }) = input_meta.constant_value.as_ref() {
+        if let Some(nu_protocol::Value::Binary { val, .. }) = input_meta
+            .as_ref()
+            .and_then(|meta| meta.constant_value.as_ref())
+        {
             self.validate_bits_not_binary_flags(cmd_name)?;
             let output = Self::bits_not_binary_bytes_output(val);
             self.reset_call_result_metadata(src_dst);
@@ -2216,7 +2218,9 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         let mode = self.bits_not_mode(cmd_name)?;
-        if let Some((_input_slot, max_len)) = input_meta.list_buffer {
+        if let Some(input_meta) = input_meta.as_ref()
+            && let Some((_input_slot, max_len)) = input_meta.list_buffer
+        {
             if mode == BitsNotMode::Auto {
                 return Err(CompileError::UnsupportedInstruction(format!(
                     "{cmd_name} default auto-width integer mode requires compile-time known input in eBPF; use --number-bytes 1, 2, or 4 for runtime input"
@@ -2277,15 +2281,23 @@ impl<'a> HirToMirLowering<'a> {
                 }
             }
 
-            let known_len = Self::numeric_list_known_len(&input_meta).map(|len| len.min(max_len));
+            let known_len = Self::numeric_list_known_len(input_meta).map(|len| len.min(max_len));
             self.install_stack_numeric_list_result_metadata(
                 src_dst, out_slot, out_ty, max_len, known_len,
             );
             return Ok(());
         }
 
-        self.validate_bits_integer_operand(cmd_name, "pipeline input", &input_meta, input_vreg)?;
-        if let Some(input) = Self::bits_integer_value_from_metadata(&input_meta) {
+        self.validate_bits_integer_operand_optional_metadata(
+            cmd_name,
+            "pipeline input",
+            input_meta.as_ref(),
+            input_vreg,
+        )?;
+        if let Some(input) = input_meta
+            .as_ref()
+            .and_then(Self::bits_integer_value_from_metadata)
+        {
             let output = Self::bits_not_output(cmd_name, input, mode)?;
             self.emit(MirInst::Copy {
                 dst: result_vreg,
