@@ -16,6 +16,33 @@ const MAP_PUSH_FLAGS: &[i64] = &[0, 2];
 const TIMER_INIT_FLAGS: &[i64] = &[0, 1, 7];
 const LWT_SEG6_ACTIONS: &[i64] = &[2, 3, 9, 10];
 const BPF_MAX_LOOPS: i64 = 8 * 1024 * 1024;
+const BPF_FIB_LOOKUP_DIRECT: i64 = 1 << 0;
+const BPF_FIB_LOOKUP_TBID: i64 = 1 << 3;
+const BPF_FIB_LOOKUP_MARK: i64 = 1 << 5;
+const BPF_FIB_LOOKUP_SIZE: i64 = 64;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScalarArgBitCombinationRequirement {
+    pub trigger_mask: i64,
+    pub required_mask: i64,
+    pub forbidden_mask: i64,
+    pub message: &'static str,
+}
+
+const FIB_LOOKUP_FLAG_COMBINATIONS: &[ScalarArgBitCombinationRequirement] = &[
+    ScalarArgBitCombinationRequirement {
+        trigger_mask: BPF_FIB_LOOKUP_TBID,
+        required_mask: BPF_FIB_LOOKUP_DIRECT,
+        forbidden_mask: 0,
+        message: "helper 'bpf_fib_lookup' requires BPF_FIB_LOOKUP_TBID to be used with BPF_FIB_LOOKUP_DIRECT",
+    },
+    ScalarArgBitCombinationRequirement {
+        trigger_mask: BPF_FIB_LOOKUP_MARK,
+        required_mask: 0,
+        forbidden_mask: BPF_FIB_LOOKUP_DIRECT,
+        message: "helper 'bpf_fib_lookup' requires BPF_FIB_LOOKUP_MARK not to be used with BPF_FIB_LOOKUP_DIRECT",
+    },
+];
 
 pub(crate) fn scalar_range_contains_only_allowed_values(
     min: i64,
@@ -59,6 +86,45 @@ pub(crate) fn scalar_range_contains_only_bitmask(min: i64, max: i64, mask: i64) 
     let mut value = min;
     loop {
         if value & !mask != 0 {
+            return false;
+        }
+        if value == max {
+            return true;
+        }
+        value += 1;
+    }
+}
+
+pub(crate) fn scalar_value_satisfies_bit_combination(
+    value: i64,
+    requirement: ScalarArgBitCombinationRequirement,
+) -> bool {
+    if value < 0 {
+        return false;
+    }
+    if value & requirement.trigger_mask == 0 {
+        return true;
+    }
+    value & requirement.required_mask == requirement.required_mask
+        && value & requirement.forbidden_mask == 0
+}
+
+pub(crate) fn scalar_range_satisfies_bit_combination(
+    min: i64,
+    max: i64,
+    requirement: ScalarArgBitCombinationRequirement,
+) -> bool {
+    if min > max || min < 0 {
+        return false;
+    }
+    let range_len = i128::from(max) - i128::from(min) + 1;
+    if range_len > 4096 {
+        return false;
+    }
+
+    let mut value = min;
+    loop {
+        if !scalar_value_satisfies_bit_combination(value, requirement) {
             return false;
         }
         if value == max {
@@ -1322,6 +1388,11 @@ impl BpfHelper {
                 0xffff_ffff,
                 "perf event read helpers require arg1 flags to fit BPF_F_INDEX_MASK/BPF_F_CURRENT_CPU (0xffffffff)",
             )),
+            (Self::FibLookup, 2) => Some((
+                BPF_FIB_LOOKUP_SIZE,
+                i64::MAX,
+                "helper 'bpf_fib_lookup' requires arg2 plen to be at least sizeof(struct bpf_fib_lookup) (64 bytes)",
+            )),
             (Self::SkbSetTunnelKey, 3) => Some((
                 0,
                 31,
@@ -1397,6 +1468,16 @@ impl BpfHelper {
                 "helper 'bpf_load_hdr_opt' requires arg3 flags to contain only BPF_LOAD_HDR_OPT_TCP_SYN (0x01)",
             )),
             _ => None,
+        }
+    }
+
+    pub const fn scalar_arg_bit_combination_requirements(
+        self,
+        arg_idx: usize,
+    ) -> &'static [ScalarArgBitCombinationRequirement] {
+        match (self, arg_idx) {
+            (Self::FibLookup, 3) => FIB_LOOKUP_FLAG_COMBINATIONS,
+            _ => &[],
         }
     }
 

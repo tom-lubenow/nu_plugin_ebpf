@@ -2,7 +2,7 @@ use super::*;
 use crate::compiler::elf::GetSocketCookieArgPolicy;
 use crate::compiler::instruction::{
     helper_named_arg_shape, scalar_range_contains_only_allowed_values,
-    scalar_range_contains_only_bitmask,
+    scalar_range_contains_only_bitmask, scalar_range_satisfies_bit_combination,
 };
 use crate::kernel_btf::KernelBtf;
 
@@ -350,6 +350,23 @@ impl<'a> TypeInference<'a> {
         }
     }
 
+    fn validate_helper_scalar_bit_combinations(
+        &self,
+        helper: BpfHelper,
+        arg_idx: usize,
+        value: &MirValue,
+        value_ranges: &HashMap<VReg, ValueRange>,
+        errors: &mut Vec<TypeError>,
+    ) {
+        for requirement in helper.scalar_arg_bit_combination_requirements(arg_idx) {
+            if let ValueRange::Known { min, max } = self.value_range_for(value, value_ranges)
+                && !scalar_range_satisfies_bit_combination(min, max, *requirement)
+            {
+                errors.push(TypeError::new(requirement.message));
+            }
+        }
+    }
+
     fn known_const_vreg(
         &self,
         vreg: VReg,
@@ -419,6 +436,13 @@ impl<'a> TypeInference<'a> {
                 errors,
             );
             self.validate_helper_scalar_bitmask(helper, arg_idx, value, value_ranges, errors);
+            self.validate_helper_scalar_bit_combinations(
+                helper,
+                arg_idx,
+                value,
+                value_ranges,
+                errors,
+            );
         }
 
         for rule in semantics.ptr_arg_rules {

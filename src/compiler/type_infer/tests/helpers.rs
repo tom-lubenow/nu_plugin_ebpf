@@ -3560,6 +3560,23 @@ fn test_type_error_fib_lookup_helper_rejects_small_params_buffer() {
 }
 
 #[test]
+fn test_type_error_fib_lookup_helper_rejects_small_plen() {
+    let (func, _) = make_fib_lookup_call(8, 64, 0);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_fib_lookup plen error");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_fib_lookup' requires arg2 plen")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
 fn test_type_error_fib_lookup_helper_rejects_invalid_flags() {
     let (func, _) = make_fib_lookup_call(64, 64, 0x40);
     let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
@@ -3571,6 +3588,40 @@ fn test_type_error_fib_lookup_helper_rejects_invalid_flags() {
         errs.iter().any(|e| e
             .message
             .contains("helper 'bpf_fib_lookup' requires arg3 flags")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_type_error_fib_lookup_helper_rejects_tbid_without_direct() {
+    let (func, _) = make_fib_lookup_call(64, 64, 0x08);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_fib_lookup TBID flag-combination error");
+    assert!(
+        errs.iter().any(|e| e.message.contains(
+            "helper 'bpf_fib_lookup' requires BPF_FIB_LOOKUP_TBID to be used with BPF_FIB_LOOKUP_DIRECT"
+        )),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_type_error_fib_lookup_helper_rejects_mark_with_direct() {
+    let (func, _) = make_fib_lookup_call(64, 64, 0x21);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_fib_lookup MARK flag-combination error");
+    assert!(
+        errs.iter().any(|e| e.message.contains(
+            "helper 'bpf_fib_lookup' requires BPF_FIB_LOOKUP_MARK not to be used with BPF_FIB_LOOKUP_DIRECT"
+        )),
         "unexpected errors: {:?}",
         errs
     );

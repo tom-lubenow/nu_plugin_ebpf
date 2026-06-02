@@ -19,8 +19,9 @@ use crate::compiler::instruction::{
     KfuncIterFamily, KfuncIterLifecycleOp, KfuncRefKind, KfuncRetKind, KfuncSignature,
     KfuncUnknownDynptrArg, KfuncUnknownDynptrArgRole, KfuncUnknownDynptrCopy,
     KfuncUnknownIterLifecycle, KfuncUnknownStackObjectCopy, KfuncUnknownStackObjectLifecycle,
-    KfuncUnknownStackObjectLifecycleOp, helper_acquire_ref_kind, helper_pointer_arg_ref_kind,
-    helper_release_ref_kind, kfunc_acquire_ref_kind, kfunc_allowed_while_lock_held,
+    KfuncUnknownStackObjectLifecycleOp, ScalarArgBitCombinationRequirement,
+    helper_acquire_ref_kind, helper_pointer_arg_ref_kind, helper_release_ref_kind,
+    kfunc_acquire_ref_kind, kfunc_allowed_while_lock_held,
     kfunc_arg_requires_known_zero as kfunc_arg_requires_known_zero_shared,
     kfunc_bpf_spin_lock_protected_graph_root_arg,
     kfunc_iter_lifecycle as kfunc_iter_lifecycle_shared,
@@ -299,6 +300,10 @@ pub enum VccInst {
         value: VccValue,
         mask: i64,
         message: String,
+    },
+    AssertBitCombination {
+        value: VccValue,
+        requirement: ScalarArgBitCombinationRequirement,
     },
     AssertConstEqIfConstEq {
         value: VccValue,

@@ -3,7 +3,8 @@ use crate::compiler::elf::GetSocketCookieArgPolicy;
 use crate::compiler::instruction::{
     KfuncRefKind, helper_named_arg_shape, kfunc_arg_accepts_skb_pointee_name,
     kfunc_arg_pointee_mismatch, kfunc_arg_requires_skb_context_or_pointer,
-    scalar_range_contains_only_bitmask, unknown_kfunc_signature_message,
+    scalar_range_contains_only_bitmask, scalar_value_satisfies_bit_combination,
+    unknown_kfunc_signature_message,
 };
 use crate::compiler::EbpfProgramType;
 
@@ -1313,6 +1314,50 @@ impl<'a> VccLowerer<'a> {
         }
     }
 
+    fn verify_helper_scalar_bit_combinations(
+        &mut self,
+        helper_id: u32,
+        helper: BpfHelper,
+        arg_idx: usize,
+        value: &MirValue,
+        out: &mut Vec<VccInst>,
+    ) -> Result<(), VccError> {
+        let requirements = helper.scalar_arg_bit_combination_requirements(arg_idx);
+        if requirements.is_empty() {
+            return Ok(());
+        }
+        match value {
+            MirValue::Const(actual) => {
+                for requirement in requirements {
+                    if !scalar_value_satisfies_bit_combination(*actual, *requirement) {
+                        return Err(VccError::new(
+                            VccErrorKind::UnsupportedInstruction,
+                            requirement.message,
+                        ));
+                    }
+                }
+                Ok(())
+            }
+            MirValue::VReg(vreg) => {
+                self.assert_scalar_reg(*vreg, out);
+                for requirement in requirements {
+                    out.push(VccInst::AssertBitCombination {
+                        value: VccValue::Reg(VccReg(vreg.0)),
+                        requirement: *requirement,
+                    });
+                }
+                Ok(())
+            }
+            MirValue::StackSlot(_) => Err(VccError::new(
+                VccErrorKind::TypeMismatch {
+                    expected: VccTypeClass::Scalar,
+                    actual: VccTypeClass::Ptr,
+                },
+                format!("helper {} arg{} expects scalar value", helper_id, arg_idx),
+            )),
+        }
+    }
+
     pub(super) fn verify_helper_semantics(
         &mut self,
         helper_id: u32,
@@ -1336,6 +1381,7 @@ impl<'a> VccLowerer<'a> {
             self.verify_helper_scalar_range(helper_id, helper, arg_idx, value, out)?;
             self.verify_helper_scalar_allowed_values(helper_id, helper, arg_idx, value, out)?;
             self.verify_helper_scalar_bitmask(helper_id, helper, arg_idx, value, out)?;
+            self.verify_helper_scalar_bit_combinations(helper_id, helper, arg_idx, value, out)?;
         }
 
         if matches!(helper, BpfHelper::GetSocketCookie) {

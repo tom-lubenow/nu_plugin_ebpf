@@ -477,9 +477,11 @@ flag combinations that depend on runtime `mtu_len` /
 `len_diff` values remain kernel-enforced. XDP, tc_action, TC, TCX, and Netkit also
 model `helper-call "bpf_fib_lookup" $ctx PARAMS_PTR PLEN FLAGS`, where
 `PARAMS_PTR` must be a stack/map-backed `bpf_fib_lookup` buffer whose
-accessible size covers `PLEN`; `FLAGS` may contain only modeled
-`BPF_FIB_LOOKUP_*` bits (`0x3f`), while the kernel still enforces minimum
-struct size and flag-combination rules. `tc_action`, TC, TCX, Netkit, and `lwt_xmit` model
+accessible size covers `PLEN`, and `PLEN` must be at least the modeled
+`struct bpf_fib_lookup` size (`64`). `FLAGS` may contain only modeled
+`BPF_FIB_LOOKUP_*` bits (`0x3f`); the compiler also requires
+`BPF_FIB_LOOKUP_TBID` to be paired with `BPF_FIB_LOOKUP_DIRECT` and rejects
+`BPF_FIB_LOOKUP_MARK` with `BPF_FIB_LOOKUP_DIRECT`. `tc_action`, TC, TCX, Netkit, and `lwt_xmit` model
 the skb tunnel metadata helpers:
 `helper-call "bpf_skb_get_tunnel_key" $ctx KEY_PTR SIZE FLAGS`,
 `helper-call "bpf_skb_set_tunnel_key" $ctx KEY_PTR SIZE FLAGS`,

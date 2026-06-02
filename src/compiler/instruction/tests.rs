@@ -2595,11 +2595,35 @@ fn test_fib_lookup_helper_contract() {
     assert_eq!(params.fixed_size, None);
     assert_eq!(params.size_from_arg, Some(2));
     assert_eq!(
+        BpfHelper::FibLookup.scalar_arg_range_requirement(2),
+        Some((
+            64,
+            i64::MAX,
+            "helper 'bpf_fib_lookup' requires arg2 plen to be at least sizeof(struct bpf_fib_lookup) (64 bytes)"
+        ))
+    );
+    assert_eq!(
         BpfHelper::FibLookup.scalar_arg_bitmask_requirement(3),
         Some((
             0x3f,
             "helper 'bpf_fib_lookup' requires arg3 flags to contain only modeled BPF_FIB_LOOKUP_* bits (0x3f)"
         ))
+    );
+    let combinations = BpfHelper::FibLookup.scalar_arg_bit_combination_requirements(3);
+    assert_eq!(combinations.len(), 2);
+    assert_eq!(combinations[0].trigger_mask, 0x08);
+    assert_eq!(combinations[0].required_mask, 0x01);
+    assert_eq!(combinations[0].forbidden_mask, 0);
+    assert_eq!(
+        combinations[0].message,
+        "helper 'bpf_fib_lookup' requires BPF_FIB_LOOKUP_TBID to be used with BPF_FIB_LOOKUP_DIRECT"
+    );
+    assert_eq!(combinations[1].trigger_mask, 0x20);
+    assert_eq!(combinations[1].required_mask, 0);
+    assert_eq!(combinations[1].forbidden_mask, 0x01);
+    assert_eq!(
+        combinations[1].message,
+        "helper 'bpf_fib_lookup' requires BPF_FIB_LOOKUP_MARK not to be used with BPF_FIB_LOOKUP_DIRECT"
     );
     assert_eq!(
         BpfHelper::CheckMtu.scalar_arg_bitmask_requirement(4),
@@ -7004,6 +7028,38 @@ fn test_helper_scalar_constraints_are_consistent_with_signatures() {
                 assert!(
                     mask >= 0,
                     "{} ({}) bitmask constraint for arg{} must use a nonnegative mask",
+                    helper.name(),
+                    helper_id,
+                    arg_idx
+                );
+            }
+
+            for requirement in helper.scalar_arg_bit_combination_requirements(arg_idx) {
+                assert_helper_scalar_constraint_arg(
+                    helper,
+                    helper_id,
+                    &signature,
+                    arg_idx,
+                    "bit-combination",
+                    requirement.message,
+                );
+                assert!(
+                    requirement.trigger_mask > 0,
+                    "{} ({}) bit-combination constraint for arg{} must use a positive trigger mask",
+                    helper.name(),
+                    helper_id,
+                    arg_idx
+                );
+                assert!(
+                    requirement.required_mask >= 0 && requirement.forbidden_mask >= 0,
+                    "{} ({}) bit-combination constraint for arg{} must use nonnegative required/forbidden masks",
+                    helper.name(),
+                    helper_id,
+                    arg_idx
+                );
+                assert!(
+                    requirement.required_mask & requirement.forbidden_mask == 0,
+                    "{} ({}) bit-combination constraint for arg{} must not require and forbid the same bits",
                     helper.name(),
                     helper_id,
                     arg_idx
