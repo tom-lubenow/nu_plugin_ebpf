@@ -58,6 +58,79 @@ fn test_verify_mir_uninitialized_branch_cond_rejected() {
 }
 
 #[test]
+fn test_verify_mir_bool_scalar_phi_branch_passes() {
+    let (mut func, entry) = new_mir_function();
+    let const_path = func.alloc_block();
+    let compare_path = func.alloc_block();
+    let join = func.alloc_block();
+    let ok = func.alloc_block();
+    let done = func.alloc_block();
+
+    let selector = func.alloc_vreg();
+    let const_true = func.alloc_vreg();
+    let lhs = func.alloc_vreg();
+    let rhs = func.alloc_vreg();
+    let compare_true = func.alloc_vreg();
+    let merged_cond = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: selector,
+            helper: BpfHelper::GetPrandomU32 as u32,
+            args: vec![],
+        });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: selector,
+        if_true: const_path,
+        if_false: compare_path,
+    };
+
+    func.block_mut(const_path).instructions.push(MirInst::Copy {
+        dst: const_true,
+        src: MirValue::Const(1),
+    });
+    func.block_mut(const_path).terminator = MirInst::Jump { target: join };
+
+    func.block_mut(compare_path)
+        .instructions
+        .push(MirInst::Copy {
+            dst: lhs,
+            src: MirValue::Const(7),
+        });
+    func.block_mut(compare_path)
+        .instructions
+        .push(MirInst::Copy {
+            dst: rhs,
+            src: MirValue::Const(11),
+        });
+    func.block_mut(compare_path)
+        .instructions
+        .push(MirInst::BinOp {
+            dst: compare_true,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(lhs),
+            rhs: MirValue::VReg(rhs),
+        });
+    func.block_mut(compare_path).terminator = MirInst::Jump { target: join };
+
+    func.block_mut(join).instructions.push(MirInst::Phi {
+        dst: merged_cond,
+        args: vec![(const_path, const_true), (compare_path, compare_true)],
+    });
+    func.block_mut(join).terminator = MirInst::Branch {
+        cond: merged_cond,
+        if_true: ok,
+        if_false: done,
+    };
+    func.block_mut(ok).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    verify_mir(&func, &HashMap::new())
+        .expect("bool/scalar phi from short-circuit boolean lowering should verify");
+}
+
+#[test]
 fn test_verify_mir_pointer_phi_preserves_bounds() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

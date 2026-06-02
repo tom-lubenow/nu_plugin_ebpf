@@ -2069,6 +2069,15 @@ impl VccState {
                     },
                 }
             }
+            (VccValueType::Bool, VccValueType::Scalar { range })
+            | (VccValueType::Scalar { range }, VccValueType::Bool) => {
+                VccValueType::Scalar {
+                    range: range.map(|range| VccRange {
+                        min: range.min.min(0),
+                        max: range.max.max(1),
+                    }),
+                }
+            }
             (VccValueType::Ptr(lp), VccValueType::Ptr(rp)) => self
                 .merge_ptr_types(lp, rp)
                 .map(VccValueType::Ptr)

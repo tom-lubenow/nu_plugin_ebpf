@@ -35475,6 +35475,21 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-scalar-comparison-grouped-boolean-runtime"
+        category: "language-core"
+        tags: [scalar comparison boolean runtime]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let a = (random int | bits and 255)'
+            '  let b = (random int | bits and 255)'
+            '  (($a == $b) or ($a != $b)) and (($a <= $b) or ($a > $b)) and (($a < ($b + 1)) or ($a >= ($b + 1)))'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-math-abs-sum"
         category: "language-core"
         tags: [aggregate list math abs sum]
