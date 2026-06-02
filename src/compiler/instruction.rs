@@ -54,6 +54,7 @@ const BPF_SKB_CHANGE_TAIL_MAX_NEW_LEN: i64 = i32::MAX as i64;
 const BPF_SKB_CHANGE_HEAD_MAX_HEAD_ROOM: i64 = i32::MAX as i64;
 const BPF_SKB_LOAD_BYTES_RELATIVE_MAX_OFFSET: i64 = 0xffff;
 const BPF_XDP_BYTE_MAX_OFFSET_OR_LEN: i64 = 0xffff;
+const BPF_MSG_DATA_MAX_U32: i64 = u32::MAX as i64;
 const PACKET_OTHERHOST: i64 = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1582,6 +1583,31 @@ impl BpfHelper {
                 0,
                 1,
                 "helper 'bpf_skb_load_bytes_relative' requires arg4 start_header to be BPF_HDR_START_MAC or BPF_HDR_START_NET",
+            )),
+            (Self::MsgApplyBytes | Self::MsgCorkBytes, 1) => Some((
+                0,
+                BPF_MSG_DATA_MAX_U32,
+                "message byte-count helpers require arg1 bytes to be between 0 and u32::MAX",
+            )),
+            (Self::MsgPullData, 1) => Some((
+                0,
+                BPF_MSG_DATA_MAX_U32,
+                "helper 'bpf_msg_pull_data' requires arg1 start to be between 0 and u32::MAX",
+            )),
+            (Self::MsgPullData, 2) => Some((
+                0,
+                BPF_MSG_DATA_MAX_U32,
+                "helper 'bpf_msg_pull_data' requires arg2 end to be between 0 and u32::MAX",
+            )),
+            (Self::MsgPushData | Self::MsgPopData, 1) => Some((
+                0,
+                BPF_MSG_DATA_MAX_U32,
+                "message data reshaping helpers require arg1 start to be between 0 and u32::MAX",
+            )),
+            (Self::MsgPushData | Self::MsgPopData, 2) => Some((
+                0,
+                BPF_MSG_DATA_MAX_U32,
+                "message data reshaping helpers require arg2 len to be between 0 and u32::MAX",
             )),
             (Self::XdpLoadBytes | Self::XdpStoreBytes, 1) => Some((
                 0,

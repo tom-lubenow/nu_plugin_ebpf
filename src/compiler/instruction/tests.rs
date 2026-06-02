@@ -2713,6 +2713,22 @@ fn test_helpers_with_reserved_zero_flags() {
         ))
     );
     assert_eq!(
+        BpfHelper::MsgPullData.scalar_arg_range_requirement(1),
+        Some((
+            0,
+            u32::MAX as i64,
+            "helper 'bpf_msg_pull_data' requires arg1 start to be between 0 and u32::MAX"
+        ))
+    );
+    assert_eq!(
+        BpfHelper::MsgPullData.scalar_arg_range_requirement(2),
+        Some((
+            0,
+            u32::MAX as i64,
+            "helper 'bpf_msg_pull_data' requires arg2 end to be between 0 and u32::MAX"
+        ))
+    );
+    assert_eq!(
         BpfHelper::MsgPullData.scalar_arg_greater_than_requirements(),
         &[ScalarArgGreaterThanRequirement {
             arg_idx: 2,
@@ -2720,6 +2736,16 @@ fn test_helpers_with_reserved_zero_flags() {
             message: "helper 'bpf_msg_pull_data' requires arg2 end to be greater than arg1 start"
         }]
     );
+    for helper in [BpfHelper::MsgApplyBytes, BpfHelper::MsgCorkBytes] {
+        assert_eq!(
+            helper.scalar_arg_range_requirement(1),
+            Some((
+                0,
+                u32::MAX as i64,
+                "message byte-count helpers require arg1 bytes to be between 0 and u32::MAX"
+            ))
+        );
+    }
     assert_eq!(
         BpfHelper::MsgPushData.zero_scalar_arg_requirement(),
         Some((
@@ -2734,6 +2760,24 @@ fn test_helpers_with_reserved_zero_flags() {
             "message data reshaping helpers require arg3 flags to be 0"
         ))
     );
+    for helper in [BpfHelper::MsgPushData, BpfHelper::MsgPopData] {
+        assert_eq!(
+            helper.scalar_arg_range_requirement(1),
+            Some((
+                0,
+                u32::MAX as i64,
+                "message data reshaping helpers require arg1 start to be between 0 and u32::MAX"
+            ))
+        );
+        assert_eq!(
+            helper.scalar_arg_range_requirement(2),
+            Some((
+                0,
+                u32::MAX as i64,
+                "message data reshaping helpers require arg2 len to be between 0 and u32::MAX"
+            ))
+        );
+    }
     assert_eq!(BpfHelper::SkbPullData.zero_scalar_arg_requirement(), None);
     assert_eq!(BpfHelper::SkbAdjustRoom.zero_scalar_arg_requirement(), None);
     assert_eq!(BpfHelper::SkbSetTstamp.zero_scalar_arg_requirement(), None);

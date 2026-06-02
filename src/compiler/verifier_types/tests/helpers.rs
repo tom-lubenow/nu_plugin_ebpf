@@ -14693,6 +14693,45 @@ fn make_msg_data_verify_call(
     make_msg_data_verify_call_with_range(helper, 0, 8, flags)
 }
 
+fn make_msg_byte_count_verify_call(
+    helper: BpfHelper,
+    bytes: i64,
+) -> (MirFunction, HashMap<VReg, MirType>) {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: helper as u32,
+            args: vec![MirValue::VReg(ctx), MirValue::Const(bytes)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    (func, types)
+}
+
 fn make_msg_data_verify_call_with_range(
     helper: BpfHelper,
     start: i64,
@@ -14740,6 +14779,26 @@ fn make_msg_data_verify_call_with_range(
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_msg_byte_count_helpers_reject_invalid_bytes() {
+    for helper in [BpfHelper::MsgApplyBytes, BpfHelper::MsgCorkBytes] {
+        for bytes in [-1_i64, 0x1_0000_0000] {
+            let (func, types) = make_msg_byte_count_verify_call(helper, bytes);
+            let probe_ctx = ProbeContext::new(EbpfProgramType::SkMsg, "/sys/fs/bpf/demo_sockmap");
+            let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+                .expect_err("expected message byte-count helper bytes error");
+            assert!(
+                err.iter().any(|e| e.message.contains(
+                    "message byte-count helpers require arg1 bytes to be between 0 and u32::MAX"
+                )),
+                "{} bytes={bytes} produced unexpected errors: {:?}",
+                helper.name(),
+                err
+            );
+        }
+    }
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_msg_data_helpers_reject_nonzero_flags() {
     for helper in [
         BpfHelper::MsgPullData,
@@ -14755,6 +14814,95 @@ fn test_verify_mir_for_probe_context_msg_data_helpers_reject_nonzero_flags() {
                 .message
                 .contains("message data reshaping helpers require arg3 flags to be 0")),
             "{} produced unexpected errors: {:?}",
+            helper.name(),
+            err
+        );
+    }
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_msg_data_helpers_reject_invalid_u32_args() {
+    for (helper, start, end_or_len, expected) in [
+        (
+            BpfHelper::MsgPullData,
+            -1,
+            8,
+            "helper 'bpf_msg_pull_data' requires arg1 start to be between 0 and u32::MAX",
+        ),
+        (
+            BpfHelper::MsgPullData,
+            0x1_0000_0000,
+            8,
+            "helper 'bpf_msg_pull_data' requires arg1 start to be between 0 and u32::MAX",
+        ),
+        (
+            BpfHelper::MsgPullData,
+            0,
+            -1,
+            "helper 'bpf_msg_pull_data' requires arg2 end to be between 0 and u32::MAX",
+        ),
+        (
+            BpfHelper::MsgPullData,
+            0,
+            0x1_0000_0000,
+            "helper 'bpf_msg_pull_data' requires arg2 end to be between 0 and u32::MAX",
+        ),
+        (
+            BpfHelper::MsgPushData,
+            -1,
+            8,
+            "message data reshaping helpers require arg1 start to be between 0 and u32::MAX",
+        ),
+        (
+            BpfHelper::MsgPushData,
+            0x1_0000_0000,
+            8,
+            "message data reshaping helpers require arg1 start to be between 0 and u32::MAX",
+        ),
+        (
+            BpfHelper::MsgPushData,
+            0,
+            -1,
+            "message data reshaping helpers require arg2 len to be between 0 and u32::MAX",
+        ),
+        (
+            BpfHelper::MsgPushData,
+            0,
+            0x1_0000_0000,
+            "message data reshaping helpers require arg2 len to be between 0 and u32::MAX",
+        ),
+        (
+            BpfHelper::MsgPopData,
+            -1,
+            8,
+            "message data reshaping helpers require arg1 start to be between 0 and u32::MAX",
+        ),
+        (
+            BpfHelper::MsgPopData,
+            0x1_0000_0000,
+            8,
+            "message data reshaping helpers require arg1 start to be between 0 and u32::MAX",
+        ),
+        (
+            BpfHelper::MsgPopData,
+            0,
+            -1,
+            "message data reshaping helpers require arg2 len to be between 0 and u32::MAX",
+        ),
+        (
+            BpfHelper::MsgPopData,
+            0,
+            0x1_0000_0000,
+            "message data reshaping helpers require arg2 len to be between 0 and u32::MAX",
+        ),
+    ] {
+        let (func, types) = make_msg_data_verify_call_with_range(helper, start, end_or_len, 0);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::SkMsg, "/sys/fs/bpf/demo_sockmap");
+        let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect_err("expected message data helper u32 range error");
+        assert!(
+            err.iter().any(|e| e.message.contains(expected)),
+            "{} start={start} end_or_len={end_or_len} produced unexpected errors: {:?}",
             helper.name(),
             err
         );
