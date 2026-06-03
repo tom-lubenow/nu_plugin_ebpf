@@ -1910,6 +1910,40 @@ fn test_infer_snprintf_helper_accepts_rodata_format() {
 }
 
 #[test]
+fn test_infer_snprintf_helper_accepts_zero_size_null_buffers() {
+    let mut func = make_test_function();
+    let fmt = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadGlobal {
+        dst: fmt,
+        symbol: "__nu_rodata_fmt".to_string(),
+        ty: MirType::Array {
+            elem: Box::new(MirType::U8),
+            len: 16,
+        },
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::Snprintf as u32,
+        args: vec![
+            MirValue::Const(0),
+            MirValue::Const(0),
+            MirValue::VReg(fmt),
+            MirValue::Const(0),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let types = ti
+        .infer(&func)
+        .expect("expected bpf_snprintf zero-size null buffers to infer");
+    assert_eq!(types.get(&dst), Some(&MirType::I64));
+}
+
+#[test]
 fn test_type_error_snprintf_rejects_stack_format() {
     let mut func = make_test_function();
     let out_slot = func.alloc_stack_slot(32, 8, StackSlotKind::StringBuffer);

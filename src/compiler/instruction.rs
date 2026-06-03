@@ -1394,6 +1394,8 @@ impl BpfHelper {
             (Self::SeqWrite, 1) => Some(2),
             (Self::RingbufOutput, 1) => Some(2),
             (Self::PerfEventOutput | Self::SkbOutput | Self::XdpOutput, 3) => Some(4),
+            (Self::Snprintf, 0) => Some(1),
+            (Self::Snprintf, 3) => Some(4),
             (Self::DynptrFromMem, 0) => Some(1),
             (Self::DynptrRead, 0) => Some(1),
             (Self::DynptrWrite, 2) => Some(3),

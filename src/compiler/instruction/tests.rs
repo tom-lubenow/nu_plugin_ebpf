@@ -3831,6 +3831,14 @@ fn test_snprintf_helper_contract() {
         Some("helper 'bpf_snprintf' requires arg4 to be >= 0")
     );
     assert_eq!(
+        BpfHelper::Snprintf.zero_size_pointer_arg_size_arg(0),
+        Some(1)
+    );
+    assert_eq!(
+        BpfHelper::Snprintf.zero_size_pointer_arg_size_arg(3),
+        Some(4)
+    );
+    assert_eq!(
         BpfHelper::Snprintf.scalar_arg_multiple_of_requirement(4),
         Some((
             8,

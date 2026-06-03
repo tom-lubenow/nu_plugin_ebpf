@@ -3645,6 +3645,41 @@ fn test_verify_mir_helper_snprintf_accepts_rodata_format() {
 }
 
 #[test]
+fn test_verify_mir_helper_snprintf_accepts_zero_size_null_buffers() {
+    let (mut func, entry) = new_mir_function();
+    let fmt = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadGlobal {
+            dst: fmt,
+            symbol: "__nu_rodata_fmt".to_string(),
+            ty: MirType::Array {
+                elem: Box::new(MirType::U8),
+                len: 16,
+            },
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::Snprintf as u32,
+            args: vec![
+                MirValue::Const(0),
+                MirValue::Const(0),
+                MirValue::VReg(fmt),
+                MirValue::Const(0),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let types = HashMap::from([(dst, MirType::I64)]);
+    verify_mir(&func, &types).expect("expected bpf_snprintf zero-size null buffers to verify");
+}
+
+#[test]
 fn test_verify_mir_helper_snprintf_rejects_stack_format() {
     let (mut func, entry) = new_mir_function();
     let out_slot = func.alloc_stack_slot(32, 8, StackSlotKind::StringBuffer);
