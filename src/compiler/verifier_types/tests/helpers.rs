@@ -14266,6 +14266,23 @@ fn test_verify_mir_for_probe_context_skb_tunnel_key_helpers_reject_invalid_size(
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_skb_tunnel_option_helpers_reject_size_above_u32() {
+    for helper in [BpfHelper::SkbGetTunnelOpt, BpfHelper::SkbSetTunnelOpt] {
+        let (func, types) = make_skb_tunnel_verify_call(helper, 0x1_0000_0000, 16, 0);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+        let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect_err("expected skb tunnel option size validation error");
+        assert!(
+            err.iter().any(|e| e.message.contains(
+                "skb tunnel option helpers require arg2 size to be between 0 and u32::MAX"
+            )),
+            "unexpected errors for {helper:?}: {:?}",
+            err
+        );
+    }
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_skb_tunnel_key_helpers_reject_invalid_flags() {
     for (helper, flags, expected) in [
         (

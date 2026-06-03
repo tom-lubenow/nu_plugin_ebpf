@@ -2342,6 +2342,14 @@ fn test_helper_signatures_skb_packet_mutation_helpers() {
         assert_eq!(sig.arg_kind(1), HelperArgKind::Pointer);
         assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
         assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+        assert_eq!(
+            helper.scalar_arg_range_requirement(2),
+            Some((
+                0,
+                u32::MAX as i64,
+                "skb tunnel option helpers require arg2 size to be between 0 and u32::MAX"
+            ))
+        );
     }
 
     let sig = HelperSignature::for_id(BpfHelper::CheckMtu as u32)

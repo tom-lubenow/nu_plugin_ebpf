@@ -4282,6 +4282,25 @@ fn test_type_error_skb_tunnel_key_helpers_reject_invalid_size() {
 }
 
 #[test]
+fn test_type_error_skb_tunnel_option_helpers_reject_size_above_u32() {
+    for helper in [BpfHelper::SkbGetTunnelOpt, BpfHelper::SkbSetTunnelOpt] {
+        let (func, _) = make_skb_tunnel_helper_call(helper, 0x1_0000_0000, 16, 0);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected skb tunnel option size validation error");
+        assert!(
+            errs.iter().any(|e| e.message.contains(
+                "skb tunnel option helpers require arg2 size to be between 0 and u32::MAX"
+            )),
+            "unexpected errors for {helper:?}: {:?}",
+            errs
+        );
+    }
+}
+
+#[test]
 fn test_type_error_skb_tunnel_key_helpers_require_constant_size() {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();
