@@ -2735,12 +2735,12 @@ impl BpfHelper {
             },
             BpfHelper::DynptrRead => HelperSemantics {
                 ptr_arg_rules: DYNPTR_READ_RULES,
-                positive_size_args: &[1],
+                positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },
             BpfHelper::DynptrWrite => HelperSemantics {
                 ptr_arg_rules: DYNPTR_WRITE_RULES,
-                positive_size_args: &[3],
+                positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },
             BpfHelper::DynptrData => HelperSemantics {

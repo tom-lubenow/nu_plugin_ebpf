@@ -4691,6 +4691,16 @@ fn test_helper_signature_dynptr_helpers() {
         BpfHelper::DynptrFromMem.dynptr_arg_role(3),
         Some(HelperDynptrArgRole::Out)
     );
+    let from_mem_semantics = BpfHelper::DynptrFromMem.semantics();
+    assert!(from_mem_semantics.positive_size_args.is_empty());
+    assert_eq!(
+        BpfHelper::DynptrFromMem.zero_size_pointer_arg_size_arg(0),
+        Some(1)
+    );
+    assert_eq!(
+        BpfHelper::DynptrFromMem.scalar_arg_nonnegative_requirement(1),
+        Some("helper 'bpf_dynptr_from_mem' requires arg1 size to be >= 0")
+    );
     let reserve_dynptr = HelperSignature::for_id(BpfHelper::RingbufReserveDynptr as u32)
         .expect("expected ringbuf_reserve_dynptr signature");
     assert_eq!(reserve_dynptr.min_args, 4);
@@ -4728,9 +4738,37 @@ fn test_helper_signature_dynptr_helpers() {
         BpfHelper::DynptrRead.dynptr_arg_role(2),
         Some(HelperDynptrArgRole::In)
     );
+    assert!(
+        BpfHelper::DynptrRead
+            .semantics()
+            .positive_size_args
+            .is_empty()
+    );
+    assert_eq!(
+        BpfHelper::DynptrRead.zero_size_pointer_arg_size_arg(0),
+        Some(1)
+    );
+    assert_eq!(
+        BpfHelper::DynptrRead.scalar_arg_nonnegative_requirement(1),
+        Some("helper 'bpf_dynptr_read' requires arg1 len to be >= 0")
+    );
     assert_eq!(
         BpfHelper::DynptrWrite.dynptr_arg_role(0),
         Some(HelperDynptrArgRole::In)
+    );
+    assert!(
+        BpfHelper::DynptrWrite
+            .semantics()
+            .positive_size_args
+            .is_empty()
+    );
+    assert_eq!(
+        BpfHelper::DynptrWrite.zero_size_pointer_arg_size_arg(2),
+        Some(3)
+    );
+    assert_eq!(
+        BpfHelper::DynptrWrite.scalar_arg_nonnegative_requirement(3),
+        Some("helper 'bpf_dynptr_write' requires arg3 len to be >= 0")
     );
 
     let data = HelperSignature::for_id(BpfHelper::DynptrData as u32)

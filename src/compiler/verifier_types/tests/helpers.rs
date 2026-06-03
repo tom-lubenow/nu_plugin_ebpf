@@ -2264,6 +2264,128 @@ fn test_verify_mir_dynptr_helper_lifecycle_balanced() {
 }
 
 #[test]
+fn test_verify_mir_dynptr_helpers_accept_zero_size_null_data() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let dynptr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let from_ret = func.alloc_vreg();
+    let read_ret = func.alloc_vreg();
+    let write_ret = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: from_ret,
+            helper: BpfHelper::DynptrFromMem as u32,
+            args: vec![
+                MirValue::Const(0),
+                MirValue::Const(0),
+                MirValue::Const(0),
+                MirValue::StackSlot(dynptr_slot),
+            ],
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: read_ret,
+            helper: BpfHelper::DynptrRead as u32,
+            args: vec![
+                MirValue::Const(0),
+                MirValue::Const(0),
+                MirValue::StackSlot(dynptr_slot),
+                MirValue::Const(0),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: write_ret,
+            helper: BpfHelper::DynptrWrite as u32,
+            args: vec![
+                MirValue::StackSlot(dynptr_slot),
+                MirValue::Const(0),
+                MirValue::Const(0),
+                MirValue::Const(0),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let types = HashMap::from([
+        (from_ret, MirType::I64),
+        (read_ret, MirType::I64),
+        (write_ret, MirType::I64),
+    ]);
+
+    verify_mir(&func, &types).expect("expected dynptr helpers with null zero-size data to verify");
+}
+
+#[test]
+fn test_verify_mir_dynptr_helpers_reject_negative_sizes() {
+    for (helper, size_arg) in [
+        (BpfHelper::DynptrFromMem, 1usize),
+        (BpfHelper::DynptrRead, 1usize),
+        (BpfHelper::DynptrWrite, 3usize),
+    ] {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let dynptr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+        let data_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        if helper != BpfHelper::DynptrFromMem {
+            func.entry_initialized_dynptr_slots.insert(dynptr_slot);
+        }
+        let dst = func.alloc_vreg();
+        let args = match helper {
+            BpfHelper::DynptrFromMem => vec![
+                MirValue::StackSlot(data_slot),
+                MirValue::Const(-1),
+                MirValue::Const(0),
+                MirValue::StackSlot(dynptr_slot),
+            ],
+            BpfHelper::DynptrRead => vec![
+                MirValue::StackSlot(data_slot),
+                MirValue::Const(-1),
+                MirValue::StackSlot(dynptr_slot),
+                MirValue::Const(0),
+                MirValue::Const(0),
+            ],
+            BpfHelper::DynptrWrite => vec![
+                MirValue::StackSlot(dynptr_slot),
+                MirValue::Const(0),
+                MirValue::StackSlot(data_slot),
+                MirValue::Const(-1),
+                MirValue::Const(0),
+            ],
+            _ => unreachable!(),
+        };
+
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: helper as u32,
+                args,
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let types = HashMap::from([(dst, MirType::I64)]);
+        let errs =
+            verify_mir(&func, &types).expect_err("expected dynptr negative size to be rejected");
+        let expected = format!("helper {} arg{} must be >= 0", helper as u32, size_arg);
+        assert!(
+            errs.iter().any(|err| err.message.contains(&expected)),
+            "unexpected errors for {helper:?}: {:?}",
+            errs
+        );
+    }
+}
+
+#[test]
 fn test_verify_mir_dynptr_helper_rejects_use_before_init() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

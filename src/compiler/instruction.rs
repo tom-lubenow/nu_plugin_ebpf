@@ -1394,6 +1394,9 @@ impl BpfHelper {
             (Self::SeqWrite, 1) => Some(2),
             (Self::RingbufOutput, 1) => Some(2),
             (Self::PerfEventOutput | Self::SkbOutput | Self::XdpOutput, 3) => Some(4),
+            (Self::DynptrFromMem, 0) => Some(1),
+            (Self::DynptrRead, 0) => Some(1),
+            (Self::DynptrWrite, 2) => Some(3),
             (Self::KallsymsLookupName, 0) => Some(1),
             _ => None,
         }
@@ -1490,6 +1493,13 @@ impl BpfHelper {
             }
             (Self::PerfEventOutput | Self::SkbOutput | Self::XdpOutput, 4) => {
                 Some("perf output helpers require arg4 size to be >= 0")
+            }
+            (Self::DynptrFromMem, 1) => {
+                Some("helper 'bpf_dynptr_from_mem' requires arg1 size to be >= 0")
+            }
+            (Self::DynptrRead, 1) => Some("helper 'bpf_dynptr_read' requires arg1 len to be >= 0"),
+            (Self::DynptrWrite, 3) => {
+                Some("helper 'bpf_dynptr_write' requires arg3 len to be >= 0")
             }
             _ => None,
         }

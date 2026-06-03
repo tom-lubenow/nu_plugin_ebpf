@@ -11955,6 +11955,114 @@ fn test_type_error_helper_ringbuf_reserve_dynptr_rejects_size_above_u32_max() {
 }
 
 #[test]
+fn test_infer_helper_dynptr_io_accepts_zero_size_null_data() {
+    let mut func = make_test_function();
+    let dynptr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let from_ret = func.alloc_vreg();
+    let read_ret = func.alloc_vreg();
+    let write_ret = func.alloc_vreg();
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst: from_ret,
+        helper: BpfHelper::DynptrFromMem as u32,
+        args: vec![
+            MirValue::Const(0),
+            MirValue::Const(0),
+            MirValue::Const(0),
+            MirValue::StackSlot(dynptr_slot),
+        ],
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst: read_ret,
+        helper: BpfHelper::DynptrRead as u32,
+        args: vec![
+            MirValue::Const(0),
+            MirValue::Const(0),
+            MirValue::StackSlot(dynptr_slot),
+            MirValue::Const(0),
+            MirValue::Const(0),
+        ],
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst: write_ret,
+        helper: BpfHelper::DynptrWrite as u32,
+        args: vec![
+            MirValue::StackSlot(dynptr_slot),
+            MirValue::Const(0),
+            MirValue::Const(0),
+            MirValue::Const(0),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let types = ti
+        .infer(&func)
+        .expect("expected dynptr helpers to infer with null zero-size data");
+    assert_eq!(types.get(&from_ret), Some(&MirType::I64));
+    assert_eq!(types.get(&read_ret), Some(&MirType::I64));
+    assert_eq!(types.get(&write_ret), Some(&MirType::I64));
+}
+
+#[test]
+fn test_type_error_helper_dynptr_io_rejects_negative_sizes() {
+    for (helper, size_arg) in [
+        (BpfHelper::DynptrFromMem, 1usize),
+        (BpfHelper::DynptrRead, 1usize),
+        (BpfHelper::DynptrWrite, 3usize),
+    ] {
+        let mut func = make_test_function();
+        let dynptr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+        let data_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let dst = func.alloc_vreg();
+        let args = match helper {
+            BpfHelper::DynptrFromMem => vec![
+                MirValue::StackSlot(data_slot),
+                MirValue::Const(-1),
+                MirValue::Const(0),
+                MirValue::StackSlot(dynptr_slot),
+            ],
+            BpfHelper::DynptrRead => vec![
+                MirValue::StackSlot(data_slot),
+                MirValue::Const(-1),
+                MirValue::StackSlot(dynptr_slot),
+                MirValue::Const(0),
+                MirValue::Const(0),
+            ],
+            BpfHelper::DynptrWrite => vec![
+                MirValue::StackSlot(dynptr_slot),
+                MirValue::Const(0),
+                MirValue::StackSlot(data_slot),
+                MirValue::Const(-1),
+                MirValue::Const(0),
+            ],
+            _ => unreachable!(),
+        };
+
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::CallHelper {
+            dst,
+            helper: helper as u32,
+            args,
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let mut ti = TypeInference::new(None);
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected dynptr negative size to be rejected");
+        let expected = format!("helper {} arg{} must be >= 0", helper as u32, size_arg);
+        assert!(
+            errs.iter().any(|err| err.message.contains(&expected)),
+            "unexpected errors for {helper:?}: {:?}",
+            errs
+        );
+    }
+}
+
+#[test]
 fn test_type_error_helper_tcp_check_syncookie_rejects_non_kernel_sk_pointer() {
     let mut func = make_test_function();
     let sk_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
