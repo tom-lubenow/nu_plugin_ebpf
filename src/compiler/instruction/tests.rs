@@ -2246,6 +2246,14 @@ fn test_helper_signatures_cgroup_retval_helpers() {
     assert_eq!(set.max_args, 1);
     assert_eq!(set.arg_kind(0), HelperArgKind::Scalar);
     assert_eq!(set.ret_kind, HelperRetKind::Scalar);
+    assert_eq!(
+        BpfHelper::SetRetval.scalar_arg_range_requirement(0),
+        Some((
+            i32::MIN as i64,
+            i32::MAX as i64,
+            "helper 'bpf_set_retval' requires arg0 retval to be between i32::MIN and i32::MAX"
+        ))
+    );
 }
 
 #[test]

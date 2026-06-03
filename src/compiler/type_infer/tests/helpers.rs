@@ -5880,6 +5880,36 @@ fn test_infer_cgroup_retval_helpers_in_supported_contexts() {
 }
 
 #[test]
+fn test_type_error_set_retval_rejects_retval_outside_i32_range() {
+    for retval in [(i32::MAX as i64) + 1, (i32::MIN as i64) - 1] {
+        let mut func = make_test_function();
+        let dst = func.alloc_vreg();
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::SetRetval as u32,
+            args: vec![MirValue::Const(retval)],
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let mut ti = TypeInference::new(Some(ProbeContext::new(
+            EbpfProgramType::CgroupSock,
+            "/sys/fs/cgroup:sock_create",
+        )));
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected bpf_set_retval retval range error");
+        assert!(
+            errs.iter().any(|e| e.message.contains(
+                "helper 'bpf_set_retval' requires arg0 retval to be between i32::MIN and i32::MAX"
+            )),
+            "unexpected errors for retval {retval}: {:?}",
+            errs
+        );
+    }
+}
+
+#[test]
 fn test_type_error_cgroup_retval_helpers_reject_invalid_contexts() {
     for (helper, probe_ctx, expected) in [
         (

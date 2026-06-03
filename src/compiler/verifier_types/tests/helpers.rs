@@ -6293,6 +6293,40 @@ fn test_verify_mir_for_probe_context_cgroup_retval_helpers_accept_supported_cont
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_set_retval_rejects_retval_outside_i32_range() {
+    for retval in [(i32::MAX as i64) + 1, (i32::MIN as i64) - 1] {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let dst = func.alloc_vreg();
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: BpfHelper::SetRetval as u32,
+                args: vec![MirValue::Const(retval)],
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(dst, MirType::I64);
+
+        let probe_ctx =
+            ProbeContext::new(EbpfProgramType::CgroupSock, "/sys/fs/cgroup:sock_create");
+        let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect_err("expected bpf_set_retval retval range error");
+        assert!(
+            err.iter().any(|e| e.message.contains(
+                "helper 'bpf_set_retval' requires arg0 retval to be between i32::MIN and i32::MAX"
+            )),
+            "unexpected errors for retval {retval}: {:?}",
+            err
+        );
+    }
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_cgroup_retval_helpers_reject_invalid_contexts() {
     for (helper, probe_ctx, expected) in [
         (

@@ -89,6 +89,8 @@ const BPF_SYSCALL_ATTR_SIZE_MAX_U32: i64 = u32::MAX as i64;
 const BPF_SYSCALL_FD_MAX_U32: i64 = u32::MAX as i64;
 const BPF_SYSCALL_NAME_SIZE_MAX_I32: i64 = i32::MAX as i64;
 const BPF_BTF_KIND_MAX_U32: i64 = u32::MAX as i64;
+const BPF_SET_RETVAL_MIN_I32: i64 = i32::MIN as i64;
+const BPF_SET_RETVAL_MAX_I32: i64 = i32::MAX as i64;
 const BPF_CHECK_MTU_IFINDEX_MAX_U32: i64 = u32::MAX as i64;
 const BPF_CHECK_MTU_LEN_DIFF_MIN_I32: i64 = i32::MIN as i64;
 const BPF_CHECK_MTU_LEN_DIFF_MAX_I32: i64 = i32::MAX as i64;
@@ -1513,6 +1515,11 @@ impl BpfHelper {
                 0,
                 BPF_SYSCALL_NAME_SIZE_MAX_I32,
                 "helper 'bpf_kallsyms_lookup_name' requires arg1 name_sz to be between 0 and i32::MAX",
+            )),
+            (Self::SetRetval, 0) => Some((
+                BPF_SET_RETVAL_MIN_I32,
+                BPF_SET_RETVAL_MAX_I32,
+                "helper 'bpf_set_retval' requires arg0 retval to be between i32::MIN and i32::MAX",
             )),
             (Self::GetFuncArg, 1) => Some((
                 0,
