@@ -18494,6 +18494,125 @@ fn make_bytes_arg_pipeline_call_program_with_flags(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_bytes_index_of_all_join_starts_with_program(
+    index_of_decl: DeclId,
+    join_decl: DeclId,
+    starts_with_decl: DeclId,
+    input: Vec<u8>,
+    pattern: Vec<u8>,
+    flags: Vec<Vec<u8>>,
+    expected_prefix: &str,
+) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Binary(input),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Binary(pattern),
+                },
+                HirStmt::Call {
+                    decl_id: index_of_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        pipeline_input: Some(RegId::new(0)),
+                        flags,
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadValue {
+                    dst: RegId::new(3),
+                    val: Box::new(Value::string("-", Span::test_data())),
+                },
+                HirStmt::Call {
+                    decl_id: join_decl,
+                    src_dst: RegId::new(4),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(3)],
+                        pipeline_input: Some(RegId::new(2)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadValue {
+                    dst: RegId::new(5),
+                    val: Box::new(Value::string(expected_prefix, Span::test_data())),
+                },
+                HirStmt::Call {
+                    decl_id: starts_with_decl,
+                    src_dst: RegId::new(6),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(5)],
+                        pipeline_input: Some(RegId::new(4)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(6) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 7,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_bytes_index_of_all_length_program(
+    index_of_decl: DeclId,
+    length_decl: DeclId,
+    input: Vec<u8>,
+    pattern: Vec<u8>,
+) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Binary(input),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Binary(pattern),
+                },
+                HirStmt::Call {
+                    decl_id: index_of_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        pipeline_input: Some(RegId::new(0)),
+                        flags: vec![b"all".to_vec()],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: length_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(2)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(3) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 4,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 #[test]
 fn test_lower_bytes_starts_with_on_binary_returns_true() {
     let bytes_starts_with_decl = DeclId::new(212);
@@ -18646,6 +18765,145 @@ fn test_lower_bytes_index_of_from_end_on_binary_returns_last_offset() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("bytes index-of --end on literal binaries should compile through codegen");
+}
+
+#[test]
+fn test_lower_bytes_index_of_all_on_binary_returns_offsets() {
+    let bytes_index_of_decl = DeclId::new(80510);
+    let join_decl = DeclId::new(80511);
+    let starts_with_decl = DeclId::new(80512);
+    let hir = make_bytes_index_of_all_join_starts_with_program(
+        bytes_index_of_decl,
+        join_decl,
+        starts_with_decl,
+        vec![1, 2, 3, 2],
+        vec![2],
+        vec![b"all".to_vec()],
+        "1-3",
+    );
+    let decl_names = HashMap::from([
+        (bytes_index_of_decl, "bytes index-of".to_string()),
+        (join_decl, "str join".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bytes index-of --all should lower to a compile-time numeric list");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"1-3\0")
+            )),
+        "expected bytes index-of --all offsets to feed str join with 1-3"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("bytes index-of --all output should compile through codegen");
+}
+
+#[test]
+fn test_lower_bytes_index_of_all_from_end_on_binary_returns_reverse_offsets() {
+    let bytes_index_of_decl = DeclId::new(80513);
+    let join_decl = DeclId::new(80514);
+    let starts_with_decl = DeclId::new(80515);
+    let hir = make_bytes_index_of_all_join_starts_with_program(
+        bytes_index_of_decl,
+        join_decl,
+        starts_with_decl,
+        vec![1, 2, 3, 2],
+        vec![2],
+        vec![b"all".to_vec(), b"end".to_vec()],
+        "3-1",
+    );
+    let decl_names = HashMap::from([
+        (bytes_index_of_decl, "bytes index-of".to_string()),
+        (join_decl, "str join".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bytes index-of --all --end should lower to reverse-order offsets");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"3-1\0")
+            )),
+        "expected bytes index-of --all --end offsets to feed str join with 3-1"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("bytes index-of --all --end output should compile through codegen");
+}
+
+#[test]
+fn test_lower_bytes_index_of_all_missing_pattern_returns_empty_list() {
+    let bytes_index_of_decl = DeclId::new(80516);
+    let length_decl = DeclId::new(80517);
+    let hir = make_bytes_index_of_all_length_program(
+        bytes_index_of_decl,
+        length_decl,
+        vec![1, 2],
+        vec![3],
+    );
+    let decl_names = HashMap::from([
+        (bytes_index_of_decl, "bytes index-of".to_string()),
+        (length_decl, "length".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bytes index-of --all should lower missing patterns to an empty list");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::ListNew { max_len: 0, .. })),
+        "expected missing bytes index-of --all to materialize an empty numeric list"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("missing bytes index-of --all output should compile through codegen");
 }
 
 #[test]

@@ -948,7 +948,7 @@ eBPF layout and verifier bounds are explicit:
 | `describe` | No-input, compile-time known values, tracked runtime scalars, tracked strings, tracked records, and stack-backed numeric lists, producing a bounded tracked string with Nushell's type description |
 | `bytes length` | Compile-time known binary input returning its byte length, or compile-time known list<binary> input returning a numeric list of byte lengths |
 | `bytes starts-with` / `bytes ends-with` | Compile-time known binary input and binary pattern, returning a constant boolean |
-| `bytes index-of` | Compile-time known binary input and non-empty binary pattern, returning the first byte index or `-1`; `--end` returns the last index |
+| `bytes index-of` | Compile-time known binary input and non-empty binary pattern, returning the first byte index or `-1`; `--end` returns the last index, and `--all` returns a stack-backed numeric list of up to 60 non-overlapping match offsets, in reverse order when combined with `--end` |
 | `bytes reverse` | Compile-time known binary input, returning a reversed binary value |
 | `bytes build` | Compile-time known binary fragments and integer byte arguments, returning a binary value |
 | `bytes at` | Compile-time known binary or list<binary> input and compile-time range using Nushell start/end bounds; scalar input returns a fixed binary slice, while materialized list output requires non-empty equal-length binary slices and empty or unequal list slices are supported when folded by `bytes collect`, `length`, or empty predicates |

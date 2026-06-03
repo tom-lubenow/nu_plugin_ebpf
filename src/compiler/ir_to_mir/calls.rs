@@ -14,6 +14,38 @@ const BPF_SK_LOOKUP_F_REPLACE: u64 = 1 << 0;
 const BPF_SK_LOOKUP_F_NO_REUSEPORT: u64 = 1 << 1;
 
 impl<'a> HirToMirLowering<'a> {
+    fn bytes_index_of_all_offsets(input: &[u8], pattern: &[u8], from_end: bool) -> Vec<i64> {
+        if pattern.is_empty() || pattern.len() > input.len() {
+            return Vec::new();
+        }
+
+        let mut offsets = Vec::new();
+        if from_end {
+            let mut end = input.len();
+            while end >= pattern.len() {
+                let Some(found) = input[..end]
+                    .windows(pattern.len())
+                    .rposition(|candidate| candidate == pattern)
+                else {
+                    break;
+                };
+                offsets.push(found as i64);
+                end = found;
+            }
+        } else {
+            let mut index = 0;
+            while index + pattern.len() <= input.len() {
+                if input[index..].starts_with(pattern) {
+                    offsets.push(index as i64);
+                    index += pattern.len();
+                } else {
+                    index += 1;
+                }
+            }
+        }
+        offsets
+    }
+
     fn bytes_at_output(input: &[u8], range: MaybeOpenRange) -> Vec<u8> {
         let len = input.len() as i64;
         let start = range
@@ -3221,13 +3253,15 @@ impl<'a> HirToMirLowering<'a> {
                     dst_vreg
                 };
 
+                let mut return_all = false;
                 let mut search_from_end = false;
                 for flag in &self.named_flags {
                     match flag.as_str() {
+                        "all" => return_all = true,
                         "end" => search_from_end = true,
                         _ => {
                             return Err(CompileError::UnsupportedInstruction(
-                                "bytes index-of currently supports only --end as a flag in eBPF"
+                                "bytes index-of currently supports only --all and --end as flags in eBPF"
                                     .into(),
                             ));
                         }
@@ -3275,28 +3309,49 @@ impl<'a> HirToMirLowering<'a> {
                     ));
                 }
 
-                let index = if pattern.len() > input.len() {
-                    -1
-                } else {
-                    let mut matches = input.windows(pattern.len());
-                    let found = if search_from_end {
-                        matches.rposition(|candidate| candidate == pattern.as_slice())
-                    } else {
-                        matches.position(|candidate| candidate == pattern.as_slice())
-                    };
-                    found.map(|idx| idx as i64).unwrap_or(-1)
-                };
+                if return_all {
+                    const MAX_BYTES_INDEX_OF_ALL_MATCHES: usize = 60;
+                    let offsets =
+                        Self::bytes_index_of_all_offsets(&input, &pattern, search_from_end);
+                    if offsets.len() > MAX_BYTES_INDEX_OF_ALL_MATCHES {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "bytes index-of --all result exceeds eBPF numeric list capacity {MAX_BYTES_INDEX_OF_ALL_MATCHES}"
+                        )));
+                    }
 
-                self.emit(MirInst::Copy {
-                    dst: result_vreg,
-                    src: MirValue::Const(index),
-                });
-                self.reset_call_result_metadata(src_dst);
-                let out_meta = self.get_or_create_metadata(src_dst);
-                out_meta.field_type = Some(MirType::I64);
-                out_meta.constant_value =
-                    Some(nu_protocol::Value::int(index, nu_protocol::Span::unknown()));
-                self.vreg_type_hints.insert(result_vreg, MirType::I64);
+                    let values = offsets
+                        .into_iter()
+                        .map(|offset| nu_protocol::Value::int(offset, nu_protocol::Span::unknown()))
+                        .collect();
+                    self.reset_call_result_metadata(src_dst);
+                    self.lower_constant_value(
+                        src_dst,
+                        &nu_protocol::Value::list(values, nu_protocol::Span::unknown()),
+                    )?;
+                } else {
+                    let index = if pattern.len() > input.len() {
+                        -1
+                    } else {
+                        let mut matches = input.windows(pattern.len());
+                        let found = if search_from_end {
+                            matches.rposition(|candidate| candidate == pattern.as_slice())
+                        } else {
+                            matches.position(|candidate| candidate == pattern.as_slice())
+                        };
+                        found.map(|idx| idx as i64).unwrap_or(-1)
+                    };
+
+                    self.emit(MirInst::Copy {
+                        dst: result_vreg,
+                        src: MirValue::Const(index),
+                    });
+                    self.reset_call_result_metadata(src_dst);
+                    let out_meta = self.get_or_create_metadata(src_dst);
+                    out_meta.field_type = Some(MirType::I64);
+                    out_meta.constant_value =
+                        Some(nu_protocol::Value::int(index, nu_protocol::Span::unknown()));
+                    self.vreg_type_hints.insert(result_vreg, MirType::I64);
+                }
             }
 
             "bytes reverse" => {

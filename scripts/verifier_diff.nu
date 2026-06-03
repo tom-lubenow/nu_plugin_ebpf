@@ -36482,6 +36482,32 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-binary-bytes-index-of-all-join"
+        category: "language-core"
+        tags: [binary bytes index-of all join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  0x[01 02 03 02] | bytes index-of --all 0x[02] | str join "-" | str starts-with "1-3"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-binary-bytes-index-of-all-end-join"
+        category: "language-core"
+        tags: [binary bytes index-of all end join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  0x[01 02 03 02] | bytes index-of --all --end 0x[02] | str join "-" | str starts-with "3-1"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-binary-bytes-reverse-starts-with"
         category: "language-core"
         tags: [binary bytes reverse starts-with]
