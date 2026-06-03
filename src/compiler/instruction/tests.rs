@@ -3088,6 +3088,22 @@ fn test_fib_lookup_helper_contract() {
         ))
     );
     assert_eq!(
+        BpfHelper::CheckMtu.scalar_arg_range_requirement(1),
+        Some((
+            0,
+            u32::MAX as i64,
+            "helper 'bpf_check_mtu' requires arg1 ifindex to be between 0 and u32::MAX"
+        ))
+    );
+    assert_eq!(
+        BpfHelper::CheckMtu.scalar_arg_range_requirement(3),
+        Some((
+            i32::MIN as i64,
+            i32::MAX as i64,
+            "helper 'bpf_check_mtu' requires arg3 len_diff to be between i32::MIN and i32::MAX"
+        ))
+    );
+    assert_eq!(
         BpfHelper::CheckMtu.zero_scalar_arg_requirement_when_arg_const(),
         Some((
             3,

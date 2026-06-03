@@ -85,6 +85,9 @@ const BPF_SYSCALL_ATTR_SIZE_MAX_U32: i64 = u32::MAX as i64;
 const BPF_SYSCALL_FD_MAX_U32: i64 = u32::MAX as i64;
 const BPF_SYSCALL_NAME_SIZE_MAX_I32: i64 = i32::MAX as i64;
 const BPF_BTF_KIND_MAX_U32: i64 = u32::MAX as i64;
+const BPF_CHECK_MTU_IFINDEX_MAX_U32: i64 = u32::MAX as i64;
+const BPF_CHECK_MTU_LEN_DIFF_MIN_I32: i64 = i32::MIN as i64;
+const BPF_CHECK_MTU_LEN_DIFF_MAX_I32: i64 = i32::MAX as i64;
 const PACKET_OTHERHOST: i64 = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1732,6 +1735,16 @@ impl BpfHelper {
                 0,
                 0xffff_ffff,
                 "perf event read helpers require arg1 flags to fit BPF_F_INDEX_MASK/BPF_F_CURRENT_CPU (0xffffffff)",
+            )),
+            (Self::CheckMtu, 1) => Some((
+                0,
+                BPF_CHECK_MTU_IFINDEX_MAX_U32,
+                "helper 'bpf_check_mtu' requires arg1 ifindex to be between 0 and u32::MAX",
+            )),
+            (Self::CheckMtu, 3) => Some((
+                BPF_CHECK_MTU_LEN_DIFF_MIN_I32,
+                BPF_CHECK_MTU_LEN_DIFF_MAX_I32,
+                "helper 'bpf_check_mtu' requires arg3 len_diff to be between i32::MIN and i32::MAX",
             )),
             (Self::FibLookup, 2) => Some((
                 BPF_FIB_LOOKUP_SIZE,

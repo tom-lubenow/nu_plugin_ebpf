@@ -4139,10 +4139,46 @@ fn make_check_mtu_call_with_len_diff(
     mtu_len_size: usize,
     len_diff: i64,
 ) -> (MirFunction, VReg) {
-    make_check_mtu_call_with_len_diff_and_mtu_len_value(flags, mtu_len_size, len_diff, None)
+    make_check_mtu_call_with_ifindex_len_diff_and_mtu_len_value(
+        0,
+        flags,
+        mtu_len_size,
+        len_diff,
+        None,
+    )
 }
 
 fn make_check_mtu_call_with_len_diff_and_mtu_len_value(
+    flags: i64,
+    mtu_len_size: usize,
+    len_diff: i64,
+    mtu_len_value: Option<i64>,
+) -> (MirFunction, VReg) {
+    make_check_mtu_call_with_ifindex_len_diff_and_mtu_len_value(
+        0,
+        flags,
+        mtu_len_size,
+        len_diff,
+        mtu_len_value,
+    )
+}
+
+fn make_check_mtu_call_with_ifindex(
+    ifindex: i64,
+    flags: i64,
+    mtu_len_size: usize,
+) -> (MirFunction, VReg) {
+    make_check_mtu_call_with_ifindex_len_diff_and_mtu_len_value(
+        ifindex,
+        flags,
+        mtu_len_size,
+        0,
+        None,
+    )
+}
+
+fn make_check_mtu_call_with_ifindex_len_diff_and_mtu_len_value(
+    ifindex: i64,
     flags: i64,
     mtu_len_size: usize,
     len_diff: i64,
@@ -4171,7 +4207,7 @@ fn make_check_mtu_call_with_len_diff_and_mtu_len_value(
         helper: BpfHelper::CheckMtu as u32,
         args: vec![
             MirValue::VReg(ctx),
-            MirValue::Const(0),
+            MirValue::Const(ifindex),
             MirValue::StackSlot(mtu_len),
             MirValue::Const(len_diff),
             MirValue::Const(flags),
@@ -4238,6 +4274,40 @@ fn test_type_error_check_mtu_helper_rejects_unknown_tc_flags() {
         errs.iter().any(|e| e
             .message
             .contains("helper 'bpf_check_mtu' requires arg4 flags")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_type_error_check_mtu_helper_rejects_ifindex_above_u32_max() {
+    let (func, _) = make_check_mtu_call_with_ifindex(0x1_0000_0000, 0, 4);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_check_mtu ifindex range error");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_check_mtu' requires arg1 ifindex to be between 0 and u32::MAX")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_type_error_check_mtu_helper_rejects_len_diff_above_i32_max() {
+    let (func, _) = make_check_mtu_call_with_len_diff(0, 4, 0x8000_0000);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_check_mtu len_diff range error");
+    assert!(
+        errs.iter().any(|e| e.message.contains(
+            "helper 'bpf_check_mtu' requires arg3 len_diff to be between i32::MIN and i32::MAX"
+        )),
         "unexpected errors: {:?}",
         errs
     );
