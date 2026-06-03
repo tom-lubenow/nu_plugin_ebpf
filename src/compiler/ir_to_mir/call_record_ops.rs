@@ -747,11 +747,6 @@ impl<'a> HirToMirLowering<'a> {
             input_meta.constant_value.as_ref(),
             Some(nu_protocol::Value::Record { val, .. }) if val.is_empty()
         );
-        if input_meta.record_fields.is_empty() && !input_is_known_empty_record {
-            return Err(CompileError::UnsupportedInstruction(
-                "values requires record input with compiler-known fields in eBPF".into(),
-            ));
-        }
 
         if let Some(nu_protocol::Value::Record { val, .. }) = input_meta.constant_value.as_ref() {
             let vals = val
@@ -759,12 +754,24 @@ impl<'a> HirToMirLowering<'a> {
                 .map(|(_key, value)| value.clone())
                 .collect::<Vec<_>>();
             let value_list = nu_protocol::Value::list(vals, Span::unknown());
+            if self.current_call_result_metadata_only
+                && Self::record_values_list_is_finite_float_only(&value_list)
+            {
+                self.lower_compile_time_only_constant_value(src_dst, &value_list);
+                return Ok(());
+            }
             if !crate::compiler::hir::supports_numeric_constant_list(&value_list)
                 && crate::compiler::hir::supports_fixed_array_constant_list(&value_list)
             {
                 self.lower_constant_value(src_dst, &value_list)?;
                 return Ok(());
             }
+        }
+
+        if input_meta.record_fields.is_empty() && !input_is_known_empty_record {
+            return Err(CompileError::UnsupportedInstruction(
+                "values requires record input with compiler-known fields in eBPF".into(),
+            ));
         }
 
         for field in &input_meta.record_fields {
@@ -808,6 +815,16 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         Ok(())
+    }
+
+    fn record_values_list_is_finite_float_only(value: &nu_protocol::Value) -> bool {
+        matches!(
+            value,
+            nu_protocol::Value::List { vals, .. } if !vals.is_empty()
+                && vals.iter().all(|value| {
+                    matches!(value, nu_protocol::Value::Float { val, .. } if val.is_finite())
+                })
+        )
     }
 
     pub(super) fn lower_metadata_record_columns(

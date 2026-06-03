@@ -312,6 +312,7 @@ pub enum FixedLayoutValueConsumer {
     Find,
     SplitList,
     Compact,
+    Values,
     StringTransform,
     Describe,
     Fill,
@@ -526,6 +527,7 @@ pub fn compile_time_value_flows_to_fixed_layout_aggregate_consumer(
         FixedLayoutValueConsumer::Find,
         FixedLayoutValueConsumer::SplitList,
         FixedLayoutValueConsumer::Compact,
+        FixedLayoutValueConsumer::Values,
         FixedLayoutValueConsumer::StringTransform,
     ]
     .into_iter()
@@ -811,6 +813,15 @@ fn compile_time_value_consumer_matches(
                 && args.rest.is_empty()
                 && args.named.is_empty()
                 && args.flags.iter().all(|flag| flag.as_slice() == b"empty")
+                && args.parser_info.is_empty()
+        }
+        FixedLayoutValueConsumer::Values => {
+            decl_name == Some("values")
+                && call_args_tracked_only_in_pipeline(src_dst, args, tracked_regs)
+                && args.positional.is_empty()
+                && args.rest.is_empty()
+                && args.named.is_empty()
+                && args.flags.is_empty()
                 && args.parser_info.is_empty()
         }
         FixedLayoutValueConsumer::StringTransform => {

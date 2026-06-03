@@ -38865,6 +38865,21 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-record-values-float-metadata-consumers"
+        category: "language-core"
+        tags: [aggregate record values list float length get sort describe str join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let count_ok = (({ a: 2.5 b: 1.5 } | values | length) == 2)'
+            '  let get_ok = ({ a: 2.5 b: 1.5 } | values | get 0 | describe | str starts-with "float")'
+            '  $count_ok and ($get_ok and ({ a: 2.5 b: 1.5 } | values | sort | str join "-" | str starts-with "1.5-2.5"))'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-record-columns-get"
         category: "language-core"
         tags: [aggregate record columns list string]
