@@ -6658,6 +6658,47 @@ fn test_type_error_redirect_map_helper_rejects_invalid_flags() {
 }
 
 #[test]
+fn test_type_error_helper_tail_call_rejects_index_above_u32_max() {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let map = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::LoadMapFd {
+        dst: map,
+        map: MapRef {
+            name: "dispatch".to_string(),
+            kind: MapKind::ProgArray,
+        },
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::TailCall as u32,
+        args: vec![
+            MirValue::VReg(ctx),
+            MirValue::VReg(map),
+            MirValue::Const(0x1_0000_0000),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected helper tail_call index range error");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_tail_call' requires arg2 index to be between 0 and u32::MAX")
+    }));
+}
+
+#[test]
 fn test_type_error_perf_event_output_helper_rejects_lsm_program() {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();

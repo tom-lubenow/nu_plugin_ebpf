@@ -463,6 +463,13 @@ fn verify_mir_with_subfunction_summaries_impl(
                         index_ty
                     )));
                 }
+                if let Some((min_required, max_required, message)) =
+                    BpfHelper::TailCall.scalar_arg_range_requirement(2)
+                    && let ValueRange::Known { min, max } = value_range(index, &state)
+                    && (min < min_required || max > max_required)
+                {
+                    errors.push(VerifierTypeError::new(message));
+                }
                 if state.has_live_ringbuf_refs() {
                     errors.push(VerifierTypeError::new(
                         "unreleased ringbuf record reference at function exit",

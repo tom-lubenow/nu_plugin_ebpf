@@ -985,6 +985,14 @@ impl<'a> TypeInference<'a> {
                         idx_ty
                     )));
                 }
+                if let Some((min_required, max_required, message)) =
+                    BpfHelper::TailCall.scalar_arg_range_requirement(2)
+                    && let ValueRange::Known { min, max } =
+                        self.value_range_for(index, value_ranges)
+                    && (min < min_required || max > max_required)
+                {
+                    errors.push(TypeError::new(message));
+                }
             }
 
             MirInst::CallHelper { helper, args, .. } => {

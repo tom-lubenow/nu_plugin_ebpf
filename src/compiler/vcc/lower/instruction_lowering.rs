@@ -2407,6 +2407,27 @@ impl<'a> VccLowerer<'a> {
                     value: vcc_val,
                     op: Some("tail_call index"),
                 });
+                if let Some((min_required, max_required, message)) =
+                    BpfHelper::TailCall.scalar_arg_range_requirement(2)
+                {
+                    match index {
+                        MirValue::Const(actual) => {
+                            if *actual < min_required || *actual > max_required {
+                                return Err(VccError::new(
+                                    VccErrorKind::UnsupportedInstruction,
+                                    message,
+                                ));
+                            }
+                        }
+                        MirValue::VReg(_) => out.push(VccInst::AssertRange {
+                            value: vcc_val,
+                            min: min_required,
+                            max: max_required,
+                            message: message.to_string(),
+                        }),
+                        MirValue::StackSlot(_) => {}
+                    }
+                }
                 Ok(VccTerminator::Return { value: None })
             }
             MirInst::LoopHeader {

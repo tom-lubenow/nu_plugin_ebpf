@@ -2708,6 +2708,18 @@ fn test_helpers_with_packet_pointer_invalidation() {
 }
 
 #[test]
+fn test_tail_call_helper_index_range_contract() {
+    assert_eq!(
+        BpfHelper::TailCall.scalar_arg_range_requirement(2),
+        Some((
+            0,
+            u32::MAX as i64,
+            "helper 'bpf_tail_call' requires arg2 index to be between 0 and u32::MAX"
+        ))
+    );
+}
+
+#[test]
 fn test_skb_store_bytes_helper_flag_contract() {
     assert_eq!(
         BpfHelper::SkbStoreBytes.scalar_arg_range_requirement(4),

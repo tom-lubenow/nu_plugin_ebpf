@@ -39,6 +39,7 @@ const BPF_GET_CURRENT_COMM_SIZE_MAX_U32: i64 = u32::MAX as i64;
 const BPF_COPY_FROM_USER_SIZE_MAX_U32: i64 = u32::MAX as i64;
 const BPF_PROBE_MEM_SIZE_MAX_U32: i64 = u32::MAX as i64;
 const BPF_MAX_LOOPS: i64 = 8 * 1024 * 1024;
+const BPF_TAIL_CALL_INDEX_MAX_U32: i64 = u32::MAX as i64;
 const BPF_CPU_INDEX_MAX_U32: i64 = u32::MAX as i64;
 const BPF_CGROUP_ARRAY_INDEX_MAX_U32: i64 = u32::MAX as i64;
 const BPF_FIB_LOOKUP_DIRECT: i64 = 1 << 0;
@@ -1471,6 +1472,11 @@ impl BpfHelper {
                 "helper 'bpf_loop' requires arg0 nr_loops to be between 0 and BPF_MAX_LOOPS (8 * 1024 * 1024)",
             )),
             (Self::BpfLoop, 3) => Some((0, 0, "helper 'bpf_loop' requires arg3 flags to be 0")),
+            (Self::TailCall, 2) => Some((
+                0,
+                BPF_TAIL_CALL_INDEX_MAX_U32,
+                "helper 'bpf_tail_call' requires arg2 index to be between 0 and u32::MAX",
+            )),
             (Self::SysBpf, 0) => Some((
                 0,
                 BPF_SYSCALL_CMD_MAX_I32,

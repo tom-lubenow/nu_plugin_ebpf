@@ -1471,6 +1471,28 @@ fn test_validate_program_capabilities_for_function_rejects_missing_tail_call_cap
 }
 
 #[test]
+fn test_type_infer_tail_call_rejects_index_above_u32_max() {
+    let mut func = make_test_function();
+    func.block_mut(BlockId(0)).terminator = MirInst::TailCall {
+        prog_map: MapRef {
+            name: "dispatch".to_string(),
+            kind: MapKind::ProgArray,
+        },
+        index: MirValue::Const(0x1_0000_0000),
+    };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected tail-call index range error");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_tail_call' requires arg2 index to be between 0 and u32::MAX")
+    }));
+}
+
+#[test]
 fn test_type_infer_rejects_array_map_delete() {
     let mut func = make_test_function();
     let key = func.alloc_vreg();

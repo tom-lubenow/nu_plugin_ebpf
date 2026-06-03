@@ -16888,6 +16888,67 @@ fn test_verify_mir_helper_tail_call_rejects_user_ctx_pointer() {
 }
 
 #[test]
+fn test_verify_mir_helper_tail_call_rejects_index_above_u32_max() {
+    let (mut func, entry) = new_mir_function();
+    let ctx = func.alloc_vreg();
+    let map = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry).instructions.push(MirInst::LoadMapFd {
+        dst: map,
+        map: MapRef {
+            name: "dispatch".to_string(),
+            kind: MapKind::ProgArray,
+        },
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::TailCall as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::VReg(map),
+                MirValue::Const(0x1_0000_0000),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(
+        map,
+        MirType::MapRef {
+            key_ty: Box::new(MirType::U32),
+            val_ty: Box::new(MirType::U32),
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let err = verify_mir_for_program(&func, &types, EbpfProgramType::Xdp.info())
+        .expect_err("expected helper tail_call index range error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_tail_call' requires arg2 index to be between 0 and u32::MAX")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_tail_call_rejects_pointer_index() {
     let (mut func, entry) = new_mir_function();
     let index_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
@@ -16910,6 +16971,27 @@ fn test_verify_mir_tail_call_rejects_pointer_index() {
     assert!(
         err.iter()
             .any(|e| e.message.contains("tail_call index expects scalar")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_tail_call_rejects_index_above_u32_max() {
+    let (mut func, entry) = new_mir_function();
+    func.block_mut(entry).terminator = MirInst::TailCall {
+        prog_map: MapRef {
+            name: "jumps".to_string(),
+            kind: MapKind::ProgArray,
+        },
+        index: MirValue::Const(0x1_0000_0000),
+    };
+
+    let err = verify_mir(&func, &HashMap::new()).expect_err("expected tail-call index range error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_tail_call' requires arg2 index to be between 0 and u32::MAX")),
         "unexpected error messages: {:?}",
         err
     );
