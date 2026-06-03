@@ -6755,6 +6755,30 @@ fn test_type_error_sock_ops_hdr_opt_helpers_reject_len_outside_kernel_range() {
 }
 
 #[test]
+fn test_type_error_sock_ops_hdr_opt_helpers_reject_zero_len() {
+    for (helper, size_arg) in [
+        (BpfHelper::LoadHdrOpt, 2),
+        (BpfHelper::StoreHdrOpt, 2),
+        (BpfHelper::ReserveHdrOpt, 1),
+    ] {
+        let func = make_guarded_sock_ops_hdr_opt_call(helper, 0);
+        let mut ti = TypeInference::new(Some(ProbeContext::new(
+            EbpfProgramType::SockOps,
+            "/sys/fs/cgroup",
+        )));
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected sock_ops header-option zero-len error");
+        let expected = format!("helper {} arg{size_arg} must be > 0", helper as u32);
+        assert!(
+            errs.iter().any(|e| e.message.contains(&expected)),
+            "unexpected errors for {helper:?}: {:?}",
+            errs
+        );
+    }
+}
+
+#[test]
 fn test_infer_sock_ops_cb_flags_set_in_sock_ops_context_when_guarded() {
     let mut func = make_test_function();
     let guarded = func.alloc_block();

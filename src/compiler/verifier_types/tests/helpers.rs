@@ -7512,6 +7512,26 @@ fn test_verify_mir_for_probe_context_sock_ops_hdr_opt_helpers_reject_len_outside
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_sock_ops_hdr_opt_helpers_reject_zero_len() {
+    for (helper, size_arg) in [
+        (BpfHelper::LoadHdrOpt, 2),
+        (BpfHelper::StoreHdrOpt, 2),
+        (BpfHelper::ReserveHdrOpt, 1),
+    ] {
+        let (func, types) = make_guarded_sock_ops_hdr_opt_verify_call(helper, 0);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+        let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect_err("expected sock_ops header-option zero-len error");
+        let expected = format!("helper {} arg{size_arg} must be > 0", helper as u32);
+        assert!(
+            err.iter().any(|e| e.message.contains(&expected)),
+            "unexpected errors for {helper:?}: {:?}",
+            err
+        );
+    }
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_sock_ops_hdr_opt_helpers_without_static_callback_proof() {
     for (helper, expected) in [
         (
