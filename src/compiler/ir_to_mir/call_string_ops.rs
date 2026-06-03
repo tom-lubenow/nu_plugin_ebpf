@@ -781,14 +781,10 @@ impl<'a> HirToMirLowering<'a> {
 
         for flag in &self.named_flags {
             match flag.as_str() {
-                "regex" => {
-                    return Err(CompileError::UnsupportedInstruction(
-                        "split row --regex is not supported in eBPF".into(),
-                    ));
-                }
+                "regex" => {}
                 _ => {
                     return Err(CompileError::UnsupportedInstruction(
-                        "split row currently supports only --number as an option in eBPF".into(),
+                        "split row currently supports only --regex as a flag in eBPF".into(),
                     ));
                 }
             }
@@ -808,6 +804,7 @@ impl<'a> HirToMirLowering<'a> {
 
         let (_, separator_reg) = self.positional_args[0];
         let separator = self.literal_string_arg(separator_reg, "split row separator")?;
+        let use_regex = self.named_flags.iter().any(|flag| flag == "regex");
         let number = if let Some((_, number_reg)) = self.named_args.get("number").copied() {
             let raw = self
                 .get_metadata(number_reg)
@@ -838,27 +835,62 @@ impl<'a> HirToMirLowering<'a> {
         };
 
         let output = if let Some(input) = self.exact_string_list_input(input_reg, "split row")? {
-            input
-                .into_iter()
-                .flat_map(|item| Self::split_row_known_string(&item, &separator, number))
-                .collect()
+            let mut output = Vec::new();
+            for item in input {
+                output.extend(Self::split_row_known_string(
+                    &item, &separator, number, use_regex,
+                )?);
+            }
+            output
         } else {
             let input = self.exact_string_input(input_reg, "split row")?;
-            Self::split_row_known_string(&input, &separator, number)
+            Self::split_row_known_string(&input, &separator, number, use_regex)?
         };
 
         self.lower_known_string_list_result(src_dst, result_vreg, output)
     }
 
-    fn split_row_known_string(input: &str, separator: &str, number: Option<usize>) -> Vec<String> {
-        if let Some(number) = number {
-            input
+    fn split_row_known_string(
+        input: &str,
+        separator: &str,
+        number: Option<usize>,
+        use_regex: bool,
+    ) -> Result<Vec<String>, CompileError> {
+        if use_regex {
+            let regex = FancyRegex::new(separator).map_err(|err| {
+                CompileError::UnsupportedInstruction(format!(
+                    "split row --regex pattern is invalid in eBPF: {err}"
+                ))
+            })?;
+            if let Some(number) = number {
+                regex
+                    .splitn(input, number)
+                    .map(Self::compile_time_regex_split_part)
+                    .collect()
+            } else {
+                regex
+                    .split(input)
+                    .map(Self::compile_time_regex_split_part)
+                    .collect()
+            }
+        } else if let Some(number) = number {
+            Ok(input
                 .splitn(number, separator)
                 .map(ToString::to_string)
-                .collect()
+                .collect())
         } else {
-            input.split(separator).map(ToString::to_string).collect()
+            Ok(input.split(separator).map(ToString::to_string).collect())
         }
+    }
+
+    fn compile_time_regex_split_part(
+        part: Result<&str, fancy_regex::Error>,
+    ) -> Result<String, CompileError> {
+        part.map(ToString::to_string).map_err(|err| {
+            CompileError::UnsupportedInstruction(format!(
+                "split row --regex failed at compile time in eBPF: {err}"
+            ))
+        })
     }
 
     pub(super) fn lower_split_chars(

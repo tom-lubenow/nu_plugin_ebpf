@@ -37470,6 +37470,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-string-list-split-row-regex-number-join"
+        category: "language-core"
+        tags: [string list split row regex number join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ["a1b2c" "d33e"] | split row --regex "\\d+" --number 2 | str join "-" | str starts-with "a-b2c-d-e"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-string-stats-get-field"
         category: "language-core"
         tags: [string str stats record get]

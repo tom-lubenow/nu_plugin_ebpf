@@ -1677,6 +1677,7 @@ fn make_split_row_join_then_starts_with_program(
     starts_with_decl: DeclId,
     input: Value,
     separator: &str,
+    flags: Vec<&str>,
     number: Option<i64>,
     join_separator: &str,
     prefix: &str,
@@ -1707,6 +1708,10 @@ fn make_split_row_join_then_starts_with_program(
         args: HirCallArgs {
             positional: vec![RegId::new(2)],
             named,
+            flags: flags
+                .into_iter()
+                .map(|flag| flag.as_bytes().to_vec())
+                .collect(),
             pipeline_input: Some(RegId::new(0)),
             ..HirCallArgs::default()
         },
@@ -7226,6 +7231,7 @@ fn test_lower_split_row_on_known_string_materializes_string_list() {
         starts_with_decl,
         Value::string("alpha,beta,gamma", Span::test_data()),
         ",",
+        Vec::new(),
         None,
         "-",
         "alpha-beta-gamma",
@@ -7283,6 +7289,7 @@ fn test_lower_split_row_on_string_list_flattens_materialized_rows() {
             Span::test_data(),
         ),
         ",",
+        Vec::new(),
         None,
         "-",
         "a-b-c-d",
@@ -7340,6 +7347,7 @@ fn test_lower_split_row_number_limits_each_input_string() {
             Span::test_data(),
         ),
         ",",
+        Vec::new(),
         Some(2),
         "-",
         "a-b,c-d-e",
@@ -7378,6 +7386,116 @@ fn test_lower_split_row_number_limits_each_input_string() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("split row --number output consumed by str join should compile");
+}
+
+#[test]
+fn test_lower_split_row_regex_on_known_string_materializes_string_list() {
+    let split_decl = DeclId::new(481);
+    let join_decl = DeclId::new(482);
+    let starts_with_decl = DeclId::new(483);
+    let hir = make_split_row_join_then_starts_with_program(
+        split_decl,
+        join_decl,
+        starts_with_decl,
+        Value::string("a1b22c", Span::test_data()),
+        r"\d+",
+        vec!["regex"],
+        None,
+        "-",
+        "a-b-c",
+    );
+    let decl_names = HashMap::from([
+        (split_decl, "split row".to_string()),
+        (join_decl, "str join".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("split row --regex should lower compile-time string input");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"a-b-c\0")
+            )),
+        "expected split row --regex output consumed by str join to materialize the split string"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("split row --regex string output consumed by str join should compile");
+}
+
+#[test]
+fn test_lower_split_row_regex_number_limits_each_input_string() {
+    let split_decl = DeclId::new(484);
+    let join_decl = DeclId::new(485);
+    let starts_with_decl = DeclId::new(486);
+    let hir = make_split_row_join_then_starts_with_program(
+        split_decl,
+        join_decl,
+        starts_with_decl,
+        Value::list(
+            vec![
+                Value::string("a1b2c", Span::test_data()),
+                Value::string("d33e", Span::test_data()),
+            ],
+            Span::test_data(),
+        ),
+        r"\d+",
+        vec!["regex"],
+        Some(2),
+        "-",
+        "a-b2c-d-e",
+    );
+    let decl_names = HashMap::from([
+        (split_decl, "split row".to_string()),
+        (join_decl, "str join".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("split row --regex --number should lower compile-time string-list input");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"a-b2c-d-e\0")
+            )),
+        "expected split row --regex --number to apply per input string before str join"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("split row --regex --number output consumed by str join should compile");
 }
 
 #[test]
