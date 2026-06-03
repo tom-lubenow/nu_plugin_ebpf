@@ -960,7 +960,17 @@ fn compile_time_value_consumer_matches(
         FixedLayoutValueConsumer::MathFloatUnary => {
             matches!(
                 decl_name,
-                Some("math cos" | "math exp" | "math ln" | "math sin" | "math sqrt" | "math tan")
+                Some(
+                    "math cos"
+                        | "math cosh"
+                        | "math exp"
+                        | "math ln"
+                        | "math sin"
+                        | "math sinh"
+                        | "math sqrt"
+                        | "math tan"
+                        | "math tanh"
+                )
             ) && call_args_tracked_only_in_pipeline(src_dst, args, tracked_regs)
                 && args.positional.is_empty()
                 && args.rest.is_empty()

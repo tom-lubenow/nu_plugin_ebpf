@@ -13177,6 +13177,157 @@ fn test_lower_math_trig_list_results_feed_metadata_only_str_join() {
 }
 
 #[test]
+fn test_lower_math_hyperbolic_rejects_materialized_float_results() {
+    for (offset, command_name, value, expected) in [
+        (
+            0,
+            "math sinh",
+            Value::int(0, Span::test_data()),
+            "math sinh compile-time result has type float",
+        ),
+        (
+            1,
+            "math cosh",
+            Value::int(0, Span::test_data()),
+            "math cosh compile-time result has type float",
+        ),
+        (
+            2,
+            "math tanh",
+            Value::int(0, Span::test_data()),
+            "math tanh compile-time result has type float",
+        ),
+        (
+            3,
+            "math cosh",
+            Value::list(
+                vec![
+                    Value::int(0, Span::test_data()),
+                    Value::int(0, Span::test_data()),
+                ],
+                Span::test_data(),
+            ),
+            "math cosh compile-time result has type list<float>",
+        ),
+        (
+            4,
+            "math sinh",
+            Value::int(1000, Span::test_data()),
+            "math sinh result must be finite",
+        ),
+        (
+            5,
+            "math cosh",
+            Value::int(1000, Span::test_data()),
+            "math cosh result must be finite",
+        ),
+    ] {
+        let decl = DeclId::new(663 + offset);
+        let hir = make_value_pipeline_call_program(decl, value);
+        let decl_names = HashMap::from([(decl, command_name.to_string())]);
+
+        let err = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .expect_err("math hyperbolic should reject direct materialization or non-finite results");
+
+        assert!(
+            err.to_string().contains(expected),
+            "unexpected error: {err}"
+        );
+    }
+}
+
+#[test]
+fn test_lower_math_hyperbolic_scalar_results_feed_metadata_only_fill() {
+    for (offset, command_name, expected_prefix) in [
+        (0, "math sinh", "0000"),
+        (1, "math cosh", "0001"),
+        (2, "math tanh", "0000"),
+    ] {
+        let math_decl = DeclId::new(669 + offset * 3);
+        let fill_decl = DeclId::new(670 + offset * 3);
+        let starts_with_decl = DeclId::new(671 + offset * 3);
+        let hir = make_value_math_fill_starts_with_program(
+            math_decl,
+            fill_decl,
+            starts_with_decl,
+            Value::int(0, Span::test_data()),
+            expected_prefix,
+            4,
+            "right",
+            "0",
+        );
+        let decl_names = HashMap::from([
+            (math_decl, command_name.to_string()),
+            (fill_decl, "fill".to_string()),
+            (starts_with_decl, "str starts-with".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("{command_name} scalar result should feed fill: {err}"));
+
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{command_name} fill result should compile: {err}"));
+    }
+}
+
+#[test]
+fn test_lower_math_hyperbolic_list_results_feed_metadata_only_str_join() {
+    for (offset, command_name, expected_prefix) in [
+        (0, "math sinh", "0.0,0.0"),
+        (1, "math cosh", "1.0,1.0"),
+        (2, "math tanh", "0.0,0.0"),
+    ] {
+        let math_decl = DeclId::new(678 + offset * 3);
+        let join_decl = DeclId::new(679 + offset * 3);
+        let starts_with_decl = DeclId::new(680 + offset * 3);
+        let hir = make_value_list_math_join_starts_with_program(
+            math_decl,
+            join_decl,
+            starts_with_decl,
+            vec![
+                Value::int(0, Span::test_data()),
+                Value::int(0, Span::test_data()),
+            ],
+            ",",
+            expected_prefix,
+        );
+        let decl_names = HashMap::from([
+            (math_decl, command_name.to_string()),
+            (join_decl, "str join".to_string()),
+            (starts_with_decl, "str starts-with".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("{command_name} list result should feed str join: {err}"));
+
+        assert_no_runtime_list_operations(&result.program, command_name);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{command_name} list str join should compile: {err}"));
+    }
+}
+
+#[test]
 fn test_lower_math_unit_reducers_materialize_raw_i64_results() {
     let cases = [
         (

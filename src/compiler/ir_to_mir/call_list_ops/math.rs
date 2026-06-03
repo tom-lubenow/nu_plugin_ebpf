@@ -432,6 +432,7 @@ impl<'a> HirToMirLowering<'a> {
         let raw = Self::compile_time_math_float_input(cmd_name, value, list_index)?;
         let result = match cmd_name {
             "math cos" => raw.cos(),
+            "math cosh" => raw.cosh(),
             "math exp" => raw.exp(),
             "math ln" => {
                 if raw <= 0.0 {
@@ -466,7 +467,9 @@ impl<'a> HirToMirLowering<'a> {
                 raw.sqrt()
             }
             "math sin" => raw.sin(),
+            "math sinh" => raw.sinh(),
             "math tan" => raw.tan(),
+            "math tanh" => raw.tanh(),
             _ => {
                 return Err(CompileError::UnsupportedInstruction(format!(
                     "unsupported compile-time float unary command {cmd_name}"
