@@ -532,7 +532,12 @@ impl<'a> HirToMirLowering<'a> {
                 "math round accepts only an optional compile-time integer --precision argument in eBPF".into(),
             ));
         }
-        let Some((_, precision_reg)) = self.named_args.get("precision").copied() else {
+        let Some((_, precision_reg)) = self
+            .named_args
+            .get("precision")
+            .or_else(|| self.named_args.get("p"))
+            .copied()
+        else {
             return Err(CompileError::UnsupportedInstruction(
                 "math round accepts only an optional compile-time integer --precision argument in eBPF".into(),
             ));

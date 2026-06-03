@@ -942,7 +942,7 @@ fn compile_time_value_consumer_matches(
                             && args
                                 .named
                                 .iter()
-                                .all(|(name, _)| name.as_slice() == b"precision")
+                                .all(|(name, _)| matches!(name.as_slice(), b"precision" | b"p"))
                     }
                     _ => args.named.is_empty(),
                 }

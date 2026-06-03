@@ -36042,7 +36042,7 @@ const FIXTURES = [
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  ((3.1415 | math round --precision 2 | fill --alignment right --character "0" --width 1 | str starts-with "3.14") and (314.15 | math round --precision -1 | fill --alignment right --character "0" --width 1 | str starts-with "310")) and ([3.1415 -2.675] | math round --precision 2 | str join "," | str starts-with "3.14,-2.68")'
+            '  ((3.1415 | math round --precision 2 | fill --alignment right --character "0" --width 1 | str starts-with "3.14") and (314.15 | math round -p -1 | fill --alignment right --character "0" --width 1 | str starts-with "310")) and ([3.1415 -2.675] | math round -p 2 | str join "," | str starts-with "3.14,-2.68")'
             '}'
         ]
         local: "accept"

@@ -17123,7 +17123,7 @@ fn test_lower_math_round_precision_list_results_feed_metadata_only_str_join() {
             ",",
             "3.14,-2.68",
         ),
-        b"precision",
+        b"p",
         Value::int(2, Span::test_data()),
     );
     let decl_names = HashMap::from([
