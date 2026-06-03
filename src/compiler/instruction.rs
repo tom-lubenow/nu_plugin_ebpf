@@ -1520,6 +1520,16 @@ impl BpfHelper {
                 1,
                 "helper 'bpf_redirect' requires arg1 flags to contain only BPF_F_INGRESS (0x01)",
             )),
+            (Self::RedirectPeer, 0) => Some((
+                0,
+                BPF_REDIRECT_IFINDEX_MAX_U32,
+                "helper 'bpf_redirect_peer' requires arg0 ifindex to be between 0 and u32::MAX",
+            )),
+            (Self::RedirectNeigh, 0) => Some((
+                0,
+                BPF_REDIRECT_IFINDEX_MAX_U32,
+                "helper 'bpf_redirect_neigh' requires arg0 ifindex to be between 0 and u32::MAX",
+            )),
             (Self::CloneRedirect, 1) => Some((
                 0,
                 BPF_REDIRECT_IFINDEX_MAX_U32,

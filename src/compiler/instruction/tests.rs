@@ -2402,6 +2402,14 @@ fn test_helper_signature_redirect_neigh() {
     assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
     assert_eq!(sig.arg_kind(3), HelperArgKind::Scalar);
     assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+    assert_eq!(
+        BpfHelper::RedirectNeigh.scalar_arg_range_requirement(0),
+        Some((
+            0,
+            u32::MAX as i64,
+            "helper 'bpf_redirect_neigh' requires arg0 ifindex to be between 0 and u32::MAX"
+        ))
+    );
 }
 
 #[test]
@@ -2413,6 +2421,14 @@ fn test_helper_signature_redirect_peer() {
     assert_eq!(sig.arg_kind(0), HelperArgKind::Scalar);
     assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
     assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+    assert_eq!(
+        BpfHelper::RedirectPeer.scalar_arg_range_requirement(0),
+        Some((
+            0,
+            u32::MAX as i64,
+            "helper 'bpf_redirect_peer' requires arg0 ifindex to be between 0 and u32::MAX"
+        ))
+    );
 }
 
 #[test]

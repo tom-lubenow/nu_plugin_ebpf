@@ -8358,6 +8358,34 @@ fn test_type_error_redirect_peer_helper_requires_zero_flags() {
 }
 
 #[test]
+fn test_type_error_redirect_peer_helper_rejects_invalid_ifindex() {
+    for ifindex in [-1_i64, 0x1_0000_0000] {
+        let mut func = make_test_function();
+        let dst = func.alloc_vreg();
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::RedirectPeer as u32,
+            args: vec![MirValue::Const(ifindex), MirValue::Const(0)],
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected bpf_redirect_peer ifindex to be rejected");
+        assert!(
+            errs.iter().any(|e| e.message.contains(
+                "helper 'bpf_redirect_peer' requires arg0 ifindex to be between 0 and u32::MAX"
+            )),
+            "unexpected errors for ifindex {ifindex}: {:?}",
+            errs
+        );
+    }
+}
+
+#[test]
 fn test_infer_redirect_peer_helper_in_tc_ingress_program() {
     let mut func = make_test_function();
     let dst = func.alloc_vreg();
@@ -8460,6 +8488,39 @@ fn test_type_error_redirect_neigh_helper_requires_zero_plen_for_null_params() {
         e.message
             .contains("helper 'bpf_redirect_neigh' requires arg2 = 0 when arg1 is null")
     }));
+}
+
+#[test]
+fn test_type_error_redirect_neigh_helper_rejects_invalid_ifindex() {
+    for ifindex in [-1_i64, 0x1_0000_0000] {
+        let mut func = make_test_function();
+        let dst = func.alloc_vreg();
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::RedirectNeigh as u32,
+            args: vec![
+                MirValue::Const(ifindex),
+                MirValue::Const(0),
+                MirValue::Const(0),
+                MirValue::Const(0),
+            ],
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected bpf_redirect_neigh ifindex to be rejected");
+        assert!(
+            errs.iter().any(|e| e.message.contains(
+                "helper 'bpf_redirect_neigh' requires arg0 ifindex to be between 0 and u32::MAX"
+            )),
+            "unexpected errors for ifindex {ifindex}: {:?}",
+            errs
+        );
+    }
 }
 
 #[test]

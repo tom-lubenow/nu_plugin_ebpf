@@ -9810,6 +9810,43 @@ fn test_verify_mir_helper_redirect_neigh_requires_zero_plen_for_zero_vreg_params
 }
 
 #[test]
+fn test_verify_mir_helper_redirect_neigh_rejects_invalid_ifindex() {
+    for ifindex in [-1_i64, 0x1_0000_0000] {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let dst = func.alloc_vreg();
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: BpfHelper::RedirectNeigh as u32,
+                args: vec![
+                    MirValue::Const(ifindex),
+                    MirValue::Const(0),
+                    MirValue::Const(0),
+                    MirValue::Const(0),
+                ],
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir(&func, &types)
+            .expect_err("expected bpf_redirect_neigh ifindex to be rejected");
+        assert!(
+            err.iter().any(|e| e.message.contains(
+                "helper 'bpf_redirect_neigh' requires arg0 ifindex to be between 0 and u32::MAX"
+            )),
+            "unexpected errors for ifindex {ifindex}: {:?}",
+            err
+        );
+    }
+}
+
+#[test]
 fn test_verify_mir_helper_redirect_peer_requires_zero_flags() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
@@ -9833,6 +9870,38 @@ fn test_verify_mir_helper_redirect_peer_requires_zero_flags() {
         e.message
             .contains("helper 'bpf_redirect_peer' requires arg1 = 0")
     }));
+}
+
+#[test]
+fn test_verify_mir_helper_redirect_peer_rejects_invalid_ifindex() {
+    for ifindex in [-1_i64, 0x1_0000_0000] {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let dst = func.alloc_vreg();
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: BpfHelper::RedirectPeer as u32,
+                args: vec![MirValue::Const(ifindex), MirValue::Const(0)],
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir(&func, &types)
+            .expect_err("expected bpf_redirect_peer ifindex to be rejected");
+        assert!(
+            err.iter().any(|e| e.message.contains(
+                "helper 'bpf_redirect_peer' requires arg0 ifindex to be between 0 and u32::MAX"
+            )),
+            "unexpected errors for ifindex {ifindex}: {:?}",
+            err
+        );
+    }
 }
 
 #[test]
