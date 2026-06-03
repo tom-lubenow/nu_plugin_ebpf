@@ -11254,32 +11254,46 @@ fn test_type_error_skb_load_bytes_rejects_small_destination_buffer() {
 
 #[test]
 fn test_infer_helper_csum_diff_allows_null_zero_side() {
-    let mut func = make_test_function();
-    let dst = func.alloc_vreg();
-    let to_slot = func.alloc_stack_slot(4, 4, StackSlotKind::StringBuffer);
-    let block = func.block_mut(BlockId(0));
-    block.instructions.push(MirInst::CallHelper {
-        dst,
-        helper: BpfHelper::CsumDiff as u32,
-        args: vec![
-            MirValue::Const(0),
-            MirValue::Const(0),
-            MirValue::StackSlot(to_slot),
-            MirValue::Const(4),
-            MirValue::Const(0),
-        ],
-    });
-    block.terminator = MirInst::Return { val: None };
+    for null_to in [false, true] {
+        let mut func = make_test_function();
+        let dst = func.alloc_vreg();
+        let args = if null_to {
+            let from_slot = func.alloc_stack_slot(4, 4, StackSlotKind::StringBuffer);
+            vec![
+                MirValue::StackSlot(from_slot),
+                MirValue::Const(4),
+                MirValue::Const(0),
+                MirValue::Const(0),
+                MirValue::Const(0),
+            ]
+        } else {
+            let to_slot = func.alloc_stack_slot(4, 4, StackSlotKind::StringBuffer);
+            vec![
+                MirValue::Const(0),
+                MirValue::Const(0),
+                MirValue::StackSlot(to_slot),
+                MirValue::Const(4),
+                MirValue::Const(0),
+            ]
+        };
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::CsumDiff as u32,
+            args,
+        });
+        block.terminator = MirInst::Return { val: None };
 
-    for probe_ctx in [
-        ProbeContext::new(EbpfProgramType::Xdp, "lo"),
-        ProbeContext::new(EbpfProgramType::LwtOut, "demo-route"),
-    ] {
-        let mut ti = TypeInference::new(Some(probe_ctx));
-        let types = ti
-            .infer(&func)
-            .expect("expected csum_diff to allow null from with zero from_size");
-        assert_eq!(types.get(&dst), Some(&MirType::I64));
+        for probe_ctx in [
+            ProbeContext::new(EbpfProgramType::Xdp, "lo"),
+            ProbeContext::new(EbpfProgramType::LwtOut, "demo-route"),
+        ] {
+            let mut ti = TypeInference::new(Some(probe_ctx));
+            let types = ti
+                .infer(&func)
+                .unwrap_or_else(|errs| panic!("expected csum_diff null side to infer: {errs:?}"));
+            assert_eq!(types.get(&dst), Some(&MirType::I64));
+        }
     }
 }
 

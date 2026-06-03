@@ -10481,36 +10481,50 @@ fn test_verify_mir_for_probe_context_csum_level_helper_rejects_invalid_level() {
 
 #[test]
 fn test_verify_mir_for_probe_context_csum_diff_allows_null_zero_side() {
-    let mut func = MirFunction::new();
-    let entry = func.alloc_block();
-    func.entry = entry;
-    let dst = func.alloc_vreg();
-    let to_slot = func.alloc_stack_slot(4, 4, StackSlotKind::StringBuffer);
-
-    func.block_mut(entry)
-        .instructions
-        .push(MirInst::CallHelper {
-            dst,
-            helper: BpfHelper::CsumDiff as u32,
-            args: vec![
+    for null_to in [false, true] {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+        let dst = func.alloc_vreg();
+        let args = if null_to {
+            let from_slot = func.alloc_stack_slot(4, 4, StackSlotKind::StringBuffer);
+            vec![
+                MirValue::StackSlot(from_slot),
+                MirValue::Const(4),
+                MirValue::Const(0),
+                MirValue::Const(0),
+                MirValue::Const(0),
+            ]
+        } else {
+            let to_slot = func.alloc_stack_slot(4, 4, StackSlotKind::StringBuffer);
+            vec![
                 MirValue::Const(0),
                 MirValue::Const(0),
                 MirValue::StackSlot(to_slot),
                 MirValue::Const(4),
                 MirValue::Const(0),
-            ],
-        });
-    func.block_mut(entry).terminator = MirInst::Return { val: None };
+            ]
+        };
 
-    let mut types = HashMap::new();
-    types.insert(dst, MirType::I64);
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: BpfHelper::CsumDiff as u32,
+                args,
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
 
-    for probe_ctx in [
-        ProbeContext::new(EbpfProgramType::Xdp, "lo"),
-        ProbeContext::new(EbpfProgramType::LwtOut, "demo-route"),
-    ] {
-        verify_mir_for_probe_context(&func, &types, &probe_ctx)
-            .expect("expected csum_diff to accept null from with zero from_size");
+        let mut types = HashMap::new();
+        types.insert(dst, MirType::I64);
+
+        for probe_ctx in [
+            ProbeContext::new(EbpfProgramType::Xdp, "lo"),
+            ProbeContext::new(EbpfProgramType::LwtOut, "demo-route"),
+        ] {
+            verify_mir_for_probe_context(&func, &types, &probe_ctx)
+                .unwrap_or_else(|err| panic!("expected csum_diff null side to verify: {err:?}"));
+        }
     }
 }
 
