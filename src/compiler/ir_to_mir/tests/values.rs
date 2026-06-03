@@ -5286,14 +5286,15 @@ fn make_source_record_get_nested_list_item_program(get_decl: DeclId) -> HirProgr
 fn make_record_values_then_get_program(
     values_decl: DeclId,
     get_decl: DeclId,
-    include_bool_field: bool,
+    include_extra_numeric_fields: bool,
     get_index: i64,
 ) -> HirProgram {
     let mut record = Record::new();
     record.push("pid", Value::int(7, Span::test_data()));
     record.push("cpu", Value::int(2, Span::test_data()));
-    if include_bool_field {
+    if include_extra_numeric_fields {
         record.push("ok", Value::bool(true, Span::test_data()));
+        record.push("none", Value::nothing(Span::test_data()));
     }
 
     let stmts = vec![
@@ -30084,7 +30085,7 @@ fn test_lower_values_on_integer_metadata_record_builds_numeric_list() {
 fn test_lower_values_on_numeric_scalar_metadata_record_builds_numeric_list() {
     let values_decl = DeclId::new(112);
     let get_decl = DeclId::new(113);
-    let hir = make_record_values_then_get_program(values_decl, get_decl, true, 2);
+    let hir = make_record_values_then_get_program(values_decl, get_decl, true, 3);
     let decl_names = HashMap::from([
         (values_decl, "values".to_string()),
         (get_decl, "get".to_string()),
@@ -30098,7 +30099,7 @@ fn test_lower_values_on_numeric_scalar_metadata_record_builds_numeric_list() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect("values should lower bool metadata-backed record fields as numeric scalars");
+    .expect("values should lower bool/null metadata-backed record fields as numeric scalars");
 
     assert!(
         result
@@ -30107,11 +30108,12 @@ fn test_lower_values_on_numeric_scalar_metadata_record_builds_numeric_list() {
             .blocks
             .iter()
             .flat_map(|block| block.instructions.iter())
-            .any(|inst| matches!(inst, MirInst::ListNew { max_len: 3, .. })),
+            .any(|inst| matches!(inst, MirInst::ListNew { max_len: 4, .. })),
         "expected values to materialize a numeric list with one slot per record field"
     );
-    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
-        .expect("record values with bool field followed by get should compile through codegen");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "record values with bool/null fields followed by get should compile through codegen",
+    );
 }
 
 #[test]

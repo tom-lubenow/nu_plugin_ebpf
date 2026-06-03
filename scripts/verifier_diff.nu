@@ -38881,6 +38881,32 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-record-values-null-get"
+        category: "language-core"
+        tags: [aggregate record values list "null"]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ({ pid: 7 none: null } | values | get 1) == 0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-record-values-runtime-bool-get"
+        category: "language-core"
+        tags: [aggregate record values list bool runtime]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  { ok: ($ctx.pid > 0) pid: $ctx.pid } | values | get 0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-record-values-after-merge"
         category: "language-core"
         tags: [aggregate record values merge list]
