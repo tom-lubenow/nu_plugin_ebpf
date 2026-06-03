@@ -7603,6 +7603,36 @@ fn test_type_error_perf_prog_read_value_requires_exact_size() {
 }
 
 #[test]
+fn test_type_error_perf_value_helpers_reject_zero_size() {
+    let cases = [
+        (
+            make_perf_prog_read_value_call(0, 24).0,
+            EbpfProgramType::PerfEvent,
+            "software:cpu-clock:period=100000",
+            "helper 56 arg2 must be > 0",
+        ),
+        (
+            make_perf_event_read_call(BpfHelper::PerfEventReadValue, 0, 0, 24).0,
+            EbpfProgramType::Xdp,
+            "lo",
+            "helper 55 arg3 must be > 0",
+        ),
+    ];
+
+    for (func, program_type, target, expected) in cases {
+        let probe_ctx = ProbeContext::new(program_type, target);
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected perf value helper zero-size error");
+        assert!(
+            errs.iter().any(|e| e.message.contains(expected)),
+            "expected {expected:?}, got {errs:?}"
+        );
+    }
+}
+
+#[test]
 fn test_type_error_perf_prog_read_value_rejects_small_buffer() {
     let (func, _) = make_perf_prog_read_value_call(24, 8);
     let probe_ctx = ProbeContext::new(

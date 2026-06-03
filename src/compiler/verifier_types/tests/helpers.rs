@@ -8187,6 +8187,31 @@ fn test_verify_mir_perf_prog_read_value_requires_exact_size() {
 }
 
 #[test]
+fn test_verify_mir_perf_value_helpers_reject_zero_size() {
+    let cases = [
+        (
+            make_perf_prog_read_value_verify_call(0, 24),
+            EbpfProgramType::PerfEvent,
+            "helper 56 arg2 must be > 0",
+        ),
+        (
+            make_perf_event_read_verify_call(BpfHelper::PerfEventReadValue, 0, 0, 24),
+            EbpfProgramType::Xdp,
+            "helper 55 arg3 must be > 0",
+        ),
+    ];
+
+    for ((func, types), program_type, expected) in cases {
+        let err = verify_mir_for_program(&func, &types, program_type.info())
+            .expect_err("expected perf value helper zero-size error");
+        assert!(
+            err.iter().any(|e| e.message.contains(expected)),
+            "expected {expected:?}, got {err:?}"
+        );
+    }
+}
+
+#[test]
 fn test_verify_mir_perf_prog_read_value_rejects_small_buffer() {
     let (func, types) = make_perf_prog_read_value_verify_call(24, 8);
     let err = verify_mir_for_program(&func, &types, EbpfProgramType::PerfEvent.info())
