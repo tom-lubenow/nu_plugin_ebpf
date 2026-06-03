@@ -14313,6 +14313,15 @@ fn make_skb_get_xfrm_state_verify_call(
     size: i64,
     buffer_size: usize,
 ) -> (MirFunction, HashMap<VReg, MirType>) {
+    make_skb_get_xfrm_state_verify_call_with_index(0, flags, size, buffer_size)
+}
+
+fn make_skb_get_xfrm_state_verify_call_with_index(
+    index: i64,
+    flags: i64,
+    size: i64,
+    buffer_size: usize,
+) -> (MirFunction, HashMap<VReg, MirType>) {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
     func.entry = entry;
@@ -14334,7 +14343,7 @@ fn make_skb_get_xfrm_state_verify_call(
             helper: BpfHelper::SkbGetXfrmState as u32,
             args: vec![
                 MirValue::VReg(ctx),
-                MirValue::Const(0),
+                MirValue::Const(index),
                 MirValue::StackSlot(xfrm_state),
                 MirValue::Const(size),
                 MirValue::Const(flags),
@@ -14388,6 +14397,36 @@ fn test_verify_mir_for_probe_context_skb_get_xfrm_state_requires_zero_flags() {
         e.message
             .contains("helper 'bpf_skb_get_xfrm_state' requires arg4 = 0")
     }));
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_skb_get_xfrm_state_rejects_index_above_u32() {
+    let (func, types) = make_skb_get_xfrm_state_verify_call_with_index(0x1_0000_0000, 0, 16, 16);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected bpf_skb_get_xfrm_state index range error");
+    assert!(
+        err.iter().any(|e| e.message.contains(
+            "helper 'bpf_skb_get_xfrm_state' requires arg1 index to be between 0 and u32::MAX"
+        )),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_skb_get_xfrm_state_rejects_size_above_u32() {
+    let (func, types) = make_skb_get_xfrm_state_verify_call(0, 0x1_0000_0000, 16);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected bpf_skb_get_xfrm_state size range error");
+    assert!(
+        err.iter().any(|e| e.message.contains(
+            "helper 'bpf_skb_get_xfrm_state' requires arg3 size to be between 0 and u32::MAX"
+        )),
+        "unexpected errors: {:?}",
+        err
+    );
 }
 
 #[test]

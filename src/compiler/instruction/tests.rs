@@ -3049,6 +3049,23 @@ fn test_skb_get_xfrm_state_helper_contract() {
     assert!(!xfrm_state.allowed.allow_user);
     assert_eq!(xfrm_state.fixed_size, None);
     assert_eq!(xfrm_state.size_from_arg, Some(3));
+
+    assert_eq!(
+        BpfHelper::SkbGetXfrmState.scalar_arg_range_requirement(1),
+        Some((
+            0,
+            u32::MAX as i64,
+            "helper 'bpf_skb_get_xfrm_state' requires arg1 index to be between 0 and u32::MAX"
+        ))
+    );
+    assert_eq!(
+        BpfHelper::SkbGetXfrmState.scalar_arg_range_requirement(3),
+        Some((
+            0,
+            u32::MAX as i64,
+            "helper 'bpf_skb_get_xfrm_state' requires arg3 size to be between 0 and u32::MAX"
+        ))
+    );
 }
 
 #[test]
