@@ -2268,6 +2268,76 @@ fn test_verify_mir_kfunc_copy_from_user_task_dynptr_rejects_cgroup_task_argument
     );
 }
 
+#[test]
+fn test_verify_mir_kfunc_copy_from_user_task_dynptr_rejects_zero_size() {
+    let (mut func, entry) = new_mir_function();
+    func.param_count = 1;
+
+    let src = func.alloc_vreg();
+    let task = func.alloc_vreg();
+    let dptr = func.alloc_vreg();
+    let off = func.alloc_vreg();
+    let size = func.alloc_vreg();
+    let ret = func.alloc_vreg();
+    let dptr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: dptr,
+        src: MirValue::StackSlot(dptr_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: off,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: size,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: task,
+            helper: BpfHelper::GetCurrentTaskBtf as u32,
+            args: vec![],
+        });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: ret,
+        kfunc: "bpf_copy_from_user_task_dynptr".to_string(),
+        btf_id: None,
+        args: vec![dptr, off, size, src, task],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        src,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::User,
+        },
+    );
+    types.insert(task, MirType::named_kernel_struct_ptr("task_struct"));
+    types.insert(
+        dptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(off, MirType::I64);
+    types.insert(size, MirType::I64);
+    types.insert(ret, MirType::I64);
+
+    let err =
+        verify_mir(&func, &types).expect_err("expected copy_from_user_task_dynptr zero-size error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("kfunc 'bpf_copy_from_user_task_dynptr' arg2 must be > 0")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
 fn make_packet_dynptr_kfunc_vcc_function(
     kfunc: &str,
     flags_value: i64,
