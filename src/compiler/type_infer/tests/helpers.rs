@@ -7293,6 +7293,35 @@ fn test_infer_signal_helpers_return_i64() {
 }
 
 #[test]
+fn test_type_error_signal_helpers_reject_invalid_sig() {
+    for helper in [BpfHelper::SendSignal, BpfHelper::SendSignalThread] {
+        for sig in [-1_i64, 0x1_0000_0000] {
+            let mut func = make_test_function();
+            let dst = func.alloc_vreg();
+            let block = func.block_mut(BlockId(0));
+            block.instructions.push(MirInst::CallHelper {
+                dst,
+                helper: helper as u32,
+                args: vec![MirValue::Const(sig)],
+            });
+            block.terminator = MirInst::Return { val: None };
+
+            let mut ti = TypeInference::new(None);
+            let errs = ti
+                .infer(&func)
+                .expect_err("expected signal helper sig range error");
+            assert!(
+                errs.iter().any(|e| e
+                    .message
+                    .contains("signal helpers require arg0 sig to be between 0 and u32::MAX")),
+                "unexpected errors for {helper:?} sig {sig}: {:?}",
+                errs
+            );
+        }
+    }
+}
+
+#[test]
 fn test_type_error_get_ns_current_pid_tgid_requires_exact_size() {
     let (func, _) = make_get_ns_current_pid_tgid_call(4, 8);
     let mut ti = TypeInference::new(None);

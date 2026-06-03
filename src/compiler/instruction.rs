@@ -60,6 +60,7 @@ const BPF_SKB_TUNNEL_OPT_MAX_SIZE: i64 = u32::MAX as i64;
 const BPF_SKB_VLAN_MAX_U16: i64 = u16::MAX as i64;
 const BPF_SKB_XFRM_STATE_MAX_U32: i64 = u32::MAX as i64;
 const BPF_SET_HASH_MAX_U32: i64 = u32::MAX as i64;
+const BPF_SIGNAL_MAX_U32: i64 = u32::MAX as i64;
 const BPF_XDP_BYTE_MAX_OFFSET_OR_LEN: i64 = 0xffff;
 const BPF_MSG_DATA_MAX_U32: i64 = u32::MAX as i64;
 const BPF_REDIRECT_IFINDEX_MAX_U32: i64 = u32::MAX as i64;
@@ -1657,6 +1658,11 @@ impl BpfHelper {
                 0,
                 BPF_SET_HASH_MAX_U32,
                 "helper 'bpf_set_hash' requires arg1 hash to be between 0 and u32::MAX",
+            )),
+            (Self::SendSignal | Self::SendSignalThread, 0) => Some((
+                0,
+                BPF_SIGNAL_MAX_U32,
+                "signal helpers require arg0 sig to be between 0 and u32::MAX",
             )),
             (Self::MsgApplyBytes | Self::MsgCorkBytes, 1) => Some((
                 0,

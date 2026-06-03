@@ -4277,6 +4277,39 @@ fn test_verify_mir_signal_helpers() {
 }
 
 #[test]
+fn test_verify_mir_signal_helpers_reject_invalid_sig() {
+    for helper in [BpfHelper::SendSignal, BpfHelper::SendSignalThread] {
+        for sig in [-1_i64, 0x1_0000_0000] {
+            let mut func = MirFunction::new();
+            let entry = func.alloc_block();
+            func.entry = entry;
+
+            let dst = func.alloc_vreg();
+            func.block_mut(entry)
+                .instructions
+                .push(MirInst::CallHelper {
+                    dst,
+                    helper: helper as u32,
+                    args: vec![MirValue::Const(sig)],
+                });
+            func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+            let mut types = HashMap::new();
+            types.insert(dst, MirType::I64);
+            let err =
+                verify_mir(&func, &types).expect_err("expected signal helper sig range error");
+            assert!(
+                err.iter().any(|e| e
+                    .message
+                    .contains("signal helpers require arg0 sig to be between 0 and u32::MAX")),
+                "unexpected errors for {helper:?} sig {sig}: {:?}",
+                err
+            );
+        }
+    }
+}
+
+#[test]
 fn test_verify_mir_rejects_more_than_five_params() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

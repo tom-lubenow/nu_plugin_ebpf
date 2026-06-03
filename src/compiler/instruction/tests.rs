@@ -1913,6 +1913,14 @@ fn test_helper_signature_signal_helpers() {
         assert_eq!(sig.arg_kind(0), HelperArgKind::Scalar);
         assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
         assert_eq!(helper.semantics().ptr_arg_rules.len(), 0);
+        assert_eq!(
+            helper.scalar_arg_range_requirement(0),
+            Some((
+                0,
+                u32::MAX as i64,
+                "signal helpers require arg0 sig to be between 0 and u32::MAX"
+            ))
+        );
     }
 }
 
