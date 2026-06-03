@@ -4894,6 +4894,28 @@ fn test_type_error_skb_tunnel_helper_rejects_small_buffer() {
 }
 
 #[test]
+fn test_type_error_skb_tunnel_helpers_reject_zero_size() {
+    for helper in [
+        BpfHelper::SkbGetTunnelKey,
+        BpfHelper::SkbSetTunnelKey,
+        BpfHelper::SkbGetTunnelOpt,
+        BpfHelper::SkbSetTunnelOpt,
+    ] {
+        let (func, _) = make_skb_tunnel_helper_call(helper, 0, 16, 0);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected skb tunnel zero-size error");
+        assert!(
+            errs.iter().any(|e| e.message.contains("arg2 must be > 0")),
+            "unexpected errors for {helper:?}: {:?}",
+            errs
+        );
+    }
+}
+
+#[test]
 fn test_type_error_skb_tunnel_key_helpers_reject_invalid_size() {
     let (func, _) = make_skb_tunnel_helper_call(BpfHelper::SkbGetTunnelKey, 16, 16, 0);
     let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");

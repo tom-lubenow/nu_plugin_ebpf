@@ -16800,6 +16800,26 @@ fn test_verify_mir_for_probe_context_skb_tunnel_helper_rejects_small_buffer() {
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_skb_tunnel_helpers_reject_zero_size() {
+    for helper in [
+        BpfHelper::SkbGetTunnelKey,
+        BpfHelper::SkbSetTunnelKey,
+        BpfHelper::SkbGetTunnelOpt,
+        BpfHelper::SkbSetTunnelOpt,
+    ] {
+        let (func, types) = make_skb_tunnel_verify_call(helper, 0, 16, 0);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+        let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect_err("expected skb tunnel zero-size error");
+        assert!(
+            err.iter().any(|e| e.message.contains("arg2 must be > 0")),
+            "unexpected errors for {helper:?}: {:?}",
+            err
+        );
+    }
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_skb_tunnel_key_helpers_reject_invalid_size() {
     let (func, types) = make_skb_tunnel_verify_call(BpfHelper::SkbSetTunnelKey, 16, 16, 0);
     let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
