@@ -17889,6 +17889,22 @@ fn test_verify_mir_xdp_get_xfrm_state_rejects_small_opts_buffer() {
 }
 
 #[test]
+fn test_verify_mir_xdp_get_xfrm_state_rejects_zero_opts_size() {
+    let (func, types) = make_xdp_get_xfrm_state_vcc_function(0, 32, true);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected bpf_xdp_get_xfrm_state zero-size opts error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("kfunc 'bpf_xdp_get_xfrm_state' arg2 must be > 0")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_xdp_get_xfrm_state_rejects_packet_pointer_arg0() {
     let (func, types) = make_xdp_get_xfrm_state_vcc_function_with_arg0(
         CtxField::Data,
