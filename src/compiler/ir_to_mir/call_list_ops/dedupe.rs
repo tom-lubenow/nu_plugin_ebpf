@@ -22,7 +22,7 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         if let Some(values) = input_reg.and_then(|reg| {
-            self.direct_list_builder_values(reg, input_vreg)
+            self.compile_time_only_list_builder_values(reg, input_vreg)
                 .map(|values| values.to_vec())
         }) {
             let mut unique = Vec::new();
@@ -31,7 +31,10 @@ impl<'a> HirToMirLowering<'a> {
                     unique.push(value);
                 }
             }
-            self.lower_constant_value(src_dst, &nu_protocol::Value::list(unique, Span::unknown()))?;
+            self.lower_compile_time_list_transform_result(
+                src_dst,
+                &nu_protocol::Value::list(unique, Span::unknown()),
+            )?;
             return Ok(());
         }
 

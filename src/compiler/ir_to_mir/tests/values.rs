@@ -1666,6 +1666,93 @@ fn make_float_literal_list_builder_find_consumer_program(
     program
 }
 
+fn make_float_literal_list_builder_transform_join_then_starts_with_program(
+    transform_decl: DeclId,
+    join_decl: DeclId,
+    starts_with_decl: DeclId,
+    values: &[f64],
+    flags: Vec<Vec<u8>>,
+    prefix: &str,
+) -> HirProgram {
+    let mut stmts = vec![HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List {
+            capacity: values.len(),
+        },
+    }];
+
+    let mut next_reg = 2;
+    for value in values {
+        let item_reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadLiteral {
+            dst: item_reg,
+            lit: HirLiteral::Float(*value),
+        });
+        stmts.push(HirStmt::ListPush {
+            src_dst: RegId::new(0),
+            item: item_reg,
+        });
+    }
+
+    stmts.push(HirStmt::Call {
+        decl_id: transform_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            flags,
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let separator_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::LoadValue {
+        dst: separator_reg,
+        val: Box::new(Value::string("-", Span::test_data())),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: join_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional: vec![separator_reg],
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let prefix_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::LoadValue {
+        dst: prefix_reg,
+        val: Box::new(Value::string(prefix, Span::test_data())),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: starts_with_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional: vec![prefix_reg],
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: next_reg,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_describe_no_input_then_length_program(
     describe_decl: DeclId,
     length_decl: DeclId,
@@ -6735,6 +6822,88 @@ fn test_lower_find_on_runtime_numeric_list_rejects_float_needle() {
             .contains("find search argument must be an integer scalar"),
         "unexpected error: {err}"
     );
+}
+
+#[test]
+fn test_lower_uniq_sort_on_float_literal_list_builder_feed_metadata_consumers() {
+    let uniq_decl = DeclId::new(305);
+    let length_decl = DeclId::new(306);
+    let hir = make_float_literal_list_builder_transform_consumer_program(
+        uniq_decl,
+        None,
+        length_decl,
+        &[2.5, 1.5, 2.5],
+    );
+    let decl_names = HashMap::from([
+        (uniq_decl, "uniq".to_string()),
+        (length_decl, "length".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("uniq should preserve metadata-only float-list builders");
+    assert_program_returns_constant(&result.program, 2, "float-list builder uniq length");
+    assert_no_runtime_list_operations(&result.program, "float-list builder uniq");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("uniq float-list output should compile");
+
+    for (offset, flags, expected) in [
+        (0, Vec::new(), "1.5-2.0-2.5"),
+        (1, vec![b"reverse".to_vec()], "2.5-2.0-1.5"),
+    ] {
+        let sort_decl = DeclId::new(307 + offset * 3);
+        let join_decl = DeclId::new(308 + offset * 3);
+        let starts_with_decl = DeclId::new(309 + offset * 3);
+        let hir = make_float_literal_list_builder_transform_join_then_starts_with_program(
+            sort_decl,
+            join_decl,
+            starts_with_decl,
+            &[2.5, 1.5, 2.0],
+            flags,
+            expected,
+        );
+        let decl_names = HashMap::from([
+            (sort_decl, "sort".to_string()),
+            (join_decl, "str join".to_string()),
+            (starts_with_decl, "str starts-with".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("sort should fold metadata-only float lists: {err}"));
+        let expected_literal = format!("{expected}\0");
+        assert!(
+            result
+                .program
+                .main
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .any(|inst| matches!(
+                    inst,
+                    MirInst::StringAppend {
+                        val_type: StringAppendType::Literal { bytes },
+                        ..
+                    } if bytes.starts_with(expected_literal.as_bytes())
+                )),
+            "expected sort to feed str join with constant {expected}"
+        );
+        assert_no_runtime_list_operations(&result.program, "float-list builder sort");
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .expect("sort float-list output should compile");
+    }
 }
 
 #[test]

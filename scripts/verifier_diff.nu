@@ -38973,6 +38973,21 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-float-list-builder-set-metadata-consumers"
+        category: "language-core"
+        tags: [aggregate list float uniq sort length str join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let uniq_ok = (([2.5 1.5 2.5] | uniq | length) == 2)'
+            '  let sort_ok = ([2.5 1.5 2.0] | sort | str join "-" | str starts-with "1.5-2.0-2.5")'
+            '  $uniq_ok and ($sort_ok and ([2.5 1.5 2.0] | sort --reverse | str join "-" | str starts-with "2.5-2.0-1.5"))'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-runtime-list-describe"
         category: "language-core"
         tags: [describe aggregate list runtime string]

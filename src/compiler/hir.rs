@@ -1204,6 +1204,22 @@ fn compile_time_aggregate_transform_preserves_tracked_input(
                 && args.parser_info.is_empty()
                 && call_args_tracked_only_in_pipeline(src_dst, args, regs)
         }
+        Some("uniq") => {
+            args.positional.is_empty()
+                && args.rest.is_empty()
+                && args.named.is_empty()
+                && args.flags.is_empty()
+                && args.parser_info.is_empty()
+                && call_args_tracked_only_in_pipeline(src_dst, args, regs)
+        }
+        Some("sort") => {
+            args.positional.is_empty()
+                && args.rest.is_empty()
+                && args.named.is_empty()
+                && args.flags.iter().all(|flag| flag.as_slice() == b"reverse")
+                && args.parser_info.is_empty()
+                && call_args_tracked_only_in_pipeline(src_dst, args, regs)
+        }
         _ => false,
     }
 }

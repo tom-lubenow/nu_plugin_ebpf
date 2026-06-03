@@ -1,9 +1,35 @@
 use super::*;
 
+#[derive(Debug, Clone, Copy)]
+struct FloatSortKey(f64);
+
+impl PartialEq for FloatSortKey {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other).is_eq()
+    }
+}
+
+impl Eq for FloatSortKey {}
+
+impl PartialOrd for FloatSortKey {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for FloatSortKey {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0
+            .partial_cmp(&other.0)
+            .expect("float sort keys are finite")
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 enum CompileTimeSortKey {
     Bool(bool),
     Int(i64),
+    Float(FloatSortKey),
     Binary(Vec<u8>),
     String(String),
 }
@@ -39,7 +65,7 @@ impl<'a> HirToMirLowering<'a> {
             .or(src_dst_had_value.then_some(src_dst));
 
         if let Some(mut values) = input_reg.and_then(|reg| {
-            self.direct_list_builder_values(reg, input_vreg)
+            self.compile_time_only_list_builder_values(reg, input_vreg)
                 .map(|values| values.to_vec())
         }) {
             let mut keyed = values
@@ -48,7 +74,7 @@ impl<'a> HirToMirLowering<'a> {
                 .collect::<Option<Vec<_>>>()
                 .ok_or_else(|| {
                     CompileError::UnsupportedInstruction(
-                        "sort supports compile-time known fixed lists with boolean, integer, binary, or string elements in eBPF"
+                        "sort supports compile-time known fixed lists with boolean, integer, finite float, binary, or string elements in eBPF"
                             .into(),
                     )
                 })?;
@@ -72,7 +98,10 @@ impl<'a> HirToMirLowering<'a> {
                 .into_iter()
                 .map(|(_, value)| value)
                 .collect::<Vec<_>>();
-            self.lower_constant_value(src_dst, &nu_protocol::Value::list(vals, Span::unknown()))?;
+            self.lower_compile_time_list_transform_result(
+                src_dst,
+                &nu_protocol::Value::list(vals, Span::unknown()),
+            )?;
             return Ok(());
         }
 
@@ -289,6 +318,9 @@ impl<'a> HirToMirLowering<'a> {
         match value {
             nu_protocol::Value::Bool { val, .. } => Some(CompileTimeSortKey::Bool(*val)),
             nu_protocol::Value::Int { val, .. } => Some(CompileTimeSortKey::Int(*val)),
+            nu_protocol::Value::Float { val, .. } if val.is_finite() => {
+                Some(CompileTimeSortKey::Float(FloatSortKey(*val)))
+            }
             nu_protocol::Value::Binary { val, .. } => Some(CompileTimeSortKey::Binary(val.clone())),
             nu_protocol::Value::String { val, .. } | nu_protocol::Value::Glob { val, .. } => {
                 Some(CompileTimeSortKey::String(val.clone()))
