@@ -72,6 +72,7 @@ const BPF_SET_HASH_MAX_U32: i64 = u32::MAX as i64;
 const BPF_SIGNAL_MAX_U32: i64 = u32::MAX as i64;
 const BPF_XDP_BYTE_MAX_OFFSET_OR_LEN: i64 = 0xffff;
 const BPF_MSG_DATA_MAX_U32: i64 = u32::MAX as i64;
+const BPF_SOCKET_REDIRECT_MAP_KEY_MAX_U32: i64 = u32::MAX as i64;
 const BPF_REDIRECT_IFINDEX_MAX_U32: i64 = u32::MAX as i64;
 const BPF_REDIRECT_NEIGH_PLEN_MAX_I32: i64 = i32::MAX as i64;
 const BPF_LWT_BUFFER_SIZE_MAX_U32: i64 = u32::MAX as i64;
@@ -1755,6 +1756,11 @@ impl BpfHelper {
                 0,
                 1,
                 "skb/message redirect helpers require flags to contain only BPF_F_INGRESS (0x01)",
+            )),
+            (Self::SkRedirectMap | Self::MsgRedirectMap, 2) => Some((
+                0,
+                BPF_SOCKET_REDIRECT_MAP_KEY_MAX_U32,
+                "socket redirect map helpers require arg2 key to be between 0 and u32::MAX",
             )),
             (Self::SkSelectReuseport, 3) => Some((
                 0,

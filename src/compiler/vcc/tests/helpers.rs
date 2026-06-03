@@ -7515,6 +7515,59 @@ fn test_verify_mir_for_program_socket_map_helpers_accept_supported_programs() {
 }
 
 #[test]
+fn test_verify_mir_for_program_socket_redirect_map_helpers_reject_key_above_u32_max() {
+    for (helper, program_info) in [
+        (BpfHelper::MsgRedirectMap, EbpfProgramType::SkMsg.info()),
+        (BpfHelper::SkRedirectMap, EbpfProgramType::SkSkb.info()),
+    ] {
+        let (mut func, entry) = new_mir_function();
+        let ctx = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::LoadCtxField {
+                dst: ctx,
+                field: CtxField::Context,
+                slot: None,
+            });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: helper as u32,
+                args: vec![
+                    MirValue::VReg(ctx),
+                    MirValue::StackSlot(map_slot),
+                    MirValue::Const(0x1_0000_0000),
+                    MirValue::Const(0),
+                ],
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ctx,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(dst, MirType::I64);
+
+        let err = verify_mir_for_program(&func, &types, program_info)
+            .expect_err("expected socket redirect map key range error");
+        assert!(
+            err.iter().any(|e| e.message.contains(
+                "socket redirect map helpers require arg2 key to be between 0 and u32::MAX"
+            )),
+            "unexpected errors for {helper:?}: {:?}",
+            err
+        );
+    }
+}
+
+#[test]
 fn test_verify_mir_for_program_sk_select_reuseport_rejects_nonzero_flags() {
     let (mut func, entry) = new_mir_function();
     let ctx = func.alloc_vreg();

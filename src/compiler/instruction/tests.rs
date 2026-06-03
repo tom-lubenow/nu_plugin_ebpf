@@ -1492,6 +1492,14 @@ fn test_helper_signatures_socket_map_helpers() {
     assert_eq!(sk_redirect_map_sig.arg_kind(3), HelperArgKind::Scalar);
     assert_eq!(sk_redirect_map_sig.ret_kind, HelperRetKind::Scalar);
     assert_eq!(
+        BpfHelper::SkRedirectMap.scalar_arg_range_requirement(2),
+        Some((
+            0,
+            u32::MAX as i64,
+            "socket redirect map helpers require arg2 key to be between 0 and u32::MAX"
+        ))
+    );
+    assert_eq!(
         BpfHelper::SkRedirectMap.scalar_arg_range_requirement(3),
         Some((
             0,
@@ -1519,6 +1527,14 @@ fn test_helper_signatures_socket_map_helpers() {
     assert_eq!(msg_redirect_map_sig.arg_kind(2), HelperArgKind::Scalar);
     assert_eq!(msg_redirect_map_sig.arg_kind(3), HelperArgKind::Scalar);
     assert_eq!(msg_redirect_map_sig.ret_kind, HelperRetKind::Scalar);
+    assert_eq!(
+        BpfHelper::MsgRedirectMap.scalar_arg_range_requirement(2),
+        Some((
+            0,
+            u32::MAX as i64,
+            "socket redirect map helpers require arg2 key to be between 0 and u32::MAX"
+        ))
+    );
     assert_eq!(
         BpfHelper::MsgRedirectMap.scalar_arg_range_requirement(3),
         Some((

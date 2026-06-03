@@ -6526,6 +6526,54 @@ fn test_infer_socket_map_helpers_in_supported_programs() {
 }
 
 #[test]
+fn test_type_error_socket_redirect_map_helpers_reject_key_above_u32_max() {
+    for (helper, probe_ctx) in [
+        (
+            BpfHelper::MsgRedirectMap,
+            ProbeContext::new(EbpfProgramType::SkMsg, "/sys/fs/bpf/demo_sockmap"),
+        ),
+        (
+            BpfHelper::SkRedirectMap,
+            ProbeContext::new(EbpfProgramType::SkSkb, "/sys/fs/bpf/demo_sockmap"),
+        ),
+    ] {
+        let mut func = make_test_function();
+        let ctx = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+        block.instructions.push(MirInst::CallHelper {
+            dst,
+            helper: helper as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(map_slot),
+                MirValue::Const(0x1_0000_0000),
+                MirValue::Const(0),
+            ],
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected socket redirect map key range error");
+        assert!(
+            errs.iter().any(|e| e.message.contains(
+                "socket redirect map helpers require arg2 key to be between 0 and u32::MAX"
+            )),
+            "unexpected errors for {helper:?}: {:?}",
+            errs
+        );
+    }
+}
+
+#[test]
 fn test_type_error_sk_select_reuseport_rejects_nonzero_flags() {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();
