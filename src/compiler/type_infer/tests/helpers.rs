@@ -6698,6 +6698,55 @@ fn test_type_error_helper_tail_call_rejects_index_above_u32_max() {
     }));
 }
 
+fn make_get_func_arg_call(arg_index: i64) -> (MirFunction, VReg) {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let output_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::GetFuncArg as u32,
+        args: vec![
+            MirValue::VReg(ctx),
+            MirValue::Const(arg_index),
+            MirValue::StackSlot(output_slot),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+    (func, dst)
+}
+
+#[test]
+fn test_infer_get_func_arg_helper() {
+    let (func, dst) = make_get_func_arg_call(0);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "tcp_connect");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let types = ti
+        .infer(&func)
+        .expect("expected bpf_get_func_arg helper to infer");
+    assert_eq!(types.get(&dst), Some(&MirType::I64));
+}
+
+#[test]
+fn test_type_error_get_func_arg_rejects_index_above_u32_max() {
+    let (func, _) = make_get_func_arg_call(0x1_0000_0000);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "tcp_connect");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected get_func_arg index range error");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_get_func_arg' requires arg1 n to be between 0 and u32::MAX")
+    }));
+}
+
 #[test]
 fn test_type_error_perf_event_output_helper_rejects_lsm_program() {
     let mut func = make_test_function();

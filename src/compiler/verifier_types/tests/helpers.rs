@@ -12836,6 +12836,7 @@ fn make_trampoline_arg_verify_call(
     helper: BpfHelper,
     output_size: usize,
     ctx_non_null: bool,
+    arg_index: i64,
 ) -> (MirFunction, HashMap<VReg, MirType>) {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
@@ -12852,7 +12853,7 @@ fn make_trampoline_arg_verify_call(
         BpfHelper::GetFuncArg => {
             vec![
                 MirValue::VReg(ctx),
-                MirValue::Const(0),
+                MirValue::Const(arg_index),
                 MirValue::StackSlot(output_slot),
             ]
         }
@@ -12901,7 +12902,7 @@ fn test_verify_mir_trampoline_arg_helpers_accept_non_null_raw_context() {
         BpfHelper::GetFuncRet,
         BpfHelper::GetFuncArgCnt,
     ] {
-        let (func, types) = make_trampoline_arg_verify_call(helper, 8, true);
+        let (func, types) = make_trampoline_arg_verify_call(helper, 8, true, 0);
         let probe_ctx = trampoline_helper_probe_context(helper);
         verify_mir_for_probe_context(&func, &types, &probe_ctx)
             .unwrap_or_else(|err| panic!("expected {helper:?} to verify: {err:?}"));
@@ -12915,7 +12916,7 @@ fn test_verify_mir_trampoline_arg_helpers_reject_unchecked_nullable_raw_context(
         BpfHelper::GetFuncRet,
         BpfHelper::GetFuncArgCnt,
     ] {
-        let (func, types) = make_trampoline_arg_verify_call(helper, 8, false);
+        let (func, types) = make_trampoline_arg_verify_call(helper, 8, false, 0);
         let probe_ctx = trampoline_helper_probe_context(helper);
         let err = match verify_mir_for_probe_context(&func, &types, &probe_ctx) {
             Ok(()) => panic!("expected {helper:?} null-check error"),
@@ -12933,7 +12934,7 @@ fn test_verify_mir_trampoline_arg_helpers_reject_unchecked_nullable_raw_context(
 #[test]
 fn test_verify_mir_trampoline_arg_helpers_reject_small_output_buffer() {
     for helper in [BpfHelper::GetFuncArg, BpfHelper::GetFuncRet] {
-        let (func, types) = make_trampoline_arg_verify_call(helper, 4, true);
+        let (func, types) = make_trampoline_arg_verify_call(helper, 4, true, 0);
         let probe_ctx = trampoline_helper_probe_context(helper);
         let err = match verify_mir_for_probe_context(&func, &types, &probe_ctx) {
             Ok(()) => panic!("expected {helper:?} output bounds error"),
@@ -12945,6 +12946,22 @@ fn test_verify_mir_trampoline_arg_helpers_reject_small_output_buffer() {
             err
         );
     }
+}
+
+#[test]
+fn test_verify_mir_get_func_arg_rejects_index_above_u32_max() {
+    let (func, types) =
+        make_trampoline_arg_verify_call(BpfHelper::GetFuncArg, 8, true, 0x1_0000_0000);
+    let probe_ctx = trampoline_helper_probe_context(BpfHelper::GetFuncArg);
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected get_func_arg index range error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_get_func_arg' requires arg1 n to be between 0 and u32::MAX")),
+        "unexpected errors: {:?}",
+        err
+    );
 }
 
 fn make_d_path_verify_call(size: i64, buf_size: usize) -> (MirFunction, HashMap<VReg, MirType>) {

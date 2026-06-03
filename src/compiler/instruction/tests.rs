@@ -4533,6 +4533,14 @@ fn test_trampoline_arg_helper_contracts() {
     assert!(arg.ptr_arg_rules[1].allowed.allow_stack);
     assert!(arg.ptr_arg_rules[1].allowed.allow_map);
     assert_eq!(arg.ptr_arg_rules[1].fixed_size, Some(8));
+    assert_eq!(
+        BpfHelper::GetFuncArg.scalar_arg_range_requirement(1),
+        Some((
+            0,
+            u32::MAX as i64,
+            "helper 'bpf_get_func_arg' requires arg1 n to be between 0 and u32::MAX"
+        ))
+    );
 
     let ret = BpfHelper::GetFuncRet.semantics();
     assert_eq!(ret.ptr_arg_rules.len(), 2);

@@ -92,6 +92,7 @@ const BPF_CHECK_MTU_LEN_DIFF_MIN_I32: i64 = i32::MIN as i64;
 const BPF_CHECK_MTU_LEN_DIFF_MAX_I32: i64 = i32::MAX as i64;
 const BPF_SOCKET_LOOKUP_TUPLE_SIZE_MAX_U32: i64 = u32::MAX as i64;
 const BPF_SYNCOOKIE_HEADER_LEN_MAX_U32: i64 = u32::MAX as i64;
+const BPF_FUNC_ARG_INDEX_MAX_U32: i64 = u32::MAX as i64;
 const PACKET_OTHERHOST: i64 = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1506,6 +1507,11 @@ impl BpfHelper {
                 0,
                 BPF_SYSCALL_NAME_SIZE_MAX_I32,
                 "helper 'bpf_kallsyms_lookup_name' requires arg1 name_sz to be between 0 and i32::MAX",
+            )),
+            (Self::GetFuncArg, 1) => Some((
+                0,
+                BPF_FUNC_ARG_INDEX_MAX_U32,
+                "helper 'bpf_get_func_arg' requires arg1 n to be between 0 and u32::MAX",
             )),
             (Self::MapLookupPercpuElem, 2) => Some((
                 0,
