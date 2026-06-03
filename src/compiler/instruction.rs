@@ -49,6 +49,7 @@ const BPF_FIB_LOOKUP_DIRECT: i64 = 1 << 0;
 const BPF_FIB_LOOKUP_TBID: i64 = 1 << 3;
 const BPF_FIB_LOOKUP_MARK: i64 = 1 << 5;
 const BPF_FIB_LOOKUP_SIZE: i64 = 64;
+const BPF_FIB_LOOKUP_PLEN_MAX_I32: i64 = i32::MAX as i64;
 pub(crate) const BPF_MTU_CHK_SEGS: i64 = 1 << 0;
 const BPF_F_ADJ_ROOM_ENCAP_L3_IPV4: i64 = 1 << 1;
 const BPF_F_ADJ_ROOM_ENCAP_L3_IPV6: i64 = 1 << 2;
@@ -1853,8 +1854,8 @@ impl BpfHelper {
             )),
             (Self::FibLookup, 2) => Some((
                 BPF_FIB_LOOKUP_SIZE,
-                i64::MAX,
-                "helper 'bpf_fib_lookup' requires arg2 plen to be at least sizeof(struct bpf_fib_lookup) (64 bytes)",
+                BPF_FIB_LOOKUP_PLEN_MAX_I32,
+                "helper 'bpf_fib_lookup' requires arg2 plen to be between sizeof(struct bpf_fib_lookup) (64 bytes) and i32::MAX",
             )),
             (Self::SkbSetTunnelKey, 3) => Some((
                 0,

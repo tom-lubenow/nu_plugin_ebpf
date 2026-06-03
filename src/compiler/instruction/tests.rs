@@ -3178,8 +3178,8 @@ fn test_fib_lookup_helper_contract() {
         BpfHelper::FibLookup.scalar_arg_range_requirement(2),
         Some((
             64,
-            i64::MAX,
-            "helper 'bpf_fib_lookup' requires arg2 plen to be at least sizeof(struct bpf_fib_lookup) (64 bytes)"
+            i32::MAX as i64,
+            "helper 'bpf_fib_lookup' requires arg2 plen to be between sizeof(struct bpf_fib_lookup) (64 bytes) and i32::MAX"
         ))
     );
     assert_eq!(

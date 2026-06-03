@@ -14821,6 +14821,21 @@ fn test_verify_mir_for_probe_context_fib_lookup_rejects_small_plen() {
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_fib_lookup_rejects_plen_above_i32_max() {
+    let (func, types) = make_fib_lookup_vcc_call(i32::MAX as i64 + 1, 64, 0);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected bpf_fib_lookup plen upper-bound error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_fib_lookup' requires arg2 plen")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_fib_lookup_rejects_invalid_flags() {
     let (func, types) = make_fib_lookup_vcc_call(64, 64, 0x40);
     let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");

@@ -516,8 +516,8 @@ values at `MTU_LEN_PTR` remain kernel-enforced for segment checks. XDP,
 tc_action, TC, TCX, and Netkit also
 model `helper-call "bpf_fib_lookup" $ctx PARAMS_PTR PLEN FLAGS`, where
 `PARAMS_PTR` must be a stack/map-backed `bpf_fib_lookup` buffer whose
-accessible size covers `PLEN`, and `PLEN` must be at least the modeled
-`struct bpf_fib_lookup` size (`64`). `FLAGS` may contain only modeled
+accessible size covers `PLEN`, and `PLEN` must fit `64..=i32::MAX` to
+cover the modeled `struct bpf_fib_lookup` size. `FLAGS` may contain only modeled
 `BPF_FIB_LOOKUP_*` bits (`0x3f`); the compiler also requires
 `BPF_FIB_LOOKUP_TBID` to be paired with `BPF_FIB_LOOKUP_DIRECT` and rejects
 `BPF_FIB_LOOKUP_MARK` with `BPF_FIB_LOOKUP_DIRECT`. `tc_action`, TC, TCX, Netkit, and `lwt_xmit` model

@@ -4606,6 +4606,23 @@ fn test_type_error_fib_lookup_helper_rejects_small_plen() {
 }
 
 #[test]
+fn test_type_error_fib_lookup_helper_rejects_plen_above_i32_max() {
+    let (func, _) = make_fib_lookup_call(i32::MAX as i64 + 1, 64, 0);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_fib_lookup plen upper-bound error");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_fib_lookup' requires arg2 plen")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
 fn test_type_error_fib_lookup_helper_rejects_invalid_flags() {
     let (func, _) = make_fib_lookup_call(64, 64, 0x40);
     let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
