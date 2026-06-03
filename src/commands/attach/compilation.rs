@@ -109,6 +109,7 @@ const NU_CLOSURE_COMMANDS: &[&str] = &[
     "math product",
     "math ceil",
     "math floor",
+    "math ln",
     "math round",
     "math sqrt",
     "math sum",

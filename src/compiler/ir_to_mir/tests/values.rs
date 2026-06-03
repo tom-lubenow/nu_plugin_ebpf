@@ -12725,6 +12725,129 @@ fn test_lower_math_exp_list_results_feed_metadata_only_str_join() {
 }
 
 #[test]
+fn test_lower_math_ln_rejects_materialized_float_results() {
+    for (offset, value, expected) in [
+        (
+            0,
+            Value::int(1, Span::test_data()),
+            "math ln compile-time result has type float",
+        ),
+        (
+            1,
+            Value::list(
+                vec![
+                    Value::int(1, Span::test_data()),
+                    Value::int(2, Span::test_data()),
+                ],
+                Span::test_data(),
+            ),
+            "math ln compile-time result has type list<float>",
+        ),
+        (
+            2,
+            Value::int(0, Span::test_data()),
+            "math ln requires positive input",
+        ),
+        (
+            3,
+            Value::int(-1, Span::test_data()),
+            "math ln requires positive input",
+        ),
+    ] {
+        let decl = DeclId::new(618 + offset);
+        let hir = make_value_pipeline_call_program(decl, value);
+        let decl_names = HashMap::from([(decl, "math ln".to_string())]);
+
+        let err = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .expect_err("math ln should reject direct materialization or non-positive input");
+
+        assert!(
+            err.to_string().contains(expected),
+            "unexpected error: {err}"
+        );
+    }
+}
+
+#[test]
+fn test_lower_math_ln_scalar_results_feed_metadata_only_fill() {
+    let math_decl = DeclId::new(622);
+    let fill_decl = DeclId::new(623);
+    let starts_with_decl = DeclId::new(624);
+    let hir = make_value_math_fill_starts_with_program(
+        math_decl,
+        fill_decl,
+        starts_with_decl,
+        Value::int(1, Span::test_data()),
+        "0000",
+        4,
+        "right",
+        "0",
+    );
+    let decl_names = HashMap::from([
+        (math_decl, "math ln".to_string()),
+        (fill_decl, "fill".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .unwrap_or_else(|err| panic!("math ln scalar result should feed fill: {err}"));
+
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("math ln fill result should compile");
+}
+
+#[test]
+fn test_lower_math_ln_list_results_feed_metadata_only_str_join() {
+    let math_decl = DeclId::new(625);
+    let join_decl = DeclId::new(626);
+    let starts_with_decl = DeclId::new(627);
+    let hir = make_value_list_math_join_starts_with_program(
+        math_decl,
+        join_decl,
+        starts_with_decl,
+        vec![
+            Value::int(1, Span::test_data()),
+            Value::int(2, Span::test_data()),
+        ],
+        ",",
+        "0.0,0.6931471805599453",
+    );
+    let decl_names = HashMap::from([
+        (math_decl, "math ln".to_string()),
+        (join_decl, "str join".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .unwrap_or_else(|err| panic!("math ln list result should feed str join: {err}"));
+
+    assert_no_runtime_list_operations(&result.program, "math ln list str join");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("math ln list str join should compile");
+}
+
+#[test]
 fn test_lower_math_unit_reducers_materialize_raw_i64_results() {
     let cases = [
         (

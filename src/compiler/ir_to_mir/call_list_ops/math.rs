@@ -426,6 +426,21 @@ impl<'a> HirToMirLowering<'a> {
         };
         let result = match cmd_name {
             "math exp" => raw.exp(),
+            "math ln" => {
+                if raw <= 0.0 {
+                    return Err(CompileError::UnsupportedInstruction(match list_index {
+                        Some(index) => {
+                            format!(
+                                "{cmd_name} requires positive list items in eBPF; item {index} is {raw}"
+                            )
+                        }
+                        None => {
+                            format!("{cmd_name} requires positive input in eBPF; input is {raw}")
+                        }
+                    }));
+                }
+                raw.ln()
+            }
             "math sqrt" => {
                 if raw < 0.0 {
                     return Err(CompileError::UnsupportedInstruction(match list_index {

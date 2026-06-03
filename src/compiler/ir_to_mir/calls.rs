@@ -4190,7 +4190,7 @@ impl<'a> HirToMirLowering<'a> {
                 self.lower_compile_time_math_avg(src_dst, dst_vreg, src_dst_had_value)?;
             }
 
-            "math exp" | "math sqrt" => {
+            "math exp" | "math ln" | "math sqrt" => {
                 self.lower_compile_time_math_float_unary(&cmd_name, src_dst, src_dst_had_value)?;
             }
 
