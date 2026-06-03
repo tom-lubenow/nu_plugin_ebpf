@@ -34,6 +34,7 @@ const BPF_F_L4_CSUM_REPLACE_ALLOWED_MASK: i64 = BPF_F_HDR_FIELD_MASK
     | BPF_F_MARK_ENFORCE
     | BPF_F_IPV6;
 const BPF_MAX_LOOPS: i64 = 8 * 1024 * 1024;
+const BPF_CGROUP_ARRAY_INDEX_MAX_U32: i64 = u32::MAX as i64;
 const BPF_FIB_LOOKUP_DIRECT: i64 = 1 << 0;
 const BPF_FIB_LOOKUP_TBID: i64 = 1 << 3;
 const BPF_FIB_LOOKUP_MARK: i64 = 1 << 5;
@@ -1447,6 +1448,11 @@ impl BpfHelper {
                 0,
                 BPF_ANCESTOR_CGROUP_LEVEL_MAX,
                 "ancestor cgroup helpers require ancestor_level to be between 0 and i32::MAX",
+            )),
+            (Self::SkbUnderCgroup, 2) | (Self::CurrentTaskUnderCgroup, 1) => Some((
+                0,
+                BPF_CGROUP_ARRAY_INDEX_MAX_U32,
+                "cgroup membership helpers require idx to be between 0 and u32::MAX",
             )),
             (Self::SkbChangeType, 1) => Some((
                 0,

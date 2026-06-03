@@ -1639,6 +1639,14 @@ fn test_cgroup_membership_helper_signatures() {
     assert_eq!(skb_sig.arg_kind(1), HelperArgKind::Pointer);
     assert_eq!(skb_sig.arg_kind(2), HelperArgKind::Scalar);
     assert_eq!(skb_sig.ret_kind, HelperRetKind::Scalar);
+    assert_eq!(
+        BpfHelper::SkbUnderCgroup.scalar_arg_range_requirement(2),
+        Some((
+            0,
+            u32::MAX as i64,
+            "cgroup membership helpers require idx to be between 0 and u32::MAX"
+        ))
+    );
 
     let task_sig = HelperSignature::for_id(BpfHelper::CurrentTaskUnderCgroup as u32)
         .expect("expected bpf_current_task_under_cgroup helper signature");
@@ -1647,6 +1655,14 @@ fn test_cgroup_membership_helper_signatures() {
     assert_eq!(task_sig.arg_kind(0), HelperArgKind::Pointer);
     assert_eq!(task_sig.arg_kind(1), HelperArgKind::Scalar);
     assert_eq!(task_sig.ret_kind, HelperRetKind::Scalar);
+    assert_eq!(
+        BpfHelper::CurrentTaskUnderCgroup.scalar_arg_range_requirement(1),
+        Some((
+            0,
+            u32::MAX as i64,
+            "cgroup membership helpers require idx to be between 0 and u32::MAX"
+        ))
+    );
 }
 
 #[test]

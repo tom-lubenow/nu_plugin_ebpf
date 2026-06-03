@@ -7034,6 +7034,95 @@ fn test_infer_sk_cgroup_helpers_in_cgroup_skb_program() {
     }
 }
 
+fn make_cgroup_membership_call(helper: BpfHelper, idx: i64) -> (MirFunction, VReg, VReg) {
+    let mut func = make_test_function();
+    let map = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let ctx = matches!(helper, BpfHelper::SkbUnderCgroup).then(|| func.alloc_vreg());
+
+    let block = func.block_mut(BlockId(0));
+    match helper {
+        BpfHelper::SkbUnderCgroup => {
+            let ctx = ctx.expect("skb helper should allocate context vreg");
+            block.instructions.push(MirInst::LoadCtxField {
+                dst: ctx,
+                field: CtxField::Context,
+                slot: None,
+            });
+            block.instructions.push(MirInst::CallHelper {
+                dst,
+                helper: helper as u32,
+                args: vec![
+                    MirValue::VReg(ctx),
+                    MirValue::VReg(map),
+                    MirValue::Const(idx),
+                ],
+            });
+        }
+        BpfHelper::CurrentTaskUnderCgroup => {
+            block.instructions.push(MirInst::CallHelper {
+                dst,
+                helper: helper as u32,
+                args: vec![MirValue::VReg(map), MirValue::Const(idx)],
+            });
+        }
+        _ => panic!("unexpected cgroup membership helper {helper:?}"),
+    }
+    block.terminator = MirInst::Return { val: None };
+
+    (func, map, dst)
+}
+
+fn cgroup_membership_probe_context(helper: BpfHelper) -> ProbeContext {
+    match helper {
+        BpfHelper::SkbUnderCgroup => ProbeContext::new(EbpfProgramType::Tc, "lo:ingress"),
+        BpfHelper::CurrentTaskUnderCgroup => ProbeContext::new(EbpfProgramType::Xdp, "lo"),
+        _ => panic!("unexpected cgroup membership helper {helper:?}"),
+    }
+}
+
+#[test]
+fn test_infer_cgroup_membership_helpers_constrain_cgroup_array_map_ref() {
+    for helper in [BpfHelper::SkbUnderCgroup, BpfHelper::CurrentTaskUnderCgroup] {
+        let (func, map, dst) = make_cgroup_membership_call(helper, 0);
+        let probe_ctx = cgroup_membership_probe_context(helper);
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let types = ti
+            .infer(&func)
+            .expect("expected cgroup membership helper to infer");
+
+        assert_eq!(types.get(&dst), Some(&MirType::I64));
+        assert_eq!(
+            types.get(&map),
+            Some(&MirType::MapRef {
+                key_ty: Box::new(MirType::U32),
+                val_ty: Box::new(MirType::U32),
+            })
+        );
+    }
+}
+
+#[test]
+fn test_type_error_cgroup_membership_helpers_reject_invalid_idx() {
+    for helper in [BpfHelper::SkbUnderCgroup, BpfHelper::CurrentTaskUnderCgroup] {
+        for idx in [-1_i64, 0x1_0000_0000] {
+            let (func, _, _) = make_cgroup_membership_call(helper, idx);
+            let probe_ctx = cgroup_membership_probe_context(helper);
+            let mut ti = TypeInference::new(Some(probe_ctx));
+            let errs = ti
+                .infer(&func)
+                .expect_err("expected cgroup membership helper idx range error");
+            assert!(
+                errs.iter().any(|e| e.message.contains(
+                    "cgroup membership helpers require idx to be between 0 and u32::MAX"
+                )),
+                "unexpected errors for {helper:?} idx {idx}: {:?}",
+                errs
+            );
+        }
+    }
+}
+
 fn make_sk_ancestor_cgroup_id_call(level: i64) -> MirFunction {
     let mut func = make_test_function();
     let call = func.alloc_block();

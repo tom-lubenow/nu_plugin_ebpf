@@ -550,7 +550,9 @@ impl<'a> TypeInference<'a> {
             BpfHelper::SkRedirectMap
             | BpfHelper::SockMapUpdate
             | BpfHelper::MsgRedirectMap
-            | BpfHelper::SkSelectReuseport => HMType::MapRef {
+            | BpfHelper::SkSelectReuseport
+            | BpfHelper::SkbUnderCgroup
+            | BpfHelper::CurrentTaskUnderCgroup => HMType::MapRef {
                 key_ty: Box::new(HMType::U32),
                 val_ty: Box::new(HMType::U32),
             },
