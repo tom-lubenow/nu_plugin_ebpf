@@ -16687,6 +16687,20 @@ fn test_verify_mir_for_probe_context_fib_lookup_rejects_small_plen() {
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_fib_lookup_rejects_zero_plen() {
+    let (func, types) = make_fib_lookup_verify_call(0, 64, 0);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected bpf_fib_lookup zero plen error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("helper 69 arg2 must be > 0")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_fib_lookup_rejects_plen_above_i32_max() {
     let (func, types) = make_fib_lookup_verify_call(i32::MAX as i64 + 1, 64, 0);
     let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
@@ -17096,6 +17110,20 @@ fn test_verify_mir_for_probe_context_skb_get_xfrm_state_rejects_small_buffer() {
         err.iter().any(|e| e
             .message
             .contains("helper skb_get_xfrm_state xfrm_state out of bounds")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_skb_get_xfrm_state_rejects_zero_size() {
+    let (func, types) = make_skb_get_xfrm_state_verify_call(0, 0, 28);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected bpf_skb_get_xfrm_state zero-size error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("helper 66 arg3 must be > 0")),
         "unexpected errors: {:?}",
         err
     );

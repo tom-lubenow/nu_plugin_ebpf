@@ -4723,6 +4723,22 @@ fn test_type_error_fib_lookup_helper_rejects_small_plen() {
 }
 
 #[test]
+fn test_type_error_fib_lookup_helper_rejects_zero_plen() {
+    let (func, _) = make_fib_lookup_call(0, 64, 0);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_fib_lookup zero plen error");
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("helper 69 arg2 must be > 0")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
 fn test_type_error_fib_lookup_helper_rejects_plen_above_i32_max() {
     let (func, _) = make_fib_lookup_call(i32::MAX as i64 + 1, 64, 0);
     let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
@@ -5178,6 +5194,22 @@ fn test_type_error_skb_get_xfrm_state_helper_rejects_small_buffer() {
         errs.iter().any(|e| e
             .message
             .contains("helper skb_get_xfrm_state xfrm_state requires 28 bytes")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_type_error_skb_get_xfrm_state_helper_rejects_zero_size() {
+    let (func, _) = make_skb_get_xfrm_state_call(0, 0, 28);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_skb_get_xfrm_state zero-size error");
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("helper 66 arg3 must be > 0")),
         "unexpected errors: {:?}",
         errs
     );
