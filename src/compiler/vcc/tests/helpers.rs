@@ -18772,17 +18772,56 @@ fn make_tcp_syncookie_vcc_call(
 }
 
 #[test]
+fn test_verify_mir_helper_tcp_syncookie_rejects_short_header_lengths() {
+    for (helper, iph_len, th_len, expected) in [
+        (
+            BpfHelper::TcpCheckSyncookie,
+            19,
+            20,
+            "TCP syncookie helpers require arg2 iph_len to be between 20 and u32::MAX",
+        ),
+        (
+            BpfHelper::TcpCheckSyncookie,
+            20,
+            19,
+            "TCP syncookie helpers require arg4 th_len to be between 20 and u32::MAX",
+        ),
+        (
+            BpfHelper::TcpGenSyncookie,
+            19,
+            20,
+            "TCP syncookie helpers require arg2 iph_len to be between 20 and u32::MAX",
+        ),
+        (
+            BpfHelper::TcpGenSyncookie,
+            20,
+            19,
+            "TCP syncookie helpers require arg4 th_len to be between 20 and u32::MAX",
+        ),
+    ] {
+        let (func, types) = make_tcp_syncookie_vcc_call(helper, iph_len, th_len);
+        let err = verify_mir(&func, &types)
+            .expect_err("expected TCP syncookie short header length error");
+        assert!(
+            err.iter().any(|e| e.message.contains(expected)),
+            "unexpected errors for {helper:?} iph_len {iph_len} th_len {th_len}: {:?}",
+            err
+        );
+    }
+}
+
+#[test]
 fn test_verify_mir_helper_tcp_check_syncookie_rejects_lengths_above_u32_max() {
     for (iph_len, th_len, expected) in [
         (
             u32::MAX as i64 + 1,
             20,
-            "TCP syncookie helpers require arg2 iph_len to be between 0 and u32::MAX",
+            "TCP syncookie helpers require arg2 iph_len to be between 20 and u32::MAX",
         ),
         (
             20,
             u32::MAX as i64 + 1,
-            "TCP syncookie helpers require arg4 th_len to be between 0 and u32::MAX",
+            "TCP syncookie helpers require arg4 th_len to be between 20 and u32::MAX",
         ),
     ] {
         let (func, types) =
@@ -18803,12 +18842,12 @@ fn test_verify_mir_helper_tcp_gen_syncookie_rejects_lengths_above_u32_max() {
         (
             u32::MAX as i64 + 1,
             20,
-            "TCP syncookie helpers require arg2 iph_len to be between 0 and u32::MAX",
+            "TCP syncookie helpers require arg2 iph_len to be between 20 and u32::MAX",
         ),
         (
             20,
             u32::MAX as i64 + 1,
-            "TCP syncookie helpers require arg4 th_len to be between 0 and u32::MAX",
+            "TCP syncookie helpers require arg4 th_len to be between 20 and u32::MAX",
         ),
     ] {
         let (func, types) =

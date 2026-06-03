@@ -5051,17 +5051,17 @@ fn test_helper_signature_socket_helpers() {
         assert_eq!(
             helper.scalar_arg_range_requirement(2),
             Some((
-                0,
+                20,
                 u32::MAX as i64,
-                "TCP syncookie helpers require arg2 iph_len to be between 0 and u32::MAX"
+                "TCP syncookie helpers require arg2 iph_len to be between 20 and u32::MAX"
             ))
         );
         assert_eq!(
             helper.scalar_arg_range_requirement(4),
             Some((
-                0,
+                20,
                 u32::MAX as i64,
-                "TCP syncookie helpers require arg4 th_len to be between 0 and u32::MAX"
+                "TCP syncookie helpers require arg4 th_len to be between 20 and u32::MAX"
             ))
         );
     }

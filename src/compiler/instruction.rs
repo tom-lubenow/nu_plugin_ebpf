@@ -112,6 +112,7 @@ const BPF_CHECK_MTU_LEN_DIFF_MAX_I32: i64 = i32::MAX as i64;
 const BPF_SOCKET_LOOKUP_TUPLE_SIZE_MAX_U32: i64 = u32::MAX as i64;
 const BPF_SOCKET_LOOKUP_NETNS_MIN_I32: i64 = i32::MIN as i64;
 const BPF_SOCKET_LOOKUP_NETNS_MAX_I32: i64 = i32::MAX as i64;
+const BPF_SYNCOOKIE_HEADER_LEN_MIN: i64 = 20;
 const BPF_SYNCOOKIE_HEADER_LEN_MAX_U32: i64 = u32::MAX as i64;
 const BPF_FUNC_ARG_INDEX_MAX_U32: i64 = u32::MAX as i64;
 const BPF_TCP_SEND_ACK_RCV_NXT_MAX_U32: i64 = u32::MAX as i64;
@@ -1820,14 +1821,14 @@ impl BpfHelper {
                 "socket lookup helpers require arg3 netns to be between i32::MIN and i32::MAX",
             )),
             (Self::TcpCheckSyncookie | Self::TcpGenSyncookie, 2) => Some((
-                0,
+                BPF_SYNCOOKIE_HEADER_LEN_MIN,
                 BPF_SYNCOOKIE_HEADER_LEN_MAX_U32,
-                "TCP syncookie helpers require arg2 iph_len to be between 0 and u32::MAX",
+                "TCP syncookie helpers require arg2 iph_len to be between 20 and u32::MAX",
             )),
             (Self::TcpCheckSyncookie | Self::TcpGenSyncookie, 4) => Some((
-                0,
+                BPF_SYNCOOKIE_HEADER_LEN_MIN,
                 BPF_SYNCOOKIE_HEADER_LEN_MAX_U32,
-                "TCP syncookie helpers require arg4 th_len to be between 0 and u32::MAX",
+                "TCP syncookie helpers require arg4 th_len to be between 20 and u32::MAX",
             )),
             (Self::TcpRawGenSyncookieIpv4 | Self::TcpRawGenSyncookieIpv6, 2) => Some((
                 0,

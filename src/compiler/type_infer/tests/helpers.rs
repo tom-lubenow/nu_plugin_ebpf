@@ -11745,6 +11745,80 @@ fn test_type_error_helper_tcp_check_syncookie_rejects_non_kernel_sk_pointer() {
     }));
 }
 
+fn make_tcp_syncookie_type_call(helper: BpfHelper, iph_len: i64, th_len: i64) -> MirFunction {
+    let mut func = make_test_function();
+    let pid = func.alloc_vreg();
+    let sk = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(7),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: sk,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: helper as u32,
+        args: vec![
+            MirValue::VReg(sk),
+            MirValue::VReg(sk),
+            MirValue::Const(iph_len),
+            MirValue::VReg(sk),
+            MirValue::Const(th_len),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    func
+}
+
+#[test]
+fn test_type_error_tcp_syncookie_helpers_reject_short_header_lengths() {
+    for (helper, iph_len, th_len, expected) in [
+        (
+            BpfHelper::TcpCheckSyncookie,
+            19,
+            20,
+            "TCP syncookie helpers require arg2 iph_len to be between 20 and u32::MAX",
+        ),
+        (
+            BpfHelper::TcpCheckSyncookie,
+            20,
+            19,
+            "TCP syncookie helpers require arg4 th_len to be between 20 and u32::MAX",
+        ),
+        (
+            BpfHelper::TcpGenSyncookie,
+            19,
+            20,
+            "TCP syncookie helpers require arg2 iph_len to be between 20 and u32::MAX",
+        ),
+        (
+            BpfHelper::TcpGenSyncookie,
+            20,
+            19,
+            "TCP syncookie helpers require arg4 th_len to be between 20 and u32::MAX",
+        ),
+    ] {
+        let func = make_tcp_syncookie_type_call(helper, iph_len, th_len);
+        let mut ti = TypeInference::new(None);
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected TCP syncookie short header length error");
+        assert!(
+            errs.iter().any(|e| e.message.contains(expected)),
+            "unexpected errors for {helper:?} iph_len {iph_len} th_len {th_len}: {:?}",
+            errs
+        );
+    }
+}
+
 #[test]
 fn test_type_error_helper_tcp_check_syncookie_rejects_non_positive_lengths() {
     let mut func = make_test_function();
@@ -11832,14 +11906,14 @@ fn test_type_error_helper_tcp_check_syncookie_rejects_lengths_above_u32_max() {
     assert!(
         errs.iter().any(|e| e
             .message
-            .contains("TCP syncookie helpers require arg2 iph_len to be between 0 and u32::MAX")),
+            .contains("TCP syncookie helpers require arg2 iph_len to be between 20 and u32::MAX")),
         "unexpected errors: {:?}",
         errs
     );
     assert!(
         errs.iter().any(|e| e
             .message
-            .contains("TCP syncookie helpers require arg4 th_len to be between 0 and u32::MAX")),
+            .contains("TCP syncookie helpers require arg4 th_len to be between 20 and u32::MAX")),
         "unexpected errors: {:?}",
         errs
     );
@@ -11979,14 +12053,14 @@ fn test_type_error_helper_tcp_gen_syncookie_rejects_lengths_above_u32_max() {
     assert!(
         errs.iter().any(|e| e
             .message
-            .contains("TCP syncookie helpers require arg2 iph_len to be between 0 and u32::MAX")),
+            .contains("TCP syncookie helpers require arg2 iph_len to be between 20 and u32::MAX")),
         "unexpected errors: {:?}",
         errs
     );
     assert!(
         errs.iter().any(|e| e
             .message
-            .contains("TCP syncookie helpers require arg4 th_len to be between 0 and u32::MAX")),
+            .contains("TCP syncookie helpers require arg4 th_len to be between 20 and u32::MAX")),
         "unexpected errors: {:?}",
         errs
     );
