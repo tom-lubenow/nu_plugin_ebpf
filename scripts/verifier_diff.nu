@@ -37392,6 +37392,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-list-split-list-regex-after-string-group-join"
+        category: "language-core"
+        tags: [list split-list regex after string join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ["a" "x1" "c" "x22" "e" "f"] | split list --regex --split after "x\\d+" | get 1 | str join "-" | str starts-with "c-x22"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-string-split-chars-join"
         category: "language-core"
         tags: [string split chars join]
