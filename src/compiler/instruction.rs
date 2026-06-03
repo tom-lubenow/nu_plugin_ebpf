@@ -80,6 +80,11 @@ const BPF_HDR_OPT_LEN_MAX_U32: i64 = u32::MAX as i64;
 const BPF_SOCKET_HELPER_LEN_MAX_I32: i64 = i32::MAX as i64;
 const BPF_STRNCMP_SIZE_MAX_U32: i64 = u32::MAX as i64;
 const BPF_RINGBUF_DYNPTR_RESERVE_SIZE_MAX_U32: i64 = u32::MAX as i64;
+const BPF_SYSCALL_CMD_MAX_I32: i64 = i32::MAX as i64;
+const BPF_SYSCALL_ATTR_SIZE_MAX_U32: i64 = u32::MAX as i64;
+const BPF_SYSCALL_FD_MAX_U32: i64 = u32::MAX as i64;
+const BPF_SYSCALL_NAME_SIZE_MAX_I32: i64 = i32::MAX as i64;
+const BPF_BTF_KIND_MAX_U32: i64 = u32::MAX as i64;
 const PACKET_OTHERHOST: i64 = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1460,6 +1465,36 @@ impl BpfHelper {
                 "helper 'bpf_loop' requires arg0 nr_loops to be between 0 and BPF_MAX_LOOPS (8 * 1024 * 1024)",
             )),
             (Self::BpfLoop, 3) => Some((0, 0, "helper 'bpf_loop' requires arg3 flags to be 0")),
+            (Self::SysBpf, 0) => Some((
+                0,
+                BPF_SYSCALL_CMD_MAX_I32,
+                "helper 'bpf_sys_bpf' requires arg0 cmd to be between 0 and i32::MAX",
+            )),
+            (Self::SysBpf, 2) => Some((
+                0,
+                BPF_SYSCALL_ATTR_SIZE_MAX_U32,
+                "helper 'bpf_sys_bpf' requires arg2 attr_size to be between 0 and u32::MAX",
+            )),
+            (Self::BtfFindByNameKind, 1) => Some((
+                0,
+                BPF_SYSCALL_NAME_SIZE_MAX_I32,
+                "helper 'bpf_btf_find_by_name_kind' requires arg1 name_sz to be between 0 and i32::MAX",
+            )),
+            (Self::BtfFindByNameKind, 2) => Some((
+                0,
+                BPF_BTF_KIND_MAX_U32,
+                "helper 'bpf_btf_find_by_name_kind' requires arg2 kind to be between 0 and u32::MAX",
+            )),
+            (Self::SysClose, 0) => Some((
+                0,
+                BPF_SYSCALL_FD_MAX_U32,
+                "helper 'bpf_sys_close' requires arg0 fd to be between 0 and u32::MAX",
+            )),
+            (Self::KallsymsLookupName, 1) => Some((
+                0,
+                BPF_SYSCALL_NAME_SIZE_MAX_I32,
+                "helper 'bpf_kallsyms_lookup_name' requires arg1 name_sz to be between 0 and i32::MAX",
+            )),
             (Self::GetCurrentComm, 1) => Some((
                 0,
                 BPF_GET_CURRENT_COMM_SIZE_MAX_U32,

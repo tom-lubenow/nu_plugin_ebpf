@@ -4368,6 +4368,106 @@ fn test_verify_mir_for_probe_context_sys_bpf_requires_positive_attr_size() {
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_syscall_helpers_reject_scalar_width_overflows() {
+    fn check_syscall_width_error<F>(helper: BpfHelper, build_args: F, expected: &str)
+    where
+        F: FnOnce(&mut MirFunction) -> Vec<MirValue>,
+    {
+        let (mut func, entry) = new_mir_function();
+        let dst = func.alloc_vreg();
+        let args = build_args(&mut func);
+
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: helper as u32,
+                args,
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let types = HashMap::from([(dst, MirType::I64)]);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Syscall, "demo");
+        let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect_err("expected syscall helper scalar width error");
+        assert!(
+            err.iter().any(|e| e.message.contains(expected)),
+            "expected {expected:?}, got {err:?}"
+        );
+    }
+
+    check_syscall_width_error(
+        BpfHelper::SysBpf,
+        |func| {
+            let attr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+            vec![
+                MirValue::Const(0x8000_0000),
+                MirValue::StackSlot(attr_slot),
+                MirValue::Const(16),
+            ]
+        },
+        "helper 'bpf_sys_bpf' requires arg0 cmd to be between 0 and i32::MAX",
+    );
+    check_syscall_width_error(
+        BpfHelper::SysBpf,
+        |func| {
+            let attr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+            vec![
+                MirValue::Const(0),
+                MirValue::StackSlot(attr_slot),
+                MirValue::Const(0x1_0000_0000),
+            ]
+        },
+        "helper 'bpf_sys_bpf' requires arg2 attr_size to be between 0 and u32::MAX",
+    );
+    check_syscall_width_error(
+        BpfHelper::BtfFindByNameKind,
+        |func| {
+            let name_slot = func.alloc_stack_slot(16, 1, StackSlotKind::StringBuffer);
+            vec![
+                MirValue::StackSlot(name_slot),
+                MirValue::Const(0x8000_0000),
+                MirValue::Const(1),
+                MirValue::Const(0),
+            ]
+        },
+        "helper 'bpf_btf_find_by_name_kind' requires arg1 name_sz to be between 0 and i32::MAX",
+    );
+    check_syscall_width_error(
+        BpfHelper::BtfFindByNameKind,
+        |func| {
+            let name_slot = func.alloc_stack_slot(16, 1, StackSlotKind::StringBuffer);
+            vec![
+                MirValue::StackSlot(name_slot),
+                MirValue::Const(16),
+                MirValue::Const(0x1_0000_0000),
+                MirValue::Const(0),
+            ]
+        },
+        "helper 'bpf_btf_find_by_name_kind' requires arg2 kind to be between 0 and u32::MAX",
+    );
+    check_syscall_width_error(
+        BpfHelper::SysClose,
+        |_| vec![MirValue::Const(0x1_0000_0000)],
+        "helper 'bpf_sys_close' requires arg0 fd to be between 0 and u32::MAX",
+    );
+    check_syscall_width_error(
+        BpfHelper::KallsymsLookupName,
+        |func| {
+            let name_slot = func.alloc_stack_slot(16, 1, StackSlotKind::StringBuffer);
+            let res_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+            vec![
+                MirValue::StackSlot(name_slot),
+                MirValue::Const(0x8000_0000),
+                MirValue::Const(0),
+                MirValue::StackSlot(res_slot),
+            ]
+        },
+        "helper 'bpf_kallsyms_lookup_name' requires arg1 name_sz to be between 0 and i32::MAX",
+    );
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_btf_find_by_name_kind_requires_zero_flags() {
     let (mut func, entry) = new_mir_function();
     let name_slot = func.alloc_stack_slot(16, 1, StackSlotKind::StringBuffer);

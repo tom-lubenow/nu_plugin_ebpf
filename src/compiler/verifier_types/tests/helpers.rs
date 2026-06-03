@@ -4412,6 +4412,87 @@ fn test_verify_mir_for_probe_context_syscall_helpers_enforce_size_and_flags() {
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_syscall_helpers_reject_scalar_width_overflows() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    let attr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let name_slot = func.alloc_stack_slot(16, 1, StackSlotKind::StringBuffer);
+    let res_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let sys_bpf = func.alloc_vreg();
+    let btf_find = func.alloc_vreg();
+    let sys_close = func.alloc_vreg();
+    let kallsyms = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: sys_bpf,
+            helper: BpfHelper::SysBpf as u32,
+            args: vec![
+                MirValue::Const(0x8000_0000),
+                MirValue::StackSlot(attr_slot),
+                MirValue::Const(0x1_0000_0000),
+            ],
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: btf_find,
+            helper: BpfHelper::BtfFindByNameKind as u32,
+            args: vec![
+                MirValue::StackSlot(name_slot),
+                MirValue::Const(0x8000_0000),
+                MirValue::Const(0x1_0000_0000),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: sys_close,
+            helper: BpfHelper::SysClose as u32,
+            args: vec![MirValue::Const(0x1_0000_0000)],
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: kallsyms,
+            helper: BpfHelper::KallsymsLookupName as u32,
+            args: vec![
+                MirValue::StackSlot(name_slot),
+                MirValue::Const(0x8000_0000),
+                MirValue::Const(0),
+                MirValue::StackSlot(res_slot),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let types = HashMap::from([
+        (sys_bpf, MirType::I64),
+        (btf_find, MirType::I64),
+        (sys_close, MirType::I64),
+        (kallsyms, MirType::I64),
+    ]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Syscall, "demo");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected syscall helper scalar width errors");
+    for expected in [
+        "helper 'bpf_sys_bpf' requires arg0 cmd to be between 0 and i32::MAX",
+        "helper 'bpf_sys_bpf' requires arg2 attr_size to be between 0 and u32::MAX",
+        "helper 'bpf_btf_find_by_name_kind' requires arg1 name_sz to be between 0 and i32::MAX",
+        "helper 'bpf_btf_find_by_name_kind' requires arg2 kind to be between 0 and u32::MAX",
+        "helper 'bpf_sys_close' requires arg0 fd to be between 0 and u32::MAX",
+        "helper 'bpf_kallsyms_lookup_name' requires arg1 name_sz to be between 0 and i32::MAX",
+    ] {
+        assert!(
+            err.iter().any(|e| e.message.contains(expected)),
+            "expected {expected:?}, got {err:?}"
+        );
+    }
+}
+
+#[test]
 fn test_unknown_helper_rejects_more_than_five_args() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

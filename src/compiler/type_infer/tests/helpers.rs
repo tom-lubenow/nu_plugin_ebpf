@@ -1779,6 +1779,73 @@ fn test_type_error_syscall_helpers_enforce_size_and_flags() {
 }
 
 #[test]
+fn test_type_error_syscall_helpers_reject_scalar_width_overflows() {
+    let mut func = make_test_function();
+    let attr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let name_slot = func.alloc_stack_slot(16, 1, StackSlotKind::StringBuffer);
+    let res_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let sys_bpf = func.alloc_vreg();
+    let btf_find = func.alloc_vreg();
+    let sys_close = func.alloc_vreg();
+    let kallsyms = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst: sys_bpf,
+        helper: BpfHelper::SysBpf as u32,
+        args: vec![
+            MirValue::Const(0x8000_0000),
+            MirValue::StackSlot(attr_slot),
+            MirValue::Const(0x1_0000_0000),
+        ],
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst: btf_find,
+        helper: BpfHelper::BtfFindByNameKind as u32,
+        args: vec![
+            MirValue::StackSlot(name_slot),
+            MirValue::Const(0x8000_0000),
+            MirValue::Const(0x1_0000_0000),
+            MirValue::Const(0),
+        ],
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst: sys_close,
+        helper: BpfHelper::SysClose as u32,
+        args: vec![MirValue::Const(0x1_0000_0000)],
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst: kallsyms,
+        helper: BpfHelper::KallsymsLookupName as u32,
+        args: vec![
+            MirValue::StackSlot(name_slot),
+            MirValue::Const(0x8000_0000),
+            MirValue::Const(0),
+            MirValue::StackSlot(res_slot),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Syscall, "demo");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected syscall helper scalar width errors");
+    for expected in [
+        "helper 'bpf_sys_bpf' requires arg0 cmd to be between 0 and i32::MAX",
+        "helper 'bpf_sys_bpf' requires arg2 attr_size to be between 0 and u32::MAX",
+        "helper 'bpf_btf_find_by_name_kind' requires arg1 name_sz to be between 0 and i32::MAX",
+        "helper 'bpf_btf_find_by_name_kind' requires arg2 kind to be between 0 and u32::MAX",
+        "helper 'bpf_sys_close' requires arg0 fd to be between 0 and u32::MAX",
+        "helper 'bpf_kallsyms_lookup_name' requires arg1 name_sz to be between 0 and i32::MAX",
+    ] {
+        assert!(
+            errs.iter().any(|e| e.message.contains(expected)),
+            "expected {expected:?}, got {errs:?}"
+        );
+    }
+}
+
+#[test]
 fn test_infer_snprintf_helper_accepts_rodata_format() {
     let mut func = make_test_function();
     let out_slot = func.alloc_stack_slot(32, 8, StackSlotKind::StringBuffer);

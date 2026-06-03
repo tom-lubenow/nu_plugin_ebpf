@@ -5000,6 +5000,22 @@ fn test_syscall_helper_contracts() {
     assert!(sys_bpf.ptr_arg_rules[0].allowed.allow_stack);
     assert!(sys_bpf.ptr_arg_rules[0].allowed.allow_map);
     assert_eq!(sys_bpf.ptr_arg_rules[0].size_from_arg, Some(2));
+    assert_eq!(
+        BpfHelper::SysBpf.scalar_arg_range_requirement(0),
+        Some((
+            0,
+            i32::MAX as i64,
+            "helper 'bpf_sys_bpf' requires arg0 cmd to be between 0 and i32::MAX"
+        ))
+    );
+    assert_eq!(
+        BpfHelper::SysBpf.scalar_arg_range_requirement(2),
+        Some((
+            0,
+            u32::MAX as i64,
+            "helper 'bpf_sys_bpf' requires arg2 attr_size to be between 0 and u32::MAX"
+        ))
+    );
 
     let btf_find = BpfHelper::BtfFindByNameKind.semantics();
     assert_eq!(btf_find.positive_size_args, &[1]);
@@ -5012,6 +5028,31 @@ fn test_syscall_helper_contracts() {
     assert_eq!(
         BpfHelper::BtfFindByNameKind.zero_scalar_arg_requirement(),
         Some((3, "helper 'bpf_btf_find_by_name_kind' requires arg3 = 0"))
+    );
+    assert_eq!(
+        BpfHelper::BtfFindByNameKind.scalar_arg_range_requirement(1),
+        Some((
+            0,
+            i32::MAX as i64,
+            "helper 'bpf_btf_find_by_name_kind' requires arg1 name_sz to be between 0 and i32::MAX"
+        ))
+    );
+    assert_eq!(
+        BpfHelper::BtfFindByNameKind.scalar_arg_range_requirement(2),
+        Some((
+            0,
+            u32::MAX as i64,
+            "helper 'bpf_btf_find_by_name_kind' requires arg2 kind to be between 0 and u32::MAX"
+        ))
+    );
+
+    assert_eq!(
+        BpfHelper::SysClose.scalar_arg_range_requirement(0),
+        Some((
+            0,
+            u32::MAX as i64,
+            "helper 'bpf_sys_close' requires arg0 fd to be between 0 and u32::MAX"
+        ))
     );
 
     let kallsyms = BpfHelper::KallsymsLookupName.semantics();
@@ -5030,6 +5071,14 @@ fn test_syscall_helper_contracts() {
     assert_eq!(
         BpfHelper::KallsymsLookupName.zero_scalar_arg_requirement(),
         Some((2, "helper 'bpf_kallsyms_lookup_name' requires arg2 = 0"))
+    );
+    assert_eq!(
+        BpfHelper::KallsymsLookupName.scalar_arg_range_requirement(1),
+        Some((
+            0,
+            i32::MAX as i64,
+            "helper 'bpf_kallsyms_lookup_name' requires arg1 name_sz to be between 0 and i32::MAX"
+        ))
     );
 }
 
