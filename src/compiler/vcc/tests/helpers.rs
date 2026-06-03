@@ -7847,6 +7847,48 @@ fn make_perf_event_read_vcc_call(
     (func, types)
 }
 
+fn make_perf_prog_read_value_vcc_call(
+    size: i64,
+    buf_size: usize,
+) -> (MirFunction, HashMap<VReg, MirType>) {
+    let (mut func, entry) = new_mir_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let buf_slot = func.alloc_stack_slot(buf_size, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::PerfProgReadValue as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(buf_slot),
+                MirValue::Const(size),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    (func, types)
+}
+
 #[test]
 fn test_verify_mir_perf_event_read_helpers() {
     for helper in [BpfHelper::PerfEventRead, BpfHelper::PerfEventReadValue] {
@@ -7854,6 +7896,36 @@ fn test_verify_mir_perf_event_read_helpers() {
         verify_mir_for_program(&func, &types, EbpfProgramType::Xdp.info())
             .expect("expected perf event read helper to verify");
     }
+}
+
+#[test]
+fn test_verify_mir_perf_prog_read_value_helper() {
+    let (func, types) = make_perf_prog_read_value_vcc_call(24, 24);
+    verify_mir_for_program(&func, &types, EbpfProgramType::PerfEvent.info())
+        .expect("expected perf prog read value helper to verify");
+}
+
+#[test]
+fn test_verify_mir_perf_prog_read_value_requires_exact_size() {
+    let (func, types) = make_perf_prog_read_value_vcc_call(8, 24);
+    let err = verify_mir_for_program(&func, &types, EbpfProgramType::PerfEvent.info())
+        .expect_err("expected perf_prog_read_value size error");
+    assert!(err.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_perf_prog_read_value' requires arg2 = 24")
+    }));
+}
+
+#[test]
+fn test_verify_mir_perf_prog_read_value_rejects_small_buffer() {
+    let (func, types) = make_perf_prog_read_value_vcc_call(24, 8);
+    let err = verify_mir_for_program(&func, &types, EbpfProgramType::PerfEvent.info())
+        .expect_err("expected perf_prog_read_value buffer bounds error");
+    assert!(
+        err.iter().any(|e| e.kind == VccErrorKind::PointerBounds),
+        "expected pointer bounds error, got {:?}",
+        err
+    );
 }
 
 #[test]

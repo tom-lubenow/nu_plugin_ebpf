@@ -4084,6 +4084,15 @@ fn test_perf_prog_read_value_helper_contract() {
     assert!(buf.allowed.allow_map);
     assert!(!buf.allowed.allow_kernel);
     assert_eq!(buf.size_from_arg, Some(2));
+
+    assert_eq!(
+        BpfHelper::PerfProgReadValue.scalar_arg_const_requirement(),
+        Some((
+            2,
+            24,
+            "helper 'bpf_perf_prog_read_value' requires arg2 = 24"
+        ))
+    );
 }
 
 #[test]

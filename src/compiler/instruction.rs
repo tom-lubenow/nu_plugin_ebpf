@@ -2147,6 +2147,11 @@ impl BpfHelper {
 
     pub const fn scalar_arg_const_requirement(self) -> Option<(usize, i64, &'static str)> {
         match self {
+            Self::PerfProgReadValue => Some((
+                2,
+                24,
+                "helper 'bpf_perf_prog_read_value' requires arg2 = 24",
+            )),
             Self::PerfEventReadValue => Some((
                 3,
                 24,

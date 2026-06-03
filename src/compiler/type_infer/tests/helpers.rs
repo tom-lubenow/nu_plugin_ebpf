@@ -6782,6 +6782,30 @@ fn make_perf_event_read_call(
     (func, dst)
 }
 
+fn make_perf_prog_read_value_call(size: i64, buf_size: usize) -> (MirFunction, VReg) {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let buf_slot = func.alloc_stack_slot(buf_size, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::PerfProgReadValue as u32,
+        args: vec![
+            MirValue::VReg(ctx),
+            MirValue::StackSlot(buf_slot),
+            MirValue::Const(size),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+    (func, dst)
+}
+
 #[test]
 fn test_infer_perf_event_read_helpers() {
     for helper in [BpfHelper::PerfEventRead, BpfHelper::PerfEventReadValue] {
@@ -6793,6 +6817,57 @@ fn test_infer_perf_event_read_helpers() {
             .expect("expected perf event read helper to infer");
         assert_eq!(types.get(&dst), Some(&MirType::I64));
     }
+}
+
+#[test]
+fn test_infer_perf_prog_read_value_helper() {
+    let (func, dst) = make_perf_prog_read_value_call(24, 24);
+    let probe_ctx = ProbeContext::new(
+        EbpfProgramType::PerfEvent,
+        "software:cpu-clock:period=100000",
+    );
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let types = ti
+        .infer(&func)
+        .expect("expected perf prog read value helper to infer");
+    assert_eq!(types.get(&dst), Some(&MirType::I64));
+}
+
+#[test]
+fn test_type_error_perf_prog_read_value_requires_exact_size() {
+    let (func, _) = make_perf_prog_read_value_call(8, 24);
+    let probe_ctx = ProbeContext::new(
+        EbpfProgramType::PerfEvent,
+        "software:cpu-clock:period=100000",
+    );
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected perf_prog_read_value size error");
+    assert!(errs.iter().any(|e| {
+        e.message
+            .contains("helper 'bpf_perf_prog_read_value' requires arg2 = 24")
+    }));
+}
+
+#[test]
+fn test_type_error_perf_prog_read_value_rejects_small_buffer() {
+    let (func, _) = make_perf_prog_read_value_call(24, 8);
+    let probe_ctx = ProbeContext::new(
+        EbpfProgramType::PerfEvent,
+        "software:cpu-clock:period=100000",
+    );
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected perf_prog_read_value buffer bounds error");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("helper perf_prog_read_value buf requires 24 bytes")),
+        "unexpected errors: {:?}",
+        errs
+    );
 }
 
 #[test]
