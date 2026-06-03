@@ -391,6 +391,106 @@ impl<'a> HirToMirLowering<'a> {
         Ok(value as i64)
     }
 
+    fn compile_time_math_sqrt_value(
+        value: nu_protocol::Value,
+        list_index: Option<usize>,
+    ) -> Result<nu_protocol::Value, CompileError> {
+        let raw = match value {
+            nu_protocol::Value::Int { val, .. } => val as f64,
+            nu_protocol::Value::Float { val, .. } if val.is_finite() => val,
+            nu_protocol::Value::Float { val, .. } => {
+                return Err(CompileError::UnsupportedInstruction(match list_index {
+                    Some(index) => {
+                        format!(
+                            "math sqrt requires finite float list items in eBPF; item {index} is {val}"
+                        )
+                    }
+                    None => {
+                        format!("math sqrt requires finite float input in eBPF; input is {val}")
+                    }
+                }));
+            }
+            other => {
+                return Err(CompileError::UnsupportedInstruction(match list_index {
+                    Some(index) => format!(
+                        "math sqrt requires integer or float list items in eBPF; item {index} has type {}",
+                        other.get_type()
+                    ),
+                    None => format!(
+                        "math sqrt requires integer or float input in eBPF; input has type {}",
+                        other.get_type()
+                    ),
+                }));
+            }
+        };
+        if raw < 0.0 {
+            return Err(CompileError::UnsupportedInstruction(match list_index {
+                Some(index) => {
+                    format!(
+                        "math sqrt requires non-negative list items in eBPF; item {index} is {raw}"
+                    )
+                }
+                None => format!("math sqrt requires non-negative input in eBPF; input is {raw}"),
+            }));
+        }
+        Ok(nu_protocol::Value::float(raw.sqrt(), Span::unknown()))
+    }
+
+    pub(in crate::compiler::ir_to_mir) fn lower_compile_time_math_sqrt(
+        &mut self,
+        src_dst: RegId,
+        src_dst_had_value: bool,
+    ) -> Result<(), CompileError> {
+        let input_reg = self
+            .pipeline_input_reg
+            .or(src_dst_had_value.then_some(src_dst));
+
+        if !self.named_flags.is_empty()
+            || !self.named_args.is_empty()
+            || !self.positional_args.is_empty()
+        {
+            return Err(CompileError::UnsupportedInstruction(
+                "math sqrt does not accept arguments in eBPF".into(),
+            ));
+        }
+
+        let input_reg = input_reg.ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "math sqrt requires compile-time known integer or float input in eBPF".into(),
+            )
+        })?;
+        let value = self
+            .get_metadata(input_reg)
+            .and_then(|meta| meta.constant_value.clone())
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "math sqrt requires compile-time known integer or float input in eBPF".into(),
+                )
+            })?;
+
+        let result = match value {
+            nu_protocol::Value::List { vals, .. } => {
+                let vals = vals
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, value)| Self::compile_time_math_sqrt_value(value, Some(index)))
+                    .collect::<Result<Vec<_>, _>>()?;
+                nu_protocol::Value::list(vals, Span::unknown())
+            }
+            value => Self::compile_time_math_sqrt_value(value, None)?,
+        };
+
+        if self.current_call_result_metadata_only {
+            self.lower_compile_time_only_constant_value(src_dst, &result);
+            return Ok(());
+        }
+
+        let result_type = result.get_type();
+        Err(CompileError::UnsupportedInstruction(format!(
+            "math sqrt compile-time result has type {result_type}; eBPF supports only results folded by fill or str join"
+        )))
+    }
+
     pub(super) fn mir_type_is_integer(ty: &MirType) -> bool {
         matches!(
             ty,

@@ -318,6 +318,7 @@ pub enum FixedLayoutValueConsumer {
     MathRounding,
     MathAverage,
     MathMedian,
+    MathSqrt,
     MathSumProduct,
     MathMinMax,
 }
@@ -948,6 +949,15 @@ fn compile_time_value_consumer_matches(
         }
         FixedLayoutValueConsumer::MathMedian => {
             decl_name == Some("math median")
+                && call_args_tracked_only_in_pipeline(src_dst, args, tracked_regs)
+                && args.positional.is_empty()
+                && args.rest.is_empty()
+                && args.named.is_empty()
+                && args.flags.is_empty()
+                && args.parser_info.is_empty()
+        }
+        FixedLayoutValueConsumer::MathSqrt => {
+            decl_name == Some("math sqrt")
                 && call_args_tracked_only_in_pipeline(src_dst, args, tracked_regs)
                 && args.positional.is_empty()
                 && args.rest.is_empty()

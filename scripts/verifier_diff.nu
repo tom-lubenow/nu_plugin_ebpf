@@ -35385,6 +35385,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-math-sqrt-folded"
+        category: "language-core"
+        tags: [scalar aggregate list math sqrt float fill str join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  (9 | math sqrt | fill --alignment right --character "0" --width 4 | str starts-with "0003") and ([4 2.25 9] | math sqrt | str join "," | str starts-with "2.0,1.5,3.0")'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-math-filesize-duration"
         category: "language-core"
         tags: [aggregate list math filesize duration constant]

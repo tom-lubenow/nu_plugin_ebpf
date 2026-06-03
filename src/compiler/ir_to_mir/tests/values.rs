@@ -12483,6 +12483,130 @@ fn test_lower_math_avg_numeric_results_feed_metadata_only_fill() {
 }
 
 #[test]
+fn test_lower_math_sqrt_rejects_materialized_float_results() {
+    for (offset, value, expected) in [
+        (
+            0,
+            Value::int(9, Span::test_data()),
+            "math sqrt compile-time result has type float",
+        ),
+        (
+            1,
+            Value::list(
+                vec![
+                    Value::int(4, Span::test_data()),
+                    Value::int(9, Span::test_data()),
+                ],
+                Span::test_data(),
+            ),
+            "math sqrt compile-time result has type list<float>",
+        ),
+        (
+            2,
+            Value::int(-1, Span::test_data()),
+            "math sqrt requires non-negative input",
+        ),
+    ] {
+        let decl = DeclId::new(596 + offset);
+        let hir = make_value_pipeline_call_program(decl, value);
+        let decl_names = HashMap::from([(decl, "math sqrt".to_string())]);
+
+        let err = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .expect_err("math sqrt should reject direct materialization or invalid input");
+
+        assert!(
+            err.to_string().contains(expected),
+            "unexpected error: {err}"
+        );
+    }
+}
+
+#[test]
+fn test_lower_math_sqrt_scalar_results_feed_metadata_only_fill() {
+    for (offset, value, expected_prefix) in [
+        (0, Value::int(9, Span::test_data()), "0003"),
+        (1, Value::float(4.0, Span::test_data()), "0002"),
+    ] {
+        let math_decl = DeclId::new(600 + offset * 3);
+        let fill_decl = DeclId::new(601 + offset * 3);
+        let starts_with_decl = DeclId::new(602 + offset * 3);
+        let hir = make_value_math_fill_starts_with_program(
+            math_decl,
+            fill_decl,
+            starts_with_decl,
+            value,
+            expected_prefix,
+            4,
+            "right",
+            "0",
+        );
+        let decl_names = HashMap::from([
+            (math_decl, "math sqrt".to_string()),
+            (fill_decl, "fill".to_string()),
+            (starts_with_decl, "str starts-with".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("math sqrt scalar result should feed fill: {err}"));
+
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .expect("math sqrt fill result should compile");
+    }
+}
+
+#[test]
+fn test_lower_math_sqrt_list_results_feed_metadata_only_str_join() {
+    let math_decl = DeclId::new(606);
+    let join_decl = DeclId::new(607);
+    let starts_with_decl = DeclId::new(608);
+    let hir = make_value_list_math_join_starts_with_program(
+        math_decl,
+        join_decl,
+        starts_with_decl,
+        vec![
+            Value::int(4, Span::test_data()),
+            Value::float(2.25, Span::test_data()),
+            Value::int(9, Span::test_data()),
+        ],
+        ",",
+        "2.0,1.5,3.0",
+    );
+    let decl_names = HashMap::from([
+        (math_decl, "math sqrt".to_string()),
+        (join_decl, "str join".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .unwrap_or_else(|err| panic!("math sqrt list result should feed str join: {err}"));
+
+    assert_no_runtime_list_operations(&result.program, "math sqrt list str join");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("math sqrt list str join should compile");
+}
+
+#[test]
 fn test_lower_math_unit_reducers_materialize_raw_i64_results() {
     let cases = [
         (
@@ -13818,6 +13942,63 @@ fn make_value_list_pipeline_call_program(decl_id: DeclId, values: Vec<Value>) ->
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_value_pipeline_call_program(decl_id: DeclId, value: Value) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(value),
+                },
+                HirStmt::Call {
+                    decl_id,
+                    src_dst: RegId::new(1),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 2,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_value_math_fill_starts_with_program(
+    math_decl: DeclId,
+    fill_decl: DeclId,
+    starts_with_decl: DeclId,
+    value: Value,
+    prefix: &str,
+    width: i64,
+    alignment: &str,
+    character: &str,
+) -> HirProgram {
+    let mut program = make_value_list_math_fill_starts_with_program(
+        math_decl,
+        fill_decl,
+        starts_with_decl,
+        vec![Value::nothing(Span::test_data())],
+        prefix,
+        width,
+        alignment,
+        character,
+    );
+    program.main.blocks[0].stmts[0] = HirStmt::LoadValue {
+        dst: RegId::new(0),
+        val: Box::new(value),
+    };
+    program
+}
+
 fn make_value_list_math_fill_starts_with_program(
     math_decl: DeclId,
     fill_decl: DeclId,
@@ -13890,6 +14071,69 @@ fn make_value_list_math_fill_starts_with_program(
         ast: Vec::new(),
         comments: Vec::new(),
         register_count: 8,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_value_list_math_join_starts_with_program(
+    math_decl: DeclId,
+    join_decl: DeclId,
+    starts_with_decl: DeclId,
+    values: Vec<Value>,
+    separator: &str,
+    prefix: &str,
+) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::list(values, Span::test_data())),
+                },
+                HirStmt::Call {
+                    decl_id: math_decl,
+                    src_dst: RegId::new(1),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadValue {
+                    dst: RegId::new(2),
+                    val: Box::new(Value::string(separator, Span::test_data())),
+                },
+                HirStmt::Call {
+                    decl_id: join_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(2)],
+                        pipeline_input: Some(RegId::new(1)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadValue {
+                    dst: RegId::new(4),
+                    val: Box::new(Value::string(prefix, Span::test_data())),
+                },
+                HirStmt::Call {
+                    decl_id: starts_with_decl,
+                    src_dst: RegId::new(5),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(4)],
+                        pipeline_input: Some(RegId::new(3)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(5) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 6,
         file_count: 0,
     };
     HirProgram::new(func, HashMap::new(), vec![], None)

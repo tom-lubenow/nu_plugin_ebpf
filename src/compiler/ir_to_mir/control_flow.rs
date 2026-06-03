@@ -1196,6 +1196,22 @@ impl<'a> HirToMirLowering<'a> {
         )
     }
 
+    fn is_compile_time_only_math_sqrt_value(
+        &self,
+        stmts: &[HirStmt],
+        stmt_index: usize,
+        dst: RegId,
+    ) -> bool {
+        compile_time_value_flows_to_fixed_layout_consumer(
+            stmts,
+            stmt_index,
+            dst,
+            self.decl_names,
+            FixedLayoutValueConsumer::MathSqrt,
+            CompileTimeValueFlow::AggregateBuilder,
+        )
+    }
+
     fn is_compile_time_only_math_sum_product_value(
         &self,
         stmts: &[HirStmt],
@@ -1239,6 +1255,7 @@ impl<'a> HirToMirLowering<'a> {
             || self.is_compile_time_only_math_rounding_value(stmts, stmt_index, dst)
             || self.is_compile_time_only_math_average_value(stmts, stmt_index, dst)
             || self.is_compile_time_only_math_median_value(stmts, stmt_index, dst)
+            || self.is_compile_time_only_math_sqrt_value(stmts, stmt_index, dst)
             || self.is_compile_time_only_math_sum_product_value(stmts, stmt_index, dst)
             || self.is_compile_time_only_math_min_max_value(stmts, stmt_index, dst)
             || self.is_compile_time_only_seq_argument_value(stmts, stmt_index, dst)
