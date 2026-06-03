@@ -1580,6 +1580,55 @@ fn test_type_error_kfunc_copy_from_user_str_src_requires_user_pointer() {
 }
 
 #[test]
+fn test_type_error_kfunc_copy_from_user_str_rejects_zero_size() {
+    let mut func = make_test_function();
+    let dst = func.alloc_vreg();
+    let size = func.alloc_vreg();
+    let src = func.alloc_vreg();
+    let flags = func.alloc_vreg();
+    let ret = func.alloc_vreg();
+    let dst_slot = func.alloc_stack_slot(32, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst,
+        src: MirValue::StackSlot(dst_slot),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: size,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: src,
+        field: CtxField::Arg(0),
+        slot: None,
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: flags,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: ret,
+        kfunc: "bpf_copy_from_user_str".to_string(),
+        btf_id: None,
+        args: vec![dst, size, src, flags],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Uprobe, "test");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected copy_from_user_str zero-size type error");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("kfunc 'bpf_copy_from_user_str' arg1 must be > 0")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
 fn test_type_error_kfunc_copy_from_user_str_requires_stack_slot_base_dst() {
     let mut func = make_test_function();
     let dst = func.alloc_vreg();
