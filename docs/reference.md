@@ -445,7 +445,8 @@ packet-edit helpers through the ordinary helper surface, including
 `bpf_clone_redirect`, `bpf_get_hash_recalc`, `bpf_csum_update`,
 `bpf_csum_level`, and `bpf_set_hash_invalid`. `tc_action`, `tc`, `tcx`, `netkit`,
 `sk_skb`, and `sk_skb_parser` additionally model `bpf_skb_vlan_push`,
-`bpf_skb_vlan_pop`, `bpf_skb_adjust_room`, and `bpf_set_hash`.
+`bpf_skb_vlan_pop`, `bpf_skb_adjust_room`, and `bpf_set_hash`. Raw
+`bpf_clone_redirect` calls require `ifindex` to be `0` through `u32::MAX`.
 `bpf_skb_store_bytes` flags may contain only `BPF_F_RECOMPUTE_CSUM` and
 `BPF_F_INVALIDATE_HASH`; `bpf_l3_csum_replace` flags may contain only
 `BPF_F_HDR_FIELD_MASK`, and `bpf_l4_csum_replace` flags may contain only
@@ -794,7 +795,7 @@ ordinary Nushell primitive `random int` or the context fields `ctx.random` /
 
 `adjust-message` is the first-class `sk_msg` byte-window and reshaping surface. `adjust-message --apply BYTES` and `adjust-message --cork BYTES` lower to `bpf_msg_apply_bytes` and `bpf_msg_cork_bytes`. `adjust-message --pull START END [--flags N]`, `adjust-message --push START LEN [--flags N]`, and `adjust-message --pop START LEN [--flags N]` lower to `bpf_msg_pull_data`, `bpf_msg_push_data`, and `bpf_msg_pop_data`; byte counts, pull start/end, and push/pop start/len arguments must be `0` through `u32::MAX`, pull/push/pop flags are reserved and must be `0`, and pull ranges require `END > START`. The ambient message context pointer is materialized automatically and the helper result is returned directly.
 
-`redirect` is the first-class packet redirect surface for XDP, tc_action, tc, tcx, and netkit. It takes an ifindex from pipeline input or a positional argument and returns the helper result directly. Plain `redirect IFINDEX` lowers to `bpf_redirect`. `redirect --peer IFINDEX` lowers to `bpf_redirect_peer` on tc_action, `tc:...:ingress`, `tcx:...:ingress`, or netkit, and `redirect --neigh IFINDEX` lowers to the default-neighbor `bpf_redirect_neigh(IFINDEX, 0, 0, FLAGS)` form on tc_action/tc/tcx/netkit. `--flags` stays available for the helper's flags argument.
+`redirect` is the first-class packet redirect surface for XDP, tc_action, tc, tcx, and netkit. It takes an ifindex from pipeline input or a positional argument and returns the helper result directly. Plain `redirect IFINDEX` lowers to `bpf_redirect` and requires `IFINDEX` to be `0` through `u32::MAX`. `redirect --peer IFINDEX` lowers to `bpf_redirect_peer` on tc_action, `tc:...:ingress`, `tcx:...:ingress`, or netkit, and `redirect --neigh IFINDEX` lowers to the default-neighbor `bpf_redirect_neigh(IFINDEX, 0, 0, FLAGS)` form on tc_action/tc/tcx/netkit. `--flags` stays available for the helper's flags argument.
 
 `redirect-socket` is the first-class socket redirect/selection surface for `sk_msg`, `sk_skb`, `sk_skb_parser`, and `sk_reuseport`. It takes a literal map name plus a key, requires `--kind sockmap` / `--kind sockhash` on message/SKB stream programs or `--kind reuseport-sockarray` on `sk_reuseport`, selects the appropriate helper from the current program type, and returns that helper result directly. On message/SKB stream programs, `--flags` is limited to `0` or `BPF_F_INGRESS`; on reuseport selection, `--flags` must be `0`.
 

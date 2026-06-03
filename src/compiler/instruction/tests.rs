@@ -2148,6 +2148,14 @@ fn test_helper_signatures_skb_packet_mutation_helpers() {
         assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
     }
     assert_eq!(
+        BpfHelper::CloneRedirect.scalar_arg_range_requirement(1),
+        Some((
+            0,
+            u32::MAX as i64,
+            "helper 'bpf_clone_redirect' requires arg1 ifindex to be between 0 and u32::MAX"
+        ))
+    );
+    assert_eq!(
         BpfHelper::CloneRedirect.scalar_arg_range_requirement(2),
         Some((
             0,
@@ -2365,6 +2373,14 @@ fn test_helper_signature_redirect() {
     assert_eq!(sig.arg_kind(0), HelperArgKind::Scalar);
     assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
     assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+    assert_eq!(
+        BpfHelper::Redirect.scalar_arg_range_requirement(0),
+        Some((
+            0,
+            u32::MAX as i64,
+            "helper 'bpf_redirect' requires arg0 ifindex to be between 0 and u32::MAX"
+        ))
+    );
     assert_eq!(
         BpfHelper::Redirect.scalar_arg_range_requirement(1),
         Some((

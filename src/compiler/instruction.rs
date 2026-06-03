@@ -56,6 +56,7 @@ const BPF_SKB_CHANGE_HEAD_MAX_HEAD_ROOM: i64 = i32::MAX as i64;
 const BPF_SKB_LOAD_BYTES_RELATIVE_MAX_OFFSET: i64 = 0xffff;
 const BPF_XDP_BYTE_MAX_OFFSET_OR_LEN: i64 = 0xffff;
 const BPF_MSG_DATA_MAX_U32: i64 = u32::MAX as i64;
+const BPF_REDIRECT_IFINDEX_MAX_U32: i64 = u32::MAX as i64;
 const PACKET_OTHERHOST: i64 = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1509,10 +1510,20 @@ impl BpfHelper {
                 0,
                 "helper 'bpf_dynptr_write' requires arg4 flags to be 0 for modeled dynptr sources",
             )),
+            (Self::Redirect, 0) => Some((
+                0,
+                BPF_REDIRECT_IFINDEX_MAX_U32,
+                "helper 'bpf_redirect' requires arg0 ifindex to be between 0 and u32::MAX",
+            )),
             (Self::Redirect, 1) => Some((
                 0,
                 1,
                 "helper 'bpf_redirect' requires arg1 flags to contain only BPF_F_INGRESS (0x01)",
+            )),
+            (Self::CloneRedirect, 1) => Some((
+                0,
+                BPF_REDIRECT_IFINDEX_MAX_U32,
+                "helper 'bpf_clone_redirect' requires arg1 ifindex to be between 0 and u32::MAX",
             )),
             (Self::CloneRedirect, 2) => Some((
                 0,

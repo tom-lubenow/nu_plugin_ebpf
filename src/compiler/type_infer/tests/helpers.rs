@@ -2581,15 +2581,7 @@ fn test_infer_lirc_helper_ctx_argument_in_lirc_mode2_program() {
 
 #[test]
 fn test_type_error_redirect_helper_rejects_non_packet_programs() {
-    let mut func = make_test_function();
-    let dst = func.alloc_vreg();
-    let block = func.block_mut(BlockId(0));
-    block.instructions.push(MirInst::CallHelper {
-        dst,
-        helper: BpfHelper::Redirect as u32,
-        args: vec![MirValue::Const(1), MirValue::Const(0)],
-    });
-    block.terminator = MirInst::Return { val: None };
+    let (func, _) = make_redirect_call(1, 0);
 
     let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
     let mut ti = TypeInference::new(Some(probe_ctx));
@@ -2603,17 +2595,41 @@ fn test_type_error_redirect_helper_rejects_non_packet_programs() {
     }));
 }
 
-#[test]
-fn test_type_error_redirect_helper_requires_zero_flags_in_xdp() {
+fn make_redirect_call(ifindex: i64, flags: i64) -> (MirFunction, VReg) {
     let mut func = make_test_function();
     let dst = func.alloc_vreg();
     let block = func.block_mut(BlockId(0));
     block.instructions.push(MirInst::CallHelper {
         dst,
         helper: BpfHelper::Redirect as u32,
-        args: vec![MirValue::Const(1), MirValue::Const(1)],
+        args: vec![MirValue::Const(ifindex), MirValue::Const(flags)],
     });
     block.terminator = MirInst::Return { val: None };
+    (func, dst)
+}
+
+#[test]
+fn test_type_error_redirect_helper_rejects_invalid_ifindex() {
+    for ifindex in [-1_i64, 0x1_0000_0000] {
+        let (func, _) = make_redirect_call(ifindex, 0);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected bpf_redirect ifindex to be rejected");
+        assert!(
+            errs.iter().any(|e| e.message.contains(
+                "helper 'bpf_redirect' requires arg0 ifindex to be between 0 and u32::MAX"
+            )),
+            "unexpected errors for ifindex {ifindex}: {:?}",
+            errs
+        );
+    }
+}
+
+#[test]
+fn test_type_error_redirect_helper_requires_zero_flags_in_xdp() {
+    let (func, _) = make_redirect_call(1, 1);
 
     let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
     let mut ti = TypeInference::new(Some(probe_ctx));
@@ -2628,15 +2644,7 @@ fn test_type_error_redirect_helper_requires_zero_flags_in_xdp() {
 
 #[test]
 fn test_infer_redirect_helper_in_tc_program() {
-    let mut func = make_test_function();
-    let dst = func.alloc_vreg();
-    let block = func.block_mut(BlockId(0));
-    block.instructions.push(MirInst::CallHelper {
-        dst,
-        helper: BpfHelper::Redirect as u32,
-        args: vec![MirValue::Const(1), MirValue::Const(0)],
-    });
-    block.terminator = MirInst::Return { val: None };
+    let (func, dst) = make_redirect_call(1, 0);
 
     let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
     let mut ti = TypeInference::new(Some(probe_ctx));
@@ -2648,15 +2656,7 @@ fn test_infer_redirect_helper_in_tc_program() {
 
 #[test]
 fn test_infer_redirect_helper_in_tc_action_program() {
-    let mut func = make_test_function();
-    let dst = func.alloc_vreg();
-    let block = func.block_mut(BlockId(0));
-    block.instructions.push(MirInst::CallHelper {
-        dst,
-        helper: BpfHelper::Redirect as u32,
-        args: vec![MirValue::Const(1), MirValue::Const(0)],
-    });
-    block.terminator = MirInst::Return { val: None };
+    let (func, dst) = make_redirect_call(1, 0);
 
     let probe_ctx = ProbeContext::new(EbpfProgramType::TcAction, "demo-action");
     let mut ti = TypeInference::new(Some(probe_ctx));
@@ -3436,6 +3436,48 @@ fn test_infer_skb_packet_mutation_helpers_in_supported_programs() {
             MirType::I64
         };
         assert_eq!(types.get(&dst), Some(&expected));
+    }
+}
+
+fn make_clone_redirect_call(ifindex: i64, flags: i64) -> MirFunction {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::CloneRedirect as u32,
+        args: vec![
+            MirValue::VReg(ctx),
+            MirValue::Const(ifindex),
+            MirValue::Const(flags),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+    func
+}
+
+#[test]
+fn test_type_error_clone_redirect_helper_rejects_invalid_ifindex() {
+    for ifindex in [-1_i64, 0x1_0000_0000] {
+        let func = make_clone_redirect_call(ifindex, 0);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected bpf_clone_redirect ifindex to be rejected");
+        assert!(
+            errs.iter().any(|e| e.message.contains(
+                "helper 'bpf_clone_redirect' requires arg1 ifindex to be between 0 and u32::MAX"
+            )),
+            "unexpected errors for ifindex {ifindex}: {:?}",
+            errs
+        );
     }
 }
 

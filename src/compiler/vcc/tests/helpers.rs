@@ -6009,20 +6009,7 @@ fn test_verify_mir_for_program_rejects_missing_helper_call_capability() {
 
 #[test]
 fn test_verify_mir_for_program_redirect_requires_zero_flags_in_xdp() {
-    let (mut func, entry) = new_mir_function();
-    let dst = func.alloc_vreg();
-
-    func.block_mut(entry)
-        .instructions
-        .push(MirInst::CallHelper {
-            dst,
-            helper: BpfHelper::Redirect as u32,
-            args: vec![MirValue::Const(1), MirValue::Const(1)],
-        });
-    func.block_mut(entry).terminator = MirInst::Return { val: None };
-
-    let mut types = HashMap::new();
-    types.insert(dst, MirType::I64);
+    let (func, types) = make_redirect_vcc_call(1, 1);
 
     let err = verify_mir_for_program(&func, &types, EbpfProgramType::Xdp.info())
         .expect_err("expected xdp redirect flags error");
@@ -6032,8 +6019,7 @@ fn test_verify_mir_for_program_redirect_requires_zero_flags_in_xdp() {
     }));
 }
 
-#[test]
-fn test_verify_mir_for_program_redirect_allows_non_zero_flags_outside_xdp() {
+fn make_redirect_vcc_call(ifindex: i64, flags: i64) -> (MirFunction, HashMap<VReg, MirType>) {
     let (mut func, entry) = new_mir_function();
     let dst = func.alloc_vreg();
 
@@ -6042,12 +6028,35 @@ fn test_verify_mir_for_program_redirect_allows_non_zero_flags_outside_xdp() {
         .push(MirInst::CallHelper {
             dst,
             helper: BpfHelper::Redirect as u32,
-            args: vec![MirValue::Const(1), MirValue::Const(1)],
+            args: vec![MirValue::Const(ifindex), MirValue::Const(flags)],
         });
     func.block_mut(entry).terminator = MirInst::Return { val: None };
 
     let mut types = HashMap::new();
     types.insert(dst, MirType::I64);
+
+    (func, types)
+}
+
+#[test]
+fn test_verify_mir_for_program_redirect_rejects_invalid_ifindex() {
+    for ifindex in [-1_i64, 0x1_0000_0000] {
+        let (func, types) = make_redirect_vcc_call(ifindex, 0);
+        let err = verify_mir_for_program(&func, &types, EbpfProgramType::Tc.info())
+            .expect_err("expected bpf_redirect ifindex to be rejected");
+        assert!(
+            err.iter().any(|e| e.message.contains(
+                "helper 'bpf_redirect' requires arg0 ifindex to be between 0 and u32::MAX"
+            )),
+            "unexpected errors for ifindex {ifindex}: {:?}",
+            err
+        );
+    }
+}
+
+#[test]
+fn test_verify_mir_for_program_redirect_allows_non_zero_flags_outside_xdp() {
+    let (func, types) = make_redirect_vcc_call(1, 1);
 
     verify_mir_for_program(&func, &types, EbpfProgramType::Tc.info())
         .expect("expected tc redirect flags to remain allowed");
@@ -8119,6 +8128,61 @@ fn test_verify_mir_for_probe_context_skb_packet_edit_helpers_reject_invalid_prog
             _ => "is only valid in tc_action, tc, tcx, netkit, sk_skb, and sk_skb_parser programs",
         };
         assert!(err.iter().any(|e| { e.message.contains(expected) }));
+    }
+}
+
+fn make_clone_redirect_vcc_call(ifindex: i64, flags: i64) -> (MirFunction, HashMap<VReg, MirType>) {
+    let (mut func, entry) = new_mir_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::CloneRedirect as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::Const(ifindex),
+                MirValue::Const(flags),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    (func, types)
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_clone_redirect_rejects_invalid_ifindex() {
+    for ifindex in [-1_i64, 0x1_0000_0000] {
+        let (func, types) = make_clone_redirect_vcc_call(ifindex, 0);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+        let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect_err("expected bpf_clone_redirect ifindex to be rejected");
+        assert!(
+            err.iter().any(|e| e.message.contains(
+                "helper 'bpf_clone_redirect' requires arg1 ifindex to be between 0 and u32::MAX"
+            )),
+            "unexpected errors for ifindex {ifindex}: {:?}",
+            err
+        );
     }
 }
 
