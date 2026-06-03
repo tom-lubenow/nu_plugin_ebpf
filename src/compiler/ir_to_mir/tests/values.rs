@@ -1753,6 +1753,116 @@ fn make_float_literal_list_builder_transform_join_then_starts_with_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_float_literal_list_builder_two_item_transforms_join_then_starts_with_program(
+    transform_decl: DeclId,
+    join_decl: DeclId,
+    starts_with_decl: DeclId,
+    values: &[f64],
+    first_item: f64,
+    second_item: f64,
+    prefix: &str,
+) -> HirProgram {
+    let mut stmts = vec![HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List {
+            capacity: values.len(),
+        },
+    }];
+
+    let mut next_reg = 2;
+    for value in values {
+        let item_reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadLiteral {
+            dst: item_reg,
+            lit: HirLiteral::Float(*value),
+        });
+        stmts.push(HirStmt::ListPush {
+            src_dst: RegId::new(0),
+            item: item_reg,
+        });
+    }
+
+    let first_item_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::LoadLiteral {
+        dst: first_item_reg,
+        lit: HirLiteral::Float(first_item),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: transform_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional: vec![first_item_reg],
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let second_item_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::LoadLiteral {
+        dst: second_item_reg,
+        lit: HirLiteral::Float(second_item),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: transform_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional: vec![second_item_reg],
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let separator_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::LoadValue {
+        dst: separator_reg,
+        val: Box::new(Value::string("-", Span::test_data())),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: join_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional: vec![separator_reg],
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let prefix_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::LoadValue {
+        dst: prefix_reg,
+        val: Box::new(Value::string(prefix, Span::test_data())),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: starts_with_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional: vec![prefix_reg],
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: next_reg,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_describe_no_input_then_length_program(
     describe_decl: DeclId,
     length_decl: DeclId,
@@ -6903,6 +7013,75 @@ fn test_lower_uniq_sort_on_float_literal_list_builder_feed_metadata_consumers() 
         assert_no_runtime_list_operations(&result.program, "float-list builder sort");
         compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
             .expect("sort float-list output should compile");
+    }
+}
+
+#[test]
+fn test_lower_chained_append_prepend_on_float_literal_list_builder_feed_metadata_consumers() {
+    let scenarios = [
+        ("append", 1.5, 2.0, "2.5-1.5-2.0"),
+        ("prepend", 1.5, 0.5, "0.5-1.5-2.5"),
+    ];
+
+    for (index, (command_name, first_item, second_item, expected)) in
+        scenarios.into_iter().enumerate()
+    {
+        let base_decl = 313 + index * 3;
+        let transform_decl = DeclId::new(base_decl);
+        let join_decl = DeclId::new(base_decl + 1);
+        let starts_with_decl = DeclId::new(base_decl + 2);
+        let hir = make_float_literal_list_builder_two_item_transforms_join_then_starts_with_program(
+            transform_decl,
+            join_decl,
+            starts_with_decl,
+            &[2.5],
+            first_item,
+            second_item,
+            expected,
+        );
+        let decl_names = HashMap::from([
+            (transform_decl, command_name.to_string()),
+            (join_decl, "str join".to_string()),
+            (starts_with_decl, "str starts-with".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("{command_name} should chain metadata-only float-list builders: {err}")
+        });
+
+        let expected_literal = format!("{expected}\0");
+        assert!(
+            result
+                .program
+                .main
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .any(|inst| matches!(
+                    inst,
+                    MirInst::StringAppend {
+                        val_type: StringAppendType::Literal { bytes },
+                        ..
+                    } if bytes.starts_with(expected_literal.as_bytes())
+                )),
+            "expected chained {command_name} to feed str join with constant {expected}"
+        );
+        assert_no_runtime_list_operations(
+            &result.program,
+            &format!("float-list builder chained {command_name}"),
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("chained {command_name} float-list output should compile: {err}")
+            });
     }
 }
 

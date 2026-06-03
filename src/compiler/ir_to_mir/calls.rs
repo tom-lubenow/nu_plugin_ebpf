@@ -217,7 +217,7 @@ impl<'a> HirToMirLowering<'a> {
 
         let (item_vreg, item_reg) = self.positional_args[0];
         if let Some(values) = input_reg.and_then(|reg| {
-            self.direct_list_builder_values(reg, input_vreg)
+            self.compile_time_only_list_builder_values(reg, input_vreg)
                 .map(|values| values.to_vec())
         }) {
             let item_constant = self.get_metadata(item_reg).and_then(|meta| {
@@ -238,11 +238,7 @@ impl<'a> HirToMirLowering<'a> {
                 vals.push(item);
             }
             let list = nu_protocol::Value::list(vals, Span::unknown());
-            if self.current_call_result_metadata_only {
-                self.lower_compile_time_only_constant_value(src_dst, &list);
-            } else {
-                self.lower_constant_value(src_dst, &list)?;
-            }
+            self.lower_compile_time_list_transform_result(src_dst, &list)?;
             return Ok(());
         }
 

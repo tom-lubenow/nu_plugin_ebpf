@@ -38988,6 +38988,20 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-float-list-builder-chained-append-prepend"
+        category: "language-core"
+        tags: [aggregate list append prepend float str join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let append_ok = ([2.5] | append 1.5 | append 2.0 | str join "-" | str starts-with "2.5-1.5-2.0")'
+            '  $append_ok and ([2.5] | prepend 1.5 | prepend 0.5 | str join "-" | str starts-with "0.5-1.5-2.5")'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-runtime-list-describe"
         category: "language-core"
         tags: [describe aggregate list runtime string]
