@@ -10702,6 +10702,31 @@ fn test_infer_trace_vprintk_helper() {
 }
 
 #[test]
+fn test_infer_trace_vprintk_accepts_zero_size_null_data() {
+    let mut func = make_test_function();
+    let fmt_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::TraceVPrintk as u32,
+        args: vec![
+            MirValue::StackSlot(fmt_slot),
+            MirValue::Const(8),
+            MirValue::Const(0),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let types = ti
+        .infer(&func)
+        .expect("expected trace_vprintk zero-size null data to infer");
+    assert_eq!(types.get(&dst), Some(&MirType::I64));
+}
+
+#[test]
 fn test_type_error_trace_vprintk_helper_rejects_small_data_buffer() {
     let (func, _) = make_trace_vprintk_call(8, 8, 16, 8);
     let mut ti = TypeInference::new(None);

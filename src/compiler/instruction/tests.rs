@@ -3908,6 +3908,10 @@ fn test_trace_vprintk_helper_contract() {
         Some("helper 'bpf_trace_vprintk' requires arg3 to be >= 0")
     );
     assert_eq!(
+        BpfHelper::TraceVPrintk.zero_size_pointer_arg_size_arg(2),
+        Some(3)
+    );
+    assert_eq!(
         BpfHelper::TraceVPrintk.scalar_arg_multiple_of_requirement(3),
         Some((
             8,

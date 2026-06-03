@@ -1396,6 +1396,7 @@ impl BpfHelper {
             (Self::PerfEventOutput | Self::SkbOutput | Self::XdpOutput, 3) => Some(4),
             (Self::Snprintf, 0) => Some(1),
             (Self::Snprintf, 3) => Some(4),
+            (Self::TraceVPrintk, 2) => Some(3),
             (Self::DynptrFromMem, 0) => Some(1),
             (Self::DynptrRead, 0) => Some(1),
             (Self::DynptrWrite, 2) => Some(3),

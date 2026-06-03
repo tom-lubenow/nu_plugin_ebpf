@@ -22448,6 +22448,32 @@ fn test_helper_trace_vprintk_verifies() {
 }
 
 #[test]
+fn test_helper_trace_vprintk_accepts_zero_size_null_data() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let fmt = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::TraceVPrintk as u32,
+            args: vec![
+                MirValue::StackSlot(fmt),
+                MirValue::Const(8),
+                MirValue::Const(0),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let types = HashMap::from([(dst, MirType::I64)]);
+    verify_mir(&func, &types).expect("expected trace_vprintk zero-size null data to verify");
+}
+
+#[test]
 fn test_helper_trace_vprintk_rejects_zero_fmt_size() {
     let (func, types) = make_trace_vprintk_verify_call(0, 8, 16, 16);
     let err = verify_mir(&func, &types).expect_err("expected trace_vprintk zero-size error");
