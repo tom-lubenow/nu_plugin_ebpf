@@ -1,5 +1,6 @@
 use super::*;
 use crate::compiler::mir::UnaryOpKind;
+use std::cmp::Ordering;
 
 impl<'a> HirToMirLowering<'a> {
     fn math_integer_result_for_rounding_command(
@@ -1095,6 +1096,22 @@ impl<'a> HirToMirLowering<'a> {
                     "{cmd_name} requires a stack-backed numeric list input in eBPF"
                 ))
             })?;
+
+        if matches!(cmd_name, "math min" | "math max")
+            && let Some(nu_protocol::Value::List { vals, .. }) = input_meta.constant_value.clone()
+            && vals
+                .iter()
+                .any(|value| matches!(value, nu_protocol::Value::Float { .. }))
+        {
+            return self.lower_compile_time_math_min_max(
+                cmd_name,
+                src_dst,
+                dst_vreg,
+                src_dst_had_value,
+                vals,
+            );
+        }
+
         let Some((_slot, max_len)) = input_meta.list_buffer else {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "{cmd_name} requires a stack-backed numeric list input in eBPF"
@@ -1293,6 +1310,75 @@ impl<'a> HirToMirLowering<'a> {
                 );
             }
         }
+        Ok(())
+    }
+
+    fn lower_compile_time_math_min_max(
+        &mut self,
+        cmd_name: &str,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+        vals: Vec<nu_protocol::Value>,
+    ) -> Result<(), CompileError> {
+        let mut selected = None::<nu_protocol::Value>;
+        for (index, value) in vals.into_iter().enumerate() {
+            match &value {
+                nu_protocol::Value::Int { .. } => {}
+                nu_protocol::Value::Float { val, .. } if val.is_finite() => {}
+                nu_protocol::Value::Float { val, .. } => {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{cmd_name} requires finite float list items in eBPF; item {index} is {val}"
+                    )));
+                }
+                other => {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{cmd_name} requires integer or float list items in eBPF; item {index} has type {}",
+                        other.get_type()
+                    )));
+                }
+            }
+
+            let should_update = selected.as_ref().is_none_or(|current| {
+                let ordering = value
+                    .partial_cmp(current)
+                    .expect("min/max float values are validated as finite");
+                matches!(
+                    (cmd_name, ordering),
+                    ("math min", Ordering::Less) | ("math max", Ordering::Greater)
+                )
+            });
+            if should_update {
+                selected = Some(value);
+            }
+        }
+
+        let selected = selected.ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires a non-empty integer or float list in eBPF"
+            ))
+        })?;
+        let nu_protocol::Value::Int { val, .. } = selected else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} compile-time list result has type float; eBPF supports only integer min/max results"
+            )));
+        };
+
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+        self.emit(MirInst::Copy {
+            dst: result_vreg,
+            src: MirValue::Const(val),
+        });
+        self.reset_call_result_metadata(src_dst);
+        let out_meta = self.get_or_create_metadata(src_dst);
+        out_meta.field_type = Some(MirType::I64);
+        out_meta.literal_int = Some(val);
+        out_meta.constant_value = Some(nu_protocol::Value::int(val, Span::unknown()));
+        self.vreg_type_hints.insert(result_vreg, MirType::I64);
         Ok(())
     }
 }

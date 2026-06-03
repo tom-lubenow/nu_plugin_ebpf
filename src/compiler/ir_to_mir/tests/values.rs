@@ -11471,6 +11471,106 @@ fn test_lower_math_product_min_max_on_numeric_lists() {
     }
 }
 
+#[test]
+fn test_lower_math_min_max_on_known_mixed_numeric_lists_with_integer_result() {
+    for (offset, command_name, values, expected) in [
+        (
+            0,
+            "math min",
+            vec![
+                Value::int(1, Span::test_data()),
+                Value::float(2.5, Span::test_data()),
+                Value::float(3.5, Span::test_data()),
+            ],
+            1,
+        ),
+        (
+            1,
+            "math max",
+            vec![
+                Value::float(1.5, Span::test_data()),
+                Value::float(2.5, Span::test_data()),
+                Value::int(3, Span::test_data()),
+            ],
+            3,
+        ),
+        (
+            2,
+            "math max",
+            vec![
+                Value::int(1, Span::test_data()),
+                Value::int(2, Span::test_data()),
+                Value::float(2.0, Span::test_data()),
+            ],
+            2,
+        ),
+    ] {
+        let decl = DeclId::new(553 + offset);
+        let hir = make_value_list_pipeline_call_program(decl, values);
+        let decl_names = HashMap::from([(decl, command_name.to_string())]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("{command_name} should lower mixed numeric list input: {err}")
+        });
+
+        assert_program_returns_constant(&result.program, expected, command_name);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{command_name} should compile through codegen: {err}"));
+    }
+}
+
+#[test]
+fn test_lower_math_min_max_rejects_known_mixed_numeric_lists_with_float_result() {
+    for (offset, command_name, values) in [
+        (
+            0,
+            "math min",
+            vec![
+                Value::float(1.5, Span::test_data()),
+                Value::int(2, Span::test_data()),
+                Value::int(3, Span::test_data()),
+            ],
+        ),
+        (
+            1,
+            "math max",
+            vec![
+                Value::int(1, Span::test_data()),
+                Value::float(2.0, Span::test_data()),
+                Value::int(2, Span::test_data()),
+            ],
+        ),
+    ] {
+        let decl = DeclId::new(556 + offset);
+        let hir = make_value_list_pipeline_call_program(decl, values);
+        let decl_names = HashMap::from([(decl, command_name.to_string())]);
+
+        let err = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .expect_err("math min/max should reject float results");
+
+        assert!(
+            err.to_string()
+                .contains("compile-time list result has type float"),
+            "unexpected error: {err}"
+        );
+    }
+}
+
 fn make_math_abs_program(abs_decl: DeclId, input: i64) -> HirProgram {
     let func = HirFunction {
         blocks: vec![HirBlock {

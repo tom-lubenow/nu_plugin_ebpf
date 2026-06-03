@@ -35307,6 +35307,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-list-math-min-max-mixed-numeric"
+        category: "language-core"
+        tags: [aggregate list math min max float constant]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  (([1 2.5 3.5] | math min) == 1) and (([1.5 2.5 3] | math max) == 3)'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-math-median"
         category: "language-core"
         tags: [aggregate list math median]

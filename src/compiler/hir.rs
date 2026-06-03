@@ -315,6 +315,7 @@ pub enum FixedLayoutValueConsumer {
     StringTransform,
     MathRounding,
     MathMedian,
+    MathMinMax,
 }
 
 pub fn compile_time_value_flows_to_fixed_layout_consumer(
@@ -910,6 +911,15 @@ fn compile_time_value_consumer_matches(
         }
         FixedLayoutValueConsumer::MathMedian => {
             decl_name == Some("math median")
+                && call_args_tracked_only_in_pipeline(src_dst, args, tracked_regs)
+                && args.positional.is_empty()
+                && args.rest.is_empty()
+                && args.named.is_empty()
+                && args.flags.is_empty()
+                && args.parser_info.is_empty()
+        }
+        FixedLayoutValueConsumer::MathMinMax => {
+            matches!(decl_name, Some("math min" | "math max"))
                 && call_args_tracked_only_in_pipeline(src_dst, args, tracked_regs)
                 && args.positional.is_empty()
                 && args.rest.is_empty()
