@@ -2011,14 +2011,14 @@ impl BpfHelper {
                 "message data reshaping helpers require arg2 len to be between 0 and u32::MAX",
             )),
             (Self::SetSockOpt | Self::GetSockOpt, 4) => Some((
-                0,
+                1,
                 BPF_SOCKET_HELPER_LEN_MAX_I32,
-                "socket option helpers require arg4 optlen to be between 0 and i32::MAX",
+                "socket option helpers require arg4 optlen to be between 1 and i32::MAX",
             )),
             (Self::Bind, 2) => Some((
-                0,
+                1,
                 BPF_SOCKET_HELPER_LEN_MAX_I32,
-                "helper 'bpf_bind' requires arg2 addr_len to be between 0 and i32::MAX",
+                "helper 'bpf_bind' requires arg2 addr_len to be between 1 and i32::MAX",
             )),
             (Self::LoadHdrOpt | Self::StoreHdrOpt, 2) => Some((
                 2,

@@ -1358,9 +1358,9 @@ fn test_helper_signatures_setsockopt_and_getsockopt() {
     assert_eq!(
         BpfHelper::Bind.scalar_arg_range_requirement(2),
         Some((
-            0,
+            1,
             i32::MAX as i64,
-            "helper 'bpf_bind' requires arg2 addr_len to be between 0 and i32::MAX"
+            "helper 'bpf_bind' requires arg2 addr_len to be between 1 and i32::MAX"
         ))
     );
 
@@ -1377,9 +1377,9 @@ fn test_helper_signatures_setsockopt_and_getsockopt() {
     assert_eq!(
         BpfHelper::SetSockOpt.scalar_arg_range_requirement(4),
         Some((
-            0,
+            1,
             i32::MAX as i64,
-            "socket option helpers require arg4 optlen to be between 0 and i32::MAX"
+            "socket option helpers require arg4 optlen to be between 1 and i32::MAX"
         ))
     );
 
@@ -1396,9 +1396,9 @@ fn test_helper_signatures_setsockopt_and_getsockopt() {
     assert_eq!(
         BpfHelper::GetSockOpt.scalar_arg_range_requirement(4),
         Some((
-            0,
+            1,
             i32::MAX as i64,
-            "socket option helpers require arg4 optlen to be between 0 and i32::MAX"
+            "socket option helpers require arg4 optlen to be between 1 and i32::MAX"
         ))
     );
 

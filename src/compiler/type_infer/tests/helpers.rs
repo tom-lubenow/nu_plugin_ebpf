@@ -5818,10 +5818,29 @@ fn test_type_error_sockopt_helpers_reject_optlen_above_i32_max() {
             .expect_err("expected sockopt helper optlen bounds error");
         assert!(
             errs.iter().any(|e| e.message.contains(
-                "socket option helpers require arg4 optlen to be between 0 and i32::MAX"
+                "socket option helpers require arg4 optlen to be between 1 and i32::MAX"
             )),
             "unexpected errors for helper {helper:?}: {:?}",
             errs
+        );
+    }
+}
+
+#[test]
+fn test_type_error_sockopt_helpers_reject_zero_optlen() {
+    for (helper, expected) in [
+        (BpfHelper::SetSockOpt, "helper 49 arg4 must be > 0"),
+        (BpfHelper::GetSockOpt, "helper 57 arg4 must be > 0"),
+    ] {
+        let (func, _) = make_sockopt_helper_call(helper, 0, 16);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get");
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected sockopt helper positive optlen error");
+        assert!(
+            errs.iter().any(|e| e.message.contains(expected)),
+            "expected {expected:?}, got {errs:?}"
         );
     }
 }
@@ -6053,7 +6072,23 @@ fn test_type_error_bind_helper_rejects_addr_len_above_i32_max() {
     assert!(
         errs.iter().any(|e| e
             .message
-            .contains("helper 'bpf_bind' requires arg2 addr_len to be between 0 and i32::MAX")),
+            .contains("helper 'bpf_bind' requires arg2 addr_len to be between 1 and i32::MAX")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_type_error_bind_helper_rejects_zero_addr_len() {
+    let (func, _) = make_bind_helper_call(0, 16);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:connect4");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bind helper positive addr_len error");
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("helper 64 arg2 must be > 0")),
         "unexpected errors: {:?}",
         errs
     );
