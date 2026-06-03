@@ -4581,7 +4581,7 @@ fn make_lwt_buffer_helper_call(
     make_lwt_buffer_helper_call_with_selector(helper, selector, size, buffer_size)
 }
 
-fn make_lwt_seg6_adjust_srh_call() -> (MirFunction, VReg) {
+fn make_lwt_seg6_adjust_srh_call_with_args(offset: i64, len: i64) -> (MirFunction, VReg) {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();
     let dst = func.alloc_vreg();
@@ -4594,10 +4594,18 @@ fn make_lwt_seg6_adjust_srh_call() -> (MirFunction, VReg) {
     block.instructions.push(MirInst::CallHelper {
         dst,
         helper: BpfHelper::LwtSeg6AdjustSrh as u32,
-        args: vec![MirValue::VReg(ctx), MirValue::Const(0), MirValue::Const(4)],
+        args: vec![
+            MirValue::VReg(ctx),
+            MirValue::Const(offset),
+            MirValue::Const(len),
+        ],
     });
     block.terminator = MirInst::Return { val: None };
     (func, dst)
+}
+
+fn make_lwt_seg6_adjust_srh_call() -> (MirFunction, VReg) {
+    make_lwt_seg6_adjust_srh_call_with_args(0, 4)
 }
 
 #[test]
@@ -4734,6 +4742,74 @@ fn test_type_error_lwt_seg6_action_rejects_invalid_param_len_for_action() {
         assert!(
             errs.iter().any(|e| e.message.contains(expected)),
             "unexpected errors for action {action}: {:?}",
+            errs
+        );
+    }
+}
+
+#[test]
+fn test_type_error_lwt_buffer_helpers_reject_size_over_u32() {
+    for (helper, program_type, target) in [
+        (
+            BpfHelper::LwtPushEncap,
+            EbpfProgramType::LwtIn,
+            "demo-route",
+        ),
+        (
+            BpfHelper::LwtSeg6StoreBytes,
+            EbpfProgramType::LwtSeg6Local,
+            "demo-route",
+        ),
+        (
+            BpfHelper::LwtSeg6Action,
+            EbpfProgramType::LwtSeg6Local,
+            "demo-route",
+        ),
+    ] {
+        let (func, _) = make_lwt_buffer_helper_call(helper, 0x1_0000_0000, 16);
+        let probe_ctx = ProbeContext::new(program_type, target);
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected lwt helper size range error");
+        assert!(
+            errs.iter().any(|e| e
+                .message
+                .contains("lwt buffer helpers require arg3 size to be between 0 and u32::MAX")),
+            "unexpected errors for {helper:?}: {:?}",
+            errs
+        );
+    }
+}
+
+#[test]
+fn test_type_error_lwt_seg6_helpers_reject_offset_over_u32() {
+    for (func, helper_name) in [
+        (
+            make_lwt_buffer_helper_call_with_selector(
+                BpfHelper::LwtSeg6StoreBytes,
+                0x1_0000_0000,
+                16,
+                16,
+            )
+            .0,
+            "bpf_lwt_seg6_store_bytes",
+        ),
+        (
+            make_lwt_seg6_adjust_srh_call_with_args(0x1_0000_0000, 4).0,
+            "bpf_lwt_seg6_adjust_srh",
+        ),
+    ] {
+        let probe_ctx = ProbeContext::new(EbpfProgramType::LwtSeg6Local, "demo-route");
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected lwt helper offset range error");
+        assert!(
+            errs.iter().any(|e| e
+                .message
+                .contains("lwt seg6 helpers require arg1 offset to be between 0 and u32::MAX")),
+            "unexpected errors for {helper_name}: {:?}",
             errs
         );
     }

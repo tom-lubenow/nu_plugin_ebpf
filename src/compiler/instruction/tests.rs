@@ -3204,6 +3204,32 @@ fn test_lwt_helpers_contract() {
             "helper 'bpf_lwt_push_encap' requires arg1 type to be BPF_LWT_ENCAP_SEG6, BPF_LWT_ENCAP_SEG6_INLINE, or BPF_LWT_ENCAP_IP"
         ))
     );
+    for helper in [
+        BpfHelper::LwtPushEncap,
+        BpfHelper::LwtSeg6StoreBytes,
+        BpfHelper::LwtSeg6Action,
+    ] {
+        assert_eq!(
+            helper.scalar_arg_range_requirement(3),
+            Some((
+                0,
+                u32::MAX as i64,
+                "lwt buffer helpers require arg3 size to be between 0 and u32::MAX"
+            )),
+            "{helper:?}"
+        );
+    }
+    for helper in [BpfHelper::LwtSeg6StoreBytes, BpfHelper::LwtSeg6AdjustSrh] {
+        assert_eq!(
+            helper.scalar_arg_range_requirement(1),
+            Some((
+                0,
+                u32::MAX as i64,
+                "lwt seg6 helpers require arg1 offset to be between 0 and u32::MAX"
+            )),
+            "{helper:?}"
+        );
+    }
     let (actions, message) = BpfHelper::LwtSeg6Action
         .scalar_arg_allowed_values_requirement(1)
         .expect("expected lwt_seg6_action action contract");

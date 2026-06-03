@@ -71,6 +71,8 @@ const BPF_SIGNAL_MAX_U32: i64 = u32::MAX as i64;
 const BPF_XDP_BYTE_MAX_OFFSET_OR_LEN: i64 = 0xffff;
 const BPF_MSG_DATA_MAX_U32: i64 = u32::MAX as i64;
 const BPF_REDIRECT_IFINDEX_MAX_U32: i64 = u32::MAX as i64;
+const BPF_LWT_BUFFER_SIZE_MAX_U32: i64 = u32::MAX as i64;
+const BPF_LWT_SEG6_OFFSET_MAX_U32: i64 = u32::MAX as i64;
 const PACKET_OTHERHOST: i64 = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1758,6 +1760,16 @@ impl BpfHelper {
                 0,
                 2,
                 "helper 'bpf_lwt_push_encap' requires arg1 type to be BPF_LWT_ENCAP_SEG6, BPF_LWT_ENCAP_SEG6_INLINE, or BPF_LWT_ENCAP_IP",
+            )),
+            (Self::LwtPushEncap | Self::LwtSeg6StoreBytes | Self::LwtSeg6Action, 3) => Some((
+                0,
+                BPF_LWT_BUFFER_SIZE_MAX_U32,
+                "lwt buffer helpers require arg3 size to be between 0 and u32::MAX",
+            )),
+            (Self::LwtSeg6StoreBytes | Self::LwtSeg6AdjustSrh, 1) => Some((
+                0,
+                BPF_LWT_SEG6_OFFSET_MAX_U32,
+                "lwt seg6 helpers require arg1 offset to be between 0 and u32::MAX",
             )),
             (Self::L3CsumReplace | Self::L4CsumReplace, 1) => Some((
                 0,
