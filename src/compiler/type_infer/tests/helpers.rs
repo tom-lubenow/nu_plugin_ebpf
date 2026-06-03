@@ -6624,7 +6624,7 @@ fn test_type_error_packet_output_helper_rejects_small_data_buffer() {
     );
 }
 
-fn make_read_branch_records_call(flags: i64) -> (MirFunction, VReg) {
+fn make_read_branch_records_call(size: i64, flags: i64) -> (MirFunction, VReg) {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();
     let dst = func.alloc_vreg();
@@ -6641,7 +6641,7 @@ fn make_read_branch_records_call(flags: i64) -> (MirFunction, VReg) {
         args: vec![
             MirValue::VReg(ctx),
             MirValue::StackSlot(buf_slot),
-            MirValue::Const(24),
+            MirValue::Const(size),
             MirValue::Const(flags),
         ],
     });
@@ -6651,7 +6651,7 @@ fn make_read_branch_records_call(flags: i64) -> (MirFunction, VReg) {
 
 #[test]
 fn test_infer_read_branch_records_accepts_size_flag() {
-    let (func, dst) = make_read_branch_records_call(1);
+    let (func, dst) = make_read_branch_records_call(24, 1);
     let probe_ctx = ProbeContext::new(
         EbpfProgramType::PerfEvent,
         "hardware:branch-instructions:period=100000",
@@ -6665,7 +6665,7 @@ fn test_infer_read_branch_records_accepts_size_flag() {
 
 #[test]
 fn test_type_error_read_branch_records_rejects_invalid_flags() {
-    let (func, _) = make_read_branch_records_call(2);
+    let (func, _) = make_read_branch_records_call(24, 2);
     let probe_ctx = ProbeContext::new(
         EbpfProgramType::PerfEvent,
         "hardware:branch-instructions:period=100000",
@@ -6678,6 +6678,26 @@ fn test_type_error_read_branch_records_rejects_invalid_flags() {
         e.message
             .contains("helper 'bpf_read_branch_records' requires arg3 flags")
     }));
+}
+
+#[test]
+fn test_type_error_read_branch_records_rejects_size_over_u32() {
+    let (func, _) = make_read_branch_records_call(0x1_0000_0000, 0);
+    let probe_ctx = ProbeContext::new(
+        EbpfProgramType::PerfEvent,
+        "hardware:branch-instructions:period=100000",
+    );
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_read_branch_records size range error");
+    assert!(
+        errs.iter().any(|e| e.message.contains(
+            "helper 'bpf_read_branch_records' requires arg2 size to be between 0 and u32::MAX"
+        )),
+        "unexpected errors: {:?}",
+        errs
+    );
 }
 
 fn make_get_branch_snapshot_call(size: i64, buf_size: usize, flags: i64) -> (MirFunction, VReg) {
@@ -6738,6 +6758,22 @@ fn test_type_error_get_branch_snapshot_rejects_small_buffer() {
         errs.iter().any(|e| e
             .message
             .contains("helper get_branch_snapshot entries requires 24 bytes")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_type_error_get_branch_snapshot_rejects_size_over_u32() {
+    let (func, _) = make_get_branch_snapshot_call(0x1_0000_0000, 8, 0);
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_get_branch_snapshot size range error");
+    assert!(
+        errs.iter().any(|e| e.message.contains(
+            "helper 'bpf_get_branch_snapshot' requires arg1 size to be between 0 and u32::MAX"
+        )),
         "unexpected errors: {:?}",
         errs
     );
@@ -6928,8 +6964,47 @@ fn test_type_error_get_stack_helper_rejects_negative_size() {
         .infer(&func)
         .expect_err("expected bpf_get_stack negative-size error");
     assert!(
-        errs.iter()
-            .any(|e| e.message.contains("helper 67 arg2 must be >= 0")),
+        errs.iter().any(|e| e
+            .message
+            .contains("stack-copy helpers require arg2 size to be between 0 and u32::MAX")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_type_error_get_stack_helper_rejects_size_over_u32() {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let buf_slot = func.alloc_stack_slot(32, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::GetStack as u32,
+        args: vec![
+            MirValue::VReg(ctx),
+            MirValue::StackSlot(buf_slot),
+            MirValue::Const(0x1_0000_0000),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_get_stack size range error");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("stack-copy helpers require arg2 size to be between 0 and u32::MAX")),
         "unexpected errors: {:?}",
         errs
     );
@@ -12439,8 +12514,25 @@ fn test_type_error_get_task_stack_rejects_negative_size() {
         .infer(&func)
         .expect_err("expected bpf_get_task_stack negative-size error");
     assert!(
-        errs.iter()
-            .any(|e| e.message.contains("helper 141 arg2 must be >= 0")),
+        errs.iter().any(|e| e
+            .message
+            .contains("stack-copy helpers require arg2 size to be between 0 and u32::MAX")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_type_error_get_task_stack_rejects_size_over_u32() {
+    let (func, _) = make_get_task_stack_call(0x1_0000_0000, 8);
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_get_task_stack size range error");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("stack-copy helpers require arg2 size to be between 0 and u32::MAX")),
         "unexpected errors: {:?}",
         errs
     );
@@ -12508,8 +12600,26 @@ fn test_type_error_d_path_rejects_negative_size() {
         .infer(&func)
         .expect_err("expected bpf_d_path negative-size error");
     assert!(
-        errs.iter()
-            .any(|e| e.message.contains("helper 147 arg2 must be >= 0")),
+        errs.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_d_path' requires arg2 size to be between 0 and u32::MAX")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_type_error_d_path_rejects_size_over_u32() {
+    let (func, _) = make_d_path_call(0x1_0000_0000, 8);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "vfs_truncate");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_d_path size range error");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_d_path' requires arg2 size to be between 0 and u32::MAX")),
         "unexpected errors: {:?}",
         errs
     );

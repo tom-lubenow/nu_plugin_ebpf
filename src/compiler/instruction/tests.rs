@@ -3791,6 +3791,14 @@ fn test_read_branch_records_zero_size_pointer_contract() {
         ))
     );
     assert_eq!(
+        BpfHelper::ReadBranchRecords.scalar_arg_range_requirement(2),
+        Some((
+            0,
+            u32::MAX as i64,
+            "helper 'bpf_read_branch_records' requires arg2 size to be between 0 and u32::MAX"
+        ))
+    );
+    assert_eq!(
         BpfHelper::ReadBranchRecords.zero_size_pointer_arg_size_arg(0),
         None
     );
@@ -3806,6 +3814,14 @@ fn test_get_branch_snapshot_zero_size_and_flag_contract() {
         BpfHelper::GetBranchSnapshot.zero_scalar_arg_requirement(),
         Some((2, "helper 'bpf_get_branch_snapshot' requires arg2 = 0"))
     );
+    assert_eq!(
+        BpfHelper::GetBranchSnapshot.scalar_arg_range_requirement(1),
+        Some((
+            0,
+            u32::MAX as i64,
+            "helper 'bpf_get_branch_snapshot' requires arg1 size to be between 0 and u32::MAX"
+        ))
+    );
 }
 
 #[test]
@@ -3817,6 +3833,14 @@ fn test_get_task_stack_buffer_contract() {
     assert_eq!(
         BpfHelper::GetTaskStack.scalar_arg_nonnegative_requirement(2),
         Some("helper 'bpf_get_task_stack' requires arg2 to be >= 0")
+    );
+    assert_eq!(
+        BpfHelper::GetTaskStack.scalar_arg_range_requirement(2),
+        Some((
+            0,
+            u32::MAX as i64,
+            "stack-copy helpers require arg2 size to be between 0 and u32::MAX"
+        ))
     );
 }
 
@@ -3851,6 +3875,14 @@ fn test_d_path_buffer_contract() {
         BpfHelper::DPath.scalar_arg_nonnegative_requirement(2),
         Some("helper 'bpf_d_path' requires arg2 to be >= 0")
     );
+    assert_eq!(
+        BpfHelper::DPath.scalar_arg_range_requirement(2),
+        Some((
+            0,
+            u32::MAX as i64,
+            "helper 'bpf_d_path' requires arg2 size to be between 0 and u32::MAX"
+        ))
+    );
 }
 
 #[test]
@@ -3858,6 +3890,14 @@ fn test_helper_get_stack_buffer_contract() {
     assert_eq!(
         BpfHelper::GetStack.scalar_arg_nonnegative_requirement(2),
         Some("helper 'bpf_get_stack' requires arg2 to be >= 0")
+    );
+    assert_eq!(
+        BpfHelper::GetStack.scalar_arg_range_requirement(2),
+        Some((
+            0,
+            u32::MAX as i64,
+            "stack-copy helpers require arg2 size to be between 0 and u32::MAX"
+        ))
     );
     assert_eq!(
         BpfHelper::GetStackId.scalar_arg_bitmask_requirement(2),

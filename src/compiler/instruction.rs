@@ -74,6 +74,7 @@ const BPF_REDIRECT_IFINDEX_MAX_U32: i64 = u32::MAX as i64;
 const BPF_LWT_BUFFER_SIZE_MAX_U32: i64 = u32::MAX as i64;
 const BPF_LWT_SEG6_OFFSET_MAX_U32: i64 = u32::MAX as i64;
 const BPF_FORMAT_SIZE_MAX_U32: i64 = u32::MAX as i64;
+const BPF_BUFFER_SIZE_MAX_U32: i64 = u32::MAX as i64;
 const PACKET_OTHERHOST: i64 = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1458,6 +1459,26 @@ impl BpfHelper {
                 0,
                 BPF_GET_CURRENT_COMM_SIZE_MAX_U32,
                 "helper 'bpf_get_current_comm' requires arg1 size to be between 0 and u32::MAX",
+            )),
+            (Self::GetStack | Self::GetTaskStack, 2) => Some((
+                0,
+                BPF_BUFFER_SIZE_MAX_U32,
+                "stack-copy helpers require arg2 size to be between 0 and u32::MAX",
+            )),
+            (Self::DPath, 2) => Some((
+                0,
+                BPF_BUFFER_SIZE_MAX_U32,
+                "helper 'bpf_d_path' requires arg2 size to be between 0 and u32::MAX",
+            )),
+            (Self::GetBranchSnapshot, 1) => Some((
+                0,
+                BPF_BUFFER_SIZE_MAX_U32,
+                "helper 'bpf_get_branch_snapshot' requires arg1 size to be between 0 and u32::MAX",
+            )),
+            (Self::ReadBranchRecords, 2) => Some((
+                0,
+                BPF_BUFFER_SIZE_MAX_U32,
+                "helper 'bpf_read_branch_records' requires arg2 size to be between 0 and u32::MAX",
             )),
             (Self::TracePrintk | Self::TraceVPrintk, 1) => Some((
                 0,

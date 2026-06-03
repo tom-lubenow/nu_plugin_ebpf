@@ -8261,8 +8261,58 @@ fn test_verify_mir_get_stack_rejects_negative_size() {
     let err = verify_mir_for_program(&func, &types, EbpfProgramType::Kprobe.info())
         .expect_err("expected get_stack negative-size error");
     assert!(
-        err.iter()
-            .any(|e| e.message.contains("helper 67 arg2 must be >= 0")),
+        err.iter().any(|e| e
+            .message
+            .contains("stack-copy helpers require arg2 size to be between 0 and u32::MAX")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_get_stack_rejects_size_over_u32() {
+    let (mut func, entry) = new_mir_function();
+    let ctx = func.alloc_vreg();
+    let buf_slot = func.alloc_stack_slot(32, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::GetStack as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(buf_slot),
+                MirValue::Const(0x1_0000_0000),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let err = verify_mir_for_program(&func, &types, EbpfProgramType::Kprobe.info())
+        .expect_err("expected get_stack size range error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("stack-copy helpers require arg2 size to be between 0 and u32::MAX")),
         "unexpected errors: {:?}",
         err
     );
@@ -9798,6 +9848,61 @@ fn test_verify_mir_read_branch_records_rejects_invalid_flags() {
     );
 }
 
+#[test]
+fn test_verify_mir_read_branch_records_rejects_size_over_u32() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let buf = func.alloc_stack_slot(24, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::ReadBranchRecords as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(buf),
+                MirValue::Const(0x1_0000_0000),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    let probe_ctx = ProbeContext::new(
+        EbpfProgramType::PerfEvent,
+        "hardware:branch-instructions:period=100000",
+    );
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected read_branch_records size range error");
+    assert!(
+        err.iter().any(|e| e.message.contains(
+            "helper 'bpf_read_branch_records' requires arg2 size to be between 0 and u32::MAX"
+        )),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
 fn make_get_branch_snapshot_vcc_call(
     size: i64,
     buf_size: usize,
@@ -9890,6 +9995,20 @@ fn test_verify_mir_get_branch_snapshot_rejects_small_buffer() {
     assert!(
         err.iter().any(|e| e.kind == VccErrorKind::PointerBounds),
         "expected pointer bounds error, got {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_get_branch_snapshot_rejects_size_over_u32() {
+    let (func, types) = make_get_branch_snapshot_vcc_call(0x1_0000_0000, 8, 0);
+    let err = verify_mir_for_program(&func, &types, EbpfProgramType::Xdp.info())
+        .expect_err("expected bpf_get_branch_snapshot size range error");
+    assert!(
+        err.iter().any(|e| e.message.contains(
+            "helper 'bpf_get_branch_snapshot' requires arg1 size to be between 0 and u32::MAX"
+        )),
+        "unexpected errors: {:?}",
         err
     );
 }
@@ -22640,8 +22759,22 @@ fn test_verify_mir_helper_get_task_stack_rejects_negative_size() {
     let (func, types) = make_get_task_stack_vcc_call(-1, 8);
     let err = verify_mir(&func, &types).expect_err("expected get_task_stack size error");
     assert!(
-        err.iter()
-            .any(|e| e.message.contains("helper 141 arg2 must be >= 0")),
+        err.iter().any(|e| e
+            .message
+            .contains("stack-copy helpers require arg2 size to be between 0 and u32::MAX")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_helper_get_task_stack_rejects_size_over_u32() {
+    let (func, types) = make_get_task_stack_vcc_call(0x1_0000_0000, 8);
+    let err = verify_mir(&func, &types).expect_err("expected get_task_stack size range error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("stack-copy helpers require arg2 size to be between 0 and u32::MAX")),
         "unexpected errors: {:?}",
         err
     );
@@ -22838,8 +22971,22 @@ fn test_verify_mir_helper_d_path_rejects_negative_size() {
     let (func, types) = make_d_path_vcc_call(-1, 8);
     let err = verify_mir(&func, &types).expect_err("expected d_path size error");
     assert!(
-        err.iter()
-            .any(|e| e.message.contains("helper 147 arg2 must be >= 0")),
+        err.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_d_path' requires arg2 size to be between 0 and u32::MAX")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_helper_d_path_rejects_size_over_u32() {
+    let (func, types) = make_d_path_vcc_call(0x1_0000_0000, 8);
+    let err = verify_mir(&func, &types).expect_err("expected d_path size range error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_d_path' requires arg2 size to be between 0 and u32::MAX")),
         "unexpected errors: {:?}",
         err
     );
