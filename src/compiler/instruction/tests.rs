@@ -5069,6 +5069,14 @@ fn test_tcp_send_ack_helper_contract() {
     assert!(!tp.allowed.allow_stack);
     assert!(!tp.allowed.allow_map);
     assert!(!tp.allowed.allow_user);
+    assert_eq!(
+        BpfHelper::TcpSendAck.scalar_arg_range_requirement(1),
+        Some((
+            0,
+            u32::MAX as i64,
+            "helper 'bpf_tcp_send_ack' requires arg1 rcv_nxt to be between 0 and u32::MAX"
+        ))
+    );
 }
 
 #[test]

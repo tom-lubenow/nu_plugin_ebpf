@@ -9041,6 +9041,34 @@ fn test_infer_tcp_send_ack_helper_in_tcp_congestion_struct_ops_callback() {
 }
 
 #[test]
+fn test_type_error_tcp_send_ack_helper_rejects_rcv_nxt_above_u32_max() {
+    let mut func = make_test_function();
+    let tcp_sock = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::TcpSendAck as u32,
+        args: vec![MirValue::VReg(tcp_sock), MirValue::Const(0x1_0000_0000)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new_struct_ops_callback("tcp_congestion_ops", "cong_avoid");
+    let hints = HashMap::from([(tcp_sock, MirType::named_kernel_struct_ptr("tcp_sock"))]);
+    let mut ti = TypeInference::new_with_env(Some(probe_ctx), None, None, Some(&hints), None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_tcp_send_ack rcv_nxt range error");
+    assert!(
+        errs.iter().any(|e| e.message.contains(
+            "helper 'bpf_tcp_send_ack' requires arg1 rcv_nxt to be between 0 and u32::MAX"
+        )),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
 fn test_type_error_tcp_send_ack_helper_rejects_non_tcp_congestion_struct_ops_callback() {
     let mut func = make_test_function();
     let tcp_sock = func.alloc_vreg();

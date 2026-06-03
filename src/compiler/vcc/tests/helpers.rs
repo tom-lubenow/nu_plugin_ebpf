@@ -12415,6 +12415,39 @@ fn test_verify_mir_for_probe_context_tcp_send_ack_accepts_tcp_congestion_struct_
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_tcp_send_ack_rejects_rcv_nxt_above_u32_max() {
+    let (mut func, entry) = new_mir_function();
+    func.param_count = 1;
+
+    let tcp_sock = func.alloc_vreg();
+    func.param_non_null.insert(tcp_sock.0 as usize);
+    let dst = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::TcpSendAck as u32,
+            args: vec![MirValue::VReg(tcp_sock), MirValue::Const(0x1_0000_0000)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(tcp_sock, MirType::named_kernel_struct_ptr("tcp_sock"));
+    types.insert(dst, MirType::I64);
+
+    let probe_ctx = ProbeContext::new_struct_ops_callback("tcp_congestion_ops", "cong_avoid");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected bpf_tcp_send_ack rcv_nxt range error");
+    assert!(
+        err.iter().any(|e| e.message.contains(
+            "helper 'bpf_tcp_send_ack' requires arg1 rcv_nxt to be between 0 and u32::MAX"
+        )),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_tcp_send_ack_rejects_sched_ext_struct_ops() {
     let (mut func, entry) = new_mir_function();
     func.param_count = 1;

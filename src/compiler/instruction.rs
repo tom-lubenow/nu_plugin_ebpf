@@ -94,6 +94,7 @@ const BPF_CHECK_MTU_LEN_DIFF_MAX_I32: i64 = i32::MAX as i64;
 const BPF_SOCKET_LOOKUP_TUPLE_SIZE_MAX_U32: i64 = u32::MAX as i64;
 const BPF_SYNCOOKIE_HEADER_LEN_MAX_U32: i64 = u32::MAX as i64;
 const BPF_FUNC_ARG_INDEX_MAX_U32: i64 = u32::MAX as i64;
+const BPF_TCP_SEND_ACK_RCV_NXT_MAX_U32: i64 = u32::MAX as i64;
 const PACKET_OTHERHOST: i64 = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1784,6 +1785,11 @@ impl BpfHelper {
                 0,
                 BPF_SYNCOOKIE_HEADER_LEN_MAX_U32,
                 "raw syncookie helpers require arg2 th_len to be between 0 and u32::MAX",
+            )),
+            (Self::TcpSendAck, 1) => Some((
+                0,
+                BPF_TCP_SEND_ACK_RCV_NXT_MAX_U32,
+                "helper 'bpf_tcp_send_ack' requires arg1 rcv_nxt to be between 0 and u32::MAX",
             )),
             (Self::PerfEventRead | Self::PerfEventReadValue, 1) => Some((
                 0,
