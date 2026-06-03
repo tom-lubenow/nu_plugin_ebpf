@@ -104,6 +104,8 @@ const BPF_CHECK_MTU_IFINDEX_MAX_U32: i64 = u32::MAX as i64;
 const BPF_CHECK_MTU_LEN_DIFF_MIN_I32: i64 = i32::MIN as i64;
 const BPF_CHECK_MTU_LEN_DIFF_MAX_I32: i64 = i32::MAX as i64;
 const BPF_SOCKET_LOOKUP_TUPLE_SIZE_MAX_U32: i64 = u32::MAX as i64;
+const BPF_SOCKET_LOOKUP_NETNS_MIN_I32: i64 = i32::MIN as i64;
+const BPF_SOCKET_LOOKUP_NETNS_MAX_I32: i64 = i32::MAX as i64;
 const BPF_SYNCOOKIE_HEADER_LEN_MAX_U32: i64 = u32::MAX as i64;
 const BPF_FUNC_ARG_INDEX_MAX_U32: i64 = u32::MAX as i64;
 const BPF_TCP_SEND_ACK_RCV_NXT_MAX_U32: i64 = u32::MAX as i64;
@@ -1800,6 +1802,11 @@ impl BpfHelper {
                 0,
                 BPF_SOCKET_LOOKUP_TUPLE_SIZE_MAX_U32,
                 "socket lookup helpers require arg2 tuple_size to be between 0 and u32::MAX",
+            )),
+            (Self::SkLookupTcp | Self::SkLookupUdp | Self::SkcLookupTcp, 3) => Some((
+                BPF_SOCKET_LOOKUP_NETNS_MIN_I32,
+                BPF_SOCKET_LOOKUP_NETNS_MAX_I32,
+                "socket lookup helpers require arg3 netns to be between i32::MIN and i32::MAX",
             )),
             (Self::TcpCheckSyncookie | Self::TcpGenSyncookie, 2) => Some((
                 0,

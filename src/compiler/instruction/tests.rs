@@ -4904,6 +4904,14 @@ fn test_helper_signature_socket_helpers() {
                 "socket lookup helpers require arg2 tuple_size to be between 0 and u32::MAX"
             ))
         );
+        assert_eq!(
+            helper.scalar_arg_range_requirement(3),
+            Some((
+                i32::MIN as i64,
+                i32::MAX as i64,
+                "socket lookup helpers require arg3 netns to be between i32::MIN and i32::MAX"
+            ))
+        );
     }
 
     let sig = HelperSignature::for_id(BpfHelper::TcpCheckSyncookie as u32)

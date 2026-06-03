@@ -8801,6 +8801,14 @@ fn test_infer_sk_lookup_tcp_helper_in_xdp_program() {
 }
 
 fn make_socket_lookup_call(helper: BpfHelper, flags: i64) -> (MirFunction, VReg) {
+    make_socket_lookup_call_with_netns(helper, 0, flags)
+}
+
+fn make_socket_lookup_call_with_netns(
+    helper: BpfHelper,
+    netns: i64,
+    flags: i64,
+) -> (MirFunction, VReg) {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();
     let dst = func.alloc_vreg();
@@ -8818,7 +8826,7 @@ fn make_socket_lookup_call(helper: BpfHelper, flags: i64) -> (MirFunction, VReg)
             MirValue::VReg(ctx),
             MirValue::StackSlot(tuple_slot),
             MirValue::Const(16),
-            MirValue::Const(0),
+            MirValue::Const(netns),
             MirValue::Const(flags),
         ],
     });
@@ -8847,6 +8855,33 @@ fn test_type_error_socket_lookup_helpers_reject_nonzero_flags() {
             helper,
             errs
         );
+    }
+}
+
+#[test]
+fn test_type_error_socket_lookup_helpers_reject_netns_outside_i32_range() {
+    for helper in [
+        BpfHelper::SkLookupTcp,
+        BpfHelper::SkLookupUdp,
+        BpfHelper::SkcLookupTcp,
+    ] {
+        for netns in [i32::MIN as i64 - 1, i32::MAX as i64 + 1] {
+            let (func, _) = make_socket_lookup_call_with_netns(helper, netns, 0);
+            let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+            let mut ti = TypeInference::new(Some(probe_ctx));
+            let errs = ti
+                .infer(&func)
+                .expect_err("expected socket lookup netns range error");
+            assert!(
+                errs.iter().any(|e| e.message.contains(
+                    "socket lookup helpers require arg3 netns to be between i32::MIN and i32::MAX"
+                )),
+                "unexpected errors for {:?} netns {}: {:?}",
+                helper,
+                netns,
+                errs
+            );
+        }
     }
 }
 
@@ -13163,6 +13198,46 @@ fn test_type_error_helper_sk_lookup_rejects_tuple_size_above_u32_max() {
         "unexpected errors: {:?}",
         errs
     );
+}
+
+#[test]
+fn test_type_error_helper_sk_lookup_rejects_netns_outside_i32_range() {
+    for netns in [i32::MIN as i64 - 1, i32::MAX as i64 + 1] {
+        let mut func = make_test_function();
+        let ctx = func.alloc_vreg();
+        let tuple_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+        let dst = func.alloc_vreg();
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+        block.instructions.push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::SkLookupTcp as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(tuple_slot),
+                MirValue::Const(16),
+                MirValue::Const(netns),
+                MirValue::Const(0),
+            ],
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let mut ti = TypeInference::new(None);
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected sk_lookup netns range error");
+        assert!(
+            errs.iter().any(|e| e.message.contains(
+                "socket lookup helpers require arg3 netns to be between i32::MIN and i32::MAX"
+            )),
+            "unexpected errors for netns {netns}: {:?}",
+            errs
+        );
+    }
 }
 
 #[test]

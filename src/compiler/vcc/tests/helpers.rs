@@ -11889,12 +11889,21 @@ fn make_socket_lookup_vcc_call(
     helper: BpfHelper,
     flags: i64,
 ) -> (MirFunction, HashMap<VReg, MirType>) {
-    make_socket_lookup_vcc_call_with_tuple_size(helper, 16, flags)
+    make_socket_lookup_vcc_call_with_tuple_size_and_netns(helper, 16, 0, flags)
 }
 
 fn make_socket_lookup_vcc_call_with_tuple_size(
     helper: BpfHelper,
     tuple_size: i64,
+    flags: i64,
+) -> (MirFunction, HashMap<VReg, MirType>) {
+    make_socket_lookup_vcc_call_with_tuple_size_and_netns(helper, tuple_size, 0, flags)
+}
+
+fn make_socket_lookup_vcc_call_with_tuple_size_and_netns(
+    helper: BpfHelper,
+    tuple_size: i64,
+    netns: i64,
     flags: i64,
 ) -> (MirFunction, HashMap<VReg, MirType>) {
     let (mut func, entry) = new_mir_function();
@@ -11918,7 +11927,7 @@ fn make_socket_lookup_vcc_call_with_tuple_size(
                 MirValue::VReg(ctx),
                 MirValue::StackSlot(tuple_slot),
                 MirValue::Const(tuple_size),
-                MirValue::Const(0),
+                MirValue::Const(netns),
                 MirValue::Const(flags),
             ],
         });
@@ -11956,6 +11965,32 @@ fn test_verify_mir_for_probe_context_socket_lookup_helpers_reject_nonzero_flags(
             helper,
             err
         );
+    }
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_socket_lookup_rejects_netns_outside_i32_range() {
+    for helper in [
+        BpfHelper::SkLookupTcp,
+        BpfHelper::SkLookupUdp,
+        BpfHelper::SkcLookupTcp,
+    ] {
+        for netns in [i32::MIN as i64 - 1, i32::MAX as i64 + 1] {
+            let (func, types) =
+                make_socket_lookup_vcc_call_with_tuple_size_and_netns(helper, 16, netns, 0);
+            let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+            let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+                .expect_err("expected socket lookup netns range error");
+            assert!(
+                err.iter().any(|e| e.message.contains(
+                    "socket lookup helpers require arg3 netns to be between i32::MIN and i32::MAX"
+                )),
+                "unexpected errors for {:?} netns {}: {:?}",
+                helper,
+                netns,
+                err
+            );
+        }
     }
 }
 
