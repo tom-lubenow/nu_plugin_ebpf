@@ -1331,6 +1331,14 @@ fn test_helper_signatures_setsockopt_and_getsockopt() {
     assert_eq!(bind_sig.arg_kind(1), HelperArgKind::Pointer);
     assert_eq!(bind_sig.arg_kind(2), HelperArgKind::Scalar);
     assert_eq!(bind_sig.ret_kind, HelperRetKind::Scalar);
+    assert_eq!(
+        BpfHelper::Bind.scalar_arg_range_requirement(2),
+        Some((
+            0,
+            i32::MAX as i64,
+            "helper 'bpf_bind' requires arg2 addr_len to be between 0 and i32::MAX"
+        ))
+    );
 
     let set_sig = HelperSignature::for_id(BpfHelper::SetSockOpt as u32)
         .expect("expected bpf_setsockopt helper signature");
@@ -1342,6 +1350,14 @@ fn test_helper_signatures_setsockopt_and_getsockopt() {
     assert_eq!(set_sig.arg_kind(3), HelperArgKind::Pointer);
     assert_eq!(set_sig.arg_kind(4), HelperArgKind::Scalar);
     assert_eq!(set_sig.ret_kind, HelperRetKind::Scalar);
+    assert_eq!(
+        BpfHelper::SetSockOpt.scalar_arg_range_requirement(4),
+        Some((
+            0,
+            i32::MAX as i64,
+            "socket option helpers require arg4 optlen to be between 0 and i32::MAX"
+        ))
+    );
 
     let get_sig = HelperSignature::for_id(BpfHelper::GetSockOpt as u32)
         .expect("expected bpf_getsockopt helper signature");
@@ -1353,6 +1369,14 @@ fn test_helper_signatures_setsockopt_and_getsockopt() {
     assert_eq!(get_sig.arg_kind(3), HelperArgKind::Pointer);
     assert_eq!(get_sig.arg_kind(4), HelperArgKind::Scalar);
     assert_eq!(get_sig.ret_kind, HelperRetKind::Scalar);
+    assert_eq!(
+        BpfHelper::GetSockOpt.scalar_arg_range_requirement(4),
+        Some((
+            0,
+            i32::MAX as i64,
+            "socket option helpers require arg4 optlen to be between 0 and i32::MAX"
+        ))
+    );
 
     let cb_flags_sig = HelperSignature::for_id(BpfHelper::SockOpsCbFlagsSet as u32)
         .expect("expected bpf_sock_ops_cb_flags_set helper signature");

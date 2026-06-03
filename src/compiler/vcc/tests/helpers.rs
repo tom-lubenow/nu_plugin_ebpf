@@ -6695,6 +6695,50 @@ fn test_verify_mir_sysctl_get_name_rejects_invalid_flags() {
     );
 }
 
+fn make_sockopt_helper_vcc_call(
+    helper: BpfHelper,
+    optlen: i64,
+    optval_size: usize,
+) -> (MirFunction, HashMap<VReg, MirType>) {
+    let (mut func, entry) = new_mir_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let optval_slot = func.alloc_stack_slot(optval_size, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: helper as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::Const(1),
+                MirValue::Const(2),
+                MirValue::StackSlot(optval_slot),
+                MirValue::Const(optlen),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+    (func, types)
+}
+
 #[test]
 fn test_verify_mir_for_program_sockopt_helpers_reject_invalid_program() {
     for (helper, probe_ctx, expected) in [
@@ -6709,46 +6753,27 @@ fn test_verify_mir_for_program_sockopt_helpers_reject_invalid_program() {
             "helper 'bpf_getsockopt' is only valid in sock_ops, cgroup_sock_addr, and cgroup_sockopt programs",
         ),
     ] {
-        let (mut func, entry) = new_mir_function();
-        let ctx = func.alloc_vreg();
-        let dst = func.alloc_vreg();
-        let optval_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
-
-        func.block_mut(entry)
-            .instructions
-            .push(MirInst::LoadCtxField {
-                dst: ctx,
-                field: CtxField::Context,
-                slot: None,
-            });
-        func.block_mut(entry)
-            .instructions
-            .push(MirInst::CallHelper {
-                dst,
-                helper: helper as u32,
-                args: vec![
-                    MirValue::VReg(ctx),
-                    MirValue::Const(1),
-                    MirValue::Const(2),
-                    MirValue::StackSlot(optval_slot),
-                    MirValue::Const(16),
-                ],
-            });
-        func.block_mut(entry).terminator = MirInst::Return { val: None };
-
-        let mut types = HashMap::new();
-        types.insert(
-            ctx,
-            MirType::Ptr {
-                pointee: Box::new(MirType::U8),
-                address_space: AddressSpace::Kernel,
-            },
-        );
-        types.insert(dst, MirType::I64);
-
+        let (func, types) = make_sockopt_helper_vcc_call(helper, 16, 16);
         let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
             .expect_err("expected sockopt helper program-surface error");
         assert!(err.iter().any(|e| e.message.contains(expected)));
+    }
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_sockopt_helpers_reject_optlen_above_i32_max() {
+    for helper in [BpfHelper::SetSockOpt, BpfHelper::GetSockOpt] {
+        let (func, types) = make_sockopt_helper_vcc_call(helper, 0x8000_0000, 16);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockopt, "/sys/fs/cgroup:get");
+        let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect_err("expected sockopt helper optlen bounds error");
+        assert!(
+            err.iter().any(|e| e.message.contains(
+                "socket option helpers require arg4 optlen to be between 0 and i32::MAX"
+            )),
+            "unexpected errors for helper {helper:?}: {:?}",
+            err
+        );
     }
 }
 
@@ -6905,6 +6930,47 @@ fn test_verify_mir_for_probe_context_cgroup_retval_helpers_reject_invalid_contex
     }
 }
 
+fn make_bind_helper_vcc_call(
+    addr_len: i64,
+    addr_size: usize,
+) -> (MirFunction, HashMap<VReg, MirType>) {
+    let (mut func, entry) = new_mir_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let addr_slot = func.alloc_stack_slot(addr_size, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::Bind as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::StackSlot(addr_slot),
+                MirValue::Const(addr_len),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+    (func, types)
+}
+
 #[test]
 fn test_verify_mir_for_program_bind_helper_rejects_invalid_program_or_attach() {
     for (probe_ctx, expected) in [
@@ -6917,45 +6983,26 @@ fn test_verify_mir_for_program_bind_helper_rejects_invalid_program_or_attach() {
             "helper 'bpf_bind' is only valid on cgroup_sock_addr connect4/connect6 hooks",
         ),
     ] {
-        let (mut func, entry) = new_mir_function();
-        let ctx = func.alloc_vreg();
-        let dst = func.alloc_vreg();
-        let addr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
-
-        func.block_mut(entry)
-            .instructions
-            .push(MirInst::LoadCtxField {
-                dst: ctx,
-                field: CtxField::Context,
-                slot: None,
-            });
-        func.block_mut(entry)
-            .instructions
-            .push(MirInst::CallHelper {
-                dst,
-                helper: BpfHelper::Bind as u32,
-                args: vec![
-                    MirValue::VReg(ctx),
-                    MirValue::StackSlot(addr_slot),
-                    MirValue::Const(16),
-                ],
-            });
-        func.block_mut(entry).terminator = MirInst::Return { val: None };
-
-        let mut types = HashMap::new();
-        types.insert(
-            ctx,
-            MirType::Ptr {
-                pointee: Box::new(MirType::U8),
-                address_space: AddressSpace::Kernel,
-            },
-        );
-        types.insert(dst, MirType::I64);
-
+        let (func, types) = make_bind_helper_vcc_call(16, 16);
         let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
             .expect_err("expected bind helper program-surface error");
         assert!(err.iter().any(|e| e.message.contains(expected)));
     }
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_bind_helper_rejects_addr_len_above_i32_max() {
+    let (func, types) = make_bind_helper_vcc_call(0x8000_0000, 16);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSockAddr, "/sys/fs/cgroup:connect4");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected bind helper addr_len bounds error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_bind' requires arg2 addr_len to be between 0 and i32::MAX")),
+        "unexpected errors: {:?}",
+        err
+    );
 }
 
 #[test]

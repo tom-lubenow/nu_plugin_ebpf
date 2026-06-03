@@ -77,6 +77,7 @@ const BPF_FORMAT_SIZE_MAX_U32: i64 = u32::MAX as i64;
 const BPF_BUFFER_SIZE_MAX_U32: i64 = u32::MAX as i64;
 const BPF_IMA_HASH_SIZE_MAX_U32: i64 = u32::MAX as i64;
 const BPF_HDR_OPT_LEN_MAX_U32: i64 = u32::MAX as i64;
+const BPF_SOCKET_HELPER_LEN_MAX_I32: i64 = i32::MAX as i64;
 const PACKET_OTHERHOST: i64 = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1799,6 +1800,16 @@ impl BpfHelper {
                 0,
                 BPF_MSG_DATA_MAX_U32,
                 "message data reshaping helpers require arg2 len to be between 0 and u32::MAX",
+            )),
+            (Self::SetSockOpt | Self::GetSockOpt, 4) => Some((
+                0,
+                BPF_SOCKET_HELPER_LEN_MAX_I32,
+                "socket option helpers require arg4 optlen to be between 0 and i32::MAX",
+            )),
+            (Self::Bind, 2) => Some((
+                0,
+                BPF_SOCKET_HELPER_LEN_MAX_I32,
+                "helper 'bpf_bind' requires arg2 addr_len to be between 0 and i32::MAX",
             )),
             (Self::LoadHdrOpt | Self::StoreHdrOpt, 2) => Some((
                 0,
