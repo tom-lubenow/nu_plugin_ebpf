@@ -19619,6 +19619,37 @@ fn test_verify_mir_helper_tcp_raw_syncookie_checks_stack_header_bounds() {
 }
 
 #[test]
+fn test_verify_mir_helper_tcp_raw_syncookie_gen_accepts_zero_size_null_tcp_header() {
+    for (helper, ip_size) in [
+        (BpfHelper::TcpRawGenSyncookieIpv4, 20),
+        (BpfHelper::TcpRawGenSyncookieIpv6, 40),
+    ] {
+        let (mut func, entry) = new_mir_function();
+        let ip_slot = func.alloc_stack_slot(ip_size, 8, StackSlotKind::StringBuffer);
+        let ret = func.alloc_vreg();
+
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: ret,
+                helper: helper as u32,
+                args: vec![
+                    MirValue::StackSlot(ip_slot),
+                    MirValue::Const(0),
+                    MirValue::Const(0),
+                ],
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(ret, MirType::I64);
+
+        verify_mir(&func, &types)
+            .unwrap_or_else(|err| panic!("expected {helper:?} to verify: {err:?}"));
+    }
+}
+
+#[test]
 fn test_verify_mir_helper_tcp_raw_syncookie_rejects_len_above_u32_max() {
     for helper in [
         BpfHelper::TcpRawGenSyncookieIpv4,

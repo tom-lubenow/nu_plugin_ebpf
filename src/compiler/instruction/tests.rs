@@ -5199,6 +5199,7 @@ fn test_helper_signature_socket_helpers() {
         BpfHelper::TcpRawGenSyncookieIpv4,
         BpfHelper::TcpRawGenSyncookieIpv6,
     ] {
+        assert_eq!(helper.zero_size_pointer_arg_size_arg(1), Some(2));
         assert_eq!(
             helper.scalar_arg_nonnegative_requirement(2),
             Some("raw syncookie helpers require arg2 to be >= 0")

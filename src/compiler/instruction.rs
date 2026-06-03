@@ -1397,6 +1397,7 @@ impl BpfHelper {
             (Self::Snprintf, 0) => Some(1),
             (Self::Snprintf, 3) => Some(4),
             (Self::TraceVPrintk, 2) => Some(3),
+            (Self::TcpRawGenSyncookieIpv4 | Self::TcpRawGenSyncookieIpv6, 1) => Some(2),
             (Self::DynptrFromMem, 0) => Some(1),
             (Self::DynptrRead, 0) => Some(1),
             (Self::DynptrWrite, 2) => Some(3),

@@ -12760,6 +12760,36 @@ fn test_infer_tcp_raw_syncookie_helpers_with_stack_headers() {
 }
 
 #[test]
+fn test_infer_tcp_raw_syncookie_gen_accepts_zero_size_null_tcp_header() {
+    for (helper, ip_size) in [
+        (BpfHelper::TcpRawGenSyncookieIpv4, 20),
+        (BpfHelper::TcpRawGenSyncookieIpv6, 40),
+    ] {
+        let mut func = make_test_function();
+        let ip_slot = func.alloc_stack_slot(ip_size, 8, StackSlotKind::StringBuffer);
+        let dst = func.alloc_vreg();
+
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::CallHelper {
+            dst,
+            helper: helper as u32,
+            args: vec![
+                MirValue::StackSlot(ip_slot),
+                MirValue::Const(0),
+                MirValue::Const(0),
+            ],
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let mut ti = TypeInference::new(None);
+        let types = ti
+            .infer(&func)
+            .unwrap_or_else(|errs| panic!("expected {helper:?} to infer: {errs:?}"));
+        assert_eq!(types.get(&dst), Some(&MirType::I64));
+    }
+}
+
+#[test]
 fn test_type_error_tcp_raw_syncookie_helpers_check_header_bounds() {
     let cases = [
         (
