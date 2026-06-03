@@ -42,6 +42,9 @@ const BPF_MAX_LOOPS: i64 = 8 * 1024 * 1024;
 const BPF_TAIL_CALL_INDEX_MAX_U32: i64 = u32::MAX as i64;
 const BPF_CPU_INDEX_MAX_U32: i64 = u32::MAX as i64;
 const BPF_CGROUP_ARRAY_INDEX_MAX_U32: i64 = u32::MAX as i64;
+const BPF_F_USER_STACK: i64 = 1 << 8;
+const BPF_F_USER_BUILD_ID: i64 = 1 << 11;
+const BPF_F_STACK_COPY_ALLOWED_MASK: i64 = 0xff | BPF_F_USER_STACK | BPF_F_USER_BUILD_ID;
 const BPF_FIB_LOOKUP_DIRECT: i64 = 1 << 0;
 const BPF_FIB_LOOKUP_TBID: i64 = 1 << 3;
 const BPF_FIB_LOOKUP_MARK: i64 = 1 << 5;
@@ -196,6 +199,14 @@ const CSUM_REPLACE_HDR_FIELD_COMBINATIONS: &[ScalarArgBitCombinationRequirement]
         message: "checksum replacement helpers require BPF_F_HDR_FIELD_MASK size to be 0, 2, or 4",
     },
 ];
+
+const STACK_COPY_FLAG_COMBINATIONS: &[ScalarArgBitCombinationRequirement] =
+    &[ScalarArgBitCombinationRequirement {
+        trigger_mask: BPF_F_USER_BUILD_ID,
+        required_mask: BPF_F_USER_STACK,
+        forbidden_mask: 0,
+        message: "stack-copy helpers require BPF_F_USER_STACK when BPF_F_USER_BUILD_ID is set",
+    }];
 
 const CSUM_REPLACE_FROM_REQUIREMENTS: &[ScalarArgConstRequirementWhenArgMaskedConst] = &[
     ScalarArgConstRequirementWhenArgMaskedConst {
@@ -2075,7 +2086,7 @@ impl BpfHelper {
                 "helper 'bpf_get_stackid' requires arg2 flags to contain only BPF_F_SKIP_FIELD_MASK/BPF_F_USER_STACK/BPF_F_FAST_STACK_CMP/BPF_F_REUSE_STACKID bits (0x07ff)",
             )),
             (Self::GetStack | Self::GetTaskStack, 3) => Some((
-                0x09ff,
+                BPF_F_STACK_COPY_ALLOWED_MASK,
                 "stack-copy helpers require flags to contain only BPF_F_SKIP_FIELD_MASK/BPF_F_USER_STACK/BPF_F_USER_BUILD_ID bits (0x09ff)",
             )),
             (Self::RedirectMap, 2) => Some((
@@ -2118,6 +2129,7 @@ impl BpfHelper {
             (Self::FibLookup, 3) => FIB_LOOKUP_FLAG_COMBINATIONS,
             (Self::SkbAdjustRoom, 3) => SKB_ADJUST_ROOM_FLAG_COMBINATIONS,
             (Self::L3CsumReplace | Self::L4CsumReplace, 4) => CSUM_REPLACE_HDR_FIELD_COMBINATIONS,
+            (Self::GetStack | Self::GetTaskStack, 3) => STACK_COPY_FLAG_COMBINATIONS,
             _ => &[],
         }
     }

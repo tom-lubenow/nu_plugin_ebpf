@@ -7568,6 +7568,44 @@ fn test_type_error_get_stack_helper_rejects_invalid_flags() {
 }
 
 #[test]
+fn test_type_error_get_stack_helper_rejects_build_id_without_user_stack() {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let buf_slot = func.alloc_stack_slot(32, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::GetStack as u32,
+        args: vec![
+            MirValue::VReg(ctx),
+            MirValue::StackSlot(buf_slot),
+            MirValue::Const(0),
+            MirValue::Const(0x0800),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_get_stack build-id flag combination error");
+    assert!(
+        errs.iter().any(|e| e.message.contains(
+            "stack-copy helpers require BPF_F_USER_STACK when BPF_F_USER_BUILD_ID is set"
+        )),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
 fn test_type_error_get_stack_helper_rejects_small_stack_buffer() {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();
@@ -13465,6 +13503,14 @@ fn test_infer_helper_task_pt_regs_returns_kernel_pointer() {
 }
 
 fn make_get_task_stack_call(size: i64, buf_size: usize) -> (MirFunction, VReg) {
+    make_get_task_stack_call_with_flags(size, buf_size, 0)
+}
+
+fn make_get_task_stack_call_with_flags(
+    size: i64,
+    buf_size: usize,
+    flags: i64,
+) -> (MirFunction, VReg) {
     let mut func = make_test_function();
     let task = func.alloc_vreg();
     let dst = func.alloc_vreg();
@@ -13482,7 +13528,7 @@ fn make_get_task_stack_call(size: i64, buf_size: usize) -> (MirFunction, VReg) {
             MirValue::VReg(task),
             MirValue::StackSlot(buf_slot),
             MirValue::Const(size),
-            MirValue::Const(0),
+            MirValue::Const(flags),
         ],
     });
     block.terminator = MirInst::Return { val: None };
@@ -13497,6 +13543,22 @@ fn test_infer_helper_get_task_stack_returns_i64() {
         .infer(&func)
         .expect("expected bpf_get_task_stack helper to infer");
     assert_eq!(types.get(&dst), Some(&MirType::I64));
+}
+
+#[test]
+fn test_type_error_get_task_stack_rejects_build_id_without_user_stack() {
+    let (func, _) = make_get_task_stack_call_with_flags(24, 24, 0x0800);
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_get_task_stack build-id flag combination error");
+    assert!(
+        errs.iter().any(|e| e.message.contains(
+            "stack-copy helpers require BPF_F_USER_STACK when BPF_F_USER_BUILD_ID is set"
+        )),
+        "unexpected errors: {:?}",
+        errs
+    );
 }
 
 #[test]

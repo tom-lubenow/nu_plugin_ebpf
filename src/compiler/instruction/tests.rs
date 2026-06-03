@@ -4103,6 +4103,17 @@ fn test_helper_get_stack_buffer_contract() {
             "stack-copy helpers require flags to contain only BPF_F_SKIP_FIELD_MASK/BPF_F_USER_STACK/BPF_F_USER_BUILD_ID bits (0x09ff)"
         ))
     );
+    for helper in [BpfHelper::GetStack, BpfHelper::GetTaskStack] {
+        let combinations = helper.scalar_arg_bit_combination_requirements(3);
+        assert_eq!(combinations.len(), 1);
+        assert_eq!(combinations[0].trigger_mask, BPF_F_USER_BUILD_ID);
+        assert_eq!(combinations[0].required_mask, BPF_F_USER_STACK);
+        assert_eq!(combinations[0].forbidden_mask, 0);
+        assert_eq!(
+            combinations[0].message,
+            "stack-copy helpers require BPF_F_USER_STACK when BPF_F_USER_BUILD_ID is set"
+        );
+    }
     assert!(scalar_range_contains_only_bitmask(0, 0x07ff, 0x07ff));
     assert!(!scalar_range_contains_only_bitmask(0, 0x09ff, 0x09ff));
     assert!(scalar_range_contains_only_bitmask(0x08ff, 0x09ff, 0x09ff));
