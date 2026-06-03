@@ -12387,6 +12387,102 @@ fn test_lower_math_sum_product_float_results_feed_metadata_only_fill() {
 }
 
 #[test]
+fn test_lower_math_avg_rejects_materialized_numeric_float_result() {
+    for (offset, values) in [
+        (
+            0,
+            vec![
+                Value::int(1, Span::test_data()),
+                Value::int(2, Span::test_data()),
+                Value::int(3, Span::test_data()),
+            ],
+        ),
+        (
+            1,
+            vec![
+                Value::float(1.0, Span::test_data()),
+                Value::int(2, Span::test_data()),
+            ],
+        ),
+    ] {
+        let decl = DeclId::new(586 + offset);
+        let hir = make_value_list_pipeline_call_program(decl, values);
+        let decl_names = HashMap::from([(decl, "math avg".to_string())]);
+
+        let err = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .expect_err("math avg should reject materialized float results");
+
+        assert!(
+            err.to_string()
+                .contains("math avg compile-time list result has type float"),
+            "unexpected error: {err}"
+        );
+    }
+}
+
+#[test]
+fn test_lower_math_avg_numeric_results_feed_metadata_only_fill() {
+    for (offset, values, expected_prefix) in [
+        (
+            0,
+            vec![
+                Value::int(1, Span::test_data()),
+                Value::int(2, Span::test_data()),
+                Value::int(3, Span::test_data()),
+            ],
+            "0002",
+        ),
+        (
+            1,
+            vec![
+                Value::float(1.0, Span::test_data()),
+                Value::int(2, Span::test_data()),
+            ],
+            "01.5",
+        ),
+    ] {
+        let math_decl = DeclId::new(588 + offset * 3);
+        let fill_decl = DeclId::new(589 + offset * 3);
+        let starts_with_decl = DeclId::new(590 + offset * 3);
+        let hir = make_value_list_math_fill_starts_with_program(
+            math_decl,
+            fill_decl,
+            starts_with_decl,
+            values,
+            expected_prefix,
+            4,
+            "right",
+            "0",
+        );
+        let decl_names = HashMap::from([
+            (math_decl, "math avg".to_string()),
+            (fill_decl, "fill".to_string()),
+            (starts_with_decl, "str starts-with".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("math avg float result should feed fill: {err}"));
+
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .expect("math avg fill result should compile");
+    }
+}
+
+#[test]
 fn test_lower_math_unit_reducers_materialize_raw_i64_results() {
     let cases = [
         (
@@ -12441,6 +12537,48 @@ fn test_lower_math_unit_reducers_materialize_raw_i64_results() {
         assert_program_returns_constant(&result.program, expected, command_name);
         compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
             .unwrap_or_else(|err| panic!("{command_name} unit result should compile: {err}"));
+    }
+}
+
+#[test]
+fn test_lower_math_avg_unit_lists_materialize_raw_i64_results() {
+    let cases = [
+        (
+            vec![
+                Value::filesize(Filesize::new(1000), Span::test_data()),
+                Value::filesize(Filesize::new(2000), Span::test_data()),
+                Value::filesize(Filesize::new(2000), Span::test_data()),
+            ],
+            1666,
+        ),
+        (
+            vec![
+                Value::duration(1_000_000_000, Span::test_data()),
+                Value::duration(2_000_000_000, Span::test_data()),
+                Value::duration(2_000_000_000, Span::test_data()),
+            ],
+            1_666_666_666,
+        ),
+    ];
+
+    for (case_index, (values, expected)) in cases.into_iter().enumerate() {
+        let decl = DeclId::new(594 + case_index);
+        let hir = make_value_list_pipeline_call_program(decl, values);
+        let decl_names = HashMap::from([(decl, "math avg".to_string())]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("math avg should lower unit list input: {err}"));
+
+        assert_program_returns_constant(&result.program, expected, "math avg unit");
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .expect("math avg unit result should compile");
     }
 }
 

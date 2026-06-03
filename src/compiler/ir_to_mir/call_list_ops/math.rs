@@ -203,6 +203,138 @@ impl<'a> HirToMirLowering<'a> {
         self.lower_compile_time_i64_unit_result(src_dst, dst_vreg, src_dst_had_value, value)
     }
 
+    pub(in crate::compiler::ir_to_mir) fn lower_compile_time_math_avg(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+    ) -> Result<(), CompileError> {
+        let input_reg = self
+            .pipeline_input_reg
+            .or(src_dst_had_value.then_some(src_dst));
+
+        if !self.named_flags.is_empty()
+            || !self.named_args.is_empty()
+            || !self.positional_args.is_empty()
+        {
+            return Err(CompileError::UnsupportedInstruction(
+                "math avg does not accept arguments in eBPF".into(),
+            ));
+        }
+
+        let input_meta = input_reg
+            .and_then(|reg| self.get_metadata(reg).cloned())
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "math avg requires a compile-time known numeric list in eBPF".into(),
+                )
+            })?;
+        let vals = match input_meta.constant_value {
+            Some(nu_protocol::Value::List { vals, .. }) => vals,
+            Some(other) => {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "math avg requires a compile-time known numeric list in eBPF; input has type {}",
+                    other.get_type()
+                )));
+            }
+            None => {
+                return Err(CompileError::UnsupportedInstruction(
+                    "math avg requires a compile-time known numeric list in eBPF".into(),
+                ));
+            }
+        };
+        if vals.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(
+                "math avg requires a non-empty numeric list in eBPF".into(),
+            ));
+        }
+        let len = vals.len();
+
+        if vals.iter().any(|value| {
+            matches!(
+                value,
+                nu_protocol::Value::Filesize { .. } | nu_protocol::Value::Duration { .. }
+            )
+        }) {
+            let mut unit = None;
+            let mut total = 0i128;
+            for (index, value) in vals.into_iter().enumerate() {
+                let Some((
+                    raw,
+                    value_unit @ (CompileTimeI64Unit::Filesize | CompileTimeI64Unit::Duration),
+                )) = Self::compile_time_i64_unit_value(&value)
+                else {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "math avg requires homogeneous filesize or duration list items in eBPF; item {index} has type {}",
+                        value.get_type()
+                    )));
+                };
+                if let Some(unit) = unit {
+                    if unit != value_unit {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "math avg requires homogeneous filesize or duration list items in eBPF; item {index} has type {}",
+                            value.get_type()
+                        )));
+                    }
+                } else {
+                    unit = Some(value_unit);
+                }
+                total += raw as i128;
+            }
+            let avg = total / len as i128;
+            let avg = i64::try_from(avg).map_err(|_| {
+                CompileError::UnsupportedInstruction(
+                    "math avg filesize/duration result overflows i64 in eBPF".into(),
+                )
+            })?;
+            let unit = unit.expect("non-empty unit avg has a unit");
+            let value = Self::compile_time_unit_value_from_i64(avg, unit);
+            return self.lower_compile_time_i64_unit_result(
+                src_dst,
+                dst_vreg,
+                src_dst_had_value,
+                value,
+            );
+        }
+
+        let mut total = 0.0;
+        for (index, value) in vals.into_iter().enumerate() {
+            let value = match value {
+                nu_protocol::Value::Int { val, .. } => val as f64,
+                nu_protocol::Value::Float { val, .. } if val.is_finite() => val,
+                nu_protocol::Value::Float { val, .. } => {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "math avg requires finite float list items in eBPF; item {index} is {val}"
+                    )));
+                }
+                other => {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "math avg requires integer, float, filesize, or duration list items in eBPF; item {index} has type {}",
+                        other.get_type()
+                    )));
+                }
+            };
+            total += value;
+        }
+        let avg = total / len as f64;
+        if !avg.is_finite() {
+            return Err(CompileError::UnsupportedInstruction(
+                "math avg compile-time list result must be finite in eBPF".into(),
+            ));
+        }
+        if self.current_call_result_metadata_only {
+            self.lower_compile_time_only_constant_value(
+                src_dst,
+                &nu_protocol::Value::float(avg, Span::unknown()),
+            );
+            return Ok(());
+        }
+
+        Err(CompileError::UnsupportedInstruction(
+            "math avg compile-time list result has type float; eBPF supports only average results folded by fill".into(),
+        ))
+    }
+
     fn math_integer_result_for_rounding_command(
         cmd_name: &str,
         value: nu_protocol::Value,

@@ -35359,6 +35359,32 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-list-math-avg-fill"
+        category: "language-core"
+        tags: [aggregate list math avg float fill]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ([1 2 3] | math avg | fill --alignment right --character "0" --width 4 | str starts-with "0002") and ([1.0 2] | math avg | fill --alignment right --character "0" --width 4 | str starts-with "01.5")'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-list-math-avg-filesize-duration"
+        category: "language-core"
+        tags: [aggregate list math avg filesize duration constant]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ([1kb 2kb 2kb] | math avg | describe | str starts-with "filesize") and ([1sec 2sec 2sec] | math avg | describe | str starts-with "duration")'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-math-filesize-duration"
         category: "language-core"
         tags: [aggregate list math filesize duration constant]
