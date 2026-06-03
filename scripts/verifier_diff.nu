@@ -38943,6 +38943,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-float-list-builder-length-empty"
+        category: "language-core"
+        tags: [aggregate list append float length is-empty is-not-empty]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  (([2.5] | append 1.5 | length) == 2) and ((([2.5] | append 1.5 | is-empty) == false) and ([2.5] | append 1.5 | is-not-empty))'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-runtime-list-describe"
         category: "language-core"
         tags: [describe aggregate list runtime string]

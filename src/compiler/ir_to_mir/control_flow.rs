@@ -533,6 +533,10 @@ impl<'a> HirToMirLowering<'a> {
                         &block.stmts,
                         stmt_index,
                         *dst,
+                    ) || self.is_compile_time_only_fixed_layout_aggregate_value(
+                        &block.stmts,
+                        stmt_index,
+                        *dst,
                     ) || self.is_compile_time_only_append_prepend_item_value(
                         &block.stmts,
                         stmt_index,
@@ -546,6 +550,10 @@ impl<'a> HirToMirLowering<'a> {
                 if let HirStmt::LoadValue { dst, val } = stmt
                     && !crate::compiler::hir::supports_constant_value(val)
                     && (self.is_compile_time_only_string_or_math_value(
+                        &block.stmts,
+                        stmt_index,
+                        *dst,
+                    ) || self.is_compile_time_only_fixed_layout_aggregate_value(
                         &block.stmts,
                         stmt_index,
                         *dst,
@@ -1088,6 +1096,20 @@ impl<'a> HirToMirLowering<'a> {
     }
 
     fn is_compile_time_only_fixed_layout_builder_value(
+        &self,
+        stmts: &[HirStmt],
+        stmt_index: usize,
+        dst: RegId,
+    ) -> bool {
+        compile_time_value_flows_to_fixed_layout_aggregate_consumer(
+            stmts,
+            stmt_index,
+            dst,
+            self.decl_names,
+        )
+    }
+
+    fn is_compile_time_only_fixed_layout_aggregate_value(
         &self,
         stmts: &[HirStmt],
         stmt_index: usize,

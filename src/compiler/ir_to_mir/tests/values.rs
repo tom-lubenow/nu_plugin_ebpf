@@ -1395,6 +1395,55 @@ fn make_float_list_builder_append_describe_then_starts_with_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_float_literal_list_builder_pipeline_call_program(
+    decl_id: DeclId,
+    values: &[f64],
+) -> HirProgram {
+    let value_count = values.len();
+    let mut stmts = vec![HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List {
+            capacity: value_count,
+        },
+    }];
+
+    for (index, value) in values.iter().enumerate() {
+        let item_reg = RegId::new(u32::try_from(index).expect("test index fits in u32") + 2);
+        stmts.push(HirStmt::LoadLiteral {
+            dst: item_reg,
+            lit: HirLiteral::Float(*value),
+        });
+        stmts.push(HirStmt::ListPush {
+            src_dst: RegId::new(0),
+            item: item_reg,
+        });
+    }
+
+    stmts.push(HirStmt::Call {
+        decl_id,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: u32::try_from(value_count).expect("test float-list length fits in u32") + 2,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_describe_no_input_then_length_program(
     describe_decl: DeclId,
     length_decl: DeclId,
@@ -6191,6 +6240,43 @@ fn test_lower_is_not_empty_on_string_list_builder_uses_constant_length() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("is-not-empty string-list builder result should compile through codegen");
+}
+
+#[test]
+fn test_lower_empty_predicates_on_float_literal_list_builder_use_constant_length() {
+    for (offset, command_name, expected) in [(0, "is-empty", 0), (1, "is-not-empty", 1)] {
+        let decl = DeclId::new(276 + offset);
+        let hir = make_float_literal_list_builder_pipeline_call_program(decl, &[2.5, 1.5]);
+        let decl_names = HashMap::from([(decl, command_name.to_string())]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("{command_name} should consume compile-time float literal list builders: {err}")
+        });
+
+        assert_program_returns_constant(&result.program, expected, command_name);
+        assert!(
+            result
+                .program
+                .main
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .all(|inst| !matches!(inst, MirInst::ListLen { .. } | MirInst::ListPush { .. })),
+            "expected {command_name} to consume float literal list builders without runtime list operations"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("{command_name} float-list builder should compile: {err}")
+            });
+    }
 }
 
 #[test]
@@ -11923,6 +12009,37 @@ fn test_lower_length_on_string_list_builder_uses_constant_length() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("length string-list builder result should compile through codegen");
+}
+
+#[test]
+fn test_lower_length_on_float_literal_list_builder_uses_constant_length() {
+    let length_decl = DeclId::new(278);
+    let hir = make_float_literal_list_builder_pipeline_call_program(length_decl, &[2.5, 1.5]);
+    let decl_names = HashMap::from([(length_decl, "length".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("length should consume compile-time float literal list builders");
+
+    assert_program_returns_constant(&result.program, 2, "float literal list-builder length");
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .all(|inst| !matches!(inst, MirInst::ListLen { .. } | MirInst::ListPush { .. })),
+        "expected length to consume float literal list builders without runtime list operations"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("length float-list builder result should compile through codegen");
 }
 
 #[test]
