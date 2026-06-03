@@ -1209,27 +1209,51 @@ impl<'a> HirToMirLowering<'a> {
             }
 
             let mut output = Vec::with_capacity(vals.len());
+            let mut has_float = false;
             for (index, item) in vals.into_iter().enumerate() {
-                let val = match item {
-                    nu_protocol::Value::Int { val, .. } => val,
+                match item {
+                    nu_protocol::Value::Int { val, .. } => {
+                        output.push(nu_protocol::Value::int(
+                            val.wrapping_abs(),
+                            nu_protocol::Span::unknown(),
+                        ));
+                    }
+                    nu_protocol::Value::Float { val, .. } if val.is_finite() => {
+                        has_float = true;
+                        output.push(nu_protocol::Value::float(
+                            val.abs(),
+                            nu_protocol::Span::unknown(),
+                        ));
+                    }
+                    nu_protocol::Value::Float { val, .. } => {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "math abs requires finite float list items in eBPF; item {index} is {val}"
+                        )));
+                    }
                     other => {
                         return Err(CompileError::UnsupportedInstruction(format!(
-                            "math abs requires integer list items in eBPF; item {index} has type {}",
+                            "math abs requires integer or finite float list items in eBPF; item {index} has type {}",
                             other.get_type()
                         )));
                     }
-                };
-                output.push(nu_protocol::Value::int(
-                    val.wrapping_abs(),
-                    nu_protocol::Span::unknown(),
+                }
+            }
+
+            let result = nu_protocol::Value::list(output, nu_protocol::Span::unknown());
+            if has_float {
+                if self.current_call_result_metadata_only {
+                    self.lower_compile_time_only_constant_value(src_dst, &result);
+                    return Ok(());
+                }
+
+                return Err(CompileError::UnsupportedInstruction(
+                    "math abs compile-time list result includes floats; eBPF supports only float results folded by fill or str join"
+                        .into(),
                 ));
             }
 
             self.reset_call_result_metadata(src_dst);
-            self.lower_constant_value(
-                src_dst,
-                &nu_protocol::Value::list(output, nu_protocol::Span::unknown()),
-            )?;
+            self.lower_constant_value(src_dst, &result)?;
             return Ok(());
         }
 
@@ -1349,6 +1373,28 @@ impl<'a> HirToMirLowering<'a> {
             out_meta.literal_int = Some(output);
             self.vreg_type_hints.insert(result_vreg, MirType::I64);
             return Ok(());
+        }
+
+        if let Some(nu_protocol::Value::Float { val, .. }) = input_meta
+            .as_ref()
+            .and_then(|meta| meta.constant_value.as_ref())
+        {
+            if !val.is_finite() {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "math abs requires finite float input in eBPF; input is {val}"
+                )));
+            }
+
+            let result = nu_protocol::Value::float(val.abs(), nu_protocol::Span::unknown());
+            if self.current_call_result_metadata_only {
+                self.lower_compile_time_only_constant_value(src_dst, &result);
+                return Ok(());
+            }
+
+            return Err(CompileError::UnsupportedInstruction(
+                "math abs compile-time result has type float; eBPF supports only float results folded by fill or str join"
+                    .into(),
+            ));
         }
 
         let input_ty = input_meta

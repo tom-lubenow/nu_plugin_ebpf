@@ -315,6 +315,7 @@ pub enum FixedLayoutValueConsumer {
     StringTransform,
     Fill,
     Seq,
+    MathAbs,
     MathRounding,
     MathAverage,
     MathMedian,
@@ -926,6 +927,15 @@ fn compile_time_value_consumer_matches(
                 && args.pipeline_input.is_none()
                 && !tracked_regs.contains(&src_dst)
                 && args.positional.iter().any(|reg| tracked_regs.contains(reg))
+                && args.rest.is_empty()
+                && args.named.is_empty()
+                && args.flags.is_empty()
+                && args.parser_info.is_empty()
+        }
+        FixedLayoutValueConsumer::MathAbs => {
+            decl_name == Some("math abs")
+                && call_args_tracked_only_in_pipeline(src_dst, args, tracked_regs)
+                && args.positional.is_empty()
                 && args.rest.is_empty()
                 && args.named.is_empty()
                 && args.flags.is_empty()

@@ -35662,6 +35662,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-math-abs-float-folded"
+        category: "language-core"
+        tags: [scalar aggregate list math abs float fill str join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  (-2.5 | math abs | fill --alignment right --character "0" --width 1 | str starts-with "2.5") and ([-2 -1.5] | math abs | str join "," | str starts-with "2,1.5")'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-scalar-math-div-mod-runtime"
         category: "language-core"
         tags: [scalar math divide modulo runtime]

@@ -16770,6 +16770,139 @@ fn test_lower_math_abs_on_runtime_scalar_integer_uses_negation_branch() {
         .expect("runtime scalar math abs should compile through codegen");
 }
 
+#[test]
+fn test_lower_math_abs_float_scalar_results_feed_metadata_only_fill() {
+    let abs_decl = DeclId::new(5080);
+    let fill_decl = DeclId::new(5081);
+    let starts_with_decl = DeclId::new(5082);
+    let hir = make_value_math_fill_starts_with_program(
+        abs_decl,
+        fill_decl,
+        starts_with_decl,
+        Value::float(-2.5, Span::test_data()),
+        "2.5",
+        1,
+        "right",
+        "0",
+    );
+    let decl_names = HashMap::from([
+        (abs_decl, "math abs".to_string()),
+        (fill_decl, "fill".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .unwrap_or_else(|err| panic!("math abs float result should feed fill: {err}"));
+
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("math abs float fill result should compile");
+}
+
+#[test]
+fn test_lower_math_abs_float_list_results_feed_metadata_only_str_join() {
+    let abs_decl = DeclId::new(5083);
+    let join_decl = DeclId::new(5084);
+    let starts_with_decl = DeclId::new(5085);
+    let hir = make_value_list_math_join_starts_with_program(
+        abs_decl,
+        join_decl,
+        starts_with_decl,
+        vec![
+            Value::int(-2, Span::test_data()),
+            Value::float(-1.5, Span::test_data()),
+        ],
+        ",",
+        "2,1.5",
+    );
+    let decl_names = HashMap::from([
+        (abs_decl, "math abs".to_string()),
+        (join_decl, "str join".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .unwrap_or_else(|err| panic!("math abs mixed list result should feed str join: {err}"));
+
+    assert_no_runtime_list_operations(&result.program, "math abs mixed list str join");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("math abs mixed list str join should compile");
+}
+
+#[test]
+fn test_lower_math_abs_rejects_materialized_float_results() {
+    let abs_decl = DeclId::new(5086);
+    let hir = make_math_float_literal_program(abs_decl, -2.5);
+    let decl_names = HashMap::from([(abs_decl, "math abs".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("math abs float result should reject direct materialization");
+
+    assert!(
+        err.to_string()
+            .contains("math abs compile-time result has type float"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_math_abs_rejects_non_finite_float_results() {
+    let abs_decl = DeclId::new(5087);
+    let fill_decl = DeclId::new(5088);
+    let starts_with_decl = DeclId::new(5089);
+    let hir = make_value_math_fill_starts_with_program(
+        abs_decl,
+        fill_decl,
+        starts_with_decl,
+        Value::float(f64::NAN, Span::test_data()),
+        "NaN",
+        1,
+        "right",
+        "0",
+    );
+    let decl_names = HashMap::from([
+        (abs_decl, "math abs".to_string()),
+        (fill_decl, "fill".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("math abs should reject non-finite float input");
+
+    assert!(
+        err.to_string()
+            .contains("math abs requires finite float input"),
+        "unexpected error: {err}"
+    );
+}
+
 fn make_math_abs_list_sum_program(
     abs_decl: DeclId,
     sum_decl: DeclId,
