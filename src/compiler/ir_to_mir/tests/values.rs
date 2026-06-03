@@ -487,6 +487,150 @@ fn make_seq_program(seq_decl: DeclId, seq_args: &[HirLiteral]) -> HirProgram {
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_seq_join_then_starts_with_program(
+    seq_decl: DeclId,
+    join_decl: DeclId,
+    starts_with_decl: DeclId,
+    seq_args: &[HirLiteral],
+    separator: &str,
+    expected_prefix: &str,
+) -> HirProgram {
+    let mut stmts = Vec::new();
+    let mut positional = Vec::new();
+    let mut next_reg = 0u32;
+    for lit in seq_args {
+        let reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadLiteral {
+            dst: reg,
+            lit: lit.clone(),
+        });
+        positional.push(reg);
+    }
+
+    let seq_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::Call {
+        decl_id: seq_decl,
+        src_dst: seq_reg,
+        args: HirCallArgs {
+            positional,
+            ..HirCallArgs::default()
+        },
+    });
+
+    let separator_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::LoadLiteral {
+        dst: separator_reg,
+        lit: HirLiteral::String(separator.as_bytes().to_vec()),
+    });
+
+    let join_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::Call {
+        decl_id: join_decl,
+        src_dst: join_reg,
+        args: HirCallArgs {
+            positional: vec![separator_reg],
+            pipeline_input: Some(seq_reg),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let prefix_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::LoadLiteral {
+        dst: prefix_reg,
+        lit: HirLiteral::String(expected_prefix.as_bytes().to_vec()),
+    });
+
+    let starts_with_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::Call {
+        decl_id: starts_with_decl,
+        src_dst: starts_with_reg,
+        args: HirCallArgs {
+            positional: vec![prefix_reg],
+            pipeline_input: Some(join_reg),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return {
+                src: starts_with_reg,
+            },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: next_reg,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_seq_then_length_program(
+    seq_decl: DeclId,
+    length_decl: DeclId,
+    seq_args: &[HirLiteral],
+) -> HirProgram {
+    let mut stmts = Vec::new();
+    let mut positional = Vec::new();
+    let mut next_reg = 0u32;
+    for lit in seq_args {
+        let reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadLiteral {
+            dst: reg,
+            lit: lit.clone(),
+        });
+        positional.push(reg);
+    }
+
+    let seq_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::Call {
+        decl_id: seq_decl,
+        src_dst: seq_reg,
+        args: HirCallArgs {
+            positional,
+            ..HirCallArgs::default()
+        },
+    });
+
+    let length_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::Call {
+        decl_id: length_decl,
+        src_dst: length_reg,
+        args: HirCallArgs {
+            pipeline_input: Some(seq_reg),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: length_reg },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: next_reg,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_seq_char_join_then_starts_with_program(
     seq_char_decl: DeclId,
     join_decl: DeclId,
@@ -11546,6 +11690,162 @@ fn test_lower_seq_negative_step_integer_range_feeds_math_sum() {
 }
 
 #[test]
+fn test_lower_seq_float_range_feeds_metadata_only_str_join() {
+    let seq_decl = DeclId::new(711);
+    let join_decl = DeclId::new(712);
+    let starts_with_decl = DeclId::new(713);
+    let hir = make_seq_join_then_starts_with_program(
+        seq_decl,
+        join_decl,
+        starts_with_decl,
+        &[
+            HirLiteral::Float(1.0),
+            HirLiteral::Float(0.5),
+            HirLiteral::Float(2.0),
+        ],
+        ",",
+        "1.0,1.5,2.0",
+    );
+    let decl_names = HashMap::from([
+        (seq_decl, "seq".to_string()),
+        (join_decl, "str join".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("float seq should fold into metadata-only str join");
+
+    assert_no_runtime_list_operations(&result.program, "metadata-only float seq");
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"1.0,1.5,2.0\0")
+            )),
+        "expected float seq to feed str join with Nushell float display text"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("float seq str join should compile through codegen");
+}
+
+#[test]
+fn test_lower_seq_mixed_numeric_range_feeds_metadata_only_str_join() {
+    let seq_decl = DeclId::new(714);
+    let join_decl = DeclId::new(715);
+    let starts_with_decl = DeclId::new(716);
+    let hir = make_seq_join_then_starts_with_program(
+        seq_decl,
+        join_decl,
+        starts_with_decl,
+        &[
+            HirLiteral::Int(1),
+            HirLiteral::Float(0.5),
+            HirLiteral::Int(2),
+        ],
+        ",",
+        "1.0,1.5,2.0",
+    );
+    let decl_names = HashMap::from([
+        (seq_decl, "seq".to_string()),
+        (join_decl, "str join".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("mixed numeric seq should promote to float metadata");
+
+    assert_no_runtime_list_operations(&result.program, "metadata-only mixed numeric seq");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("mixed numeric seq str join should compile through codegen");
+}
+
+#[test]
+fn test_lower_seq_float_zero_step_feeds_metadata_only_length() {
+    let seq_decl = DeclId::new(717);
+    let length_decl = DeclId::new(718);
+    let hir = make_seq_then_length_program(
+        seq_decl,
+        length_decl,
+        &[
+            HirLiteral::Float(1.0),
+            HirLiteral::Float(0.0),
+            HirLiteral::Float(2.0),
+        ],
+    );
+    let decl_names = HashMap::from([
+        (seq_decl, "seq".to_string()),
+        (length_decl, "length".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("zero-step float seq should fold to empty metadata list");
+
+    assert_program_returns_constant(&result.program, 0, "zero-step float seq length");
+    assert_no_runtime_list_operations(&result.program, "metadata-only empty float seq");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("zero-step float seq length should compile through codegen");
+}
+
+#[test]
+fn test_lower_seq_float_rejects_materialized_output() {
+    let seq_decl = DeclId::new(719);
+    let hir = make_seq_program(
+        seq_decl,
+        &[
+            HirLiteral::Float(1.0),
+            HirLiteral::Float(0.5),
+            HirLiteral::Float(2.0),
+        ],
+    );
+    let decl_names = HashMap::from([(seq_decl, "seq".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("materialized float seq output should be rejected");
+
+    assert!(
+        err.to_string()
+            .contains("seq float output is supported only when folded"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn test_lower_seq_char_range_feeds_str_join() {
     let scenarios = [
         ("ascending", "a", "e", "", "abcde"),
@@ -11714,7 +12014,7 @@ fn test_lower_seq_rejects_output_over_capacity() {
 }
 
 #[test]
-fn test_lower_seq_rejects_non_integer_arguments() {
+fn test_lower_seq_rejects_non_numeric_arguments() {
     let seq_decl = DeclId::new(519);
     let hir = make_seq_program(seq_decl, &[HirLiteral::String(b"5".to_vec())]);
     let decl_names = HashMap::from([(seq_decl, "seq".to_string())]);
@@ -11727,11 +12027,11 @@ fn test_lower_seq_rejects_non_integer_arguments() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("seq non-integer arguments should be rejected");
+    .expect_err("seq non-numeric arguments should be rejected");
 
     assert!(
         err.to_string()
-            .contains("seq arguments must be compile-time known integers"),
+            .contains("seq arguments must be compile-time known integers or floats"),
         "unexpected error: {err}"
     );
 }

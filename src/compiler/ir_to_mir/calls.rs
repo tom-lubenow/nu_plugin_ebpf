@@ -13,6 +13,20 @@ use crate::compiler::{ProgramIntrinsic, TypeInference};
 const BPF_SK_LOOKUP_F_REPLACE: u64 = 1 << 0;
 const BPF_SK_LOOKUP_F_NO_REUSEPORT: u64 = 1 << 1;
 
+enum SeqNumericArg {
+    Int(i64),
+    Float(f64),
+}
+
+impl SeqNumericArg {
+    fn as_f64(&self) -> f64 {
+        match self {
+            Self::Int(value) => *value as f64,
+            Self::Float(value) => *value,
+        }
+    }
+}
+
 impl<'a> HirToMirLowering<'a> {
     fn bytes_index_of_all_offsets(input: &[u8], pattern: &[u8], from_end: bool) -> Vec<i64> {
         if pattern.is_empty() || pattern.len() > input.len() {
@@ -382,7 +396,7 @@ impl<'a> HirToMirLowering<'a> {
     }
 
     fn lower_seq_constant(&mut self, src_dst: RegId) -> Result<(), CompileError> {
-        const MAX_SEQ_STACK_LIST_CAPACITY: usize = 60;
+        const MAX_SEQ_LIST_CAPACITY: usize = 60;
 
         if self.pipeline_input.is_some() || self.pipeline_input_reg.is_some() {
             return Err(CompileError::UnsupportedInstruction(
@@ -396,7 +410,43 @@ impl<'a> HirToMirLowering<'a> {
         }
         if !(1..=3).contains(&self.positional_args.len()) {
             return Err(CompileError::UnsupportedInstruction(
-                "seq supports one to three integer arguments in eBPF".into(),
+                "seq supports one to three numeric arguments in eBPF".into(),
+            ));
+        }
+
+        let maybe_float_args = self
+            .positional_args
+            .iter()
+            .map(|(_, reg)| self.seq_numeric_arg(*reg))
+            .collect::<Result<Vec<_>, _>>()?;
+        if maybe_float_args
+            .iter()
+            .any(|arg| matches!(arg, SeqNumericArg::Float(_)))
+        {
+            let values = match maybe_float_args.as_slice() {
+                [value] => vec![nu_protocol::Value::float(value.as_f64(), Span::unknown())],
+                [start, end] => Self::seq_float_values(
+                    start.as_f64(),
+                    1.0,
+                    end.as_f64(),
+                    MAX_SEQ_LIST_CAPACITY,
+                )?,
+                [start, step, end] => Self::seq_float_values(
+                    start.as_f64(),
+                    step.as_f64(),
+                    end.as_f64(),
+                    MAX_SEQ_LIST_CAPACITY,
+                )?,
+                _ => unreachable!("seq argument count was validated"),
+            };
+            let list = nu_protocol::Value::list(values, Span::unknown());
+            if self.current_call_result_metadata_only {
+                self.lower_compile_time_only_constant_value(src_dst, &list);
+                return Ok(());
+            }
+            return Err(CompileError::UnsupportedInstruction(
+                "seq float output is supported only when folded by str join, length, or empty predicates in eBPF"
+                    .into(),
             ));
         }
 
@@ -407,9 +457,9 @@ impl<'a> HirToMirLowering<'a> {
             .collect::<Result<Vec<_>, _>>()?;
         let values = match args.as_slice() {
             [value] => vec![nu_protocol::Value::int(*value, Span::unknown())],
-            [start, end] => Self::seq_integer_values(*start, 1, *end, MAX_SEQ_STACK_LIST_CAPACITY)?,
+            [start, end] => Self::seq_integer_values(*start, 1, *end, MAX_SEQ_LIST_CAPACITY)?,
             [start, step, end] => {
-                Self::seq_integer_values(*start, *step, *end, MAX_SEQ_STACK_LIST_CAPACITY)?
+                Self::seq_integer_values(*start, *step, *end, MAX_SEQ_LIST_CAPACITY)?
             }
             _ => unreachable!("seq argument count was validated"),
         };
@@ -487,6 +537,26 @@ impl<'a> HirToMirLowering<'a> {
             })
     }
 
+    fn seq_numeric_arg(&self, reg: RegId) -> Result<SeqNumericArg, CompileError> {
+        self.get_metadata(reg)
+            .and_then(|meta| {
+                meta.literal_int.map(SeqNumericArg::Int).or_else(|| {
+                    match meta.constant_value.as_ref() {
+                        Some(nu_protocol::Value::Int { val, .. }) => Some(SeqNumericArg::Int(*val)),
+                        Some(nu_protocol::Value::Float { val, .. }) => {
+                            Some(SeqNumericArg::Float(*val))
+                        }
+                        _ => None,
+                    }
+                })
+            })
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "seq arguments must be compile-time known integers or floats in eBPF".into(),
+                )
+            })
+    }
+
     fn seq_integer_values(
         start: i64,
         step: i64,
@@ -527,6 +597,51 @@ impl<'a> HirToMirLowering<'a> {
             current = i64::try_from(next).map_err(|_| {
                 CompileError::UnsupportedInstruction("seq overflows i64 in eBPF".into())
             })?;
+        }
+
+        Ok(values)
+    }
+
+    fn seq_float_values(
+        start: f64,
+        step: f64,
+        end: f64,
+        max_len: usize,
+    ) -> Result<Vec<nu_protocol::Value>, CompileError> {
+        if step == 0.0 {
+            return Ok(Vec::new());
+        }
+        if !start.is_finite() || !step.is_finite() || !end.is_finite() {
+            return Err(CompileError::UnsupportedInstruction(
+                "seq float arguments must be finite in eBPF".into(),
+            ));
+        }
+
+        let mut values = Vec::new();
+        let mut current = start;
+        loop {
+            let in_range = if step > 0.0 {
+                current <= end
+            } else {
+                current >= end
+            };
+            if !in_range {
+                break;
+            }
+            if values.len() >= max_len {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "seq float output exceeds compile-time list capacity {max_len} in eBPF"
+                )));
+            }
+            values.push(nu_protocol::Value::float(current, Span::unknown()));
+
+            let next = current + step;
+            if !next.is_finite() {
+                return Err(CompileError::UnsupportedInstruction(
+                    "seq float overflows in eBPF".into(),
+                ));
+            }
+            current = next;
         }
 
         Ok(values)

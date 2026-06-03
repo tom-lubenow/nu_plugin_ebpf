@@ -313,6 +313,7 @@ pub enum FixedLayoutValueConsumer {
     SplitList,
     Compact,
     StringTransform,
+    Seq,
     MathRounding,
     MathMedian,
     MathMinMax,
@@ -899,6 +900,16 @@ fn compile_time_value_consumer_matches(
                     }
                     _ => false,
                 }
+        }
+        FixedLayoutValueConsumer::Seq => {
+            decl_name == Some("seq")
+                && args.pipeline_input.is_none()
+                && !tracked_regs.contains(&src_dst)
+                && args.positional.iter().any(|reg| tracked_regs.contains(reg))
+                && args.rest.is_empty()
+                && args.named.is_empty()
+                && args.flags.is_empty()
+                && args.parser_info.is_empty()
         }
         FixedLayoutValueConsumer::MathRounding => {
             matches!(decl_name, Some("math ceil" | "math floor" | "math round"))

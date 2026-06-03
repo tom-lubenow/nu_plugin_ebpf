@@ -35241,6 +35241,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-seq-float-join"
+        category: "language-core"
+        tags: [aggregate list seq float str join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  seq 1.0 0.5 2.0 | str join "," | str starts-with "1.0,1.5,2.0"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-seq-char-join"
         category: "language-core"
         tags: [aggregate list seq char str join]
