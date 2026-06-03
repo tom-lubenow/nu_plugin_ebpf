@@ -2211,6 +2211,16 @@ fn test_infer_seq_output_helpers_in_iter_program() {
             0,
         ),
         (
+            BpfHelper::SeqWrite,
+            vec![
+                MirValue::VReg(VReg(0)),
+                MirValue::Const(0),
+                MirValue::Const(0),
+            ],
+            8,
+            0,
+        ),
+        (
             BpfHelper::SeqPrintfBtf,
             vec![
                 MirValue::VReg(VReg(0)),

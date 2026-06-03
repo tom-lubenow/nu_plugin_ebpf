@@ -1391,6 +1391,7 @@ impl BpfHelper {
             ) => Some(1),
             (Self::DPath, 1) => Some(2),
             (Self::SeqPrintf, 3) => Some(4),
+            (Self::SeqWrite, 1) => Some(2),
             (Self::KallsymsLookupName, 0) => Some(1),
             _ => None,
         }

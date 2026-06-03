@@ -4001,6 +4001,10 @@ fn test_seq_output_helper_contracts() {
             "helper 'bpf_seq_write' requires arg2 len to be between 0 and u32::MAX"
         ))
     );
+    assert_eq!(
+        BpfHelper::SeqWrite.zero_size_pointer_arg_size_arg(1),
+        Some(2)
+    );
 
     let sig = HelperSignature::for_id(BpfHelper::SeqPrintfBtf as u32)
         .expect("expected bpf_seq_printf_btf helper signature");

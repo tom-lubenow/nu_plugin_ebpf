@@ -4075,6 +4075,7 @@ fn test_verify_mir_for_probe_context_seq_output_helpers_accept_iter_program() {
     let printf_dst = func.alloc_vreg();
     let printf_null_dst = func.alloc_vreg();
     let write_dst = func.alloc_vreg();
+    let write_null_dst = func.alloc_vreg();
     let printf_btf_dst = func.alloc_vreg();
 
     func.block_mut(entry)
@@ -4124,6 +4125,13 @@ fn test_verify_mir_for_probe_context_seq_output_helpers_accept_iter_program() {
     func.block_mut(entry)
         .instructions
         .push(MirInst::CallHelper {
+            dst: write_null_dst,
+            helper: BpfHelper::SeqWrite as u32,
+            args: vec![MirValue::VReg(seq), MirValue::Const(0), MirValue::Const(0)],
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
             dst: printf_btf_dst,
             helper: BpfHelper::SeqPrintfBtf as u32,
             args: vec![
@@ -4146,6 +4154,7 @@ fn test_verify_mir_for_probe_context_seq_output_helpers_accept_iter_program() {
         (printf_dst, MirType::I64),
         (printf_null_dst, MirType::I64),
         (write_dst, MirType::I64),
+        (write_null_dst, MirType::I64),
         (printf_btf_dst, MirType::I64),
     ]);
     let probe_ctx = ProbeContext::new(EbpfProgramType::Iter, "task");
