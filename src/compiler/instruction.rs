@@ -1603,9 +1603,9 @@ impl BpfHelper {
                 "helper 'bpf_read_branch_records' requires arg2 size to be between 0 and u32::MAX",
             )),
             (Self::ImaInodeHash | Self::ImaFileHash, 2) => Some((
-                0,
+                1,
                 BPF_IMA_HASH_SIZE_MAX_U32,
-                "IMA hash helpers require arg2 size to be between 0 and u32::MAX",
+                "IMA hash helpers require arg2 size to be between 1 and u32::MAX",
             )),
             (Self::TracePrintk | Self::TraceVPrintk, 1) => Some((
                 1,

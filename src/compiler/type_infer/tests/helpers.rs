@@ -14315,19 +14315,30 @@ fn test_type_error_ima_inode_hash_rejects_small_buffer() {
 }
 
 #[test]
-fn test_type_error_ima_file_hash_requires_positive_size() {
-    let (func, _, _, hints) = make_ima_hash_call(BpfHelper::ImaFileHash, "file", 0, 16);
-    let probe_ctx = ProbeContext::new(EbpfProgramType::Lsm, "lsm.s:file_open");
-    let mut ti = TypeInference::new_with_env(Some(probe_ctx), None, None, Some(&hints), None);
-    let errs = ti
-        .infer(&func)
-        .expect_err("expected IMA file hash positive-size error");
-    assert!(
-        errs.iter()
-            .any(|e| e.message.contains("helper 193 arg2 must be > 0")),
-        "unexpected errors: {:?}",
-        errs
-    );
+fn test_type_error_ima_hash_helpers_require_positive_size() {
+    for (helper, object_type_name, expected) in [
+        (
+            BpfHelper::ImaInodeHash,
+            "inode",
+            "helper 161 arg2 must be > 0",
+        ),
+        (
+            BpfHelper::ImaFileHash,
+            "file",
+            "helper 193 arg2 must be > 0",
+        ),
+    ] {
+        let (func, _, _, hints) = make_ima_hash_call(helper, object_type_name, 0, 16);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Lsm, "lsm.s:file_open");
+        let mut ti = TypeInference::new_with_env(Some(probe_ctx), None, None, Some(&hints), None);
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected IMA helper positive-size error");
+        assert!(
+            errs.iter().any(|e| e.message.contains(expected)),
+            "expected {expected:?}, got {errs:?}"
+        );
+    }
 }
 
 #[test]
@@ -14342,7 +14353,7 @@ fn test_type_error_ima_inode_hash_rejects_size_over_u32() {
     assert!(
         errs.iter().any(|e| e
             .message
-            .contains("IMA hash helpers require arg2 size to be between 0 and u32::MAX")),
+            .contains("IMA hash helpers require arg2 size to be between 1 and u32::MAX")),
         "unexpected errors: {:?}",
         errs
     );
@@ -14359,7 +14370,7 @@ fn test_type_error_ima_file_hash_rejects_size_over_u32() {
     assert!(
         errs.iter().any(|e| e
             .message
-            .contains("IMA hash helpers require arg2 size to be between 0 and u32::MAX")),
+            .contains("IMA hash helpers require arg2 size to be between 1 and u32::MAX")),
         "unexpected errors: {:?}",
         errs
     );

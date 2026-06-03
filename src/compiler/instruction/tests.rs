@@ -4573,9 +4573,9 @@ fn test_ima_hash_helper_contracts() {
     assert_eq!(
         BpfHelper::ImaInodeHash.scalar_arg_range_requirement(2),
         Some((
-            0,
+            1,
             u32::MAX as i64,
-            "IMA hash helpers require arg2 size to be between 0 and u32::MAX"
+            "IMA hash helpers require arg2 size to be between 1 and u32::MAX"
         ))
     );
 
@@ -4598,9 +4598,9 @@ fn test_ima_hash_helper_contracts() {
     assert_eq!(
         BpfHelper::ImaFileHash.scalar_arg_range_requirement(2),
         Some((
-            0,
+            1,
             u32::MAX as i64,
-            "IMA hash helpers require arg2 size to be between 0 and u32::MAX"
+            "IMA hash helpers require arg2 size to be between 1 and u32::MAX"
         ))
     );
     assert_eq!(
