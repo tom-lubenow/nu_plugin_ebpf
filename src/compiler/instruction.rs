@@ -1533,14 +1533,14 @@ impl BpfHelper {
                 "helper 'bpf_sys_bpf' requires arg0 cmd to be between 0 and i32::MAX",
             )),
             (Self::SysBpf, 2) => Some((
-                0,
+                1,
                 BPF_SYSCALL_ATTR_SIZE_MAX_U32,
-                "helper 'bpf_sys_bpf' requires arg2 attr_size to be between 0 and u32::MAX",
+                "helper 'bpf_sys_bpf' requires arg2 attr_size to be between 1 and u32::MAX",
             )),
             (Self::BtfFindByNameKind, 1) => Some((
-                0,
+                1,
                 BPF_SYSCALL_NAME_SIZE_MAX_I32,
-                "helper 'bpf_btf_find_by_name_kind' requires arg1 name_sz to be between 0 and i32::MAX",
+                "helper 'bpf_btf_find_by_name_kind' requires arg1 name_sz to be between 1 and i32::MAX",
             )),
             (Self::BtfFindByNameKind, 2) => Some((
                 0,

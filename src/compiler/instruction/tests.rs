@@ -5348,9 +5348,9 @@ fn test_syscall_helper_contracts() {
     assert_eq!(
         BpfHelper::SysBpf.scalar_arg_range_requirement(2),
         Some((
-            0,
+            1,
             u32::MAX as i64,
-            "helper 'bpf_sys_bpf' requires arg2 attr_size to be between 0 and u32::MAX"
+            "helper 'bpf_sys_bpf' requires arg2 attr_size to be between 1 and u32::MAX"
         ))
     );
 
@@ -5369,9 +5369,9 @@ fn test_syscall_helper_contracts() {
     assert_eq!(
         BpfHelper::BtfFindByNameKind.scalar_arg_range_requirement(1),
         Some((
-            0,
+            1,
             i32::MAX as i64,
-            "helper 'bpf_btf_find_by_name_kind' requires arg1 name_sz to be between 0 and i32::MAX"
+            "helper 'bpf_btf_find_by_name_kind' requires arg1 name_sz to be between 1 and i32::MAX"
         ))
     );
     assert_eq!(

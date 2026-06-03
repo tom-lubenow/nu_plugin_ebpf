@@ -4418,7 +4418,7 @@ fn test_verify_mir_for_probe_context_syscall_helpers_enforce_size_and_flags() {
             helper: BpfHelper::BtfFindByNameKind as u32,
             args: vec![
                 MirValue::StackSlot(name_slot),
-                MirValue::Const(16),
+                MirValue::Const(0),
                 MirValue::Const(1),
                 MirValue::Const(1),
             ],
@@ -4448,6 +4448,10 @@ fn test_verify_mir_for_probe_context_syscall_helpers_enforce_size_and_flags() {
     assert!(
         err.iter()
             .any(|e| e.message.contains("helper 166 arg2 must be > 0"))
+    );
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("helper 167 arg1 must be > 0"))
     );
     assert!(err.iter().any(|e| {
         e.message
@@ -4527,8 +4531,8 @@ fn test_verify_mir_for_probe_context_syscall_helpers_reject_scalar_width_overflo
         .expect_err("expected syscall helper scalar width errors");
     for expected in [
         "helper 'bpf_sys_bpf' requires arg0 cmd to be between 0 and i32::MAX",
-        "helper 'bpf_sys_bpf' requires arg2 attr_size to be between 0 and u32::MAX",
-        "helper 'bpf_btf_find_by_name_kind' requires arg1 name_sz to be between 0 and i32::MAX",
+        "helper 'bpf_sys_bpf' requires arg2 attr_size to be between 1 and u32::MAX",
+        "helper 'bpf_btf_find_by_name_kind' requires arg1 name_sz to be between 1 and i32::MAX",
         "helper 'bpf_btf_find_by_name_kind' requires arg2 kind to be between 0 and u32::MAX",
         "helper 'bpf_sys_close' requires arg0 fd to be between 0 and u32::MAX",
         "helper 'bpf_kallsyms_lookup_name' requires arg1 name_sz to be between 0 and i32::MAX",

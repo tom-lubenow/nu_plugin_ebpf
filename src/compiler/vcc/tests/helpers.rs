@@ -4463,7 +4463,7 @@ fn test_verify_mir_for_probe_context_syscall_helpers_reject_scalar_width_overflo
                 MirValue::Const(0x1_0000_0000),
             ]
         },
-        "helper 'bpf_sys_bpf' requires arg2 attr_size to be between 0 and u32::MAX",
+        "helper 'bpf_sys_bpf' requires arg2 attr_size to be between 1 and u32::MAX",
     );
     check_syscall_width_error(
         BpfHelper::BtfFindByNameKind,
@@ -4476,7 +4476,7 @@ fn test_verify_mir_for_probe_context_syscall_helpers_reject_scalar_width_overflo
                 MirValue::Const(0),
             ]
         },
-        "helper 'bpf_btf_find_by_name_kind' requires arg1 name_sz to be between 0 and i32::MAX",
+        "helper 'bpf_btf_find_by_name_kind' requires arg1 name_sz to be between 1 and i32::MAX",
     );
     check_syscall_width_error(
         BpfHelper::BtfFindByNameKind,
@@ -4509,6 +4509,38 @@ fn test_verify_mir_for_probe_context_syscall_helpers_reject_scalar_width_overflo
             ]
         },
         "helper 'bpf_kallsyms_lookup_name' requires arg1 name_sz to be between 0 and i32::MAX",
+    );
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_btf_find_by_name_kind_requires_positive_name_size() {
+    let (mut func, entry) = new_mir_function();
+    let name_slot = func.alloc_stack_slot(16, 1, StackSlotKind::StringBuffer);
+    let btf_find = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: btf_find,
+            helper: BpfHelper::BtfFindByNameKind as u32,
+            args: vec![
+                MirValue::StackSlot(name_slot),
+                MirValue::Const(0),
+                MirValue::Const(1),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let types = HashMap::from([(btf_find, MirType::I64)]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Syscall, "demo");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected btf_find_by_name_kind name-size error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("helper 167 arg1 must be > 0")),
+        "unexpected errors: {:?}",
+        err
     );
 }
 
