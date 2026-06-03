@@ -13515,6 +13515,15 @@ fn test_lower_bits_not_number_bytes_on_runtime_scalar_integer_input() {
         "expected runtime scalar bits not --number-bytes to emit BitNot"
     );
     assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .any(|block| matches!(block.terminator, MirInst::Branch { .. })),
+        "expected runtime scalar bits not --number-bytes to branch on source sign"
+    );
+    assert!(
         instructions.iter().any(|inst| matches!(
             inst,
             MirInst::BinOp {
@@ -13570,6 +13579,10 @@ fn test_lower_bits_not_default_on_known_integer_inputs() {
         (4, 251),
         (256, 65279),
         (65_536, 4_294_901_759),
+        (4_294_967_296, 140_733_193_388_031),
+        (140_737_488_355_327, 0),
+        (140_737_488_355_328, 140_737_488_355_327),
+        (i64::MAX, 0),
         (-5, 4),
         (-129, 128),
         (-32_769, 32_768),
@@ -13594,12 +13607,12 @@ fn test_lower_bits_not_default_on_known_integer_inputs() {
 }
 
 #[test]
-fn test_lower_bits_not_default_rejects_unmodeled_positive_i64_auto_width() {
+fn test_lower_bits_not_default_accepts_positive_i64_auto_width() {
     let bits_decl = DeclId::new(31701);
     let hir = make_bits_not_program(bits_decl, 4_294_967_296, false);
     let decl_names = HashMap::from([(bits_decl, "bits not".to_string())]);
 
-    let err = lower_hir_to_mir_with_hints(
+    let result = lower_hir_to_mir_with_hints(
         &hir,
         None,
         &decl_names,
@@ -13607,14 +13620,11 @@ fn test_lower_bits_not_default_rejects_unmodeled_positive_i64_auto_width() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("default bits not should reject positive values requiring unmodeled 8-byte mode");
+    .expect("default bits not should lower positive values requiring 8-byte auto-width mode");
 
-    assert!(
-        err.to_string().contains(
-            "bits not default auto-width integer mode supports non-negative values up to u32::MAX"
-        ),
-        "unexpected error: {err}"
-    );
+    assert_program_returns_constant(&result.program, 140_733_193_388_031, "default bits not");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("default bits not positive 8-byte auto-width input should compile through codegen");
 }
 
 #[test]
@@ -13646,23 +13656,42 @@ fn test_lower_bits_not_default_rejects_runtime_scalar_integer_input() {
 
 #[test]
 fn test_lower_bits_not_number_bytes_on_known_integer_input() {
-    let bits_decl = DeclId::new(3171);
-    let hir = make_bits_not_program_with_number_bytes(bits_decl, 4, false, Some(2));
-    let decl_names = HashMap::from([(bits_decl, "bits not".to_string())]);
+    for (offset, (input, number_bytes, expected)) in [
+        (4, 2, 65_531),
+        (4, 8, 140_737_488_355_323),
+        (4_294_967_296, 8, 140_733_193_388_031),
+        (-130, 1, 129),
+        (i64::MIN, 8, i64::MAX),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let decl = DeclId::new(3171 + offset);
+        let hir = make_bits_not_program_with_number_bytes(decl, input, false, Some(number_bytes));
+        let decl_names = HashMap::from([(decl, "bits not".to_string())]);
 
-    let result = lower_hir_to_mir_with_hints(
-        &hir,
-        None,
-        &decl_names,
-        None,
-        &HashMap::new(),
-        &HashMap::new(),
-    )
-    .expect("bits not --number-bytes 2 should lower integer input");
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("bits not --number-bytes {number_bytes} should lower integer input: {err}")
+        });
 
-    assert_program_returns_constant(&result.program, 65531, "bits not --number-bytes 2");
-    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
-        .expect("bits not --number-bytes 2 should compile through codegen");
+        assert_program_returns_constant(
+            &result.program,
+            expected,
+            &format!("bits not --number-bytes {number_bytes}"),
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("bits not --number-bytes {number_bytes} should compile: {err}")
+            });
+    }
 }
 
 #[test]
@@ -13784,7 +13813,7 @@ fn test_lower_bits_not_on_known_binary_lists() {
 #[test]
 fn test_lower_bits_not_rejects_unsupported_number_bytes() {
     let bits_decl = DeclId::new(3174);
-    let hir = make_bits_not_program_with_number_bytes(bits_decl, 4, false, Some(8));
+    let hir = make_bits_not_program_with_number_bytes(bits_decl, 4, false, Some(16));
     let decl_names = HashMap::from([(bits_decl, "bits not".to_string())]);
 
     let err = lower_hir_to_mir_with_hints(
@@ -13795,11 +13824,11 @@ fn test_lower_bits_not_rejects_unsupported_number_bytes() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("bits not --number-bytes 8 should remain unsupported");
+    .expect_err("bits not should reject unsupported --number-bytes values");
 
     assert!(
         err.to_string()
-            .contains("bits not masked integer mode supports --number-bytes 1, 2, or 4"),
+            .contains("bits not masked integer mode supports --number-bytes 1, 2, 4, or 8"),
         "unexpected error: {err}"
     );
 }
@@ -16256,6 +16285,15 @@ fn test_lower_bits_not_number_bytes_on_runtime_stack_numeric_lists() {
             }
         )),
         "expected runtime bits not --number-bytes to emit BitNot"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .any(|block| matches!(block.terminator, MirInst::Branch { .. })),
+        "expected runtime bits not --number-bytes to branch on item sign"
     );
     assert!(
         instructions.iter().any(|inst| matches!(

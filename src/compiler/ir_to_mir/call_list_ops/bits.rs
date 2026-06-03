@@ -8,6 +8,8 @@ enum BitsNotMode {
     Masked { mask: i64 },
 }
 
+const BITS_NOT_UNSIGNED_I64_MASK: i64 = 0x7fff_ffff_ffff;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum BitsShiftMode {
     SignedI64,
@@ -485,9 +487,10 @@ impl<'a> HirToMirLowering<'a> {
             1 => 0xff,
             2 => 0xffff,
             4 => 0xffff_ffff,
+            8 => BITS_NOT_UNSIGNED_I64_MASK,
             _ => {
                 return Err(CompileError::UnsupportedInstruction(format!(
-                    "{cmd_name} masked integer mode supports --number-bytes 1, 2, or 4 in eBPF; got {number_bytes}"
+                    "{cmd_name} masked integer mode supports --number-bytes 1, 2, 4, or 8 in eBPF; got {number_bytes}"
                 )));
             }
         };
@@ -516,11 +519,11 @@ impl<'a> HirToMirLowering<'a> {
         match mode {
             BitsNotMode::Signed => Ok(!input),
             BitsNotMode::Auto => Self::bits_not_auto_output(cmd_name, input),
-            BitsNotMode::Masked { mask } => Ok((!input) & mask),
+            BitsNotMode::Masked { mask } => Ok(if input < 0 { !input } else { (!input) & mask }),
         }
     }
 
-    fn bits_not_auto_output(cmd_name: &str, input: i64) -> Result<i64, CompileError> {
+    fn bits_not_auto_output(_cmd_name: &str, input: i64) -> Result<i64, CompileError> {
         if input < 0 {
             return Ok(!input);
         }
@@ -529,11 +532,7 @@ impl<'a> HirToMirLowering<'a> {
             0..=0xff => 0xff,
             0x100..=0xffff => 0xffff,
             0x1_0000..=0xffff_ffff => 0xffff_ffff,
-            _ => {
-                return Err(CompileError::UnsupportedInstruction(format!(
-                    "{cmd_name} default auto-width integer mode supports non-negative values up to u32::MAX in eBPF; use --number-bytes 1, 2, or 4 for wider truncation"
-                )));
-            }
+            _ => BITS_NOT_UNSIGNED_I64_MASK,
         };
         Ok((!input) & mask)
     }
@@ -2313,7 +2312,7 @@ impl<'a> HirToMirLowering<'a> {
         {
             if mode == BitsNotMode::Auto {
                 return Err(CompileError::UnsupportedInstruction(format!(
-                    "{cmd_name} default auto-width integer mode requires compile-time known input in eBPF; use --number-bytes 1, 2, or 4 for runtime input"
+                    "{cmd_name} default auto-width integer mode requires compile-time known input in eBPF; use --number-bytes 1, 2, 4, or 8 for runtime input"
                 )));
             }
             let (out_slot, out_ty) = self.create_stack_numeric_list_result(result_vreg, max_len);
@@ -2404,7 +2403,7 @@ impl<'a> HirToMirLowering<'a> {
         } else {
             if mode == BitsNotMode::Auto {
                 return Err(CompileError::UnsupportedInstruction(format!(
-                    "{cmd_name} default auto-width integer mode requires compile-time known input in eBPF; use --number-bytes 1, 2, or 4 for runtime input"
+                    "{cmd_name} default auto-width integer mode requires compile-time known input in eBPF; use --number-bytes 1, 2, 4, or 8 for runtime input"
                 )));
             }
             self.emit_bits_not_value(result_vreg, MirValue::VReg(input_vreg), mode);
@@ -2420,16 +2419,33 @@ impl<'a> HirToMirLowering<'a> {
         self.emit(MirInst::UnaryOp {
             dst,
             op: UnaryOpKind::BitNot,
-            src,
+            src: src.clone(),
         });
         if let BitsNotMode::Masked { mask } = mode {
-            let mask_value = self.large_const_operand(&MirType::I64, mask);
+            let continuation_block = self.func.alloc_block();
+            let non_negative_block = self.func.alloc_block();
+
+            let is_negative_vreg = self.func.alloc_vreg();
             self.emit(MirInst::BinOp {
-                dst,
-                op: BinOpKind::And,
-                lhs: MirValue::VReg(dst),
-                rhs: mask_value,
+                dst: is_negative_vreg,
+                op: BinOpKind::Lt,
+                lhs: src,
+                rhs: MirValue::Const(0),
             });
+            self.vreg_type_hints.insert(is_negative_vreg, MirType::Bool);
+            self.terminate(MirInst::Branch {
+                cond: is_negative_vreg,
+                if_true: continuation_block,
+                if_false: non_negative_block,
+            });
+
+            self.current_block = non_negative_block;
+            self.emit_mask_i64(dst, MirValue::VReg(dst), mask);
+            self.terminate(MirInst::Jump {
+                target: continuation_block,
+            });
+
+            self.current_block = continuation_block;
         }
     }
 
