@@ -2116,6 +2116,69 @@ fn test_kfunc_copy_from_user_dynptr_src_requires_user_pointer() {
 }
 
 #[test]
+fn test_kfunc_copy_from_user_dynptr_rejects_zero_size() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+
+    let dptr = func.alloc_vreg();
+    let off = func.alloc_vreg();
+    let size = func.alloc_vreg();
+    let src = func.alloc_vreg();
+    let ret = func.alloc_vreg();
+    let dptr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: dptr,
+        src: MirValue::StackSlot(dptr_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: off,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: size,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: ret,
+        kfunc: "bpf_copy_from_user_dynptr".to_string(),
+        btf_id: None,
+        args: vec![dptr, off, size, src],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        dptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(off, MirType::I64);
+    types.insert(size, MirType::I64);
+    types.insert(
+        src,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::User,
+        },
+    );
+    types.insert(ret, MirType::I64);
+
+    let err =
+        verify_mir(&func, &types).expect_err("expected copy_from_user_dynptr zero-size error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("kfunc 'bpf_copy_from_user_dynptr' arg2 must be > 0")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_kfunc_copy_from_user_dynptr_requires_stack_slot_base_dptr() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
