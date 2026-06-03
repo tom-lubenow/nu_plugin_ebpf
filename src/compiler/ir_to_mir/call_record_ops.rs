@@ -5,7 +5,7 @@ const MAX_RECORD_COLUMNS_RESULTS: usize = 64;
 
 impl<'a> HirToMirLowering<'a> {
     fn metadata_record_values_supported_field(meta: &RegMetadata, field: &RecordField) -> bool {
-        let storage_is_integer = matches!(
+        let storage_is_numeric_scalar = matches!(
             field.ty,
             MirType::I8
                 | MirType::I16
@@ -15,8 +15,9 @@ impl<'a> HirToMirLowering<'a> {
                 | MirType::U16
                 | MirType::U32
                 | MirType::U64
+                | MirType::Bool
         );
-        if !storage_is_integer {
+        if !storage_is_numeric_scalar {
             return false;
         }
 
@@ -29,6 +30,8 @@ impl<'a> HirToMirLowering<'a> {
                 nu_protocol::Value::Int { .. }
                     | nu_protocol::Value::Filesize { .. }
                     | nu_protocol::Value::Duration { .. }
+                    | nu_protocol::Value::Bool { .. }
+                    | nu_protocol::Value::Nothing { .. }
             )
         )
     }
@@ -777,7 +780,7 @@ impl<'a> HirToMirLowering<'a> {
         for field in &input_meta.record_fields {
             if !Self::metadata_record_values_supported_field(&input_meta, field) {
                 return Err(CompileError::UnsupportedInstruction(format!(
-                    "values supports only integer scalar record fields in eBPF; field '{}' has type {:?}",
+                    "values supports only numeric scalar record fields in eBPF; field '{}' has type {:?}",
                     field.name, field.ty
                 )));
             }

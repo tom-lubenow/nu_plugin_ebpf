@@ -38868,6 +38868,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-record-values-bool-get"
+        category: "language-core"
+        tags: [aggregate record values list bool]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  { pid: 7 ok: true } | values | get 1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-record-values-after-merge"
         category: "language-core"
         tags: [aggregate record values merge list]
@@ -39089,18 +39102,18 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
-        name: "core-record-values-non-integer-reject"
+        name: "core-record-values-heterogeneous-reject"
         category: "language-core"
         tags: [aggregate record values reject]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  { pid: 7 ok: true } | values'
+            '  { pid: 7 comm: "nu" } | values'
             '}'
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "values supports only integer scalar record fields"
+        error_contains: "values supports only numeric scalar record fields"
     }
     {
         name: "core-record-insert-field"

@@ -5340,6 +5340,42 @@ fn make_record_values_then_get_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_record_mixed_string_values_program(values_decl: DeclId) -> HirProgram {
+    let mut record = Record::new();
+    record.push("pid", Value::int(7, Span::test_data()));
+    record.push("comm", Value::string("nu", Span::test_data()));
+
+    let stmts = vec![
+        HirStmt::LoadValue {
+            dst: RegId::new(0),
+            val: Box::new(Value::record(record, Span::test_data())),
+        },
+        HirStmt::Call {
+            decl_id: values_decl,
+            src_dst: RegId::new(1),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(0)),
+                ..HirCallArgs::default()
+            },
+        },
+    ];
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 2,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_record_string_values_then_get_then_starts_with_program(
     values_decl: DeclId,
     get_decl: DeclId,
@@ -30045,14 +30081,44 @@ fn test_lower_values_on_integer_metadata_record_builds_numeric_list() {
 }
 
 #[test]
-fn test_lower_values_rejects_non_integer_metadata_record_field() {
+fn test_lower_values_on_numeric_scalar_metadata_record_builds_numeric_list() {
     let values_decl = DeclId::new(112);
     let get_decl = DeclId::new(113);
-    let hir = make_record_values_then_get_program(values_decl, get_decl, true, 1);
+    let hir = make_record_values_then_get_program(values_decl, get_decl, true, 2);
     let decl_names = HashMap::from([
         (values_decl, "values".to_string()),
         (get_decl, "get".to_string()),
     ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("values should lower bool metadata-backed record fields as numeric scalars");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::ListNew { max_len: 3, .. })),
+        "expected values to materialize a numeric list with one slot per record field"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("record values with bool field followed by get should compile through codegen");
+}
+
+#[test]
+fn test_lower_values_rejects_heterogeneous_metadata_record_field() {
+    let values_decl = DeclId::new(1120);
+    let hir = make_record_mixed_string_values_program(values_decl);
+    let decl_names = HashMap::from([(values_decl, "values".to_string())]);
 
     let err = lower_hir_to_mir_with_hints(
         &hir,
@@ -30062,11 +30128,11 @@ fn test_lower_values_rejects_non_integer_metadata_record_field() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("values of a record containing a bool field should be rejected");
+    .expect_err("values of a mixed numeric/string record should be rejected");
 
     assert!(
         err.to_string()
-            .contains("values supports only integer scalar record fields"),
+            .contains("values supports only numeric scalar record fields"),
         "unexpected error: {err}"
     );
 }
