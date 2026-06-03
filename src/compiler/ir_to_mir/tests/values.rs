@@ -12848,6 +12848,169 @@ fn test_lower_math_ln_list_results_feed_metadata_only_str_join() {
 }
 
 #[test]
+fn test_lower_math_log_rejects_materialized_float_results() {
+    for (offset, value, base, expected) in [
+        (
+            0,
+            Value::int(100, Span::test_data()),
+            Value::int(10, Span::test_data()),
+            "math log compile-time result has type float",
+        ),
+        (
+            1,
+            Value::list(
+                vec![
+                    Value::int(16, Span::test_data()),
+                    Value::int(8, Span::test_data()),
+                ],
+                Span::test_data(),
+            ),
+            Value::int(2, Span::test_data()),
+            "math log compile-time result has type list<float>",
+        ),
+        (
+            2,
+            Value::int(0, Span::test_data()),
+            Value::int(10, Span::test_data()),
+            "math log requires positive input",
+        ),
+        (
+            3,
+            Value::int(100, Span::test_data()),
+            Value::int(1, Span::test_data()),
+            "math log base must be positive and not 1",
+        ),
+        (
+            4,
+            Value::int(100, Span::test_data()),
+            Value::int(0, Span::test_data()),
+            "math log base must be positive and not 1",
+        ),
+    ] {
+        let decl = DeclId::new(628 + offset);
+        let hir = with_math_positional_arg(make_value_pipeline_call_program(decl, value), base);
+        let decl_names = HashMap::from([(decl, "math log".to_string())]);
+
+        let err = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .expect_err("math log should reject direct materialization or invalid input/base");
+
+        assert!(
+            err.to_string().contains(expected),
+            "unexpected error: {err}"
+        );
+    }
+}
+
+#[test]
+fn test_lower_math_log_rejects_missing_base() {
+    let decl = DeclId::new(633);
+    let hir = make_value_pipeline_call_program(decl, Value::int(100, Span::test_data()));
+    let decl_names = HashMap::from([(decl, "math log".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("math log should require a base argument");
+
+    assert!(
+        err.to_string()
+            .contains("math log requires exactly one base argument"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_math_log_scalar_results_feed_metadata_only_fill() {
+    let math_decl = DeclId::new(634);
+    let fill_decl = DeclId::new(635);
+    let starts_with_decl = DeclId::new(636);
+    let hir = with_math_positional_arg(
+        make_value_math_fill_starts_with_program(
+            math_decl,
+            fill_decl,
+            starts_with_decl,
+            Value::int(100, Span::test_data()),
+            "0002",
+            4,
+            "right",
+            "0",
+        ),
+        Value::int(10, Span::test_data()),
+    );
+    let decl_names = HashMap::from([
+        (math_decl, "math log".to_string()),
+        (fill_decl, "fill".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .unwrap_or_else(|err| panic!("math log scalar result should feed fill: {err}"));
+
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("math log fill result should compile");
+}
+
+#[test]
+fn test_lower_math_log_list_results_feed_metadata_only_str_join() {
+    let math_decl = DeclId::new(637);
+    let join_decl = DeclId::new(638);
+    let starts_with_decl = DeclId::new(639);
+    let hir = with_math_positional_arg(
+        make_value_list_math_join_starts_with_program(
+            math_decl,
+            join_decl,
+            starts_with_decl,
+            vec![
+                Value::int(16, Span::test_data()),
+                Value::int(8, Span::test_data()),
+                Value::int(4, Span::test_data()),
+            ],
+            ",",
+            "4.0,3.0,2.0",
+        ),
+        Value::int(2, Span::test_data()),
+    );
+    let decl_names = HashMap::from([
+        (math_decl, "math log".to_string()),
+        (join_decl, "str join".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .unwrap_or_else(|err| panic!("math log list result should feed str join: {err}"));
+
+    assert_no_runtime_list_operations(&result.program, "math log list str join");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("math log list str join should compile");
+}
+
+#[test]
 fn test_lower_math_unit_reducers_materialize_raw_i64_results() {
     let cases = [
         (
@@ -14211,6 +14374,23 @@ fn make_value_pipeline_call_program(decl_id: DeclId, value: Value) -> HirProgram
         file_count: 0,
     };
     HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn with_math_positional_arg(mut program: HirProgram, arg: Value) -> HirProgram {
+    let arg_reg = RegId::new(program.main.register_count);
+    program.main.register_count += 1;
+    program.main.blocks[0].stmts.insert(
+        1,
+        HirStmt::LoadValue {
+            dst: arg_reg,
+            val: Box::new(arg),
+        },
+    );
+    match &mut program.main.blocks[0].stmts[2] {
+        HirStmt::Call { args, .. } => args.positional.push(arg_reg),
+        other => panic!("expected math call after inserted positional argument, got {other:?}"),
+    }
+    program
 }
 
 fn make_value_math_fill_starts_with_program(

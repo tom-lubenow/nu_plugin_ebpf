@@ -391,16 +391,16 @@ impl<'a> HirToMirLowering<'a> {
         Ok(value as i64)
     }
 
-    fn compile_time_math_float_unary_value(
+    fn compile_time_math_float_input(
         cmd_name: &str,
         value: nu_protocol::Value,
         list_index: Option<usize>,
-    ) -> Result<nu_protocol::Value, CompileError> {
-        let raw = match value {
-            nu_protocol::Value::Int { val, .. } => val as f64,
-            nu_protocol::Value::Float { val, .. } if val.is_finite() => val,
+    ) -> Result<f64, CompileError> {
+        match value {
+            nu_protocol::Value::Int { val, .. } => Ok(val as f64),
+            nu_protocol::Value::Float { val, .. } if val.is_finite() => Ok(val),
             nu_protocol::Value::Float { val, .. } => {
-                return Err(CompileError::UnsupportedInstruction(match list_index {
+                Err(CompileError::UnsupportedInstruction(match list_index {
                     Some(index) => {
                         format!(
                             "{cmd_name} requires finite float list items in eBPF; item {index} is {val}"
@@ -409,21 +409,27 @@ impl<'a> HirToMirLowering<'a> {
                     None => {
                         format!("{cmd_name} requires finite float input in eBPF; input is {val}")
                     }
-                }));
+                }))
             }
-            other => {
-                return Err(CompileError::UnsupportedInstruction(match list_index {
-                    Some(index) => format!(
-                        "{cmd_name} requires integer or float list items in eBPF; item {index} has type {}",
-                        other.get_type()
-                    ),
-                    None => format!(
-                        "{cmd_name} requires integer or float input in eBPF; input has type {}",
-                        other.get_type()
-                    ),
-                }));
-            }
-        };
+            other => Err(CompileError::UnsupportedInstruction(match list_index {
+                Some(index) => format!(
+                    "{cmd_name} requires integer or float list items in eBPF; item {index} has type {}",
+                    other.get_type()
+                ),
+                None => format!(
+                    "{cmd_name} requires integer or float input in eBPF; input has type {}",
+                    other.get_type()
+                ),
+            })),
+        }
+    }
+
+    fn compile_time_math_float_unary_value(
+        cmd_name: &str,
+        value: nu_protocol::Value,
+        list_index: Option<usize>,
+    ) -> Result<nu_protocol::Value, CompileError> {
+        let raw = Self::compile_time_math_float_input(cmd_name, value, list_index)?;
         let result = match cmd_name {
             "math exp" => raw.exp(),
             "math ln" => {
@@ -464,6 +470,14 @@ impl<'a> HirToMirLowering<'a> {
                 )));
             }
         };
+        Self::compile_time_math_float_result(cmd_name, result, list_index)
+    }
+
+    fn compile_time_math_float_result(
+        cmd_name: &str,
+        result: f64,
+        list_index: Option<usize>,
+    ) -> Result<nu_protocol::Value, CompileError> {
         if !result.is_finite() {
             return Err(CompileError::UnsupportedInstruction(match list_index {
                 Some(index) => {
@@ -473,6 +487,130 @@ impl<'a> HirToMirLowering<'a> {
             }));
         }
         Ok(nu_protocol::Value::float(result, Span::unknown()))
+    }
+
+    fn compile_time_math_log_value(
+        value: nu_protocol::Value,
+        base: f64,
+        list_index: Option<usize>,
+    ) -> Result<nu_protocol::Value, CompileError> {
+        let cmd_name = "math log";
+        let raw = Self::compile_time_math_float_input(cmd_name, value, list_index)?;
+        if raw <= 0.0 {
+            return Err(CompileError::UnsupportedInstruction(match list_index {
+                Some(index) => {
+                    format!(
+                        "{cmd_name} requires positive list items in eBPF; item {index} is {raw}"
+                    )
+                }
+                None => format!("{cmd_name} requires positive input in eBPF; input is {raw}"),
+            }));
+        }
+        Self::compile_time_math_float_result(cmd_name, raw.log(base), list_index)
+    }
+
+    fn compile_time_math_log_base(&self, reg: RegId) -> Result<f64, CompileError> {
+        let metadata = self.get_metadata(reg).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "math log requires a compile-time known integer or float base in eBPF".into(),
+            )
+        })?;
+
+        let base = if let Some(raw) = metadata.literal_int {
+            raw as f64
+        } else {
+            match metadata.constant_value.as_ref() {
+                Some(nu_protocol::Value::Int { val, .. }) => *val as f64,
+                Some(nu_protocol::Value::Float { val, .. }) if val.is_finite() => *val,
+                Some(nu_protocol::Value::Float { val, .. }) => {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "math log base must be finite in eBPF; base is {val}"
+                    )));
+                }
+                Some(other) => {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "math log requires a compile-time known integer or float base in eBPF; base has type {}",
+                        other.get_type()
+                    )));
+                }
+                None => {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "math log requires a compile-time known integer or float base in eBPF"
+                            .into(),
+                    ));
+                }
+            }
+        };
+
+        if base <= 0.0 || base == 1.0 {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "math log base must be positive and not 1 in eBPF; base is {base}"
+            )));
+        }
+
+        Ok(base)
+    }
+
+    pub(in crate::compiler::ir_to_mir) fn lower_compile_time_math_log(
+        &mut self,
+        src_dst: RegId,
+        src_dst_had_value: bool,
+    ) -> Result<(), CompileError> {
+        let input_reg = self
+            .pipeline_input_reg
+            .or(src_dst_had_value.then_some(src_dst));
+
+        if !self.named_flags.is_empty() || !self.named_args.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(
+                "math log accepts only one compile-time base positional argument in eBPF".into(),
+            ));
+        }
+        if self.positional_args.len() != 1 {
+            return Err(CompileError::UnsupportedInstruction(
+                "math log requires exactly one base argument in eBPF".into(),
+            ));
+        }
+
+        let (_, base_reg) = self.positional_args[0];
+        let base = self.compile_time_math_log_base(base_reg)?;
+
+        let input_reg = input_reg.ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "math log requires compile-time known integer or float input in eBPF".into(),
+            )
+        })?;
+        let value = self
+            .get_metadata(input_reg)
+            .and_then(|meta| meta.constant_value.clone())
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "math log requires compile-time known integer or float input in eBPF".into(),
+                )
+            })?;
+
+        let result = match value {
+            nu_protocol::Value::List { vals, .. } => {
+                let vals = vals
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, value)| {
+                        Self::compile_time_math_log_value(value, base, Some(index))
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                nu_protocol::Value::list(vals, Span::unknown())
+            }
+            value => Self::compile_time_math_log_value(value, base, None)?,
+        };
+
+        if self.current_call_result_metadata_only {
+            self.lower_compile_time_only_constant_value(src_dst, &result);
+            return Ok(());
+        }
+
+        let result_type = result.get_type();
+        Err(CompileError::UnsupportedInstruction(format!(
+            "math log compile-time result has type {result_type}; eBPF supports only results folded by fill or str join"
+        )))
     }
 
     pub(in crate::compiler::ir_to_mir) fn lower_compile_time_math_float_unary(
