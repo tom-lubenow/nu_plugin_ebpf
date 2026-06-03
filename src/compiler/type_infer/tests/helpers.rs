@@ -12496,6 +12496,26 @@ fn make_probe_write_user_call(size: i64, src_size: usize) -> (MirFunction, VReg)
     (func, dst)
 }
 
+fn make_probe_read_kernel_call(size: i64, buf_size: usize) -> (MirFunction, VReg) {
+    let mut func = make_test_function();
+    let dst = func.alloc_vreg();
+    let dst_slot = func.alloc_stack_slot(buf_size, 8, StackSlotKind::StringBuffer);
+    let src_slot = func.alloc_stack_slot(buf_size, 8, StackSlotKind::StringBuffer);
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::ProbeReadKernel as u32,
+        args: vec![
+            MirValue::StackSlot(dst_slot),
+            MirValue::Const(size),
+            MirValue::StackSlot(src_slot),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+    (func, dst)
+}
+
 fn make_override_return_call(use_stack_ctx: bool) -> (MirFunction, VReg) {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();
@@ -12595,6 +12615,37 @@ fn test_type_error_probe_write_user_rejects_small_source_buffer() {
         errs.iter().any(|e| e
             .message
             .contains("helper probe_write_user src requires 16 bytes")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_type_error_probe_memory_helpers_reject_size_over_u32() {
+    let (func, _) = make_probe_read_kernel_call(0x1_0000_0000, 16);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "test");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_probe_read_kernel size range error");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("probe read helpers require arg1 size to be between 0 and u32::MAX")),
+        "unexpected errors: {:?}",
+        errs
+    );
+
+    let (func, _) = make_probe_write_user_call(0x1_0000_0000, 16);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Uprobe, "test");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_probe_write_user size range error");
+    assert!(
+        errs.iter().any(|e| e.message.contains(
+            "helper 'bpf_probe_write_user' requires arg2 size to be between 0 and u32::MAX"
+        )),
         "unexpected errors: {:?}",
         errs
     );

@@ -3351,6 +3351,37 @@ fn test_helper_get_current_comm_size_contract() {
 }
 
 #[test]
+fn test_helper_probe_memory_size_contracts() {
+    for helper in [
+        BpfHelper::ProbeRead,
+        BpfHelper::ProbeReadStr,
+        BpfHelper::ProbeReadUser,
+        BpfHelper::ProbeReadKernel,
+        BpfHelper::ProbeReadUserStr,
+        BpfHelper::ProbeReadKernelStr,
+    ] {
+        assert_eq!(
+            helper.scalar_arg_range_requirement(1),
+            Some((
+                0,
+                u32::MAX as i64,
+                "probe read helpers require arg1 size to be between 0 and u32::MAX"
+            )),
+            "{helper:?}"
+        );
+    }
+
+    assert_eq!(
+        BpfHelper::ProbeWriteUser.scalar_arg_range_requirement(2),
+        Some((
+            0,
+            u32::MAX as i64,
+            "helper 'bpf_probe_write_user' requires arg2 size to be between 0 and u32::MAX"
+        ))
+    );
+}
+
+#[test]
 fn test_helper_static_null_pointer_contracts() {
     for (helper, arg_idx) in [
         (BpfHelper::KptrXchg, 1),

@@ -22953,6 +22953,35 @@ fn make_probe_write_user_vcc_call(
     (func, types)
 }
 
+fn make_probe_read_kernel_vcc_call(
+    size: i64,
+    buf_size: usize,
+) -> (MirFunction, HashMap<VReg, MirType>) {
+    let (mut func, entry) = new_mir_function();
+
+    let ret = func.alloc_vreg();
+    let dst_slot = func.alloc_stack_slot(buf_size, 8, StackSlotKind::StringBuffer);
+    let src_slot = func.alloc_stack_slot(buf_size, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: ret,
+            helper: BpfHelper::ProbeReadKernel as u32,
+            args: vec![
+                MirValue::StackSlot(dst_slot),
+                MirValue::Const(size),
+                MirValue::StackSlot(src_slot),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(ret, MirType::I64);
+
+    (func, types)
+}
+
 fn make_override_return_vcc_call(use_stack_ctx: bool) -> (MirFunction, HashMap<VReg, MirType>) {
     let (mut func, entry) = new_mir_function();
 
@@ -23011,6 +23040,29 @@ fn test_verify_mir_helper_copy_from_user_task_accepts_zero_size_null_dst() {
 fn test_verify_mir_helper_probe_write_user_accepts_user_dst() {
     let (func, types) = make_probe_write_user_vcc_call(16, 16);
     verify_mir(&func, &types).expect("expected bpf_probe_write_user helper to verify");
+}
+
+#[test]
+fn test_verify_mir_helper_probe_memory_rejects_size_over_u32() {
+    let (func, types) = make_probe_read_kernel_vcc_call(0x1_0000_0000, 16);
+    let err = verify_mir(&func, &types).expect_err("expected probe_read size range error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("probe read helpers require arg1 size to be between 0 and u32::MAX")),
+        "unexpected errors: {:?}",
+        err
+    );
+
+    let (func, types) = make_probe_write_user_vcc_call(0x1_0000_0000, 16);
+    let err = verify_mir(&func, &types).expect_err("expected probe_write_user size range error");
+    assert!(
+        err.iter().any(|e| e.message.contains(
+            "helper 'bpf_probe_write_user' requires arg2 size to be between 0 and u32::MAX"
+        )),
+        "unexpected errors: {:?}",
+        err
+    );
 }
 
 #[test]
