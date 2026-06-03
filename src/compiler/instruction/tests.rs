@@ -1150,6 +1150,14 @@ fn test_helper_signature_strncmp() {
     assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
     assert_eq!(sig.arg_kind(2), HelperArgKind::Pointer);
     assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+    assert_eq!(
+        BpfHelper::Strncmp.scalar_arg_range_requirement(1),
+        Some((
+            0,
+            u32::MAX as i64,
+            "helper 'bpf_strncmp' requires arg1 s1_sz to be between 0 and u32::MAX"
+        ))
+    );
 }
 
 #[test]
@@ -4652,6 +4660,14 @@ fn test_ringbuf_helper_flag_contracts() {
             0,
             0,
             "helper 'bpf_ringbuf_reserve_dynptr' requires arg2 flags to be 0"
+        ))
+    );
+    assert_eq!(
+        BpfHelper::RingbufReserveDynptr.scalar_arg_range_requirement(1),
+        Some((
+            0,
+            u32::MAX as i64,
+            "helper 'bpf_ringbuf_reserve_dynptr' requires arg1 size to be between 0 and u32::MAX"
         ))
     );
     assert_eq!(

@@ -78,6 +78,8 @@ const BPF_BUFFER_SIZE_MAX_U32: i64 = u32::MAX as i64;
 const BPF_IMA_HASH_SIZE_MAX_U32: i64 = u32::MAX as i64;
 const BPF_HDR_OPT_LEN_MAX_U32: i64 = u32::MAX as i64;
 const BPF_SOCKET_HELPER_LEN_MAX_I32: i64 = i32::MAX as i64;
+const BPF_STRNCMP_SIZE_MAX_U32: i64 = u32::MAX as i64;
+const BPF_RINGBUF_DYNPTR_RESERVE_SIZE_MAX_U32: i64 = u32::MAX as i64;
 const PACKET_OTHERHOST: i64 = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1528,6 +1530,11 @@ impl BpfHelper {
                 BPF_COPY_FROM_USER_SIZE_MAX_U32,
                 "copy-from-user helpers require arg1 size to be between 0 and u32::MAX",
             )),
+            (Self::Strncmp, 1) => Some((
+                0,
+                BPF_STRNCMP_SIZE_MAX_U32,
+                "helper 'bpf_strncmp' requires arg1 s1_sz to be between 0 and u32::MAX",
+            )),
             (
                 Self::ProbeRead
                 | Self::ProbeReadStr
@@ -1586,6 +1593,11 @@ impl BpfHelper {
                 0,
                 0,
                 "helper 'bpf_ringbuf_reserve_dynptr' requires arg2 flags to be 0",
+            )),
+            (Self::RingbufReserveDynptr, 1) => Some((
+                0,
+                BPF_RINGBUF_DYNPTR_RESERVE_SIZE_MAX_U32,
+                "helper 'bpf_ringbuf_reserve_dynptr' requires arg1 size to be between 0 and u32::MAX",
             )),
             (Self::RingbufSubmit, 1) => Some((
                 0,

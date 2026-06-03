@@ -5532,6 +5532,22 @@ fn test_type_error_strncmp_helper_rejects_small_s1_buffer() {
 }
 
 #[test]
+fn test_type_error_strncmp_helper_rejects_s1_size_above_u32_max() {
+    let (func, _) = make_strncmp_call(0x1_0000_0000, 8, false);
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected strncmp s1 size range error");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_strncmp' requires arg1 s1_sz to be between 0 and u32::MAX")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
 fn test_type_error_strncmp_helper_rejects_stack_s2() {
     let (func, _) = make_strncmp_call(8, 8, true);
     let mut ti = TypeInference::new(None);
@@ -10682,6 +10698,39 @@ fn test_type_error_helper_ringbuf_rejects_invalid_flags() {
             errs
         );
     }
+}
+
+#[test]
+fn test_type_error_helper_ringbuf_reserve_dynptr_rejects_size_above_u32_max() {
+    let mut func = make_test_function();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let dynptr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::RingbufReserveDynptr as u32,
+        args: vec![
+            MirValue::StackSlot(map_slot),
+            MirValue::Const(0x1_0000_0000),
+            MirValue::Const(0),
+            MirValue::StackSlot(dynptr_slot),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected ringbuf_reserve_dynptr size range error");
+    assert!(
+        errs.iter().any(|e| e.message.contains(
+            "helper 'bpf_ringbuf_reserve_dynptr' requires arg1 size to be between 0 and u32::MAX"
+        )),
+        "unexpected errors: {:?}",
+        errs
+    );
 }
 
 #[test]

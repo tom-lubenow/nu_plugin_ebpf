@@ -4861,6 +4861,40 @@ fn test_verify_mir_helper_ringbuf_rejects_invalid_flags() {
 }
 
 #[test]
+fn test_verify_mir_helper_ringbuf_reserve_dynptr_rejects_size_above_u32_max() {
+    let (mut func, entry) = new_mir_function();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let dynptr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::RingbufReserveDynptr as u32,
+            args: vec![
+                MirValue::StackSlot(map_slot),
+                MirValue::Const(0x1_0000_0000),
+                MirValue::Const(0),
+                MirValue::StackSlot(dynptr_slot),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(dst, MirType::I64);
+    let err =
+        verify_mir(&func, &types).expect_err("expected ringbuf_reserve_dynptr size range error");
+    assert!(
+        err.iter().any(|e| e.message.contains(
+            "helper 'bpf_ringbuf_reserve_dynptr' requires arg1 size to be between 0 and u32::MAX"
+        )),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_helper_ringbuf_reserve_vreg_size_positive_required() {
     let (mut func, entry) = new_mir_function();
     let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
@@ -7834,6 +7868,20 @@ fn test_verify_mir_strncmp_helper_rejects_small_s1_buffer() {
     assert!(
         err.iter().any(|e| e.kind == VccErrorKind::PointerBounds),
         "expected pointer bounds error, got {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_strncmp_helper_rejects_s1_size_above_u32_max() {
+    let (func, types) = make_strncmp_vcc_call(0x1_0000_0000, 8, false);
+    let err = verify_mir_for_program(&func, &types, EbpfProgramType::Xdp.info())
+        .expect_err("expected strncmp s1 size range error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_strncmp' requires arg1 s1_sz to be between 0 and u32::MAX")),
+        "unexpected errors: {:?}",
         err
     );
 }
