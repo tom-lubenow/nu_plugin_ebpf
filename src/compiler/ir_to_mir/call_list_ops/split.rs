@@ -102,14 +102,31 @@ impl<'a> HirToMirLowering<'a> {
                 .collect(),
             Span::unknown(),
         );
-        if !crate::compiler::hir::supports_constant_value(&result) {
+        if !crate::compiler::hir::supports_constant_value(&result)
+            && !(self.current_call_result_metadata_only
+                && Self::split_list_result_is_nested_float_only(&result))
+        {
             return Err(CompileError::UnsupportedInstruction(
                 "split list result requires homogeneous fixed-layout groups in eBPF".into(),
             ));
         }
 
-        self.lower_constant_value(src_dst, &result)?;
+        if self.current_call_result_metadata_only {
+            self.lower_compile_time_only_constant_value(src_dst, &result);
+        } else {
+            self.lower_constant_value(src_dst, &result)?;
+        }
         Ok(())
+    }
+
+    fn split_list_result_is_nested_float_only(value: &nu_protocol::Value) -> bool {
+        match value {
+            nu_protocol::Value::Float { .. } => true,
+            nu_protocol::Value::List { vals, .. } => vals
+                .iter()
+                .all(Self::split_list_result_is_nested_float_only),
+            _ => false,
+        }
     }
 
     fn compile_time_separator_value(

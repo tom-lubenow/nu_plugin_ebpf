@@ -39002,6 +39002,20 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-float-list-builder-split-list"
+        category: "language-core"
+        tags: [aggregate list float split-list length get str join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let count_ok = (([2.5 1.5 3.5 1.5 4.5] | split list 1.5 | length) == 3)'
+            '  $count_ok and ([2.5 1.5 3.5 4.5 1.5 5.5] | split list 1.5 | get 1 | str join "-" | str starts-with "3.5-4.5")'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-runtime-list-describe"
         category: "language-core"
         tags: [describe aggregate list runtime string]

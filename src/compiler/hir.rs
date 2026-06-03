@@ -795,7 +795,7 @@ fn compile_time_value_consumer_matches(
         }
         FixedLayoutValueConsumer::SplitList => {
             decl_name == Some("split list")
-                && call_args_tracked_only_in_pipeline(src_dst, args, tracked_regs)
+                && call_args_tracked_only_in_pipeline_or_positional(src_dst, args, tracked_regs, 0)
                 && args.positional.len() == 1
                 && args.rest.is_empty()
                 && args
@@ -1217,6 +1217,17 @@ fn compile_time_aggregate_transform_preserves_tracked_input(
                 && args.rest.is_empty()
                 && args.named.is_empty()
                 && args.flags.iter().all(|flag| flag.as_slice() == b"reverse")
+                && args.parser_info.is_empty()
+                && call_args_tracked_only_in_pipeline(src_dst, args, regs)
+        }
+        Some("split list") => {
+            args.positional.len() == 1
+                && args.rest.is_empty()
+                && args
+                    .named
+                    .iter()
+                    .all(|(name, _)| name.as_slice() == b"split")
+                && args.flags.iter().all(|flag| flag.as_slice() == b"regex")
                 && args.parser_info.is_empty()
                 && call_args_tracked_only_in_pipeline(src_dst, args, regs)
         }

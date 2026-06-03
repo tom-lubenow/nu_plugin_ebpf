@@ -1863,6 +1863,187 @@ fn make_float_literal_list_builder_two_item_transforms_join_then_starts_with_pro
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_float_literal_list_builder_split_list_length_program(
+    split_decl: DeclId,
+    length_decl: DeclId,
+    values: &[f64],
+    separator: f64,
+) -> HirProgram {
+    let mut stmts = vec![HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List {
+            capacity: values.len(),
+        },
+    }];
+
+    let mut next_reg = 2;
+    for value in values {
+        let item_reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadLiteral {
+            dst: item_reg,
+            lit: HirLiteral::Float(*value),
+        });
+        stmts.push(HirStmt::ListPush {
+            src_dst: RegId::new(0),
+            item: item_reg,
+        });
+    }
+
+    let separator_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::LoadLiteral {
+        dst: separator_reg,
+        lit: HirLiteral::Float(separator),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: split_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional: vec![separator_reg],
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let length_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::Call {
+        decl_id: length_decl,
+        src_dst: length_reg,
+        args: HirCallArgs {
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: length_reg },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: next_reg,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_float_literal_list_builder_split_list_get_join_then_starts_with_program(
+    split_decl: DeclId,
+    get_decl: DeclId,
+    join_decl: DeclId,
+    starts_with_decl: DeclId,
+    values: &[f64],
+    separator: f64,
+    group_index: i64,
+    prefix: &str,
+) -> HirProgram {
+    let mut stmts = vec![HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List {
+            capacity: values.len(),
+        },
+    }];
+
+    let mut next_reg = 2;
+    for value in values {
+        let item_reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadLiteral {
+            dst: item_reg,
+            lit: HirLiteral::Float(*value),
+        });
+        stmts.push(HirStmt::ListPush {
+            src_dst: RegId::new(0),
+            item: item_reg,
+        });
+    }
+
+    let separator_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::LoadLiteral {
+        dst: separator_reg,
+        lit: HirLiteral::Float(separator),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: split_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional: vec![separator_reg],
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let group_index_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::LoadLiteral {
+        dst: group_index_reg,
+        lit: HirLiteral::Int(group_index),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: get_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional: vec![group_index_reg],
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let join_separator_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::LoadValue {
+        dst: join_separator_reg,
+        val: Box::new(Value::string("-", Span::test_data())),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: join_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional: vec![join_separator_reg],
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let prefix_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::LoadValue {
+        dst: prefix_reg,
+        val: Box::new(Value::string(prefix, Span::test_data())),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: starts_with_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional: vec![prefix_reg],
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: next_reg,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_describe_no_input_then_length_program(
     describe_decl: DeclId,
     length_decl: DeclId,
@@ -7083,6 +7264,86 @@ fn test_lower_chained_append_prepend_on_float_literal_list_builder_feed_metadata
                 panic!("chained {command_name} float-list output should compile: {err}")
             });
     }
+}
+
+#[test]
+fn test_lower_split_list_on_float_literal_list_builder_feed_metadata_consumers() {
+    let split_decl = DeclId::new(319);
+    let length_decl = DeclId::new(320);
+    let hir = make_float_literal_list_builder_split_list_length_program(
+        split_decl,
+        length_decl,
+        &[2.5, 1.5, 3.5, 1.5, 4.5],
+        1.5,
+    );
+    let decl_names = HashMap::from([
+        (split_decl, "split list".to_string()),
+        (length_decl, "length".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("split list should preserve metadata-only float-list builders");
+    assert_program_returns_constant(&result.program, 3, "float-list split length");
+    assert_no_runtime_list_operations(&result.program, "float-list split length");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("float-list split length should compile");
+
+    let split_decl = DeclId::new(321);
+    let get_decl = DeclId::new(322);
+    let join_decl = DeclId::new(323);
+    let starts_with_decl = DeclId::new(324);
+    let hir = make_float_literal_list_builder_split_list_get_join_then_starts_with_program(
+        split_decl,
+        get_decl,
+        join_decl,
+        starts_with_decl,
+        &[2.5, 1.5, 3.5, 4.5, 1.5, 5.5],
+        1.5,
+        1,
+        "3.5-4.5",
+    );
+    let decl_names = HashMap::from([
+        (split_decl, "split list".to_string()),
+        (get_decl, "get".to_string()),
+        (join_decl, "str join".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("split list group should feed metadata consumers");
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"3.5-4.5\0")
+            )),
+        "expected split list group to feed str join with 3.5-4.5"
+    );
+    assert_no_runtime_list_operations(&result.program, "float-list split get join");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("float-list split group str join should compile");
 }
 
 #[test]
