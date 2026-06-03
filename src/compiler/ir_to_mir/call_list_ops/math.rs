@@ -483,6 +483,108 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
+    fn compile_time_math_round_precision_arg(&self, reg: RegId) -> Result<i64, CompileError> {
+        let metadata = self.get_metadata(reg).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "math round requires a compile-time known integer precision in eBPF".into(),
+            )
+        })?;
+
+        if let Some(value) = metadata.literal_int {
+            return Ok(value);
+        }
+
+        match metadata.constant_value.as_ref() {
+            Some(nu_protocol::Value::Int { val, .. }) => Ok(*val),
+            Some(other) => Err(CompileError::UnsupportedInstruction(format!(
+                "math round requires a compile-time known integer precision in eBPF; precision has type {}",
+                other.get_type()
+            ))),
+            None => Err(CompileError::UnsupportedInstruction(
+                "math round requires a compile-time known integer precision in eBPF".into(),
+            )),
+        }
+    }
+
+    fn compile_time_math_round_precision_value(
+        value: nu_protocol::Value,
+        precision: i64,
+        list_index: Option<usize>,
+    ) -> Result<nu_protocol::Value, CompileError> {
+        let cmd_name = "math round";
+        let raw = Self::compile_time_math_float_input(cmd_name, value, list_index)?;
+        let factor = 10.0_f64.powf(precision as f64);
+        let result = (raw * factor).round() / factor;
+        Self::compile_time_math_float_result(cmd_name, result, list_index)
+    }
+
+    fn lower_compile_time_math_round_precision(
+        &mut self,
+        src_dst: RegId,
+        src_dst_had_value: bool,
+    ) -> Result<(), CompileError> {
+        let input_reg = self
+            .pipeline_input_reg
+            .or(src_dst_had_value.then_some(src_dst));
+
+        if !self.named_flags.is_empty() || !self.positional_args.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(
+                "math round accepts only an optional compile-time integer --precision argument in eBPF".into(),
+            ));
+        }
+        let Some((_, precision_reg)) = self.named_args.get("precision").copied() else {
+            return Err(CompileError::UnsupportedInstruction(
+                "math round accepts only an optional compile-time integer --precision argument in eBPF".into(),
+            ));
+        };
+        if self.named_args.len() != 1 {
+            return Err(CompileError::UnsupportedInstruction(
+                "math round accepts only an optional compile-time integer --precision argument in eBPF".into(),
+            ));
+        }
+        let precision = self.compile_time_math_round_precision_arg(precision_reg)?;
+
+        let input_reg = input_reg.ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "math round requires compile-time known integer or float input with --precision in eBPF"
+                    .into(),
+            )
+        })?;
+        let value = self
+            .get_metadata(input_reg)
+            .and_then(|meta| meta.constant_value.clone())
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "math round requires compile-time known integer or float input with --precision in eBPF"
+                        .into(),
+                )
+            })?;
+
+        let result = match value {
+            nu_protocol::Value::List { vals, .. } => {
+                let vals = vals
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, value)| {
+                        Self::compile_time_math_round_precision_value(value, precision, Some(index))
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                nu_protocol::Value::list(vals, Span::unknown())
+            }
+            value => Self::compile_time_math_round_precision_value(value, precision, None)?,
+        };
+
+        if self.current_call_result_metadata_only {
+            self.lower_compile_time_only_constant_value(src_dst, &result);
+            return Ok(());
+        }
+
+        let result_type = result.get_type();
+        Err(CompileError::UnsupportedInstruction(format!(
+            "math round --precision compile-time result has type {result_type}; eBPF supports only results folded by fill or str join"
+        )))
+    }
+
     fn checked_compile_time_float_to_i64(
         cmd_name: &str,
         value: f64,
@@ -942,6 +1044,10 @@ impl<'a> HirToMirLowering<'a> {
         let input_reg = self
             .pipeline_input_reg
             .or(src_dst_had_value.then_some(src_dst));
+
+        if cmd_name == "math round" && !self.named_args.is_empty() {
+            return self.lower_compile_time_math_round_precision(src_dst, src_dst_had_value);
+        }
 
         if !self.named_flags.is_empty()
             || !self.named_args.is_empty()

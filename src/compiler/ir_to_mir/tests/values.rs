@@ -15404,6 +15404,23 @@ fn with_math_positional_arg(mut program: HirProgram, arg: Value) -> HirProgram {
     program
 }
 
+fn with_math_named_arg(mut program: HirProgram, name: &[u8], arg: Value) -> HirProgram {
+    let arg_reg = RegId::new(program.main.register_count);
+    program.main.register_count += 1;
+    program.main.blocks[0].stmts.insert(
+        1,
+        HirStmt::LoadValue {
+            dst: arg_reg,
+            val: Box::new(arg),
+        },
+    );
+    match &mut program.main.blocks[0].stmts[2] {
+        HirStmt::Call { args, .. } => args.named.push((name.to_vec(), arg_reg)),
+        other => panic!("expected math call after inserted named argument, got {other:?}"),
+    }
+    program
+}
+
 fn with_math_flag(mut program: HirProgram, flag: &[u8]) -> HirProgram {
     match &mut program.main.blocks[0].stmts[1] {
         HirStmt::Call { args, .. } => args.flags.push(flag.to_vec()),
@@ -17042,6 +17059,203 @@ fn test_lower_math_rounding_commands_on_known_mixed_numeric_lists() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("math round mixed numeric list should compile through codegen");
+}
+
+#[test]
+fn test_lower_math_round_precision_scalar_results_feed_metadata_only_fill() {
+    for (offset, value, precision, expected_prefix) in [
+        (0, Value::float(3.1415, Span::test_data()), 2, "3.14"),
+        (1, Value::int(3, Span::test_data()), 2, "3.0"),
+        (2, Value::float(314.15, Span::test_data()), -1, "310"),
+    ] {
+        let math_decl = DeclId::new(5060 + offset * 3);
+        let fill_decl = DeclId::new(5061 + offset * 3);
+        let starts_with_decl = DeclId::new(5062 + offset * 3);
+        let hir = with_math_named_arg(
+            make_value_math_fill_starts_with_program(
+                math_decl,
+                fill_decl,
+                starts_with_decl,
+                value,
+                expected_prefix,
+                1,
+                "right",
+                "0",
+            ),
+            b"precision",
+            Value::int(precision, Span::test_data()),
+        );
+        let decl_names = HashMap::from([
+            (math_decl, "math round".to_string()),
+            (fill_decl, "fill".to_string()),
+            (starts_with_decl, "str starts-with".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("math round --precision should feed fill: {err}"));
+
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .expect("math round --precision fill result should compile");
+    }
+}
+
+#[test]
+fn test_lower_math_round_precision_list_results_feed_metadata_only_str_join() {
+    let math_decl = DeclId::new(5069);
+    let join_decl = DeclId::new(5070);
+    let starts_with_decl = DeclId::new(5071);
+    let hir = with_math_named_arg(
+        make_value_list_math_join_starts_with_program(
+            math_decl,
+            join_decl,
+            starts_with_decl,
+            vec![
+                Value::float(3.1415, Span::test_data()),
+                Value::float(-2.675, Span::test_data()),
+            ],
+            ",",
+            "3.14,-2.68",
+        ),
+        b"precision",
+        Value::int(2, Span::test_data()),
+    );
+    let decl_names = HashMap::from([
+        (math_decl, "math round".to_string()),
+        (join_decl, "str join".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .unwrap_or_else(|err| panic!("math round --precision list should feed str join: {err}"));
+
+    assert_no_runtime_list_operations(&result.program, "math round --precision");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("math round --precision list str join should compile");
+}
+
+#[test]
+fn test_lower_math_round_precision_rejects_materialized_float_results() {
+    let decl = DeclId::new(5072);
+    let hir = with_math_named_arg(
+        make_value_pipeline_call_program(decl, Value::float(3.1415, Span::test_data())),
+        b"precision",
+        Value::int(2, Span::test_data()),
+    );
+    let decl_names = HashMap::from([(decl, "math round".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("math round --precision should reject direct materialization");
+
+    assert!(
+        err.to_string()
+            .contains("math round --precision compile-time result has type float"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_math_round_precision_rejects_non_integer_precision() {
+    let math_decl = DeclId::new(5073);
+    let fill_decl = DeclId::new(5074);
+    let starts_with_decl = DeclId::new(5075);
+    let hir = with_math_named_arg(
+        make_value_math_fill_starts_with_program(
+            math_decl,
+            fill_decl,
+            starts_with_decl,
+            Value::float(3.1415, Span::test_data()),
+            "3.1",
+            1,
+            "right",
+            "0",
+        ),
+        b"precision",
+        Value::bool(true, Span::test_data()),
+    );
+    let decl_names = HashMap::from([
+        (math_decl, "math round".to_string()),
+        (fill_decl, "fill".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("math round --precision should reject non-integer precision");
+
+    assert!(
+        err.to_string()
+            .contains("math round requires a compile-time known integer precision"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_math_round_precision_rejects_non_finite_results() {
+    let math_decl = DeclId::new(5076);
+    let fill_decl = DeclId::new(5077);
+    let starts_with_decl = DeclId::new(5078);
+    let hir = with_math_named_arg(
+        make_value_math_fill_starts_with_program(
+            math_decl,
+            fill_decl,
+            starts_with_decl,
+            Value::float(3.1415, Span::test_data()),
+            "NaN",
+            1,
+            "right",
+            "0",
+        ),
+        b"precision",
+        Value::int(1000, Span::test_data()),
+    );
+    let decl_names = HashMap::from([
+        (math_decl, "math round".to_string()),
+        (fill_decl, "fill".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("math round --precision should reject non-finite results");
+
+    assert!(
+        err.to_string()
+            .contains("math round result must be finite in eBPF"),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]

@@ -36036,6 +36036,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-math-round-precision-folded"
+        category: "language-core"
+        tags: [scalar aggregate list math round precision float fill str join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ((3.1415 | math round --precision 2 | fill --alignment right --character "0" --width 1 | str starts-with "3.14") and (314.15 | math round --precision -1 | fill --alignment right --character "0" --width 1 | str starts-with "310")) and ([3.1415 -2.675] | math round --precision 2 | str join "," | str starts-with "3.14,-2.68")'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-scalar-math-integer-identity-runtime"
         category: "language-core"
         tags: [scalar math ceil floor round runtime]

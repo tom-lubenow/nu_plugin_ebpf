@@ -936,7 +936,16 @@ fn compile_time_value_consumer_matches(
                 && call_args_tracked_only_in_pipeline(src_dst, args, tracked_regs)
                 && args.positional.is_empty()
                 && args.rest.is_empty()
-                && args.named.is_empty()
+                && match decl_name {
+                    Some("math round") => {
+                        args.named.len() <= 1
+                            && args
+                                .named
+                                .iter()
+                                .all(|(name, _)| name.as_slice() == b"precision")
+                    }
+                    _ => args.named.is_empty(),
+                }
                 && args.flags.is_empty()
                 && args.parser_info.is_empty()
         }
