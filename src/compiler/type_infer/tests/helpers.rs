@@ -9325,20 +9325,24 @@ fn test_type_error_socket_lookup_helpers_reject_invalid_tuple_size() {
         BpfHelper::SkLookupUdp,
         BpfHelper::SkcLookupTcp,
     ] {
-        let (func, _) = make_socket_lookup_call_with_tuple_size_and_netns(helper, 16, 0, 0);
-        let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
-        let mut ti = TypeInference::new(Some(probe_ctx));
-        let errs = ti
-            .infer(&func)
-            .expect_err("expected socket lookup tuple_size exact-size error");
-        assert!(
-            errs.iter().any(|e| e.message.contains(
-                "socket lookup helpers require arg2 tuple_size to be sizeof(tuple->ipv4) (12) or sizeof(tuple->ipv6) (36)"
-            )),
-            "unexpected errors for {:?}: {:?}",
-            helper,
-            errs
-        );
+        for tuple_size in [0, 16] {
+            let (func, _) =
+                make_socket_lookup_call_with_tuple_size_and_netns(helper, tuple_size, 0, 0);
+            let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+            let mut ti = TypeInference::new(Some(probe_ctx));
+            let errs = ti
+                .infer(&func)
+                .expect_err("expected socket lookup tuple_size exact-size error");
+            assert!(
+                errs.iter().any(|e| e.message.contains(
+                    "socket lookup helpers require arg2 tuple_size to be sizeof(tuple->ipv4) (12) or sizeof(tuple->ipv6) (36)"
+                )),
+                "unexpected errors for {:?} tuple_size {}: {:?}",
+                helper,
+                tuple_size,
+                errs
+            );
+        }
     }
 }
 

@@ -5088,6 +5088,7 @@ fn test_helper_signature_socket_helpers() {
         BpfHelper::SkLookupUdp,
         BpfHelper::SkcLookupTcp,
     ] {
+        assert_eq!(helper.zero_size_pointer_arg_size_arg(1), None);
         assert_eq!(
             helper.zero_scalar_arg_requirement(),
             Some((4, "socket lookup helpers require arg4 flags = 0"))
