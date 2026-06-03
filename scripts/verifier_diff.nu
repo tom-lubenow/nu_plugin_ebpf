@@ -37641,6 +37641,21 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-string-list-split-nested-metadata"
+        category: "language-core"
+        tags: [string list split chars words nested join length]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let chars = (["ab" "cd"] | split chars | str join ":")'
+            '  let words = (["a b" "c d e"] | split words | str join ":")'
+            '  (($chars | str starts-with "[a") and ($chars | str contains "b]:[c")) and ((($words | str starts-with "[a") and ($words | str contains "e]")) and ((["ab" "cd"] | split chars | length) == 2))'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-string-split-row-join"
         category: "language-core"
         tags: [string split row join]

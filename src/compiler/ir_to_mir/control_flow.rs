@@ -1201,6 +1201,7 @@ impl<'a> HirToMirLowering<'a> {
     ) -> bool {
         [
             FixedLayoutValueConsumer::BytesCollect,
+            FixedLayoutValueConsumer::StrJoin,
             FixedLayoutValueConsumer::Length,
             FixedLayoutValueConsumer::EmptyPredicate,
         ]

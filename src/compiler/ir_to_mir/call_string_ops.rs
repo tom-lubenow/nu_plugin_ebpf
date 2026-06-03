@@ -941,26 +941,62 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         if let Some(reg) = input_reg
-            && let Some(nu_protocol::Value::List { .. }) = self
+            && let Some(nu_protocol::Value::List { vals, .. }) = self
                 .get_metadata(reg)
                 .and_then(|meta| meta.constant_value.as_ref())
         {
+            let mut output = Vec::with_capacity(vals.len());
+            for (index, item) in vals.iter().enumerate() {
+                let (nu_protocol::Value::String { val, .. } | nu_protocol::Value::Glob { val, .. }) =
+                    item
+                else {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "split chars requires string list items in eBPF; item {index} has type {}",
+                        item.get_type()
+                    )));
+                };
+                let parts =
+                    Self::split_chars_known_string(val, use_grapheme_clusters, Span::unknown());
+                output.push(nu_protocol::Value::list(parts, Span::unknown()));
+            }
+            let value = nu_protocol::Value::list(output, Span::unknown());
+            if self.current_call_result_metadata_only {
+                self.lower_compile_time_only_constant_value(src_dst, &value);
+                return Ok(());
+            }
             return Err(CompileError::UnsupportedInstruction(
-                "split chars on list<string> produces nested lists, which are not supported in eBPF"
+                "split chars on list<string> produces nested lists, which require a metadata-only consumer in eBPF"
                     .into(),
             ));
         }
 
         let input = self.exact_string_input(input_reg, "split chars")?;
-        let output = if use_grapheme_clusters {
-            UnicodeSegmentation::graphemes(input.as_str(), true)
-                .map(ToString::to_string)
-                .collect()
-        } else {
-            input.chars().map(|ch| ch.to_string()).collect()
-        };
+        let output = Self::split_chars_known_string(&input, use_grapheme_clusters, Span::unknown())
+            .into_iter()
+            .filter_map(|value| match value {
+                nu_protocol::Value::String { val, .. } => Some(val),
+                _ => None,
+            })
+            .collect();
 
         self.lower_known_string_list_result(src_dst, result_vreg, output)
+    }
+
+    fn split_chars_known_string(
+        input: &str,
+        use_grapheme_clusters: bool,
+        span: Span,
+    ) -> Vec<nu_protocol::Value> {
+        if use_grapheme_clusters {
+            UnicodeSegmentation::graphemes(input, true)
+                .map(|part| nu_protocol::Value::string(part.to_string(), span))
+                .collect()
+        } else {
+            input
+                .chars()
+                .map(|ch| nu_protocol::Value::string(ch.to_string(), span))
+                .collect()
+        }
     }
 
     pub(super) fn lower_split_words(
@@ -1052,18 +1088,63 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         if let Some(reg) = input_reg
-            && let Some(nu_protocol::Value::List { .. }) = self
+            && let Some(nu_protocol::Value::List { vals, .. }) = self
                 .get_metadata(reg)
                 .and_then(|meta| meta.constant_value.as_ref())
         {
+            let mut output = Vec::with_capacity(vals.len());
+            for (index, item) in vals.iter().enumerate() {
+                let (nu_protocol::Value::String { val, .. } | nu_protocol::Value::Glob { val, .. }) =
+                    item
+                else {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "split words requires string list items in eBPF; item {index} has type {}",
+                        item.get_type()
+                    )));
+                };
+                let parts = Self::split_words_known_string(
+                    val,
+                    min_word_len,
+                    use_grapheme_clusters,
+                    Span::unknown(),
+                );
+                output.push(nu_protocol::Value::list(parts, Span::unknown()));
+            }
+            let value = nu_protocol::Value::list(output, Span::unknown());
+            if self.current_call_result_metadata_only {
+                self.lower_compile_time_only_constant_value(src_dst, &value);
+                return Ok(());
+            }
             return Err(CompileError::UnsupportedInstruction(
-                "split words on list<string> produces nested lists, which are not supported in eBPF"
+                "split words on list<string> produces nested lists, which require a metadata-only consumer in eBPF"
                     .into(),
             ));
         }
 
         let input = self.exact_string_input(input_reg, "split words")?;
-        let output = input
+        let output = Self::split_words_known_string(
+            &input,
+            min_word_len,
+            use_grapheme_clusters,
+            Span::unknown(),
+        )
+        .into_iter()
+        .filter_map(|value| match value {
+            nu_protocol::Value::String { val, .. } => Some(val),
+            _ => None,
+        })
+        .collect();
+
+        self.lower_known_string_list_result(src_dst, result_vreg, output)
+    }
+
+    fn split_words_known_string(
+        input: &str,
+        min_word_len: Option<usize>,
+        use_grapheme_clusters: bool,
+        span: Span,
+    ) -> Vec<nu_protocol::Value> {
+        input
             .unicode_words()
             .filter(|word| {
                 min_word_len.is_none_or(|min_word_len| {
@@ -1075,10 +1156,8 @@ impl<'a> HirToMirLowering<'a> {
                     len >= min_word_len
                 })
             })
-            .map(ToString::to_string)
-            .collect();
-
-        self.lower_known_string_list_result(src_dst, result_vreg, output)
+            .map(|word| nu_protocol::Value::string(word.to_string(), span))
+            .collect()
     }
 
     pub(super) fn lower_string_stats(
