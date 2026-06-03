@@ -35476,6 +35476,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-math-stats-folded"
+        category: "language-core"
+        tags: [aggregate list math variance stddev sample float fill]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ([1 2 3 4 5] | math variance | fill --alignment right --character "0" --width 4 | str starts-with "0002") and ([1 2 3 4 5] | math stddev --sample | fill --alignment right --character "0" --width 4 | str starts-with "1.581")'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-math-filesize-duration"
         category: "language-core"
         tags: [aggregate list math filesize duration constant]

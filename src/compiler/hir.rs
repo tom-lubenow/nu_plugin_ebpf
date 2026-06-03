@@ -320,6 +320,7 @@ pub enum FixedLayoutValueConsumer {
     MathMedian,
     MathFloatUnary,
     MathLog,
+    MathVarianceStddev,
     MathSumProduct,
     MathMinMax,
 }
@@ -991,6 +992,18 @@ fn compile_time_value_consumer_matches(
                 && args.rest.is_empty()
                 && args.named.is_empty()
                 && args.flags.is_empty()
+                && args.parser_info.is_empty()
+        }
+        FixedLayoutValueConsumer::MathVarianceStddev => {
+            matches!(decl_name, Some("math stddev" | "math variance"))
+                && call_args_tracked_only_in_pipeline(src_dst, args, tracked_regs)
+                && args.positional.is_empty()
+                && args.rest.is_empty()
+                && args.named.is_empty()
+                && args
+                    .flags
+                    .iter()
+                    .all(|flag| matches!(flag.as_slice(), b"sample" | b"s"))
                 && args.parser_info.is_empty()
         }
         FixedLayoutValueConsumer::MathSumProduct => {

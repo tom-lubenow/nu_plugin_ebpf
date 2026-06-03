@@ -13618,6 +13618,214 @@ fn test_lower_math_inverse_list_results_feed_metadata_only_str_join() {
 }
 
 #[test]
+fn test_lower_math_variance_stddev_rejects_materialized_float_results() {
+    for (offset, command_name, expected) in [
+        (
+            0,
+            "math variance",
+            "math variance compile-time list result has type float",
+        ),
+        (
+            1,
+            "math stddev",
+            "math stddev compile-time list result has type float",
+        ),
+    ] {
+        let decl = DeclId::new(736 + offset);
+        let hir = make_value_pipeline_call_program(
+            decl,
+            Value::list(
+                vec![
+                    Value::int(1, Span::test_data()),
+                    Value::int(2, Span::test_data()),
+                    Value::int(3, Span::test_data()),
+                    Value::int(4, Span::test_data()),
+                    Value::int(5, Span::test_data()),
+                ],
+                Span::test_data(),
+            ),
+        );
+        let decl_names = HashMap::from([(decl, command_name.to_string())]);
+
+        let err = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .expect_err("math variance/stddev should reject direct materialization");
+
+        assert!(
+            err.to_string().contains(expected),
+            "unexpected error: {err}"
+        );
+    }
+}
+
+#[test]
+fn test_lower_math_variance_stddev_rejects_invalid_inputs() {
+    for (offset, command_name, value, sample, expected) in [
+        (
+            0,
+            "math variance",
+            Value::list(Vec::new(), Span::test_data()),
+            false,
+            "math variance requires a non-empty numeric list",
+        ),
+        (
+            1,
+            "math stddev",
+            Value::list(vec![Value::int(1, Span::test_data())], Span::test_data()),
+            true,
+            "math stddev --sample requires at least two numeric list items",
+        ),
+        (
+            2,
+            "math variance",
+            Value::list(
+                vec![
+                    Value::int(1, Span::test_data()),
+                    Value::string("x", Span::test_data()),
+                ],
+                Span::test_data(),
+            ),
+            false,
+            "math variance requires integer or float list items",
+        ),
+        (
+            3,
+            "math stddev",
+            Value::list(
+                vec![
+                    Value::int(1, Span::test_data()),
+                    Value::float(f64::INFINITY, Span::test_data()),
+                ],
+                Span::test_data(),
+            ),
+            false,
+            "math stddev requires finite float list items",
+        ),
+    ] {
+        let decl = DeclId::new(738 + offset);
+        let mut hir = make_value_pipeline_call_program(decl, value);
+        if sample {
+            match &mut hir.main.blocks[0].stmts[1] {
+                HirStmt::Call { args, .. } => args.flags.push(b"sample".to_vec()),
+                other => panic!("expected math stats call, got {other:?}"),
+            }
+        }
+        let decl_names = HashMap::from([(decl, command_name.to_string())]);
+
+        let err = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .expect_err("math variance/stddev should reject invalid inputs");
+
+        assert!(
+            err.to_string().contains(expected),
+            "unexpected error: {err}"
+        );
+    }
+}
+
+#[test]
+fn test_lower_math_variance_stddev_rejects_unknown_flags() {
+    let decl = DeclId::new(742);
+    let mut hir = make_value_pipeline_call_program(
+        decl,
+        Value::list(
+            vec![
+                Value::int(1, Span::test_data()),
+                Value::int(2, Span::test_data()),
+            ],
+            Span::test_data(),
+        ),
+    );
+    match &mut hir.main.blocks[0].stmts[1] {
+        HirStmt::Call { args, .. } => args.flags.push(b"population".to_vec()),
+        other => panic!("expected math stats call, got {other:?}"),
+    }
+    let decl_names = HashMap::from([(decl, "math variance".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("math variance should reject unknown flags");
+
+    assert!(
+        err.to_string()
+            .contains("math variance accepts only the optional --sample flag"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_math_variance_stddev_results_feed_metadata_only_fill() {
+    for (offset, command_name, sample, expected_prefix) in [
+        (0, "math variance", false, "0002"),
+        (1, "math variance", true, "02.5"),
+        (2, "math stddev", false, "1.414"),
+        (3, "math stddev", true, "1.581"),
+    ] {
+        let math_decl = DeclId::new(743 + offset * 3);
+        let fill_decl = DeclId::new(744 + offset * 3);
+        let starts_with_decl = DeclId::new(745 + offset * 3);
+        let mut hir = make_value_list_math_fill_starts_with_program(
+            math_decl,
+            fill_decl,
+            starts_with_decl,
+            vec![
+                Value::int(1, Span::test_data()),
+                Value::int(2, Span::test_data()),
+                Value::int(3, Span::test_data()),
+                Value::int(4, Span::test_data()),
+                Value::int(5, Span::test_data()),
+            ],
+            expected_prefix,
+            4,
+            "right",
+            "0",
+        );
+        if sample {
+            match &mut hir.main.blocks[0].stmts[1] {
+                HirStmt::Call { args, .. } => args.flags.push(b"sample".to_vec()),
+                other => panic!("expected math stats call, got {other:?}"),
+            }
+        }
+        let decl_names = HashMap::from([
+            (math_decl, command_name.to_string()),
+            (fill_decl, "fill".to_string()),
+            (starts_with_decl, "str starts-with".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("{command_name} result should feed fill: {err}"));
+
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{command_name} fill result should compile: {err}"));
+    }
+}
+
+#[test]
 fn test_lower_math_unit_reducers_materialize_raw_i64_results() {
     let cases = [
         (

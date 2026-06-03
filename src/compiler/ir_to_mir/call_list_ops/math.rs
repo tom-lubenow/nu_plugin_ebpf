@@ -335,6 +335,120 @@ impl<'a> HirToMirLowering<'a> {
         ))
     }
 
+    pub(in crate::compiler::ir_to_mir) fn lower_compile_time_math_variance_stddev(
+        &mut self,
+        cmd_name: &str,
+        src_dst: RegId,
+        src_dst_had_value: bool,
+    ) -> Result<(), CompileError> {
+        let input_reg = self
+            .pipeline_input_reg
+            .or(src_dst_had_value.then_some(src_dst));
+
+        if !self.named_args.is_empty() || !self.positional_args.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} accepts only the optional --sample flag in eBPF"
+            )));
+        }
+        for flag in &self.named_flags {
+            if flag != "sample" && flag != "s" {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{cmd_name} accepts only the optional --sample flag in eBPF"
+                )));
+            }
+        }
+        let sample = self
+            .named_flags
+            .iter()
+            .any(|flag| flag == "sample" || flag == "s");
+
+        let input_meta = input_reg
+            .and_then(|reg| self.get_metadata(reg).cloned())
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "{cmd_name} requires a compile-time known numeric list in eBPF"
+                ))
+            })?;
+        let vals = match input_meta.constant_value {
+            Some(nu_protocol::Value::List { vals, .. }) => vals,
+            Some(other) => {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{cmd_name} requires a compile-time known numeric list in eBPF; input has type {}",
+                    other.get_type()
+                )));
+            }
+            None => {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{cmd_name} requires a compile-time known numeric list in eBPF"
+                )));
+            }
+        };
+        if vals.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires a non-empty numeric list in eBPF"
+            )));
+        }
+        if sample && vals.len() < 2 {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} --sample requires at least two numeric list items in eBPF"
+            )));
+        }
+
+        let mut values = Vec::with_capacity(vals.len());
+        for (index, value) in vals.into_iter().enumerate() {
+            let value = match value {
+                nu_protocol::Value::Int { val, .. } => val as f64,
+                nu_protocol::Value::Float { val, .. } if val.is_finite() => val,
+                nu_protocol::Value::Float { val, .. } => {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{cmd_name} requires finite float list items in eBPF; item {index} is {val}"
+                    )));
+                }
+                other => {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{cmd_name} requires integer or float list items in eBPF; item {index} has type {}",
+                        other.get_type()
+                    )));
+                }
+            };
+            values.push(value);
+        }
+
+        let len = values.len() as f64;
+        let mean = values.iter().sum::<f64>() / len;
+        let sum_squared_deviation = values
+            .iter()
+            .map(|value| {
+                let deviation = value - mean;
+                deviation * deviation
+            })
+            .sum::<f64>();
+        let denominator = if sample { len - 1.0 } else { len };
+        let variance = sum_squared_deviation / denominator;
+        let result = if cmd_name == "math stddev" {
+            variance.sqrt()
+        } else {
+            variance
+        };
+        if !result.is_finite() {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} compile-time list result must be finite in eBPF"
+            )));
+        }
+
+        if self.current_call_result_metadata_only {
+            self.lower_compile_time_only_constant_value(
+                src_dst,
+                &nu_protocol::Value::float(result, Span::unknown()),
+            );
+            return Ok(());
+        }
+
+        Err(CompileError::UnsupportedInstruction(format!(
+            "{cmd_name} compile-time list result has type float; eBPF supports only results folded by fill"
+        )))
+    }
+
     fn math_integer_result_for_rounding_command(
         cmd_name: &str,
         value: nu_protocol::Value,
