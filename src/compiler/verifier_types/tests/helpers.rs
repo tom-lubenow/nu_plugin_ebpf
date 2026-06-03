@@ -23175,6 +23175,54 @@ fn test_helper_ringbuf_rejects_invalid_flags() {
 }
 
 #[test]
+fn test_helper_ringbuf_reserve_helpers_reject_zero_size() {
+    let cases = [BpfHelper::RingbufReserve, BpfHelper::RingbufReserveDynptr];
+
+    for helper in cases {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+        let dynptr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+        let dst = func.alloc_vreg();
+        let args = match helper {
+            BpfHelper::RingbufReserve => vec![
+                MirValue::StackSlot(map_slot),
+                MirValue::Const(0),
+                MirValue::Const(0),
+            ],
+            BpfHelper::RingbufReserveDynptr => vec![
+                MirValue::StackSlot(map_slot),
+                MirValue::Const(0),
+                MirValue::Const(0),
+                MirValue::StackSlot(dynptr_slot),
+            ],
+            _ => unreachable!(),
+        };
+
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: helper as u32,
+                args,
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(dst, MirType::I64);
+        let err = verify_mir(&func, &types).expect_err("expected ringbuf reserve zero-size error");
+        let expected = format!("helper {} arg1 must be > 0", helper as u32);
+        assert!(
+            err.iter().any(|e| e.message.contains(&expected)),
+            "unexpected errors for {helper:?}: {:?}",
+            err
+        );
+    }
+}
+
+#[test]
 fn test_helper_ringbuf_reserve_dynptr_rejects_size_above_u32_max() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
