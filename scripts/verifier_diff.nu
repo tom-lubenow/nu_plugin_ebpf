@@ -35254,6 +35254,21 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-seq-float-metadata-transforms"
+        category: "language-core"
+        tags: [aggregate list seq float sort reverse find split-list str join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let sort_ok = (seq 2.0 -0.5 1.0 | sort | str join "," | str starts-with "1.0,1.5,2.0")'
+            '  let reverse_ok = (seq 1.0 0.5 2.0 | reverse | str join "," | str starts-with "2.0,1.5,1.0")'
+            '  $sort_ok and ($reverse_ok and (((seq 1.0 0.5 2.0 | find 1.5 | length) == 1) and ((seq 1.0 0.5 2.0 | split list 1.5 | length) == 2)))'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-seq-char-join"
         category: "language-core"
         tags: [aggregate list seq char str join]

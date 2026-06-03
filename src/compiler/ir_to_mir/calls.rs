@@ -446,7 +446,7 @@ impl<'a> HirToMirLowering<'a> {
                 return Ok(());
             }
             return Err(CompileError::UnsupportedInstruction(
-                "seq float output is supported only when folded by str join, length, or empty predicates in eBPF"
+                "seq float output is supported only when folded by metadata consumers in eBPF"
                     .into(),
             ));
         }

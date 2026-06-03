@@ -693,6 +693,196 @@ fn make_seq_then_length_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_seq_transform_join_then_starts_with_program(
+    seq_decl: DeclId,
+    transform_decl: DeclId,
+    join_decl: DeclId,
+    starts_with_decl: DeclId,
+    seq_args: &[HirLiteral],
+    transform_arg: Option<HirLiteral>,
+    separator: &str,
+    expected_prefix: &str,
+) -> HirProgram {
+    let mut stmts = Vec::new();
+    let mut positional = Vec::new();
+    let mut next_reg = 0u32;
+    for lit in seq_args {
+        let reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadLiteral {
+            dst: reg,
+            lit: lit.clone(),
+        });
+        positional.push(reg);
+    }
+
+    let seq_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::Call {
+        decl_id: seq_decl,
+        src_dst: seq_reg,
+        args: HirCallArgs {
+            positional,
+            ..HirCallArgs::default()
+        },
+    });
+
+    let transform_positional = if let Some(lit) = transform_arg {
+        let arg_reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadLiteral { dst: arg_reg, lit });
+        vec![arg_reg]
+    } else {
+        Vec::new()
+    };
+
+    let transform_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::Call {
+        decl_id: transform_decl,
+        src_dst: transform_reg,
+        args: HirCallArgs {
+            positional: transform_positional,
+            pipeline_input: Some(seq_reg),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let separator_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::LoadLiteral {
+        dst: separator_reg,
+        lit: HirLiteral::String(separator.as_bytes().to_vec()),
+    });
+
+    let join_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::Call {
+        decl_id: join_decl,
+        src_dst: join_reg,
+        args: HirCallArgs {
+            positional: vec![separator_reg],
+            pipeline_input: Some(transform_reg),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let prefix_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::LoadLiteral {
+        dst: prefix_reg,
+        lit: HirLiteral::String(expected_prefix.as_bytes().to_vec()),
+    });
+
+    let starts_with_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::Call {
+        decl_id: starts_with_decl,
+        src_dst: starts_with_reg,
+        args: HirCallArgs {
+            positional: vec![prefix_reg],
+            pipeline_input: Some(join_reg),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return {
+                src: starts_with_reg,
+            },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: next_reg,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_seq_transform_length_program(
+    seq_decl: DeclId,
+    transform_decl: DeclId,
+    length_decl: DeclId,
+    seq_args: &[HirLiteral],
+    transform_arg: Option<HirLiteral>,
+) -> HirProgram {
+    let mut stmts = Vec::new();
+    let mut positional = Vec::new();
+    let mut next_reg = 0u32;
+    for lit in seq_args {
+        let reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadLiteral {
+            dst: reg,
+            lit: lit.clone(),
+        });
+        positional.push(reg);
+    }
+
+    let seq_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::Call {
+        decl_id: seq_decl,
+        src_dst: seq_reg,
+        args: HirCallArgs {
+            positional,
+            ..HirCallArgs::default()
+        },
+    });
+
+    let transform_positional = if let Some(lit) = transform_arg {
+        let arg_reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadLiteral { dst: arg_reg, lit });
+        vec![arg_reg]
+    } else {
+        Vec::new()
+    };
+
+    let transform_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::Call {
+        decl_id: transform_decl,
+        src_dst: transform_reg,
+        args: HirCallArgs {
+            positional: transform_positional,
+            pipeline_input: Some(seq_reg),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let length_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::Call {
+        decl_id: length_decl,
+        src_dst: length_reg,
+        args: HirCallArgs {
+            pipeline_input: Some(transform_reg),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: length_reg },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: next_reg,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_seq_char_join_then_starts_with_program(
     seq_char_decl: DeclId,
     join_decl: DeclId,
@@ -13637,6 +13827,116 @@ fn test_lower_seq_mixed_numeric_range_feeds_metadata_only_str_join() {
     assert_no_runtime_list_operations(&result.program, "metadata-only mixed numeric seq");
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("mixed numeric seq str join should compile through codegen");
+}
+
+#[test]
+fn test_lower_seq_float_range_feeds_metadata_only_list_transforms() {
+    let seq_args = [
+        HirLiteral::Float(1.0),
+        HirLiteral::Float(0.5),
+        HirLiteral::Float(2.0),
+    ];
+    for (offset, transform_name, transform_arg, expected_prefix) in [
+        (0, "sort", None, "1.0,1.5,2.0"),
+        (10, "reverse", None, "2.0,1.5,1.0"),
+        (20, "find", Some(HirLiteral::Float(1.5)), "1.5"),
+    ] {
+        let seq_decl = DeclId::new(730 + offset);
+        let transform_decl = DeclId::new(731 + offset);
+        let join_decl = DeclId::new(732 + offset);
+        let starts_with_decl = DeclId::new(733 + offset);
+        let hir = make_seq_transform_join_then_starts_with_program(
+            seq_decl,
+            transform_decl,
+            join_decl,
+            starts_with_decl,
+            &seq_args,
+            transform_arg,
+            ",",
+            expected_prefix,
+        );
+        let decl_names = HashMap::from([
+            (seq_decl, "seq".to_string()),
+            (transform_decl, transform_name.to_string()),
+            (join_decl, "str join".to_string()),
+            (starts_with_decl, "str starts-with".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("float seq should feed metadata-only {transform_name}: {err}")
+        });
+
+        assert_no_runtime_list_operations(
+            &result.program,
+            &format!("metadata-only float seq {transform_name}"),
+        );
+        assert!(
+            result
+                .program
+                .main
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .any(|inst| matches!(
+                    inst,
+                    MirInst::StringAppend {
+                        val_type: StringAppendType::Literal { bytes },
+                        ..
+                    } if bytes.starts_with(format!("{expected_prefix}\0").as_bytes())
+                )),
+            "expected float seq | {transform_name} to feed str join with {expected_prefix}"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("float seq {transform_name} should compile through codegen: {err}")
+            });
+    }
+}
+
+#[test]
+fn test_lower_seq_float_range_split_list_feeds_metadata_only_length() {
+    let seq_decl = DeclId::new(760);
+    let split_decl = DeclId::new(761);
+    let length_decl = DeclId::new(762);
+    let hir = make_seq_transform_length_program(
+        seq_decl,
+        split_decl,
+        length_decl,
+        &[
+            HirLiteral::Float(1.0),
+            HirLiteral::Float(0.5),
+            HirLiteral::Float(2.0),
+        ],
+        Some(HirLiteral::Float(1.5)),
+    );
+    let decl_names = HashMap::from([
+        (seq_decl, "seq".to_string()),
+        (split_decl, "split list".to_string()),
+        (length_decl, "length".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("float seq should feed metadata-only split list");
+
+    assert_program_returns_constant(&result.program, 2, "float seq split list length");
+    assert_no_runtime_list_operations(&result.program, "metadata-only float seq split list");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("float seq split list length should compile through codegen");
 }
 
 #[test]
