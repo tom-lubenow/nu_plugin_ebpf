@@ -10408,6 +10408,92 @@ fn test_verify_mir_for_probe_context_csum_diff_rejects_out_of_range_scalars() {
     }
 }
 
+fn make_lirc_scalar_verify_call(
+    helper: BpfHelper,
+    scalar_args: Vec<MirValue>,
+) -> (MirFunction, HashMap<VReg, MirType>) {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+
+    let mut args = vec![MirValue::VReg(ctx)];
+    args.extend(scalar_args);
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: helper as u32,
+            args,
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let types = HashMap::from([
+        (
+            ctx,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Kernel,
+            },
+        ),
+        (dst, MirType::I64),
+    ]);
+    (func, types)
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_lirc_helpers_reject_out_of_range_scalars() {
+    for (helper, scalar_args, expected) in [
+        (
+            BpfHelper::RcKeydown,
+            vec![
+                MirValue::Const(0x1_0000_0000),
+                MirValue::Const(0),
+                MirValue::Const(0),
+            ],
+            "helper 'bpf_rc_keydown' requires arg1 protocol to be between 0 and u32::MAX",
+        ),
+        (
+            BpfHelper::RcKeydown,
+            vec![
+                MirValue::Const(0),
+                MirValue::Const(0),
+                MirValue::Const(0x1_0000_0000),
+            ],
+            "helper 'bpf_rc_keydown' requires arg3 toggle to be between 0 and u32::MAX",
+        ),
+        (
+            BpfHelper::RcPointerRel,
+            vec![MirValue::Const(i32::MAX as i64 + 1), MirValue::Const(0)],
+            "helper 'bpf_rc_pointer_rel' requires arg1 rel_x to be between i32::MIN and i32::MAX",
+        ),
+        (
+            BpfHelper::RcPointerRel,
+            vec![MirValue::Const(0), MirValue::Const(i32::MIN as i64 - 1)],
+            "helper 'bpf_rc_pointer_rel' requires arg2 rel_y to be between i32::MIN and i32::MAX",
+        ),
+    ] {
+        let (func, types) = make_lirc_scalar_verify_call(helper, scalar_args);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::LircMode2, "/dev/lirc0");
+        let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect_err("expected lirc scalar range validation error");
+        assert!(
+            err.iter().any(|e| e.message.contains(expected)),
+            "unexpected errors for {helper:?}: {:?}",
+            err
+        );
+    }
+}
+
 #[test]
 fn test_verify_mir_for_program_packet_byte_helpers_reject_invalid_programs() {
     for (helper, program_info, expected) in [

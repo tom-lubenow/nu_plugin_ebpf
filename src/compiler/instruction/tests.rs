@@ -2120,6 +2120,22 @@ fn test_helper_signatures_prandom_boot_and_lirc_helpers() {
     assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
     assert_eq!(sig.arg_kind(3), HelperArgKind::Scalar);
     assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+    assert_eq!(
+        BpfHelper::RcKeydown.scalar_arg_range_requirement(1),
+        Some((
+            0,
+            u32::MAX as i64,
+            "helper 'bpf_rc_keydown' requires arg1 protocol to be between 0 and u32::MAX"
+        ))
+    );
+    assert_eq!(
+        BpfHelper::RcKeydown.scalar_arg_range_requirement(3),
+        Some((
+            0,
+            u32::MAX as i64,
+            "helper 'bpf_rc_keydown' requires arg3 toggle to be between 0 and u32::MAX"
+        ))
+    );
 
     let sig = HelperSignature::for_id(BpfHelper::RcPointerRel as u32)
         .expect("expected bpf_rc_pointer_rel helper signature");
@@ -2129,6 +2145,22 @@ fn test_helper_signatures_prandom_boot_and_lirc_helpers() {
     assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
     assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
     assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+    assert_eq!(
+        BpfHelper::RcPointerRel.scalar_arg_range_requirement(1),
+        Some((
+            i32::MIN as i64,
+            i32::MAX as i64,
+            "helper 'bpf_rc_pointer_rel' requires arg1 rel_x to be between i32::MIN and i32::MAX"
+        ))
+    );
+    assert_eq!(
+        BpfHelper::RcPointerRel.scalar_arg_range_requirement(2),
+        Some((
+            i32::MIN as i64,
+            i32::MAX as i64,
+            "helper 'bpf_rc_pointer_rel' requires arg2 rel_y to be between i32::MIN and i32::MAX"
+        ))
+    );
 }
 
 #[test]

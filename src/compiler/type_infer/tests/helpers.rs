@@ -2848,6 +2848,78 @@ fn test_infer_lirc_helper_ctx_argument_in_lirc_mode2_program() {
     assert_eq!(types.get(&dst), Some(&MirType::I64));
 }
 
+fn make_lirc_scalar_helper_call(
+    helper: BpfHelper,
+    scalar_args: Vec<MirValue>,
+) -> (MirFunction, VReg) {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+
+    let mut args = vec![MirValue::VReg(ctx)];
+    args.extend(scalar_args);
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: helper as u32,
+        args,
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    (func, dst)
+}
+
+#[test]
+fn test_type_error_lirc_helpers_reject_out_of_range_scalars() {
+    for (helper, scalar_args, expected) in [
+        (
+            BpfHelper::RcKeydown,
+            vec![
+                MirValue::Const(0x1_0000_0000),
+                MirValue::Const(0),
+                MirValue::Const(0),
+            ],
+            "helper 'bpf_rc_keydown' requires arg1 protocol to be between 0 and u32::MAX",
+        ),
+        (
+            BpfHelper::RcKeydown,
+            vec![
+                MirValue::Const(0),
+                MirValue::Const(0),
+                MirValue::Const(0x1_0000_0000),
+            ],
+            "helper 'bpf_rc_keydown' requires arg3 toggle to be between 0 and u32::MAX",
+        ),
+        (
+            BpfHelper::RcPointerRel,
+            vec![MirValue::Const(i32::MAX as i64 + 1), MirValue::Const(0)],
+            "helper 'bpf_rc_pointer_rel' requires arg1 rel_x to be between i32::MIN and i32::MAX",
+        ),
+        (
+            BpfHelper::RcPointerRel,
+            vec![MirValue::Const(0), MirValue::Const(i32::MIN as i64 - 1)],
+            "helper 'bpf_rc_pointer_rel' requires arg2 rel_y to be between i32::MIN and i32::MAX",
+        ),
+    ] {
+        let (func, _) = make_lirc_scalar_helper_call(helper, scalar_args);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::LircMode2, "/dev/lirc0");
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected lirc scalar argument to be rejected");
+        assert!(
+            errs.iter().any(|e| e.message.contains(expected)),
+            "unexpected errors for {helper:?}: {:?}",
+            errs
+        );
+    }
+}
+
 #[test]
 fn test_type_error_redirect_helper_rejects_non_packet_programs() {
     let (func, _) = make_redirect_call(1, 0);
