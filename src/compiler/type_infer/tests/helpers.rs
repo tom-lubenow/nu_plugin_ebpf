@@ -5445,6 +5445,40 @@ fn test_type_error_lwt_buffer_helpers_reject_size_over_u32() {
 }
 
 #[test]
+fn test_type_error_lwt_buffer_helpers_reject_zero_size() {
+    for (helper, program_type, target) in [
+        (
+            BpfHelper::LwtPushEncap,
+            EbpfProgramType::LwtIn,
+            "demo-route",
+        ),
+        (
+            BpfHelper::LwtSeg6StoreBytes,
+            EbpfProgramType::LwtSeg6Local,
+            "demo-route",
+        ),
+        (
+            BpfHelper::LwtSeg6Action,
+            EbpfProgramType::LwtSeg6Local,
+            "demo-route",
+        ),
+    ] {
+        let (func, _) = make_lwt_buffer_helper_call(helper, 0, 16);
+        let probe_ctx = ProbeContext::new(program_type, target);
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected lwt helper zero-size error");
+        let expected = format!("helper {} arg3 must be > 0", helper as u32);
+        assert!(
+            errs.iter().any(|e| e.message.contains(&expected)),
+            "unexpected errors for {helper:?}: {:?}",
+            errs
+        );
+    }
+}
+
+#[test]
 fn test_type_error_lwt_seg6_helpers_reject_offset_over_u32() {
     for (func, helper_name) in [
         (

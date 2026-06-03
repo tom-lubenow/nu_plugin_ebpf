@@ -17338,6 +17338,38 @@ fn test_verify_mir_for_probe_context_lwt_buffer_helpers_reject_size_over_u32() {
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_lwt_buffer_helpers_reject_zero_size() {
+    for (helper, program_type, target) in [
+        (
+            BpfHelper::LwtPushEncap,
+            EbpfProgramType::LwtIn,
+            "demo-route",
+        ),
+        (
+            BpfHelper::LwtSeg6StoreBytes,
+            EbpfProgramType::LwtSeg6Local,
+            "demo-route",
+        ),
+        (
+            BpfHelper::LwtSeg6Action,
+            EbpfProgramType::LwtSeg6Local,
+            "demo-route",
+        ),
+    ] {
+        let (func, types) = make_lwt_buffer_verify_call(helper, 0, 16);
+        let probe_ctx = ProbeContext::new(program_type, target);
+        let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect_err("expected lwt helper zero-size error");
+        let expected = format!("helper {} arg3 must be > 0", helper as u32);
+        assert!(
+            err.iter().any(|e| e.message.contains(&expected)),
+            "unexpected errors for {helper:?}: {:?}",
+            err
+        );
+    }
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_lwt_seg6_helpers_reject_offset_over_u32() {
     for (func, types, helper_name) in [
         {
