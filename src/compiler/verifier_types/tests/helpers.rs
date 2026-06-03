@@ -13324,6 +13324,42 @@ fn make_skb_change_tail_verify_call(
     (func, types)
 }
 
+fn make_skb_pull_data_verify_call(len: i64) -> (MirFunction, HashMap<VReg, MirType>) {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::SkbPullData as u32,
+            args: vec![MirValue::VReg(ctx), MirValue::Const(len)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    (func, types)
+}
+
 #[test]
 fn test_verify_mir_for_probe_context_skb_change_head_requires_zero_flags() {
     let (func, types) = make_skb_change_head_verify_call(14, 1);
@@ -13365,6 +13401,23 @@ fn test_verify_mir_for_probe_context_skb_change_tail_rejects_invalid_new_len() {
                 "helper 'bpf_skb_change_tail' requires arg1 new_len to be between 0 and i32::MAX"
             )),
             "unexpected errors for new_len {new_len}: {:?}",
+            err
+        );
+    }
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_skb_pull_data_rejects_invalid_len() {
+    for len in [-1_i64, 0x1_0000_0000] {
+        let (func, types) = make_skb_pull_data_verify_call(len);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+        let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect_err("expected bpf_skb_pull_data len to be rejected");
+        assert!(
+            err.iter().any(|e| e.message.contains(
+                "helper 'bpf_skb_pull_data' requires arg1 len to be between 0 and u32::MAX"
+            )),
+            "unexpected errors for len {len}: {:?}",
             err
         );
     }

@@ -50,6 +50,7 @@ const BPF_F_ADJ_ROOM_ALLOWED_MASK: i64 =
     (0x1ffu64 | (BPF_ADJ_ROOM_ENCAP_L2_MASK << BPF_ADJ_ROOM_ENCAP_L2_SHIFT)) as i64;
 const BPF_SKB_ADJUST_ROOM_MAX_LEN_DIFF: i64 = 0xfff;
 const BPF_SKB_BYTE_MAX_OFFSET: i64 = i32::MAX as i64;
+const BPF_SKB_PULL_DATA_MAX_LEN: i64 = u32::MAX as i64;
 const BPF_SKB_CHANGE_TAIL_MAX_NEW_LEN: i64 = i32::MAX as i64;
 const BPF_SKB_CHANGE_HEAD_MAX_HEAD_ROOM: i64 = i32::MAX as i64;
 const BPF_SKB_LOAD_BYTES_RELATIVE_MAX_OFFSET: i64 = 0xffff;
@@ -1563,6 +1564,11 @@ impl BpfHelper {
                 0,
                 BPF_SKB_BYTE_MAX_OFFSET,
                 "skb byte helpers require arg1 offset to be between 0 and i32::MAX",
+            )),
+            (Self::SkbPullData, 1) => Some((
+                0,
+                BPF_SKB_PULL_DATA_MAX_LEN,
+                "helper 'bpf_skb_pull_data' requires arg1 len to be between 0 and u32::MAX",
             )),
             (Self::SkbChangeTail, 1) => Some((
                 0,

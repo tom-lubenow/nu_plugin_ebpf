@@ -2779,6 +2779,14 @@ fn test_helpers_with_reserved_zero_flags() {
         );
     }
     assert_eq!(BpfHelper::SkbPullData.zero_scalar_arg_requirement(), None);
+    assert_eq!(
+        BpfHelper::SkbPullData.scalar_arg_range_requirement(1),
+        Some((
+            0,
+            u32::MAX as i64,
+            "helper 'bpf_skb_pull_data' requires arg1 len to be between 0 and u32::MAX"
+        ))
+    );
     assert_eq!(BpfHelper::SkbAdjustRoom.zero_scalar_arg_requirement(), None);
     assert_eq!(BpfHelper::SkbSetTstamp.zero_scalar_arg_requirement(), None);
     assert_eq!(
