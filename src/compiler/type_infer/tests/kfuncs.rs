@@ -2502,6 +2502,49 @@ fn test_type_error_kfunc_scx_error_bstr_requires_stack_slot_base_fmt() {
 }
 
 #[test]
+fn test_type_error_kfunc_scx_error_bstr_requires_positive_data_size() {
+    let mut func = make_test_function();
+    let fmt = func.alloc_vreg();
+    let data = func.alloc_vreg();
+    let size = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let fmt_slot = func.alloc_stack_slot(64, 8, StackSlotKind::StringBuffer);
+    let data_slot = func.alloc_stack_slot(64, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: fmt,
+        src: MirValue::StackSlot(fmt_slot),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: data,
+        src: MirValue::StackSlot(data_slot),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: size,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "scx_bpf_error_bstr".to_string(),
+        btf_id: None,
+        args: vec![fmt, data, size],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected scx_bpf_error_bstr positive-size type error");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("kfunc 'scx_bpf_error_bstr' arg2 must be > 0")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
 fn test_type_error_kfunc_scx_exit_bstr_requires_positive_data_size() {
     let mut func = make_test_function();
     let code = func.alloc_vreg();
