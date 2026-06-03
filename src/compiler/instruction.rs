@@ -73,6 +73,7 @@ const BPF_MSG_DATA_MAX_U32: i64 = u32::MAX as i64;
 const BPF_REDIRECT_IFINDEX_MAX_U32: i64 = u32::MAX as i64;
 const BPF_LWT_BUFFER_SIZE_MAX_U32: i64 = u32::MAX as i64;
 const BPF_LWT_SEG6_OFFSET_MAX_U32: i64 = u32::MAX as i64;
+const BPF_FORMAT_SIZE_MAX_U32: i64 = u32::MAX as i64;
 const PACKET_OTHERHOST: i64 = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1457,6 +1458,41 @@ impl BpfHelper {
                 0,
                 BPF_GET_CURRENT_COMM_SIZE_MAX_U32,
                 "helper 'bpf_get_current_comm' requires arg1 size to be between 0 and u32::MAX",
+            )),
+            (Self::TracePrintk | Self::TraceVPrintk, 1) => Some((
+                0,
+                BPF_FORMAT_SIZE_MAX_U32,
+                "trace print helpers require arg1 fmt_size to be between 0 and u32::MAX",
+            )),
+            (Self::TraceVPrintk, 3) => Some((
+                0,
+                BPF_FORMAT_SIZE_MAX_U32,
+                "helper 'bpf_trace_vprintk' requires arg3 data_len to be between 0 and u32::MAX",
+            )),
+            (Self::Snprintf | Self::SnprintfBtf, 1) => Some((
+                0,
+                BPF_FORMAT_SIZE_MAX_U32,
+                "snprintf helpers require arg1 str_size to be between 0 and u32::MAX",
+            )),
+            (Self::Snprintf, 4) => Some((
+                0,
+                BPF_FORMAT_SIZE_MAX_U32,
+                "helper 'bpf_snprintf' requires arg4 data_len to be between 0 and u32::MAX",
+            )),
+            (Self::SeqPrintf, 2) => Some((
+                0,
+                BPF_FORMAT_SIZE_MAX_U32,
+                "helper 'bpf_seq_printf' requires arg2 fmt_size to be between 0 and u32::MAX",
+            )),
+            (Self::SeqPrintf, 4) => Some((
+                0,
+                BPF_FORMAT_SIZE_MAX_U32,
+                "helper 'bpf_seq_printf' requires arg4 data_len to be between 0 and u32::MAX",
+            )),
+            (Self::SeqWrite, 2) => Some((
+                0,
+                BPF_FORMAT_SIZE_MAX_U32,
+                "helper 'bpf_seq_write' requires arg2 len to be between 0 and u32::MAX",
             )),
             (Self::CopyFromUser | Self::CopyFromUserTask, 1) => Some((
                 0,

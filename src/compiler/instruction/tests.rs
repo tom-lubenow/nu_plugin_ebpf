@@ -3526,6 +3526,22 @@ fn test_snprintf_helper_contract() {
             "helper 'bpf_snprintf' requires arg4 to be a multiple of 8"
         ))
     );
+    assert_eq!(
+        BpfHelper::Snprintf.scalar_arg_range_requirement(1),
+        Some((
+            0,
+            u32::MAX as i64,
+            "snprintf helpers require arg1 str_size to be between 0 and u32::MAX"
+        ))
+    );
+    assert_eq!(
+        BpfHelper::Snprintf.scalar_arg_range_requirement(4),
+        Some((
+            0,
+            u32::MAX as i64,
+            "helper 'bpf_snprintf' requires arg4 data_len to be between 0 and u32::MAX"
+        ))
+    );
 
     let semantics = BpfHelper::Snprintf.semantics();
     assert!(semantics.positive_size_args.is_empty());
@@ -3579,6 +3595,25 @@ fn test_trace_vprintk_helper_contract() {
             "helper 'bpf_trace_vprintk' requires arg3 to be a multiple of 8"
         ))
     );
+    for helper in [BpfHelper::TracePrintk, BpfHelper::TraceVPrintk] {
+        assert_eq!(
+            helper.scalar_arg_range_requirement(1),
+            Some((
+                0,
+                u32::MAX as i64,
+                "trace print helpers require arg1 fmt_size to be between 0 and u32::MAX"
+            )),
+            "{helper:?}"
+        );
+    }
+    assert_eq!(
+        BpfHelper::TraceVPrintk.scalar_arg_range_requirement(3),
+        Some((
+            0,
+            u32::MAX as i64,
+            "helper 'bpf_trace_vprintk' requires arg3 data_len to be between 0 and u32::MAX"
+        ))
+    );
 
     let semantics = BpfHelper::TraceVPrintk.semantics();
     assert_eq!(semantics.positive_size_args, &[1]);
@@ -3621,6 +3656,22 @@ fn test_seq_output_helper_contracts() {
             "helper 'bpf_seq_printf' requires arg4 to be a multiple of 8"
         ))
     );
+    assert_eq!(
+        BpfHelper::SeqPrintf.scalar_arg_range_requirement(2),
+        Some((
+            0,
+            u32::MAX as i64,
+            "helper 'bpf_seq_printf' requires arg2 fmt_size to be between 0 and u32::MAX"
+        ))
+    );
+    assert_eq!(
+        BpfHelper::SeqPrintf.scalar_arg_range_requirement(4),
+        Some((
+            0,
+            u32::MAX as i64,
+            "helper 'bpf_seq_printf' requires arg4 data_len to be between 0 and u32::MAX"
+        ))
+    );
 
     let semantics = BpfHelper::SeqPrintf.semantics();
     assert_eq!(semantics.ptr_arg_rules.len(), 3);
@@ -3643,6 +3694,14 @@ fn test_seq_output_helper_contracts() {
     assert_eq!(
         BpfHelper::SeqWrite.scalar_arg_nonnegative_requirement(2),
         Some("helper 'bpf_seq_write' requires arg2 to be >= 0")
+    );
+    assert_eq!(
+        BpfHelper::SeqWrite.scalar_arg_range_requirement(2),
+        Some((
+            0,
+            u32::MAX as i64,
+            "helper 'bpf_seq_write' requires arg2 len to be between 0 and u32::MAX"
+        ))
     );
 
     let sig = HelperSignature::for_id(BpfHelper::SeqPrintfBtf as u32)
@@ -3672,6 +3731,14 @@ fn test_snprintf_btf_helper_contract() {
     assert_eq!(
         BpfHelper::SnprintfBtf.scalar_arg_nonnegative_requirement(1),
         Some("helper 'bpf_snprintf_btf' requires arg1 to be >= 0")
+    );
+    assert_eq!(
+        BpfHelper::SnprintfBtf.scalar_arg_range_requirement(1),
+        Some((
+            0,
+            u32::MAX as i64,
+            "snprintf helpers require arg1 str_size to be between 0 and u32::MAX"
+        ))
     );
     assert_eq!(
         BpfHelper::SnprintfBtf.scalar_arg_const_requirement(),

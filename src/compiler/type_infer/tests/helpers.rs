@@ -1888,6 +1888,62 @@ fn test_type_error_snprintf_size_and_alignment() {
     }));
 }
 
+fn make_snprintf_helper_call(str_size: i64, data_len: i64) -> MirFunction {
+    let mut func = make_test_function();
+    let out_slot = func.alloc_stack_slot(32, 8, StackSlotKind::StringBuffer);
+    let data_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let fmt = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadGlobal {
+        dst: fmt,
+        symbol: "__nu_rodata_fmt".to_string(),
+        ty: MirType::Array {
+            elem: Box::new(MirType::U8),
+            len: 16,
+        },
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::Snprintf as u32,
+        args: vec![
+            MirValue::StackSlot(out_slot),
+            MirValue::Const(str_size),
+            MirValue::VReg(fmt),
+            MirValue::StackSlot(data_slot),
+            MirValue::Const(data_len),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+    func
+}
+
+#[test]
+fn test_type_error_snprintf_rejects_size_over_u32() {
+    for (str_size, data_len, expected) in [
+        (
+            0x1_0000_0000,
+            16,
+            "snprintf helpers require arg1 str_size to be between 0 and u32::MAX",
+        ),
+        (
+            32,
+            0x1_0000_0000,
+            "helper 'bpf_snprintf' requires arg4 data_len to be between 0 and u32::MAX",
+        ),
+    ] {
+        let func = make_snprintf_helper_call(str_size, data_len);
+        let mut ti = TypeInference::new(None);
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected snprintf size range error");
+        assert!(
+            errs.iter().any(|e| e.message.contains(expected)),
+            "expected {expected:?}, got {errs:?}"
+        );
+    }
+}
+
 #[test]
 fn test_infer_snprintf_btf_helper_accepts_stack_buffers() {
     let mut func = make_test_function();
@@ -1955,6 +2011,39 @@ fn test_type_error_snprintf_btf_size_and_shape() {
         e.message
             .contains("helper 'bpf_snprintf_btf' requires arg4 to contain only BTF_F_* bits")
     }));
+}
+
+#[test]
+fn test_type_error_snprintf_btf_rejects_size_over_u32() {
+    let mut func = make_test_function();
+    let out_slot = func.alloc_stack_slot(32, 8, StackSlotKind::StringBuffer);
+    let btf_ptr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SnprintfBtf as u32,
+        args: vec![
+            MirValue::StackSlot(out_slot),
+            MirValue::Const(0x1_0000_0000),
+            MirValue::StackSlot(btf_ptr_slot),
+            MirValue::Const(16),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected snprintf_btf size range error");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("snprintf helpers require arg1 str_size to be between 0 and u32::MAX")),
+        "unexpected errors: {:?}",
+        errs
+    );
 }
 
 #[test]
@@ -2114,6 +2203,86 @@ fn test_type_error_seq_output_helpers_reject_invalid_shapes() {
         let errs = ti
             .infer(&func)
             .expect_err("expected seq helper shape error");
+        assert!(
+            errs.iter().any(|e| e.message.contains(expected)),
+            "expected {expected:?}, got {errs:?}"
+        );
+    }
+}
+
+#[test]
+fn test_type_error_seq_output_helpers_reject_size_over_u32() {
+    let cases = [
+        (
+            BpfHelper::SeqPrintf,
+            vec![
+                MirValue::VReg(VReg(0)),
+                MirValue::StackSlot(StackSlotId(0)),
+                MirValue::Const(0x1_0000_0000),
+                MirValue::StackSlot(StackSlotId(1)),
+                MirValue::Const(16),
+            ],
+            16,
+            16,
+            "helper 'bpf_seq_printf' requires arg2 fmt_size to be between 0 and u32::MAX",
+        ),
+        (
+            BpfHelper::SeqPrintf,
+            vec![
+                MirValue::VReg(VReg(0)),
+                MirValue::StackSlot(StackSlotId(0)),
+                MirValue::Const(16),
+                MirValue::StackSlot(StackSlotId(1)),
+                MirValue::Const(0x1_0000_0000),
+            ],
+            16,
+            16,
+            "helper 'bpf_seq_printf' requires arg4 data_len to be between 0 and u32::MAX",
+        ),
+        (
+            BpfHelper::SeqWrite,
+            vec![
+                MirValue::VReg(VReg(0)),
+                MirValue::StackSlot(StackSlotId(0)),
+                MirValue::Const(0x1_0000_0000),
+            ],
+            16,
+            0,
+            "helper 'bpf_seq_write' requires arg2 len to be between 0 and u32::MAX",
+        ),
+    ];
+
+    for (helper, args, first_slot_size, second_slot_size, expected) in cases {
+        let mut func = make_test_function();
+        let seq = func.alloc_vreg();
+        assert_eq!(seq, VReg(0));
+        let first_slot = func.alloc_stack_slot(first_slot_size, 8, StackSlotKind::StringBuffer);
+        assert_eq!(first_slot, StackSlotId(0));
+        if second_slot_size > 0 {
+            let second_slot =
+                func.alloc_stack_slot(second_slot_size, 8, StackSlotKind::StringBuffer);
+            assert_eq!(second_slot, StackSlotId(1));
+        }
+        let dst = func.alloc_vreg();
+
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::LoadCtxField {
+            dst: seq,
+            field: CtxField::Context,
+            slot: None,
+        });
+        block.instructions.push(MirInst::CallHelper {
+            dst,
+            helper: helper as u32,
+            args,
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Iter, "task");
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected seq helper size range error");
         assert!(
             errs.iter().any(|e| e.message.contains(expected)),
             "expected {expected:?}, got {errs:?}"
@@ -9121,6 +9290,20 @@ fn make_trace_vprintk_call(
     (func, dst)
 }
 
+fn make_trace_printk_call(fmt_size: i64, fmt_slot_size: usize) -> MirFunction {
+    let mut func = make_test_function();
+    let fmt_slot = func.alloc_stack_slot(fmt_slot_size, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::TracePrintk as u32,
+        args: vec![MirValue::StackSlot(fmt_slot), MirValue::Const(fmt_size)],
+    });
+    block.terminator = MirInst::Return { val: None };
+    func
+}
+
 #[test]
 fn test_infer_trace_vprintk_helper() {
     let (func, dst) = make_trace_vprintk_call(8, 8, 16, 16);
@@ -9161,6 +9344,33 @@ fn test_type_error_trace_vprintk_helper_rejects_invalid_data_len() {
         "unexpected errors: {:?}",
         errs
     );
+}
+
+#[test]
+fn test_type_error_trace_print_helpers_reject_size_over_u32() {
+    for (func, expected) in [
+        (
+            make_trace_printk_call(0x1_0000_0000, 8),
+            "trace print helpers require arg1 fmt_size to be between 0 and u32::MAX",
+        ),
+        (
+            make_trace_vprintk_call(0x1_0000_0000, 8, 16, 16).0,
+            "trace print helpers require arg1 fmt_size to be between 0 and u32::MAX",
+        ),
+        (
+            make_trace_vprintk_call(8, 8, 0x1_0000_0000, 16).0,
+            "helper 'bpf_trace_vprintk' requires arg3 data_len to be between 0 and u32::MAX",
+        ),
+    ] {
+        let mut ti = TypeInference::new(None);
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected trace print size range error");
+        assert!(
+            errs.iter().any(|e| e.message.contains(expected)),
+            "expected {expected:?}, got {errs:?}"
+        );
+    }
 }
 
 #[test]
