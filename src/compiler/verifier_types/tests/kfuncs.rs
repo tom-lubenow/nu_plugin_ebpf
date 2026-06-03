@@ -12158,6 +12158,73 @@ fn test_kfunc_crypto_ctx_create_params_requires_stack_or_map_space() {
 }
 
 #[test]
+fn test_kfunc_crypto_ctx_create_rejects_zero_params_size() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let params = func.alloc_vreg();
+    let params_sz = func.alloc_vreg();
+    let err_ptr = func.alloc_vreg();
+    let crypto_ctx = func.alloc_vreg();
+    let params_slot = func.alloc_stack_slot(512, 8, StackSlotKind::StringBuffer);
+    let err_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: params,
+        src: MirValue::StackSlot(params_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: params_sz,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: err_ptr,
+        src: MirValue::StackSlot(err_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: crypto_ctx,
+        kfunc: "bpf_crypto_ctx_create".to_string(),
+        btf_id: None,
+        args: vec![params, params_sz, err_ptr],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        params,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(params_sz, MirType::I64);
+    types.insert(
+        err_ptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Stack,
+        },
+    );
+    types.insert(
+        crypto_ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+
+    let err = verify_mir(&func, &types).expect_err("expected crypto_ctx_create zero-size error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("kfunc 'bpf_crypto_ctx_create' arg1 must be > 0")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_kfunc_crypto_ctx_create_err_requires_stack_slot_base_pointer() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

@@ -4900,6 +4900,49 @@ fn test_type_error_kfunc_crypto_ctx_create_params_requires_stack_or_map_space() 
 }
 
 #[test]
+fn test_type_error_kfunc_crypto_ctx_create_rejects_zero_params_size() {
+    let mut func = make_test_function();
+    let params = func.alloc_vreg();
+    let params_sz = func.alloc_vreg();
+    let err_ptr = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let params_slot = func.alloc_stack_slot(512, 8, StackSlotKind::StringBuffer);
+    let err_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: params,
+        src: MirValue::StackSlot(params_slot),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: params_sz,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: err_ptr,
+        src: MirValue::StackSlot(err_slot),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_crypto_ctx_create".to_string(),
+        btf_id: None,
+        args: vec![params, params_sz, err_ptr],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected crypto_ctx_create zero-size type error");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("kfunc 'bpf_crypto_ctx_create' arg1 must be > 0")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
 fn test_type_error_kfunc_crypto_ctx_create_err_requires_stack_slot_base_pointer() {
     let mut func = make_test_function();
     let params = func.alloc_vreg();
