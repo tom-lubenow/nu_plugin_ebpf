@@ -6120,7 +6120,7 @@ fn test_verify_mir_for_probe_context_sk_cgroup_helpers_accept_cgroup_skb() {
                 args: vec![
                     MirValue::VReg(ctx),
                     MirValue::StackSlot(tuple_slot),
-                    MirValue::Const(16),
+                    MirValue::Const(12),
                     MirValue::Const(0),
                     MirValue::Const(0),
                 ],
@@ -11898,7 +11898,7 @@ fn test_verify_mir_for_probe_context_sk_lookup_tcp_rejects_invalid_program() {
             args: vec![
                 MirValue::VReg(ctx),
                 MirValue::StackSlot(tuple_slot),
-                MirValue::Const(16),
+                MirValue::Const(12),
                 MirValue::Const(0),
                 MirValue::Const(0),
             ],
@@ -11949,7 +11949,7 @@ fn test_verify_mir_for_probe_context_sk_lookup_tcp_accepts_xdp() {
             args: vec![
                 MirValue::VReg(ctx),
                 MirValue::StackSlot(tuple_slot),
-                MirValue::Const(16),
+                MirValue::Const(12),
                 MirValue::Const(0),
                 MirValue::Const(0),
             ],
@@ -12003,7 +12003,7 @@ fn make_socket_lookup_vcc_call(
     helper: BpfHelper,
     flags: i64,
 ) -> (MirFunction, HashMap<VReg, MirType>) {
-    make_socket_lookup_vcc_call_with_tuple_size_and_netns(helper, 16, 0, flags)
+    make_socket_lookup_vcc_call_with_tuple_size_and_netns(helper, 12, 0, flags)
 }
 
 fn make_socket_lookup_vcc_call_with_tuple_size(
@@ -12091,7 +12091,7 @@ fn test_verify_mir_for_probe_context_socket_lookup_rejects_netns_outside_i32_ran
     ] {
         for netns in [i32::MIN as i64 - 1, i32::MAX as i64 + 1] {
             let (func, types) =
-                make_socket_lookup_vcc_call_with_tuple_size_and_netns(helper, 16, netns, 0);
+                make_socket_lookup_vcc_call_with_tuple_size_and_netns(helper, 12, netns, 0);
             let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
             let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
                 .expect_err("expected socket lookup netns range error");
@@ -12123,6 +12123,28 @@ fn test_verify_mir_for_probe_context_socket_lookup_rejects_tuple_size_above_u32_
         assert!(
             err.iter().any(|e| e.message.contains(
                 "socket lookup helpers require arg2 tuple_size to be between 0 and u32::MAX"
+            )),
+            "unexpected errors for {:?}: {:?}",
+            helper,
+            err
+        );
+    }
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_socket_lookup_rejects_invalid_tuple_size() {
+    for helper in [
+        BpfHelper::SkLookupTcp,
+        BpfHelper::SkLookupUdp,
+        BpfHelper::SkcLookupTcp,
+    ] {
+        let (func, types) = make_socket_lookup_vcc_call_with_tuple_size(helper, 16, 0);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+        let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect_err("expected socket lookup tuple_size exact-size error");
+        assert!(
+            err.iter().any(|e| e.message.contains(
+                "socket lookup helpers require arg2 tuple_size to be sizeof(tuple->ipv4) (12) or sizeof(tuple->ipv6) (36)"
             )),
             "unexpected errors for {:?}: {:?}",
             helper,
@@ -12447,7 +12469,7 @@ fn test_verify_mir_for_probe_context_get_listener_sock_accepts_cgroup_skb() {
             args: vec![
                 MirValue::VReg(ctx),
                 MirValue::StackSlot(tuple_slot),
-                MirValue::Const(16),
+                MirValue::Const(12),
                 MirValue::Const(0),
                 MirValue::Const(0),
             ],
@@ -12582,7 +12604,7 @@ fn test_verify_mir_for_probe_context_sk_fullsock_accepts_cgroup_skb() {
             args: vec![
                 MirValue::VReg(ctx),
                 MirValue::StackSlot(tuple_slot),
-                MirValue::Const(16),
+                MirValue::Const(12),
                 MirValue::Const(0),
                 MirValue::Const(0),
             ],
@@ -18876,7 +18898,7 @@ fn test_verify_mir_for_probe_context_tcp_check_syncookie_accepts_xdp() {
             args: vec![
                 MirValue::VReg(ctx),
                 MirValue::StackSlot(tuple_slot),
-                MirValue::Const(16),
+                MirValue::Const(12),
                 MirValue::Const(0),
                 MirValue::Const(0),
             ],
@@ -18963,7 +18985,7 @@ fn test_verify_mir_for_probe_context_tcp_gen_syncookie_accepts_tc() {
             args: vec![
                 MirValue::VReg(ctx),
                 MirValue::StackSlot(tuple_slot),
-                MirValue::Const(16),
+                MirValue::Const(12),
                 MirValue::Const(0),
                 MirValue::Const(0),
             ],
@@ -21360,7 +21382,7 @@ fn test_verify_mir_helper_sk_lookup_release_socket_reference() {
             args: vec![
                 MirValue::VReg(ctx),
                 MirValue::StackSlot(tuple_slot),
-                MirValue::Const(16),
+                MirValue::Const(12),
                 MirValue::Const(0),
                 MirValue::Const(0),
             ],
@@ -21445,7 +21467,7 @@ fn test_verify_mir_helper_sk_release_rejected_after_partial_lookup_join() {
             args: vec![
                 MirValue::VReg(ctx),
                 MirValue::StackSlot(tuple_slot),
-                MirValue::Const(16),
+                MirValue::Const(12),
                 MirValue::Const(0),
                 MirValue::Const(0),
             ],
@@ -21536,7 +21558,7 @@ fn test_verify_mir_helper_sk_release_accepts_explicit_null_after_lookup_join() {
             args: vec![
                 MirValue::VReg(ctx),
                 MirValue::StackSlot(tuple_slot),
-                MirValue::Const(16),
+                MirValue::Const(12),
                 MirValue::Const(0),
                 MirValue::Const(0),
             ],
@@ -21633,7 +21655,7 @@ fn test_verify_mir_helper_sk_release_accepts_explicit_null_phi_after_lookup_join
             args: vec![
                 MirValue::VReg(ctx),
                 MirValue::StackSlot(tuple_slot),
-                MirValue::Const(16),
+                MirValue::Const(12),
                 MirValue::Const(0),
                 MirValue::Const(0),
             ],
@@ -21737,7 +21759,7 @@ fn test_verify_mir_helper_sk_release_rejects_nonzero_scalar_phi_after_lookup_joi
             args: vec![
                 MirValue::VReg(ctx),
                 MirValue::StackSlot(tuple_slot),
-                MirValue::Const(16),
+                MirValue::Const(12),
                 MirValue::Const(0),
                 MirValue::Const(0),
             ],
@@ -21851,7 +21873,7 @@ fn test_verify_mir_helper_sk_release_rejects_double_release() {
             args: vec![
                 MirValue::VReg(ctx),
                 MirValue::StackSlot(tuple_slot),
-                MirValue::Const(16),
+                MirValue::Const(12),
                 MirValue::Const(0),
                 MirValue::Const(0),
             ],
@@ -21953,7 +21975,7 @@ fn test_verify_mir_helper_sk_release_rejects_use_after_release_projection() {
             args: vec![
                 MirValue::VReg(ctx),
                 MirValue::StackSlot(tuple_slot),
-                MirValue::Const(16),
+                MirValue::Const(12),
                 MirValue::Const(0),
                 MirValue::Const(0),
             ],
@@ -26051,7 +26073,7 @@ fn test_verify_mir_helper_sk_lookup_leak_is_rejected() {
             args: vec![
                 MirValue::VReg(ctx),
                 MirValue::StackSlot(tuple_slot),
-                MirValue::Const(16),
+                MirValue::Const(12),
                 MirValue::Const(0),
                 MirValue::Const(0),
             ],
@@ -26133,7 +26155,7 @@ fn test_verify_mir_helper_skc_lookup_release_socket_reference() {
             args: vec![
                 MirValue::VReg(ctx),
                 MirValue::StackSlot(tuple_slot),
-                MirValue::Const(16),
+                MirValue::Const(12),
                 MirValue::Const(0),
                 MirValue::Const(0),
             ],

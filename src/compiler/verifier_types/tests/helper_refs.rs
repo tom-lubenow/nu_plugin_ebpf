@@ -769,7 +769,7 @@ fn test_helper_sk_lookup_release_socket_reference() {
             args: vec![
                 MirValue::VReg(ctx),
                 MirValue::StackSlot(tuple_slot),
-                MirValue::Const(16),
+                MirValue::Const(12),
                 MirValue::Const(0),
                 MirValue::Const(0),
             ],
@@ -856,7 +856,7 @@ fn test_helper_sk_release_rejected_after_partial_lookup_join() {
             args: vec![
                 MirValue::VReg(ctx),
                 MirValue::StackSlot(tuple_slot),
-                MirValue::Const(16),
+                MirValue::Const(12),
                 MirValue::Const(0),
                 MirValue::Const(0),
             ],
@@ -948,7 +948,7 @@ fn test_helper_sk_release_accepts_explicit_null_after_lookup_join() {
             args: vec![
                 MirValue::VReg(ctx),
                 MirValue::StackSlot(tuple_slot),
-                MirValue::Const(16),
+                MirValue::Const(12),
                 MirValue::Const(0),
                 MirValue::Const(0),
             ],
@@ -1047,7 +1047,7 @@ fn test_helper_sk_release_accepts_explicit_null_phi_after_lookup_join() {
             args: vec![
                 MirValue::VReg(ctx),
                 MirValue::StackSlot(tuple_slot),
-                MirValue::Const(16),
+                MirValue::Const(12),
                 MirValue::Const(0),
                 MirValue::Const(0),
             ],
@@ -1153,7 +1153,7 @@ fn test_helper_sk_release_rejects_nonzero_scalar_phi_after_lookup_join() {
             args: vec![
                 MirValue::VReg(ctx),
                 MirValue::StackSlot(tuple_slot),
-                MirValue::Const(16),
+                MirValue::Const(12),
                 MirValue::Const(0),
                 MirValue::Const(0),
             ],
@@ -1267,7 +1267,7 @@ fn test_helper_sk_release_rejects_double_release() {
             args: vec![
                 MirValue::VReg(ctx),
                 MirValue::StackSlot(tuple_slot),
-                MirValue::Const(16),
+                MirValue::Const(12),
                 MirValue::Const(0),
                 MirValue::Const(0),
             ],
@@ -1371,7 +1371,7 @@ fn test_helper_sk_release_rejects_use_after_release_projection() {
             args: vec![
                 MirValue::VReg(ctx),
                 MirValue::StackSlot(tuple_slot),
-                MirValue::Const(16),
+                MirValue::Const(12),
                 MirValue::Const(0),
                 MirValue::Const(0),
             ],
@@ -3411,7 +3411,7 @@ fn test_helper_sk_lookup_leak_is_rejected() {
             args: vec![
                 MirValue::VReg(ctx),
                 MirValue::StackSlot(tuple_slot),
-                MirValue::Const(16),
+                MirValue::Const(12),
                 MirValue::Const(0),
                 MirValue::Const(0),
             ],
@@ -3495,7 +3495,7 @@ fn test_helper_skc_lookup_release_socket_reference() {
             args: vec![
                 MirValue::VReg(ctx),
                 MirValue::StackSlot(tuple_slot),
-                MirValue::Const(16),
+                MirValue::Const(12),
                 MirValue::Const(0),
                 MirValue::Const(0),
             ],

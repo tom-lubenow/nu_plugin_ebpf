@@ -8221,7 +8221,7 @@ fn test_infer_sk_cgroup_helpers_in_cgroup_skb_program() {
             args: vec![
                 MirValue::VReg(ctx),
                 MirValue::StackSlot(tuple_slot),
-                MirValue::Const(16),
+                MirValue::Const(12),
                 MirValue::Const(0),
                 MirValue::Const(0),
             ],
@@ -8374,7 +8374,7 @@ fn make_sk_ancestor_cgroup_id_call(level: i64) -> MirFunction {
         args: vec![
             MirValue::VReg(ctx),
             MirValue::StackSlot(tuple_slot),
-            MirValue::Const(16),
+            MirValue::Const(12),
             MirValue::Const(0),
             MirValue::Const(0),
         ],
@@ -8943,7 +8943,7 @@ fn test_type_error_sk_lookup_tcp_helper_rejects_invalid_program() {
         args: vec![
             MirValue::VReg(ctx),
             MirValue::StackSlot(tuple_slot),
-            MirValue::Const(16),
+            MirValue::Const(12),
             MirValue::Const(0),
             MirValue::Const(0),
         ],
@@ -8980,7 +8980,7 @@ fn test_infer_sk_lookup_tcp_helper_in_xdp_program() {
         args: vec![
             MirValue::VReg(ctx),
             MirValue::StackSlot(tuple_slot),
-            MirValue::Const(16),
+            MirValue::Const(12),
             MirValue::Const(0),
             MirValue::Const(0),
         ],
@@ -9009,6 +9009,15 @@ fn make_socket_lookup_call_with_netns(
     netns: i64,
     flags: i64,
 ) -> (MirFunction, VReg) {
+    make_socket_lookup_call_with_tuple_size_and_netns(helper, 12, netns, flags)
+}
+
+fn make_socket_lookup_call_with_tuple_size_and_netns(
+    helper: BpfHelper,
+    tuple_size: i64,
+    netns: i64,
+    flags: i64,
+) -> (MirFunction, VReg) {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();
     let dst = func.alloc_vreg();
@@ -9025,13 +9034,37 @@ fn make_socket_lookup_call_with_netns(
         args: vec![
             MirValue::VReg(ctx),
             MirValue::StackSlot(tuple_slot),
-            MirValue::Const(16),
+            MirValue::Const(tuple_size),
             MirValue::Const(netns),
             MirValue::Const(flags),
         ],
     });
     block.terminator = MirInst::Return { val: None };
     (func, dst)
+}
+
+#[test]
+fn test_type_error_socket_lookup_helpers_reject_invalid_tuple_size() {
+    for helper in [
+        BpfHelper::SkLookupTcp,
+        BpfHelper::SkLookupUdp,
+        BpfHelper::SkcLookupTcp,
+    ] {
+        let (func, _) = make_socket_lookup_call_with_tuple_size_and_netns(helper, 16, 0, 0);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected socket lookup tuple_size exact-size error");
+        assert!(
+            errs.iter().any(|e| e.message.contains(
+                "socket lookup helpers require arg2 tuple_size to be sizeof(tuple->ipv4) (12) or sizeof(tuple->ipv6) (36)"
+            )),
+            "unexpected errors for {:?}: {:?}",
+            helper,
+            errs
+        );
+    }
 }
 
 #[test]
@@ -9305,7 +9338,7 @@ fn test_infer_get_listener_sock_helper_in_cgroup_skb_program() {
         args: vec![
             MirValue::VReg(ctx),
             MirValue::StackSlot(tuple_slot),
-            MirValue::Const(16),
+            MirValue::Const(12),
             MirValue::Const(0),
             MirValue::Const(0),
         ],
@@ -9379,7 +9412,7 @@ fn test_infer_sk_fullsock_helper_in_cgroup_skb_program() {
         args: vec![
             MirValue::VReg(ctx),
             MirValue::StackSlot(tuple_slot),
-            MirValue::Const(16),
+            MirValue::Const(12),
             MirValue::Const(0),
             MirValue::Const(0),
         ],
@@ -9637,7 +9670,7 @@ fn test_infer_skc_to_tcp_sock_helper_in_xdp_program() {
         args: vec![
             MirValue::VReg(ctx),
             MirValue::StackSlot(tuple_slot),
-            MirValue::Const(16),
+            MirValue::Const(12),
             MirValue::Const(0),
             MirValue::Const(0),
         ],
@@ -12019,7 +12052,7 @@ fn test_infer_tcp_check_syncookie_helper_in_xdp_program() {
         args: vec![
             MirValue::VReg(ctx),
             MirValue::StackSlot(tuple_slot),
-            MirValue::Const(16),
+            MirValue::Const(12),
             MirValue::Const(0),
             MirValue::Const(0),
         ],
@@ -12087,7 +12120,7 @@ fn test_infer_tcp_gen_syncookie_helper_in_tc_program() {
         args: vec![
             MirValue::VReg(ctx),
             MirValue::StackSlot(tuple_slot),
-            MirValue::Const(16),
+            MirValue::Const(12),
             MirValue::Const(0),
             MirValue::Const(0),
         ],
@@ -13304,7 +13337,7 @@ fn test_infer_helper_sk_lookup_returns_kernel_pointer() {
         args: vec![
             MirValue::VReg(ctx),
             MirValue::StackSlot(tuple_slot),
-            MirValue::Const(16),
+            MirValue::Const(12),
             MirValue::Const(0),
             MirValue::Const(0),
         ],
@@ -13342,7 +13375,7 @@ fn test_infer_helper_skc_lookup_returns_kernel_pointer() {
         args: vec![
             MirValue::VReg(ctx),
             MirValue::StackSlot(tuple_slot),
-            MirValue::Const(16),
+            MirValue::Const(12),
             MirValue::Const(0),
             MirValue::Const(0),
         ],
@@ -13419,7 +13452,7 @@ fn test_type_error_helper_sk_lookup_rejects_netns_outside_i32_range() {
             args: vec![
                 MirValue::VReg(ctx),
                 MirValue::StackSlot(tuple_slot),
-                MirValue::Const(16),
+                MirValue::Const(12),
                 MirValue::Const(netns),
                 MirValue::Const(0),
             ],
@@ -13459,7 +13492,7 @@ fn test_infer_helper_get_listener_sock_returns_kernel_pointer() {
         args: vec![
             MirValue::VReg(ctx),
             MirValue::StackSlot(tuple_slot),
-            MirValue::Const(16),
+            MirValue::Const(12),
             MirValue::Const(0),
             MirValue::Const(0),
         ],
@@ -13495,7 +13528,7 @@ fn test_infer_helper_sk_fullsock_returns_kernel_pointer() {
         args: vec![
             MirValue::VReg(ctx),
             MirValue::StackSlot(tuple_slot),
-            MirValue::Const(16),
+            MirValue::Const(12),
             MirValue::Const(0),
             MirValue::Const(0),
         ],
@@ -13531,7 +13564,7 @@ fn test_infer_helper_tcp_sock_returns_kernel_pointer() {
         args: vec![
             MirValue::VReg(ctx),
             MirValue::StackSlot(tuple_slot),
-            MirValue::Const(16),
+            MirValue::Const(12),
             MirValue::Const(0),
             MirValue::Const(0),
         ],
@@ -13567,7 +13600,7 @@ fn test_infer_helper_skc_to_tcp_sock_returns_kernel_pointer() {
         args: vec![
             MirValue::VReg(ctx),
             MirValue::StackSlot(tuple_slot),
-            MirValue::Const(16),
+            MirValue::Const(12),
             MirValue::Const(0),
             MirValue::Const(0),
         ],
@@ -13606,7 +13639,7 @@ fn test_infer_helper_skc_to_tcp6_sock_returns_kernel_pointer() {
         args: vec![
             MirValue::VReg(ctx),
             MirValue::StackSlot(tuple_slot),
-            MirValue::Const(16),
+            MirValue::Const(12),
             MirValue::Const(0),
             MirValue::Const(0),
         ],
@@ -13669,7 +13702,7 @@ fn test_infer_helper_additional_skc_casts_return_kernel_pointer() {
             args: vec![
                 MirValue::VReg(ctx),
                 MirValue::StackSlot(tuple_slot),
-                MirValue::Const(16),
+                MirValue::Const(12),
                 MirValue::Const(0),
                 MirValue::Const(0),
             ],

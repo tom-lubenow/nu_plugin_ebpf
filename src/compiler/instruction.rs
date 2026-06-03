@@ -17,6 +17,7 @@ const MAP_PUSH_FLAGS: &[i64] = &[0, 2];
 const TIMER_INIT_FLAGS: &[i64] = &[0, 1, 7];
 const LWT_SEG6_ACTIONS: &[i64] = &[2, 3, 9, 10];
 const BPF_CSUM_LEVELS: &[i64] = &[0, 1, 2, 3];
+const SOCKET_LOOKUP_TUPLE_SIZES: &[i64] = &[12, 36];
 const BPF_ANCESTOR_CGROUP_LEVEL_MAX: i64 = i32::MAX as i64;
 const SKB_CHANGE_PROTO_PROTOCOLS: &[i64] = &[0x0800, 0x86dd];
 const BPF_F_HDR_FIELD_MASK: i64 = 0x0f;
@@ -2228,6 +2229,10 @@ impl BpfHelper {
                 SKB_TUNNEL_KEY_SIZES,
                 "skb tunnel key helpers require arg2 size to be one of 8, 22, 24, 28, or 44 bytes",
             )),
+            (Self::SkLookupTcp | Self::SkLookupUdp | Self::SkcLookupTcp, 2) => Some((
+                SOCKET_LOOKUP_TUPLE_SIZES,
+                "socket lookup helpers require arg2 tuple_size to be sizeof(tuple->ipv4) (12) or sizeof(tuple->ipv6) (36)",
+            )),
             (Self::SkbChangeProto, 1) => Some((
                 SKB_CHANGE_PROTO_PROTOCOLS,
                 "helper 'bpf_skb_change_proto' requires arg1 proto to be ETH_P_IP or ETH_P_IPV6",
@@ -2298,6 +2303,9 @@ impl BpfHelper {
             (Self::DynptrData, 2) => Some("helper 'bpf_dynptr_data' arg2 must be known constant"),
             (Self::SkbGetTunnelKey | Self::SkbSetTunnelKey, 2) => {
                 Some("skb tunnel key helpers require arg2 size to be a known constant")
+            }
+            (Self::SkLookupTcp | Self::SkLookupUdp | Self::SkcLookupTcp, 2) => {
+                Some("socket lookup helpers require arg2 tuple_size to be a known constant")
             }
             _ => None,
         }

@@ -5005,6 +5005,17 @@ fn test_helper_signature_socket_helpers() {
             ))
         );
         assert_eq!(
+            helper.scalar_arg_allowed_values_requirement(2),
+            Some((
+                &[12, 36][..],
+                "socket lookup helpers require arg2 tuple_size to be sizeof(tuple->ipv4) (12) or sizeof(tuple->ipv6) (36)"
+            ))
+        );
+        assert_eq!(
+            helper.scalar_arg_known_const_requirement(2),
+            Some("socket lookup helpers require arg2 tuple_size to be a known constant")
+        );
+        assert_eq!(
             helper.scalar_arg_range_requirement(3),
             Some((
                 i32::MIN as i64,
