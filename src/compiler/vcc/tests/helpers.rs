@@ -10130,6 +10130,23 @@ fn test_verify_mir_for_probe_context_skb_store_bytes_rejects_len_over_u32() {
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_skb_load_bytes_rejects_len_over_u32() {
+    for helper in [BpfHelper::SkbLoadBytes, BpfHelper::SkbLoadBytesRelative] {
+        let (func, types) = make_skb_bytes_vcc_call(helper, 0, 0x1_0000_0000);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+        let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect_err("expected skb load byte helper len range validation error");
+        assert!(
+            err.iter().any(|e| e
+                .message
+                .contains("skb load byte helpers require arg3 len to be between 0 and u32::MAX")),
+            "unexpected errors for {helper:?}: {:?}",
+            err
+        );
+    }
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_flow_dissector_skb_load_bytes_rejects_large_offset() {
     let (func, types) = make_skb_bytes_vcc_call(BpfHelper::SkbLoadBytes, 0x1_0000, 4);
     let probe_ctx = ProbeContext::new(EbpfProgramType::FlowDissector, "/proc/self/ns/net");

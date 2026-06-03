@@ -9324,6 +9324,25 @@ fn test_type_error_skb_store_bytes_rejects_len_over_u32() {
 }
 
 #[test]
+fn test_type_error_skb_load_bytes_rejects_len_over_u32() {
+    for helper in [BpfHelper::SkbLoadBytes, BpfHelper::SkbLoadBytesRelative] {
+        let func = make_skb_bytes_helper_call(helper, 0, 0x1_0000_0000);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected skb load byte helper len range validation error");
+        assert!(
+            errs.iter().any(|e| e
+                .message
+                .contains("skb load byte helpers require arg3 len to be between 0 and u32::MAX")),
+            "unexpected errors for {helper:?}: {:?}",
+            errs
+        );
+    }
+}
+
+#[test]
 fn test_type_error_flow_dissector_skb_load_bytes_rejects_large_offset() {
     let func = make_skb_bytes_helper_call(BpfHelper::SkbLoadBytes, 0x1_0000, 4);
     let probe_ctx = ProbeContext::new(EbpfProgramType::FlowDissector, "/proc/self/ns/net");

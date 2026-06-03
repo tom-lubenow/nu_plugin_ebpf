@@ -2653,6 +2653,17 @@ fn test_skb_store_bytes_helper_flag_contract() {
             "helper 'bpf_skb_store_bytes' requires arg3 len to be between 0 and u32::MAX"
         ))
     );
+    for helper in [BpfHelper::SkbLoadBytes, BpfHelper::SkbLoadBytesRelative] {
+        assert_eq!(
+            helper.scalar_arg_range_requirement(3),
+            Some((
+                0,
+                u32::MAX as i64,
+                "skb load byte helpers require arg3 len to be between 0 and u32::MAX"
+            )),
+            "{helper:?}"
+        );
+    }
     for helper in [BpfHelper::SkbStoreBytes, BpfHelper::SkbLoadBytes] {
         assert_eq!(
             helper.scalar_arg_range_requirement(1),

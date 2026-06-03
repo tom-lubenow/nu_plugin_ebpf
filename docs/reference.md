@@ -477,12 +477,13 @@ underlying packet buffer may change. Raw packet-copy helpers are modeled too:
 `bpf_skb_load_bytes` works on `flow_dissector`, `socket_filter`, `lwt_*`,
 `tc`, `tcx`, `netkit`, `cgroup_skb`, `sk_reuseport`, `sk_skb`, and `sk_skb_parser`;
 `bpf_skb_load_bytes` / `bpf_skb_store_bytes` offsets must fit `0..i32::MAX`,
-and `bpf_skb_store_bytes` lengths must fit `0..u32::MAX` while still satisfying
-the positive source-buffer size rule.
+and load/store lengths must fit `0..u32::MAX` while still satisfying the
+positive buffer-size rule.
 In `flow_dissector`, `bpf_skb_load_bytes` offsets must fit `0..0xffff`.
 `bpf_skb_load_bytes_relative` works on `socket_filter`, `tc`, `tcx`, `netkit`, `cgroup_skb`,
-and `sk_reuseport`, with `offset` limited to `0..0xffff` and `start_header`
-limited to `BPF_HDR_START_MAC` or `BPF_HDR_START_NET`; and
+and `sk_reuseport`, with `offset` limited to `0..0xffff`, `len` capped to
+`u32::MAX`, and `start_header` limited to `BPF_HDR_START_MAC` or
+`BPF_HDR_START_NET`; and
 `bpf_xdp_get_buff_len`, `bpf_xdp_load_bytes`, and `bpf_xdp_store_bytes` are
 XDP-only. XDP byte helper offsets and lengths must fit `0..0xffff`. XDP
 targets default to SKB/generic attach mode for safer development attaches;
