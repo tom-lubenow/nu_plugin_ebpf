@@ -3339,6 +3339,18 @@ fn test_helper_csum_diff_zero_size_pointer_contract() {
 }
 
 #[test]
+fn test_helper_get_current_comm_size_contract() {
+    assert_eq!(
+        BpfHelper::GetCurrentComm.scalar_arg_range_requirement(1),
+        Some((
+            0,
+            u32::MAX as i64,
+            "helper 'bpf_get_current_comm' requires arg1 size to be between 0 and u32::MAX"
+        ))
+    );
+}
+
+#[test]
 fn test_helper_static_null_pointer_contracts() {
     for (helper, arg_idx) in [
         (BpfHelper::KptrXchg, 1),

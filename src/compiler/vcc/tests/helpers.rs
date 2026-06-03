@@ -16331,6 +16331,38 @@ fn test_verify_mir_helper_trace_vprintk_rejects_invalid_data_len() {
     );
 }
 
+fn make_get_current_comm_vcc_call(size: i64) -> (MirFunction, HashMap<VReg, MirType>) {
+    let (mut func, entry) = new_mir_function();
+    let dst = func.alloc_vreg();
+    let buf = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: 16, // bpf_get_current_comm(buf, size)
+            args: vec![MirValue::StackSlot(buf), MirValue::Const(size)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(dst, MirType::I64);
+    (func, types)
+}
+
+#[test]
+fn test_verify_mir_helper_get_current_comm_rejects_size_over_u32() {
+    let (func, types) = make_get_current_comm_vcc_call(0x1_0000_0000);
+    let err = verify_mir(&func, &types).expect_err("expected get_current_comm size range error");
+    assert!(
+        err.iter().any(|e| e.message.contains(
+            "helper 'bpf_get_current_comm' requires arg1 size to be between 0 and u32::MAX"
+        )),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
 #[test]
 fn test_verify_mir_helper_get_current_comm_variable_size_range_checks_bounds() {
     let (mut func, entry) = new_mir_function();

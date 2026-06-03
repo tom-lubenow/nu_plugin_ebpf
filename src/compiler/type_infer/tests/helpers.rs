@@ -8988,6 +8988,38 @@ fn test_type_error_helper_get_current_comm_rejects_small_stack_slot() {
     );
 }
 
+fn make_get_current_comm_call(size: i64) -> MirFunction {
+    let mut func = make_test_function();
+    let buf_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::GetCurrentComm as u32,
+        args: vec![MirValue::StackSlot(buf_slot), MirValue::Const(size)],
+    });
+    block.terminator = MirInst::Return { val: None };
+    func
+}
+
+#[test]
+fn test_type_error_helper_get_current_comm_rejects_out_of_range_size() {
+    for size in [-1_i64, 0x1_0000_0000] {
+        let func = make_get_current_comm_call(size);
+        let mut ti = TypeInference::new(None);
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected get_current_comm size range error");
+        assert!(
+            errs.iter().any(|e| e.message.contains(
+                "helper 'bpf_get_current_comm' requires arg1 size to be between 0 and u32::MAX"
+            )),
+            "unexpected errors for size {size}: {:?}",
+            errs
+        );
+    }
+}
+
 fn make_trace_vprintk_call(
     fmt_size: i64,
     fmt_slot_size: usize,

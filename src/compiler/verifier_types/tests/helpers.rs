@@ -19690,6 +19690,43 @@ fn test_helper_get_current_comm_checks_dst_bounds() {
     );
 }
 
+fn make_get_current_comm_verify_call(size: i64) -> (MirFunction, HashMap<VReg, MirType>) {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let buf = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: 16, // bpf_get_current_comm(buf, size)
+            args: vec![MirValue::StackSlot(buf), MirValue::Const(size)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(dst, MirType::I64);
+    (func, types)
+}
+
+#[test]
+fn test_helper_get_current_comm_rejects_out_of_range_size() {
+    for size in [-1_i64, 0x1_0000_0000] {
+        let (func, types) = make_get_current_comm_verify_call(size);
+        let err =
+            verify_mir(&func, &types).expect_err("expected get_current_comm size range error");
+        assert!(
+            err.iter().any(|e| e.message.contains(
+                "helper 'bpf_get_current_comm' requires arg1 size to be between 0 and u32::MAX"
+            )),
+            "unexpected errors for size {size}: {:?}",
+            err
+        );
+    }
+}
+
 #[test]
 fn test_helper_trace_printk_requires_positive_size() {
     let mut func = MirFunction::new();
