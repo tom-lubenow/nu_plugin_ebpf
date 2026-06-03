@@ -81,6 +81,8 @@ const BPF_REDIRECT_IFINDEX_MAX_U32: i64 = u32::MAX as i64;
 const BPF_REDIRECT_NEIGH_PLEN_MAX_I32: i64 = i32::MAX as i64;
 const BPF_LWT_BUFFER_SIZE_MAX_U32: i64 = u32::MAX as i64;
 const BPF_LWT_SEG6_OFFSET_MAX_U32: i64 = u32::MAX as i64;
+const BPF_LWT_SEG6_ADJUST_SRH_DELTA_MIN_I32: i64 = i32::MIN as i64;
+const BPF_LWT_SEG6_ADJUST_SRH_DELTA_MAX_I32: i64 = i32::MAX as i64;
 const BPF_FORMAT_SIZE_MAX_U32: i64 = u32::MAX as i64;
 const BPF_BUFFER_SIZE_MAX_U32: i64 = u32::MAX as i64;
 const BPF_IMA_HASH_SIZE_MAX_U32: i64 = u32::MAX as i64;
@@ -2012,6 +2014,11 @@ impl BpfHelper {
                 0,
                 BPF_LWT_SEG6_OFFSET_MAX_U32,
                 "lwt seg6 helpers require arg1 offset to be between 0 and u32::MAX",
+            )),
+            (Self::LwtSeg6AdjustSrh, 2) => Some((
+                BPF_LWT_SEG6_ADJUST_SRH_DELTA_MIN_I32,
+                BPF_LWT_SEG6_ADJUST_SRH_DELTA_MAX_I32,
+                "helper 'bpf_lwt_seg6_adjust_srh' requires arg2 delta to be between i32::MIN and i32::MAX",
             )),
             (Self::L3CsumReplace | Self::L4CsumReplace, 1) => Some((
                 0,

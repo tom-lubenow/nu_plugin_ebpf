@@ -16120,7 +16120,7 @@ fn make_lwt_buffer_verify_call(
 
 fn make_lwt_seg6_adjust_srh_verify_call_with_args(
     offset: i64,
-    len: i64,
+    delta: i64,
 ) -> (MirFunction, HashMap<VReg, MirType>) {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
@@ -16143,7 +16143,7 @@ fn make_lwt_seg6_adjust_srh_verify_call_with_args(
             args: vec![
                 MirValue::VReg(ctx),
                 MirValue::Const(offset),
-                MirValue::Const(len),
+                MirValue::Const(delta),
             ],
         });
     func.block_mut(entry).terminator = MirInst::Return { val: None };
@@ -16349,6 +16349,23 @@ fn test_verify_mir_for_probe_context_lwt_seg6_helpers_reject_offset_over_u32() {
                 .message
                 .contains("lwt seg6 helpers require arg1 offset to be between 0 and u32::MAX")),
             "unexpected errors for {helper_name}: {:?}",
+            err
+        );
+    }
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_lwt_seg6_adjust_srh_rejects_delta_outside_i32_range() {
+    for delta in [i32::MAX as i64 + 1, i32::MIN as i64 - 1] {
+        let (func, types) = make_lwt_seg6_adjust_srh_verify_call_with_args(0, delta);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::LwtSeg6Local, "demo-route");
+        let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect_err("expected lwt_seg6_adjust_srh delta range error");
+        assert!(
+            err.iter().any(|e| e.message.contains(
+                "helper 'bpf_lwt_seg6_adjust_srh' requires arg2 delta to be between i32::MIN and i32::MAX"
+            )),
+            "unexpected errors for delta {delta}: {:?}",
             err
         );
     }

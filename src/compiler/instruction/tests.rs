@@ -3405,6 +3405,14 @@ fn test_lwt_helpers_contract() {
             "{helper:?}"
         );
     }
+    assert_eq!(
+        BpfHelper::LwtSeg6AdjustSrh.scalar_arg_range_requirement(2),
+        Some((
+            i32::MIN as i64,
+            i32::MAX as i64,
+            "helper 'bpf_lwt_seg6_adjust_srh' requires arg2 delta to be between i32::MIN and i32::MAX"
+        ))
+    );
     let (actions, message) = BpfHelper::LwtSeg6Action
         .scalar_arg_allowed_values_requirement(1)
         .expect("expected lwt_seg6_action action contract");

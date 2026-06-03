@@ -4992,7 +4992,7 @@ fn make_lwt_buffer_helper_call(
     make_lwt_buffer_helper_call_with_selector(helper, selector, size, buffer_size)
 }
 
-fn make_lwt_seg6_adjust_srh_call_with_args(offset: i64, len: i64) -> (MirFunction, VReg) {
+fn make_lwt_seg6_adjust_srh_call_with_args(offset: i64, delta: i64) -> (MirFunction, VReg) {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();
     let dst = func.alloc_vreg();
@@ -5008,7 +5008,7 @@ fn make_lwt_seg6_adjust_srh_call_with_args(offset: i64, len: i64) -> (MirFunctio
         args: vec![
             MirValue::VReg(ctx),
             MirValue::Const(offset),
-            MirValue::Const(len),
+            MirValue::Const(delta),
         ],
     });
     block.terminator = MirInst::Return { val: None };
@@ -5221,6 +5221,25 @@ fn test_type_error_lwt_seg6_helpers_reject_offset_over_u32() {
                 .message
                 .contains("lwt seg6 helpers require arg1 offset to be between 0 and u32::MAX")),
             "unexpected errors for {helper_name}: {:?}",
+            errs
+        );
+    }
+}
+
+#[test]
+fn test_type_error_lwt_seg6_adjust_srh_rejects_delta_outside_i32_range() {
+    for delta in [i32::MAX as i64 + 1, i32::MIN as i64 - 1] {
+        let (func, _) = make_lwt_seg6_adjust_srh_call_with_args(0, delta);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::LwtSeg6Local, "demo-route");
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected lwt_seg6_adjust_srh delta range error");
+        assert!(
+            errs.iter().any(|e| e.message.contains(
+                "helper 'bpf_lwt_seg6_adjust_srh' requires arg2 delta to be between i32::MIN and i32::MAX"
+            )),
+            "unexpected errors for delta {delta}: {:?}",
             errs
         );
     }
