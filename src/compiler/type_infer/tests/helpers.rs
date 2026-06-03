@@ -10505,15 +10505,35 @@ fn test_type_error_trace_vprintk_helper_rejects_invalid_data_len() {
 }
 
 #[test]
+fn test_type_error_trace_print_helpers_reject_zero_fmt_size() {
+    for (func, expected) in [
+        (make_trace_printk_call(0, 8), "helper 6 arg1 must be > 0"),
+        (
+            make_trace_vprintk_call(0, 8, 16, 16).0,
+            "helper 177 arg1 must be > 0",
+        ),
+    ] {
+        let mut ti = TypeInference::new(None);
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected trace print zero-size error");
+        assert!(
+            errs.iter().any(|e| e.message.contains(expected)),
+            "expected {expected:?}, got {errs:?}"
+        );
+    }
+}
+
+#[test]
 fn test_type_error_trace_print_helpers_reject_size_out_of_range() {
     for (func, expected) in [
         (
             make_trace_printk_call(0x1_0000_0000, 8),
-            "trace print helpers require arg1 fmt_size to be between 0 and u32::MAX",
+            "trace print helpers require arg1 fmt_size to be between 1 and u32::MAX",
         ),
         (
             make_trace_vprintk_call(0x1_0000_0000, 8, 16, 16).0,
-            "trace print helpers require arg1 fmt_size to be between 0 and u32::MAX",
+            "trace print helpers require arg1 fmt_size to be between 1 and u32::MAX",
         ),
         (
             make_trace_vprintk_call(8, 8, 104, 16).0,

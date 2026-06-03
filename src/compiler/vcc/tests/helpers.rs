@@ -17807,7 +17807,7 @@ fn test_verify_mir_helper_trace_printk_rejects_fmt_size_over_u32() {
     assert!(
         err.iter().any(|e| e
             .message
-            .contains("trace print helpers require arg1 fmt_size to be between 0 and u32::MAX")),
+            .contains("trace print helpers require arg1 fmt_size to be between 1 and u32::MAX")),
         "unexpected errors: {:?}",
         err
     );
@@ -17892,6 +17892,18 @@ fn test_verify_mir_helper_trace_vprintk() {
 }
 
 #[test]
+fn test_verify_mir_helper_trace_vprintk_rejects_zero_fmt_size() {
+    let (func, types) = make_trace_vprintk_vcc_call(0, 8, 16, 16);
+    let err = verify_mir(&func, &types).expect_err("expected trace_vprintk zero-size error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("helper 177 arg1 must be > 0")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_helper_trace_vprintk_bounds() {
     let (func, types) = make_trace_vprintk_vcc_call(8, 8, 16, 8);
     let err = verify_mir(&func, &types).expect_err("expected trace_vprintk bounds error");
@@ -17928,7 +17940,7 @@ fn test_verify_mir_helper_trace_vprintk_rejects_size_out_of_range() {
         (
             0x1_0000_0000,
             16,
-            "trace print helpers require arg1 fmt_size to be between 0 and u32::MAX",
+            "trace print helpers require arg1 fmt_size to be between 1 and u32::MAX",
         ),
         (
             8,

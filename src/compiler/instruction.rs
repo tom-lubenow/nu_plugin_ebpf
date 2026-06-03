@@ -1608,9 +1608,9 @@ impl BpfHelper {
                 "IMA hash helpers require arg2 size to be between 0 and u32::MAX",
             )),
             (Self::TracePrintk | Self::TraceVPrintk, 1) => Some((
-                0,
+                1,
                 BPF_FORMAT_SIZE_MAX_U32,
-                "trace print helpers require arg1 fmt_size to be between 0 and u32::MAX",
+                "trace print helpers require arg1 fmt_size to be between 1 and u32::MAX",
             )),
             (Self::TraceVPrintk, 3) => Some((
                 0,
