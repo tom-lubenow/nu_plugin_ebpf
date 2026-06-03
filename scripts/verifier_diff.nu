@@ -37385,7 +37385,7 @@ const FIXTURES = [
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  [1 true null] | str join ":" | str starts-with "1:true:"'
+            '  [1 1.5 1kb 1sec 0x[01 02] true null] | str join ":" | str starts-with "1:1.5:1.0 kB:1sec:[1, 2]:true:"'
             '}'
         ]
         local: "accept"

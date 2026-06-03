@@ -7844,11 +7844,15 @@ fn test_lower_str_join_on_known_scalar_list_materializes_joined_string() {
         starts_with_decl,
         vec![
             Value::int(1, Span::test_data()),
+            Value::float(1.5, Span::test_data()),
+            Value::filesize(Filesize::new(1000), Span::test_data()),
+            Value::duration(1_000_000_000, Span::test_data()),
+            Value::binary(vec![1, 2], Span::test_data()),
             Value::bool(true, Span::test_data()),
             Value::nothing(Span::test_data()),
         ],
         ":",
-        "1:true:",
+        "1:1.5:1.0 kB:1sec:[1, 2]:true:",
     );
     let decl_names = HashMap::from([
         (join_decl, "str join".to_string()),
@@ -7877,7 +7881,7 @@ fn test_lower_str_join_on_known_scalar_list_materializes_joined_string() {
                 MirInst::StringAppend {
                     val_type: StringAppendType::Literal { bytes },
                     ..
-                } if bytes.starts_with(b"1:true:\0")
+                } if bytes.starts_with(b"1:1.5:1.0 kB:1sec:[1, 2]:true:\0")
             )),
         "expected str join on a scalar list to materialize the joined string"
     );
