@@ -13187,6 +13187,64 @@ fn test_lower_math_median_on_known_odd_integer_list_materializes_median() {
 }
 
 #[test]
+fn test_lower_math_median_on_known_mixed_numeric_list_with_integer_median() {
+    let median_decl = DeclId::new(551);
+    let hir = make_value_list_pipeline_call_program(
+        median_decl,
+        vec![
+            Value::float(1.5, Span::test_data()),
+            Value::int(3, Span::test_data()),
+            Value::float(10.5, Span::test_data()),
+        ],
+    );
+    let decl_names = HashMap::from([(median_decl, "math median".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("math median should lower mixed numeric list input when the median is an integer");
+
+    assert_program_returns_constant(&result.program, 3, "math median");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("math median mixed numeric integer result should compile through codegen");
+}
+
+#[test]
+fn test_lower_math_median_rejects_known_mixed_numeric_list_with_float_median() {
+    let median_decl = DeclId::new(552);
+    let hir = make_value_list_pipeline_call_program(
+        median_decl,
+        vec![
+            Value::float(1.5, Span::test_data()),
+            Value::float(3.5, Span::test_data()),
+            Value::int(10, Span::test_data()),
+        ],
+    );
+    let decl_names = HashMap::from([(median_decl, "math median".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("math median should reject float median results");
+
+    assert!(
+        err.to_string()
+            .contains("math median compile-time list median has type float"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn test_lower_math_median_on_seq_output_materializes_median() {
     let seq_decl = DeclId::new(521);
     let median_decl = DeclId::new(522);
@@ -13291,7 +13349,7 @@ fn test_lower_math_median_rejects_even_length_integer_list() {
 
     assert!(
         err.to_string()
-            .contains("math median requires an odd-length integer list"),
+            .contains("math median requires an odd-length integer or float list"),
         "unexpected error: {err}"
     );
 }
@@ -13348,7 +13406,7 @@ fn test_lower_math_median_rejects_empty_integer_list() {
 
     assert!(
         err.to_string()
-            .contains("math median requires a non-empty integer list"),
+            .contains("math median requires a non-empty integer or float list"),
         "unexpected error: {err}"
     );
 }

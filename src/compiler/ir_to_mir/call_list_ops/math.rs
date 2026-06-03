@@ -930,34 +930,52 @@ impl<'a> HirToMirLowering<'a> {
             .and_then(|reg| self.get_metadata(reg).cloned())
             .ok_or_else(|| {
                 CompileError::UnsupportedInstruction(
-                    "math median requires compile-time known integer-list input in eBPF".into(),
+                    "math median requires compile-time known integer-list or integer/float-list input in eBPF".into(),
                 )
             })?;
 
         if let Some(nu_protocol::Value::List { vals, .. }) = input_meta.constant_value.clone() {
             if vals.is_empty() {
                 return Err(CompileError::UnsupportedInstruction(
-                    "math median requires a non-empty integer list in eBPF".into(),
+                    "math median requires a non-empty integer or float list in eBPF".into(),
                 ));
             }
             if vals.len() % 2 == 0 {
                 return Err(CompileError::UnsupportedInstruction(
-                    "math median requires an odd-length integer list in eBPF because even-length medians are floats in Nushell".into(),
+                    "math median requires an odd-length integer or float list in eBPF because even-length medians are floats in Nushell".into(),
                 ));
             }
 
-            let mut ints = Vec::with_capacity(vals.len());
+            let mut values = Vec::with_capacity(vals.len());
             for (index, value) in vals.into_iter().enumerate() {
-                let nu_protocol::Value::Int { val, .. } = value else {
-                    return Err(CompileError::UnsupportedInstruction(format!(
-                        "math median requires integer list items in eBPF; item {index} has type {}",
-                        value.get_type()
-                    )));
-                };
-                ints.push(val);
+                match &value {
+                    nu_protocol::Value::Int { .. } => {}
+                    nu_protocol::Value::Float { val, .. } if val.is_finite() => {}
+                    nu_protocol::Value::Float { val, .. } => {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "math median requires finite float list items in eBPF; item {index} is {val}"
+                        )));
+                    }
+                    other => {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "math median requires integer or float list items in eBPF; item {index} has type {}",
+                            other.get_type()
+                        )));
+                    }
+                }
+                values.push(value);
             }
-            ints.sort_unstable();
-            let median = ints[ints.len() / 2];
+            values.sort_by(|lhs, rhs| {
+                lhs.partial_cmp(rhs)
+                    .expect("median float values are validated as finite")
+            });
+            let median_value = &values[values.len() / 2];
+            let nu_protocol::Value::Int { val: median, .. } = median_value else {
+                return Err(CompileError::UnsupportedInstruction(
+                    "math median compile-time list median has type float; eBPF supports only integer median results".into(),
+                ));
+            };
+            let median = *median;
 
             let result_vreg = if src_dst_had_value {
                 self.assign_fresh_vreg(src_dst)

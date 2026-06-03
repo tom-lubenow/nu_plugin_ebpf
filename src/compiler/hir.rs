@@ -314,6 +314,7 @@ pub enum FixedLayoutValueConsumer {
     Compact,
     StringTransform,
     MathRounding,
+    MathMedian,
 }
 
 pub fn compile_time_value_flows_to_fixed_layout_consumer(
@@ -900,6 +901,15 @@ fn compile_time_value_consumer_matches(
         }
         FixedLayoutValueConsumer::MathRounding => {
             matches!(decl_name, Some("math ceil" | "math floor" | "math round"))
+                && call_args_tracked_only_in_pipeline(src_dst, args, tracked_regs)
+                && args.positional.is_empty()
+                && args.rest.is_empty()
+                && args.named.is_empty()
+                && args.flags.is_empty()
+                && args.parser_info.is_empty()
+        }
+        FixedLayoutValueConsumer::MathMedian => {
+            decl_name == Some("math median")
                 && call_args_tracked_only_in_pipeline(src_dst, args, tracked_regs)
                 && args.positional.is_empty()
                 && args.rest.is_empty()

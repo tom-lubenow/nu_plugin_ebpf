@@ -529,7 +529,7 @@ impl<'a> HirToMirLowering<'a> {
                 }
                 if let HirStmt::LoadLiteral { dst, lit } = stmt
                     && matches!(lit, HirLiteral::Float(_))
-                    && self.is_compile_time_only_string_or_math_transform_value(
+                    && self.is_compile_time_only_string_or_math_value(
                         &block.stmts,
                         stmt_index,
                         *dst,
@@ -541,7 +541,7 @@ impl<'a> HirToMirLowering<'a> {
                 }
                 if let HirStmt::LoadValue { dst, val } = stmt
                     && !crate::compiler::hir::supports_constant_value(val)
-                    && self.is_compile_time_only_string_or_math_transform_value(
+                    && self.is_compile_time_only_string_or_math_value(
                         &block.stmts,
                         stmt_index,
                         *dst,
@@ -1125,7 +1125,23 @@ impl<'a> HirToMirLowering<'a> {
         )
     }
 
-    fn is_compile_time_only_string_or_math_transform_value(
+    fn is_compile_time_only_math_median_value(
+        &self,
+        stmts: &[HirStmt],
+        stmt_index: usize,
+        dst: RegId,
+    ) -> bool {
+        compile_time_value_flows_to_fixed_layout_consumer(
+            stmts,
+            stmt_index,
+            dst,
+            self.decl_names,
+            FixedLayoutValueConsumer::MathMedian,
+            CompileTimeValueFlow::AggregateBuilder,
+        )
+    }
+
+    fn is_compile_time_only_string_or_math_value(
         &self,
         stmts: &[HirStmt],
         stmt_index: usize,
@@ -1133,6 +1149,7 @@ impl<'a> HirToMirLowering<'a> {
     ) -> bool {
         self.is_compile_time_only_string_transform_value(stmts, stmt_index, dst)
             || self.is_compile_time_only_math_rounding_value(stmts, stmt_index, dst)
+            || self.is_compile_time_only_math_median_value(stmts, stmt_index, dst)
     }
 
     fn call_result_flows_to_metadata_only_consumer(

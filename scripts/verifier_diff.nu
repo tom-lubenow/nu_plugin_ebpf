@@ -35320,6 +35320,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-list-math-median-mixed-numeric"
+        category: "language-core"
+        tags: [aggregate list math median float constant]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ([1.5 3 10.5] | math median) == 3'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-seq-math-median"
         category: "language-core"
         tags: [aggregate list seq math median]
