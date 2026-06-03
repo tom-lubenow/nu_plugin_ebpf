@@ -35398,6 +35398,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-math-exp-folded"
+        category: "language-core"
+        tags: [scalar aggregate list math exp float fill str join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  (0 | math exp | fill --alignment right --character "0" --width 4 | str starts-with "0001") and ([0 1] | math exp | str join "," | str starts-with "1.0,2.718281828459045")'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-math-filesize-duration"
         category: "language-core"
         tags: [aggregate list math filesize duration constant]

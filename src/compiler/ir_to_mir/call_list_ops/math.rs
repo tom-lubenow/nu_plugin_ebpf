@@ -391,7 +391,8 @@ impl<'a> HirToMirLowering<'a> {
         Ok(value as i64)
     }
 
-    fn compile_time_math_sqrt_value(
+    fn compile_time_math_float_unary_value(
+        cmd_name: &str,
         value: nu_protocol::Value,
         list_index: Option<usize>,
     ) -> Result<nu_protocol::Value, CompileError> {
@@ -402,42 +403,66 @@ impl<'a> HirToMirLowering<'a> {
                 return Err(CompileError::UnsupportedInstruction(match list_index {
                     Some(index) => {
                         format!(
-                            "math sqrt requires finite float list items in eBPF; item {index} is {val}"
+                            "{cmd_name} requires finite float list items in eBPF; item {index} is {val}"
                         )
                     }
                     None => {
-                        format!("math sqrt requires finite float input in eBPF; input is {val}")
+                        format!("{cmd_name} requires finite float input in eBPF; input is {val}")
                     }
                 }));
             }
             other => {
                 return Err(CompileError::UnsupportedInstruction(match list_index {
                     Some(index) => format!(
-                        "math sqrt requires integer or float list items in eBPF; item {index} has type {}",
+                        "{cmd_name} requires integer or float list items in eBPF; item {index} has type {}",
                         other.get_type()
                     ),
                     None => format!(
-                        "math sqrt requires integer or float input in eBPF; input has type {}",
+                        "{cmd_name} requires integer or float input in eBPF; input has type {}",
                         other.get_type()
                     ),
                 }));
             }
         };
-        if raw < 0.0 {
+        let result = match cmd_name {
+            "math exp" => raw.exp(),
+            "math sqrt" => {
+                if raw < 0.0 {
+                    return Err(CompileError::UnsupportedInstruction(match list_index {
+                        Some(index) => {
+                            format!(
+                                "{cmd_name} requires non-negative list items in eBPF; item {index} is {raw}"
+                            )
+                        }
+                        None => {
+                            format!(
+                                "{cmd_name} requires non-negative input in eBPF; input is {raw}"
+                            )
+                        }
+                    }));
+                }
+                raw.sqrt()
+            }
+            _ => {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "unsupported compile-time float unary command {cmd_name}"
+                )));
+            }
+        };
+        if !result.is_finite() {
             return Err(CompileError::UnsupportedInstruction(match list_index {
                 Some(index) => {
-                    format!(
-                        "math sqrt requires non-negative list items in eBPF; item {index} is {raw}"
-                    )
+                    format!("{cmd_name} list item {index} result must be finite in eBPF")
                 }
-                None => format!("math sqrt requires non-negative input in eBPF; input is {raw}"),
+                None => format!("{cmd_name} result must be finite in eBPF"),
             }));
         }
-        Ok(nu_protocol::Value::float(raw.sqrt(), Span::unknown()))
+        Ok(nu_protocol::Value::float(result, Span::unknown()))
     }
 
-    pub(in crate::compiler::ir_to_mir) fn lower_compile_time_math_sqrt(
+    pub(in crate::compiler::ir_to_mir) fn lower_compile_time_math_float_unary(
         &mut self,
+        cmd_name: &str,
         src_dst: RegId,
         src_dst_had_value: bool,
     ) -> Result<(), CompileError> {
@@ -450,13 +475,14 @@ impl<'a> HirToMirLowering<'a> {
             || !self.positional_args.is_empty()
         {
             return Err(CompileError::UnsupportedInstruction(
-                "math sqrt does not accept arguments in eBPF".into(),
+                format!("{cmd_name} does not accept arguments in eBPF").into(),
             ));
         }
 
         let input_reg = input_reg.ok_or_else(|| {
             CompileError::UnsupportedInstruction(
-                "math sqrt requires compile-time known integer or float input in eBPF".into(),
+                format!("{cmd_name} requires compile-time known integer or float input in eBPF")
+                    .into(),
             )
         })?;
         let value = self
@@ -464,7 +490,10 @@ impl<'a> HirToMirLowering<'a> {
             .and_then(|meta| meta.constant_value.clone())
             .ok_or_else(|| {
                 CompileError::UnsupportedInstruction(
-                    "math sqrt requires compile-time known integer or float input in eBPF".into(),
+                    format!(
+                        "{cmd_name} requires compile-time known integer or float input in eBPF"
+                    )
+                    .into(),
                 )
             })?;
 
@@ -473,11 +502,13 @@ impl<'a> HirToMirLowering<'a> {
                 let vals = vals
                     .into_iter()
                     .enumerate()
-                    .map(|(index, value)| Self::compile_time_math_sqrt_value(value, Some(index)))
+                    .map(|(index, value)| {
+                        Self::compile_time_math_float_unary_value(cmd_name, value, Some(index))
+                    })
                     .collect::<Result<Vec<_>, _>>()?;
                 nu_protocol::Value::list(vals, Span::unknown())
             }
-            value => Self::compile_time_math_sqrt_value(value, None)?,
+            value => Self::compile_time_math_float_unary_value(cmd_name, value, None)?,
         };
 
         if self.current_call_result_metadata_only {
@@ -487,7 +518,7 @@ impl<'a> HirToMirLowering<'a> {
 
         let result_type = result.get_type();
         Err(CompileError::UnsupportedInstruction(format!(
-            "math sqrt compile-time result has type {result_type}; eBPF supports only results folded by fill or str join"
+            "{cmd_name} compile-time result has type {result_type}; eBPF supports only results folded by fill or str join"
         )))
     }
 

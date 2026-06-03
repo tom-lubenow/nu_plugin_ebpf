@@ -12607,6 +12607,124 @@ fn test_lower_math_sqrt_list_results_feed_metadata_only_str_join() {
 }
 
 #[test]
+fn test_lower_math_exp_rejects_materialized_float_results() {
+    for (offset, value, expected) in [
+        (
+            0,
+            Value::int(0, Span::test_data()),
+            "math exp compile-time result has type float",
+        ),
+        (
+            1,
+            Value::list(
+                vec![
+                    Value::int(0, Span::test_data()),
+                    Value::int(1, Span::test_data()),
+                ],
+                Span::test_data(),
+            ),
+            "math exp compile-time result has type list<float>",
+        ),
+        (
+            2,
+            Value::int(1000, Span::test_data()),
+            "math exp result must be finite",
+        ),
+    ] {
+        let decl = DeclId::new(609 + offset);
+        let hir = make_value_pipeline_call_program(decl, value);
+        let decl_names = HashMap::from([(decl, "math exp".to_string())]);
+
+        let err = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .expect_err("math exp should reject direct materialization or non-finite results");
+
+        assert!(
+            err.to_string().contains(expected),
+            "unexpected error: {err}"
+        );
+    }
+}
+
+#[test]
+fn test_lower_math_exp_scalar_results_feed_metadata_only_fill() {
+    let math_decl = DeclId::new(612);
+    let fill_decl = DeclId::new(613);
+    let starts_with_decl = DeclId::new(614);
+    let hir = make_value_math_fill_starts_with_program(
+        math_decl,
+        fill_decl,
+        starts_with_decl,
+        Value::int(0, Span::test_data()),
+        "0001",
+        4,
+        "right",
+        "0",
+    );
+    let decl_names = HashMap::from([
+        (math_decl, "math exp".to_string()),
+        (fill_decl, "fill".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .unwrap_or_else(|err| panic!("math exp scalar result should feed fill: {err}"));
+
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("math exp fill result should compile");
+}
+
+#[test]
+fn test_lower_math_exp_list_results_feed_metadata_only_str_join() {
+    let math_decl = DeclId::new(615);
+    let join_decl = DeclId::new(616);
+    let starts_with_decl = DeclId::new(617);
+    let hir = make_value_list_math_join_starts_with_program(
+        math_decl,
+        join_decl,
+        starts_with_decl,
+        vec![
+            Value::int(0, Span::test_data()),
+            Value::int(1, Span::test_data()),
+        ],
+        ",",
+        "1.0,2.718281828459045",
+    );
+    let decl_names = HashMap::from([
+        (math_decl, "math exp".to_string()),
+        (join_decl, "str join".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .unwrap_or_else(|err| panic!("math exp list result should feed str join: {err}"));
+
+    assert_no_runtime_list_operations(&result.program, "math exp list str join");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("math exp list str join should compile");
+}
+
+#[test]
 fn test_lower_math_unit_reducers_materialize_raw_i64_results() {
     let cases = [
         (

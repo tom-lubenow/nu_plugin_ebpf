@@ -101,6 +101,7 @@ const NU_CLOSURE_COMMANDS: &[&str] = &[
     "bits shr",
     "bits xor",
     "math avg",
+    "math exp",
     "math max",
     "math median",
     "math min",
