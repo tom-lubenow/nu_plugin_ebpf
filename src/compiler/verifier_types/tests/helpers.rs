@@ -8154,6 +8154,58 @@ fn test_verify_mir_for_program_skb_vlan_push_rejects_invalid_u16_args() {
     }
 }
 
+fn make_set_hash_verify_call(hash: i64) -> (MirFunction, HashMap<VReg, MirType>) {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::SetHash as u32,
+            args: vec![MirValue::VReg(ctx), MirValue::Const(hash)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    (func, types)
+}
+
+#[test]
+fn test_verify_mir_for_program_set_hash_rejects_invalid_hash() {
+    for hash in [-1_i64, 0x1_0000_0000] {
+        let (func, types) = make_set_hash_verify_call(hash);
+        let err = verify_mir_for_program(&func, &types, EbpfProgramType::Tc.info())
+            .expect_err("expected bpf_set_hash hash to be rejected");
+        assert!(
+            err.iter().any(|e| e
+                .message
+                .contains("helper 'bpf_set_hash' requires arg1 hash to be between 0 and u32::MAX")),
+            "unexpected errors for hash {hash}: {:?}",
+            err
+        );
+    }
+}
+
 fn make_clone_redirect_verify_call(
     ifindex: i64,
     flags: i64,

@@ -2856,6 +2856,25 @@ fn make_skb_pull_data_call(len: i64) -> MirFunction {
     func
 }
 
+fn make_set_hash_call(hash: i64) -> MirFunction {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SetHash as u32,
+        args: vec![MirValue::VReg(ctx), MirValue::Const(hash)],
+    });
+    block.terminator = MirInst::Return { val: None };
+    func
+}
+
 #[test]
 fn test_type_error_skb_adjust_room_helper_rejects_len_diff_out_of_range() {
     for len_diff in [0x1000_i64, -0x1000] {
@@ -2889,6 +2908,25 @@ fn test_type_error_skb_pull_data_helper_rejects_invalid_len() {
                 "helper 'bpf_skb_pull_data' requires arg1 len to be between 0 and u32::MAX"
             )),
             "unexpected errors for len {len}: {:?}",
+            errs
+        );
+    }
+}
+
+#[test]
+fn test_type_error_set_hash_helper_rejects_invalid_hash() {
+    for hash in [-1_i64, 0x1_0000_0000] {
+        let func = make_set_hash_call(hash);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected bpf_set_hash hash to be rejected");
+        assert!(
+            errs.iter().any(|e| e
+                .message
+                .contains("helper 'bpf_set_hash' requires arg1 hash to be between 0 and u32::MAX")),
+            "unexpected errors for hash {hash}: {:?}",
             errs
         );
     }
