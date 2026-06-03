@@ -12604,6 +12604,25 @@ fn test_type_error_copy_from_user_rejects_small_buffer() {
 }
 
 #[test]
+fn test_type_error_copy_from_user_rejects_size_over_u32() {
+    for with_task in [false, true] {
+        let (func, _) = make_copy_from_user_call(0x1_0000_0000, 16, with_task);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Uprobe, "test");
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected copy_from_user size range error");
+        assert!(
+            errs.iter().any(|e| e
+                .message
+                .contains("copy-from-user helpers require arg1 size to be between 0 and u32::MAX")),
+            "unexpected errors for with_task={with_task}: {:?}",
+            errs
+        );
+    }
+}
+
+#[test]
 fn test_type_error_probe_write_user_rejects_small_source_buffer() {
     let (func, _) = make_probe_write_user_call(16, 8);
     let probe_ctx = ProbeContext::new(EbpfProgramType::Uprobe, "test");

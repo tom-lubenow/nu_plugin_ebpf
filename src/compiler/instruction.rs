@@ -36,6 +36,7 @@ const BPF_F_L4_CSUM_REPLACE_ALLOWED_MASK: i64 = BPF_F_HDR_FIELD_MASK
 const BPF_CSUM_DIFF_MAX_U32: i64 = u32::MAX as i64;
 const BPF_CSUM_UPDATE_CSUM_MAX_U32: i64 = u32::MAX as i64;
 const BPF_GET_CURRENT_COMM_SIZE_MAX_U32: i64 = u32::MAX as i64;
+const BPF_COPY_FROM_USER_SIZE_MAX_U32: i64 = u32::MAX as i64;
 const BPF_PROBE_MEM_SIZE_MAX_U32: i64 = u32::MAX as i64;
 const BPF_MAX_LOOPS: i64 = 8 * 1024 * 1024;
 const BPF_CGROUP_ARRAY_INDEX_MAX_U32: i64 = u32::MAX as i64;
@@ -1453,6 +1454,11 @@ impl BpfHelper {
                 0,
                 BPF_GET_CURRENT_COMM_SIZE_MAX_U32,
                 "helper 'bpf_get_current_comm' requires arg1 size to be between 0 and u32::MAX",
+            )),
+            (Self::CopyFromUser | Self::CopyFromUserTask, 1) => Some((
+                0,
+                BPF_COPY_FROM_USER_SIZE_MAX_U32,
+                "copy-from-user helpers require arg1 size to be between 0 and u32::MAX",
             )),
             (
                 Self::ProbeRead

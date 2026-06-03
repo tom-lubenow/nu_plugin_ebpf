@@ -12921,6 +12921,21 @@ fn test_verify_mir_helper_copy_from_user_rejects_small_buffer() {
 }
 
 #[test]
+fn test_verify_mir_helper_copy_from_user_rejects_size_over_u32() {
+    for with_task in [false, true] {
+        let (func, types) = make_copy_from_user_verify_call(0x1_0000_0000, 16, with_task, 0);
+        let err = verify_mir(&func, &types).expect_err("expected copy_from_user range error");
+        assert!(
+            err.iter().any(|e| e
+                .message
+                .contains("copy-from-user helpers require arg1 size to be between 0 and u32::MAX")),
+            "unexpected errors for with_task={with_task}: {:?}",
+            err
+        );
+    }
+}
+
+#[test]
 fn test_verify_mir_helper_copy_from_user_rejects_null_dst_with_nonzero_size() {
     let (func, types) = make_copy_from_user_null_dst_verify_call(8, false, 0);
     let err = verify_mir(&func, &types).expect_err("expected copy_from_user null dst size error");

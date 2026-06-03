@@ -3382,6 +3382,21 @@ fn test_helper_probe_memory_size_contracts() {
 }
 
 #[test]
+fn test_helper_copy_from_user_size_contracts() {
+    for helper in [BpfHelper::CopyFromUser, BpfHelper::CopyFromUserTask] {
+        assert_eq!(
+            helper.scalar_arg_range_requirement(1),
+            Some((
+                0,
+                u32::MAX as i64,
+                "copy-from-user helpers require arg1 size to be between 0 and u32::MAX"
+            )),
+            "{helper:?}"
+        );
+    }
+}
+
+#[test]
 fn test_helper_static_null_pointer_contracts() {
     for (helper, arg_idx) in [
         (BpfHelper::KptrXchg, 1),
