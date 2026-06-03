@@ -93,6 +93,7 @@ const BPF_LWT_SEG6_ADJUST_SRH_DELTA_MAX_I32: i64 = i32::MAX as i64;
 const BPF_XDP_ADJUST_DELTA_MIN_I32: i64 = i32::MIN as i64;
 const BPF_XDP_ADJUST_DELTA_MAX_I32: i64 = i32::MAX as i64;
 const BPF_FORMAT_SIZE_MAX_U32: i64 = u32::MAX as i64;
+const BPF_BPRINTF_DATA_LEN_MAX: i64 = 12 * 8;
 const BPF_BUFFER_SIZE_MAX_U32: i64 = u32::MAX as i64;
 const BPF_IMA_HASH_SIZE_MAX_U32: i64 = u32::MAX as i64;
 const BPF_HDR_OPT_LEN_MAX_U32: i64 = u32::MAX as i64;
@@ -1604,8 +1605,8 @@ impl BpfHelper {
             )),
             (Self::TraceVPrintk, 3) => Some((
                 0,
-                BPF_FORMAT_SIZE_MAX_U32,
-                "helper 'bpf_trace_vprintk' requires arg3 data_len to be between 0 and u32::MAX",
+                BPF_BPRINTF_DATA_LEN_MAX,
+                "helper 'bpf_trace_vprintk' requires arg3 data_len to be between 0 and MAX_BPRINTF_VARARGS * 8 (96 bytes)",
             )),
             (Self::Snprintf | Self::SnprintfBtf, 1) => Some((
                 0,
@@ -1614,8 +1615,8 @@ impl BpfHelper {
             )),
             (Self::Snprintf, 4) => Some((
                 0,
-                BPF_FORMAT_SIZE_MAX_U32,
-                "helper 'bpf_snprintf' requires arg4 data_len to be between 0 and u32::MAX",
+                BPF_BPRINTF_DATA_LEN_MAX,
+                "helper 'bpf_snprintf' requires arg4 data_len to be between 0 and MAX_BPRINTF_VARARGS * 8 (96 bytes)",
             )),
             (Self::SeqPrintf, 2) => Some((
                 0,
@@ -1624,8 +1625,8 @@ impl BpfHelper {
             )),
             (Self::SeqPrintf, 4) => Some((
                 0,
-                BPF_FORMAT_SIZE_MAX_U32,
-                "helper 'bpf_seq_printf' requires arg4 data_len to be between 0 and u32::MAX",
+                BPF_BPRINTF_DATA_LEN_MAX,
+                "helper 'bpf_seq_printf' requires arg4 data_len to be between 0 and MAX_BPRINTF_VARARGS * 8 (96 bytes)",
             )),
             (Self::SeqWrite, 2) => Some((
                 0,

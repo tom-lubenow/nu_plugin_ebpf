@@ -1986,7 +1986,7 @@ fn make_snprintf_helper_call(str_size: i64, data_len: i64) -> MirFunction {
 }
 
 #[test]
-fn test_type_error_snprintf_rejects_size_over_u32() {
+fn test_type_error_snprintf_rejects_size_out_of_range() {
     for (str_size, data_len, expected) in [
         (
             0x1_0000_0000,
@@ -1995,8 +1995,8 @@ fn test_type_error_snprintf_rejects_size_over_u32() {
         ),
         (
             32,
-            0x1_0000_0000,
-            "helper 'bpf_snprintf' requires arg4 data_len to be between 0 and u32::MAX",
+            104,
+            "helper 'bpf_snprintf' requires arg4 data_len to be between 0 and MAX_BPRINTF_VARARGS * 8 (96 bytes)",
         ),
     ] {
         let func = make_snprintf_helper_call(str_size, data_len);
@@ -2278,7 +2278,7 @@ fn test_type_error_seq_output_helpers_reject_invalid_shapes() {
 }
 
 #[test]
-fn test_type_error_seq_output_helpers_reject_size_over_u32() {
+fn test_type_error_seq_output_helpers_reject_size_out_of_range() {
     let cases = [
         (
             BpfHelper::SeqPrintf,
@@ -2300,11 +2300,11 @@ fn test_type_error_seq_output_helpers_reject_size_over_u32() {
                 MirValue::StackSlot(StackSlotId(0)),
                 MirValue::Const(16),
                 MirValue::StackSlot(StackSlotId(1)),
-                MirValue::Const(0x1_0000_0000),
+                MirValue::Const(104),
             ],
             16,
             16,
-            "helper 'bpf_seq_printf' requires arg4 data_len to be between 0 and u32::MAX",
+            "helper 'bpf_seq_printf' requires arg4 data_len to be between 0 and MAX_BPRINTF_VARARGS * 8 (96 bytes)",
         ),
         (
             BpfHelper::SeqWrite,
@@ -10490,7 +10490,7 @@ fn test_type_error_trace_vprintk_helper_rejects_invalid_data_len() {
 }
 
 #[test]
-fn test_type_error_trace_print_helpers_reject_size_over_u32() {
+fn test_type_error_trace_print_helpers_reject_size_out_of_range() {
     for (func, expected) in [
         (
             make_trace_printk_call(0x1_0000_0000, 8),
@@ -10501,8 +10501,8 @@ fn test_type_error_trace_print_helpers_reject_size_over_u32() {
             "trace print helpers require arg1 fmt_size to be between 0 and u32::MAX",
         ),
         (
-            make_trace_vprintk_call(8, 8, 0x1_0000_0000, 16).0,
-            "helper 'bpf_trace_vprintk' requires arg3 data_len to be between 0 and u32::MAX",
+            make_trace_vprintk_call(8, 8, 104, 16).0,
+            "helper 'bpf_trace_vprintk' requires arg3 data_len to be between 0 and MAX_BPRINTF_VARARGS * 8 (96 bytes)",
         ),
     ] {
         let mut ti = TypeInference::new(None);

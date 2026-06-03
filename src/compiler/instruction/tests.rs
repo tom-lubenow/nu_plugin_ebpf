@@ -3821,8 +3821,8 @@ fn test_snprintf_helper_contract() {
         BpfHelper::Snprintf.scalar_arg_range_requirement(4),
         Some((
             0,
-            u32::MAX as i64,
-            "helper 'bpf_snprintf' requires arg4 data_len to be between 0 and u32::MAX"
+            96,
+            "helper 'bpf_snprintf' requires arg4 data_len to be between 0 and MAX_BPRINTF_VARARGS * 8 (96 bytes)"
         ))
     );
 
@@ -3893,8 +3893,8 @@ fn test_trace_vprintk_helper_contract() {
         BpfHelper::TraceVPrintk.scalar_arg_range_requirement(3),
         Some((
             0,
-            u32::MAX as i64,
-            "helper 'bpf_trace_vprintk' requires arg3 data_len to be between 0 and u32::MAX"
+            96,
+            "helper 'bpf_trace_vprintk' requires arg3 data_len to be between 0 and MAX_BPRINTF_VARARGS * 8 (96 bytes)"
         ))
     );
 
@@ -3951,8 +3951,8 @@ fn test_seq_output_helper_contracts() {
         BpfHelper::SeqPrintf.scalar_arg_range_requirement(4),
         Some((
             0,
-            u32::MAX as i64,
-            "helper 'bpf_seq_printf' requires arg4 data_len to be between 0 and u32::MAX"
+            96,
+            "helper 'bpf_seq_printf' requires arg4 data_len to be between 0 and MAX_BPRINTF_VARARGS * 8 (96 bytes)"
         ))
     );
 

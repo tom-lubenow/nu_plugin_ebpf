@@ -3649,7 +3649,7 @@ fn make_snprintf_vcc_call(str_size: i64, data_len: i64) -> (MirFunction, HashMap
 }
 
 #[test]
-fn test_verify_mir_helper_snprintf_rejects_size_over_u32() {
+fn test_verify_mir_helper_snprintf_rejects_size_out_of_range() {
     for (str_size, data_len, expected) in [
         (
             0x1_0000_0000,
@@ -3658,8 +3658,8 @@ fn test_verify_mir_helper_snprintf_rejects_size_over_u32() {
         ),
         (
             32,
-            0x1_0000_0000,
-            "helper 'bpf_snprintf' requires arg4 data_len to be between 0 and u32::MAX",
+            104,
+            "helper 'bpf_snprintf' requires arg4 data_len to be between 0 and MAX_BPRINTF_VARARGS * 8 (96 bytes)",
         ),
     ] {
         let (func, types) = make_snprintf_vcc_call(str_size, data_len);
@@ -4148,7 +4148,7 @@ fn test_verify_mir_for_probe_context_seq_write_rejects_negative_len() {
 }
 
 #[test]
-fn test_verify_mir_for_probe_context_seq_output_helpers_reject_size_over_u32() {
+fn test_verify_mir_for_probe_context_seq_output_helpers_reject_size_out_of_range() {
     let cases = [
         (
             BpfHelper::SeqPrintf,
@@ -4170,11 +4170,11 @@ fn test_verify_mir_for_probe_context_seq_output_helpers_reject_size_over_u32() {
                 MirValue::StackSlot(StackSlotId(0)),
                 MirValue::Const(16),
                 MirValue::StackSlot(StackSlotId(1)),
-                MirValue::Const(0x1_0000_0000),
+                MirValue::Const(104),
             ],
             16,
             16,
-            "helper 'bpf_seq_printf' requires arg4 data_len to be between 0 and u32::MAX",
+            "helper 'bpf_seq_printf' requires arg4 data_len to be between 0 and MAX_BPRINTF_VARARGS * 8 (96 bytes)",
         ),
         (
             BpfHelper::SeqWrite,
@@ -17910,7 +17910,7 @@ fn test_verify_mir_helper_trace_vprintk_rejects_invalid_data_len() {
 }
 
 #[test]
-fn test_verify_mir_helper_trace_vprintk_rejects_size_over_u32() {
+fn test_verify_mir_helper_trace_vprintk_rejects_size_out_of_range() {
     for (fmt_size, data_len, expected) in [
         (
             0x1_0000_0000,
@@ -17919,8 +17919,8 @@ fn test_verify_mir_helper_trace_vprintk_rejects_size_over_u32() {
         ),
         (
             8,
-            0x1_0000_0000,
-            "helper 'bpf_trace_vprintk' requires arg3 data_len to be between 0 and u32::MAX",
+            104,
+            "helper 'bpf_trace_vprintk' requires arg3 data_len to be between 0 and MAX_BPRINTF_VARARGS * 8 (96 bytes)",
         ),
     ] {
         let (func, types) = make_trace_vprintk_vcc_call(fmt_size, 8, data_len, 16);
