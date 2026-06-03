@@ -38956,6 +38956,22 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-float-list-builder-transform-metadata-consumers"
+        category: "language-core"
+        tags: [aggregate list append float take skip drop reverse first last length describe str join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let slices = ((([2.5] | append 1.5 | take 1 | length) == 1) and (([2.5] | append 1.5 | skip 1 | str join "," | str starts-with "1.5") and (([2.5] | append 1.5 | drop 1 | length) == 1)))'
+            '  let ordering = ([2.5] | append 1.5 | reverse | str join "," | str starts-with "1.5,2.5")'
+            '  let scalars = (([2.5] | append 1.5 | first | describe | str starts-with "float") and ([2.5] | append 1.5 | last | describe | str starts-with "float"))'
+            '  $slices and ($ordering and ($scalars and ([2.5] | append 1.5 | last 1 | describe | str starts-with "list<float>")))'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-runtime-list-describe"
         category: "language-core"
         tags: [describe aggregate list runtime string]

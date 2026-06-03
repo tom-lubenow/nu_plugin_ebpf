@@ -24,6 +24,10 @@ impl<'a> HirToMirLowering<'a> {
         )
     }
 
+    fn is_metadata_only_placeholder_type(ty: &MirType) -> bool {
+        matches!(ty, MirType::I64)
+    }
+
     pub(super) fn direct_list_builder_values(
         &self,
         input_reg: RegId,
@@ -63,7 +67,27 @@ impl<'a> HirToMirLowering<'a> {
         {
             return Some(vals);
         }
+        if self
+            .vreg_type_hints
+            .get(&input_vreg)
+            .is_some_and(Self::is_metadata_only_placeholder_type)
+        {
+            return Some(vals);
+        }
         self.direct_list_builder_values(input_reg, input_vreg)
+    }
+
+    fn lower_compile_time_list_transform_result(
+        &mut self,
+        dst: RegId,
+        value: &nu_protocol::Value,
+    ) -> Result<(), CompileError> {
+        if self.current_call_result_metadata_only {
+            self.lower_compile_time_only_constant_value(dst, value);
+            Ok(())
+        } else {
+            self.lower_constant_value(dst, value)
+        }
     }
 
     pub(super) fn create_stack_numeric_list_result(
@@ -156,7 +180,7 @@ impl<'a> HirToMirLowering<'a> {
             })
             .transpose()?
         {
-            self.lower_constant_value(src_dst, &projected)?;
+            self.lower_compile_time_list_transform_result(src_dst, &projected)?;
         } else if input_meta
             .as_ref()
             .and_then(|meta| meta.list_buffer)
@@ -321,7 +345,10 @@ impl<'a> HirToMirLowering<'a> {
                 }
                 _ => unreachable!("validated stack list slice command"),
             };
-            self.lower_constant_value(src_dst, &nu_protocol::Value::list(vals, Span::unknown()))?;
+            self.lower_compile_time_list_transform_result(
+                src_dst,
+                &nu_protocol::Value::list(vals, Span::unknown()),
+            )?;
             return Ok(());
         }
 
@@ -470,7 +497,10 @@ impl<'a> HirToMirLowering<'a> {
                 .map(|values| values.to_vec())
         }) {
             values.reverse();
-            self.lower_constant_value(src_dst, &nu_protocol::Value::list(values, Span::unknown()))?;
+            self.lower_compile_time_list_transform_result(
+                src_dst,
+                &nu_protocol::Value::list(values, Span::unknown()),
+            )?;
             return Ok(());
         }
 
@@ -607,7 +637,7 @@ impl<'a> HirToMirLowering<'a> {
                 .map(|values| values.to_vec())
         }) {
             let start = values.len().saturating_sub(count);
-            self.lower_constant_value(
+            self.lower_compile_time_list_transform_result(
                 src_dst,
                 &nu_protocol::Value::list(
                     values.into_iter().skip(start).collect::<Vec<_>>(),

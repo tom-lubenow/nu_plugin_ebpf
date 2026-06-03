@@ -469,14 +469,12 @@ pub fn compile_time_value_flows_to_fixed_layout_consumer(
                     );
                 }
 
-                if flow == CompileTimeValueFlow::AggregateBuilder
-                    && compile_time_aggregate_transform_preserves_tracked_input(
-                        decl_names.get(decl_id).map(String::as_str),
-                        *src_dst,
-                        args,
-                        &tracked_regs,
-                    )
-                {
+                if compile_time_aggregate_transform_preserves_tracked_input(
+                    decl_names.get(decl_id).map(String::as_str),
+                    *src_dst,
+                    args,
+                    &tracked_regs,
+                ) {
                     tracked_regs.insert(*src_dst);
                     continue;
                 }
@@ -1142,14 +1140,49 @@ fn compile_time_aggregate_transform_preserves_tracked_input(
     args: &HirCallArgs,
     regs: &HashSet<RegId>,
 ) -> bool {
-    matches!(decl_name, Some("append" | "prepend"))
-        && args.positional.len() == 1
-        && args.rest.is_empty()
-        && args.named.is_empty()
-        && args.flags.is_empty()
-        && args.parser_info.is_empty()
-        && (args.pipeline_input.is_some_and(|reg| regs.contains(&reg))
-            || (args.pipeline_input.is_none() && regs.contains(&src_dst)))
+    match decl_name {
+        Some("append" | "prepend") => {
+            args.positional.len() == 1
+                && args.rest.is_empty()
+                && args.named.is_empty()
+                && args.flags.is_empty()
+                && args.parser_info.is_empty()
+                && call_args_tracked_only_in_pipeline(src_dst, args, regs)
+        }
+        Some("take") => {
+            args.positional.len() == 1
+                && args.rest.is_empty()
+                && args.named.is_empty()
+                && args.flags.is_empty()
+                && args.parser_info.is_empty()
+                && call_args_tracked_only_in_pipeline(src_dst, args, regs)
+        }
+        Some("skip" | "drop") => {
+            args.positional.len() <= 1
+                && args.rest.is_empty()
+                && args.named.is_empty()
+                && args.flags.is_empty()
+                && args.parser_info.is_empty()
+                && call_args_tracked_only_in_pipeline(src_dst, args, regs)
+        }
+        Some("first" | "last") => {
+            args.positional.len() <= 1
+                && args.rest.is_empty()
+                && args.named.is_empty()
+                && args.flags.is_empty()
+                && args.parser_info.is_empty()
+                && call_args_tracked_only_in_pipeline(src_dst, args, regs)
+        }
+        Some("reverse") => {
+            args.positional.is_empty()
+                && args.rest.is_empty()
+                && args.named.is_empty()
+                && args.flags.is_empty()
+                && args.parser_info.is_empty()
+                && call_args_tracked_only_in_pipeline(src_dst, args, regs)
+        }
+        _ => false,
+    }
 }
 
 fn stmt_touches_compile_time_value(

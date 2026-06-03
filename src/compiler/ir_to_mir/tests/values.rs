@@ -1444,6 +1444,118 @@ fn make_float_literal_list_builder_pipeline_call_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_float_literal_list_builder_transform_consumer_program(
+    transform_decl: DeclId,
+    transform_count: Option<i64>,
+    consumer_decl: DeclId,
+    values: &[f64],
+) -> HirProgram {
+    let mut stmts = vec![HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List {
+            capacity: values.len(),
+        },
+    }];
+
+    let mut next_reg = 2;
+    for value in values {
+        let item_reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadLiteral {
+            dst: item_reg,
+            lit: HirLiteral::Float(*value),
+        });
+        stmts.push(HirStmt::ListPush {
+            src_dst: RegId::new(0),
+            item: item_reg,
+        });
+    }
+
+    let positional = if let Some(count) = transform_count {
+        let count_reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadLiteral {
+            dst: count_reg,
+            lit: HirLiteral::Int(count),
+        });
+        vec![count_reg]
+    } else {
+        Vec::new()
+    };
+
+    stmts.push(HirStmt::Call {
+        decl_id: transform_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional,
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let consumer_result_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::Call {
+        decl_id: consumer_decl,
+        src_dst: consumer_result_reg,
+        args: HirCallArgs {
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return {
+                src: consumer_result_reg,
+            },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: next_reg,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_float_literal_list_builder_transform_two_consumers_program(
+    transform_decl: DeclId,
+    transform_count: Option<i64>,
+    first_consumer_decl: DeclId,
+    second_consumer_decl: DeclId,
+    values: &[f64],
+) -> HirProgram {
+    let mut program = make_float_literal_list_builder_transform_consumer_program(
+        transform_decl,
+        transform_count,
+        first_consumer_decl,
+        values,
+    );
+
+    let block = &mut program.main.blocks[0];
+    let previous_result = match block.terminator {
+        HirTerminator::Return { src } => src,
+        _ => unreachable!("test helper creates a return terminator"),
+    };
+    let second_result = RegId::new(program.main.register_count);
+    program.main.register_count += 1;
+    block.stmts.push(HirStmt::Call {
+        decl_id: second_consumer_decl,
+        src_dst: second_result,
+        args: HirCallArgs {
+            pipeline_input: Some(previous_result),
+            ..HirCallArgs::default()
+        },
+    });
+    block.terminator = HirTerminator::Return { src: second_result };
+
+    program
+}
+
 fn make_describe_no_input_then_length_program(
     describe_decl: DeclId,
     length_decl: DeclId,
@@ -6276,6 +6388,112 @@ fn test_lower_empty_predicates_on_float_literal_list_builder_use_constant_length
             .unwrap_or_else(|err| {
                 panic!("{command_name} float-list builder should compile: {err}")
             });
+    }
+}
+
+#[test]
+fn test_lower_list_transforms_on_float_literal_list_builder_feed_metadata_consumers() {
+    for (offset, command_name, count, expected) in [
+        (0, "take", Some(1), 1),
+        (1, "skip", Some(1), 1),
+        (2, "drop", Some(1), 1),
+        (3, "reverse", None, 2),
+        (4, "last", Some(1), 1),
+    ] {
+        let transform_decl = DeclId::new(279 + offset);
+        let length_decl = DeclId::new(284 + offset);
+        let hir = make_float_literal_list_builder_transform_consumer_program(
+            transform_decl,
+            count,
+            length_decl,
+            &[2.5, 1.5],
+        );
+        let decl_names = HashMap::from([
+            (transform_decl, command_name.to_string()),
+            (length_decl, "length".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("{command_name} should preserve metadata-only float-list builders: {err}")
+        });
+
+        assert_program_returns_constant(
+            &result.program,
+            expected,
+            &format!("float-list builder {command_name} length"),
+        );
+        assert_no_runtime_list_operations(
+            &result.program,
+            &format!("float-list builder {command_name}"),
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("{command_name} float-list transform should compile: {err}")
+            });
+    }
+}
+
+#[test]
+fn test_lower_scalar_first_last_on_float_literal_list_builder_feed_describe() {
+    for (offset, command_name) in [(0, "first"), (1, "last")] {
+        let transform_decl = DeclId::new(289 + offset);
+        let describe_decl = DeclId::new(291 + offset);
+        let length_decl = DeclId::new(293 + offset);
+        let hir = make_float_literal_list_builder_transform_two_consumers_program(
+            transform_decl,
+            None,
+            describe_decl,
+            length_decl,
+            &[2.5, 1.5],
+        );
+        let decl_names = HashMap::from([
+            (transform_decl, command_name.to_string()),
+            (describe_decl, "describe".to_string()),
+            (length_decl, "str length".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("{command_name} should preserve metadata-only float scalar output: {err}")
+        });
+
+        assert!(
+            result
+                .program
+                .main
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .any(|inst| matches!(
+                    inst,
+                    MirInst::StringAppend {
+                        val_type: StringAppendType::Literal { bytes },
+                        ..
+                    } if bytes.starts_with(b"float\0")
+                )),
+            "expected describe to materialize the {command_name} float type string"
+        );
+        assert_no_runtime_list_operations(
+            &result.program,
+            &format!("float-list builder scalar {command_name}"),
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{command_name} float-list scalar should compile: {err}"));
     }
 }
 
