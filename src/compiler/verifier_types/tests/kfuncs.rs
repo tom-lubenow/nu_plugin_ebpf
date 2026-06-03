@@ -18103,6 +18103,13 @@ fn test_sock_ops_enable_tx_tstamp_rejects_copied_socket_arg0() {
 fn make_sock_addr_set_sun_path_verify_function_with_copied_arg0(
     arg0_field: CtxField,
 ) -> (MirFunction, HashMap<VReg, MirType>) {
+    make_sock_addr_set_sun_path_verify_function_with_size(arg0_field, 17)
+}
+
+fn make_sock_addr_set_sun_path_verify_function_with_size(
+    arg0_field: CtxField,
+    size_value: i64,
+) -> (MirFunction, HashMap<VReg, MirType>) {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
     func.entry = entry;
@@ -18131,7 +18138,7 @@ fn make_sock_addr_set_sun_path_verify_function_with_copied_arg0(
     });
     func.block_mut(entry).instructions.push(MirInst::Copy {
         dst: size,
-        src: MirValue::Const(17),
+        src: MirValue::Const(size_value),
     });
     func.block_mut(entry).instructions.push(MirInst::CallKfunc {
         dst: ret,
@@ -18167,6 +18174,25 @@ fn make_sock_addr_set_sun_path_verify_function_with_copied_arg0(
     types.insert(ret, MirType::I64);
 
     (func, types)
+}
+
+#[test]
+fn test_sock_addr_set_sun_path_rejects_zero_size() {
+    let (func, types) = make_sock_addr_set_sun_path_verify_function_with_size(CtxField::Context, 0);
+    let probe_ctx = ProbeContext::new(
+        EbpfProgramType::CgroupSockAddr,
+        "/sys/fs/cgroup:connect_unix",
+    );
+
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected zero-size sun_path kfunc arg2 to fail");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("kfunc 'bpf_sock_addr_set_sun_path' arg2 must be > 0")),
+        "unexpected errors: {:?}",
+        err
+    );
 }
 
 #[test]

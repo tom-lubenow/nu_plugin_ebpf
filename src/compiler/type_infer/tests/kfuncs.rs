@@ -5855,16 +5855,24 @@ fn test_type_error_sock_ops_enable_tx_tstamp_rejects_copied_socket_arg0() {
 }
 
 fn make_sock_addr_set_sun_path_type_call(arg0_field: CtxField) -> MirFunction {
-    make_sock_addr_set_sun_path_type_call_with_arg0_copy(arg0_field, false)
+    make_sock_addr_set_sun_path_type_call_with_size(arg0_field, 17)
+}
+
+fn make_sock_addr_set_sun_path_type_call_with_size(
+    arg0_field: CtxField,
+    size_value: i64,
+) -> MirFunction {
+    make_sock_addr_set_sun_path_type_call_with_arg0_copy(arg0_field, false, size_value)
 }
 
 fn make_sock_addr_set_sun_path_type_call_with_copied_arg0(arg0_field: CtxField) -> MirFunction {
-    make_sock_addr_set_sun_path_type_call_with_arg0_copy(arg0_field, true)
+    make_sock_addr_set_sun_path_type_call_with_arg0_copy(arg0_field, true, 17)
 }
 
 fn make_sock_addr_set_sun_path_type_call_with_arg0_copy(
     arg0_field: CtxField,
     copy_arg0: bool,
+    size_value: i64,
 ) -> MirFunction {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();
@@ -5891,7 +5899,7 @@ fn make_sock_addr_set_sun_path_type_call_with_arg0_copy(
     });
     block.instructions.push(MirInst::Copy {
         dst: size,
-        src: MirValue::Const(17),
+        src: MirValue::Const(size_value),
     });
     block.instructions.push(MirInst::CallKfunc {
         dst: ret,
@@ -5901,6 +5909,25 @@ fn make_sock_addr_set_sun_path_type_call_with_arg0_copy(
     });
     block.terminator = MirInst::Return { val: None };
     func
+}
+
+#[test]
+fn test_type_error_sock_addr_set_sun_path_rejects_zero_size() {
+    let func = make_sock_addr_set_sun_path_type_call_with_size(CtxField::Context, 0);
+    let mut ti = TypeInference::new(Some(ProbeContext::new(
+        EbpfProgramType::CgroupSockAddr,
+        "/sys/fs/cgroup:connect_unix",
+    )));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected zero-size sun_path kfunc arg2 to fail");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("kfunc 'bpf_sock_addr_set_sun_path' arg2 must be > 0")),
+        "unexpected errors: {:?}",
+        errs
+    );
 }
 
 #[test]
