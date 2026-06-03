@@ -9996,6 +9996,89 @@ fn test_lower_char_named_character_materializes_literal() {
 }
 
 #[test]
+fn test_lower_char_named_character_ignores_extra_string_args() {
+    let char_decl = DeclId::new(512);
+    let starts_with_decl = DeclId::new(513);
+    let hir = make_char_then_starts_with_program(
+        char_decl,
+        starts_with_decl,
+        Vec::new(),
+        &[
+            CharTestArg::String("prompt"),
+            CharTestArg::String("ignored"),
+            CharTestArg::String("1f354"),
+        ],
+        "▶",
+    );
+    let decl_names = HashMap::from([
+        (char_decl, "char".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("char named-character extras should be accepted as ignored strings");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with("▶\0".as_bytes())
+            )),
+        "expected char named-character form to ignore extra string arguments"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("char named-character extra-string result should compile through codegen");
+}
+
+#[test]
+fn test_lower_char_named_character_rejects_non_string_extra_args() {
+    let char_decl = DeclId::new(514);
+    let starts_with_decl = DeclId::new(515);
+    let hir = make_char_then_starts_with_program(
+        char_decl,
+        starts_with_decl,
+        Vec::new(),
+        &[CharTestArg::String("prompt"), CharTestArg::Int(65)],
+        "▶",
+    );
+    let decl_names = HashMap::from([
+        (char_decl, "char".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("char named-character form should reject non-string extra args");
+
+    assert!(
+        err.to_string()
+            .contains("char named-character extra argument requires a compile-time string literal"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn test_lower_char_unicode_codepoints_materialize_literal() {
     let char_decl = DeclId::new(506);
     let starts_with_decl = DeclId::new(507);

@@ -37472,6 +37472,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-char-named-extra-string-args"
+        category: "language-core"
+        tags: [string char named rest]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  char prompt ignored 1f354 | str starts-with "▶"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-char-unicode-codepoints"
         category: "language-core"
         tags: [string char unicode]

@@ -79,12 +79,11 @@ impl<'a> HirToMirLowering<'a> {
         } else if integer {
             self.lower_char_integer_output()?
         } else {
-            if self.positional_args.len() != 1 {
-                return Err(CompileError::UnsupportedInstruction(
-                    "char named-character form supports exactly one argument in eBPF".into(),
-                ));
-            }
             let name = self.literal_string_arg(self.positional_args[0].1, "char")?;
+            for (_, reg) in self.positional_args.iter().skip(1) {
+                // Nushell ignores extra string rest arguments in the named-character form.
+                let _ = self.literal_string_arg(*reg, "char named-character extra argument")?;
+            }
             Self::known_named_char(&name).ok_or_else(|| {
                 CompileError::UnsupportedInstruction(format!(
                     "char named character '{name}' is not supported in eBPF"
