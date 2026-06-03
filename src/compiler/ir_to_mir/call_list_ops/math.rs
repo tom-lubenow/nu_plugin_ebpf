@@ -2,17 +2,60 @@ use super::*;
 use crate::compiler::mir::UnaryOpKind;
 
 impl<'a> HirToMirLowering<'a> {
-    fn math_identity_value_for_integer_command(
+    fn math_integer_result_for_rounding_command(
         cmd_name: &str,
         value: nu_protocol::Value,
+        list_index: Option<usize>,
     ) -> Result<nu_protocol::Value, CompileError> {
         match value {
             nu_protocol::Value::Int { .. } => Ok(value),
-            other => Err(CompileError::UnsupportedInstruction(format!(
-                "{cmd_name} currently supports integer input only in eBPF; input has type {}",
-                other.get_type()
-            ))),
+            nu_protocol::Value::Float { val, .. } => {
+                let rounded = match cmd_name {
+                    "math ceil" => val.ceil(),
+                    "math floor" => val.floor(),
+                    "math round" => val.round(),
+                    _ => {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "unsupported integer rounding command {cmd_name}"
+                        )));
+                    }
+                };
+                let val = Self::checked_compile_time_float_to_i64(cmd_name, rounded, list_index)?;
+                Ok(nu_protocol::Value::int(val, nu_protocol::Span::unknown()))
+            }
+            other => Err(CompileError::UnsupportedInstruction(match list_index {
+                Some(index) => format!(
+                    "{cmd_name} requires integer or compile-time float list items in eBPF; item {index} has type {}",
+                    other.get_type()
+                ),
+                None => format!(
+                    "{cmd_name} currently supports integer input and compile-time float input only in eBPF; input has type {}",
+                    other.get_type()
+                ),
+            })),
         }
+    }
+
+    fn checked_compile_time_float_to_i64(
+        cmd_name: &str,
+        value: f64,
+        list_index: Option<usize>,
+    ) -> Result<i64, CompileError> {
+        const I64_MIN_F64: f64 = -9_223_372_036_854_775_808.0;
+        const I64_MAX_PLUS_ONE_F64: f64 = 9_223_372_036_854_775_808.0;
+
+        if !value.is_finite() || !(I64_MIN_F64..I64_MAX_PLUS_ONE_F64).contains(&value) {
+            return Err(CompileError::UnsupportedInstruction(match list_index {
+                Some(index) => format!(
+                    "{cmd_name} compile-time float list item {index} result {value} cannot be represented as an i64 in eBPF"
+                ),
+                None => format!(
+                    "{cmd_name} compile-time float result {value} cannot be represented as an i64 in eBPF"
+                ),
+            }));
+        }
+
+        Ok(value as i64)
     }
 
     pub(super) fn mir_type_is_integer(ty: &MirType) -> bool {
@@ -73,13 +116,7 @@ impl<'a> HirToMirLowering<'a> {
                 .into_iter()
                 .enumerate()
                 .map(|(index, value)| {
-                    let nu_protocol::Value::Int { .. } = value else {
-                        return Err(CompileError::UnsupportedInstruction(format!(
-                            "{cmd_name} requires integer list items in eBPF; item {index} has type {}",
-                            value.get_type()
-                        )));
-                    };
-                    Ok(value)
+                    Self::math_integer_result_for_rounding_command(cmd_name, value, Some(index))
                 })
                 .collect::<Result<Vec<_>, _>>()?;
 
@@ -112,9 +149,9 @@ impl<'a> HirToMirLowering<'a> {
             .as_ref()
             .and_then(|meta| meta.constant_value.clone())
         {
-            let value = Self::math_identity_value_for_integer_command(cmd_name, value)?;
+            let value = Self::math_integer_result_for_rounding_command(cmd_name, value, None)?;
             let nu_protocol::Value::Int { val, .. } = value else {
-                unreachable!("integer identity helper returns only integer values")
+                unreachable!("math rounding helper returns only integer values")
             };
 
             let result_vreg = if src_dst_had_value {

@@ -11501,6 +11501,36 @@ fn make_math_abs_program(abs_decl: DeclId, input: i64) -> HirProgram {
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_math_float_literal_program(math_decl: DeclId, input: f64) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Float(input),
+                },
+                HirStmt::Call {
+                    decl_id: math_decl,
+                    src_dst: RegId::new(1),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 2,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_runtime_scalar_math_unary_program(math_decl: DeclId, random_decl: DeclId) -> HirProgram {
     let func = HirFunction {
         blocks: vec![HirBlock {
@@ -12562,6 +12592,48 @@ fn make_value_list_pipeline_call_program(decl_id: DeclId, values: Vec<Value>) ->
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_value_list_two_call_program(
+    first_decl: DeclId,
+    second_decl: DeclId,
+    values: Vec<Value>,
+) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::list(values, Span::test_data())),
+                },
+                HirStmt::Call {
+                    decl_id: first_decl,
+                    src_dst: RegId::new(1),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: second_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(1)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(2) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_bits_binary_value_list_program(
     bits_decl: DeclId,
     values: Vec<Value>,
@@ -13551,6 +13623,48 @@ fn test_lower_math_integer_identity_commands_on_known_integer_inputs() {
 }
 
 #[test]
+fn test_lower_math_rounding_commands_on_known_float_inputs() {
+    for (offset, command_name, input, expected) in [
+        (0, "math ceil", 1.25, 2),
+        (1, "math floor", -1.25, -2),
+        (2, "math round", -2.5, -3),
+    ] {
+        let decl = DeclId::new(2820 + offset);
+        let hir = make_math_float_literal_program(decl, input);
+        let decl_names = HashMap::from([(decl, command_name.to_string())]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("{command_name} should lower float input: {err}"));
+
+        assert!(
+            result
+                .program
+                .main
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .any(|inst| matches!(
+                    inst,
+                    MirInst::Copy {
+                        src: MirValue::Const(value),
+                        ..
+                    } if *value == expected
+                )),
+            "expected {command_name} to materialize {expected} from {input}"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{command_name} should compile through codegen: {err}"));
+    }
+}
+
+#[test]
 fn test_lower_math_integer_identity_commands_on_runtime_scalar_integers() {
     for (offset, command_name) in [(0, "math ceil"), (1, "math floor"), (2, "math round")] {
         let command_decl = DeclId::new(266 + offset);
@@ -13635,6 +13749,49 @@ fn test_lower_math_integer_identity_commands_on_known_integer_lists() {
 }
 
 #[test]
+fn test_lower_math_rounding_commands_on_known_mixed_numeric_lists() {
+    let round_decl = DeclId::new(2823);
+    let sum_decl = DeclId::new(2824);
+    let hir = make_value_list_two_call_program(
+        round_decl,
+        sum_decl,
+        vec![
+            Value::int(1, Span::test_data()),
+            Value::float(1.5, Span::test_data()),
+            Value::float(-1.5, Span::test_data()),
+        ],
+    );
+    let decl_names = HashMap::from([
+        (round_decl, "math round".to_string()),
+        (sum_decl, "math sum".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("math round should lower mixed compile-time integer/float list input");
+    let expected = [1i64, 2, -2]
+        .into_iter()
+        .flat_map(|value| value.to_le_bytes())
+        .collect::<Vec<_>>();
+
+    assert!(
+        result
+            .readonly_globals
+            .iter()
+            .any(|global| global.data == expected),
+        "expected math round to materialize integer results for the mixed list"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("math round mixed numeric list should compile through codegen");
+}
+
+#[test]
 fn test_lower_math_integer_identity_rejects_non_integer_list_items() {
     let round_decl = DeclId::new(280);
     let hir = make_value_list_pipeline_call_program(
@@ -13658,7 +13815,7 @@ fn test_lower_math_integer_identity_rejects_non_integer_list_items() {
 
     assert!(
         err.to_string()
-            .contains("math round requires integer list items"),
+            .contains("math round requires integer or compile-time float list items"),
         "unexpected error: {err}"
     );
 }

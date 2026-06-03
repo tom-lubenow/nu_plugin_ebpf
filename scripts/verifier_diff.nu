@@ -35789,6 +35789,32 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-scalar-math-float-rounding"
+        category: "language-core"
+        tags: [scalar math ceil floor round float constant]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ([(1.25 | math ceil) (-1.25 | math floor) (-2.5 | math round)] | math sum) == -3'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-list-math-float-rounding"
+        category: "language-core"
+        tags: [aggregate list math round float constant]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [1 1.5 -1.5] | math round | str join "," | str starts-with "1,2,-2"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-scalar-math-integer-identity-runtime"
         category: "language-core"
         tags: [scalar math ceil floor round runtime]
