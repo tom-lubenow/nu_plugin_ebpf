@@ -26,6 +26,11 @@ enum FillAlignment {
     CenterRight,
 }
 
+enum KnownFillInput {
+    Scalar(String),
+    List(Vec<String>),
+}
+
 impl<'a> HirToMirLowering<'a> {
     pub(super) fn lower_char(
         &mut self,
@@ -2075,17 +2080,69 @@ impl<'a> HirToMirLowering<'a> {
         let alignment = self.fill_alignment()?;
         let fill = self.fill_character()?;
 
-        if let Some(input) = self.exact_string_list_input(input_reg, "fill")? {
-            let output = input
-                .into_iter()
-                .map(|item| Self::fill_known_string(&item, width, alignment, &fill))
-                .collect();
-            return self.lower_known_string_list_result(src_dst, result_vreg, output);
+        match self.fill_input(input_reg)? {
+            KnownFillInput::List(input) => {
+                let output = input
+                    .into_iter()
+                    .map(|item| Self::fill_known_string(&item, width, alignment, &fill))
+                    .collect();
+                self.lower_known_string_list_result(src_dst, result_vreg, output)
+            }
+            KnownFillInput::Scalar(input) => {
+                let output = Self::fill_known_string(&input, width, alignment, &fill);
+                self.lower_known_string_result(src_dst, result_vreg, output)
+            }
+        }
+    }
+
+    fn fill_input(&self, input_reg: Option<RegId>) -> Result<KnownFillInput, CompileError> {
+        let Some(meta) = input_reg.and_then(|reg| self.get_metadata(reg).cloned()) else {
+            return Err(CompileError::UnsupportedInstruction(
+                "fill requires compile-time known string or int input in eBPF".into(),
+            ));
+        };
+
+        if let Some(value) = meta.constant_value {
+            return match value {
+                nu_protocol::Value::String { val, .. } | nu_protocol::Value::Glob { val, .. } => {
+                    Ok(KnownFillInput::Scalar(val))
+                }
+                nu_protocol::Value::Int { val, .. } => Ok(KnownFillInput::Scalar(val.to_string())),
+                nu_protocol::Value::List { vals, .. } => vals
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, item)| Self::fill_item_value(item, index))
+                    .collect::<Result<Vec<_>, _>>()
+                    .map(KnownFillInput::List),
+                other => Err(CompileError::UnsupportedInstruction(format!(
+                    "fill requires compile-time known string or int input in eBPF; input has type {}",
+                    other.get_type()
+                ))),
+            };
         }
 
-        let input = self.exact_string_input(input_reg, "fill")?;
-        let output = Self::fill_known_string(&input, width, alignment, &fill);
-        self.lower_known_string_result(src_dst, result_vreg, output)
+        if let Some(input) = meta.literal_string {
+            Ok(KnownFillInput::Scalar(input))
+        } else if let Some(input) = meta.literal_int {
+            Ok(KnownFillInput::Scalar(input.to_string()))
+        } else {
+            Err(CompileError::UnsupportedInstruction(
+                "fill requires compile-time known string or int input in eBPF".into(),
+            ))
+        }
+    }
+
+    fn fill_item_value(value: nu_protocol::Value, index: usize) -> Result<String, CompileError> {
+        match value {
+            nu_protocol::Value::String { val, .. } | nu_protocol::Value::Glob { val, .. } => {
+                Ok(val)
+            }
+            nu_protocol::Value::Int { val, .. } => Ok(val.to_string()),
+            other => Err(CompileError::UnsupportedInstruction(format!(
+                "fill supports only string and int compile-time list items in eBPF; item {index} has type {}",
+                other.get_type()
+            ))),
+        }
     }
 
     fn fill_width(&self) -> Result<usize, CompileError> {

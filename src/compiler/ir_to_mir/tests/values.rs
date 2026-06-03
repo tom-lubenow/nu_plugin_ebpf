@@ -2949,10 +2949,30 @@ fn make_fill_then_starts_with_program(
     alignment: Option<&str>,
     character: Option<&str>,
 ) -> HirProgram {
+    make_fill_value_then_starts_with_program(
+        fill_decl,
+        starts_with_decl,
+        Value::string(value, Span::test_data()),
+        prefix,
+        width,
+        alignment,
+        character,
+    )
+}
+
+fn make_fill_value_then_starts_with_program(
+    fill_decl: DeclId,
+    starts_with_decl: DeclId,
+    value: Value,
+    prefix: &str,
+    width: Option<i64>,
+    alignment: Option<&str>,
+    character: Option<&str>,
+) -> HirProgram {
     let mut next_reg = 2u32;
     let mut stmts = vec![HirStmt::LoadValue {
         dst: RegId::new(0),
-        val: Box::new(Value::string(value, Span::test_data())),
+        val: Box::new(value),
     }];
     let mut named = Vec::new();
 
@@ -3040,16 +3060,60 @@ fn make_string_list_fill_join_then_starts_with_program(
     character: &str,
     prefix: &str,
 ) -> HirProgram {
+    make_value_list_fill_join_then_starts_with_program(
+        fill_decl,
+        join_decl,
+        starts_with_decl,
+        values
+            .iter()
+            .map(|value| Value::string(*value, Span::test_data()))
+            .collect(),
+        width,
+        alignment,
+        character,
+        prefix,
+    )
+}
+
+fn make_int_list_fill_join_then_starts_with_program(
+    fill_decl: DeclId,
+    join_decl: DeclId,
+    starts_with_decl: DeclId,
+    values: &[i64],
+    width: i64,
+    alignment: &str,
+    character: &str,
+    prefix: &str,
+) -> HirProgram {
+    make_value_list_fill_join_then_starts_with_program(
+        fill_decl,
+        join_decl,
+        starts_with_decl,
+        values
+            .iter()
+            .map(|value| Value::int(*value, Span::test_data()))
+            .collect(),
+        width,
+        alignment,
+        character,
+        prefix,
+    )
+}
+
+fn make_value_list_fill_join_then_starts_with_program(
+    fill_decl: DeclId,
+    join_decl: DeclId,
+    starts_with_decl: DeclId,
+    values: Vec<Value>,
+    width: i64,
+    alignment: &str,
+    character: &str,
+    prefix: &str,
+) -> HirProgram {
     let mut next_reg = 2u32;
     let mut stmts = vec![HirStmt::LoadValue {
         dst: RegId::new(0),
-        val: Box::new(Value::list(
-            values
-                .iter()
-                .map(|value| Value::string(*value, Span::test_data()))
-                .collect(),
-            Span::test_data(),
-        )),
+        val: Box::new(Value::list(values, Span::test_data())),
     }];
 
     let width_reg = RegId::new(next_reg);
@@ -9809,6 +9873,54 @@ fn test_lower_fill_right_on_known_string_materializes_padded_literal() {
 }
 
 #[test]
+fn test_lower_fill_right_on_known_int_materializes_padded_literal() {
+    let fill_decl = DeclId::new(504);
+    let starts_with_decl = DeclId::new(505);
+    let hir = make_fill_value_then_starts_with_program(
+        fill_decl,
+        starts_with_decl,
+        Value::int(42, Span::test_data()),
+        "00042",
+        Some(5),
+        Some("right"),
+        Some("0"),
+    );
+    let decl_names = HashMap::from([
+        (fill_decl, "fill".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("fill should lower for compile-time known int input");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"00042\0")
+            )),
+        "expected fill to materialize the padded int string"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("fill int result consumed by str starts-with should compile through codegen");
+}
+
+#[test]
 fn test_lower_fill_center_on_known_string_list_materializes_padded_literals() {
     let fill_decl = DeclId::new(499);
     let join_decl = DeclId::new(500);
@@ -9870,6 +9982,70 @@ fn test_lower_fill_center_on_known_string_list_materializes_padded_literals() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("fill string-list result consumed by str join should compile through codegen");
+}
+
+#[test]
+fn test_lower_fill_right_on_known_int_list_materializes_padded_literals() {
+    let fill_decl = DeclId::new(506);
+    let join_decl = DeclId::new(507);
+    let starts_with_decl = DeclId::new(508);
+    let hir = make_int_list_fill_join_then_starts_with_program(
+        fill_decl,
+        join_decl,
+        starts_with_decl,
+        &[1, 23],
+        3,
+        "right",
+        "0",
+        "001,023",
+    );
+    let decl_names = HashMap::from([
+        (fill_decl, "fill".to_string()),
+        (join_decl, "str join".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("fill should lower for compile-time known int-list input");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"001,023\0")
+            )),
+        "expected fill list output to feed str join with padded int strings"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .all(|inst| !matches!(
+                inst,
+                MirInst::ListGet { .. } | MirInst::ListLen { .. } | MirInst::ListPush { .. }
+            )),
+        "expected compile-time fill int-list input not to use runtime list operations"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("fill int-list result consumed by str join should compile through codegen");
 }
 
 #[test]

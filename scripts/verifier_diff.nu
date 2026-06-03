@@ -37340,6 +37340,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-int-fill-right"
+        category: "language-core"
+        tags: [int fill right]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  42 | fill --alignment right --character "0" --width 5 | str starts-with "00042"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-char-named-prompt"
         category: "language-core"
         tags: [string char named]
@@ -37386,6 +37399,19 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  ["a" "bc"] | fill --alignment center --character "_" --width 4 | str join "," | str starts-with "_a__,_bc_"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-int-list-fill-right-join"
+        category: "language-core"
+        tags: [int list fill right join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [1 23] | fill --alignment right --character "0" --width 3 | str join "," | str starts-with "001,023"'
             '}'
         ]
         local: "accept"
