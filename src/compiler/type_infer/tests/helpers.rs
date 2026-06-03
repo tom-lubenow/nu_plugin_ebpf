@@ -10967,6 +10967,57 @@ fn test_type_error_helper_tcp_check_syncookie_rejects_non_positive_lengths() {
 }
 
 #[test]
+fn test_type_error_helper_tcp_check_syncookie_rejects_lengths_above_u32_max() {
+    let mut func = make_test_function();
+    let pid = func.alloc_vreg();
+    let sk = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(7),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: sk,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::TcpCheckSyncookie as u32,
+        args: vec![
+            MirValue::VReg(sk),
+            MirValue::VReg(sk),
+            MirValue::Const(0x1_0000_0000),
+            MirValue::VReg(sk),
+            MirValue::Const(0x1_0000_0000),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected tcp_check_syncookie size range errors");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("TCP syncookie helpers require arg2 iph_len to be between 0 and u32::MAX")),
+        "unexpected errors: {:?}",
+        errs
+    );
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("TCP syncookie helpers require arg4 th_len to be between 0 and u32::MAX")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
 fn test_type_error_helper_tcp_gen_syncookie_rejects_non_kernel_sk_pointer() {
     let mut func = make_test_function();
     let sk_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
@@ -11057,6 +11108,57 @@ fn test_type_error_helper_tcp_gen_syncookie_rejects_non_positive_lengths() {
     assert!(
         errs.iter()
             .any(|e| e.message.contains("helper 110 arg4 must be > 0")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_type_error_helper_tcp_gen_syncookie_rejects_lengths_above_u32_max() {
+    let mut func = make_test_function();
+    let pid = func.alloc_vreg();
+    let sk = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(7),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst: sk,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::TcpGenSyncookie as u32,
+        args: vec![
+            MirValue::VReg(sk),
+            MirValue::VReg(sk),
+            MirValue::Const(0x1_0000_0000),
+            MirValue::VReg(sk),
+            MirValue::Const(0x1_0000_0000),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected tcp_gen_syncookie size range errors");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("TCP syncookie helpers require arg2 iph_len to be between 0 and u32::MAX")),
+        "unexpected errors: {:?}",
+        errs
+    );
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("TCP syncookie helpers require arg4 th_len to be between 0 and u32::MAX")),
         "unexpected errors: {:?}",
         errs
     );
@@ -11380,6 +11482,38 @@ fn test_type_error_tcp_raw_syncookie_gen_rejects_negative_len() {
     assert!(
         errs.iter()
             .any(|e| e.message.contains("helper 204 arg2 must be >= 0")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_type_error_tcp_raw_syncookie_gen_rejects_len_above_u32_max() {
+    let mut func = make_test_function();
+    let ip_slot = func.alloc_stack_slot(20, 8, StackSlotKind::StringBuffer);
+    let th_slot = func.alloc_stack_slot(20, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::TcpRawGenSyncookieIpv4 as u32,
+        args: vec![
+            MirValue::StackSlot(ip_slot),
+            MirValue::StackSlot(th_slot),
+            MirValue::Const(0x1_0000_0000),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected raw syncookie len range error");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("raw syncookie helpers require arg2 th_len to be between 0 and u32::MAX")),
         "unexpected errors: {:?}",
         errs
     );
@@ -12431,6 +12565,44 @@ fn test_infer_helper_skc_lookup_returns_kernel_pointer() {
             other
         ),
     }
+}
+
+#[test]
+fn test_type_error_helper_sk_lookup_rejects_tuple_size_above_u32_max() {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let tuple_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SkLookupTcp as u32,
+        args: vec![
+            MirValue::VReg(ctx),
+            MirValue::StackSlot(tuple_slot),
+            MirValue::Const(0x1_0000_0000),
+            MirValue::Const(0),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected sk_lookup tuple_size range error");
+    assert!(
+        errs.iter().any(|e| e.message.contains(
+            "socket lookup helpers require arg2 tuple_size to be between 0 and u32::MAX"
+        )),
+        "unexpected errors: {:?}",
+        errs
+    );
 }
 
 #[test]

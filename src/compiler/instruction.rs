@@ -88,6 +88,8 @@ const BPF_BTF_KIND_MAX_U32: i64 = u32::MAX as i64;
 const BPF_CHECK_MTU_IFINDEX_MAX_U32: i64 = u32::MAX as i64;
 const BPF_CHECK_MTU_LEN_DIFF_MIN_I32: i64 = i32::MIN as i64;
 const BPF_CHECK_MTU_LEN_DIFF_MAX_I32: i64 = i32::MAX as i64;
+const BPF_SOCKET_LOOKUP_TUPLE_SIZE_MAX_U32: i64 = u32::MAX as i64;
+const BPF_SYNCOOKIE_HEADER_LEN_MAX_U32: i64 = u32::MAX as i64;
 const PACKET_OTHERHOST: i64 = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1730,6 +1732,26 @@ impl BpfHelper {
                 0,
                 3,
                 "helper 'bpf_sk_assign' requires arg2 flags to contain only BPF_SK_LOOKUP_F_REPLACE/BPF_SK_LOOKUP_F_NO_REUSEPORT bits (0x03)",
+            )),
+            (Self::SkLookupTcp | Self::SkLookupUdp | Self::SkcLookupTcp, 2) => Some((
+                0,
+                BPF_SOCKET_LOOKUP_TUPLE_SIZE_MAX_U32,
+                "socket lookup helpers require arg2 tuple_size to be between 0 and u32::MAX",
+            )),
+            (Self::TcpCheckSyncookie | Self::TcpGenSyncookie, 2) => Some((
+                0,
+                BPF_SYNCOOKIE_HEADER_LEN_MAX_U32,
+                "TCP syncookie helpers require arg2 iph_len to be between 0 and u32::MAX",
+            )),
+            (Self::TcpCheckSyncookie | Self::TcpGenSyncookie, 4) => Some((
+                0,
+                BPF_SYNCOOKIE_HEADER_LEN_MAX_U32,
+                "TCP syncookie helpers require arg4 th_len to be between 0 and u32::MAX",
+            )),
+            (Self::TcpRawGenSyncookieIpv4 | Self::TcpRawGenSyncookieIpv6, 2) => Some((
+                0,
+                BPF_SYNCOOKIE_HEADER_LEN_MAX_U32,
+                "raw syncookie helpers require arg2 th_len to be between 0 and u32::MAX",
             )),
             (Self::PerfEventRead | Self::PerfEventReadValue, 1) => Some((
                 0,

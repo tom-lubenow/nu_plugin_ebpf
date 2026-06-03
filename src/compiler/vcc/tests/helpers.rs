@@ -11455,6 +11455,14 @@ fn make_socket_lookup_vcc_call(
     helper: BpfHelper,
     flags: i64,
 ) -> (MirFunction, HashMap<VReg, MirType>) {
+    make_socket_lookup_vcc_call_with_tuple_size(helper, 16, flags)
+}
+
+fn make_socket_lookup_vcc_call_with_tuple_size(
+    helper: BpfHelper,
+    tuple_size: i64,
+    flags: i64,
+) -> (MirFunction, HashMap<VReg, MirType>) {
     let (mut func, entry) = new_mir_function();
     let ctx = func.alloc_vreg();
     let dst = func.alloc_vreg();
@@ -11475,7 +11483,7 @@ fn make_socket_lookup_vcc_call(
             args: vec![
                 MirValue::VReg(ctx),
                 MirValue::StackSlot(tuple_slot),
-                MirValue::Const(16),
+                MirValue::Const(tuple_size),
                 MirValue::Const(0),
                 MirValue::Const(flags),
             ],
@@ -11510,6 +11518,29 @@ fn test_verify_mir_for_probe_context_socket_lookup_helpers_reject_nonzero_flags(
             err.iter().any(|e| e
                 .message
                 .contains("socket lookup helpers require arg4 flags = 0")),
+            "unexpected errors for {:?}: {:?}",
+            helper,
+            err
+        );
+    }
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_socket_lookup_rejects_tuple_size_above_u32_max() {
+    for helper in [
+        BpfHelper::SkLookupTcp,
+        BpfHelper::SkLookupUdp,
+        BpfHelper::SkcLookupTcp,
+    ] {
+        let (func, types) =
+            make_socket_lookup_vcc_call_with_tuple_size(helper, u32::MAX as i64 + 1, 0);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+        let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect_err("expected socket lookup tuple_size range error");
+        assert!(
+            err.iter().any(|e| e.message.contains(
+                "socket lookup helpers require arg2 tuple_size to be between 0 and u32::MAX"
+            )),
             "unexpected errors for {:?}: {:?}",
             helper,
             err
@@ -17815,6 +17846,106 @@ fn test_verify_mir_helper_tcp_gen_syncookie_rejects_non_positive_lengths() {
     );
 }
 
+fn make_tcp_syncookie_vcc_call(
+    helper: BpfHelper,
+    iph_len: i64,
+    th_len: i64,
+) -> (MirFunction, HashMap<VReg, MirType>) {
+    let (mut func, entry) = new_mir_function();
+    let pid = func.alloc_vreg();
+    let kptr = func.alloc_vreg();
+    let syncookie_ret = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: pid,
+        src: MirValue::Const(7),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: kptr,
+        kfunc: "bpf_task_from_pid".to_string(),
+        btf_id: None,
+        args: vec![pid],
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: syncookie_ret,
+            helper: helper as u32,
+            args: vec![
+                MirValue::VReg(kptr),
+                MirValue::VReg(kptr),
+                MirValue::Const(iph_len),
+                MirValue::VReg(kptr),
+                MirValue::Const(th_len),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(pid, MirType::I64);
+    types.insert(
+        kptr,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(syncookie_ret, MirType::I64);
+
+    (func, types)
+}
+
+#[test]
+fn test_verify_mir_helper_tcp_check_syncookie_rejects_lengths_above_u32_max() {
+    for (iph_len, th_len, expected) in [
+        (
+            u32::MAX as i64 + 1,
+            20,
+            "TCP syncookie helpers require arg2 iph_len to be between 0 and u32::MAX",
+        ),
+        (
+            20,
+            u32::MAX as i64 + 1,
+            "TCP syncookie helpers require arg4 th_len to be between 0 and u32::MAX",
+        ),
+    ] {
+        let (func, types) =
+            make_tcp_syncookie_vcc_call(BpfHelper::TcpCheckSyncookie, iph_len, th_len);
+        let err =
+            verify_mir(&func, &types).expect_err("expected tcp_check_syncookie length range error");
+        assert!(
+            err.iter().any(|e| e.message.contains(expected)),
+            "unexpected error messages: {:?}",
+            err
+        );
+    }
+}
+
+#[test]
+fn test_verify_mir_helper_tcp_gen_syncookie_rejects_lengths_above_u32_max() {
+    for (iph_len, th_len, expected) in [
+        (
+            u32::MAX as i64 + 1,
+            20,
+            "TCP syncookie helpers require arg2 iph_len to be between 0 and u32::MAX",
+        ),
+        (
+            20,
+            u32::MAX as i64 + 1,
+            "TCP syncookie helpers require arg4 th_len to be between 0 and u32::MAX",
+        ),
+    ] {
+        let (func, types) =
+            make_tcp_syncookie_vcc_call(BpfHelper::TcpGenSyncookie, iph_len, th_len);
+        let err =
+            verify_mir(&func, &types).expect_err("expected tcp_gen_syncookie length range error");
+        assert!(
+            err.iter().any(|e| e.message.contains(expected)),
+            "unexpected error messages: {:?}",
+            err
+        );
+    }
+}
+
 #[test]
 fn test_verify_mir_for_probe_context_tcp_check_syncookie_rejects_kprobe() {
     let (mut func, entry) = new_mir_function();
@@ -18069,6 +18200,45 @@ fn test_verify_mir_helper_tcp_raw_syncookie_checks_stack_header_bounds() {
         "unexpected error messages: {:?}",
         err
     );
+}
+
+#[test]
+fn test_verify_mir_helper_tcp_raw_syncookie_rejects_len_above_u32_max() {
+    for helper in [
+        BpfHelper::TcpRawGenSyncookieIpv4,
+        BpfHelper::TcpRawGenSyncookieIpv6,
+    ] {
+        let (mut func, entry) = new_mir_function();
+        let ip_slot = func.alloc_stack_slot(40, 8, StackSlotKind::StringBuffer);
+        let th_slot = func.alloc_stack_slot(20, 8, StackSlotKind::StringBuffer);
+        let ret = func.alloc_vreg();
+
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: ret,
+                helper: helper as u32,
+                args: vec![
+                    MirValue::StackSlot(ip_slot),
+                    MirValue::StackSlot(th_slot),
+                    MirValue::Const(u32::MAX as i64 + 1),
+                ],
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(ret, MirType::I64);
+
+        let err = verify_mir(&func, &types).expect_err("expected raw syncookie length range error");
+        assert!(
+            err.iter().any(|e| e.message.contains(
+                "raw syncookie helpers require arg2 th_len to be between 0 and u32::MAX"
+            )),
+            "unexpected errors for {:?}: {:?}",
+            helper,
+            err
+        );
+    }
 }
 
 #[test]

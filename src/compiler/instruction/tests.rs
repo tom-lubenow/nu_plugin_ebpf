@@ -4757,6 +4757,14 @@ fn test_helper_signature_socket_helpers() {
             helper.zero_scalar_arg_requirement(),
             Some((4, "socket lookup helpers require arg4 flags = 0"))
         );
+        assert_eq!(
+            helper.scalar_arg_range_requirement(2),
+            Some((
+                0,
+                u32::MAX as i64,
+                "socket lookup helpers require arg2 tuple_size to be between 0 and u32::MAX"
+            ))
+        );
     }
 
     let sig = HelperSignature::for_id(BpfHelper::TcpCheckSyncookie as u32)
@@ -4780,6 +4788,25 @@ fn test_helper_signature_socket_helpers() {
     assert_eq!(sig.arg_kind(3), HelperArgKind::Pointer);
     assert_eq!(sig.arg_kind(4), HelperArgKind::Scalar);
     assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+
+    for helper in [BpfHelper::TcpCheckSyncookie, BpfHelper::TcpGenSyncookie] {
+        assert_eq!(
+            helper.scalar_arg_range_requirement(2),
+            Some((
+                0,
+                u32::MAX as i64,
+                "TCP syncookie helpers require arg2 iph_len to be between 0 and u32::MAX"
+            ))
+        );
+        assert_eq!(
+            helper.scalar_arg_range_requirement(4),
+            Some((
+                0,
+                u32::MAX as i64,
+                "TCP syncookie helpers require arg4 th_len to be between 0 and u32::MAX"
+            ))
+        );
+    }
 
     for helper in [
         BpfHelper::TcpRawGenSyncookieIpv4,
@@ -4814,10 +4841,23 @@ fn test_helper_signature_socket_helpers() {
     assert_eq!(semantics.ptr_arg_rules[0].fixed_size, Some(20));
     assert_eq!(semantics.ptr_arg_rules[1].arg_idx, 1);
     assert_eq!(semantics.ptr_arg_rules[1].size_from_arg, Some(2));
-    assert_eq!(
-        BpfHelper::TcpRawGenSyncookieIpv4.scalar_arg_nonnegative_requirement(2),
-        Some("raw syncookie helpers require arg2 to be >= 0")
-    );
+    for helper in [
+        BpfHelper::TcpRawGenSyncookieIpv4,
+        BpfHelper::TcpRawGenSyncookieIpv6,
+    ] {
+        assert_eq!(
+            helper.scalar_arg_nonnegative_requirement(2),
+            Some("raw syncookie helpers require arg2 to be >= 0")
+        );
+        assert_eq!(
+            helper.scalar_arg_range_requirement(2),
+            Some((
+                0,
+                u32::MAX as i64,
+                "raw syncookie helpers require arg2 th_len to be between 0 and u32::MAX"
+            ))
+        );
+    }
 
     let semantics = BpfHelper::TcpRawCheckSyncookieIpv6.semantics();
     assert_eq!(semantics.ptr_arg_rules.len(), 2);
