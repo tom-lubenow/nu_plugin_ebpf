@@ -8749,6 +8749,103 @@ fn test_lower_describe_on_known_record_materializes_type_string() {
 }
 
 #[test]
+fn test_lower_describe_on_known_float_materializes_type_string() {
+    let describe_decl = DeclId::new(217);
+    let starts_with_decl = DeclId::new(218);
+    let hir = make_describe_then_starts_with_program(
+        describe_decl,
+        starts_with_decl,
+        Value::float(2.5, Span::test_data()),
+        "float",
+    );
+    let decl_names = HashMap::from([
+        (describe_decl, "describe".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("describe should lower compile-time known float input");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"float\0")
+            )),
+        "expected describe to materialize the Nushell float type string"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("describe float output consumed by str starts-with should compile through codegen");
+}
+
+#[test]
+fn test_lower_describe_on_known_float_list_materializes_type_string() {
+    let describe_decl = DeclId::new(219);
+    let starts_with_decl = DeclId::new(220);
+    let hir = make_describe_then_starts_with_program(
+        describe_decl,
+        starts_with_decl,
+        Value::list(
+            vec![
+                Value::float(2.5, Span::test_data()),
+                Value::float(1.5, Span::test_data()),
+            ],
+            Span::test_data(),
+        ),
+        "list<float>",
+    );
+    let decl_names = HashMap::from([
+        (describe_decl, "describe".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("describe should lower compile-time known float list input");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"list<float>\0")
+            )),
+        "expected describe to materialize the Nushell float list type string"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "describe float list output consumed by str starts-with should compile through codegen",
+    );
+}
+
+#[test]
 fn test_lower_describe_no_input_materializes_nothing_type_string() {
     let describe_decl = DeclId::new(208);
     let length_decl = DeclId::new(209);
@@ -12607,6 +12704,70 @@ fn test_lower_math_sqrt_list_results_feed_metadata_only_str_join() {
 }
 
 #[test]
+fn test_lower_math_sqrt_results_feed_metadata_only_describe() {
+    for (offset, value, expected_prefix) in [
+        (0, Value::int(4, Span::test_data()), "float"),
+        (
+            1,
+            Value::list(
+                vec![
+                    Value::int(4, Span::test_data()),
+                    Value::int(9, Span::test_data()),
+                ],
+                Span::test_data(),
+            ),
+            "list<float>",
+        ),
+    ] {
+        let math_decl = DeclId::new(609 + offset * 3);
+        let describe_decl = DeclId::new(610 + offset * 3);
+        let starts_with_decl = DeclId::new(611 + offset * 3);
+        let hir = make_value_math_describe_starts_with_program(
+            math_decl,
+            describe_decl,
+            starts_with_decl,
+            value,
+            expected_prefix,
+        );
+        let decl_names = HashMap::from([
+            (math_decl, "math sqrt".to_string()),
+            (describe_decl, "describe".to_string()),
+            (starts_with_decl, "str starts-with".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("math sqrt result should feed describe: {err}"));
+        let expected_bytes = format!("{expected_prefix}\0");
+
+        assert!(
+            result
+                .program
+                .main
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .any(|inst| matches!(
+                    inst,
+                    MirInst::StringAppend {
+                        val_type: StringAppendType::Literal { bytes },
+                        ..
+                    } if bytes.starts_with(expected_bytes.as_bytes())
+                )),
+            "expected describe to materialize '{expected_prefix}' for math sqrt result"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .expect("math sqrt describe result should compile");
+    }
+}
+
+#[test]
 fn test_lower_math_exp_rejects_materialized_float_results() {
     for (offset, value, expected) in [
         (
@@ -15454,6 +15615,63 @@ fn make_value_math_fill_starts_with_program(
         val: Box::new(value),
     };
     program
+}
+
+fn make_value_math_describe_starts_with_program(
+    math_decl: DeclId,
+    describe_decl: DeclId,
+    starts_with_decl: DeclId,
+    value: Value,
+    prefix: &str,
+) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(value),
+                },
+                HirStmt::Call {
+                    decl_id: math_decl,
+                    src_dst: RegId::new(1),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: describe_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(1)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadValue {
+                    dst: RegId::new(3),
+                    val: Box::new(Value::string(prefix, Span::test_data())),
+                },
+                HirStmt::Call {
+                    decl_id: starts_with_decl,
+                    src_dst: RegId::new(4),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(3)],
+                        pipeline_input: Some(RegId::new(2)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(4) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 5,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
 fn make_value_list_math_fill_starts_with_program(

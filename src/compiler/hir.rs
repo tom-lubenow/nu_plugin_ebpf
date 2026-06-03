@@ -313,6 +313,7 @@ pub enum FixedLayoutValueConsumer {
     SplitList,
     Compact,
     StringTransform,
+    Describe,
     Fill,
     Seq,
     MathAbs,
@@ -907,6 +908,15 @@ fn compile_time_value_consumer_matches(
                     }
                     _ => false,
                 }
+        }
+        FixedLayoutValueConsumer::Describe => {
+            decl_name == Some("describe")
+                && call_args_tracked_only_in_pipeline(src_dst, args, tracked_regs)
+                && args.positional.is_empty()
+                && args.rest.is_empty()
+                && args.named.is_empty()
+                && args.flags.is_empty()
+                && args.parser_info.is_empty()
         }
         FixedLayoutValueConsumer::Fill => {
             decl_name == Some("fill")

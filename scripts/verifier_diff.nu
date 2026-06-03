@@ -38917,6 +38917,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-describe-metadata-float"
+        category: "language-core"
+        tags: [describe scalar aggregate list math sqrt float]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ((2.5 | describe | str starts-with "float") and ([2.5 1.5] | describe | str starts-with "list<float>")) and ((4 | math sqrt | describe | str starts-with "float") and ([4 9] | math sqrt | describe | str starts-with "list<float>"))'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-runtime-list-describe"
         category: "language-core"
         tags: [describe aggregate list runtime string]
