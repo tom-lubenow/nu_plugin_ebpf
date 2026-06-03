@@ -168,7 +168,9 @@ struct BoundedRange {
 struct MaybeOpenRange {
     /// Start value, or None for an omitted lower bound.
     start: Option<i64>,
-    /// Step value.
+    /// Explicit range middle value. Nushell string/binary slice commands keep
+    /// this metadata but use only start/end bounds.
+    #[allow(dead_code)]
     step: i64,
     /// End value, or None for an omitted upper bound.
     end: Option<i64>,

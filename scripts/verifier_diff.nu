@@ -36547,6 +36547,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-binary-bytes-at-explicit-step-starts-with"
+        category: "language-core"
+        tags: [binary bytes at range step starts-with]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  0x[01 02 03 04 05 06] | bytes at 1..3..4 | bytes starts-with 0x[02 03 04 05]'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-binary-bytes-at-empty-length"
         category: "language-core"
         tags: [binary bytes at empty length]
@@ -37652,6 +37665,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-string-index-of-range-explicit-step"
+        category: "language-core"
+        tags: [string str index-of range step]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "abcabc" | str index-of "bc" --range 2..4..5'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-string-index-of-open-end-range"
         category: "language-core"
         tags: [string str index-of range]
@@ -37763,6 +37789,19 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  "abcdef" | str substring 1..3 | str starts-with "bcd"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-string-substring-explicit-step"
+        category: "language-core"
+        tags: [string str substring range step]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "abcdef" | str substring 1..3..4 | str starts-with "bcde"'
             '}'
         ]
         local: "accept"

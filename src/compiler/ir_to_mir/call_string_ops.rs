@@ -1382,12 +1382,6 @@ impl<'a> HirToMirLowering<'a> {
                     "str substring requires a compile-time known range argument in eBPF".into(),
                 )
             })?;
-        if range.step != 1 {
-            return Err(CompileError::UnsupportedInstruction(
-                "str substring currently supports only default unit-step ranges in eBPF".into(),
-            ));
-        }
-
         if let Some(input) = self.exact_string_list_input(input_reg, "str substring")? {
             let output = input
                 .into_iter()
@@ -2580,13 +2574,6 @@ impl<'a> HirToMirLowering<'a> {
                     "str index-of --range requires a compile-time known range in eBPF".into(),
                 )
             })?;
-        if range.step != 1 {
-            return Err(CompileError::UnsupportedInstruction(
-                "str index-of --range currently supports only default unit-step ranges in eBPF"
-                    .into(),
-            ));
-        }
-
         Ok(Self::string_range_byte_bounds(range, input_len))
     }
 

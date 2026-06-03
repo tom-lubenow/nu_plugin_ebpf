@@ -3417,12 +3417,6 @@ impl<'a> HirToMirLowering<'a> {
                             "bytes at requires a compile-time known range in eBPF".into(),
                         )
                     })?;
-                if range.step != 1 {
-                    return Err(CompileError::UnsupportedInstruction(
-                        "bytes at currently supports only default unit-step ranges in eBPF".into(),
-                    ));
-                }
-
                 match input {
                     nu_protocol::Value::Binary { val, .. } => {
                         let output = Self::bytes_at_output(&val, range);

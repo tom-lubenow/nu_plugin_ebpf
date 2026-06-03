@@ -1295,6 +1295,21 @@ fn make_string_index_of_range_program(
     inclusion: RangeInclusion,
     flags: Vec<Vec<u8>>,
 ) -> HirProgram {
+    make_string_index_of_range_program_with_step(
+        decl_id, value, needle, start, 1, end, inclusion, flags,
+    )
+}
+
+fn make_string_index_of_range_program_with_step(
+    decl_id: DeclId,
+    value: &str,
+    needle: &str,
+    start: Option<i64>,
+    step: i64,
+    end: Option<i64>,
+    inclusion: RangeInclusion,
+    flags: Vec<Vec<u8>>,
+) -> HirProgram {
     let func = HirFunction {
         blocks: vec![HirBlock {
             id: HirBlockId(0),
@@ -1313,7 +1328,7 @@ fn make_string_index_of_range_program(
                 },
                 HirStmt::LoadLiteral {
                     dst: RegId::new(4),
-                    lit: HirLiteral::Int(1),
+                    lit: HirLiteral::Int(step),
                 },
                 HirStmt::LoadLiteral {
                     dst: RegId::new(5),
@@ -3210,6 +3225,30 @@ fn make_string_substring_then_starts_with_program(
     prefix: &str,
     flags: Vec<Vec<u8>>,
 ) -> HirProgram {
+    make_string_substring_then_starts_with_program_with_step(
+        substring_decl,
+        starts_with_decl,
+        value,
+        start,
+        1,
+        end,
+        inclusion,
+        prefix,
+        flags,
+    )
+}
+
+fn make_string_substring_then_starts_with_program_with_step(
+    substring_decl: DeclId,
+    starts_with_decl: DeclId,
+    value: &str,
+    start: i64,
+    step: i64,
+    end: i64,
+    inclusion: RangeInclusion,
+    prefix: &str,
+    flags: Vec<Vec<u8>>,
+) -> HirProgram {
     let func = HirFunction {
         blocks: vec![HirBlock {
             id: HirBlockId(0),
@@ -3224,7 +3263,7 @@ fn make_string_substring_then_starts_with_program(
                 },
                 HirStmt::LoadLiteral {
                     dst: RegId::new(3),
-                    lit: HirLiteral::Int(1),
+                    lit: HirLiteral::Int(step),
                 },
                 HirStmt::LoadLiteral {
                     dst: RegId::new(4),
@@ -8581,6 +8620,40 @@ fn test_lower_str_index_of_range_on_known_string_limits_search_offsets() {
 }
 
 #[test]
+fn test_lower_str_index_of_range_ignores_explicit_step_like_nushell() {
+    let index_of_decl = DeclId::new(80500);
+    let hir = make_string_index_of_range_program_with_step(
+        index_of_decl,
+        "abcabc",
+        "bc",
+        Some(2),
+        4,
+        Some(5),
+        RangeInclusion::Inclusive,
+        Vec::new(),
+    );
+    let decl_names = HashMap::from([(index_of_decl, "str index-of".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str index-of --range should accept explicit range step metadata");
+
+    assert_program_returns_constant(
+        &result.program,
+        4,
+        "str index-of --range with explicit step",
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("str index-of --range with explicit step should compile through codegen");
+}
+
+#[test]
 fn test_lower_str_index_of_open_end_range_on_known_string_uses_input_length() {
     let index_of_decl = DeclId::new(155);
     let hir = make_string_index_of_range_program(
@@ -10182,6 +10255,56 @@ fn test_lower_str_substring_on_known_string_materializes_slice_literal() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("str substring result consumed by str starts-with should compile through codegen");
+}
+
+#[test]
+fn test_lower_str_substring_ignores_explicit_step_like_nushell() {
+    let substring_decl = DeclId::new(80501);
+    let starts_with_decl = DeclId::new(80502);
+    let hir = make_string_substring_then_starts_with_program_with_step(
+        substring_decl,
+        starts_with_decl,
+        "abcdef",
+        1,
+        3,
+        4,
+        RangeInclusion::Inclusive,
+        "bcde",
+        Vec::new(),
+    );
+    let decl_names = HashMap::from([
+        (substring_decl, "str substring".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str substring should accept explicit range step metadata");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"bcde\0")
+            )),
+        "expected str substring with explicit step to materialize the start/end sliced string"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("str substring with explicit step should compile through codegen");
 }
 
 #[test]
@@ -19003,6 +19126,28 @@ fn make_bytes_at_then_starts_with_program(
     inclusion: RangeInclusion,
     expected_prefix: Vec<u8>,
 ) -> HirProgram {
+    make_bytes_at_then_starts_with_program_with_step(
+        at_decl,
+        starts_with_decl,
+        input,
+        start,
+        1,
+        end,
+        inclusion,
+        expected_prefix,
+    )
+}
+
+fn make_bytes_at_then_starts_with_program_with_step(
+    at_decl: DeclId,
+    starts_with_decl: DeclId,
+    input: Vec<u8>,
+    start: Option<i64>,
+    step: i64,
+    end: Option<i64>,
+    inclusion: RangeInclusion,
+    expected_prefix: Vec<u8>,
+) -> HirProgram {
     let func = HirFunction {
         blocks: vec![HirBlock {
             id: HirBlockId(0),
@@ -19017,7 +19162,7 @@ fn make_bytes_at_then_starts_with_program(
                 },
                 HirStmt::LoadLiteral {
                     dst: RegId::new(2),
-                    lit: HirLiteral::Int(1),
+                    lit: HirLiteral::Int(step),
                 },
                 HirStmt::LoadLiteral {
                     dst: RegId::new(3),
@@ -19489,6 +19634,40 @@ fn test_lower_bytes_at_materializes_non_empty_slice() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("bytes at output consumed by bytes starts-with should compile through codegen");
+}
+
+#[test]
+fn test_lower_bytes_at_ignores_explicit_step_like_nushell() {
+    let bytes_at_decl = DeclId::new(80503);
+    let bytes_starts_with_decl = DeclId::new(80504);
+    let hir = make_bytes_at_then_starts_with_program_with_step(
+        bytes_at_decl,
+        bytes_starts_with_decl,
+        vec![1, 2, 3, 4, 5, 6],
+        Some(1),
+        3,
+        Some(4),
+        RangeInclusion::Inclusive,
+        vec![2, 3, 4, 5],
+    );
+    let decl_names = HashMap::from([
+        (bytes_at_decl, "bytes at".to_string()),
+        (bytes_starts_with_decl, "bytes starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bytes at should accept explicit range step metadata");
+
+    assert_program_returns_constant(&result.program, 1, "bytes at with explicit step");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("bytes at with explicit step should compile through codegen");
 }
 
 #[test]
