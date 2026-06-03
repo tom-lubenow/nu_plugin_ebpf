@@ -1371,6 +1371,14 @@ fn test_helper_signatures_setsockopt_and_getsockopt() {
     assert_eq!(load_hdr_sig.arg_kind(2), HelperArgKind::Scalar);
     assert_eq!(load_hdr_sig.arg_kind(3), HelperArgKind::Scalar);
     assert_eq!(load_hdr_sig.ret_kind, HelperRetKind::Scalar);
+    assert_eq!(
+        BpfHelper::LoadHdrOpt.scalar_arg_range_requirement(2),
+        Some((
+            0,
+            u32::MAX as i64,
+            "TCP header option helpers require arg2 len to be between 0 and u32::MAX"
+        ))
+    );
 
     let store_hdr_sig = HelperSignature::for_id(BpfHelper::StoreHdrOpt as u32)
         .expect("expected bpf_store_hdr_opt helper signature");
@@ -1381,6 +1389,14 @@ fn test_helper_signatures_setsockopt_and_getsockopt() {
     assert_eq!(store_hdr_sig.arg_kind(2), HelperArgKind::Scalar);
     assert_eq!(store_hdr_sig.arg_kind(3), HelperArgKind::Scalar);
     assert_eq!(store_hdr_sig.ret_kind, HelperRetKind::Scalar);
+    assert_eq!(
+        BpfHelper::StoreHdrOpt.scalar_arg_range_requirement(2),
+        Some((
+            0,
+            u32::MAX as i64,
+            "TCP header option helpers require arg2 len to be between 0 and u32::MAX"
+        ))
+    );
 
     let reserve_hdr_sig = HelperSignature::for_id(BpfHelper::ReserveHdrOpt as u32)
         .expect("expected bpf_reserve_hdr_opt helper signature");
@@ -1390,6 +1406,14 @@ fn test_helper_signatures_setsockopt_and_getsockopt() {
     assert_eq!(reserve_hdr_sig.arg_kind(1), HelperArgKind::Scalar);
     assert_eq!(reserve_hdr_sig.arg_kind(2), HelperArgKind::Scalar);
     assert_eq!(reserve_hdr_sig.ret_kind, HelperRetKind::Scalar);
+    assert_eq!(
+        BpfHelper::ReserveHdrOpt.scalar_arg_range_requirement(1),
+        Some((
+            0,
+            u32::MAX as i64,
+            "helper 'bpf_reserve_hdr_opt' requires arg1 len to be between 0 and u32::MAX"
+        ))
+    );
 }
 
 #[test]

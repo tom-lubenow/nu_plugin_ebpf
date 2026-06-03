@@ -7,6 +7,8 @@ use crate::compiler::test_mir_builders::dynptr_from_mem_join_reinitialize_mir;
 use crate::compiler::{EbpfProgramType, MapRef, ProbeContext, ProgramCapability, ProgramTypeInfo};
 
 const BPF_LOAD_HDR_OPT_TCP_SYN: i64 = 1;
+const BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB: i64 = 4;
+const BPF_SOCK_OPS_HDR_OPT_LEN_CB: i64 = 14;
 const BPF_SOCK_OPS_WRITE_HDR_OPT_CB: i64 = 15;
 
 fn bpf_timer_map_ptr_ty() -> MirType {
@@ -6898,6 +6900,120 @@ fn test_verify_mir_for_probe_context_sock_ops_callback_sensitive_helpers_without
     let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
     verify_mir_for_probe_context(&func, &types, &probe_ctx)
         .expect("expected sock_ops cb_flags_set helper to verify without callback proof");
+}
+
+fn make_guarded_sock_ops_hdr_opt_verify_call(
+    helper: BpfHelper,
+    len: i64,
+) -> (MirFunction, HashMap<VReg, MirType>) {
+    let callback_op = match helper {
+        BpfHelper::LoadHdrOpt => BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB,
+        BpfHelper::StoreHdrOpt => BPF_SOCK_OPS_WRITE_HDR_OPT_CB,
+        BpfHelper::ReserveHdrOpt => BPF_SOCK_OPS_HDR_OPT_LEN_CB,
+        _ => unreachable!("expected sock_ops header-option helper"),
+    };
+
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    let guarded = func.alloc_block();
+    let done = func.alloc_block();
+    let op = func.alloc_vreg();
+    let matches = func.alloc_vreg();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let buf_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let args = match helper {
+        BpfHelper::LoadHdrOpt | BpfHelper::StoreHdrOpt => vec![
+            MirValue::VReg(ctx),
+            MirValue::StackSlot(buf_slot),
+            MirValue::Const(len),
+            MirValue::Const(0),
+        ],
+        BpfHelper::ReserveHdrOpt => vec![
+            MirValue::VReg(ctx),
+            MirValue::Const(len),
+            MirValue::Const(0),
+        ],
+        _ => unreachable!(),
+    };
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: op,
+            field: CtxField::SockOp,
+            slot: None,
+        });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: matches,
+        op: BinOpKind::Eq,
+        lhs: MirValue::VReg(op),
+        rhs: MirValue::Const(callback_op),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond: matches,
+        if_true: guarded,
+        if_false: done,
+    };
+    func.block_mut(guarded)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(guarded)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: helper as u32,
+            args,
+        });
+    func.block_mut(guarded).terminator = MirInst::Jump { target: done };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(op, MirType::I32);
+    types.insert(matches, MirType::Bool);
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    (func, types)
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_sock_ops_hdr_opt_helpers_reject_len_over_u32() {
+    for (helper, expected) in [
+        (
+            BpfHelper::LoadHdrOpt,
+            "TCP header option helpers require arg2 len to be between 0 and u32::MAX",
+        ),
+        (
+            BpfHelper::StoreHdrOpt,
+            "TCP header option helpers require arg2 len to be between 0 and u32::MAX",
+        ),
+        (
+            BpfHelper::ReserveHdrOpt,
+            "helper 'bpf_reserve_hdr_opt' requires arg1 len to be between 0 and u32::MAX",
+        ),
+    ] {
+        let (func, types) = make_guarded_sock_ops_hdr_opt_verify_call(helper, 0x1_0000_0000);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+        let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect_err("expected sock_ops header-option len range error");
+        assert!(
+            err.iter().any(|e| e.message.contains(expected)),
+            "unexpected errors for {helper:?}: {:?}",
+            err
+        );
+    }
 }
 
 #[test]
