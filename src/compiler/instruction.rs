@@ -1639,9 +1639,9 @@ impl BpfHelper {
                 "copy-from-user helpers require arg1 size to be between 0 and u32::MAX",
             )),
             (Self::Strncmp, 1) => Some((
-                0,
+                1,
                 BPF_STRNCMP_SIZE_MAX_U32,
-                "helper 'bpf_strncmp' requires arg1 s1_sz to be between 0 and u32::MAX",
+                "helper 'bpf_strncmp' requires arg1 s1_sz to be between 1 and u32::MAX",
             )),
             (
                 Self::ProbeRead

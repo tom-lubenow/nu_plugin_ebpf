@@ -8286,6 +8286,19 @@ fn test_verify_mir_strncmp_helper_rejects_small_s1_buffer() {
 }
 
 #[test]
+fn test_verify_mir_strncmp_helper_rejects_zero_s1_size() {
+    let (func, types) = make_strncmp_vcc_call(0, 8, false);
+    let err = verify_mir_for_program(&func, &types, EbpfProgramType::Xdp.info())
+        .expect_err("expected strncmp positive-size error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("helper 182 arg1 must be > 0")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_strncmp_helper_rejects_s1_size_above_u32_max() {
     let (func, types) = make_strncmp_vcc_call(0x1_0000_0000, 8, false);
     let err = verify_mir_for_program(&func, &types, EbpfProgramType::Xdp.info())
@@ -8293,7 +8306,7 @@ fn test_verify_mir_strncmp_helper_rejects_s1_size_above_u32_max() {
     assert!(
         err.iter().any(|e| e
             .message
-            .contains("helper 'bpf_strncmp' requires arg1 s1_sz to be between 0 and u32::MAX")),
+            .contains("helper 'bpf_strncmp' requires arg1 s1_sz to be between 1 and u32::MAX")),
         "unexpected errors: {:?}",
         err
     );

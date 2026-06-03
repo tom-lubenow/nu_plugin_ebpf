@@ -5905,6 +5905,21 @@ fn test_type_error_strncmp_helper_rejects_small_s1_buffer() {
 }
 
 #[test]
+fn test_type_error_strncmp_helper_rejects_zero_s1_size() {
+    let (func, _) = make_strncmp_call(0, 8, false);
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected strncmp positive-size error");
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("helper 182 arg1 must be > 0")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
 fn test_type_error_strncmp_helper_rejects_s1_size_above_u32_max() {
     let (func, _) = make_strncmp_call(0x1_0000_0000, 8, false);
     let mut ti = TypeInference::new(None);
@@ -5914,7 +5929,7 @@ fn test_type_error_strncmp_helper_rejects_s1_size_above_u32_max() {
     assert!(
         errs.iter().any(|e| e
             .message
-            .contains("helper 'bpf_strncmp' requires arg1 s1_sz to be between 0 and u32::MAX")),
+            .contains("helper 'bpf_strncmp' requires arg1 s1_sz to be between 1 and u32::MAX")),
         "unexpected errors: {:?}",
         errs
     );
