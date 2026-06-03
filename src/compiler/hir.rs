@@ -336,6 +336,33 @@ pub fn compile_time_value_flows_to_fixed_layout_consumer(
     consumer: FixedLayoutValueConsumer,
     flow: CompileTimeValueFlow,
 ) -> bool {
+    compile_time_value_flows_to_fixed_layout_consumer_inner(
+        stmts, stmt_index, dst, decl_names, consumer, flow, false,
+    )
+}
+
+pub fn compile_time_value_flows_to_fixed_layout_consumer_through_list_transforms(
+    stmts: &[HirStmt],
+    stmt_index: usize,
+    dst: RegId,
+    decl_names: &HashMap<DeclId, String>,
+    consumer: FixedLayoutValueConsumer,
+    flow: CompileTimeValueFlow,
+) -> bool {
+    compile_time_value_flows_to_fixed_layout_consumer_inner(
+        stmts, stmt_index, dst, decl_names, consumer, flow, true,
+    )
+}
+
+fn compile_time_value_flows_to_fixed_layout_consumer_inner(
+    stmts: &[HirStmt],
+    stmt_index: usize,
+    dst: RegId,
+    decl_names: &HashMap<DeclId, String>,
+    consumer: FixedLayoutValueConsumer,
+    flow: CompileTimeValueFlow,
+    list_transforms_only: bool,
+) -> bool {
     let Some(rest) = stmts.get(stmt_index.saturating_add(1)..) else {
         return false;
     };
@@ -475,6 +502,7 @@ pub fn compile_time_value_flows_to_fixed_layout_consumer(
                     *src_dst,
                     args,
                     &tracked_regs,
+                    list_transforms_only,
                 ) {
                     tracked_regs.insert(*src_dst);
                     continue;
@@ -1150,6 +1178,7 @@ fn compile_time_aggregate_transform_preserves_tracked_input(
     src_dst: RegId,
     args: &HirCallArgs,
     regs: &HashSet<RegId>,
+    list_transforms_only: bool,
 ) -> bool {
     match decl_name {
         Some("append" | "prepend") => {
@@ -1177,15 +1206,19 @@ fn compile_time_aggregate_transform_preserves_tracked_input(
                 && call_args_tracked_only_in_pipeline(src_dst, args, regs)
         }
         Some("first" | "last") => {
-            args.positional.len() <= 1
-                && args.rest.is_empty()
+            (if list_transforms_only {
+                args.positional.len() == 1
+            } else {
+                args.positional.len() <= 1
+            }) && args.rest.is_empty()
                 && args.named.is_empty()
                 && args.flags.is_empty()
                 && args.parser_info.is_empty()
                 && call_args_tracked_only_in_pipeline(src_dst, args, regs)
         }
         Some("get") => {
-            args.positional.len() == 1
+            !list_transforms_only
+                && args.positional.len() == 1
                 && args.rest.is_empty()
                 && args.named.is_empty()
                 && args.flags.is_empty()

@@ -1944,6 +1944,18 @@ impl<'a> HirToMirLowering<'a> {
         result_vreg: VReg,
         outputs: Vec<String>,
     ) -> Result<(), CompileError> {
+        if self.current_call_result_list_transform_metadata_only {
+            let values = outputs
+                .into_iter()
+                .map(|output| nu_protocol::Value::string(output, Span::unknown()))
+                .collect();
+            self.lower_compile_time_only_constant_value(
+                src_dst,
+                &nu_protocol::Value::list(values, Span::unknown()),
+            );
+            return Ok(());
+        }
+
         let max_len = outputs.iter().map(String::len).max().unwrap_or(0);
         let aligned_len = align_to_eight(max_len + 1).min(MAX_STRING_SIZE).max(16);
         let elem_ty = MirType::Array {

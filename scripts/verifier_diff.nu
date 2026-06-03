@@ -38893,6 +38893,21 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-record-columns-metadata-transforms"
+        category: "language-core"
+        tags: [aggregate record columns list string sort reverse find split-list str join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let sort_ok = ({ b: 2 a: 1 } | columns | sort | str join "-" | str starts-with "a-b")'
+            '  let reverse_ok = ({ pid: 7 cpu: 2 ok: true } | columns | reverse | str join "," | str starts-with "ok,cpu,pid")'
+            '  $sort_ok and ($reverse_ok and ((({ pid: 7 cpu: 2 ok: true } | columns | find cpu | length) == 1) and (({ pid: 7 cpu: 2 ok: true } | columns | split list cpu | length) == 2)))'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-record-columns-empty-length"
         category: "language-core"
         tags: [aggregate record columns list empty]

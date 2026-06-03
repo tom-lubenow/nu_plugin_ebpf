@@ -597,6 +597,8 @@ impl<'a> HirToMirLowering<'a> {
                     continue;
                 }
                 let previous_call_result_metadata_only = self.current_call_result_metadata_only;
+                let previous_call_result_list_transform_metadata_only =
+                    self.current_call_result_list_transform_metadata_only;
                 self.current_call_result_metadata_only = match stmt {
                     HirStmt::Call { src_dst, .. } => self
                         .call_result_flows_to_metadata_only_consumer(
@@ -606,8 +608,19 @@ impl<'a> HirToMirLowering<'a> {
                         ),
                     _ => false,
                 };
+                self.current_call_result_list_transform_metadata_only = match stmt {
+                    HirStmt::Call { src_dst, .. } => self
+                        .call_result_flows_to_metadata_only_list_transform_consumer(
+                            &block.stmts,
+                            stmt_index,
+                            *src_dst,
+                        ),
+                    _ => false,
+                };
                 let result = self.lower_stmt(stmt);
                 self.current_call_result_metadata_only = previous_call_result_metadata_only;
+                self.current_call_result_list_transform_metadata_only =
+                    previous_call_result_list_transform_metadata_only;
                 result?;
             }
             if self.current_block_has_real_terminator() {
@@ -1497,12 +1510,55 @@ impl<'a> HirToMirLowering<'a> {
             FixedLayoutValueConsumer::StrJoin,
             FixedLayoutValueConsumer::Length,
             FixedLayoutValueConsumer::EmptyPredicate,
+            FixedLayoutValueConsumer::Slice,
+            FixedLayoutValueConsumer::Reverse,
+            FixedLayoutValueConsumer::AppendPrepend,
+            FixedLayoutValueConsumer::Uniq,
+            FixedLayoutValueConsumer::Sort,
+            FixedLayoutValueConsumer::Find,
+            FixedLayoutValueConsumer::SplitList,
+            FixedLayoutValueConsumer::Compact,
             FixedLayoutValueConsumer::Fill,
             FixedLayoutValueConsumer::Describe,
         ]
         .into_iter()
         .any(|consumer| {
             compile_time_value_flows_to_fixed_layout_consumer(
+                stmts,
+                stmt_index,
+                dst,
+                self.decl_names,
+                consumer,
+                CompileTimeValueFlow::Direct,
+            )
+        })
+    }
+
+    fn call_result_flows_to_metadata_only_list_transform_consumer(
+        &self,
+        stmts: &[HirStmt],
+        stmt_index: usize,
+        dst: RegId,
+    ) -> bool {
+        [
+            FixedLayoutValueConsumer::BytesCollect,
+            FixedLayoutValueConsumer::StrJoin,
+            FixedLayoutValueConsumer::Length,
+            FixedLayoutValueConsumer::EmptyPredicate,
+            FixedLayoutValueConsumer::Slice,
+            FixedLayoutValueConsumer::Reverse,
+            FixedLayoutValueConsumer::AppendPrepend,
+            FixedLayoutValueConsumer::Uniq,
+            FixedLayoutValueConsumer::Sort,
+            FixedLayoutValueConsumer::Find,
+            FixedLayoutValueConsumer::SplitList,
+            FixedLayoutValueConsumer::Compact,
+            FixedLayoutValueConsumer::Fill,
+            FixedLayoutValueConsumer::Describe,
+        ]
+        .into_iter()
+        .any(|consumer| {
+            crate::compiler::hir::compile_time_value_flows_to_fixed_layout_consumer_through_list_transforms(
                 stmts,
                 stmt_index,
                 dst,

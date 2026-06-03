@@ -999,7 +999,7 @@ eBPF layout and verifier bounds are explicit:
 | `select` / `reject` | Metadata-backed fixed records, materialized into a fresh fixed-layout record |
 | `rename` | Positional top-level field renames, compile-time `--column {old: new}` mappings, and `--block` closures made only of no-argument known string transform commands for metadata-backed fixed records |
 | `merge` | Metadata-backed fixed records with one metadata-backed record argument, preserving Nushell overwrite and append field semantics |
-| `columns` | Metadata-backed fixed records, producing a fixed string list of field names in record field order |
+| `columns` | Metadata-backed fixed records, producing a fixed string list of field names in record field order, including metadata-only list-transform chains when folded by metadata consumers |
 | `values` | Metadata-backed fixed records whose fields are integer scalars, producing a stack-backed numeric list in record field order; compile-time known homogeneous fixed-layout values produce a fixed list; homogeneous finite float record values are supported as metadata-only lists when folded by metadata consumers |
 | `insert` / `update` / `upsert` | Top-level metadata-backed fixed-record fields with non-closure replacement values, preserving Nushell existing/missing-field behavior |
 | `default` | Compiler-known null/empty scalar replacement and metadata-backed record missing/null field replacement; closure default values and runtime nullable-pointer defaults are rejected |

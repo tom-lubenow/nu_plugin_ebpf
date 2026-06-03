@@ -5481,6 +5481,113 @@ fn make_record_columns_then_get_then_starts_with_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_record_columns_transform_join_starts_with_program(
+    columns_decl: DeclId,
+    transform_decl: DeclId,
+    join_decl: DeclId,
+    starts_with_decl: DeclId,
+    transform_arg: Option<&str>,
+    expected_prefix: &str,
+) -> HirProgram {
+    let mut record = Record::new();
+    record.push("pid", Value::int(7, Span::test_data()));
+    record.push("cpu", Value::int(2, Span::test_data()));
+    record.push("ok", Value::bool(true, Span::test_data()));
+
+    let mut stmts = vec![
+        HirStmt::LoadValue {
+            dst: RegId::new(0),
+            val: Box::new(Value::record(record, Span::test_data())),
+        },
+        HirStmt::Call {
+            decl_id: columns_decl,
+            src_dst: RegId::new(1),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(0)),
+                ..HirCallArgs::default()
+            },
+        },
+    ];
+
+    let mut next_reg = 2;
+    let transform_positional = if let Some(arg) = transform_arg {
+        let arg_reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadValue {
+            dst: arg_reg,
+            val: Box::new(Value::string(arg, Span::test_data())),
+        });
+        vec![arg_reg]
+    } else {
+        Vec::new()
+    };
+
+    let transform_result_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::Call {
+        decl_id: transform_decl,
+        src_dst: transform_result_reg,
+        args: HirCallArgs {
+            positional: transform_positional,
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let join_separator_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::LoadValue {
+        dst: join_separator_reg,
+        val: Box::new(Value::string(",", Span::test_data())),
+    });
+    let join_result_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::Call {
+        decl_id: join_decl,
+        src_dst: join_result_reg,
+        args: HirCallArgs {
+            positional: vec![join_separator_reg],
+            pipeline_input: Some(transform_result_reg),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let prefix_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::LoadValue {
+        dst: prefix_reg,
+        val: Box::new(Value::string(expected_prefix, Span::test_data())),
+    });
+    let starts_with_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::Call {
+        decl_id: starts_with_decl,
+        src_dst: starts_with_reg,
+        args: HirCallArgs {
+            positional: vec![prefix_reg],
+            pipeline_input: Some(join_result_reg),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return {
+                src: starts_with_reg,
+            },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: next_reg,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_record_empty_predicate_program(
     decl_id: DeclId,
     command_name: &str,
@@ -29860,6 +29967,68 @@ fn test_lower_columns_on_metadata_record_materializes_field_name_list() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("record columns followed by string predicate should compile through codegen");
+}
+
+#[test]
+fn test_lower_columns_feed_metadata_only_list_transforms() {
+    for (offset, transform_name, transform_arg, expected_prefix) in [
+        (0, "sort", None, "cpu,ok,pid"),
+        (10, "reverse", None, "ok,cpu,pid"),
+        (20, "find", Some("cpu"), "cpu"),
+    ] {
+        let columns_decl = DeclId::new(215 + offset);
+        let transform_decl = DeclId::new(216 + offset);
+        let join_decl = DeclId::new(217 + offset);
+        let starts_with_decl = DeclId::new(218 + offset);
+        let hir = make_record_columns_transform_join_starts_with_program(
+            columns_decl,
+            transform_decl,
+            join_decl,
+            starts_with_decl,
+            transform_arg,
+            expected_prefix,
+        );
+        let decl_names = HashMap::from([
+            (columns_decl, "columns".to_string()),
+            (transform_decl, transform_name.to_string()),
+            (join_decl, "str join".to_string()),
+            (starts_with_decl, "str starts-with".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("columns should feed metadata-only {transform_name}: {err}"));
+        assert!(
+            result
+                .program
+                .main
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .any(|inst| matches!(
+                    inst,
+                    MirInst::StringAppend {
+                        val_type: StringAppendType::Literal { bytes },
+                        ..
+                    } if bytes.starts_with(format!("{expected_prefix}\0").as_bytes())
+                )),
+            "expected columns | {transform_name} to feed str join with {expected_prefix}"
+        );
+        assert_no_runtime_list_operations(
+            &result.program,
+            &format!("record columns {transform_name}"),
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("record columns {transform_name} should compile through codegen: {err}")
+            });
+    }
 }
 
 #[test]
