@@ -2437,6 +2437,39 @@ fn test_infer_per_cpu_ptr_helpers_return_kernel_pointers() {
 }
 
 #[test]
+fn test_type_error_per_cpu_ptr_rejects_cpu_above_u32_max() {
+    let mut func = make_test_function();
+    let percpu_ptr = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: percpu_ptr,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::PerCpuPtr as u32,
+        args: vec![MirValue::VReg(percpu_ptr), MirValue::Const(0x1_0000_0000)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "do_sys_open");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected per_cpu_ptr CPU range error");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_per_cpu_ptr' requires arg1 cpu to be between 0 and u32::MAX")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
 fn test_type_error_per_cpu_ptr_helpers_require_kernel_pointer() {
     for helper in [BpfHelper::PerCpuPtr, BpfHelper::ThisCpuPtr] {
         let mut func = make_test_function();
@@ -10537,6 +10570,48 @@ fn test_infer_helper_map_lookup_percpu_returns_pointer() {
         }
         other => panic!("Expected helper map lookup percpu pointer return, got {other:?}"),
     }
+}
+
+#[test]
+fn test_type_error_helper_map_lookup_percpu_rejects_cpu_above_u32_max() {
+    let mut func = make_test_function();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let key_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let map = func.alloc_vreg();
+    let key = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: map,
+        src: MirValue::StackSlot(map_slot),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: key,
+        src: MirValue::StackSlot(key_slot),
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::MapLookupPercpuElem as u32,
+        args: vec![
+            MirValue::VReg(map),
+            MirValue::VReg(key),
+            MirValue::Const(0x1_0000_0000),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected map_lookup_percpu CPU range error");
+    assert!(
+        errs.iter().any(|e| e.message.contains(
+            "helper 'bpf_map_lookup_percpu_elem' requires arg2 cpu to be between 0 and u32::MAX"
+        )),
+        "unexpected errors: {:?}",
+        errs
+    );
 }
 
 #[test]

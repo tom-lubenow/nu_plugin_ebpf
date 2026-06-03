@@ -39,6 +39,7 @@ const BPF_GET_CURRENT_COMM_SIZE_MAX_U32: i64 = u32::MAX as i64;
 const BPF_COPY_FROM_USER_SIZE_MAX_U32: i64 = u32::MAX as i64;
 const BPF_PROBE_MEM_SIZE_MAX_U32: i64 = u32::MAX as i64;
 const BPF_MAX_LOOPS: i64 = 8 * 1024 * 1024;
+const BPF_CPU_INDEX_MAX_U32: i64 = u32::MAX as i64;
 const BPF_CGROUP_ARRAY_INDEX_MAX_U32: i64 = u32::MAX as i64;
 const BPF_FIB_LOOKUP_DIRECT: i64 = 1 << 0;
 const BPF_FIB_LOOKUP_TBID: i64 = 1 << 3;
@@ -1499,6 +1500,16 @@ impl BpfHelper {
                 0,
                 BPF_SYSCALL_NAME_SIZE_MAX_I32,
                 "helper 'bpf_kallsyms_lookup_name' requires arg1 name_sz to be between 0 and i32::MAX",
+            )),
+            (Self::MapLookupPercpuElem, 2) => Some((
+                0,
+                BPF_CPU_INDEX_MAX_U32,
+                "helper 'bpf_map_lookup_percpu_elem' requires arg2 cpu to be between 0 and u32::MAX",
+            )),
+            (Self::PerCpuPtr, 1) => Some((
+                0,
+                BPF_CPU_INDEX_MAX_U32,
+                "helper 'bpf_per_cpu_ptr' requires arg1 cpu to be between 0 and u32::MAX",
             )),
             (Self::GetCurrentComm, 1) => Some((
                 0,

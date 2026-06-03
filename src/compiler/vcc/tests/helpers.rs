@@ -4740,6 +4740,49 @@ fn test_verify_mir_helper_map_lookup_percpu_rejects_out_of_bounds_key_pointer() 
 }
 
 #[test]
+fn test_verify_mir_helper_map_lookup_percpu_rejects_cpu_above_u32_max() {
+    let (mut func, entry) = new_mir_function();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let key_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let map = func.alloc_vreg();
+    let key = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: map,
+        src: MirValue::StackSlot(map_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: key,
+        src: MirValue::StackSlot(key_slot),
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::MapLookupPercpuElem as u32,
+            args: vec![
+                MirValue::VReg(map),
+                MirValue::VReg(key),
+                MirValue::Const(0x1_0000_0000),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(dst, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected map_lookup_percpu CPU range error");
+    assert!(
+        err.iter().any(|e| e.message.contains(
+            "helper 'bpf_map_lookup_percpu_elem' requires arg2 cpu to be between 0 and u32::MAX"
+        )),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_helper_per_cpu_ptr_helpers_accept_kernel_pointer() {
     let (mut func, entry) = new_mir_function();
     let percpu_ptr = func.alloc_vreg();
@@ -4780,6 +4823,44 @@ fn test_verify_mir_helper_per_cpu_ptr_helpers_accept_kernel_pointer() {
     ]);
 
     verify_mir(&func, &types).expect("expected per-cpu pointer helpers to verify");
+}
+
+#[test]
+fn test_verify_mir_helper_per_cpu_ptr_rejects_cpu_above_u32_max() {
+    let (mut func, entry) = new_mir_function();
+    let percpu_ptr = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: percpu_ptr,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::PerCpuPtr as u32,
+            args: vec![MirValue::VReg(percpu_ptr), MirValue::Const(0x1_0000_0000)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let kernel_ptr = MirType::Ptr {
+        pointee: Box::new(MirType::Unknown),
+        address_space: AddressSpace::Kernel,
+    };
+    let types = HashMap::from([(percpu_ptr, kernel_ptr.clone()), (dst, kernel_ptr)]);
+
+    let err = verify_mir(&func, &types).expect_err("expected per_cpu_ptr CPU range error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_per_cpu_ptr' requires arg1 cpu to be between 0 and u32::MAX")),
+        "unexpected errors: {:?}",
+        err
+    );
 }
 
 #[test]
