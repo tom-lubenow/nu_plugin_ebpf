@@ -9574,6 +9574,74 @@ fn test_type_error_helper_csum_diff_rejects_small_buffer() {
     );
 }
 
+fn make_csum_diff_scalar_call(arg_idx: usize, value: i64) -> MirFunction {
+    let mut func = make_test_function();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    let mut args = vec![
+        MirValue::Const(0),
+        MirValue::Const(0),
+        MirValue::Const(0),
+        MirValue::Const(0),
+        MirValue::Const(0),
+    ];
+    args[arg_idx] = MirValue::Const(value);
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::CsumDiff as u32,
+        args,
+    });
+    block.terminator = MirInst::Return { val: None };
+    func
+}
+
+#[test]
+fn test_type_error_helper_csum_diff_rejects_out_of_range_scalars() {
+    for (arg_idx, value, expected) in [
+        (
+            1,
+            -4,
+            "helper 'bpf_csum_diff' requires arg1 from_size to be between 0 and u32::MAX",
+        ),
+        (
+            1,
+            0x1_0000_0000,
+            "helper 'bpf_csum_diff' requires arg1 from_size to be between 0 and u32::MAX",
+        ),
+        (
+            3,
+            -4,
+            "helper 'bpf_csum_diff' requires arg3 to_size to be between 0 and u32::MAX",
+        ),
+        (
+            3,
+            0x1_0000_0000,
+            "helper 'bpf_csum_diff' requires arg3 to_size to be between 0 and u32::MAX",
+        ),
+        (
+            4,
+            -1,
+            "helper 'bpf_csum_diff' requires arg4 seed to be between 0 and u32::MAX",
+        ),
+        (
+            4,
+            0x1_0000_0000,
+            "helper 'bpf_csum_diff' requires arg4 seed to be between 0 and u32::MAX",
+        ),
+    ] {
+        let func = make_csum_diff_scalar_call(arg_idx, value);
+        let mut ti = TypeInference::new(Some(ProbeContext::new(EbpfProgramType::Xdp, "lo")));
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected csum_diff scalar range validation error");
+        assert!(
+            errs.iter().any(|e| e.message.contains(expected)),
+            "unexpected errors for arg{arg_idx}={value}: {:?}",
+            errs
+        );
+    }
+}
+
 fn make_csum_update_call(csum: i64) -> MirFunction {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();

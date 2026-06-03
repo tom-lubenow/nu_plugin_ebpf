@@ -9793,6 +9793,81 @@ fn test_verify_mir_for_probe_context_csum_diff_rejects_unaligned_size() {
     );
 }
 
+fn make_csum_diff_scalar_vcc_call(
+    arg_idx: usize,
+    value: i64,
+) -> (MirFunction, HashMap<VReg, MirType>) {
+    let (mut func, entry) = new_mir_function();
+    let dst = func.alloc_vreg();
+    let mut args = vec![
+        MirValue::Const(0),
+        MirValue::Const(0),
+        MirValue::Const(0),
+        MirValue::Const(0),
+        MirValue::Const(0),
+    ];
+    args[arg_idx] = MirValue::Const(value);
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::CsumDiff as u32,
+            args,
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(dst, MirType::I64);
+    (func, types)
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_csum_diff_rejects_out_of_range_scalars() {
+    for (arg_idx, value, expected) in [
+        (
+            1,
+            -4,
+            "helper 'bpf_csum_diff' requires arg1 from_size to be between 0 and u32::MAX",
+        ),
+        (
+            1,
+            0x1_0000_0000,
+            "helper 'bpf_csum_diff' requires arg1 from_size to be between 0 and u32::MAX",
+        ),
+        (
+            3,
+            -4,
+            "helper 'bpf_csum_diff' requires arg3 to_size to be between 0 and u32::MAX",
+        ),
+        (
+            3,
+            0x1_0000_0000,
+            "helper 'bpf_csum_diff' requires arg3 to_size to be between 0 and u32::MAX",
+        ),
+        (
+            4,
+            -1,
+            "helper 'bpf_csum_diff' requires arg4 seed to be between 0 and u32::MAX",
+        ),
+        (
+            4,
+            0x1_0000_0000,
+            "helper 'bpf_csum_diff' requires arg4 seed to be between 0 and u32::MAX",
+        ),
+    ] {
+        let (func, types) = make_csum_diff_scalar_vcc_call(arg_idx, value);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+        let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect_err("expected csum_diff scalar range validation error");
+        assert!(
+            err.iter().any(|e| e.message.contains(expected)),
+            "unexpected errors for arg{arg_idx}={value}: {:?}",
+            err
+        );
+    }
+}
+
 #[test]
 fn test_verify_mir_for_probe_context_packet_byte_helpers_reject_invalid_programs() {
     for (helper, program_type, target, expected) in [

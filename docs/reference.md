@@ -499,8 +499,9 @@ compile/dry-run only until the loader models map-entry program loading.
 on `xdp:devmap` secondary programs; ordinary interface XDP and `xdp:cpumap`
 programs still expose ingress ifindex and RX queue metadata. XDP, TC, TCX, Netkit, and LWT also
 model `bpf_csum_diff`; its `from_size` and `to_size` arguments must be
-multiples of four, and a null `from` or `to` buffer is accepted only
-when the paired size is zero. `ctx.xdp_buff_len` exposes
+multiples of four and fit `0..u32::MAX`, its `seed` must fit
+`0..u32::MAX`, and a null `from` or `to` buffer is accepted only when
+the paired size is zero. `ctx.xdp_buff_len` exposes
 `bpf_xdp_get_buff_len` directly for XDP programs that need total
 multi-buffer packet size rather than the linear `ctx.packet_len`. XDP,
 tc_action, TC, TCX, and Netkit also model `helper-call "bpf_check_mtu" $ctx IFINDEX MTU_LEN_PTR LEN_DIFF FLAGS`;

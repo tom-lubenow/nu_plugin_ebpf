@@ -3312,6 +3312,30 @@ fn test_helper_csum_diff_zero_size_pointer_contract() {
             "helper 'bpf_csum_diff' requires arg3 to be a multiple of 4"
         ))
     );
+    assert_eq!(
+        BpfHelper::CsumDiff.scalar_arg_range_requirement(1),
+        Some((
+            0,
+            u32::MAX as i64,
+            "helper 'bpf_csum_diff' requires arg1 from_size to be between 0 and u32::MAX"
+        ))
+    );
+    assert_eq!(
+        BpfHelper::CsumDiff.scalar_arg_range_requirement(3),
+        Some((
+            0,
+            u32::MAX as i64,
+            "helper 'bpf_csum_diff' requires arg3 to_size to be between 0 and u32::MAX"
+        ))
+    );
+    assert_eq!(
+        BpfHelper::CsumDiff.scalar_arg_range_requirement(4),
+        Some((
+            0,
+            u32::MAX as i64,
+            "helper 'bpf_csum_diff' requires arg4 seed to be between 0 and u32::MAX"
+        ))
+    );
 }
 
 #[test]
