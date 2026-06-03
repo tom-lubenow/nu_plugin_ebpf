@@ -4190,8 +4190,9 @@ impl<'a> HirToMirLowering<'a> {
                 self.lower_compile_time_math_avg(src_dst, dst_vreg, src_dst_had_value)?;
             }
 
-            "math cos" | "math cosh" | "math exp" | "math ln" | "math sin" | "math sinh"
-            | "math sqrt" | "math tan" | "math tanh" => {
+            "math arccos" | "math arccosh" | "math arcsin" | "math arcsinh" | "math arctan"
+            | "math arctanh" | "math cos" | "math cosh" | "math exp" | "math ln" | "math sin"
+            | "math sinh" | "math sqrt" | "math tan" | "math tanh" => {
                 self.lower_compile_time_math_float_unary(&cmd_name, src_dst, src_dst_had_value)?;
             }
 

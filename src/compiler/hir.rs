@@ -961,7 +961,13 @@ fn compile_time_value_consumer_matches(
             matches!(
                 decl_name,
                 Some(
-                    "math cos"
+                    "math arccos"
+                        | "math arccosh"
+                        | "math arcsin"
+                        | "math arcsinh"
+                        | "math arctan"
+                        | "math arctanh"
+                        | "math cos"
                         | "math cosh"
                         | "math exp"
                         | "math ln"

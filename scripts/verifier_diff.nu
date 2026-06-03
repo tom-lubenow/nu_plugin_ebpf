@@ -35463,6 +35463,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-math-inverse-folded"
+        category: "language-core"
+        tags: [scalar aggregate list math inverse float fill str join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  (((0 | math arcsin | fill --alignment right --character "0" --width 4 | str starts-with "0000") and (1 | math arccos | fill --alignment right --character "0" --width 4 | str starts-with "0000")) and ((0 | math arctan | fill --alignment right --character "0" --width 4 | str starts-with "0000") and (0 | math arcsinh | fill --alignment right --character "0" --width 4 | str starts-with "0000"))) and (((1 | math arccosh | fill --alignment right --character "0" --width 4 | str starts-with "0000") and (0 | math arctanh | fill --alignment right --character "0" --width 4 | str starts-with "0000")) and ([0 1] | math arcsin | str join "," | str starts-with "0.0,1.5707963267948966"))'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-math-filesize-duration"
         category: "language-core"
         tags: [aggregate list math filesize duration constant]

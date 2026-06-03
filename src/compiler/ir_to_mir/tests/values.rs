@@ -13328,6 +13328,296 @@ fn test_lower_math_hyperbolic_list_results_feed_metadata_only_str_join() {
 }
 
 #[test]
+fn test_lower_math_inverse_rejects_materialized_float_results() {
+    for (offset, command_name, value, expected) in [
+        (
+            0,
+            "math arcsin",
+            Value::int(0, Span::test_data()),
+            "math arcsin compile-time result has type float",
+        ),
+        (
+            1,
+            "math arccos",
+            Value::int(1, Span::test_data()),
+            "math arccos compile-time result has type float",
+        ),
+        (
+            2,
+            "math arctan",
+            Value::int(0, Span::test_data()),
+            "math arctan compile-time result has type float",
+        ),
+        (
+            3,
+            "math arcsinh",
+            Value::int(0, Span::test_data()),
+            "math arcsinh compile-time result has type float",
+        ),
+        (
+            4,
+            "math arccosh",
+            Value::int(1, Span::test_data()),
+            "math arccosh compile-time result has type float",
+        ),
+        (
+            5,
+            "math arctanh",
+            Value::int(0, Span::test_data()),
+            "math arctanh compile-time result has type float",
+        ),
+        (
+            6,
+            "math arcsin",
+            Value::list(
+                vec![
+                    Value::int(0, Span::test_data()),
+                    Value::int(1, Span::test_data()),
+                ],
+                Span::test_data(),
+            ),
+            "math arcsin compile-time result has type list<float>",
+        ),
+    ] {
+        let decl = DeclId::new(687 + offset);
+        let hir = make_value_pipeline_call_program(decl, value);
+        let decl_names = HashMap::from([(decl, command_name.to_string())]);
+
+        let err = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .expect_err("math inverse should reject direct materialization");
+
+        assert!(
+            err.to_string().contains(expected),
+            "unexpected error: {err}"
+        );
+    }
+}
+
+#[test]
+fn test_lower_math_inverse_rejects_invalid_domains() {
+    for (offset, command_name, value, expected) in [
+        (
+            0,
+            "math arcsin",
+            Value::int(2, Span::test_data()),
+            "math arcsin requires input in the closed interval [-1, 1]",
+        ),
+        (
+            1,
+            "math arccos",
+            Value::int(-2, Span::test_data()),
+            "math arccos requires input in the closed interval [-1, 1]",
+        ),
+        (
+            2,
+            "math arccosh",
+            Value::int(0, Span::test_data()),
+            "math arccosh requires input >= 1",
+        ),
+        (
+            3,
+            "math arctanh",
+            Value::int(1, Span::test_data()),
+            "math arctanh requires input in the open interval (-1, 1)",
+        ),
+        (
+            4,
+            "math arctanh",
+            Value::int(-1, Span::test_data()),
+            "math arctanh requires input in the open interval (-1, 1)",
+        ),
+    ] {
+        let decl = DeclId::new(694 + offset);
+        let hir = make_value_pipeline_call_program(decl, value);
+        let decl_names = HashMap::from([(decl, command_name.to_string())]);
+
+        let err = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .expect_err("math inverse should reject invalid domains");
+
+        assert!(
+            err.to_string().contains(expected),
+            "unexpected error: {err}"
+        );
+    }
+}
+
+#[test]
+fn test_lower_math_inverse_rejects_degrees_flag() {
+    let decl = DeclId::new(699);
+    let mut hir = make_value_pipeline_call_program(decl, Value::int(0, Span::test_data()));
+    match &mut hir.main.blocks[0].stmts[1] {
+        HirStmt::Call { args, .. } => args.flags.push(b"degrees".to_vec()),
+        other => panic!("expected math inverse call, got {other:?}"),
+    }
+    let decl_names = HashMap::from([(decl, "math arcsin".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("math inverse --degrees should be rejected");
+
+    assert!(
+        err.to_string()
+            .contains("math arcsin does not accept arguments in eBPF"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_math_inverse_scalar_results_feed_metadata_only_fill() {
+    for (offset, command_name, value) in [
+        (0, "math arcsin", Value::int(0, Span::test_data())),
+        (1, "math arccos", Value::int(1, Span::test_data())),
+        (2, "math arctan", Value::int(0, Span::test_data())),
+        (3, "math arcsinh", Value::int(0, Span::test_data())),
+        (4, "math arccosh", Value::int(1, Span::test_data())),
+        (5, "math arctanh", Value::int(0, Span::test_data())),
+    ] {
+        let math_decl = DeclId::new(700 + offset * 3);
+        let fill_decl = DeclId::new(701 + offset * 3);
+        let starts_with_decl = DeclId::new(702 + offset * 3);
+        let hir = make_value_math_fill_starts_with_program(
+            math_decl,
+            fill_decl,
+            starts_with_decl,
+            value,
+            "0000",
+            4,
+            "right",
+            "0",
+        );
+        let decl_names = HashMap::from([
+            (math_decl, command_name.to_string()),
+            (fill_decl, "fill".to_string()),
+            (starts_with_decl, "str starts-with".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("{command_name} scalar result should feed fill: {err}"));
+
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{command_name} fill result should compile: {err}"));
+    }
+}
+
+#[test]
+fn test_lower_math_inverse_list_results_feed_metadata_only_str_join() {
+    for (offset, command_name, values, expected_prefix) in [
+        (
+            0,
+            "math arcsin",
+            vec![
+                Value::int(0, Span::test_data()),
+                Value::int(1, Span::test_data()),
+            ],
+            "0.0,1.5707963267948966",
+        ),
+        (
+            1,
+            "math arccos",
+            vec![
+                Value::int(1, Span::test_data()),
+                Value::int(0, Span::test_data()),
+            ],
+            "0.0,1.5707963267948966",
+        ),
+        (
+            2,
+            "math arctan",
+            vec![
+                Value::int(0, Span::test_data()),
+                Value::int(1, Span::test_data()),
+            ],
+            "0.0,0.7853981633974483",
+        ),
+        (
+            3,
+            "math arcsinh",
+            vec![
+                Value::int(0, Span::test_data()),
+                Value::int(1, Span::test_data()),
+            ],
+            "0.0,0.881373587019543",
+        ),
+        (
+            4,
+            "math arccosh",
+            vec![
+                Value::int(1, Span::test_data()),
+                Value::int(2, Span::test_data()),
+            ],
+            "0.0,1.3169578969248166",
+        ),
+        (
+            5,
+            "math arctanh",
+            vec![
+                Value::int(0, Span::test_data()),
+                Value::float(0.5, Span::test_data()),
+            ],
+            "0.0,0.5493061443340548",
+        ),
+    ] {
+        let math_decl = DeclId::new(718 + offset * 3);
+        let join_decl = DeclId::new(719 + offset * 3);
+        let starts_with_decl = DeclId::new(720 + offset * 3);
+        let hir = make_value_list_math_join_starts_with_program(
+            math_decl,
+            join_decl,
+            starts_with_decl,
+            values,
+            ",",
+            expected_prefix,
+        );
+        let decl_names = HashMap::from([
+            (math_decl, command_name.to_string()),
+            (join_decl, "str join".to_string()),
+            (starts_with_decl, "str starts-with".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("{command_name} list result should feed str join: {err}"));
+
+        assert_no_runtime_list_operations(&result.program, command_name);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{command_name} list str join should compile: {err}"));
+    }
+}
+
+#[test]
 fn test_lower_math_unit_reducers_materialize_raw_i64_results() {
     let cases = [
         (

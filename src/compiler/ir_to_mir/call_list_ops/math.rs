@@ -431,6 +431,74 @@ impl<'a> HirToMirLowering<'a> {
     ) -> Result<nu_protocol::Value, CompileError> {
         let raw = Self::compile_time_math_float_input(cmd_name, value, list_index)?;
         let result = match cmd_name {
+            "math arccos" => {
+                if !(-1.0..=1.0).contains(&raw) {
+                    return Err(CompileError::UnsupportedInstruction(match list_index {
+                        Some(index) => {
+                            format!(
+                                "{cmd_name} requires list items in the closed interval [-1, 1] in eBPF; item {index} is {raw}"
+                            )
+                        }
+                        None => {
+                            format!(
+                                "{cmd_name} requires input in the closed interval [-1, 1] in eBPF; input is {raw}"
+                            )
+                        }
+                    }));
+                }
+                raw.acos()
+            }
+            "math arccosh" => {
+                if raw < 1.0 {
+                    return Err(CompileError::UnsupportedInstruction(match list_index {
+                        Some(index) => {
+                            format!(
+                                "{cmd_name} requires list items >= 1 in eBPF; item {index} is {raw}"
+                            )
+                        }
+                        None => {
+                            format!("{cmd_name} requires input >= 1 in eBPF; input is {raw}")
+                        }
+                    }));
+                }
+                raw.acosh()
+            }
+            "math arcsin" => {
+                if !(-1.0..=1.0).contains(&raw) {
+                    return Err(CompileError::UnsupportedInstruction(match list_index {
+                        Some(index) => {
+                            format!(
+                                "{cmd_name} requires list items in the closed interval [-1, 1] in eBPF; item {index} is {raw}"
+                            )
+                        }
+                        None => {
+                            format!(
+                                "{cmd_name} requires input in the closed interval [-1, 1] in eBPF; input is {raw}"
+                            )
+                        }
+                    }));
+                }
+                raw.asin()
+            }
+            "math arcsinh" => raw.asinh(),
+            "math arctan" => raw.atan(),
+            "math arctanh" => {
+                if raw <= -1.0 || raw >= 1.0 {
+                    return Err(CompileError::UnsupportedInstruction(match list_index {
+                        Some(index) => {
+                            format!(
+                                "{cmd_name} requires list items in the open interval (-1, 1) in eBPF; item {index} is {raw}"
+                            )
+                        }
+                        None => {
+                            format!(
+                                "{cmd_name} requires input in the open interval (-1, 1) in eBPF; input is {raw}"
+                            )
+                        }
+                    }));
+                }
+                raw.atanh()
+            }
             "math cos" => raw.cos(),
             "math cosh" => raw.cosh(),
             "math exp" => raw.exp(),
