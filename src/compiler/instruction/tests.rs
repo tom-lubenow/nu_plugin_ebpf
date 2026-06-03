@@ -4861,8 +4861,8 @@ fn test_ringbuf_helper_flag_contracts() {
         BpfHelper::RingbufQuery.scalar_arg_range_requirement(1),
         Some((
             0,
-            3,
-            "helper 'bpf_ringbuf_query' requires arg1 flags to be one of BPF_RB_* query selectors (0..3)"
+            4,
+            "helper 'bpf_ringbuf_query' requires arg1 flags to be one of BPF_RB_* query selectors (0..4)"
         ))
     );
 }

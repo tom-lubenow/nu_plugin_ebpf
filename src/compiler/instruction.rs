@@ -1719,8 +1719,8 @@ impl BpfHelper {
             )),
             (Self::RingbufQuery, 1) => Some((
                 0,
-                3,
-                "helper 'bpf_ringbuf_query' requires arg1 flags to be one of BPF_RB_* query selectors (0..3)",
+                4,
+                "helper 'bpf_ringbuf_query' requires arg1 flags to be one of BPF_RB_* query selectors (0..4)",
             )),
             (Self::DynptrFromMem, 2) => Some((
                 0,

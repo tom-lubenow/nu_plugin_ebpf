@@ -11286,6 +11286,27 @@ fn test_type_error_helper_ringbuf_query_rejects_non_stack_map_arg() {
 }
 
 #[test]
+fn test_infer_helper_ringbuf_query_accepts_overwrite_pos_selector() {
+    let mut func = make_test_function();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::RingbufQuery as u32,
+        args: vec![MirValue::StackSlot(map_slot), MirValue::Const(4)],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let types = ti
+        .infer(&func)
+        .expect("expected ringbuf_query overwrite-pos selector to infer");
+    assert_eq!(types.get(&dst), Some(&MirType::I64));
+}
+
+#[test]
 fn test_type_error_helper_ringbuf_rejects_invalid_flags() {
     let cases = [
         (
@@ -11352,7 +11373,7 @@ fn test_type_error_helper_ringbuf_rejects_invalid_flags() {
             BpfHelper::RingbufSubmitDynptr | BpfHelper::RingbufDiscardDynptr => {
                 vec![MirValue::StackSlot(data_slot), MirValue::Const(4)]
             }
-            BpfHelper::RingbufQuery => vec![MirValue::StackSlot(map_slot), MirValue::Const(4)],
+            BpfHelper::RingbufQuery => vec![MirValue::StackSlot(map_slot), MirValue::Const(5)],
             _ => unreachable!(),
         };
 

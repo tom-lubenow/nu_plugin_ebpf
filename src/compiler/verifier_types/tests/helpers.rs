@@ -18316,6 +18316,29 @@ fn test_helper_ringbuf_query_rejects_map_lookup_value_as_map_arg() {
 }
 
 #[test]
+fn test_helper_ringbuf_query_accepts_overwrite_pos_selector() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::RingbufQuery as u32,
+            args: vec![MirValue::StackSlot(map_slot), MirValue::Const(4)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(dst, MirType::I64);
+
+    verify_mir(&func, &types).expect("expected ringbuf_query overwrite-pos selector to verify");
+}
+
+#[test]
 fn test_helper_tcp_check_syncookie_rejects_non_positive_lengths() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
@@ -21998,7 +22021,7 @@ fn test_helper_ringbuf_rejects_invalid_flags() {
                 MirValue::Const(1),
                 MirValue::StackSlot(data_slot),
             ],
-            BpfHelper::RingbufQuery => vec![MirValue::StackSlot(map_slot), MirValue::Const(4)],
+            BpfHelper::RingbufQuery => vec![MirValue::StackSlot(map_slot), MirValue::Const(5)],
             _ => unreachable!(),
         };
 
