@@ -539,8 +539,9 @@ through `0x1f`. Runtime tunnel address-family compatibility remains
 kernel-enforced. `tc_action`, TC, TCX, and Netkit also model
 `helper-call "bpf_skb_get_xfrm_state" $ctx INDEX XFRM_STATE_PTR SIZE 0`;
 `XFRM_STATE_PTR` must be a stack/map-backed output buffer whose
-accessible size covers `SIZE`; `INDEX` and `SIZE` must fit `u32`, and
-the final reserved flags argument must be zero.
+accessible size covers `SIZE`; `INDEX` must fit `u32`, `SIZE` must be
+`sizeof(struct bpf_xfrm_state)` (`28`), and the final reserved flags argument
+must be zero.
 `tc_action`, Netkit, TC egress, and TCX egress expose skb cgroup/classifier
 metadata as ordinary `ctx.cgroup_classid` and `ctx.route_realm` fields; TC action
 and TC/TCX egress also expose `ctx.skb_cgroup_id`. LWT programs expose `ctx.cgroup_classid` and

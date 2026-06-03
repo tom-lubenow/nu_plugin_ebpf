@@ -72,6 +72,7 @@ const BPF_SKB_LOAD_BYTES_RELATIVE_MAX_OFFSET: i64 = 0xffff;
 const BPF_SKB_GET_TUNNEL_OPT_MAX_SIZE: i64 = u32::MAX as i64;
 const BPF_SKB_SET_TUNNEL_OPT_MAX_SIZE: i64 = 0xff;
 const BPF_SKB_VLAN_MAX_U16: i64 = u16::MAX as i64;
+const BPF_XFRM_STATE_SIZE: i64 = 28;
 const BPF_SKB_XFRM_STATE_MAX_U32: i64 = u32::MAX as i64;
 const BPF_SET_HASH_MAX_U32: i64 = u32::MAX as i64;
 const BPF_SIGNAL_MAX_U32: i64 = u32::MAX as i64;
@@ -2275,6 +2276,11 @@ impl BpfHelper {
                 3,
                 8,
                 "helper 'bpf_get_ns_current_pid_tgid' requires arg3 = 8",
+            )),
+            Self::SkbGetXfrmState => Some((
+                3,
+                BPF_XFRM_STATE_SIZE,
+                "helper 'bpf_skb_get_xfrm_state' requires arg3 size = sizeof(struct bpf_xfrm_state) (28 bytes)",
             )),
             Self::SnprintfBtf => Some((3, 16, "helper 'bpf_snprintf_btf' requires arg3 = 16")),
             Self::SeqPrintfBtf => Some((2, 16, "helper 'bpf_seq_printf_btf' requires arg2 = 16")),

@@ -4957,7 +4957,7 @@ fn test_infer_skb_get_xfrm_state_helper_in_tc_programs() {
         ProbeContext::new(EbpfProgramType::Tc, "lo:ingress"),
         ProbeContext::new(EbpfProgramType::TcAction, "demo-action"),
     ] {
-        let (func, dst) = make_skb_get_xfrm_state_call(0, 16, 16);
+        let (func, dst) = make_skb_get_xfrm_state_call(0, 28, 28);
         let mut ti = TypeInference::new(Some(probe_ctx));
         let types = ti
             .infer(&func)
@@ -4968,7 +4968,7 @@ fn test_infer_skb_get_xfrm_state_helper_in_tc_programs() {
 
 #[test]
 fn test_type_error_skb_get_xfrm_state_helper_rejects_non_tc_program() {
-    let (func, _) = make_skb_get_xfrm_state_call(0, 16, 16);
+    let (func, _) = make_skb_get_xfrm_state_call(0, 28, 28);
     let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
     let mut ti = TypeInference::new(Some(probe_ctx));
     let errs = ti
@@ -4981,7 +4981,7 @@ fn test_type_error_skb_get_xfrm_state_helper_rejects_non_tc_program() {
 
 #[test]
 fn test_type_error_skb_get_xfrm_state_helper_requires_zero_flags() {
-    let (func, _) = make_skb_get_xfrm_state_call(1, 16, 16);
+    let (func, _) = make_skb_get_xfrm_state_call(1, 28, 28);
     let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
     let mut ti = TypeInference::new(Some(probe_ctx));
     let errs = ti
@@ -4995,7 +4995,7 @@ fn test_type_error_skb_get_xfrm_state_helper_requires_zero_flags() {
 
 #[test]
 fn test_type_error_skb_get_xfrm_state_helper_rejects_index_above_u32() {
-    let (func, _) = make_skb_get_xfrm_state_call_with_index(0x1_0000_0000, 0, 16, 16);
+    let (func, _) = make_skb_get_xfrm_state_call_with_index(0x1_0000_0000, 0, 28, 28);
     let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
     let mut ti = TypeInference::new(Some(probe_ctx));
     let errs = ti
@@ -5012,7 +5012,7 @@ fn test_type_error_skb_get_xfrm_state_helper_rejects_index_above_u32() {
 
 #[test]
 fn test_type_error_skb_get_xfrm_state_helper_rejects_size_above_u32() {
-    let (func, _) = make_skb_get_xfrm_state_call(0, 0x1_0000_0000, 16);
+    let (func, _) = make_skb_get_xfrm_state_call(0, 0x1_0000_0000, 28);
     let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
     let mut ti = TypeInference::new(Some(probe_ctx));
     let errs = ti
@@ -5029,7 +5029,7 @@ fn test_type_error_skb_get_xfrm_state_helper_rejects_size_above_u32() {
 
 #[test]
 fn test_type_error_skb_get_xfrm_state_helper_rejects_small_buffer() {
-    let (func, _) = make_skb_get_xfrm_state_call(0, 16, 8);
+    let (func, _) = make_skb_get_xfrm_state_call(0, 28, 16);
     let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
     let mut ti = TypeInference::new(Some(probe_ctx));
     let errs = ti
@@ -5038,7 +5038,24 @@ fn test_type_error_skb_get_xfrm_state_helper_rejects_small_buffer() {
     assert!(
         errs.iter().any(|e| e
             .message
-            .contains("helper skb_get_xfrm_state xfrm_state requires 16 bytes")),
+            .contains("helper skb_get_xfrm_state xfrm_state requires 28 bytes")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_type_error_skb_get_xfrm_state_helper_rejects_size_not_struct_size() {
+    let (func, _) = make_skb_get_xfrm_state_call(0, 16, 28);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_skb_get_xfrm_state exact size error");
+    assert!(
+        errs.iter().any(|e| e.message.contains(
+            "helper 'bpf_skb_get_xfrm_state' requires arg3 size = sizeof(struct bpf_xfrm_state) (28 bytes)"
+        )),
         "unexpected errors: {:?}",
         errs
     );

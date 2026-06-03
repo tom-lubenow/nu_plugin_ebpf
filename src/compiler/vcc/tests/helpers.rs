@@ -15135,7 +15135,7 @@ fn test_verify_mir_for_probe_context_skb_get_xfrm_state_accepts_tc_programs() {
         ProbeContext::new(EbpfProgramType::Tc, "lo:ingress"),
         ProbeContext::new(EbpfProgramType::TcAction, "demo-action"),
     ] {
-        let (func, types) = make_skb_get_xfrm_state_vcc_call(0, 16, 16);
+        let (func, types) = make_skb_get_xfrm_state_vcc_call(0, 28, 28);
         verify_mir_for_probe_context(&func, &types, &probe_ctx)
             .expect("expected bpf_skb_get_xfrm_state helper to verify");
     }
@@ -15143,7 +15143,7 @@ fn test_verify_mir_for_probe_context_skb_get_xfrm_state_accepts_tc_programs() {
 
 #[test]
 fn test_verify_mir_for_probe_context_skb_get_xfrm_state_rejects_non_tc_program() {
-    let (func, types) = make_skb_get_xfrm_state_vcc_call(0, 16, 16);
+    let (func, types) = make_skb_get_xfrm_state_vcc_call(0, 28, 28);
     let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
     let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
         .expect_err("expected bpf_skb_get_xfrm_state to be rejected outside tc");
@@ -15154,7 +15154,7 @@ fn test_verify_mir_for_probe_context_skb_get_xfrm_state_rejects_non_tc_program()
 
 #[test]
 fn test_verify_mir_for_probe_context_skb_get_xfrm_state_requires_zero_flags() {
-    let (func, types) = make_skb_get_xfrm_state_vcc_call(1, 16, 16);
+    let (func, types) = make_skb_get_xfrm_state_vcc_call(1, 28, 28);
     let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
     let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
         .expect_err("expected bpf_skb_get_xfrm_state flags to require zero");
@@ -15166,7 +15166,7 @@ fn test_verify_mir_for_probe_context_skb_get_xfrm_state_requires_zero_flags() {
 
 #[test]
 fn test_verify_mir_for_probe_context_skb_get_xfrm_state_rejects_index_above_u32() {
-    let (func, types) = make_skb_get_xfrm_state_vcc_call_with_index(0x1_0000_0000, 0, 16, 16);
+    let (func, types) = make_skb_get_xfrm_state_vcc_call_with_index(0x1_0000_0000, 0, 28, 28);
     let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
     let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
         .expect_err("expected bpf_skb_get_xfrm_state index range error");
@@ -15181,7 +15181,7 @@ fn test_verify_mir_for_probe_context_skb_get_xfrm_state_rejects_index_above_u32(
 
 #[test]
 fn test_verify_mir_for_probe_context_skb_get_xfrm_state_rejects_size_above_u32() {
-    let (func, types) = make_skb_get_xfrm_state_vcc_call(0, 0x1_0000_0000, 16);
+    let (func, types) = make_skb_get_xfrm_state_vcc_call(0, 0x1_0000_0000, 28);
     let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
     let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
         .expect_err("expected bpf_skb_get_xfrm_state size range error");
@@ -15196,12 +15196,27 @@ fn test_verify_mir_for_probe_context_skb_get_xfrm_state_rejects_size_above_u32()
 
 #[test]
 fn test_verify_mir_for_probe_context_skb_get_xfrm_state_rejects_small_buffer() {
-    let (func, types) = make_skb_get_xfrm_state_vcc_call(0, 16, 8);
+    let (func, types) = make_skb_get_xfrm_state_vcc_call(0, 28, 16);
     let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
     let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
         .expect_err("expected bpf_skb_get_xfrm_state buffer bounds error");
     assert!(
         err.iter().any(|e| e.kind == VccErrorKind::PointerBounds),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_skb_get_xfrm_state_rejects_size_not_struct_size() {
+    let (func, types) = make_skb_get_xfrm_state_vcc_call(0, 16, 28);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected bpf_skb_get_xfrm_state exact size error");
+    assert!(
+        err.iter().any(|e| e.message.contains(
+            "helper 'bpf_skb_get_xfrm_state' requires arg3 size = sizeof(struct bpf_xfrm_state) (28 bytes)"
+        )),
         "unexpected errors: {:?}",
         err
     );

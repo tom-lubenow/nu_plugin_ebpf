@@ -3361,6 +3361,14 @@ fn test_skb_get_xfrm_state_helper_contract() {
             "helper 'bpf_skb_get_xfrm_state' requires arg3 size to be between 0 and u32::MAX"
         ))
     );
+    assert_eq!(
+        BpfHelper::SkbGetXfrmState.scalar_arg_const_requirement(),
+        Some((
+            3,
+            28,
+            "helper 'bpf_skb_get_xfrm_state' requires arg3 size = sizeof(struct bpf_xfrm_state) (28 bytes)"
+        ))
+    );
 }
 
 #[test]
