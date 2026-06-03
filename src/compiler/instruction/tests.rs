@@ -1422,9 +1422,9 @@ fn test_helper_signatures_setsockopt_and_getsockopt() {
     assert_eq!(
         BpfHelper::LoadHdrOpt.scalar_arg_range_requirement(2),
         Some((
-            0,
+            2,
             u32::MAX as i64,
-            "TCP header option helpers require arg2 len to be between 0 and u32::MAX"
+            "TCP header option helpers require arg2 len to be between 2 and u32::MAX"
         ))
     );
 
@@ -1440,9 +1440,9 @@ fn test_helper_signatures_setsockopt_and_getsockopt() {
     assert_eq!(
         BpfHelper::StoreHdrOpt.scalar_arg_range_requirement(2),
         Some((
-            0,
+            2,
             u32::MAX as i64,
-            "TCP header option helpers require arg2 len to be between 0 and u32::MAX"
+            "TCP header option helpers require arg2 len to be between 2 and u32::MAX"
         ))
     );
 
@@ -1457,9 +1457,9 @@ fn test_helper_signatures_setsockopt_and_getsockopt() {
     assert_eq!(
         BpfHelper::ReserveHdrOpt.scalar_arg_range_requirement(1),
         Some((
-            0,
+            2,
             u32::MAX as i64,
-            "helper 'bpf_reserve_hdr_opt' requires arg1 len to be between 0 and u32::MAX"
+            "helper 'bpf_reserve_hdr_opt' requires arg1 len to be between 2 and u32::MAX"
         ))
     );
 }

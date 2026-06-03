@@ -25712,30 +25712,32 @@ fn make_guarded_sock_ops_hdr_opt_vcc_call(
 }
 
 #[test]
-fn test_verify_mir_helper_sock_ops_hdr_opt_helpers_reject_len_over_u32() {
+fn test_verify_mir_helper_sock_ops_hdr_opt_helpers_reject_len_outside_kernel_range() {
     for (helper, expected) in [
         (
             BpfHelper::LoadHdrOpt,
-            "TCP header option helpers require arg2 len to be between 0 and u32::MAX",
+            "TCP header option helpers require arg2 len to be between 2 and u32::MAX",
         ),
         (
             BpfHelper::StoreHdrOpt,
-            "TCP header option helpers require arg2 len to be between 0 and u32::MAX",
+            "TCP header option helpers require arg2 len to be between 2 and u32::MAX",
         ),
         (
             BpfHelper::ReserveHdrOpt,
-            "helper 'bpf_reserve_hdr_opt' requires arg1 len to be between 0 and u32::MAX",
+            "helper 'bpf_reserve_hdr_opt' requires arg1 len to be between 2 and u32::MAX",
         ),
     ] {
-        let (func, types) = make_guarded_sock_ops_hdr_opt_vcc_call(helper, 0x1_0000_0000);
-        let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
-        let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
-            .expect_err("expected sock_ops header-option len range error");
-        assert!(
-            err.iter().any(|e| e.message.contains(expected)),
-            "unexpected errors for {helper:?}: {:?}",
-            err
-        );
+        for len in [1, 0x1_0000_0000] {
+            let (func, types) = make_guarded_sock_ops_hdr_opt_vcc_call(helper, len);
+            let probe_ctx = ProbeContext::new(EbpfProgramType::SockOps, "/sys/fs/cgroup");
+            let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+                .expect_err("expected sock_ops header-option len range error");
+            assert!(
+                err.iter().any(|e| e.message.contains(expected)),
+                "unexpected errors for {helper:?} len {len}: {:?}",
+                err
+            );
+        }
     }
 }
 

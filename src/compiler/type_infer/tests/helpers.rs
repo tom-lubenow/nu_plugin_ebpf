@@ -6414,34 +6414,36 @@ fn make_guarded_sock_ops_hdr_opt_call(helper: BpfHelper, len: i64) -> MirFunctio
 }
 
 #[test]
-fn test_type_error_sock_ops_hdr_opt_helpers_reject_len_over_u32() {
+fn test_type_error_sock_ops_hdr_opt_helpers_reject_len_outside_kernel_range() {
     for (helper, expected) in [
         (
             BpfHelper::LoadHdrOpt,
-            "TCP header option helpers require arg2 len to be between 0 and u32::MAX",
+            "TCP header option helpers require arg2 len to be between 2 and u32::MAX",
         ),
         (
             BpfHelper::StoreHdrOpt,
-            "TCP header option helpers require arg2 len to be between 0 and u32::MAX",
+            "TCP header option helpers require arg2 len to be between 2 and u32::MAX",
         ),
         (
             BpfHelper::ReserveHdrOpt,
-            "helper 'bpf_reserve_hdr_opt' requires arg1 len to be between 0 and u32::MAX",
+            "helper 'bpf_reserve_hdr_opt' requires arg1 len to be between 2 and u32::MAX",
         ),
     ] {
-        let func = make_guarded_sock_ops_hdr_opt_call(helper, 0x1_0000_0000);
-        let mut ti = TypeInference::new(Some(ProbeContext::new(
-            EbpfProgramType::SockOps,
-            "/sys/fs/cgroup",
-        )));
-        let errs = ti
-            .infer(&func)
-            .expect_err("expected sock_ops header-option len range error");
-        assert!(
-            errs.iter().any(|e| e.message.contains(expected)),
-            "unexpected errors for {helper:?}: {:?}",
-            errs
-        );
+        for len in [1, 0x1_0000_0000] {
+            let func = make_guarded_sock_ops_hdr_opt_call(helper, len);
+            let mut ti = TypeInference::new(Some(ProbeContext::new(
+                EbpfProgramType::SockOps,
+                "/sys/fs/cgroup",
+            )));
+            let errs = ti
+                .infer(&func)
+                .expect_err("expected sock_ops header-option len range error");
+            assert!(
+                errs.iter().any(|e| e.message.contains(expected)),
+                "unexpected errors for {helper:?} len {len}: {:?}",
+                errs
+            );
+        }
     }
 }
 

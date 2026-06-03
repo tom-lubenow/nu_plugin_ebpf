@@ -2008,14 +2008,14 @@ impl BpfHelper {
                 "helper 'bpf_bind' requires arg2 addr_len to be between 0 and i32::MAX",
             )),
             (Self::LoadHdrOpt | Self::StoreHdrOpt, 2) => Some((
-                0,
+                2,
                 BPF_HDR_OPT_LEN_MAX_U32,
-                "TCP header option helpers require arg2 len to be between 0 and u32::MAX",
+                "TCP header option helpers require arg2 len to be between 2 and u32::MAX",
             )),
             (Self::ReserveHdrOpt, 1) => Some((
-                0,
+                2,
                 BPF_HDR_OPT_LEN_MAX_U32,
-                "helper 'bpf_reserve_hdr_opt' requires arg1 len to be between 0 and u32::MAX",
+                "helper 'bpf_reserve_hdr_opt' requires arg1 len to be between 2 and u32::MAX",
             )),
             (Self::XdpAdjustHead | Self::XdpAdjustMeta | Self::XdpAdjustTail, 1) => Some((
                 BPF_XDP_ADJUST_DELTA_MIN_I32,
