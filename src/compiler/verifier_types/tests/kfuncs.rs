@@ -17930,8 +17930,7 @@ fn test_kfunc_dynptr_slice_buffer_allows_const_zero_scalar() {
         .expect("expected nullable bpf_dynptr_slice buffer arg to allow scalar const zero");
 }
 
-#[test]
-fn test_kfunc_dynptr_slice_requires_positive_size() {
+fn assert_dynptr_slice_requires_positive_size(kfunc: &str) {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
     func.entry = entry;
@@ -17961,7 +17960,7 @@ fn test_kfunc_dynptr_slice_requires_positive_size() {
     });
     func.block_mut(entry).instructions.push(MirInst::CallKfunc {
         dst: ret,
-        kfunc: "bpf_dynptr_slice".to_string(),
+        kfunc: kfunc.to_string(),
         btf_id: None,
         args: vec![dptr, off, buffer, size],
     });
@@ -17990,10 +17989,20 @@ fn test_kfunc_dynptr_slice_requires_positive_size() {
     assert!(
         err.iter().any(|e| e
             .message
-            .contains("kfunc 'bpf_dynptr_slice' arg3 must be > 0")),
+            .contains(&format!("kfunc '{kfunc}' arg3 must be > 0"))),
         "unexpected errors: {:?}",
         err
     );
+}
+
+#[test]
+fn test_kfunc_dynptr_slice_requires_positive_size() {
+    assert_dynptr_slice_requires_positive_size("bpf_dynptr_slice");
+}
+
+#[test]
+fn test_kfunc_dynptr_slice_rdwr_requires_positive_size() {
+    assert_dynptr_slice_requires_positive_size("bpf_dynptr_slice_rdwr");
 }
 
 #[test]
