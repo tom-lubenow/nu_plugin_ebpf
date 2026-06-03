@@ -7046,6 +7046,58 @@ fn test_infer_perf_event_output_helper_accepts_lwt_program() {
     assert_eq!(types.get(&dst), Some(&MirType::I64));
 }
 
+fn make_perf_event_output_call(flags: i64, size: i64, data_size: usize) -> (MirFunction, VReg) {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let map = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let data_slot = func.alloc_stack_slot(data_size, 8, StackSlotKind::StringBuffer);
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::LoadMapFd {
+        dst: map,
+        map: MapRef {
+            name: "demo_perf_events".to_string(),
+            kind: MapKind::PerfEventArray,
+        },
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::PerfEventOutput as u32,
+        args: vec![
+            MirValue::VReg(ctx),
+            MirValue::VReg(map),
+            MirValue::Const(flags),
+            MirValue::StackSlot(data_slot),
+            MirValue::Const(size),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+    (func, dst)
+}
+
+#[test]
+fn test_type_error_perf_event_output_helper_rejects_invalid_flags() {
+    for flags in [-1, 0x1_0000_0000] {
+        let (func, _) = make_perf_event_output_call(flags, 8, 8);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::LwtOut, "demo-route");
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected bpf_perf_event_output flags error");
+        assert!(
+            errs.iter()
+                .any(|e| e.message.contains("perf output helpers require arg2 flags")),
+            "unexpected errors for flags {flags}: {:?}",
+            errs
+        );
+    }
+}
+
 fn make_perf_event_read_call(
     helper: BpfHelper,
     flags: i64,
@@ -7236,6 +7288,16 @@ fn make_packet_output_call_with_arg0(
     data_size: usize,
     arg0_field: CtxField,
 ) -> (MirFunction, VReg) {
+    make_packet_output_call_with_arg0_and_flags(helper, 0, size, data_size, arg0_field)
+}
+
+fn make_packet_output_call_with_arg0_and_flags(
+    helper: BpfHelper,
+    flags: i64,
+    size: i64,
+    data_size: usize,
+    arg0_field: CtxField,
+) -> (MirFunction, VReg) {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();
     let map = func.alloc_vreg();
@@ -7260,7 +7322,7 @@ fn make_packet_output_call_with_arg0(
         args: vec![
             MirValue::VReg(ctx),
             MirValue::VReg(map),
-            MirValue::Const(0),
+            MirValue::Const(flags),
             MirValue::StackSlot(data_slot),
             MirValue::Const(size),
         ],
@@ -7279,6 +7341,30 @@ fn test_infer_packet_output_helper_accepts_typed_skb_argument() {
         .infer(&func)
         .expect("expected packet output helper to infer");
     assert_eq!(types.get(&dst), Some(&MirType::I64));
+}
+
+#[test]
+fn test_type_error_packet_output_helper_rejects_invalid_flags() {
+    for flags in [-1, 0x1_0000_0000] {
+        let (func, _) = make_packet_output_call_with_arg0_and_flags(
+            BpfHelper::SkbOutput,
+            flags,
+            8,
+            8,
+            CtxField::Arg(0),
+        );
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "netif_receive_skb");
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected bpf_skb_output flags error");
+        assert!(
+            errs.iter()
+                .any(|e| e.message.contains("perf output helpers require arg2 flags")),
+            "unexpected errors for flags {flags}: {:?}",
+            errs
+        );
+    }
 }
 
 #[test]

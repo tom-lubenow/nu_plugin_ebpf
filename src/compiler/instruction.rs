@@ -111,6 +111,7 @@ const BPF_SOCKET_LOOKUP_NETNS_MAX_I32: i64 = i32::MAX as i64;
 const BPF_SYNCOOKIE_HEADER_LEN_MAX_U32: i64 = u32::MAX as i64;
 const BPF_FUNC_ARG_INDEX_MAX_U32: i64 = u32::MAX as i64;
 const BPF_TCP_SEND_ACK_RCV_NXT_MAX_U32: i64 = u32::MAX as i64;
+const BPF_PERF_EVENT_FLAGS_MAX_U32: i64 = u32::MAX as i64;
 const PACKET_OTHERHOST: i64 = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1832,8 +1833,13 @@ impl BpfHelper {
             )),
             (Self::PerfEventRead | Self::PerfEventReadValue, 1) => Some((
                 0,
-                0xffff_ffff,
+                BPF_PERF_EVENT_FLAGS_MAX_U32,
                 "perf event read helpers require arg1 flags to fit BPF_F_INDEX_MASK/BPF_F_CURRENT_CPU (0xffffffff)",
+            )),
+            (Self::PerfEventOutput | Self::SkbOutput | Self::XdpOutput, 2) => Some((
+                0,
+                BPF_PERF_EVENT_FLAGS_MAX_U32,
+                "perf output helpers require arg2 flags to fit BPF_F_INDEX_MASK/BPF_F_CURRENT_CPU (0xffffffff)",
             )),
             (Self::CheckMtu, 1) => Some((
                 0,

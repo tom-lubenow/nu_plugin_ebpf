@@ -1947,6 +1947,20 @@ fn test_helper_signatures_packet_output_helpers() {
 }
 
 #[test]
+fn test_helper_signature_perf_event_output() {
+    let sig = HelperSignature::for_id(BpfHelper::PerfEventOutput as u32)
+        .expect("expected bpf_perf_event_output helper signature");
+    assert_eq!(sig.min_args, 5);
+    assert_eq!(sig.max_args, 5);
+    assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(1), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(2), HelperArgKind::Scalar);
+    assert_eq!(sig.arg_kind(3), HelperArgKind::Pointer);
+    assert_eq!(sig.arg_kind(4), HelperArgKind::Scalar);
+    assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+}
+
+#[test]
 fn test_helper_signature_perf_prog_read_value() {
     let sig = HelperSignature::for_id(BpfHelper::PerfProgReadValue as u32)
         .expect("expected bpf_perf_prog_read_value helper signature");
@@ -3486,7 +3500,62 @@ fn test_packet_output_helpers_contract() {
         assert!(!data.allowed.allow_user);
         assert_eq!(data.fixed_size, None);
         assert_eq!(data.size_from_arg, Some(4));
+
+        assert_eq!(
+            helper.scalar_arg_range_requirement(2),
+            Some((
+                0,
+                0xffff_ffff,
+                "perf output helpers require arg2 flags to fit BPF_F_INDEX_MASK/BPF_F_CURRENT_CPU (0xffffffff)"
+            ))
+        );
     }
+}
+
+#[test]
+fn test_perf_event_output_helper_contract() {
+    let semantics = BpfHelper::PerfEventOutput.semantics();
+    assert_eq!(semantics.positive_size_args, &[4]);
+    assert_eq!(semantics.ptr_arg_rules.len(), 3);
+
+    let ctx = semantics.ptr_arg_rules[0];
+    assert_eq!(ctx.arg_idx, 0);
+    assert_eq!(ctx.op, "helper perf_event_output ctx");
+    assert!(ctx.allowed.allow_kernel);
+    assert!(!ctx.allowed.allow_stack);
+    assert!(!ctx.allowed.allow_map);
+    assert!(!ctx.allowed.allow_user);
+    assert_eq!(ctx.fixed_size, None);
+    assert_eq!(ctx.size_from_arg, None);
+
+    let map = semantics.ptr_arg_rules[1];
+    assert_eq!(map.arg_idx, 1);
+    assert_eq!(map.op, "helper perf_event_output map");
+    assert!(map.allowed.allow_stack);
+    assert!(!map.allowed.allow_map);
+    assert!(!map.allowed.allow_kernel);
+    assert!(!map.allowed.allow_user);
+    assert_eq!(map.fixed_size, None);
+    assert_eq!(map.size_from_arg, None);
+
+    let data = semantics.ptr_arg_rules[2];
+    assert_eq!(data.arg_idx, 3);
+    assert_eq!(data.op, "helper perf_event_output data");
+    assert!(data.allowed.allow_stack);
+    assert!(data.allowed.allow_map);
+    assert!(!data.allowed.allow_kernel);
+    assert!(!data.allowed.allow_user);
+    assert_eq!(data.fixed_size, None);
+    assert_eq!(data.size_from_arg, Some(4));
+
+    assert_eq!(
+        BpfHelper::PerfEventOutput.scalar_arg_range_requirement(2),
+        Some((
+            0,
+            0xffff_ffff,
+            "perf output helpers require arg2 flags to fit BPF_F_INDEX_MASK/BPF_F_CURRENT_CPU (0xffffffff)"
+        ))
+    );
 }
 
 #[test]

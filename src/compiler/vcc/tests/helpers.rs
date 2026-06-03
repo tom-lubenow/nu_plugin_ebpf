@@ -7879,6 +7879,82 @@ fn test_verify_mir_for_probe_context_perf_event_output_helper_accepts_lwt() {
         .expect("expected perf_event_output helper in lwt_out program");
 }
 
+fn make_perf_event_output_vcc_call(
+    flags: i64,
+    size: i64,
+    data_size: usize,
+) -> (MirFunction, HashMap<VReg, MirType>) {
+    let (mut func, entry) = new_mir_function();
+    let ctx = func.alloc_vreg();
+    let map = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let data_slot = func.alloc_stack_slot(data_size, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry).instructions.push(MirInst::LoadMapFd {
+        dst: map,
+        map: MapRef {
+            name: "demo_perf_events".to_string(),
+            kind: MapKind::PerfEventArray,
+        },
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::PerfEventOutput as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::VReg(map),
+                MirValue::Const(flags),
+                MirValue::StackSlot(data_slot),
+                MirValue::Const(size),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(
+        map,
+        MirType::MapRef {
+            key_ty: Box::new(MirType::U32),
+            val_ty: Box::new(MirType::U32),
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    (func, types)
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_perf_event_output_rejects_invalid_flags() {
+    for flags in [-1, 0x1_0000_0000] {
+        let (func, types) = make_perf_event_output_vcc_call(flags, 8, 8);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::LwtOut, "demo-route");
+        let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect_err("expected perf_event_output flags error");
+        assert!(
+            err.iter()
+                .any(|e| e.message.contains("perf output helpers require arg2 flags")),
+            "unexpected errors for flags {flags}: {:?}",
+            err
+        );
+    }
+}
+
 fn make_perf_event_read_vcc_call(
     helper: BpfHelper,
     flags: i64,
@@ -8272,6 +8348,7 @@ fn make_packet_output_vcc_call(
 ) -> (MirFunction, HashMap<VReg, MirType>) {
     make_packet_output_vcc_call_with_arg0(
         helper,
+        0,
         size,
         data_size,
         CtxField::Context,
@@ -8291,6 +8368,7 @@ fn kernel_struct_ptr(name: &str) -> MirType {
 
 fn make_packet_output_vcc_call_with_arg0(
     helper: BpfHelper,
+    flags: i64,
     size: i64,
     data_size: usize,
     arg0_field: CtxField,
@@ -8324,7 +8402,7 @@ fn make_packet_output_vcc_call_with_arg0(
             args: vec![
                 MirValue::VReg(ctx),
                 MirValue::VReg(map),
-                MirValue::Const(0),
+                MirValue::Const(flags),
                 MirValue::StackSlot(data_slot),
                 MirValue::Const(size),
             ],
@@ -8360,7 +8438,7 @@ fn test_verify_mir_for_probe_context_packet_output_helpers_accept_typed_packet_a
         ),
     ] {
         let (func, types) =
-            make_packet_output_vcc_call_with_arg0(helper, 8, 8, CtxField::Arg(0), arg0_type);
+            make_packet_output_vcc_call_with_arg0(helper, 0, 8, 8, CtxField::Arg(0), arg0_type);
         verify_mir_for_probe_context(&func, &types, &probe_ctx)
             .expect("expected packet output helper to verify");
     }
@@ -8407,6 +8485,7 @@ fn test_verify_mir_for_probe_context_packet_output_helper_rejects_packet_program
 fn test_verify_mir_for_probe_context_packet_output_helper_rejects_small_data_buffer() {
     let (func, types) = make_packet_output_vcc_call_with_arg0(
         BpfHelper::SkbOutput,
+        0,
         16,
         8,
         CtxField::Arg(0),
@@ -8420,6 +8499,41 @@ fn test_verify_mir_for_probe_context_packet_output_helper_rejects_small_data_buf
         "expected pointer bounds error, got {:?}",
         err
     );
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_packet_output_helpers_reject_invalid_flags() {
+    for (helper, arg0_type, probe_ctx) in [
+        (
+            BpfHelper::SkbOutput,
+            kernel_struct_ptr("sk_buff"),
+            ProbeContext::new(EbpfProgramType::Fentry, "netif_receive_skb"),
+        ),
+        (
+            BpfHelper::XdpOutput,
+            kernel_struct_ptr("xdp_buff"),
+            ProbeContext::new(EbpfProgramType::Fentry, "xdp_do_redirect"),
+        ),
+    ] {
+        for flags in [-1, 0x1_0000_0000] {
+            let (func, types) = make_packet_output_vcc_call_with_arg0(
+                helper,
+                flags,
+                8,
+                8,
+                CtxField::Arg(0),
+                arg0_type.clone(),
+            );
+            let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+                .expect_err("expected packet output flags error");
+            assert!(
+                err.iter()
+                    .any(|e| e.message.contains("perf output helpers require arg2 flags")),
+                "unexpected errors for {helper:?} flags {flags}: {:?}",
+                err
+            );
+        }
+    }
 }
 
 #[test]
