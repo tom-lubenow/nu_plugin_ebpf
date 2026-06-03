@@ -9034,6 +9034,21 @@ fn test_type_error_signal_helpers_reject_invalid_sig() {
 }
 
 #[test]
+fn test_type_error_get_ns_current_pid_tgid_rejects_zero_size() {
+    let (func, _) = make_get_ns_current_pid_tgid_call(0, 8);
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_get_ns_current_pid_tgid zero-size error");
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("helper 120 arg3 must be > 0")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
 fn test_type_error_get_ns_current_pid_tgid_requires_exact_size() {
     let (func, _) = make_get_ns_current_pid_tgid_call(4, 8);
     let mut ti = TypeInference::new(None);

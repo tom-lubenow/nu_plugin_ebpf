@@ -8305,6 +8305,19 @@ fn test_verify_mir_get_ns_current_pid_tgid_helper() {
 }
 
 #[test]
+fn test_verify_mir_get_ns_current_pid_tgid_rejects_zero_size() {
+    let (func, types) = make_get_ns_current_pid_tgid_verify_call(0, 8);
+    let err = verify_mir_for_program(&func, &types, EbpfProgramType::Xdp.info())
+        .expect_err("expected bpf_get_ns_current_pid_tgid zero-size error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("helper 120 arg3 must be > 0")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_get_ns_current_pid_tgid_requires_exact_size() {
     let (func, types) = make_get_ns_current_pid_tgid_verify_call(4, 8);
     let err = verify_mir_for_program(&func, &types, EbpfProgramType::Xdp.info())
