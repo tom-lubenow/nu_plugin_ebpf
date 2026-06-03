@@ -2552,7 +2552,7 @@ impl BpfHelper {
             },
             BpfHelper::SnprintfBtf => HelperSemantics {
                 ptr_arg_rules: SNPRINTF_BTF_RULES,
-                positive_size_args: &[],
+                positive_size_args: &[1],
                 ringbuf_record_arg0: false,
             },
             BpfHelper::SeqPrintf => HelperSemantics {

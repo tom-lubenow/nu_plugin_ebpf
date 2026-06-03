@@ -2039,6 +2039,38 @@ fn test_infer_snprintf_btf_helper_accepts_stack_buffers() {
 }
 
 #[test]
+fn test_type_error_snprintf_btf_rejects_zero_size() {
+    let mut func = make_test_function();
+    let out_slot = func.alloc_stack_slot(32, 8, StackSlotKind::StringBuffer);
+    let btf_ptr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::SnprintfBtf as u32,
+        args: vec![
+            MirValue::StackSlot(out_slot),
+            MirValue::Const(0),
+            MirValue::StackSlot(btf_ptr_slot),
+            MirValue::Const(16),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_snprintf_btf positive str_size error");
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("helper 149 arg1 must be > 0")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
 fn test_type_error_snprintf_btf_size_and_shape() {
     let mut func = make_test_function();
     let out_slot = func.alloc_stack_slot(32, 8, StackSlotKind::StringBuffer);
@@ -2105,9 +2137,9 @@ fn test_type_error_snprintf_btf_rejects_size_over_u32() {
         .infer(&func)
         .expect_err("expected snprintf_btf size range error");
     assert!(
-        errs.iter().any(|e| e
-            .message
-            .contains("snprintf helpers require arg1 str_size to be between 0 and u32::MAX")),
+        errs.iter().any(|e| e.message.contains(
+            "helper 'bpf_snprintf_btf' requires arg1 str_size to be between 1 and u32::MAX"
+        )),
         "unexpected errors: {:?}",
         errs
     );

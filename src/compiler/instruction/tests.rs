@@ -4033,9 +4033,9 @@ fn test_snprintf_btf_helper_contract() {
     assert_eq!(
         BpfHelper::SnprintfBtf.scalar_arg_range_requirement(1),
         Some((
-            0,
+            1,
             u32::MAX as i64,
-            "snprintf helpers require arg1 str_size to be between 0 and u32::MAX"
+            "helper 'bpf_snprintf_btf' requires arg1 str_size to be between 1 and u32::MAX"
         ))
     );
     assert_eq!(
@@ -4052,7 +4052,7 @@ fn test_snprintf_btf_helper_contract() {
     );
 
     let semantics = BpfHelper::SnprintfBtf.semantics();
-    assert!(semantics.positive_size_args.is_empty());
+    assert_eq!(semantics.positive_size_args, &[1]);
     assert_eq!(semantics.ptr_arg_rules.len(), 2);
 
     let out = semantics.ptr_arg_rules[0];

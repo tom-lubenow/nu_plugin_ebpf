@@ -1617,7 +1617,12 @@ impl BpfHelper {
                 BPF_BPRINTF_DATA_LEN_MAX,
                 "helper 'bpf_trace_vprintk' requires arg3 data_len to be between 0 and MAX_BPRINTF_VARARGS * 8 (96 bytes)",
             )),
-            (Self::Snprintf | Self::SnprintfBtf, 1) => Some((
+            (Self::SnprintfBtf, 1) => Some((
+                1,
+                BPF_FORMAT_SIZE_MAX_U32,
+                "helper 'bpf_snprintf_btf' requires arg1 str_size to be between 1 and u32::MAX",
+            )),
+            (Self::Snprintf, 1) => Some((
                 0,
                 BPF_FORMAT_SIZE_MAX_U32,
                 "snprintf helpers require arg1 str_size to be between 0 and u32::MAX",
