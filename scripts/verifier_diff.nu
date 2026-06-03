@@ -35333,6 +35333,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-list-math-float-results-fill"
+        category: "language-core"
+        tags: [aggregate list math min max median float fill]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  (([1.5 2 3] | math min | fill --alignment right --character "0" --width 4 | str starts-with "01.5") and ([1 2.0 2] | math max | fill --alignment right --character "0" --width 4 | str starts-with "0002")) and (([1 3] | math median | fill --alignment right --character "0" --width 4 | str starts-with "0002") and ([1.5 3.5 10] | math median | fill --alignment right --character "0" --width 4 | str starts-with "03.5"))'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-math-filesize-duration"
         category: "language-core"
         tags: [aggregate list math filesize duration constant]

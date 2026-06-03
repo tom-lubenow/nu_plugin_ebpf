@@ -313,6 +313,7 @@ pub enum FixedLayoutValueConsumer {
     SplitList,
     Compact,
     StringTransform,
+    Fill,
     Seq,
     MathRounding,
     MathMedian,
@@ -900,6 +901,20 @@ fn compile_time_value_consumer_matches(
                     }
                     _ => false,
                 }
+        }
+        FixedLayoutValueConsumer::Fill => {
+            decl_name == Some("fill")
+                && call_args_tracked_only_in_pipeline(src_dst, args, tracked_regs)
+                && args.positional.is_empty()
+                && args.named.iter().all(|(name, _)| {
+                    matches!(
+                        name.as_slice(),
+                        b"width" | b"w" | b"alignment" | b"a" | b"character" | b"c"
+                    )
+                })
+                && args.rest.is_empty()
+                && args.flags.is_empty()
+                && args.parser_info.is_empty()
         }
         FixedLayoutValueConsumer::Seq => {
             decl_name == Some("seq")

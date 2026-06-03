@@ -12229,6 +12229,65 @@ fn test_lower_math_min_max_rejects_known_mixed_numeric_lists_with_float_result()
 }
 
 #[test]
+fn test_lower_math_min_max_float_results_feed_metadata_only_fill() {
+    for (offset, command_name, values, expected_prefix) in [
+        (
+            0,
+            "math min",
+            vec![
+                Value::float(1.5, Span::test_data()),
+                Value::int(2, Span::test_data()),
+                Value::int(3, Span::test_data()),
+            ],
+            "01.5",
+        ),
+        (
+            1,
+            "math max",
+            vec![
+                Value::int(1, Span::test_data()),
+                Value::float(2.0, Span::test_data()),
+                Value::int(2, Span::test_data()),
+            ],
+            "0002",
+        ),
+    ] {
+        let math_decl = DeclId::new(560 + offset * 3);
+        let fill_decl = DeclId::new(561 + offset * 3);
+        let starts_with_decl = DeclId::new(562 + offset * 3);
+        let hir = make_value_list_math_fill_starts_with_program(
+            math_decl,
+            fill_decl,
+            starts_with_decl,
+            values,
+            expected_prefix,
+            4,
+            "right",
+            "0",
+        );
+        let decl_names = HashMap::from([
+            (math_decl, command_name.to_string()),
+            (fill_decl, "fill".to_string()),
+            (starts_with_decl, "str starts-with".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("{command_name} float result should feed fill: {err}"));
+
+        assert_no_runtime_list_operations(&result.program, command_name);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{command_name} fill result should compile: {err}"));
+    }
+}
+
+#[test]
 fn test_lower_math_unit_reducers_materialize_raw_i64_results() {
     let cases = [
         (
@@ -13522,6 +13581,83 @@ fn make_value_list_pipeline_call_program(decl_id: DeclId, values: Vec<Value>) ->
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_value_list_math_fill_starts_with_program(
+    math_decl: DeclId,
+    fill_decl: DeclId,
+    starts_with_decl: DeclId,
+    values: Vec<Value>,
+    prefix: &str,
+    width: i64,
+    alignment: &str,
+    character: &str,
+) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::list(values, Span::test_data())),
+                },
+                HirStmt::Call {
+                    decl_id: math_decl,
+                    src_dst: RegId::new(1),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(width),
+                },
+                HirStmt::LoadValue {
+                    dst: RegId::new(3),
+                    val: Box::new(Value::string(alignment, Span::test_data())),
+                },
+                HirStmt::LoadValue {
+                    dst: RegId::new(4),
+                    val: Box::new(Value::string(character, Span::test_data())),
+                },
+                HirStmt::Call {
+                    decl_id: fill_decl,
+                    src_dst: RegId::new(5),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(1)),
+                        named: vec![
+                            (b"width".to_vec(), RegId::new(2)),
+                            (b"alignment".to_vec(), RegId::new(3)),
+                            (b"character".to_vec(), RegId::new(4)),
+                        ],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadValue {
+                    dst: RegId::new(6),
+                    val: Box::new(Value::string(prefix, Span::test_data())),
+                },
+                HirStmt::Call {
+                    decl_id: starts_with_decl,
+                    src_dst: RegId::new(7),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(6)],
+                        pipeline_input: Some(RegId::new(5)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(7) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 8,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_value_list_math_describe_starts_with_program(
     math_decl: DeclId,
     describe_decl: DeclId,
@@ -14232,6 +14368,62 @@ fn test_lower_math_median_rejects_known_mixed_numeric_list_with_float_median() {
 }
 
 #[test]
+fn test_lower_math_median_float_results_feed_metadata_only_fill() {
+    for (offset, values, expected_prefix) in [
+        (
+            0,
+            vec![
+                Value::int(1, Span::test_data()),
+                Value::int(3, Span::test_data()),
+            ],
+            "0002",
+        ),
+        (
+            1,
+            vec![
+                Value::float(1.5, Span::test_data()),
+                Value::float(3.5, Span::test_data()),
+                Value::int(10, Span::test_data()),
+            ],
+            "03.5",
+        ),
+    ] {
+        let median_decl = DeclId::new(720 + offset * 3);
+        let fill_decl = DeclId::new(721 + offset * 3);
+        let starts_with_decl = DeclId::new(722 + offset * 3);
+        let hir = make_value_list_math_fill_starts_with_program(
+            median_decl,
+            fill_decl,
+            starts_with_decl,
+            values,
+            expected_prefix,
+            4,
+            "right",
+            "0",
+        );
+        let decl_names = HashMap::from([
+            (median_decl, "math median".to_string()),
+            (fill_decl, "fill".to_string()),
+            (starts_with_decl, "str starts-with".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("math median float result should feed fill: {err}"));
+
+        assert_no_runtime_list_operations(&result.program, "math median float fill");
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .expect("math median float fill result should compile");
+    }
+}
+
+#[test]
 fn test_lower_math_median_on_known_filesize_duration_lists_materializes_unit_result() {
     let cases = [
         (
@@ -14427,11 +14619,11 @@ fn test_lower_math_median_rejects_even_length_integer_list() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("math median should reject even-length integer lists");
+    .expect_err("math median should reject materialized even-length integer medians");
 
     assert!(
         err.to_string()
-            .contains("math median requires an odd-length integer or float list"),
+            .contains("math median compile-time list median has type float"),
         "unexpected error: {err}"
     );
 }

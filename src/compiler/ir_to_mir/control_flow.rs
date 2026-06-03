@@ -1221,6 +1221,7 @@ impl<'a> HirToMirLowering<'a> {
             FixedLayoutValueConsumer::StrJoin,
             FixedLayoutValueConsumer::Length,
             FixedLayoutValueConsumer::EmptyPredicate,
+            FixedLayoutValueConsumer::Fill,
         ]
         .into_iter()
         .any(|consumer| {

@@ -1155,12 +1155,6 @@ impl<'a> HirToMirLowering<'a> {
                     "math median requires a non-empty integer or float list in eBPF".into(),
                 ));
             }
-            if vals.len() % 2 == 0 {
-                return Err(CompileError::UnsupportedInstruction(
-                    "math median requires an odd-length integer or float list in eBPF because even-length medians are floats in Nushell".into(),
-                ));
-            }
-
             let mut values = Vec::with_capacity(vals.len());
             for (index, value) in vals.into_iter().enumerate() {
                 match &value {
@@ -1184,14 +1178,39 @@ impl<'a> HirToMirLowering<'a> {
                 lhs.partial_cmp(rhs)
                     .expect("median float values are validated as finite")
             });
-            let median_value = &values[values.len() / 2];
-            let nu_protocol::Value::Int { val: median, .. } = median_value else {
+            if values.len() % 2 == 0 {
+                let lhs = Self::numeric_value_as_f64(&values[values.len() / 2 - 1]);
+                let rhs = Self::numeric_value_as_f64(&values[values.len() / 2]);
+                let median = (lhs + rhs) / 2.0;
+                if self.current_call_result_metadata_only {
+                    self.lower_compile_time_only_constant_value(
+                        src_dst,
+                        &nu_protocol::Value::float(median, Span::unknown()),
+                    );
+                    return Ok(());
+                }
                 return Err(CompileError::UnsupportedInstruction(
-                    "math median compile-time list median has type float; eBPF supports only integer median results".into(),
+                    "math median compile-time list median has type float; eBPF supports only integer median results unless folded by fill".into(),
                 ));
-            };
-            let median = *median;
+            }
 
+            let median_value = &values[values.len() / 2];
+            let median = match median_value {
+                nu_protocol::Value::Int { val, .. } => *val,
+                nu_protocol::Value::Float { val, .. } if self.current_call_result_metadata_only => {
+                    self.lower_compile_time_only_constant_value(
+                        src_dst,
+                        &nu_protocol::Value::float(*val, Span::unknown()),
+                    );
+                    return Ok(());
+                }
+                nu_protocol::Value::Float { .. } => {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "math median compile-time list median has type float; eBPF supports only integer median results unless folded by fill".into(),
+                    ));
+                }
+                _ => unreachable!("median values were validated as integer or finite float"),
+            };
             let result_vreg = if src_dst_had_value {
                 self.assign_fresh_vreg(src_dst)
             } else {
@@ -1544,6 +1563,14 @@ impl<'a> HirToMirLowering<'a> {
         Ok(())
     }
 
+    fn numeric_value_as_f64(value: &nu_protocol::Value) -> f64 {
+        match value {
+            nu_protocol::Value::Int { val, .. } => *val as f64,
+            nu_protocol::Value::Float { val, .. } => *val,
+            _ => unreachable!("numeric values are validated before median computation"),
+        }
+    }
+
     fn lower_compile_time_math_min_max(
         &mut self,
         cmd_name: &str,
@@ -1589,10 +1616,21 @@ impl<'a> HirToMirLowering<'a> {
                 "{cmd_name} requires a non-empty integer or float list in eBPF"
             ))
         })?;
-        let nu_protocol::Value::Int { val, .. } = selected else {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "{cmd_name} compile-time list result has type float; eBPF supports only integer min/max results"
-            )));
+        let val = match selected {
+            nu_protocol::Value::Int { val, .. } => val,
+            nu_protocol::Value::Float { val, .. } if self.current_call_result_metadata_only => {
+                self.lower_compile_time_only_constant_value(
+                    src_dst,
+                    &nu_protocol::Value::float(val, Span::unknown()),
+                );
+                return Ok(());
+            }
+            nu_protocol::Value::Float { .. } => {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{cmd_name} compile-time list result has type float; eBPF supports only integer min/max results unless folded by fill"
+                )));
+            }
+            _ => unreachable!("min/max values were validated as integer or finite float"),
         };
 
         let result_vreg = if src_dst_had_value {
