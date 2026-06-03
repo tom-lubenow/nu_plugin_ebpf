@@ -1628,9 +1628,9 @@ impl BpfHelper {
                 "helper 'bpf_snprintf' requires arg4 data_len to be between 0 and MAX_BPRINTF_VARARGS * 8 (96 bytes)",
             )),
             (Self::SeqPrintf, 2) => Some((
-                0,
+                1,
                 BPF_FORMAT_SIZE_MAX_U32,
-                "helper 'bpf_seq_printf' requires arg2 fmt_size to be between 0 and u32::MAX",
+                "helper 'bpf_seq_printf' requires arg2 fmt_size to be between 1 and u32::MAX",
             )),
             (Self::SeqPrintf, 4) => Some((
                 0,

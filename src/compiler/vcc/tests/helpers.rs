@@ -4155,13 +4155,26 @@ fn test_verify_mir_for_probe_context_seq_output_helpers_reject_size_out_of_range
             vec![
                 MirValue::VReg(VReg(0)),
                 MirValue::StackSlot(StackSlotId(0)),
+                MirValue::Const(0),
+                MirValue::StackSlot(StackSlotId(1)),
+                MirValue::Const(16),
+            ],
+            16,
+            16,
+            "helper 126 arg2 must be > 0",
+        ),
+        (
+            BpfHelper::SeqPrintf,
+            vec![
+                MirValue::VReg(VReg(0)),
+                MirValue::StackSlot(StackSlotId(0)),
                 MirValue::Const(0x1_0000_0000),
                 MirValue::StackSlot(StackSlotId(1)),
                 MirValue::Const(16),
             ],
             16,
             16,
-            "helper 'bpf_seq_printf' requires arg2 fmt_size to be between 0 and u32::MAX",
+            "helper 'bpf_seq_printf' requires arg2 fmt_size to be between 1 and u32::MAX",
         ),
         (
             BpfHelper::SeqPrintf,

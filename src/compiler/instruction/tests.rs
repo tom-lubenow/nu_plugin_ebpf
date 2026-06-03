@@ -3957,9 +3957,9 @@ fn test_seq_output_helper_contracts() {
     assert_eq!(
         BpfHelper::SeqPrintf.scalar_arg_range_requirement(2),
         Some((
-            0,
+            1,
             u32::MAX as i64,
-            "helper 'bpf_seq_printf' requires arg2 fmt_size to be between 0 and u32::MAX"
+            "helper 'bpf_seq_printf' requires arg2 fmt_size to be between 1 and u32::MAX"
         ))
     );
     assert_eq!(
