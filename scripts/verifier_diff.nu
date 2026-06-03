@@ -37353,6 +37353,32 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-float-fill-right"
+        category: "language-core"
+        tags: [float fill right]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  1.25 | fill --alignment right --character "0" --width 6 | str starts-with "001.25"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-filesize-fill-right"
+        category: "language-core"
+        tags: [filesize fill right]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  1kb | fill --alignment right --character "_" --width 8 | str starts-with "____1000"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-char-named-prompt"
         category: "language-core"
         tags: [string char named]
@@ -37412,6 +37438,19 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  [1 23] | fill --alignment right --character "0" --width 3 | str join "," | str starts-with "001,023"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-mixed-list-fill-right-join"
+        category: "language-core"
+        tags: [int float filesize string list fill right join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [1 1.5 1kb "x"] | fill --alignment right --character "0" --width 4 | str join "," | str starts-with "0001,01.5,1000,000x"'
             '}'
         ]
         local: "accept"

@@ -2098,16 +2098,20 @@ impl<'a> HirToMirLowering<'a> {
     fn fill_input(&self, input_reg: Option<RegId>) -> Result<KnownFillInput, CompileError> {
         let Some(meta) = input_reg.and_then(|reg| self.get_metadata(reg).cloned()) else {
             return Err(CompileError::UnsupportedInstruction(
-                "fill requires compile-time known string or int input in eBPF".into(),
+                "fill requires compile-time known string, int, float, or filesize input in eBPF"
+                    .into(),
             ));
         };
 
         if let Some(value) = meta.constant_value {
             return match value {
-                nu_protocol::Value::String { val, .. } | nu_protocol::Value::Glob { val, .. } => {
-                    Ok(KnownFillInput::Scalar(val))
+                value @ (nu_protocol::Value::String { .. }
+                | nu_protocol::Value::Glob { .. }
+                | nu_protocol::Value::Int { .. }
+                | nu_protocol::Value::Float { .. }
+                | nu_protocol::Value::Filesize { .. }) => {
+                    Ok(KnownFillInput::Scalar(Self::fill_value_text(value, None)?))
                 }
-                nu_protocol::Value::Int { val, .. } => Ok(KnownFillInput::Scalar(val.to_string())),
                 nu_protocol::Value::List { vals, .. } => vals
                     .into_iter()
                     .enumerate()
@@ -2115,7 +2119,7 @@ impl<'a> HirToMirLowering<'a> {
                     .collect::<Result<Vec<_>, _>>()
                     .map(KnownFillInput::List),
                 other => Err(CompileError::UnsupportedInstruction(format!(
-                    "fill requires compile-time known string or int input in eBPF; input has type {}",
+                    "fill requires compile-time known string, int, float, or filesize input in eBPF; input has type {}",
                     other.get_type()
                 ))),
             };
@@ -2127,21 +2131,40 @@ impl<'a> HirToMirLowering<'a> {
             Ok(KnownFillInput::Scalar(input.to_string()))
         } else {
             Err(CompileError::UnsupportedInstruction(
-                "fill requires compile-time known string or int input in eBPF".into(),
+                "fill requires compile-time known string, int, float, or filesize input in eBPF"
+                    .into(),
             ))
         }
     }
 
     fn fill_item_value(value: nu_protocol::Value, index: usize) -> Result<String, CompileError> {
+        Self::fill_value_text(value, Some(index))
+    }
+
+    fn fill_value_text(
+        value: nu_protocol::Value,
+        list_index: Option<usize>,
+    ) -> Result<String, CompileError> {
         match value {
             nu_protocol::Value::String { val, .. } | nu_protocol::Value::Glob { val, .. } => {
                 Ok(val)
             }
             nu_protocol::Value::Int { val, .. } => Ok(val.to_string()),
-            other => Err(CompileError::UnsupportedInstruction(format!(
-                "fill supports only string and int compile-time list items in eBPF; item {index} has type {}",
-                other.get_type()
-            ))),
+            nu_protocol::Value::Float { val, .. } => Ok(val.to_string()),
+            nu_protocol::Value::Filesize { val, .. } => Ok(val.get().to_string()),
+            other => {
+                let supported = "string, int, float, and filesize";
+                match list_index {
+                    Some(index) => Err(CompileError::UnsupportedInstruction(format!(
+                        "fill supports only {supported} compile-time list items in eBPF; item {index} has type {}",
+                        other.get_type()
+                    ))),
+                    None => Err(CompileError::UnsupportedInstruction(format!(
+                        "fill requires compile-time known {supported} input in eBPF; input has type {}",
+                        other.get_type()
+                    ))),
+                }
+            }
         }
     }
 

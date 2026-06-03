@@ -1142,6 +1142,7 @@ impl HirLiteral {
         match self {
             HirLiteral::Bool(val) => Some(Value::bool(*val, span)),
             HirLiteral::Int(val) => Some(Value::int(*val, span)),
+            HirLiteral::Float(val) => Some(Value::float(*val, span)),
             HirLiteral::Filesize(val) => Some(Value::filesize(*val, span)),
             HirLiteral::Duration(val) => Some(Value::duration(*val, span)),
             HirLiteral::Nothing => Some(Value::nothing(span)),

@@ -527,6 +527,29 @@ impl<'a> HirToMirLowering<'a> {
                         "terminal eBPF command must be the final expression in its block".into(),
                     ));
                 }
+                if let HirStmt::LoadLiteral { dst, lit } = stmt
+                    && matches!(lit, HirLiteral::Float(_))
+                    && self.is_compile_time_only_string_transform_value(
+                        &block.stmts,
+                        stmt_index,
+                        *dst,
+                    )
+                    && let Some(value) = lit.to_constant_value()
+                {
+                    self.lower_compile_time_only_constant_value(*dst, &value);
+                    continue;
+                }
+                if let HirStmt::LoadValue { dst, val } = stmt
+                    && !crate::compiler::hir::supports_constant_value(val)
+                    && self.is_compile_time_only_string_transform_value(
+                        &block.stmts,
+                        stmt_index,
+                        *dst,
+                    )
+                {
+                    self.lower_compile_time_only_constant_value(*dst, val);
+                    continue;
+                }
                 if let HirStmt::LoadValue { dst, val } = stmt
                     && self.is_compile_time_only_typed_global_define_value(
                         &block.stmts,
@@ -1067,6 +1090,22 @@ impl<'a> HirToMirLowering<'a> {
             stmt_index,
             dst,
             self.decl_names,
+        )
+    }
+
+    fn is_compile_time_only_string_transform_value(
+        &self,
+        stmts: &[HirStmt],
+        stmt_index: usize,
+        dst: RegId,
+    ) -> bool {
+        compile_time_value_flows_to_fixed_layout_consumer(
+            stmts,
+            stmt_index,
+            dst,
+            self.decl_names,
+            FixedLayoutValueConsumer::StringTransform,
+            CompileTimeValueFlow::AggregateBuilder,
         )
     }
 

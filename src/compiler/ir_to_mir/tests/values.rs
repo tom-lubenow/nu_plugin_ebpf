@@ -9,7 +9,9 @@ use nu_protocol::ast::{
     CellPath, Comparison, Expr, Expression, Operator, PathMember, RangeInclusion,
 };
 use nu_protocol::casing::Casing;
-use nu_protocol::{DeclId, IN_VARIABLE_ID, Record, RegId, Span, SpanId, Type, Value, VarId};
+use nu_protocol::{
+    DeclId, Filesize, IN_VARIABLE_ID, Record, RegId, Span, SpanId, Type, Value, VarId,
+};
 use std::collections::HashMap;
 
 fn string_member(name: &str) -> PathMember {
@@ -3048,6 +3050,31 @@ fn make_fill_value_then_starts_with_program(
         file_count: 0,
     };
     HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_fill_literal_then_starts_with_program(
+    fill_decl: DeclId,
+    starts_with_decl: DeclId,
+    lit: HirLiteral,
+    prefix: &str,
+    width: Option<i64>,
+    alignment: Option<&str>,
+    character: Option<&str>,
+) -> HirProgram {
+    let mut program = make_fill_value_then_starts_with_program(
+        fill_decl,
+        starts_with_decl,
+        Value::nothing(Span::test_data()),
+        prefix,
+        width,
+        alignment,
+        character,
+    );
+    program.main.blocks[0].stmts[0] = HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit,
+    };
+    program
 }
 
 fn make_string_list_fill_join_then_starts_with_program(
@@ -9921,6 +9948,142 @@ fn test_lower_fill_right_on_known_int_materializes_padded_literal() {
 }
 
 #[test]
+fn test_lower_fill_right_on_known_float_literal_materializes_padded_literal() {
+    let fill_decl = DeclId::new(509);
+    let starts_with_decl = DeclId::new(510);
+    let hir = make_fill_literal_then_starts_with_program(
+        fill_decl,
+        starts_with_decl,
+        HirLiteral::Float(1.25),
+        "001.25",
+        Some(6),
+        Some("right"),
+        Some("0"),
+    );
+    let decl_names = HashMap::from([
+        (fill_decl, "fill".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("fill should lower for compile-time known float input");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"001.25\0")
+            )),
+        "expected fill to materialize the padded float string"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("fill float result consumed by str starts-with should compile through codegen");
+}
+
+#[test]
+fn test_lower_float_literal_without_fill_consumer_remains_unsupported() {
+    let hir = HirProgram::new(
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Float(1.25),
+                }],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            }],
+            entry: HirBlockId(0),
+            spans: Vec::new(),
+            ast: Vec::new(),
+            comments: Vec::new(),
+            register_count: 1,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        None,
+    );
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("float literals should remain unsupported without a compile-time fill consumer");
+
+    assert!(
+        err.to_string().contains("Unsupported literal"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_fill_right_on_known_filesize_materializes_padded_literal() {
+    let fill_decl = DeclId::new(511);
+    let starts_with_decl = DeclId::new(512);
+    let hir = make_fill_value_then_starts_with_program(
+        fill_decl,
+        starts_with_decl,
+        Value::filesize(Filesize::new(1000), Span::test_data()),
+        "____1000",
+        Some(8),
+        Some("right"),
+        Some("_"),
+    );
+    let decl_names = HashMap::from([
+        (fill_decl, "fill".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("fill should lower for compile-time known filesize input");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"____1000\0")
+            )),
+        "expected fill to materialize the padded filesize string"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("fill filesize result consumed by str starts-with should compile through codegen");
+}
+
+#[test]
 fn test_lower_fill_center_on_known_string_list_materializes_padded_literals() {
     let fill_decl = DeclId::new(499);
     let join_decl = DeclId::new(500);
@@ -10046,6 +10209,62 @@ fn test_lower_fill_right_on_known_int_list_materializes_padded_literals() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("fill int-list result consumed by str join should compile through codegen");
+}
+
+#[test]
+fn test_lower_fill_right_on_known_mixed_numeric_list_materializes_padded_literals() {
+    let fill_decl = DeclId::new(513);
+    let join_decl = DeclId::new(514);
+    let starts_with_decl = DeclId::new(515);
+    let hir = make_value_list_fill_join_then_starts_with_program(
+        fill_decl,
+        join_decl,
+        starts_with_decl,
+        vec![
+            Value::int(1, Span::test_data()),
+            Value::float(1.5, Span::test_data()),
+            Value::filesize(Filesize::new(1000), Span::test_data()),
+            Value::string("x", Span::test_data()),
+        ],
+        4,
+        "right",
+        "0",
+        "0001,01.5,1000,000x",
+    );
+    let decl_names = HashMap::from([
+        (fill_decl, "fill".to_string()),
+        (join_decl, "str join".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("fill should lower for compile-time known mixed numeric/string list input");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"0001,01.5,1000,000x\0")
+            )),
+        "expected fill list output to feed str join with padded mixed strings"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("fill mixed list result consumed by str join should compile through codegen");
 }
 
 #[test]
