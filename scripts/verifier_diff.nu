@@ -38930,6 +38930,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-describe-float-list-builder"
+        category: "language-core"
+        tags: [describe aggregate list append float]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [2.5] | append 1.5 | describe | str starts-with "list<float>"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-runtime-list-describe"
         category: "language-core"
         tags: [describe aggregate list runtime string]

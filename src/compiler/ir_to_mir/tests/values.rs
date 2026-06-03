@@ -1235,6 +1235,166 @@ fn make_describe_then_starts_with_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_float_list_builder_describe_then_starts_with_program(
+    describe_decl: DeclId,
+    starts_with_decl: DeclId,
+    values: &[f64],
+    prefix: &str,
+) -> HirProgram {
+    let value_count = values.len();
+    let mut stmts = vec![HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List {
+            capacity: value_count,
+        },
+    }];
+    let mut next_reg = 2;
+    for value in values {
+        let item_reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadValue {
+            dst: item_reg,
+            val: Box::new(Value::float(*value, Span::test_data())),
+        });
+        stmts.push(HirStmt::ListPush {
+            src_dst: RegId::new(0),
+            item: item_reg,
+        });
+    }
+    let prefix_reg = RegId::new(next_reg);
+    next_reg += 1;
+    let result_reg = RegId::new(next_reg);
+    next_reg += 1;
+
+    stmts.push(HirStmt::Call {
+        decl_id: describe_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::LoadValue {
+        dst: prefix_reg,
+        val: Box::new(Value::string(prefix, Span::test_data())),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: starts_with_decl,
+        src_dst: result_reg,
+        args: HirCallArgs {
+            positional: vec![prefix_reg],
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: result_reg },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: next_reg,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_float_list_builder_append_describe_then_starts_with_program(
+    append_decl: DeclId,
+    describe_decl: DeclId,
+    starts_with_decl: DeclId,
+    values: &[f64],
+    appended: f64,
+    prefix: &str,
+) -> HirProgram {
+    let value_count = values.len();
+    let mut stmts = vec![HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List {
+            capacity: value_count,
+        },
+    }];
+    let mut next_reg = 2;
+    for value in values {
+        let item_reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadLiteral {
+            dst: item_reg,
+            lit: HirLiteral::Float(*value),
+        });
+        stmts.push(HirStmt::ListPush {
+            src_dst: RegId::new(0),
+            item: item_reg,
+        });
+    }
+
+    let appended_reg = RegId::new(next_reg);
+    next_reg += 1;
+    let append_result_reg = RegId::new(next_reg);
+    next_reg += 1;
+    let describe_result_reg = RegId::new(next_reg);
+    next_reg += 1;
+    let prefix_reg = RegId::new(next_reg);
+    next_reg += 1;
+    let result_reg = RegId::new(next_reg);
+    next_reg += 1;
+
+    stmts.push(HirStmt::LoadLiteral {
+        dst: appended_reg,
+        lit: HirLiteral::Float(appended),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: append_decl,
+        src_dst: append_result_reg,
+        args: HirCallArgs {
+            positional: vec![appended_reg],
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: describe_decl,
+        src_dst: describe_result_reg,
+        args: HirCallArgs {
+            pipeline_input: Some(append_result_reg),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::LoadValue {
+        dst: prefix_reg,
+        val: Box::new(Value::string(prefix, Span::test_data())),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: starts_with_decl,
+        src_dst: result_reg,
+        args: HirCallArgs {
+            positional: vec![prefix_reg],
+            pipeline_input: Some(describe_result_reg),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: result_reg },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: next_reg,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_describe_no_input_then_length_program(
     describe_decl: DeclId,
     length_decl: DeclId,
@@ -8842,6 +9002,122 @@ fn test_lower_describe_on_known_float_list_materializes_type_string() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
         "describe float list output consumed by str starts-with should compile through codegen",
+    );
+}
+
+#[test]
+fn test_lower_describe_on_float_list_builder_materializes_type_string() {
+    let describe_decl = DeclId::new(221);
+    let starts_with_decl = DeclId::new(222);
+    let hir = make_float_list_builder_describe_then_starts_with_program(
+        describe_decl,
+        starts_with_decl,
+        &[2.5, 1.5],
+        "list<float>",
+    );
+    let decl_names = HashMap::from([
+        (describe_decl, "describe".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("describe should consume compile-time float-list builders");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"list<float>\0")
+            )),
+        "expected describe to materialize the Nushell float-list builder type string"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .all(|inst| !matches!(inst, MirInst::ListPush { .. })),
+        "expected describe to consume the float-list builder without runtime ListPush"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "describe float-list builder output consumed by str starts-with should compile through codegen",
+    );
+}
+
+#[test]
+fn test_lower_describe_on_appended_float_list_builder_materializes_type_string() {
+    let append_decl = DeclId::new(223);
+    let describe_decl = DeclId::new(224);
+    let starts_with_decl = DeclId::new(225);
+    let hir = make_float_list_builder_append_describe_then_starts_with_program(
+        append_decl,
+        describe_decl,
+        starts_with_decl,
+        &[2.5],
+        1.5,
+        "list<float>",
+    );
+    let decl_names = HashMap::from([
+        (append_decl, "append".to_string()),
+        (describe_decl, "describe".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("describe should consume appended compile-time float-list builders");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"list<float>\0")
+            )),
+        "expected describe to materialize the appended float-list builder type string"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .all(|inst| !matches!(inst, MirInst::ListPush { .. })),
+        "expected describe to consume appended float-list builders without runtime ListPush"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "describe appended float-list builder output consumed by str starts-with should compile through codegen",
     );
 }
 

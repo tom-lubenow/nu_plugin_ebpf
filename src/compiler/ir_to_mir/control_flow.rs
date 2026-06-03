@@ -529,11 +529,15 @@ impl<'a> HirToMirLowering<'a> {
                 }
                 if let HirStmt::LoadLiteral { dst, lit } = stmt
                     && matches!(lit, HirLiteral::Float(_))
-                    && self.is_compile_time_only_string_or_math_value(
+                    && (self.is_compile_time_only_string_or_math_value(
                         &block.stmts,
                         stmt_index,
                         *dst,
-                    )
+                    ) || self.is_compile_time_only_append_prepend_item_value(
+                        &block.stmts,
+                        stmt_index,
+                        *dst,
+                    ))
                     && let Some(value) = lit.to_constant_value()
                 {
                     self.lower_compile_time_only_constant_value(*dst, &value);
@@ -541,11 +545,15 @@ impl<'a> HirToMirLowering<'a> {
                 }
                 if let HirStmt::LoadValue { dst, val } = stmt
                     && !crate::compiler::hir::supports_constant_value(val)
-                    && self.is_compile_time_only_string_or_math_value(
+                    && (self.is_compile_time_only_string_or_math_value(
                         &block.stmts,
                         stmt_index,
                         *dst,
-                    )
+                    ) || self.is_compile_time_only_append_prepend_item_value(
+                        &block.stmts,
+                        stmt_index,
+                        *dst,
+                    ))
                 {
                     self.lower_compile_time_only_constant_value(*dst, val);
                     continue;
@@ -1313,6 +1321,126 @@ impl<'a> HirToMirLowering<'a> {
             FixedLayoutValueConsumer::Seq,
             CompileTimeValueFlow::Direct,
         )
+    }
+
+    fn is_compile_time_only_append_prepend_item_value(
+        &self,
+        stmts: &[HirStmt],
+        stmt_index: usize,
+        dst: RegId,
+    ) -> bool {
+        let Some(rest) = stmts.get(stmt_index.saturating_add(1)..) else {
+            return false;
+        };
+        for (offset, stmt) in rest.iter().enumerate() {
+            let HirStmt::Call {
+                decl_id,
+                src_dst,
+                args,
+            } = stmt
+            else {
+                if Self::append_prepend_item_stmt_touches_reg(stmt, dst) {
+                    return false;
+                }
+                continue;
+            };
+            let decl_name = self.decl_names.get(decl_id).map(String::as_str);
+            let Some("append" | "prepend") = decl_name else {
+                if Self::append_prepend_item_call_args_touch_reg(args, dst) || *src_dst == dst {
+                    return false;
+                }
+                continue;
+            };
+            if args.positional.len() != 1
+                || args.positional[0] != dst
+                || !args.rest.is_empty()
+                || !args.named.is_empty()
+                || !args.flags.is_empty()
+                || !args.parser_info.is_empty()
+            {
+                return false;
+            }
+            let Some(input_reg) = args
+                .pipeline_input
+                .or((*src_dst != dst).then_some(*src_dst))
+            else {
+                return false;
+            };
+            if !self
+                .get_metadata(input_reg)
+                .and_then(|meta| meta.constant_value.as_ref())
+                .is_some_and(|value| matches!(value, Value::List { .. }))
+            {
+                return false;
+            }
+            return self.call_result_flows_to_metadata_only_consumer(
+                stmts,
+                stmt_index + 1 + offset,
+                *src_dst,
+            );
+        }
+        false
+    }
+
+    fn append_prepend_item_call_args_touch_reg(args: &HirCallArgs, reg: RegId) -> bool {
+        args.pipeline_input == Some(reg)
+            || args.positional.iter().any(|arg| *arg == reg)
+            || args.rest.iter().any(|arg| *arg == reg)
+            || args.named.iter().any(|(_, arg)| *arg == reg)
+    }
+
+    fn append_prepend_item_stmt_touches_reg(stmt: &HirStmt, reg: RegId) -> bool {
+        match stmt {
+            HirStmt::LoadLiteral { dst, .. } | HirStmt::LoadValue { dst, .. } => *dst == reg,
+            HirStmt::Move { dst, src } | HirStmt::Clone { dst, src } => *dst == reg || *src == reg,
+            HirStmt::StoreVariable { src, .. }
+            | HirStmt::Drain { src }
+            | HirStmt::DrainIfEnd { src }
+            | HirStmt::Drop { src }
+            | HirStmt::StoreEnv { src, .. }
+            | HirStmt::WriteFile { src, .. }
+            | HirStmt::CheckMatchGuard { src } => *src == reg,
+            HirStmt::LoadVariable { dst, .. }
+            | HirStmt::LoadEnv { dst, .. }
+            | HirStmt::LoadEnvOpt { dst, .. }
+            | HirStmt::OnErrorInto { dst, .. } => *dst == reg,
+            HirStmt::Collect { src_dst }
+            | HirStmt::Span { src_dst }
+            | HirStmt::CheckErrRedirected { src: src_dst }
+            | HirStmt::GlobFrom { src_dst, .. }
+            | HirStmt::Not { src_dst } => *src_dst == reg,
+            HirStmt::StringAppend { src_dst, val } | HirStmt::ListPush { src_dst, item: val } => {
+                *src_dst == reg || *val == reg
+            }
+            HirStmt::ListSpread { src_dst, items } | HirStmt::RecordSpread { src_dst, items } => {
+                *src_dst == reg || *items == reg
+            }
+            HirStmt::RecordInsert { src_dst, key, val } => {
+                *src_dst == reg || *key == reg || *val == reg
+            }
+            HirStmt::BinaryOp {
+                lhs_dst: src_dst,
+                rhs,
+                ..
+            }
+            | HirStmt::FollowCellPath { src_dst, path: rhs } => *src_dst == reg || *rhs == reg,
+            HirStmt::UpsertCellPath {
+                src_dst,
+                path,
+                new_value,
+            } => *src_dst == reg || *path == reg || *new_value == reg,
+            HirStmt::CloneCellPath { dst, src, path } => *dst == reg || *src == reg || *path == reg,
+            HirStmt::OpenFile { path, .. } => *path == reg,
+            HirStmt::Call { src_dst, args, .. } => {
+                *src_dst == reg || Self::append_prepend_item_call_args_touch_reg(args, reg)
+            }
+            HirStmt::CloseFile { .. }
+            | HirStmt::RedirectOut { .. }
+            | HirStmt::RedirectErr { .. }
+            | HirStmt::OnError { .. }
+            | HirStmt::DropVariable { .. }
+            | HirStmt::PopErrorHandler => false,
+        }
     }
 
     fn is_compile_time_only_string_or_math_value(

@@ -469,6 +469,18 @@ pub fn compile_time_value_flows_to_fixed_layout_consumer(
                     );
                 }
 
+                if flow == CompileTimeValueFlow::AggregateBuilder
+                    && compile_time_aggregate_transform_preserves_tracked_input(
+                        decl_names.get(decl_id).map(String::as_str),
+                        *src_dst,
+                        args,
+                        &tracked_regs,
+                    )
+                {
+                    tracked_regs.insert(*src_dst);
+                    continue;
+                }
+
                 if tracked_regs.contains(src_dst)
                     || call_args_touch_compile_time_value(args, &tracked_regs)
                 {
@@ -505,6 +517,7 @@ pub fn compile_time_value_flows_to_fixed_layout_aggregate_consumer(
         FixedLayoutValueConsumer::StrJoin,
         FixedLayoutValueConsumer::Length,
         FixedLayoutValueConsumer::EmptyPredicate,
+        FixedLayoutValueConsumer::Describe,
         FixedLayoutValueConsumer::Get,
         FixedLayoutValueConsumer::FirstLast,
         FixedLayoutValueConsumer::Slice,
@@ -1121,6 +1134,22 @@ fn call_args_non_pipeline_touch_compile_time_value(
 fn call_args_touch_compile_time_value(args: &HirCallArgs, regs: &HashSet<RegId>) -> bool {
     args.pipeline_input.is_some_and(|reg| regs.contains(&reg))
         || call_args_non_pipeline_touch_compile_time_value(args, regs)
+}
+
+fn compile_time_aggregate_transform_preserves_tracked_input(
+    decl_name: Option<&str>,
+    src_dst: RegId,
+    args: &HirCallArgs,
+    regs: &HashSet<RegId>,
+) -> bool {
+    matches!(decl_name, Some("append" | "prepend"))
+        && args.positional.len() == 1
+        && args.rest.is_empty()
+        && args.named.is_empty()
+        && args.flags.is_empty()
+        && args.parser_info.is_empty()
+        && (args.pipeline_input.is_some_and(|reg| regs.contains(&reg))
+            || (args.pipeline_input.is_none() && regs.contains(&src_dst)))
 }
 
 fn stmt_touches_compile_time_value(

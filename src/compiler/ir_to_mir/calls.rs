@@ -237,7 +237,12 @@ impl<'a> HirToMirLowering<'a> {
             } else {
                 vals.push(item);
             }
-            self.lower_constant_value(src_dst, &nu_protocol::Value::list(vals, Span::unknown()))?;
+            let list = nu_protocol::Value::list(vals, Span::unknown());
+            if self.current_call_result_metadata_only {
+                self.lower_compile_time_only_constant_value(src_dst, &list);
+            } else {
+                self.lower_constant_value(src_dst, &list)?;
+            }
             return Ok(());
         }
 
