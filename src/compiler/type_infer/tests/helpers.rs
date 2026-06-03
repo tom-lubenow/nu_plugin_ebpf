@@ -10896,6 +10896,21 @@ fn test_type_error_helper_get_current_comm_rejects_out_of_range_size() {
     }
 }
 
+#[test]
+fn test_type_error_helper_get_current_comm_rejects_zero_size() {
+    let func = make_get_current_comm_call(0);
+    let mut ti = TypeInference::new(None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected get_current_comm zero-size error");
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("helper 16 arg1 must be > 0")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
 fn make_trace_vprintk_call(
     fmt_size: i64,
     fmt_slot_size: usize,

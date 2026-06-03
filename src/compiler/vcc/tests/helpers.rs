@@ -19443,6 +19443,15 @@ fn test_verify_mir_helper_tcp_check_syncookie_rejects_non_positive_lengths() {
         "unexpected error messages: {:?}",
         err
     );
+
+    let (func, types) = make_tcp_syncookie_vcc_call(BpfHelper::TcpCheckSyncookie, 20, 0);
+    let err = verify_mir(&func, &types).expect_err("expected tcp_check_syncookie th_len error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("helper 100 arg4 must be > 0")),
+        "unexpected error messages: {:?}",
+        err
+    );
 }
 
 #[test]
@@ -19491,6 +19500,15 @@ fn test_verify_mir_helper_tcp_gen_syncookie_rejects_non_positive_lengths() {
     assert!(
         err.iter()
             .any(|e| e.message.contains("helper 110 arg2 must be > 0")),
+        "unexpected error messages: {:?}",
+        err
+    );
+
+    let (func, types) = make_tcp_syncookie_vcc_call(BpfHelper::TcpGenSyncookie, 20, 0);
+    let err = verify_mir(&func, &types).expect_err("expected tcp_gen_syncookie th_len error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("helper 110 arg4 must be > 0")),
         "unexpected error messages: {:?}",
         err
     );
