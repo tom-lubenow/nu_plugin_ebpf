@@ -6091,6 +6091,22 @@ fn test_infer_strtox_helpers() {
 }
 
 #[test]
+fn test_type_error_strtox_helpers_reject_zero_buf_len() {
+    for helper in [BpfHelper::Strtol, BpfHelper::Strtoul] {
+        let (func, _) = make_strtox_call(helper, 0, 0, 8);
+        let mut ti = TypeInference::new(None);
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected string conversion positive-size error");
+        assert!(
+            errs.iter().any(|e| e.message.contains("arg1 must be > 0")),
+            "unexpected errors for {helper:?}: {:?}",
+            errs
+        );
+    }
+}
+
+#[test]
 fn test_infer_strncmp_helper_accepts_rodata_s2() {
     let (func, dst) = make_strncmp_call(8, 8, false);
     let mut ti = TypeInference::new(None);

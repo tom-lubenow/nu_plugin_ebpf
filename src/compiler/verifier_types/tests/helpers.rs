@@ -8370,6 +8370,20 @@ fn test_verify_mir_strtox_helpers() {
 }
 
 #[test]
+fn test_verify_mir_strtox_helpers_reject_zero_buf_len() {
+    for helper in [BpfHelper::Strtol, BpfHelper::Strtoul] {
+        let (func, types) = make_strtox_verify_call(helper, 0, 0, 8);
+        let err = verify_mir_for_program(&func, &types, EbpfProgramType::Xdp.info())
+            .expect_err("expected string conversion positive-size error");
+        assert!(
+            err.iter().any(|e| e.message.contains("arg1 must be > 0")),
+            "unexpected errors for {helper:?}: {:?}",
+            err
+        );
+    }
+}
+
+#[test]
 fn test_verify_mir_strncmp_helper_accepts_rodata_s2() {
     let (func, types) = make_strncmp_verify_call(8, 8, false);
     verify_mir_for_program(&func, &types, EbpfProgramType::Xdp.info())
