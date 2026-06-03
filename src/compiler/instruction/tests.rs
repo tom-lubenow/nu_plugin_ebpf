@@ -5393,13 +5393,17 @@ fn test_syscall_helper_contracts() {
     );
 
     let kallsyms = BpfHelper::KallsymsLookupName.semantics();
-    assert_eq!(kallsyms.positive_size_args, &[1]);
+    assert!(kallsyms.positive_size_args.is_empty());
     assert_eq!(kallsyms.ptr_arg_rules.len(), 2);
     assert_eq!(
         kallsyms.ptr_arg_rules[0].op,
         "helper kallsyms_lookup_name name"
     );
     assert_eq!(kallsyms.ptr_arg_rules[0].size_from_arg, Some(1));
+    assert_eq!(
+        BpfHelper::KallsymsLookupName.zero_size_pointer_arg_size_arg(0),
+        Some(1)
+    );
     assert_eq!(
         kallsyms.ptr_arg_rules[1].op,
         "helper kallsyms_lookup_name res"

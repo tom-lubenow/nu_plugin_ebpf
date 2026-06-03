@@ -445,6 +445,8 @@ fn test_infer_syscall_helpers_in_syscall_program() {
     let btf_find = func.alloc_vreg();
     let sys_close = func.alloc_vreg();
     let kallsyms = func.alloc_vreg();
+    let kallsyms_zero_stack = func.alloc_vreg();
+    let kallsyms_zero_null = func.alloc_vreg();
     let block = func.block_mut(BlockId(0));
     block.instructions.push(MirInst::CallHelper {
         dst: sys_bpf,
@@ -480,6 +482,26 @@ fn test_infer_syscall_helpers_in_syscall_program() {
             MirValue::StackSlot(res_slot),
         ],
     });
+    block.instructions.push(MirInst::CallHelper {
+        dst: kallsyms_zero_stack,
+        helper: BpfHelper::KallsymsLookupName as u32,
+        args: vec![
+            MirValue::StackSlot(name_slot),
+            MirValue::Const(0),
+            MirValue::Const(0),
+            MirValue::StackSlot(res_slot),
+        ],
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst: kallsyms_zero_null,
+        helper: BpfHelper::KallsymsLookupName as u32,
+        args: vec![
+            MirValue::Const(0),
+            MirValue::Const(0),
+            MirValue::Const(0),
+            MirValue::StackSlot(res_slot),
+        ],
+    });
     block.terminator = MirInst::Return { val: None };
 
     let probe_ctx = ProbeContext::new(EbpfProgramType::Syscall, "demo");
@@ -491,6 +513,8 @@ fn test_infer_syscall_helpers_in_syscall_program() {
     assert_eq!(types.get(&btf_find), Some(&MirType::I64));
     assert_eq!(types.get(&sys_close), Some(&MirType::I64));
     assert_eq!(types.get(&kallsyms), Some(&MirType::I64));
+    assert_eq!(types.get(&kallsyms_zero_stack), Some(&MirType::I64));
+    assert_eq!(types.get(&kallsyms_zero_null), Some(&MirType::I64));
 }
 
 #[test]

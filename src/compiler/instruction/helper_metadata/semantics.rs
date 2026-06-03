@@ -2587,7 +2587,7 @@ impl BpfHelper {
             },
             BpfHelper::KallsymsLookupName => HelperSemantics {
                 ptr_arg_rules: KALLSYMS_LOOKUP_NAME_RULES,
-                positive_size_args: &[1],
+                positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },
             BpfHelper::TaskPtRegs => HelperSemantics {

@@ -3611,6 +3611,8 @@ fn test_verify_mir_for_probe_context_syscall_helpers_accept_syscall_program() {
     let btf_find = func.alloc_vreg();
     let sys_close = func.alloc_vreg();
     let kallsyms = func.alloc_vreg();
+    let kallsyms_zero_stack = func.alloc_vreg();
+    let kallsyms_zero_null = func.alloc_vreg();
 
     func.block_mut(entry)
         .instructions
@@ -3654,6 +3656,30 @@ fn test_verify_mir_for_probe_context_syscall_helpers_accept_syscall_program() {
                 MirValue::StackSlot(res_slot),
             ],
         });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: kallsyms_zero_stack,
+            helper: BpfHelper::KallsymsLookupName as u32,
+            args: vec![
+                MirValue::StackSlot(name_slot),
+                MirValue::Const(0),
+                MirValue::Const(0),
+                MirValue::StackSlot(res_slot),
+            ],
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: kallsyms_zero_null,
+            helper: BpfHelper::KallsymsLookupName as u32,
+            args: vec![
+                MirValue::Const(0),
+                MirValue::Const(0),
+                MirValue::Const(0),
+                MirValue::StackSlot(res_slot),
+            ],
+        });
     func.block_mut(entry).terminator = MirInst::Return { val: None };
 
     let types = HashMap::from([
@@ -3661,6 +3687,8 @@ fn test_verify_mir_for_probe_context_syscall_helpers_accept_syscall_program() {
         (btf_find, MirType::I64),
         (sys_close, MirType::I64),
         (kallsyms, MirType::I64),
+        (kallsyms_zero_stack, MirType::I64),
+        (kallsyms_zero_null, MirType::I64),
     ]);
     let probe_ctx = ProbeContext::new(EbpfProgramType::Syscall, "demo");
     verify_mir_for_probe_context(&func, &types, &probe_ctx)
