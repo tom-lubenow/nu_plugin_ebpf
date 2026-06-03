@@ -35346,6 +35346,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-list-math-float-sum-product-fill"
+        category: "language-core"
+        tags: [aggregate list math sum product float fill]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ([1.5 2] | math sum | fill --alignment right --character "0" --width 4 | str starts-with "03.5") and ([1.5 2] | math product | fill --alignment right --character "0" --width 4 | str starts-with "0003")'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-math-filesize-duration"
         category: "language-core"
         tags: [aggregate list math filesize duration constant]

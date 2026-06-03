@@ -1347,6 +1347,15 @@ impl<'a> HirToMirLowering<'a> {
             );
         }
 
+        if matches!(cmd_name, "math sum" | "math product")
+            && let Some(nu_protocol::Value::List { vals, .. }) = input_meta.constant_value.clone()
+            && vals
+                .iter()
+                .any(|value| matches!(value, nu_protocol::Value::Float { .. }))
+        {
+            return self.lower_compile_time_math_sum_product(cmd_name, src_dst, vals);
+        }
+
         if matches!(cmd_name, "math min" | "math max")
             && let Some(nu_protocol::Value::List { vals, .. }) = input_meta.constant_value.clone()
             && vals
@@ -1569,6 +1578,61 @@ impl<'a> HirToMirLowering<'a> {
             nu_protocol::Value::Float { val, .. } => *val,
             _ => unreachable!("numeric values are validated before median computation"),
         }
+    }
+
+    fn lower_compile_time_math_sum_product(
+        &mut self,
+        cmd_name: &str,
+        src_dst: RegId,
+        vals: Vec<nu_protocol::Value>,
+    ) -> Result<(), CompileError> {
+        if vals.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires a non-empty integer or float list in eBPF"
+            )));
+        }
+
+        let mut result = if cmd_name == "math product" { 1.0 } else { 0.0 };
+        for (index, value) in vals.into_iter().enumerate() {
+            let value = match value {
+                nu_protocol::Value::Int { val, .. } => val as f64,
+                nu_protocol::Value::Float { val, .. } if val.is_finite() => val,
+                nu_protocol::Value::Float { val, .. } => {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{cmd_name} requires finite float list items in eBPF; item {index} is {val}"
+                    )));
+                }
+                other => {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{cmd_name} requires integer or float list items in eBPF; item {index} has type {}",
+                        other.get_type()
+                    )));
+                }
+            };
+            if cmd_name == "math product" {
+                result *= value;
+            } else {
+                result += value;
+            }
+        }
+
+        if !result.is_finite() {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} compile-time list result must be finite in eBPF"
+            )));
+        }
+
+        if self.current_call_result_metadata_only {
+            self.lower_compile_time_only_constant_value(
+                src_dst,
+                &nu_protocol::Value::float(result, Span::unknown()),
+            );
+            return Ok(());
+        }
+
+        Err(CompileError::UnsupportedInstruction(format!(
+            "{cmd_name} compile-time list result has type float; eBPF supports only integer sum/product results unless folded by fill"
+        )))
     }
 
     fn lower_compile_time_math_min_max(

@@ -12288,6 +12288,105 @@ fn test_lower_math_min_max_float_results_feed_metadata_only_fill() {
 }
 
 #[test]
+fn test_lower_math_sum_product_rejects_known_mixed_numeric_lists_with_float_result() {
+    for (offset, command_name, values) in [
+        (
+            0,
+            "math sum",
+            vec![
+                Value::float(1.5, Span::test_data()),
+                Value::int(2, Span::test_data()),
+            ],
+        ),
+        (
+            1,
+            "math product",
+            vec![
+                Value::float(1.5, Span::test_data()),
+                Value::int(2, Span::test_data()),
+            ],
+        ),
+    ] {
+        let decl = DeclId::new(570 + offset);
+        let hir = make_value_list_pipeline_call_program(decl, values);
+        let decl_names = HashMap::from([(decl, command_name.to_string())]);
+
+        let err = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .expect_err("math sum/product should reject materialized float results");
+
+        assert!(
+            err.to_string()
+                .contains("compile-time list result has type float"),
+            "unexpected error: {err}"
+        );
+    }
+}
+
+#[test]
+fn test_lower_math_sum_product_float_results_feed_metadata_only_fill() {
+    for (offset, command_name, values, expected_prefix) in [
+        (
+            0,
+            "math sum",
+            vec![
+                Value::float(1.5, Span::test_data()),
+                Value::int(2, Span::test_data()),
+            ],
+            "03.5",
+        ),
+        (
+            1,
+            "math product",
+            vec![
+                Value::float(1.5, Span::test_data()),
+                Value::int(2, Span::test_data()),
+            ],
+            "0003",
+        ),
+    ] {
+        let math_decl = DeclId::new(580 + offset * 3);
+        let fill_decl = DeclId::new(581 + offset * 3);
+        let starts_with_decl = DeclId::new(582 + offset * 3);
+        let hir = make_value_list_math_fill_starts_with_program(
+            math_decl,
+            fill_decl,
+            starts_with_decl,
+            values,
+            expected_prefix,
+            4,
+            "right",
+            "0",
+        );
+        let decl_names = HashMap::from([
+            (math_decl, command_name.to_string()),
+            (fill_decl, "fill".to_string()),
+            (starts_with_decl, "str starts-with".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("{command_name} float result should feed fill: {err}"));
+
+        assert_no_runtime_list_operations(&result.program, command_name);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{command_name} fill result should compile: {err}"));
+    }
+}
+
+#[test]
 fn test_lower_math_unit_reducers_materialize_raw_i64_results() {
     let cases = [
         (
