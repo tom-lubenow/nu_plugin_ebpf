@@ -8281,6 +8281,58 @@ fn test_verify_mir_for_program_skb_vlan_push_rejects_invalid_u16_args() {
     }
 }
 
+fn make_csum_update_verify_call(csum: i64) -> (MirFunction, HashMap<VReg, MirType>) {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::CsumUpdate as u32,
+            args: vec![MirValue::VReg(ctx), MirValue::Const(csum)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    (func, types)
+}
+
+#[test]
+fn test_verify_mir_for_program_csum_update_rejects_invalid_csum() {
+    for csum in [-1_i64, 0x1_0000_0000] {
+        let (func, types) = make_csum_update_verify_call(csum);
+        let err = verify_mir_for_program(&func, &types, EbpfProgramType::Tc.info())
+            .expect_err("expected bpf_csum_update csum range error");
+        assert!(
+            err.iter().any(|e| e.message.contains(
+                "helper 'bpf_csum_update' requires arg1 csum to be between 0 and u32::MAX"
+            )),
+            "unexpected errors for csum {csum}: {:?}",
+            err
+        );
+    }
+}
+
 fn make_set_hash_verify_call(hash: i64) -> (MirFunction, HashMap<VReg, MirType>) {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

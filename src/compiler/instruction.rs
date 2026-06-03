@@ -33,6 +33,7 @@ const BPF_F_L4_CSUM_REPLACE_ALLOWED_MASK: i64 = BPF_F_HDR_FIELD_MASK
     | BPF_F_MARK_MANGLED_0
     | BPF_F_MARK_ENFORCE
     | BPF_F_IPV6;
+const BPF_CSUM_UPDATE_CSUM_MAX_U32: i64 = u32::MAX as i64;
 const BPF_MAX_LOOPS: i64 = 8 * 1024 * 1024;
 const BPF_CGROUP_ARRAY_INDEX_MAX_U32: i64 = u32::MAX as i64;
 const BPF_FIB_LOOKUP_DIRECT: i64 = 1 << 0;
@@ -1718,6 +1719,11 @@ impl BpfHelper {
                 0,
                 0xffff,
                 "checksum replacement helpers require arg1 offset to be between 0 and 0xffff",
+            )),
+            (Self::CsumUpdate, 1) => Some((
+                0,
+                BPF_CSUM_UPDATE_CSUM_MAX_U32,
+                "helper 'bpf_csum_update' requires arg1 csum to be between 0 and u32::MAX",
             )),
             (Self::SkbSetTstamp, 2) => Some((
                 0,

@@ -449,6 +449,7 @@ packet-edit helpers through the ordinary helper surface, including
 `bpf_clone_redirect` calls require `ifindex` to be `0` through `u32::MAX`;
 raw `bpf_skb_vlan_push` calls require `vlan_proto` and `vlan_tci` to be
 `0` through `u16::MAX`; raw `bpf_set_hash` calls require `hash` to be
+`0` through `u32::MAX`; raw `bpf_csum_update` calls require `csum` to be
 `0` through `u32::MAX`.
 `bpf_skb_store_bytes` flags may contain only `BPF_F_RECOMPUTE_CSUM` and
 `BPF_F_INVALIDATE_HASH`; `bpf_l3_csum_replace` flags may contain only

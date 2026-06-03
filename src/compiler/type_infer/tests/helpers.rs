@@ -9557,6 +9557,44 @@ fn test_type_error_helper_csum_diff_rejects_small_buffer() {
     );
 }
 
+fn make_csum_update_call(csum: i64) -> MirFunction {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::CsumUpdate as u32,
+        args: vec![MirValue::VReg(ctx), MirValue::Const(csum)],
+    });
+    block.terminator = MirInst::Return { val: None };
+    func
+}
+
+#[test]
+fn test_type_error_csum_update_helper_rejects_invalid_csum() {
+    for csum in [-1_i64, 0x1_0000_0000] {
+        let func = make_csum_update_call(csum);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected bpf_csum_update csum range error");
+        assert!(
+            errs.iter().any(|e| e.message.contains(
+                "helper 'bpf_csum_update' requires arg1 csum to be between 0 and u32::MAX"
+            )),
+            "unexpected errors for csum {csum}: {:?}",
+            errs
+        );
+    }
+}
+
 #[test]
 fn test_infer_helper_sysctl_get_current_value_in_cgroup_sysctl_program() {
     let mut func = make_test_function();

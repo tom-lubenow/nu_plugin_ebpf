@@ -2264,6 +2264,14 @@ fn test_helper_signatures_skb_packet_mutation_helpers() {
             "helper 'bpf_set_hash' requires arg1 hash to be between 0 and u32::MAX"
         ))
     );
+    assert_eq!(
+        BpfHelper::CsumUpdate.scalar_arg_range_requirement(1),
+        Some((
+            0,
+            u32::MAX as i64,
+            "helper 'bpf_csum_update' requires arg1 csum to be between 0 and u32::MAX"
+        ))
+    );
 
     let sig = HelperSignature::for_id(BpfHelper::SetHashInvalid as u32)
         .expect("expected bpf_set_hash_invalid helper signature");
