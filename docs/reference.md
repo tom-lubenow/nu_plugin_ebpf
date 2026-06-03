@@ -447,6 +447,7 @@ packet-edit helpers through the ordinary helper surface, including
 `sk_skb`, and `sk_skb_parser` additionally model `bpf_skb_vlan_push`,
 `bpf_skb_vlan_pop`, `bpf_skb_adjust_room`, and `bpf_set_hash`. Raw
 `bpf_clone_redirect` calls require `ifindex` to be `0` through `u32::MAX`;
+raw `bpf_skb_store_bytes` calls require `len` to fit `0..u32::MAX`;
 raw `bpf_skb_vlan_push` calls require `vlan_proto` and `vlan_tci` to be
 `0` through `u16::MAX`; raw `bpf_set_hash` calls require `hash` to be
 `0` through `u32::MAX`; raw `bpf_csum_update` calls require `csum` to be
@@ -475,7 +476,9 @@ direct packet-pointer facts when the kernel helper contract says the
 underlying packet buffer may change. Raw packet-copy helpers are modeled too:
 `bpf_skb_load_bytes` works on `flow_dissector`, `socket_filter`, `lwt_*`,
 `tc`, `tcx`, `netkit`, `cgroup_skb`, `sk_reuseport`, `sk_skb`, and `sk_skb_parser`;
-`bpf_skb_load_bytes` / `bpf_skb_store_bytes` offsets must fit `0..i32::MAX`.
+`bpf_skb_load_bytes` / `bpf_skb_store_bytes` offsets must fit `0..i32::MAX`,
+and `bpf_skb_store_bytes` lengths must fit `0..u32::MAX` while still satisfying
+the positive source-buffer size rule.
 In `flow_dissector`, `bpf_skb_load_bytes` offsets must fit `0..0xffff`.
 `bpf_skb_load_bytes_relative` works on `socket_filter`, `tc`, `tcx`, `netkit`, `cgroup_skb`,
 and `sk_reuseport`, with `offset` limited to `0..0xffff` and `start_header`

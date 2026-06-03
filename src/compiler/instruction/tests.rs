@@ -2645,6 +2645,14 @@ fn test_skb_store_bytes_helper_flag_contract() {
             "helper 'bpf_skb_store_bytes' requires arg4 flags to contain only BPF_F_RECOMPUTE_CSUM/BPF_F_INVALIDATE_HASH bits (0x03)"
         ))
     );
+    assert_eq!(
+        BpfHelper::SkbStoreBytes.scalar_arg_range_requirement(3),
+        Some((
+            0,
+            u32::MAX as i64,
+            "helper 'bpf_skb_store_bytes' requires arg3 len to be between 0 and u32::MAX"
+        ))
+    );
     for helper in [BpfHelper::SkbStoreBytes, BpfHelper::SkbLoadBytes] {
         assert_eq!(
             helper.scalar_arg_range_requirement(1),

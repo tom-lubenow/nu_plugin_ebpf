@@ -9205,7 +9205,7 @@ fn test_type_error_packet_byte_helpers_reject_invalid_programs() {
     }
 }
 
-fn make_skb_bytes_helper_call(helper: BpfHelper, offset: i64) -> MirFunction {
+fn make_skb_bytes_helper_call(helper: BpfHelper, offset: i64, len: i64) -> MirFunction {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();
     let dst = func.alloc_vreg();
@@ -9220,7 +9220,7 @@ fn make_skb_bytes_helper_call(helper: BpfHelper, offset: i64) -> MirFunction {
         MirValue::VReg(ctx),
         MirValue::Const(offset),
         MirValue::StackSlot(buf_slot),
-        MirValue::Const(4),
+        MirValue::Const(len),
     ];
     if matches!(
         helper,
@@ -9261,7 +9261,7 @@ fn test_type_error_skb_byte_helpers_reject_invalid_offsets() {
             "helper 'bpf_skb_load_bytes_relative' requires arg1 offset to be between 0 and 0xffff",
         ),
     ] {
-        let func = make_skb_bytes_helper_call(helper, offset);
+        let func = make_skb_bytes_helper_call(helper, offset, 4);
         let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
         let mut ti = TypeInference::new(Some(probe_ctx));
         let errs = ti
@@ -9275,8 +9275,25 @@ fn test_type_error_skb_byte_helpers_reject_invalid_offsets() {
 }
 
 #[test]
+fn test_type_error_skb_store_bytes_rejects_len_over_u32() {
+    let func = make_skb_bytes_helper_call(BpfHelper::SkbStoreBytes, 0, 0x1_0000_0000);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_skb_store_bytes len range validation error");
+    assert!(
+        errs.iter().any(|e| e.message.contains(
+            "helper 'bpf_skb_store_bytes' requires arg3 len to be between 0 and u32::MAX"
+        )),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
 fn test_type_error_flow_dissector_skb_load_bytes_rejects_large_offset() {
-    let func = make_skb_bytes_helper_call(BpfHelper::SkbLoadBytes, 0x1_0000);
+    let func = make_skb_bytes_helper_call(BpfHelper::SkbLoadBytes, 0x1_0000, 4);
     let probe_ctx = ProbeContext::new(EbpfProgramType::FlowDissector, "/proc/self/ns/net");
     let mut ti = TypeInference::new(Some(probe_ctx));
     let errs = ti

@@ -9957,6 +9957,7 @@ fn test_verify_mir_for_probe_context_packet_byte_helpers_accept_allowed_programs
 fn make_skb_bytes_vcc_call(
     helper: BpfHelper,
     offset: i64,
+    len: i64,
 ) -> (MirFunction, HashMap<VReg, MirType>) {
     let (mut func, entry) = new_mir_function();
     let ctx = func.alloc_vreg();
@@ -9974,7 +9975,7 @@ fn make_skb_bytes_vcc_call(
         MirValue::VReg(ctx),
         MirValue::Const(offset),
         MirValue::StackSlot(buf_slot),
-        MirValue::Const(4),
+        MirValue::Const(len),
     ];
     if matches!(
         helper,
@@ -10027,7 +10028,7 @@ fn test_verify_mir_for_probe_context_skb_byte_helpers_reject_invalid_offsets() {
             "helper 'bpf_skb_load_bytes_relative' requires arg1 offset to be between 0 and 0xffff",
         ),
     ] {
-        let (func, types) = make_skb_bytes_vcc_call(helper, offset);
+        let (func, types) = make_skb_bytes_vcc_call(helper, offset, 4);
         let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
         let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
             .expect_err("expected skb byte helper scalar range validation error");
@@ -10039,8 +10040,23 @@ fn test_verify_mir_for_probe_context_skb_byte_helpers_reject_invalid_offsets() {
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_skb_store_bytes_rejects_len_over_u32() {
+    let (func, types) = make_skb_bytes_vcc_call(BpfHelper::SkbStoreBytes, 0, 0x1_0000_0000);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected bpf_skb_store_bytes len range validation error");
+    assert!(
+        err.iter().any(|e| e.message.contains(
+            "helper 'bpf_skb_store_bytes' requires arg3 len to be between 0 and u32::MAX"
+        )),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_flow_dissector_skb_load_bytes_rejects_large_offset() {
-    let (func, types) = make_skb_bytes_vcc_call(BpfHelper::SkbLoadBytes, 0x1_0000);
+    let (func, types) = make_skb_bytes_vcc_call(BpfHelper::SkbLoadBytes, 0x1_0000, 4);
     let probe_ctx = ProbeContext::new(EbpfProgramType::FlowDissector, "/proc/self/ns/net");
     let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
         .expect_err("expected flow_dissector skb_load_bytes offset validation error");
