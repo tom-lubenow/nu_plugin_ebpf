@@ -3663,9 +3663,9 @@ fn test_helper_get_current_comm_size_contract() {
     assert_eq!(
         BpfHelper::GetCurrentComm.scalar_arg_range_requirement(1),
         Some((
-            0,
+            1,
             u32::MAX as i64,
-            "helper 'bpf_get_current_comm' requires arg1 size to be between 0 and u32::MAX"
+            "helper 'bpf_get_current_comm' requires arg1 size to be between 1 and u32::MAX"
         ))
     );
 }

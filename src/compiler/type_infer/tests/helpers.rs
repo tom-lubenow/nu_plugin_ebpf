@@ -10400,7 +10400,7 @@ fn test_type_error_helper_get_current_comm_rejects_out_of_range_size() {
             .expect_err("expected get_current_comm size range error");
         assert!(
             errs.iter().any(|e| e.message.contains(
-                "helper 'bpf_get_current_comm' requires arg1 size to be between 0 and u32::MAX"
+                "helper 'bpf_get_current_comm' requires arg1 size to be between 1 and u32::MAX"
             )),
             "unexpected errors for size {size}: {:?}",
             errs

@@ -1569,9 +1569,9 @@ impl BpfHelper {
                 "helper 'bpf_per_cpu_ptr' requires arg1 cpu to be between 0 and u32::MAX",
             )),
             (Self::GetCurrentComm, 1) => Some((
-                0,
+                1,
                 BPF_GET_CURRENT_COMM_SIZE_MAX_U32,
-                "helper 'bpf_get_current_comm' requires arg1 size to be between 0 and u32::MAX",
+                "helper 'bpf_get_current_comm' requires arg1 size to be between 1 and u32::MAX",
             )),
             (Self::GetStack | Self::GetTaskStack, 2) => Some((
                 0,
