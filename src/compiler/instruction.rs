@@ -75,6 +75,7 @@ const BPF_LWT_BUFFER_SIZE_MAX_U32: i64 = u32::MAX as i64;
 const BPF_LWT_SEG6_OFFSET_MAX_U32: i64 = u32::MAX as i64;
 const BPF_FORMAT_SIZE_MAX_U32: i64 = u32::MAX as i64;
 const BPF_BUFFER_SIZE_MAX_U32: i64 = u32::MAX as i64;
+const BPF_IMA_HASH_SIZE_MAX_U32: i64 = u32::MAX as i64;
 const PACKET_OTHERHOST: i64 = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1479,6 +1480,11 @@ impl BpfHelper {
                 0,
                 BPF_BUFFER_SIZE_MAX_U32,
                 "helper 'bpf_read_branch_records' requires arg2 size to be between 0 and u32::MAX",
+            )),
+            (Self::ImaInodeHash | Self::ImaFileHash, 2) => Some((
+                0,
+                BPF_IMA_HASH_SIZE_MAX_U32,
+                "IMA hash helpers require arg2 size to be between 0 and u32::MAX",
             )),
             (Self::TracePrintk | Self::TraceVPrintk, 1) => Some((
                 0,

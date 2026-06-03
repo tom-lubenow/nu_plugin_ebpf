@@ -4252,6 +4252,14 @@ fn test_ima_hash_helper_contracts() {
     let inode_semantics = BpfHelper::ImaInodeHash.semantics();
     assert_eq!(inode_semantics.positive_size_args, &[2]);
     assert_eq!(inode_semantics.ptr_arg_rules.len(), 2);
+    assert_eq!(
+        BpfHelper::ImaInodeHash.scalar_arg_range_requirement(2),
+        Some((
+            0,
+            u32::MAX as i64,
+            "IMA hash helpers require arg2 size to be between 0 and u32::MAX"
+        ))
+    );
 
     let inode = inode_semantics.ptr_arg_rules[0];
     assert_eq!(inode.arg_idx, 0);
@@ -4269,6 +4277,14 @@ fn test_ima_hash_helper_contracts() {
     let file_semantics = BpfHelper::ImaFileHash.semantics();
     assert_eq!(file_semantics.positive_size_args, &[2]);
     assert_eq!(file_semantics.ptr_arg_rules.len(), 2);
+    assert_eq!(
+        BpfHelper::ImaFileHash.scalar_arg_range_requirement(2),
+        Some((
+            0,
+            u32::MAX as i64,
+            "IMA hash helpers require arg2 size to be between 0 and u32::MAX"
+        ))
+    );
     assert_eq!(
         file_semantics.ptr_arg_rules[0].op,
         "helper ima_file_hash file"

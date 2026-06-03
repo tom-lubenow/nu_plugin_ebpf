@@ -12822,6 +12822,41 @@ fn test_type_error_ima_file_hash_requires_positive_size() {
 }
 
 #[test]
+fn test_type_error_ima_inode_hash_rejects_size_over_u32() {
+    let (func, _, _, hints) =
+        make_ima_hash_call(BpfHelper::ImaInodeHash, "inode", 0x1_0000_0000, 16);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Lsm, "lsm.s:file_open");
+    let mut ti = TypeInference::new_with_env(Some(probe_ctx), None, None, Some(&hints), None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected IMA inode hash size range error");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("IMA hash helpers require arg2 size to be between 0 and u32::MAX")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_type_error_ima_file_hash_rejects_size_over_u32() {
+    let (func, _, _, hints) = make_ima_hash_call(BpfHelper::ImaFileHash, "file", 0x1_0000_0000, 16);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Lsm, "lsm.s:file_open");
+    let mut ti = TypeInference::new_with_env(Some(probe_ctx), None, None, Some(&hints), None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected IMA file hash size range error");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("IMA hash helpers require arg2 size to be between 0 and u32::MAX")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
 fn test_type_error_ima_file_hash_rejects_inode_arg() {
     let (func, _, _, hints) = make_ima_hash_call(BpfHelper::ImaFileHash, "inode", 16, 16);
     let probe_ctx = ProbeContext::new(EbpfProgramType::Lsm, "lsm.s:file_open");

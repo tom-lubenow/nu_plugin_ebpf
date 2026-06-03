@@ -23201,6 +23201,32 @@ fn test_verify_mir_helper_ima_file_hash_requires_positive_size() {
 }
 
 #[test]
+fn test_verify_mir_helper_ima_inode_hash_rejects_size_over_u32() {
+    let (func, types) = make_ima_hash_vcc_call(BpfHelper::ImaInodeHash, "inode", 0x1_0000_0000, 16);
+    let err = verify_mir(&func, &types).expect_err("expected IMA inode size range error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("IMA hash helpers require arg2 size to be between 0 and u32::MAX")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_helper_ima_file_hash_rejects_size_over_u32() {
+    let (func, types) = make_ima_hash_vcc_call(BpfHelper::ImaFileHash, "file", 0x1_0000_0000, 16);
+    let err = verify_mir(&func, &types).expect_err("expected IMA file size range error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("IMA hash helpers require arg2 size to be between 0 and u32::MAX")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_helper_ima_file_hash_rejects_inode_arg() {
     let (func, types) = make_ima_hash_vcc_call(BpfHelper::ImaFileHash, "inode", 16, 16);
     let err = verify_mir(&func, &types).expect_err("expected IMA file ref mismatch");
