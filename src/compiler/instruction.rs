@@ -1378,7 +1378,7 @@ impl BpfHelper {
             (Self::CsumDiff, 2) => Some(3),
             (Self::ReadBranchRecords, 1) => Some(2),
             (Self::GetBranchSnapshot, 0) => Some(1),
-            (Self::GetTaskStack, 1) => Some(2),
+            (Self::GetStack | Self::GetTaskStack, 1) => Some(2),
             (Self::CopyFromUser | Self::CopyFromUserTask, 0) => Some(1),
             (
                 Self::ProbeRead

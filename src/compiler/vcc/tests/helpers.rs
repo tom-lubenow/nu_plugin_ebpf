@@ -9089,6 +9089,47 @@ fn test_verify_mir_get_stack_allows_zero_size_buffer() {
 }
 
 #[test]
+fn test_verify_mir_get_stack_allows_zero_size_null_buffer() {
+    let (mut func, entry) = new_mir_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::GetStack as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::Const(0),
+                MirValue::Const(0),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    verify_mir_for_program(&func, &types, EbpfProgramType::Kprobe.info())
+        .expect("expected get_stack zero-size null buffer to pass");
+}
+
+#[test]
 fn test_verify_mir_get_stack_rejects_invalid_flags() {
     let (mut func, entry) = new_mir_function();
     let ctx = func.alloc_vreg();

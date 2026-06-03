@@ -4215,6 +4215,10 @@ fn test_d_path_buffer_contract() {
 #[test]
 fn test_helper_get_stack_buffer_contract() {
     assert_eq!(
+        BpfHelper::GetStack.zero_size_pointer_arg_size_arg(1),
+        Some(2)
+    );
+    assert_eq!(
         BpfHelper::GetStack.scalar_arg_nonnegative_requirement(2),
         Some("helper 'bpf_get_stack' requires arg2 to be >= 0")
     );
