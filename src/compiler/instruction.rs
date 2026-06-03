@@ -73,6 +73,7 @@ const BPF_SIGNAL_MAX_U32: i64 = u32::MAX as i64;
 const BPF_XDP_BYTE_MAX_OFFSET_OR_LEN: i64 = 0xffff;
 const BPF_MSG_DATA_MAX_U32: i64 = u32::MAX as i64;
 const BPF_REDIRECT_IFINDEX_MAX_U32: i64 = u32::MAX as i64;
+const BPF_REDIRECT_NEIGH_PLEN_MAX_I32: i64 = i32::MAX as i64;
 const BPF_LWT_BUFFER_SIZE_MAX_U32: i64 = u32::MAX as i64;
 const BPF_LWT_SEG6_OFFSET_MAX_U32: i64 = u32::MAX as i64;
 const BPF_FORMAT_SIZE_MAX_U32: i64 = u32::MAX as i64;
@@ -1432,6 +1433,9 @@ impl BpfHelper {
             (Self::TcpRawGenSyncookieIpv4 | Self::TcpRawGenSyncookieIpv6, 2) => {
                 Some("raw syncookie helpers require arg2 to be >= 0")
             }
+            (Self::RedirectNeigh, 2) => {
+                Some("helper 'bpf_redirect_neigh' requires arg2 plen to be >= 0")
+            }
             _ => None,
         }
     }
@@ -1724,6 +1728,11 @@ impl BpfHelper {
                 0,
                 BPF_REDIRECT_IFINDEX_MAX_U32,
                 "helper 'bpf_redirect_neigh' requires arg0 ifindex to be between 0 and u32::MAX",
+            )),
+            (Self::RedirectNeigh, 2) => Some((
+                0,
+                BPF_REDIRECT_NEIGH_PLEN_MAX_I32,
+                "helper 'bpf_redirect_neigh' requires arg2 plen to be between 0 and i32::MAX",
             )),
             (Self::CloneRedirect, 1) => Some((
                 0,

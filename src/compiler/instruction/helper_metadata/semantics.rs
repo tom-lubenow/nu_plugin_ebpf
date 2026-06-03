@@ -888,7 +888,7 @@ impl BpfHelper {
             op: "helper redirect_neigh params",
             allowed: STACK_ONLY,
             fixed_size: None,
-            size_from_arg: None,
+            size_from_arg: Some(2),
         }];
 
         const PERF_EVENT_OUTPUT_RULES: &[HelperPtrArgRule] = &[

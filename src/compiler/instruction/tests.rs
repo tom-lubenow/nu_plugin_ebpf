@@ -2570,6 +2570,25 @@ fn test_helper_signature_redirect_neigh() {
             "helper 'bpf_redirect_neigh' requires arg0 ifindex to be between 0 and u32::MAX"
         ))
     );
+    assert_eq!(
+        BpfHelper::RedirectNeigh.scalar_arg_range_requirement(2),
+        Some((
+            0,
+            i32::MAX as i64,
+            "helper 'bpf_redirect_neigh' requires arg2 plen to be between 0 and i32::MAX"
+        ))
+    );
+    assert_eq!(
+        BpfHelper::RedirectNeigh.scalar_arg_nonnegative_requirement(2),
+        Some("helper 'bpf_redirect_neigh' requires arg2 plen to be >= 0")
+    );
+
+    let semantics = BpfHelper::RedirectNeigh.semantics();
+    assert_eq!(semantics.ptr_arg_rules.len(), 1);
+    let params = semantics.ptr_arg_rules[0];
+    assert_eq!(params.arg_idx, 1);
+    assert_eq!(params.op, "helper redirect_neigh params");
+    assert_eq!(params.size_from_arg, Some(2));
 }
 
 #[test]

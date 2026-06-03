@@ -632,7 +632,9 @@ directly; redirect ifindexes must be `0` through `u32::MAX`, and XDP still requi
 the default-neighbor form of `bpf_redirect_neigh`, lowering to
 `bpf_redirect_neigh(IFINDEX, 0, 0, FLAGS)`; `FLAGS` must also stay
 `0`. The raw `helper-call "bpf_redirect*" ...` forms enforce the same
-ifindex bounds and remain modeled when you need the escape hatch.
+ifindex bounds and remain modeled when you need the escape hatch. For
+raw `bpf_redirect_neigh`, a non-null params buffer is bounded by `PLEN`,
+and `PLEN` must fit `0..=i32::MAX`.
 
 On XDP, `adjust-packet --head|--meta|--tail DELTA` is the preferred first-class surface for packet relayout. It selects the corresponding `bpf_xdp_adjust_*` helper, materializes the ambient context pointer automatically, and returns the helper result directly. On `tc_action`, `tc`, `tcx`, `netkit`, `sk_skb`, and `sk_skb_parser`, `adjust-packet --head|--tail DELTA`, `adjust-packet --pull LEN`, and `adjust-packet --room LEN_DIFF --mode MODE [--flags N]` do the same for `bpf_skb_change_{head,tail}`, `bpf_skb_pull_data`, and `bpf_skb_adjust_room`; pull `LEN` must be `0` through `u32::MAX`, and LWT programs also support `adjust-packet --pull LEN`.
 

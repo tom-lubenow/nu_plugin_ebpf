@@ -11330,6 +11330,70 @@ fn test_verify_mir_helper_redirect_neigh_rejects_invalid_ifindex() {
 }
 
 #[test]
+fn test_verify_mir_helper_redirect_neigh_rejects_invalid_plen() {
+    let (mut func, entry) = new_mir_function();
+    let params = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::RedirectNeigh as u32,
+            args: vec![
+                MirValue::Const(1),
+                MirValue::StackSlot(params),
+                MirValue::Const(i64::from(i32::MAX) + 1),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(dst, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected bpf_redirect_neigh plen range error");
+    assert!(
+        err.iter().any(|e| e.message.contains(
+            "helper 'bpf_redirect_neigh' requires arg2 plen to be between 0 and i32::MAX"
+        )),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_helper_redirect_neigh_rejects_small_params_buffer() {
+    let (mut func, entry) = new_mir_function();
+    let params = func.alloc_stack_slot(4, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::RedirectNeigh as u32,
+            args: vec![
+                MirValue::Const(1),
+                MirValue::StackSlot(params),
+                MirValue::Const(8),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(dst, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected redirect_neigh params bounds error");
+    assert!(
+        err.iter().any(|e| e.kind == VccErrorKind::PointerBounds),
+        "expected pointer bounds error, got {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_helper_redirect_peer_requires_zero_flags() {
     let (mut func, entry) = new_mir_function();
     let dst = func.alloc_vreg();

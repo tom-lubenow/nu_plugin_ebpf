@@ -9759,6 +9759,70 @@ fn test_type_error_redirect_neigh_helper_rejects_invalid_ifindex() {
 }
 
 #[test]
+fn test_type_error_redirect_neigh_helper_rejects_invalid_plen() {
+    let mut func = make_test_function();
+    let params = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::RedirectNeigh as u32,
+        args: vec![
+            MirValue::Const(1),
+            MirValue::StackSlot(params),
+            MirValue::Const(i64::from(i32::MAX) + 1),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_redirect_neigh plen range error");
+    assert!(
+        errs.iter().any(|e| e.message.contains(
+            "helper 'bpf_redirect_neigh' requires arg2 plen to be between 0 and i32::MAX"
+        )),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_type_error_redirect_neigh_helper_rejects_small_params_buffer() {
+    let mut func = make_test_function();
+    let params = func.alloc_stack_slot(4, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::RedirectNeigh as u32,
+        args: vec![
+            MirValue::Const(1),
+            MirValue::StackSlot(params),
+            MirValue::Const(8),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_redirect_neigh params bounds error");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("helper redirect_neigh params requires 8 bytes")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
 fn test_infer_redirect_neigh_helper_in_tc_program() {
     let mut func = make_test_function();
     let dst = func.alloc_vreg();
