@@ -982,7 +982,20 @@ fn compile_time_value_consumer_matches(
                 && args.positional.is_empty()
                 && args.rest.is_empty()
                 && args.named.is_empty()
-                && args.flags.is_empty()
+                && args.flags.iter().all(|flag| {
+                    matches!(flag.as_slice(), b"degrees" | b"d")
+                        && matches!(
+                            decl_name,
+                            Some(
+                                "math arccos"
+                                    | "math arcsin"
+                                    | "math arctan"
+                                    | "math cos"
+                                    | "math sin"
+                                    | "math tan"
+                            )
+                        )
+                })
                 && args.parser_info.is_empty()
         }
         FixedLayoutValueConsumer::MathLog => {

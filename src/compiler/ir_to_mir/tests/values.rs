@@ -13066,33 +13066,6 @@ fn test_lower_math_trig_rejects_materialized_float_results() {
 }
 
 #[test]
-fn test_lower_math_trig_rejects_degrees_flag() {
-    let decl = DeclId::new(644);
-    let mut hir = make_value_pipeline_call_program(decl, Value::int(0, Span::test_data()));
-    match &mut hir.main.blocks[0].stmts[1] {
-        HirStmt::Call { args, .. } => args.flags.push(b"degrees".to_vec()),
-        other => panic!("expected math trig call, got {other:?}"),
-    }
-    let decl_names = HashMap::from([(decl, "math sin".to_string())]);
-
-    let err = lower_hir_to_mir_with_hints(
-        &hir,
-        None,
-        &decl_names,
-        None,
-        &HashMap::new(),
-        &HashMap::new(),
-    )
-    .expect_err("math trig --degrees should be rejected");
-
-    assert!(
-        err.to_string()
-            .contains("math sin does not accept arguments in eBPF"),
-        "unexpected error: {err}"
-    );
-}
-
-#[test]
 fn test_lower_math_trig_scalar_results_feed_metadata_only_fill() {
     for (offset, command_name, expected_prefix) in [
         (0, "math sin", "0000"),
@@ -13130,6 +13103,50 @@ fn test_lower_math_trig_scalar_results_feed_metadata_only_fill() {
 
         compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
             .unwrap_or_else(|err| panic!("{command_name} fill result should compile: {err}"));
+    }
+}
+
+#[test]
+fn test_lower_math_trig_scalar_degrees_results_feed_metadata_only_fill() {
+    for (offset, command_name, value, expected_prefix, width) in [
+        (0, "math sin", Value::int(90, Span::test_data()), "0001", 4),
+        (1, "math cos", Value::int(180, Span::test_data()), "-1", 1),
+        (2, "math tan", Value::int(45, Span::test_data()), "0.999", 1),
+    ] {
+        let math_decl = DeclId::new(744 + offset * 3);
+        let fill_decl = DeclId::new(745 + offset * 3);
+        let starts_with_decl = DeclId::new(746 + offset * 3);
+        let hir = with_math_flag(
+            make_value_math_fill_starts_with_program(
+                math_decl,
+                fill_decl,
+                starts_with_decl,
+                value,
+                expected_prefix,
+                width,
+                "right",
+                "0",
+            ),
+            b"degrees",
+        );
+        let decl_names = HashMap::from([
+            (math_decl, command_name.to_string()),
+            (fill_decl, "fill".to_string()),
+            (starts_with_decl, "str starts-with".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("{command_name} --degrees should feed fill: {err}"));
+
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{command_name} --degrees fill should compile: {err}"));
     }
 }
 
@@ -13174,6 +13191,128 @@ fn test_lower_math_trig_list_results_feed_metadata_only_str_join() {
         compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
             .unwrap_or_else(|err| panic!("{command_name} list str join should compile: {err}"));
     }
+}
+
+#[test]
+fn test_lower_math_trig_list_degrees_results_feed_metadata_only_str_join() {
+    let math_decl = DeclId::new(753);
+    let join_decl = DeclId::new(754);
+    let starts_with_decl = DeclId::new(755);
+    let hir = with_math_flag(
+        make_value_list_math_join_starts_with_program(
+            math_decl,
+            join_decl,
+            starts_with_decl,
+            vec![
+                Value::int(0, Span::test_data()),
+                Value::int(90, Span::test_data()),
+            ],
+            ",",
+            "0.0,1.0",
+        ),
+        b"d",
+    );
+    let decl_names = HashMap::from([
+        (math_decl, "math sin".to_string()),
+        (join_decl, "str join".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .unwrap_or_else(|err| panic!("math sin -d list result should feed str join: {err}"));
+
+    assert_no_runtime_list_operations(&result.program, "math sin -d");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("math sin -d list str join should compile");
+}
+
+#[test]
+fn test_lower_math_float_unary_rejects_unsupported_degrees_flag() {
+    let math_decl = DeclId::new(756);
+    let fill_decl = DeclId::new(757);
+    let starts_with_decl = DeclId::new(758);
+    let hir = with_math_flag(
+        make_value_math_fill_starts_with_program(
+            math_decl,
+            fill_decl,
+            starts_with_decl,
+            Value::int(4, Span::test_data()),
+            "2",
+            1,
+            "right",
+            "0",
+        ),
+        b"degrees",
+    );
+    let decl_names = HashMap::from([
+        (math_decl, "math sqrt".to_string()),
+        (fill_decl, "fill".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("math sqrt --degrees should be rejected");
+
+    assert!(
+        err.to_string()
+            .contains("math sqrt does not accept arguments in eBPF"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_math_float_unary_rejects_unknown_flag() {
+    let math_decl = DeclId::new(759);
+    let fill_decl = DeclId::new(760);
+    let starts_with_decl = DeclId::new(761);
+    let hir = with_math_flag(
+        make_value_math_fill_starts_with_program(
+            math_decl,
+            fill_decl,
+            starts_with_decl,
+            Value::int(90, Span::test_data()),
+            "1",
+            1,
+            "right",
+            "0",
+        ),
+        b"radians",
+    );
+    let decl_names = HashMap::from([
+        (math_decl, "math sin".to_string()),
+        (fill_decl, "fill".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("math sin unknown flag should be rejected");
+
+    assert!(
+        err.to_string()
+            .contains("math sin accepts only the optional --degrees flag in eBPF"),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]
@@ -13456,33 +13595,6 @@ fn test_lower_math_inverse_rejects_invalid_domains() {
 }
 
 #[test]
-fn test_lower_math_inverse_rejects_degrees_flag() {
-    let decl = DeclId::new(699);
-    let mut hir = make_value_pipeline_call_program(decl, Value::int(0, Span::test_data()));
-    match &mut hir.main.blocks[0].stmts[1] {
-        HirStmt::Call { args, .. } => args.flags.push(b"degrees".to_vec()),
-        other => panic!("expected math inverse call, got {other:?}"),
-    }
-    let decl_names = HashMap::from([(decl, "math arcsin".to_string())]);
-
-    let err = lower_hir_to_mir_with_hints(
-        &hir,
-        None,
-        &decl_names,
-        None,
-        &HashMap::new(),
-        &HashMap::new(),
-    )
-    .expect_err("math inverse --degrees should be rejected");
-
-    assert!(
-        err.to_string()
-            .contains("math arcsin does not accept arguments in eBPF"),
-        "unexpected error: {err}"
-    );
-}
-
-#[test]
 fn test_lower_math_inverse_scalar_results_feed_metadata_only_fill() {
     for (offset, command_name, value) in [
         (0, "math arcsin", Value::int(0, Span::test_data())),
@@ -13523,6 +13635,50 @@ fn test_lower_math_inverse_scalar_results_feed_metadata_only_fill() {
 
         compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
             .unwrap_or_else(|err| panic!("{command_name} fill result should compile: {err}"));
+    }
+}
+
+#[test]
+fn test_lower_math_inverse_scalar_degrees_results_feed_metadata_only_fill() {
+    for (offset, command_name, value, expected_prefix) in [
+        (0, "math arcsin", Value::int(1, Span::test_data()), "90"),
+        (1, "math arccos", Value::int(-1, Span::test_data()), "180"),
+        (2, "math arctan", Value::int(1, Span::test_data()), "45"),
+    ] {
+        let math_decl = DeclId::new(762 + offset * 3);
+        let fill_decl = DeclId::new(763 + offset * 3);
+        let starts_with_decl = DeclId::new(764 + offset * 3);
+        let hir = with_math_flag(
+            make_value_math_fill_starts_with_program(
+                math_decl,
+                fill_decl,
+                starts_with_decl,
+                value,
+                expected_prefix,
+                1,
+                "right",
+                "0",
+            ),
+            b"degrees",
+        );
+        let decl_names = HashMap::from([
+            (math_decl, command_name.to_string()),
+            (fill_decl, "fill".to_string()),
+            (starts_with_decl, "str starts-with".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("{command_name} --degrees should feed fill: {err}"));
+
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{command_name} --degrees fill should compile: {err}"));
     }
 }
 
@@ -13615,6 +13771,46 @@ fn test_lower_math_inverse_list_results_feed_metadata_only_str_join() {
         compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
             .unwrap_or_else(|err| panic!("{command_name} list str join should compile: {err}"));
     }
+}
+
+#[test]
+fn test_lower_math_inverse_list_degrees_results_feed_metadata_only_str_join() {
+    let math_decl = DeclId::new(771);
+    let join_decl = DeclId::new(772);
+    let starts_with_decl = DeclId::new(773);
+    let hir = with_math_flag(
+        make_value_list_math_join_starts_with_program(
+            math_decl,
+            join_decl,
+            starts_with_decl,
+            vec![
+                Value::int(0, Span::test_data()),
+                Value::int(1, Span::test_data()),
+            ],
+            ",",
+            "0.0,90.0",
+        ),
+        b"d",
+    );
+    let decl_names = HashMap::from([
+        (math_decl, "math arcsin".to_string()),
+        (join_decl, "str join".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .unwrap_or_else(|err| panic!("math arcsin -d list result should feed str join: {err}"));
+
+    assert_no_runtime_list_operations(&result.program, "math arcsin -d");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("math arcsin -d list str join should compile");
 }
 
 #[test]
@@ -15204,6 +15400,14 @@ fn with_math_positional_arg(mut program: HirProgram, arg: Value) -> HirProgram {
     match &mut program.main.blocks[0].stmts[2] {
         HirStmt::Call { args, .. } => args.positional.push(arg_reg),
         other => panic!("expected math call after inserted positional argument, got {other:?}"),
+    }
+    program
+}
+
+fn with_math_flag(mut program: HirProgram, flag: &[u8]) -> HirProgram {
+    match &mut program.main.blocks[0].stmts[1] {
+        HirStmt::Call { args, .. } => args.flags.push(flag.to_vec()),
+        other => panic!("expected math call, got {other:?}"),
     }
     program
 }

@@ -538,12 +538,33 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
+    fn math_float_unary_accepts_degrees(cmd_name: &str) -> bool {
+        matches!(
+            cmd_name,
+            "math arccos" | "math arcsin" | "math arctan" | "math cos" | "math sin" | "math tan"
+        )
+    }
+
+    fn math_float_unary_input_degrees(cmd_name: &str) -> bool {
+        matches!(cmd_name, "math cos" | "math sin" | "math tan")
+    }
+
+    fn math_float_unary_output_degrees(cmd_name: &str) -> bool {
+        matches!(cmd_name, "math arccos" | "math arcsin" | "math arctan")
+    }
+
     fn compile_time_math_float_unary_value(
         cmd_name: &str,
         value: nu_protocol::Value,
         list_index: Option<usize>,
+        degrees: bool,
     ) -> Result<nu_protocol::Value, CompileError> {
         let raw = Self::compile_time_math_float_input(cmd_name, value, list_index)?;
+        let input = if degrees && Self::math_float_unary_input_degrees(cmd_name) {
+            raw.to_radians()
+        } else {
+            raw
+        };
         let result = match cmd_name {
             "math arccos" => {
                 if !(-1.0..=1.0).contains(&raw) {
@@ -613,7 +634,7 @@ impl<'a> HirToMirLowering<'a> {
                 }
                 raw.atanh()
             }
-            "math cos" => raw.cos(),
+            "math cos" => input.cos(),
             "math cosh" => raw.cosh(),
             "math exp" => raw.exp(),
             "math ln" => {
@@ -648,15 +669,20 @@ impl<'a> HirToMirLowering<'a> {
                 }
                 raw.sqrt()
             }
-            "math sin" => raw.sin(),
+            "math sin" => input.sin(),
             "math sinh" => raw.sinh(),
-            "math tan" => raw.tan(),
+            "math tan" => input.tan(),
             "math tanh" => raw.tanh(),
             _ => {
                 return Err(CompileError::UnsupportedInstruction(format!(
                     "unsupported compile-time float unary command {cmd_name}"
                 )));
             }
+        };
+        let result = if degrees && Self::math_float_unary_output_degrees(cmd_name) {
+            result.to_degrees()
+        } else {
+            result
         };
         Self::compile_time_math_float_result(cmd_name, result, list_index)
     }
@@ -815,10 +841,31 @@ impl<'a> HirToMirLowering<'a> {
             || !self.named_args.is_empty()
             || !self.positional_args.is_empty()
         {
-            return Err(CompileError::UnsupportedInstruction(
-                format!("{cmd_name} does not accept arguments in eBPF").into(),
-            ));
+            let degrees = self
+                .named_flags
+                .iter()
+                .any(|flag| matches!(flag.as_str(), "degrees" | "d"));
+            let unsupported_flag = self
+                .named_flags
+                .iter()
+                .any(|flag| !matches!(flag.as_str(), "degrees" | "d"));
+            if unsupported_flag
+                || !self.named_args.is_empty()
+                || !self.positional_args.is_empty()
+                || (degrees && !Self::math_float_unary_accepts_degrees(cmd_name))
+            {
+                let message = if Self::math_float_unary_accepts_degrees(cmd_name) {
+                    format!("{cmd_name} accepts only the optional --degrees flag in eBPF")
+                } else {
+                    format!("{cmd_name} does not accept arguments in eBPF")
+                };
+                return Err(CompileError::UnsupportedInstruction(message.into()));
+            }
         }
+        let degrees = self
+            .named_flags
+            .iter()
+            .any(|flag| matches!(flag.as_str(), "degrees" | "d"));
 
         let input_reg = input_reg.ok_or_else(|| {
             CompileError::UnsupportedInstruction(
@@ -844,12 +891,17 @@ impl<'a> HirToMirLowering<'a> {
                     .into_iter()
                     .enumerate()
                     .map(|(index, value)| {
-                        Self::compile_time_math_float_unary_value(cmd_name, value, Some(index))
+                        Self::compile_time_math_float_unary_value(
+                            cmd_name,
+                            value,
+                            Some(index),
+                            degrees,
+                        )
                     })
                     .collect::<Result<Vec<_>, _>>()?;
                 nu_protocol::Value::list(vals, Span::unknown())
             }
-            value => Self::compile_time_math_float_unary_value(cmd_name, value, None)?,
+            value => Self::compile_time_math_float_unary_value(cmd_name, value, None, degrees)?,
         };
 
         if self.current_call_result_metadata_only {

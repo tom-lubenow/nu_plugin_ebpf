@@ -35476,6 +35476,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-math-degrees-folded"
+        category: "language-core"
+        tags: [scalar aggregate list math degrees inverse sin cos tan float fill str join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  (((90 | math sin --degrees | fill --alignment right --character "0" --width 4 | str starts-with "0001") and (180 | math cos --degrees | fill --alignment right --character "0" --width 1 | str starts-with "-1")) and (45 | math tan --degrees | fill --alignment right --character "0" --width 1 | str starts-with "0.999")) and (((1 | math arcsin --degrees | fill --alignment right --character "0" --width 1 | str starts-with "90") and (-1 | math arccos --degrees | fill --alignment right --character "0" --width 1 | str starts-with "180")) and ((1 | math arctan -d | fill --alignment right --character "0" --width 1 | str starts-with "45") and ([0 1] | math arcsin -d | str join "," | str starts-with "0.0,90.0")))'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-math-stats-folded"
         category: "language-core"
         tags: [aggregate list math variance stddev sample float fill]
