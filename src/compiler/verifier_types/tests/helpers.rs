@@ -16184,20 +16184,49 @@ fn test_verify_mir_for_probe_context_skb_tunnel_key_helpers_reject_invalid_size(
 }
 
 #[test]
-fn test_verify_mir_for_probe_context_skb_tunnel_option_helpers_reject_size_above_u32() {
-    for helper in [BpfHelper::SkbGetTunnelOpt, BpfHelper::SkbSetTunnelOpt] {
-        let (func, types) = make_skb_tunnel_verify_call(helper, 0x1_0000_0000, 16, 0);
-        let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
-        let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
-            .expect_err("expected skb tunnel option size validation error");
-        assert!(
-            err.iter().any(|e| e.message.contains(
-                "skb tunnel option helpers require arg2 size to be between 0 and u32::MAX"
-            )),
-            "unexpected errors for {helper:?}: {:?}",
-            err
-        );
-    }
+fn test_verify_mir_for_probe_context_skb_get_tunnel_option_helper_rejects_size_above_u32() {
+    let (func, types) =
+        make_skb_tunnel_verify_call(BpfHelper::SkbGetTunnelOpt, 0x1_0000_0000, 16, 0);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected skb get tunnel option size validation error");
+    assert!(
+        err.iter().any(|e| e.message.contains(
+            "helper 'bpf_skb_get_tunnel_opt' requires arg2 size to be between 0 and u32::MAX"
+        )),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_skb_set_tunnel_option_rejects_size_above_opts_max() {
+    let (func, types) = make_skb_tunnel_verify_call(BpfHelper::SkbSetTunnelOpt, 256, 256, 0);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected skb set tunnel option size validation error");
+    assert!(
+        err.iter().any(|e| e.message.contains(
+            "helper 'bpf_skb_set_tunnel_opt' requires arg2 size to be between 0 and IP_TUNNEL_OPTS_MAX (255)"
+        )),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_skb_set_tunnel_option_helper_rejects_unaligned_size() {
+    let (func, types) = make_skb_tunnel_verify_call(BpfHelper::SkbSetTunnelOpt, 18, 18, 0);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:ingress");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected skb set tunnel option size alignment error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_skb_set_tunnel_opt' requires arg2 size to be a multiple of 4")),
+        "unexpected errors: {:?}",
+        err
+    );
 }
 
 #[test]

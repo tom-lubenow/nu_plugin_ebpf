@@ -69,7 +69,8 @@ const BPF_SKB_PULL_DATA_MAX_LEN: i64 = u32::MAX as i64;
 const BPF_SKB_CHANGE_TAIL_MAX_NEW_LEN: i64 = i32::MAX as i64;
 const BPF_SKB_CHANGE_HEAD_MAX_HEAD_ROOM: i64 = i32::MAX as i64;
 const BPF_SKB_LOAD_BYTES_RELATIVE_MAX_OFFSET: i64 = 0xffff;
-const BPF_SKB_TUNNEL_OPT_MAX_SIZE: i64 = u32::MAX as i64;
+const BPF_SKB_GET_TUNNEL_OPT_MAX_SIZE: i64 = u32::MAX as i64;
+const BPF_SKB_SET_TUNNEL_OPT_MAX_SIZE: i64 = 0xff;
 const BPF_SKB_VLAN_MAX_U16: i64 = u16::MAX as i64;
 const BPF_SKB_XFRM_STATE_MAX_U32: i64 = u32::MAX as i64;
 const BPF_SET_HASH_MAX_U32: i64 = u32::MAX as i64;
@@ -1426,6 +1427,10 @@ impl BpfHelper {
                 2,
                 "checksum replacement helpers require arg1 offset to be even",
             )),
+            (Self::SkbSetTunnelOpt, 2) => Some((
+                4,
+                "helper 'bpf_skb_set_tunnel_opt' requires arg2 size to be a multiple of 4",
+            )),
             (Self::Snprintf, 4) => Some((
                 8,
                 "helper 'bpf_snprintf' requires arg4 to be a multiple of 8",
@@ -1862,10 +1867,15 @@ impl BpfHelper {
                 31,
                 "helper 'bpf_skb_set_tunnel_key' requires arg3 flags to contain only BPF_F_TUNINFO_IPV6/BPF_F_ZERO_CSUM_TX/BPF_F_DONT_FRAGMENT/BPF_F_SEQ_NUMBER/BPF_F_NO_TUNNEL_KEY bits (0x1f)",
             )),
-            (Self::SkbGetTunnelOpt | Self::SkbSetTunnelOpt, 2) => Some((
+            (Self::SkbGetTunnelOpt, 2) => Some((
                 0,
-                BPF_SKB_TUNNEL_OPT_MAX_SIZE,
-                "skb tunnel option helpers require arg2 size to be between 0 and u32::MAX",
+                BPF_SKB_GET_TUNNEL_OPT_MAX_SIZE,
+                "helper 'bpf_skb_get_tunnel_opt' requires arg2 size to be between 0 and u32::MAX",
+            )),
+            (Self::SkbSetTunnelOpt, 2) => Some((
+                0,
+                BPF_SKB_SET_TUNNEL_OPT_MAX_SIZE,
+                "helper 'bpf_skb_set_tunnel_opt' requires arg2 size to be between 0 and IP_TUNNEL_OPTS_MAX (255)",
             )),
             (Self::SkbGetXfrmState, 1) => Some((
                 0,

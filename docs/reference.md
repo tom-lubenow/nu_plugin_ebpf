@@ -527,8 +527,10 @@ the skb tunnel metadata helpers:
 `helper-call "bpf_skb_get_tunnel_opt" $ctx OPT_PTR SIZE`, and
 `helper-call "bpf_skb_set_tunnel_opt" $ctx OPT_PTR SIZE`. `KEY_PTR` and
 `OPT_PTR` must be stack/map-backed buffers whose accessible size covers
-`SIZE`. For tunnel-option helpers, `SIZE` must be positive and fit
-`u32`. For tunnel-key helpers, `SIZE` must be a known constant and one
+`SIZE`. For tunnel-option helpers, `SIZE` must be positive and
+`bpf_skb_get_tunnel_opt` sizes fit `u32`; `bpf_skb_set_tunnel_opt` sizes must
+fit `1..=255` and be a multiple of 4. For tunnel-key helpers, `SIZE` must be a
+known constant and one
 of the modeled kernel-compatible `struct bpf_tunnel_key` prefix sizes
 (`8`, `22`, `24`, `28`, or `44` bytes). `bpf_skb_get_tunnel_key` accepts only
 `BPF_F_TUNINFO_IPV6` and `BPF_F_TUNINFO_FLAGS`, while
