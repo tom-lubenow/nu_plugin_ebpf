@@ -3439,6 +3439,66 @@ fn test_infer_skb_packet_mutation_helpers_in_supported_programs() {
     }
 }
 
+#[test]
+fn test_type_error_skb_vlan_push_rejects_invalid_u16_args() {
+    for (arg_idx, bad_value, message) in [
+        (
+            1,
+            -1_i64,
+            "helper 'bpf_skb_vlan_push' requires arg1 vlan_proto to be between 0 and u16::MAX",
+        ),
+        (
+            1,
+            0x1_0000,
+            "helper 'bpf_skb_vlan_push' requires arg1 vlan_proto to be between 0 and u16::MAX",
+        ),
+        (
+            2,
+            -1_i64,
+            "helper 'bpf_skb_vlan_push' requires arg2 vlan_tci to be between 0 and u16::MAX",
+        ),
+        (
+            2,
+            0x1_0000,
+            "helper 'bpf_skb_vlan_push' requires arg2 vlan_tci to be between 0 and u16::MAX",
+        ),
+    ] {
+        let mut func = make_test_function();
+        let ctx = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let mut args = vec![
+            MirValue::VReg(ctx),
+            MirValue::Const(0x8100),
+            MirValue::Const(1),
+        ];
+        args[arg_idx] = MirValue::Const(bad_value);
+
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+        block.instructions.push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::SkbVlanPush as u32,
+            args,
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let probe_ctx = ProbeContext::new(EbpfProgramType::SkSkb, "/sys/fs/bpf/demo_sockmap");
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected bpf_skb_vlan_push u16 arg to be rejected");
+        assert!(
+            errs.iter().any(|e| e.message.contains(message)),
+            "unexpected errors for arg{arg_idx}={bad_value}: {:?}",
+            errs
+        );
+    }
+}
+
 fn make_clone_redirect_call(ifindex: i64, flags: i64) -> MirFunction {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();

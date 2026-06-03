@@ -54,6 +54,7 @@ const BPF_SKB_PULL_DATA_MAX_LEN: i64 = u32::MAX as i64;
 const BPF_SKB_CHANGE_TAIL_MAX_NEW_LEN: i64 = i32::MAX as i64;
 const BPF_SKB_CHANGE_HEAD_MAX_HEAD_ROOM: i64 = i32::MAX as i64;
 const BPF_SKB_LOAD_BYTES_RELATIVE_MAX_OFFSET: i64 = 0xffff;
+const BPF_SKB_VLAN_MAX_U16: i64 = u16::MAX as i64;
 const BPF_XDP_BYTE_MAX_OFFSET_OR_LEN: i64 = 0xffff;
 const BPF_MSG_DATA_MAX_U32: i64 = u32::MAX as i64;
 const BPF_REDIRECT_IFINDEX_MAX_U32: i64 = u32::MAX as i64;
@@ -1610,6 +1611,16 @@ impl BpfHelper {
                 0,
                 1,
                 "helper 'bpf_skb_load_bytes_relative' requires arg4 start_header to be BPF_HDR_START_MAC or BPF_HDR_START_NET",
+            )),
+            (Self::SkbVlanPush, 1) => Some((
+                0,
+                BPF_SKB_VLAN_MAX_U16,
+                "helper 'bpf_skb_vlan_push' requires arg1 vlan_proto to be between 0 and u16::MAX",
+            )),
+            (Self::SkbVlanPush, 2) => Some((
+                0,
+                BPF_SKB_VLAN_MAX_U16,
+                "helper 'bpf_skb_vlan_push' requires arg2 vlan_tci to be between 0 and u16::MAX",
             )),
             (Self::MsgApplyBytes | Self::MsgCorkBytes, 1) => Some((
                 0,

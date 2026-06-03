@@ -2163,6 +2163,22 @@ fn test_helper_signatures_skb_packet_mutation_helpers() {
             "skb/message redirect helpers require flags to contain only BPF_F_INGRESS (0x01)"
         ))
     );
+    assert_eq!(
+        BpfHelper::SkbVlanPush.scalar_arg_range_requirement(1),
+        Some((
+            0,
+            u16::MAX as i64,
+            "helper 'bpf_skb_vlan_push' requires arg1 vlan_proto to be between 0 and u16::MAX"
+        ))
+    );
+    assert_eq!(
+        BpfHelper::SkbVlanPush.scalar_arg_range_requirement(2),
+        Some((
+            0,
+            u16::MAX as i64,
+            "helper 'bpf_skb_vlan_push' requires arg2 vlan_tci to be between 0 and u16::MAX"
+        ))
+    );
 
     let sig = HelperSignature::for_id(BpfHelper::SkbPullData as u32)
         .expect("expected bpf_skb_pull_data helper signature");

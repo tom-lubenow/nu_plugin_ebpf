@@ -8131,6 +8131,77 @@ fn test_verify_mir_for_probe_context_skb_packet_edit_helpers_reject_invalid_prog
     }
 }
 
+#[test]
+fn test_verify_mir_for_probe_context_skb_vlan_push_rejects_invalid_u16_args() {
+    for (arg_idx, bad_value, message) in [
+        (
+            1,
+            -1_i64,
+            "helper 'bpf_skb_vlan_push' requires arg1 vlan_proto to be between 0 and u16::MAX",
+        ),
+        (
+            1,
+            0x1_0000,
+            "helper 'bpf_skb_vlan_push' requires arg1 vlan_proto to be between 0 and u16::MAX",
+        ),
+        (
+            2,
+            -1_i64,
+            "helper 'bpf_skb_vlan_push' requires arg2 vlan_tci to be between 0 and u16::MAX",
+        ),
+        (
+            2,
+            0x1_0000,
+            "helper 'bpf_skb_vlan_push' requires arg2 vlan_tci to be between 0 and u16::MAX",
+        ),
+    ] {
+        let (mut func, entry) = new_mir_function();
+        let ctx = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let mut args = vec![
+            MirValue::VReg(ctx),
+            MirValue::Const(0x8100),
+            MirValue::Const(1),
+        ];
+        args[arg_idx] = MirValue::Const(bad_value);
+
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::LoadCtxField {
+                dst: ctx,
+                field: CtxField::Context,
+                slot: None,
+            });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: BpfHelper::SkbVlanPush as u32,
+                args,
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ctx,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(dst, MirType::I64);
+
+        let probe_ctx = ProbeContext::new(EbpfProgramType::SkSkb, "/sys/fs/bpf/demo_sockmap");
+        let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect_err("expected bpf_skb_vlan_push u16 arg to be rejected");
+        assert!(
+            err.iter().any(|e| e.message.contains(message)),
+            "unexpected errors for arg{arg_idx}={bad_value}: {:?}",
+            err
+        );
+    }
+}
+
 fn make_clone_redirect_vcc_call(ifindex: i64, flags: i64) -> (MirFunction, HashMap<VReg, MirType>) {
     let (mut func, entry) = new_mir_function();
     let ctx = func.alloc_vreg();
