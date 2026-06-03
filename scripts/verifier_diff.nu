@@ -37392,6 +37392,21 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-string-aggregate-list-join"
+        category: "language-core"
+        tags: [string list aggregate record str join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let records = ([{a: 1 b: 2} {c: 3}] | str join ":")'
+            '  let lists = ([[1 2] [3]] | str join ":")'
+            '  (($records | str starts-with "{a: 1") and ($records | str contains "b: 2}:{c: 3}")) and (($lists | str starts-with "[1") and ($lists | str contains "2]:[3]"))'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-string-fill-right"
         category: "language-core"
         tags: [string fill right]

@@ -2386,8 +2386,11 @@ impl<'a> HirToMirLowering<'a> {
             | nu_protocol::Value::Binary { .. }) => {
                 Ok(value.to_expanded_string("", &nu_protocol::Config::default()))
             }
+            value @ (nu_protocol::Value::List { .. } | nu_protocol::Value::Record { .. }) => {
+                Ok(value.to_expanded_string("\n", &nu_protocol::Config::default()))
+            }
             other => Err(CompileError::UnsupportedInstruction(format!(
-                "{command} supports only string, int, float, filesize, duration, binary, bool, and null compile-time list items in eBPF; item {index} has type {}",
+                "{command} supports only string, int, float, filesize, duration, binary, bool, null, list, and record compile-time list items in eBPF; item {index} has type {}",
                 other.get_type()
             ))),
         }

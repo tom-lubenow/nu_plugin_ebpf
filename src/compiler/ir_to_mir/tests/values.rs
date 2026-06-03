@@ -7890,6 +7890,87 @@ fn test_lower_str_join_on_known_scalar_list_materializes_joined_string() {
 }
 
 #[test]
+fn test_lower_str_join_on_known_aggregate_list_items_materializes_expanded_string() {
+    let cases = [
+        (
+            vec![
+                Value::record(
+                    test_record(vec![
+                        ("a", Value::int(1, Span::test_data())),
+                        ("b", Value::int(2, Span::test_data())),
+                    ]),
+                    Span::test_data(),
+                ),
+                Value::record(
+                    test_record(vec![("c", Value::int(3, Span::test_data()))]),
+                    Span::test_data(),
+                ),
+            ],
+            "{a: 1\nb: 2}:{c: 3}",
+        ),
+        (
+            vec![
+                Value::list(
+                    vec![
+                        Value::int(1, Span::test_data()),
+                        Value::int(2, Span::test_data()),
+                    ],
+                    Span::test_data(),
+                ),
+                Value::list(vec![Value::int(3, Span::test_data())], Span::test_data()),
+            ],
+            "[1\n2]:[3]",
+        ),
+    ];
+
+    for (index, (values, expected)) in cases.into_iter().enumerate() {
+        let join_decl = DeclId::new(273 + index);
+        let starts_with_decl = DeclId::new(275 + index);
+        let hir = make_constant_list_join_then_starts_with_program(
+            join_decl,
+            starts_with_decl,
+            values,
+            ":",
+            expected,
+        );
+        let decl_names = HashMap::from([
+            (join_decl, "str join".to_string()),
+            (starts_with_decl, "str starts-with".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .expect("str join should materialize compile-time known aggregate-list items");
+
+        let expected_with_nul = format!("{expected}\0");
+        assert!(
+            result
+                .program
+                .main
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .any(|inst| matches!(
+                    inst,
+                    MirInst::StringAppend {
+                        val_type: StringAppendType::Literal { bytes },
+                        ..
+                    } if bytes.starts_with(expected_with_nul.as_bytes())
+                )),
+            "expected str join on aggregate list case {index} to materialize {expected:?}"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .expect("str join aggregate-list result consumed by str starts-with should compile");
+    }
+}
+
+#[test]
 fn test_lower_str_join_on_string_list_builder_materializes_joined_string() {
     let join_decl = DeclId::new(269);
     let starts_with_decl = DeclId::new(270);
