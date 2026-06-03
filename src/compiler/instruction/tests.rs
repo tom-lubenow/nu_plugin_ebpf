@@ -3709,9 +3709,9 @@ fn test_helper_probe_memory_size_contracts() {
     assert_eq!(
         BpfHelper::ProbeWriteUser.scalar_arg_range_requirement(2),
         Some((
-            0,
+            1,
             u32::MAX as i64,
-            "helper 'bpf_probe_write_user' requires arg2 size to be between 0 and u32::MAX"
+            "helper 'bpf_probe_write_user' requires arg2 size to be between 1 and u32::MAX"
         ))
     );
 }

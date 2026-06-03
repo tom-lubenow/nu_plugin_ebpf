@@ -14598,6 +14598,22 @@ fn test_type_error_probe_write_user_rejects_small_source_buffer() {
 }
 
 #[test]
+fn test_type_error_probe_write_user_rejects_zero_size() {
+    let (func, _) = make_probe_write_user_call(0, 16);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Uprobe, "test");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_probe_write_user zero-size error");
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("helper 36 arg2 must be > 0")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
 fn test_infer_probe_read_kernel_accepts_zero_size_null_dst() {
     let (func, dst) = make_probe_read_kernel_null_dst_call(0);
     let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "test");
@@ -14649,7 +14665,7 @@ fn test_type_error_probe_memory_helpers_reject_size_over_u32() {
         .expect_err("expected bpf_probe_write_user size range error");
     assert!(
         errs.iter().any(|e| e.message.contains(
-            "helper 'bpf_probe_write_user' requires arg2 size to be between 0 and u32::MAX"
+            "helper 'bpf_probe_write_user' requires arg2 size to be between 1 and u32::MAX"
         )),
         "unexpected errors: {:?}",
         errs

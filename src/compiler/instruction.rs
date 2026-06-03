@@ -1666,9 +1666,9 @@ impl BpfHelper {
                 "probe read helpers require arg1 size to be between 0 and u32::MAX",
             )),
             (Self::ProbeWriteUser, 2) => Some((
-                0,
+                1,
                 BPF_PROBE_MEM_SIZE_MAX_U32,
-                "helper 'bpf_probe_write_user' requires arg2 size to be between 0 and u32::MAX",
+                "helper 'bpf_probe_write_user' requires arg2 size to be between 1 and u32::MAX",
             )),
             (Self::GetCurrentAncestorCgroupId, 0)
             | (Self::SkAncestorCgroupId | Self::SkbAncestorCgroupId, 1) => Some((

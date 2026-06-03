@@ -24973,6 +24973,18 @@ fn test_verify_mir_helper_probe_write_user_accepts_user_dst() {
 }
 
 #[test]
+fn test_verify_mir_helper_probe_write_user_rejects_zero_size() {
+    let (func, types) = make_probe_write_user_vcc_call(0, 16);
+    let err = verify_mir(&func, &types).expect_err("expected probe_write_user zero-size error");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("helper 36 arg2 must be > 0")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_helper_probe_read_kernel_accepts_zero_size_null_dst() {
     let (func, types) = make_probe_read_kernel_null_dst_vcc_call(0);
     verify_mir(&func, &types).expect("expected zero-size bpf_probe_read_kernel null dst");
@@ -25008,7 +25020,7 @@ fn test_verify_mir_helper_probe_memory_rejects_size_over_u32() {
     let err = verify_mir(&func, &types).expect_err("expected probe_write_user size range error");
     assert!(
         err.iter().any(|e| e.message.contains(
-            "helper 'bpf_probe_write_user' requires arg2 size to be between 0 and u32::MAX"
+            "helper 'bpf_probe_write_user' requires arg2 size to be between 1 and u32::MAX"
         )),
         "unexpected errors: {:?}",
         err
