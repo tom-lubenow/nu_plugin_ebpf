@@ -13643,6 +13643,67 @@ fn test_verify_mir_for_probe_context_redirect_peer_accepts_tc_ingress() {
         .expect("expected redirect_peer tc-ingress context to verify");
 }
 
+fn make_xdp_adjust_vcc_call(
+    helper: BpfHelper,
+    delta: i64,
+) -> (MirFunction, HashMap<VReg, MirType>) {
+    let (mut func, entry) = new_mir_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: helper as u32,
+            args: vec![MirValue::VReg(ctx), MirValue::Const(delta)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+    (func, types)
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_xdp_adjust_rejects_delta_outside_i32_range() {
+    for helper in [
+        BpfHelper::XdpAdjustHead,
+        BpfHelper::XdpAdjustMeta,
+        BpfHelper::XdpAdjustTail,
+    ] {
+        for delta in [i32::MIN as i64 - 1, i32::MAX as i64 + 1] {
+            let (func, types) = make_xdp_adjust_vcc_call(helper, delta);
+            let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+            let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+                .expect_err("expected xdp adjust delta range error");
+            assert!(
+                err.iter().any(|e| e.message.contains(
+                    "XDP adjust helpers require arg1 delta to be between i32::MIN and i32::MAX"
+                )),
+                "unexpected errors for {:?} delta {}: {:?}",
+                helper,
+                delta,
+                err
+            );
+        }
+    }
+}
+
 #[test]
 fn test_verify_mir_for_probe_context_xdp_adjust_meta_invalidates_prior_packet_pointers() {
     let (mut func, entry) = new_mir_function();

@@ -2680,6 +2680,14 @@ fn test_helper_signatures_xdp_adjust_helpers() {
         assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
         assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
         assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+        assert_eq!(
+            helper.scalar_arg_range_requirement(1),
+            Some((
+                i32::MIN as i64,
+                i32::MAX as i64,
+                "XDP adjust helpers require arg1 delta to be between i32::MIN and i32::MAX"
+            ))
+        );
     }
 
     let sig = HelperSignature::for_id(BpfHelper::XdpGetBuffLen as u32)

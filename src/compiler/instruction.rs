@@ -86,6 +86,8 @@ const BPF_LWT_BUFFER_SIZE_MAX_U32: i64 = u32::MAX as i64;
 const BPF_LWT_SEG6_OFFSET_MAX_U32: i64 = u32::MAX as i64;
 const BPF_LWT_SEG6_ADJUST_SRH_DELTA_MIN_I32: i64 = i32::MIN as i64;
 const BPF_LWT_SEG6_ADJUST_SRH_DELTA_MAX_I32: i64 = i32::MAX as i64;
+const BPF_XDP_ADJUST_DELTA_MIN_I32: i64 = i32::MIN as i64;
+const BPF_XDP_ADJUST_DELTA_MAX_I32: i64 = i32::MAX as i64;
 const BPF_FORMAT_SIZE_MAX_U32: i64 = u32::MAX as i64;
 const BPF_BUFFER_SIZE_MAX_U32: i64 = u32::MAX as i64;
 const BPF_IMA_HASH_SIZE_MAX_U32: i64 = u32::MAX as i64;
@@ -1997,6 +1999,11 @@ impl BpfHelper {
                 0,
                 BPF_HDR_OPT_LEN_MAX_U32,
                 "helper 'bpf_reserve_hdr_opt' requires arg1 len to be between 0 and u32::MAX",
+            )),
+            (Self::XdpAdjustHead | Self::XdpAdjustMeta | Self::XdpAdjustTail, 1) => Some((
+                BPF_XDP_ADJUST_DELTA_MIN_I32,
+                BPF_XDP_ADJUST_DELTA_MAX_I32,
+                "XDP adjust helpers require arg1 delta to be between i32::MIN and i32::MAX",
             )),
             (Self::XdpLoadBytes | Self::XdpStoreBytes, 1) => Some((
                 0,

@@ -3062,6 +3062,52 @@ fn test_infer_xdp_adjust_meta_helper_in_xdp_program() {
     assert_eq!(types.get(&dst), Some(&MirType::I64));
 }
 
+fn make_xdp_adjust_call(helper: BpfHelper, delta: i64) -> (MirFunction, VReg) {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: helper as u32,
+        args: vec![MirValue::VReg(ctx), MirValue::Const(delta)],
+    });
+    block.terminator = MirInst::Return { val: None };
+    (func, dst)
+}
+
+#[test]
+fn test_type_error_xdp_adjust_helpers_reject_delta_outside_i32_range() {
+    for helper in [
+        BpfHelper::XdpAdjustHead,
+        BpfHelper::XdpAdjustMeta,
+        BpfHelper::XdpAdjustTail,
+    ] {
+        for delta in [i32::MIN as i64 - 1, i32::MAX as i64 + 1] {
+            let (func, _) = make_xdp_adjust_call(helper, delta);
+            let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+            let mut ti = TypeInference::new(Some(probe_ctx));
+            let errs = ti
+                .infer(&func)
+                .expect_err("expected xdp adjust delta range error");
+            assert!(
+                errs.iter().any(|e| e.message.contains(
+                    "XDP adjust helpers require arg1 delta to be between i32::MIN and i32::MAX"
+                )),
+                "unexpected errors for {:?} delta {}: {:?}",
+                helper,
+                delta,
+                errs
+            );
+        }
+    }
+}
+
 #[test]
 fn test_type_error_skb_packet_mutation_helpers_reject_invalid_programs() {
     for (helper, args) in [
