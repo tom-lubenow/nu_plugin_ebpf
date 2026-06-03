@@ -3689,6 +3689,21 @@ fn test_helper_probe_memory_size_contracts() {
             )),
             "{helper:?}"
         );
+        assert_eq!(
+            helper.zero_size_pointer_arg_size_arg(0),
+            Some(1),
+            "{helper:?}"
+        );
+        assert_eq!(
+            helper.zero_size_pointer_arg_size_arg(2),
+            Some(1),
+            "{helper:?}"
+        );
+        assert_eq!(
+            helper.semantics().positive_size_args,
+            &[] as &[usize],
+            "{helper:?}"
+        );
     }
 
     assert_eq!(

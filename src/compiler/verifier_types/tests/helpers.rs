@@ -14112,6 +14112,33 @@ fn make_probe_read_kernel_verify_call(
     (func, types)
 }
 
+fn make_probe_read_kernel_null_dst_verify_call(size: i64) -> (MirFunction, HashMap<VReg, MirType>) {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let ret = func.alloc_vreg();
+    let src_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: ret,
+            helper: BpfHelper::ProbeReadKernel as u32,
+            args: vec![
+                MirValue::Const(0),
+                MirValue::Const(size),
+                MirValue::StackSlot(src_slot),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(ret, MirType::I64);
+
+    (func, types)
+}
+
 fn make_override_return_verify_call(use_stack_ctx: bool) -> (MirFunction, HashMap<VReg, MirType>) {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
@@ -14172,6 +14199,26 @@ fn test_verify_mir_helper_copy_from_user_task_accepts_zero_size_null_dst() {
 fn test_verify_mir_helper_probe_write_user_accepts_user_dst() {
     let (func, types) = make_probe_write_user_verify_call(16, 16);
     verify_mir(&func, &types).expect("expected bpf_probe_write_user helper to verify");
+}
+
+#[test]
+fn test_verify_mir_helper_probe_read_kernel_accepts_zero_size_null_dst() {
+    let (func, types) = make_probe_read_kernel_null_dst_verify_call(0);
+    verify_mir(&func, &types).expect("expected zero-size bpf_probe_read_kernel null dst");
+}
+
+#[test]
+fn test_verify_mir_helper_probe_read_kernel_rejects_nonzero_size_null_dst() {
+    let (func, types) = make_probe_read_kernel_null_dst_verify_call(1);
+    let err = verify_mir(&func, &types)
+        .expect_err("expected nonzero-size bpf_probe_read_kernel null dst error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper 113 arg0 requires arg1 = 0 when arg0 is null")),
+        "unexpected errors: {:?}",
+        err
+    );
 }
 
 #[test]

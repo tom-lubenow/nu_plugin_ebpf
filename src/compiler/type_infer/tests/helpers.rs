@@ -14455,6 +14455,25 @@ fn make_probe_read_kernel_call(size: i64, buf_size: usize) -> (MirFunction, VReg
     (func, dst)
 }
 
+fn make_probe_read_kernel_null_dst_call(size: i64) -> (MirFunction, VReg) {
+    let mut func = make_test_function();
+    let dst = func.alloc_vreg();
+    let src_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::ProbeReadKernel as u32,
+        args: vec![
+            MirValue::Const(0),
+            MirValue::Const(size),
+            MirValue::StackSlot(src_slot),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+    (func, dst)
+}
+
 fn make_override_return_call(use_stack_ctx: bool) -> (MirFunction, VReg) {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();
@@ -14573,6 +14592,34 @@ fn test_type_error_probe_write_user_rejects_small_source_buffer() {
         errs.iter().any(|e| e
             .message
             .contains("helper probe_write_user src requires 16 bytes")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_infer_probe_read_kernel_accepts_zero_size_null_dst() {
+    let (func, dst) = make_probe_read_kernel_null_dst_call(0);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "test");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let types = ti
+        .infer(&func)
+        .expect("expected zero-size bpf_probe_read_kernel null dst to infer");
+    assert_eq!(types.get(&dst), Some(&MirType::I64));
+}
+
+#[test]
+fn test_type_error_probe_read_kernel_rejects_nonzero_size_null_dst() {
+    let (func, _) = make_probe_read_kernel_null_dst_call(1);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "test");
+    let mut ti = TypeInference::new(Some(probe_ctx));
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected nonzero-size bpf_probe_read_kernel null dst error");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("helper 113 arg0 requires arg1 = 0 when arg0 is null")),
         "unexpected errors: {:?}",
         errs
     );

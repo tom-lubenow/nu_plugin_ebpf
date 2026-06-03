@@ -1380,6 +1380,15 @@ impl BpfHelper {
             (Self::GetBranchSnapshot, 0) => Some(1),
             (Self::GetTaskStack, 1) => Some(2),
             (Self::CopyFromUser | Self::CopyFromUserTask, 0) => Some(1),
+            (
+                Self::ProbeRead
+                | Self::ProbeReadStr
+                | Self::ProbeReadUser
+                | Self::ProbeReadKernel
+                | Self::ProbeReadUserStr
+                | Self::ProbeReadKernelStr,
+                0 | 2,
+            ) => Some(1),
             (Self::DPath, 1) => Some(2),
             (Self::SeqPrintf, 3) => Some(4),
             _ => None,
