@@ -786,7 +786,7 @@ fn compile_time_value_consumer_matches(
         }
         FixedLayoutValueConsumer::Find => {
             decl_name == Some("find")
-                && call_args_tracked_only_in_pipeline(src_dst, args, tracked_regs)
+                && call_args_tracked_only_in_pipeline_or_positional(src_dst, args, tracked_regs, 0)
                 && args.positional.len() == 1
                 && args.rest.is_empty()
                 && args.named.is_empty()
@@ -1170,6 +1170,29 @@ fn compile_time_aggregate_transform_preserves_tracked_input(
                 && args.rest.is_empty()
                 && args.named.is_empty()
                 && args.flags.is_empty()
+                && args.parser_info.is_empty()
+                && call_args_tracked_only_in_pipeline(src_dst, args, regs)
+        }
+        Some("get") => {
+            args.positional.len() == 1
+                && args.rest.is_empty()
+                && args.named.is_empty()
+                && args.flags.is_empty()
+                && args.parser_info.is_empty()
+                && call_args_tracked_only_in_pipeline(src_dst, args, regs)
+        }
+        Some("find") => {
+            args.positional.len() == 1
+                && args.rest.is_empty()
+                && args.named.is_empty()
+                && args.flags.is_empty()
+                && args.parser_info.is_empty()
+                && call_args_tracked_only_in_pipeline(src_dst, args, regs)
+        }
+        Some("compact") => {
+            args.rest.is_empty()
+                && args.named.is_empty()
+                && args.flags.iter().all(|flag| flag.as_slice() == b"empty")
                 && args.parser_info.is_empty()
                 && call_args_tracked_only_in_pipeline(src_dst, args, regs)
         }

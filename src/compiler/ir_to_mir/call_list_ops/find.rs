@@ -26,7 +26,7 @@ impl<'a> HirToMirLowering<'a> {
         let (needle_vreg, needle_reg) = self.positional_args[0];
 
         if let Some(values) = input_reg.and_then(|reg| {
-            self.direct_list_builder_values(reg, input_vreg)
+            self.compile_time_only_list_builder_values(reg, input_vreg)
                 .map(|values| values.to_vec())
         }) {
             let Some(needle) = self
@@ -47,7 +47,10 @@ impl<'a> HirToMirLowering<'a> {
                 .into_iter()
                 .filter(|value| value == &needle)
                 .collect::<Vec<_>>();
-            self.lower_constant_value(src_dst, &nu_protocol::Value::list(vals, Span::unknown()))?;
+            self.lower_compile_time_list_transform_result(
+                src_dst,
+                &nu_protocol::Value::list(vals, Span::unknown()),
+            )?;
             return Ok(());
         }
 
@@ -68,6 +71,17 @@ impl<'a> HirToMirLowering<'a> {
         let needle_const = needle_meta
             .as_ref()
             .and_then(Self::numeric_value_from_metadata);
+        if needle_const.is_none()
+            && needle_meta
+                .as_ref()
+                .and_then(|meta| meta.constant_value.as_ref())
+                .is_some()
+        {
+            return Err(CompileError::UnsupportedInstruction(
+                "find search argument must be an integer scalar for stack-backed numeric lists in eBPF"
+                    .into(),
+            ));
+        }
         if needle_const.is_none()
             && !matches!(
                 self.typed_value_runtime_type(needle_reg, needle_vreg),

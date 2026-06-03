@@ -38958,14 +38958,15 @@ const FIXTURES = [
     {
         name: "core-float-list-builder-transform-metadata-consumers"
         category: "language-core"
-        tags: [aggregate list append float take skip drop reverse first last length describe str join]
+        tags: [aggregate list append float take skip drop reverse first last get find compact length describe str join]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
             '  let slices = ((([2.5] | append 1.5 | take 1 | length) == 1) and (([2.5] | append 1.5 | skip 1 | str join "," | str starts-with "1.5") and (([2.5] | append 1.5 | drop 1 | length) == 1)))'
             '  let ordering = ([2.5] | append 1.5 | reverse | str join "," | str starts-with "1.5,2.5")'
             '  let scalars = (([2.5] | append 1.5 | first | describe | str starts-with "float") and ([2.5] | append 1.5 | last | describe | str starts-with "float"))'
-            '  $slices and ($ordering and ($scalars and ([2.5] | append 1.5 | last 1 | describe | str starts-with "list<float>")))'
+            '  let projections = (([2.5] | append 1.5 | get 0 | describe | str starts-with "float") and ((([2.5] | append 1.5 | find 1.5 | length) == 1) and ([2.5] | append 1.5 | compact --empty | str join "," | str starts-with "2.5,1.5")))'
+            '  $slices and ($ordering and ($scalars and ($projections and ([2.5] | append 1.5 | last 1 | describe | str starts-with "list<float>"))))'
             '}'
         ]
         local: "accept"

@@ -4383,7 +4383,7 @@ impl<'a> HirToMirLowering<'a> {
                                 ))
                             })?;
 
-                            self.lower_constant_value(src_dst, &projected)?;
+                            self.lower_compile_time_list_transform_result(src_dst, &projected)?;
                             handled_list_get = true;
                         } else if let Some((_slot, max_len)) = meta.list_buffer {
                             if let MirValue::Const(raw_idx) = &idx {

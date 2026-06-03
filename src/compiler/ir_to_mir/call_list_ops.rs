@@ -77,7 +77,7 @@ impl<'a> HirToMirLowering<'a> {
         self.direct_list_builder_values(input_reg, input_vreg)
     }
 
-    fn lower_compile_time_list_transform_result(
+    pub(super) fn lower_compile_time_list_transform_result(
         &mut self,
         dst: RegId,
         value: &nu_protocol::Value,

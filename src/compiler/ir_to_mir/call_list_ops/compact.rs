@@ -34,7 +34,7 @@ impl<'a> HirToMirLowering<'a> {
         })?;
 
         if let Some(values) = self
-            .direct_list_builder_values(input_reg, input_vreg)
+            .compile_time_only_list_builder_values(input_reg, input_vreg)
             .map(|values| values.to_vec())
         {
             let columns = self.compact_column_names()?;
@@ -54,7 +54,10 @@ impl<'a> HirToMirLowering<'a> {
                     Self::compact_keeps_value_for_columns(value, remove_empty, &columns)
                 })
                 .collect::<Vec<_>>();
-            self.lower_constant_value(src_dst, &nu_protocol::Value::list(vals, Span::unknown()))?;
+            self.lower_compile_time_list_transform_result(
+                src_dst,
+                &nu_protocol::Value::list(vals, Span::unknown()),
+            )?;
             return Ok(());
         }
 
