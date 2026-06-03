@@ -2455,8 +2455,7 @@ fn test_kfunc_copy_from_user_task_dynptr_rejects_cgroup_task_argument() {
     );
 }
 
-#[test]
-fn test_kfunc_copy_from_user_task_dynptr_rejects_zero_size() {
+fn assert_copy_from_user_task_dynptr_rejects_zero_size(kfunc: &str) {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
     func.entry = entry;
@@ -2490,7 +2489,7 @@ fn test_kfunc_copy_from_user_task_dynptr_rejects_zero_size() {
         });
     func.block_mut(entry).instructions.push(MirInst::CallKfunc {
         dst: ret,
-        kfunc: "bpf_copy_from_user_task_dynptr".to_string(),
+        kfunc: kfunc.to_string(),
         btf_id: None,
         args: vec![dptr, off, size, src, task],
     });
@@ -2517,14 +2516,24 @@ fn test_kfunc_copy_from_user_task_dynptr_rejects_zero_size() {
     types.insert(ret, MirType::I64);
 
     let err =
-        verify_mir(&func, &types).expect_err("expected copy_from_user_task_dynptr zero-size error");
+        verify_mir(&func, &types).expect_err("expected copy_from_user_task dynptr zero-size error");
     assert!(
         err.iter().any(|e| e
             .message
-            .contains("kfunc 'bpf_copy_from_user_task_dynptr' arg2 must be > 0")),
+            .contains(&format!("kfunc '{kfunc}' arg2 must be > 0"))),
         "unexpected errors: {:?}",
         err
     );
+}
+
+#[test]
+fn test_kfunc_copy_from_user_task_dynptr_rejects_zero_size() {
+    assert_copy_from_user_task_dynptr_rejects_zero_size("bpf_copy_from_user_task_dynptr");
+}
+
+#[test]
+fn test_kfunc_copy_from_user_task_str_dynptr_rejects_zero_size() {
+    assert_copy_from_user_task_dynptr_rejects_zero_size("bpf_copy_from_user_task_str_dynptr");
 }
 
 fn make_packet_dynptr_kfunc_verify_function(

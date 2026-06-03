@@ -1984,8 +1984,7 @@ fn test_type_error_kfunc_copy_from_user_task_dynptr_requires_kernel_task_arg() {
     );
 }
 
-#[test]
-fn test_type_error_kfunc_copy_from_user_task_dynptr_rejects_zero_size() {
+fn assert_copy_from_user_task_dynptr_rejects_zero_size(kfunc: &str) {
     let mut func = make_test_function();
     let dptr = func.alloc_vreg();
     let off = func.alloc_vreg();
@@ -2019,7 +2018,7 @@ fn test_type_error_kfunc_copy_from_user_task_dynptr_rejects_zero_size() {
     });
     block.instructions.push(MirInst::CallKfunc {
         dst: ret,
-        kfunc: "bpf_copy_from_user_task_dynptr".to_string(),
+        kfunc: kfunc.to_string(),
         btf_id: None,
         args: vec![dptr, off, size, src, task],
     });
@@ -2029,14 +2028,24 @@ fn test_type_error_kfunc_copy_from_user_task_dynptr_rejects_zero_size() {
     let mut ti = TypeInference::new(Some(probe_ctx));
     let errs = ti
         .infer(&func)
-        .expect_err("expected copy_from_user_task_dynptr zero-size type error");
+        .expect_err("expected copy_from_user_task dynptr zero-size type error");
     assert!(
         errs.iter().any(|e| e
             .message
-            .contains("kfunc 'bpf_copy_from_user_task_dynptr' arg2 must be > 0")),
+            .contains(&format!("kfunc '{kfunc}' arg2 must be > 0"))),
         "unexpected errors: {:?}",
         errs
     );
+}
+
+#[test]
+fn test_type_error_kfunc_copy_from_user_task_dynptr_rejects_zero_size() {
+    assert_copy_from_user_task_dynptr_rejects_zero_size("bpf_copy_from_user_task_dynptr");
+}
+
+#[test]
+fn test_type_error_kfunc_copy_from_user_task_str_dynptr_rejects_zero_size() {
+    assert_copy_from_user_task_dynptr_rejects_zero_size("bpf_copy_from_user_task_str_dynptr");
 }
 
 fn make_packet_dynptr_kfunc_type_call(kfunc: &str, flags_value: i64) -> MirFunction {
