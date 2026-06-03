@@ -35320,6 +35320,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-list-math-filesize-duration"
+        category: "language-core"
+        tags: [aggregate list math filesize duration constant]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  (([1kb 2kb] | math sum | describe | str starts-with "filesize") and (([1sec 2sec] | math sum | describe | str starts-with "duration"))) and ((([1kb 2] | math max | describe | str starts-with "filesize") and ([1sec 2] | math min) == 2) and (([1kb 2kb] | math median | describe | str starts-with "filesize") and ([1sec 2sec] | math median | describe | str starts-with "duration")))'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-math-median"
         category: "language-core"
         tags: [aggregate list math median]

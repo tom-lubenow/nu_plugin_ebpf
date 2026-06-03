@@ -11571,6 +11571,179 @@ fn test_lower_math_min_max_rejects_known_mixed_numeric_lists_with_float_result()
     }
 }
 
+#[test]
+fn test_lower_math_unit_reducers_materialize_raw_i64_results() {
+    let cases = [
+        (
+            "math sum",
+            vec![
+                Value::filesize(Filesize::new(1000), Span::test_data()),
+                Value::filesize(Filesize::new(2000), Span::test_data()),
+            ],
+            3000,
+        ),
+        (
+            "math sum",
+            vec![
+                Value::duration(1_000_000_000, Span::test_data()),
+                Value::duration(2_000_000_000, Span::test_data()),
+            ],
+            3_000_000_000,
+        ),
+        (
+            "math min",
+            vec![
+                Value::filesize(Filesize::new(1000), Span::test_data()),
+                Value::int(2, Span::test_data()),
+            ],
+            2,
+        ),
+        (
+            "math max",
+            vec![
+                Value::filesize(Filesize::new(1000), Span::test_data()),
+                Value::int(2, Span::test_data()),
+            ],
+            1000,
+        ),
+    ];
+
+    for (case_index, (command_name, values, expected)) in cases.into_iter().enumerate() {
+        let decl = DeclId::new(590 + case_index);
+        let hir = make_value_list_pipeline_call_program(decl, values);
+        let decl_names = HashMap::from([(decl, command_name.to_string())]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("{command_name} should lower unit list input: {err}"));
+
+        assert_program_returns_constant(&result.program, expected, command_name);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{command_name} unit result should compile: {err}"));
+    }
+}
+
+#[test]
+fn test_lower_math_unit_reducers_preserve_describe_type() {
+    let cases = [
+        (
+            "math sum",
+            vec![
+                Value::filesize(Filesize::new(1000), Span::test_data()),
+                Value::filesize(Filesize::new(2000), Span::test_data()),
+            ],
+            "filesize",
+        ),
+        (
+            "math sum",
+            vec![
+                Value::duration(1_000_000_000, Span::test_data()),
+                Value::duration(2_000_000_000, Span::test_data()),
+            ],
+            "duration",
+        ),
+        (
+            "math max",
+            vec![
+                Value::filesize(Filesize::new(1000), Span::test_data()),
+                Value::int(2, Span::test_data()),
+            ],
+            "filesize",
+        ),
+        (
+            "math min",
+            vec![
+                Value::duration(1_000_000_000, Span::test_data()),
+                Value::int(2, Span::test_data()),
+            ],
+            "int",
+        ),
+    ];
+
+    for (case_index, (command_name, values, expected_prefix)) in cases.into_iter().enumerate() {
+        let math_decl = DeclId::new(600 + case_index * 3);
+        let describe_decl = DeclId::new(math_decl.get() + 1);
+        let starts_with_decl = DeclId::new(math_decl.get() + 2);
+        let hir = make_value_list_math_describe_starts_with_program(
+            math_decl,
+            describe_decl,
+            starts_with_decl,
+            values,
+            expected_prefix,
+        );
+        let decl_names = HashMap::from([
+            (math_decl, command_name.to_string()),
+            (describe_decl, "describe".to_string()),
+            (starts_with_decl, "str starts-with".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("{command_name} unit result should feed describe: {err}"));
+
+        let expected_literal = format!("{expected_prefix}\0");
+        assert!(
+            result
+                .program
+                .main
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .any(|inst| matches!(
+                    inst,
+                    MirInst::StringAppend {
+                        val_type: StringAppendType::Literal { bytes },
+                        ..
+                    } if bytes.starts_with(expected_literal.as_bytes())
+                )),
+            "expected {command_name} unit result to describe as {expected_prefix}"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{command_name} describe result should compile: {err}"));
+    }
+}
+
+#[test]
+fn test_lower_math_sum_rejects_mixed_unit_lists() {
+    let sum_decl = DeclId::new(612);
+    let hir = make_value_list_pipeline_call_program(
+        sum_decl,
+        vec![
+            Value::filesize(Filesize::new(1000), Span::test_data()),
+            Value::int(2, Span::test_data()),
+        ],
+    );
+    let decl_names = HashMap::from([(sum_decl, "math sum".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("math sum should reject mixed unit lists");
+
+    assert!(
+        err.to_string()
+            .contains("requires homogeneous filesize or duration list items"),
+        "unexpected error: {err}"
+    );
+}
+
 fn make_math_abs_program(abs_decl: DeclId, input: i64) -> HirProgram {
     let func = HirFunction {
         blocks: vec![HirBlock {
@@ -12692,6 +12865,63 @@ fn make_value_list_pipeline_call_program(decl_id: DeclId, values: Vec<Value>) ->
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_value_list_math_describe_starts_with_program(
+    math_decl: DeclId,
+    describe_decl: DeclId,
+    starts_with_decl: DeclId,
+    values: Vec<Value>,
+    prefix: &str,
+) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::list(values, Span::test_data())),
+                },
+                HirStmt::Call {
+                    decl_id: math_decl,
+                    src_dst: RegId::new(1),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: describe_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(1)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadValue {
+                    dst: RegId::new(3),
+                    val: Box::new(Value::string(prefix, Span::test_data())),
+                },
+                HirStmt::Call {
+                    decl_id: starts_with_decl,
+                    src_dst: RegId::new(4),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(3)],
+                        pipeline_input: Some(RegId::new(2)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(4) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 5,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_value_list_two_call_program(
     first_decl: DeclId,
     second_decl: DeclId,
@@ -13342,6 +13572,101 @@ fn test_lower_math_median_rejects_known_mixed_numeric_list_with_float_median() {
             .contains("math median compile-time list median has type float"),
         "unexpected error: {err}"
     );
+}
+
+#[test]
+fn test_lower_math_median_on_known_filesize_duration_lists_materializes_unit_result() {
+    let cases = [
+        (
+            vec![
+                Value::filesize(Filesize::new(1000), Span::test_data()),
+                Value::filesize(Filesize::new(2000), Span::test_data()),
+            ],
+            1500,
+            "filesize",
+        ),
+        (
+            vec![
+                Value::duration(1_000_000_000, Span::test_data()),
+                Value::duration(2_000_000_000, Span::test_data()),
+            ],
+            1_500_000_000,
+            "duration",
+        ),
+        (
+            vec![
+                Value::filesize(Filesize::new(3000), Span::test_data()),
+                Value::filesize(Filesize::new(1000), Span::test_data()),
+                Value::filesize(Filesize::new(2000), Span::test_data()),
+            ],
+            2000,
+            "filesize",
+        ),
+    ];
+
+    for (case_index, (values, expected, expected_prefix)) in cases.into_iter().enumerate() {
+        let median_decl = DeclId::new(613 + case_index * 4);
+        let describe_decl = DeclId::new(median_decl.get() + 1);
+        let starts_with_decl = DeclId::new(median_decl.get() + 2);
+        let direct_hir = make_value_list_pipeline_call_program(median_decl, values.clone());
+        let decl_names = HashMap::from([(median_decl, "math median".to_string())]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &direct_hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .expect("math median should lower filesize/duration list input");
+
+        assert_program_returns_constant(&result.program, expected, "math median unit");
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .expect("math median unit result should compile");
+
+        let describe_hir = make_value_list_math_describe_starts_with_program(
+            median_decl,
+            describe_decl,
+            starts_with_decl,
+            values,
+            expected_prefix,
+        );
+        let decl_names = HashMap::from([
+            (median_decl, "math median".to_string()),
+            (describe_decl, "describe".to_string()),
+            (starts_with_decl, "str starts-with".to_string()),
+        ]);
+        let result = lower_hir_to_mir_with_hints(
+            &describe_hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .expect("math median unit result should preserve describe type");
+
+        let expected_literal = format!("{expected_prefix}\0");
+        assert!(
+            result
+                .program
+                .main
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .any(|inst| matches!(
+                    inst,
+                    MirInst::StringAppend {
+                        val_type: StringAppendType::Literal { bytes },
+                        ..
+                    } if bytes.starts_with(expected_literal.as_bytes())
+                )),
+            "expected math median unit result to describe as {expected_prefix}"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .expect("math median unit describe result should compile");
+    }
 }
 
 #[test]

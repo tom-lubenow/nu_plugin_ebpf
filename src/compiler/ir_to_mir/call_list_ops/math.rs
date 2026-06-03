@@ -2,7 +2,207 @@ use super::*;
 use crate::compiler::mir::UnaryOpKind;
 use std::cmp::Ordering;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CompileTimeI64Unit {
+    Int,
+    Filesize,
+    Duration,
+}
+
 impl<'a> HirToMirLowering<'a> {
+    fn compile_time_i64_unit_value(
+        value: &nu_protocol::Value,
+    ) -> Option<(i64, CompileTimeI64Unit)> {
+        match value {
+            nu_protocol::Value::Int { val, .. } => Some((*val, CompileTimeI64Unit::Int)),
+            nu_protocol::Value::Filesize { val, .. } => {
+                Some((val.get(), CompileTimeI64Unit::Filesize))
+            }
+            nu_protocol::Value::Duration { val, .. } => Some((*val, CompileTimeI64Unit::Duration)),
+            _ => None,
+        }
+    }
+
+    fn compile_time_unit_value_from_i64(
+        value: i64,
+        unit: CompileTimeI64Unit,
+    ) -> nu_protocol::Value {
+        match unit {
+            CompileTimeI64Unit::Int => nu_protocol::Value::int(value, nu_protocol::Span::unknown()),
+            CompileTimeI64Unit::Filesize => nu_protocol::Value::filesize(
+                nu_protocol::Filesize::new(value),
+                nu_protocol::Span::unknown(),
+            ),
+            CompileTimeI64Unit::Duration => {
+                nu_protocol::Value::duration(value, nu_protocol::Span::unknown())
+            }
+        }
+    }
+
+    fn lower_compile_time_i64_unit_result(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+        value: nu_protocol::Value,
+    ) -> Result<(), CompileError> {
+        let Some((raw, _unit)) = Self::compile_time_i64_unit_value(&value) else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "compile-time math result has unsupported type {} in eBPF",
+                value.get_type()
+            )));
+        };
+
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+        self.emit(MirInst::Copy {
+            dst: result_vreg,
+            src: MirValue::Const(raw),
+        });
+        self.reset_call_result_metadata(src_dst);
+        let out_meta = self.get_or_create_metadata(src_dst);
+        out_meta.field_type = Some(MirType::I64);
+        out_meta.literal_int = Some(raw);
+        out_meta.constant_value = Some(value);
+        self.vreg_type_hints.insert(result_vreg, MirType::I64);
+        Ok(())
+    }
+
+    fn lower_compile_time_math_unit_reduce(
+        &mut self,
+        cmd_name: &str,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+        vals: Vec<nu_protocol::Value>,
+    ) -> Result<(), CompileError> {
+        if vals.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires a non-empty integer, filesize, or duration list in eBPF"
+            )));
+        }
+
+        match cmd_name {
+            "math sum" => {
+                let mut unit = None;
+                let mut total = 0i64;
+                for (index, value) in vals.into_iter().enumerate() {
+                    let Some((
+                        raw,
+                        value_unit @ (CompileTimeI64Unit::Filesize | CompileTimeI64Unit::Duration),
+                    )) = Self::compile_time_i64_unit_value(&value)
+                    else {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "{cmd_name} requires homogeneous filesize or duration list items in eBPF; item {index} has type {}",
+                            value.get_type()
+                        )));
+                    };
+                    if let Some(unit) = unit {
+                        if unit != value_unit {
+                            return Err(CompileError::UnsupportedInstruction(format!(
+                                "{cmd_name} requires homogeneous filesize or duration list items in eBPF; item {index} has type {}",
+                                value.get_type()
+                            )));
+                        }
+                    } else {
+                        unit = Some(value_unit);
+                    }
+                    total = total.checked_add(raw).ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(format!(
+                            "{cmd_name} filesize/duration result overflows i64 in eBPF"
+                        ))
+                    })?;
+                }
+                let unit = unit.expect("non-empty unit sum has a unit");
+                let value = Self::compile_time_unit_value_from_i64(total, unit);
+                self.lower_compile_time_i64_unit_result(src_dst, dst_vreg, src_dst_had_value, value)
+            }
+            "math min" | "math max" => {
+                let mut selected = None::<(i64, nu_protocol::Value)>;
+                for (index, value) in vals.into_iter().enumerate() {
+                    let Some((raw, _unit)) = Self::compile_time_i64_unit_value(&value) else {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "{cmd_name} requires integer, filesize, or duration list items in eBPF; item {index} has type {}",
+                            value.get_type()
+                        )));
+                    };
+                    let should_update = selected.as_ref().is_none_or(|(selected_raw, _)| {
+                        if cmd_name == "math min" {
+                            raw < *selected_raw
+                        } else {
+                            raw > *selected_raw
+                        }
+                    });
+                    if should_update {
+                        selected = Some((raw, value));
+                    }
+                }
+                let (_raw, value) = selected.expect("non-empty min/max has a selected value");
+                self.lower_compile_time_i64_unit_result(src_dst, dst_vreg, src_dst_had_value, value)
+            }
+            "math product" => Err(CompileError::UnsupportedInstruction(
+                "math product does not support filesize or duration list input in eBPF".into(),
+            )),
+            _ => Err(CompileError::UnsupportedInstruction(format!(
+                "unsupported filesize/duration reducer {cmd_name}"
+            ))),
+        }
+    }
+
+    fn lower_compile_time_math_unit_median(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+        vals: Vec<nu_protocol::Value>,
+    ) -> Result<(), CompileError> {
+        if vals.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(
+                "math median requires a non-empty filesize or duration list in eBPF".into(),
+            ));
+        }
+
+        let mut unit = None;
+        let mut values = Vec::with_capacity(vals.len());
+        for (index, value) in vals.into_iter().enumerate() {
+            let Some((
+                raw,
+                value_unit @ (CompileTimeI64Unit::Filesize | CompileTimeI64Unit::Duration),
+            )) = Self::compile_time_i64_unit_value(&value)
+            else {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "math median requires homogeneous filesize or duration list items in eBPF; item {index} has type {}",
+                    value.get_type()
+                )));
+            };
+            if let Some(unit) = unit {
+                if unit != value_unit {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "math median requires homogeneous filesize or duration list items in eBPF; item {index} has type {}",
+                        value.get_type()
+                    )));
+                }
+            } else {
+                unit = Some(value_unit);
+            }
+            values.push(raw);
+        }
+
+        values.sort_unstable();
+        let median = if values.len() % 2 == 1 {
+            values[values.len() / 2]
+        } else {
+            let upper = values.len() / 2;
+            ((values[upper - 1] as i128 + values[upper] as i128) / 2) as i64
+        };
+        let unit = unit.expect("non-empty unit median has a unit");
+        let value = Self::compile_time_unit_value_from_i64(median, unit);
+        self.lower_compile_time_i64_unit_result(src_dst, dst_vreg, src_dst_had_value, value)
+    }
+
     fn math_integer_result_for_rounding_command(
         cmd_name: &str,
         value: nu_protocol::Value,
@@ -936,6 +1136,20 @@ impl<'a> HirToMirLowering<'a> {
             })?;
 
         if let Some(nu_protocol::Value::List { vals, .. }) = input_meta.constant_value.clone() {
+            if vals.iter().any(|value| {
+                matches!(
+                    value,
+                    nu_protocol::Value::Filesize { .. } | nu_protocol::Value::Duration { .. }
+                )
+            }) {
+                return self.lower_compile_time_math_unit_median(
+                    src_dst,
+                    dst_vreg,
+                    src_dst_had_value,
+                    vals,
+                );
+            }
+
             if vals.is_empty() {
                 return Err(CompileError::UnsupportedInstruction(
                     "math median requires a non-empty integer or float list in eBPF".into(),
@@ -1096,6 +1310,23 @@ impl<'a> HirToMirLowering<'a> {
                     "{cmd_name} requires a stack-backed numeric list input in eBPF"
                 ))
             })?;
+
+        if let Some(nu_protocol::Value::List { vals, .. }) = input_meta.constant_value.clone()
+            && vals.iter().any(|value| {
+                matches!(
+                    value,
+                    nu_protocol::Value::Filesize { .. } | nu_protocol::Value::Duration { .. }
+                )
+            })
+        {
+            return self.lower_compile_time_math_unit_reduce(
+                cmd_name,
+                src_dst,
+                dst_vreg,
+                src_dst_had_value,
+                vals,
+            );
+        }
 
         if matches!(cmd_name, "math min" | "math max")
             && let Some(nu_protocol::Value::List { vals, .. }) = input_meta.constant_value.clone()
