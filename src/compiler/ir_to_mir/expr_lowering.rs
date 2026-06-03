@@ -531,11 +531,6 @@ impl<'a> HirToMirLowering<'a> {
         if_true: BlockId,
         if_false: BlockId,
     ) -> Result<(), CompileError> {
-        if range.next.is_some() {
-            return Err(CompileError::UnsupportedInstruction(
-                "Match range patterns with explicit steps are not supported in eBPF".into(),
-            ));
-        }
         let start = match &range.from {
             Some(expr) => Self::match_expression_i64_literal(expr).ok_or_else(|| {
                 CompileError::UnsupportedInstruction(
@@ -552,8 +547,27 @@ impl<'a> HirToMirLowering<'a> {
             })?),
             None => None,
         };
+        let next = match &range.next {
+            Some(expr) => Some(Self::match_expression_i64_literal(expr).ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "Match range patterns require a literal integer next value in eBPF".into(),
+                )
+            })?),
+            None => None,
+        };
 
         let Some(end) = end else {
+            if let Some(next) = next {
+                return self.terminate_i64_stepped_range_match(
+                    src_vreg,
+                    start,
+                    next,
+                    None,
+                    range.operator.inclusion,
+                    if_true,
+                    if_false,
+                );
+            }
             let lower_cmp = self.func.alloc_vreg();
             self.emit(MirInst::BinOp {
                 dst: lower_cmp,
@@ -568,6 +582,18 @@ impl<'a> HirToMirLowering<'a> {
             });
             return Ok(());
         };
+
+        if let Some(next) = next {
+            return self.terminate_i64_stepped_range_match(
+                src_vreg,
+                start,
+                next,
+                Some(end),
+                range.operator.inclusion,
+                if_true,
+                if_false,
+            );
+        }
 
         let (lower_op, lower_bound, upper_op, upper_bound) = if start <= end {
             let upper_op = match range.operator.inclusion {
@@ -604,6 +630,108 @@ impl<'a> HirToMirLowering<'a> {
             lhs: MirValue::VReg(lower_cmp),
             rhs: MirValue::VReg(upper_cmp),
         });
+        self.terminate(MirInst::Branch {
+            cond: in_range,
+            if_true,
+            if_false,
+        });
+        Ok(())
+    }
+
+    fn terminate_i64_stepped_range_match(
+        &mut self,
+        src_vreg: VReg,
+        start: i64,
+        next: i64,
+        end: Option<i64>,
+        inclusion: RangeInclusion,
+        if_true: BlockId,
+        if_false: BlockId,
+    ) -> Result<(), CompileError> {
+        let raw_step = next.checked_sub(start).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "Match range pattern step overflows i64 in eBPF".into(),
+            )
+        })?;
+        if raw_step == 0 {
+            return Err(CompileError::UnsupportedInstruction(
+                "Match range patterns require a non-zero explicit step in eBPF".into(),
+            ));
+        }
+        let step = raw_step.checked_abs().ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "Match range pattern step is too large for eBPF".into(),
+            )
+        })?;
+
+        if end.is_some_and(|end| start > end) {
+            self.terminate_known_match_mismatch(if_false);
+            return Ok(());
+        }
+
+        let lower_cmp = self.func.alloc_vreg();
+        self.emit(MirInst::BinOp {
+            dst: lower_cmp,
+            op: BinOpKind::Ge,
+            lhs: MirValue::VReg(src_vreg),
+            rhs: MirValue::Const(start),
+        });
+        let mut in_range = lower_cmp;
+
+        if let Some(end) = end {
+            let upper_cmp = self.func.alloc_vreg();
+            let upper_op = match inclusion {
+                RangeInclusion::Inclusive => BinOpKind::Le,
+                RangeInclusion::RightExclusive => BinOpKind::Lt,
+            };
+            self.emit(MirInst::BinOp {
+                dst: upper_cmp,
+                op: upper_op,
+                lhs: MirValue::VReg(src_vreg),
+                rhs: MirValue::Const(end),
+            });
+            let combined = self.func.alloc_vreg();
+            self.emit(MirInst::BinOp {
+                dst: combined,
+                op: BinOpKind::And,
+                lhs: MirValue::VReg(in_range),
+                rhs: MirValue::VReg(upper_cmp),
+            });
+            in_range = combined;
+        }
+
+        if step != 1 {
+            let offset = self.func.alloc_vreg();
+            self.emit(MirInst::BinOp {
+                dst: offset,
+                op: BinOpKind::Sub,
+                lhs: MirValue::VReg(src_vreg),
+                rhs: MirValue::Const(start),
+            });
+            let remainder = self.func.alloc_vreg();
+            self.emit(MirInst::BinOp {
+                dst: remainder,
+                op: BinOpKind::Mod,
+                lhs: MirValue::VReg(offset),
+                rhs: MirValue::Const(step),
+            });
+            let aligned = self.func.alloc_vreg();
+            self.emit(MirInst::BinOp {
+                dst: aligned,
+                op: BinOpKind::Eq,
+                lhs: MirValue::VReg(remainder),
+                rhs: MirValue::Const(0),
+            });
+            let combined = self.func.alloc_vreg();
+            self.emit(MirInst::BinOp {
+                dst: combined,
+                op: BinOpKind::And,
+                lhs: MirValue::VReg(in_range),
+                rhs: MirValue::VReg(aligned),
+            });
+            in_range = combined;
+        }
+
         self.terminate(MirInst::Branch {
             cond: in_range,
             if_true,

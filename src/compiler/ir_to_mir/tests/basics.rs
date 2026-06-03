@@ -7,7 +7,7 @@ use crate::compiler::hir::{
     HirTerminator,
 };
 use crate::compiler::instruction::BpfHelper;
-use crate::compiler::mir::{AddressSpace, BYTES_COUNTER_MAP_NAME, COUNTER_MAP_NAME};
+use crate::compiler::mir::{AddressSpace, BYTES_COUNTER_MAP_NAME, BlockId, COUNTER_MAP_NAME};
 use crate::compiler::passes::optimize_with_ssa_hints;
 use crate::kernel_btf::{KernelBtf, TrampolineFieldSelector, TypeInfo};
 use nu_protocol::ast::{
@@ -303,6 +303,29 @@ fn integer_range_expr_match_pattern_with_bounds(
         expr: Expr::Range(Box::new(Range {
             from: start.map(integer_expr),
             next: None,
+            to: end.map(integer_expr),
+            operator: RangeOperator {
+                inclusion,
+                span: Span::test_data(),
+                next_op_span: Span::test_data(),
+            },
+        })),
+        span: Span::test_data(),
+        span_id: SpanId::new(0),
+        ty: Type::Range,
+    }))
+}
+
+fn integer_range_expr_match_pattern_with_step(
+    start: i64,
+    next: i64,
+    end: Option<i64>,
+    inclusion: RangeInclusion,
+) -> Pattern {
+    Pattern::Expression(Box::new(Expression {
+        expr: Expr::Range(Box::new(Range {
+            from: Some(integer_expr(start)),
+            next: Some(integer_expr(next)),
             to: end.map(integer_expr),
             operator: RangeOperator {
                 inclusion,
@@ -1514,6 +1537,230 @@ fn test_lower_match_integer_open_upper_range_pattern_emits_lower_bound_only() {
 
     compile_mir_to_ebpf_with_hints(&program, None, None)
         .expect("integer open-upper range match pattern should compile through codegen");
+}
+
+#[test]
+fn test_lower_match_integer_explicit_step_range_pattern_compiles() {
+    let hir = make_integer_match_program(integer_range_expr_match_pattern_with_step(
+        0,
+        2,
+        Some(10),
+        RangeInclusion::Inclusive,
+    ));
+
+    let program = lower_hir_to_mir(&hir, None, &HashMap::new())
+        .expect("integer explicit-step range match pattern should lower to MIR");
+    let instructions: Vec<_> = program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect();
+    assert!(instructions.iter().any(|inst| {
+        matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::Ge,
+                rhs: MirValue::Const(0),
+                ..
+            }
+        )
+    }));
+    assert!(instructions.iter().any(|inst| {
+        matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::Le,
+                rhs: MirValue::Const(10),
+                ..
+            }
+        )
+    }));
+    assert!(instructions.iter().any(|inst| {
+        matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::Sub,
+                rhs: MirValue::Const(0),
+                ..
+            }
+        )
+    }));
+    assert!(instructions.iter().any(|inst| {
+        matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::Mod,
+                rhs: MirValue::Const(2),
+                ..
+            }
+        )
+    }));
+    assert!(instructions.iter().any(|inst| {
+        matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::Eq,
+                rhs: MirValue::Const(0),
+                ..
+            }
+        )
+    }));
+    assert!(instructions.iter().any(|inst| {
+        matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::And,
+                ..
+            }
+        )
+    }));
+
+    compile_mir_to_ebpf_with_hints(&program, None, None)
+        .expect("integer explicit-step range match pattern should compile through codegen");
+}
+
+#[test]
+fn test_lower_match_integer_right_exclusive_explicit_step_range_pattern_compiles() {
+    let hir = make_integer_match_program(integer_range_expr_match_pattern_with_step(
+        0,
+        2,
+        Some(10),
+        RangeInclusion::RightExclusive,
+    ));
+
+    let program = lower_hir_to_mir(&hir, None, &HashMap::new())
+        .expect("integer right-exclusive explicit-step range match pattern should lower to MIR");
+    let instructions: Vec<_> = program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect();
+    assert!(instructions.iter().any(|inst| {
+        matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::Lt,
+                rhs: MirValue::Const(10),
+                ..
+            }
+        )
+    }));
+    assert!(instructions.iter().any(|inst| {
+        matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::Mod,
+                rhs: MirValue::Const(2),
+                ..
+            }
+        )
+    }));
+
+    compile_mir_to_ebpf_with_hints(&program, None, None).expect(
+        "integer right-exclusive explicit-step range match pattern should compile through codegen",
+    );
+}
+
+#[test]
+fn test_lower_match_integer_open_upper_explicit_step_range_pattern_compiles() {
+    let hir = make_integer_match_program(integer_range_expr_match_pattern_with_step(
+        0,
+        2,
+        None,
+        RangeInclusion::Inclusive,
+    ));
+
+    let program = lower_hir_to_mir(&hir, None, &HashMap::new())
+        .expect("integer open-upper explicit-step range match pattern should lower to MIR");
+    let instructions: Vec<_> = program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect();
+    assert!(instructions.iter().any(|inst| {
+        matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::Ge,
+                rhs: MirValue::Const(0),
+                ..
+            }
+        )
+    }));
+    assert!(instructions.iter().any(|inst| {
+        matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::Mod,
+                rhs: MirValue::Const(2),
+                ..
+            }
+        )
+    }));
+    assert!(!instructions.iter().any(|inst| {
+        matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::Le | BinOpKind::Lt,
+                ..
+            }
+        )
+    }));
+
+    compile_mir_to_ebpf_with_hints(&program, None, None).expect(
+        "integer open-upper explicit-step range match pattern should compile through codegen",
+    );
+}
+
+#[test]
+fn test_lower_match_integer_zero_step_range_pattern_rejects() {
+    let hir = make_integer_match_program(integer_range_expr_match_pattern_with_step(
+        10,
+        10,
+        Some(12),
+        RangeInclusion::Inclusive,
+    ));
+
+    let err = lower_hir_to_mir(&hir, None, &HashMap::new())
+        .expect_err("integer zero-step range match pattern should be rejected");
+    assert!(
+        err.to_string().contains("non-zero explicit step in eBPF"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_match_integer_descending_explicit_step_range_pattern_is_false() {
+    let hir = make_integer_match_program(integer_range_expr_match_pattern_with_step(
+        10,
+        7,
+        Some(0),
+        RangeInclusion::Inclusive,
+    ));
+
+    let program = lower_hir_to_mir(&hir, None, &HashMap::new())
+        .expect("integer descending explicit-step range match pattern should lower to MIR");
+    let entry = &program.main.blocks[0];
+    assert!(matches!(
+        entry.terminator,
+        MirInst::Jump { target: BlockId(2) }
+    ));
+    assert!(!entry.instructions.iter().any(|inst| {
+        matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::Mod,
+                ..
+            }
+        )
+    }));
+
+    compile_mir_to_ebpf_with_hints(&program, None, None).expect(
+        "integer descending explicit-step range match pattern should compile through codegen",
+    );
 }
 
 #[test]
