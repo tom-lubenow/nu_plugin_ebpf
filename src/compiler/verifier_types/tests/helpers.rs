@@ -11355,6 +11355,31 @@ fn test_verify_mir_for_probe_context_skb_store_bytes_rejects_len_over_u32() {
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_packet_byte_helpers_reject_zero_len() {
+    for helper in [
+        BpfHelper::SkbStoreBytes,
+        BpfHelper::SkbLoadBytes,
+        BpfHelper::SkbLoadBytesRelative,
+        BpfHelper::XdpLoadBytes,
+        BpfHelper::XdpStoreBytes,
+    ] {
+        let (func, types) = make_skb_bytes_verify_call(helper, 0, 0);
+        let probe_ctx = if matches!(helper, BpfHelper::XdpLoadBytes | BpfHelper::XdpStoreBytes) {
+            ProbeContext::new(EbpfProgramType::Xdp, "lo")
+        } else {
+            ProbeContext::new(EbpfProgramType::Tc, "lo:ingress")
+        };
+        let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect_err("expected packet byte helper zero-len error");
+        assert!(
+            err.iter().any(|e| e.message.contains("arg3 must be > 0")),
+            "unexpected errors for {helper:?}: {:?}",
+            err
+        );
+    }
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_skb_load_bytes_rejects_len_over_u32() {
     for helper in [BpfHelper::SkbLoadBytes, BpfHelper::SkbLoadBytesRelative] {
         let (func, types) = make_skb_bytes_verify_call(helper, 0, 0x1_0000_0000);

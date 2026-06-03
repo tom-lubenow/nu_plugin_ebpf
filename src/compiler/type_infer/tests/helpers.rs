@@ -11077,6 +11077,33 @@ fn test_type_error_skb_store_bytes_rejects_len_over_u32() {
 }
 
 #[test]
+fn test_type_error_packet_byte_helpers_reject_zero_len() {
+    for helper in [
+        BpfHelper::SkbStoreBytes,
+        BpfHelper::SkbLoadBytes,
+        BpfHelper::SkbLoadBytesRelative,
+        BpfHelper::XdpLoadBytes,
+        BpfHelper::XdpStoreBytes,
+    ] {
+        let func = make_skb_bytes_helper_call(helper, 0, 0);
+        let probe_ctx = if matches!(helper, BpfHelper::XdpLoadBytes | BpfHelper::XdpStoreBytes) {
+            ProbeContext::new(EbpfProgramType::Xdp, "lo")
+        } else {
+            ProbeContext::new(EbpfProgramType::Tc, "lo:ingress")
+        };
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected packet byte helper zero-len error");
+        assert!(
+            errs.iter().any(|e| e.message.contains("arg3 must be > 0")),
+            "unexpected errors for {helper:?}: {:?}",
+            errs
+        );
+    }
+}
+
+#[test]
 fn test_type_error_skb_load_bytes_rejects_len_over_u32() {
     for helper in [BpfHelper::SkbLoadBytes, BpfHelper::SkbLoadBytesRelative] {
         let func = make_skb_bytes_helper_call(helper, 0, 0x1_0000_0000);
