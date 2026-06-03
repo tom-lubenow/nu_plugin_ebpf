@@ -397,6 +397,13 @@ impl<'a> HirToMirLowering<'a> {
                 level
             )));
         };
+        if level_i32 < 0 {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "ctx.{projection_name} requires ancestor level 0..{}, got {}",
+                i32::MAX,
+                level
+            )));
+        }
         if !uses_ctx_arg {
             self.validate_ctx_field_access_with_source_name(&CtxField::CgroupId, projection_name)?;
         }

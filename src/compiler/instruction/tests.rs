@@ -1770,6 +1770,14 @@ fn test_helper_signature_get_current_cgroup_id() {
     assert_eq!(sig.max_args, 1);
     assert_eq!(sig.arg_kind(0), HelperArgKind::Scalar);
     assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+    assert_eq!(
+        BpfHelper::GetCurrentAncestorCgroupId.scalar_arg_range_requirement(0),
+        Some((
+            0,
+            i32::MAX as i64,
+            "ancestor cgroup helpers require ancestor_level to be between 0 and i32::MAX"
+        ))
+    );
 
     let sig = HelperSignature::for_id(BpfHelper::GetNsCurrentPidTgid as u32)
         .expect("expected bpf_get_ns_current_pid_tgid helper signature");
@@ -2079,6 +2087,14 @@ fn test_helper_signatures_sk_cgroup_helpers() {
     assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
     assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
     assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+    assert_eq!(
+        BpfHelper::SkAncestorCgroupId.scalar_arg_range_requirement(1),
+        Some((
+            0,
+            i32::MAX as i64,
+            "ancestor cgroup helpers require ancestor_level to be between 0 and i32::MAX"
+        ))
+    );
 
     let sig = HelperSignature::for_id(BpfHelper::SkbCgroupId as u32)
         .expect("expected bpf_skb_cgroup_id helper signature");
@@ -2094,6 +2110,14 @@ fn test_helper_signatures_sk_cgroup_helpers() {
     assert_eq!(sig.arg_kind(0), HelperArgKind::Pointer);
     assert_eq!(sig.arg_kind(1), HelperArgKind::Scalar);
     assert_eq!(sig.ret_kind, HelperRetKind::Scalar);
+    assert_eq!(
+        BpfHelper::SkbAncestorCgroupId.scalar_arg_range_requirement(1),
+        Some((
+            0,
+            i32::MAX as i64,
+            "ancestor cgroup helpers require ancestor_level to be between 0 and i32::MAX"
+        ))
+    );
 }
 
 #[test]

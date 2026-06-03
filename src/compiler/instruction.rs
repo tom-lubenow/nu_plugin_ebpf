@@ -17,6 +17,7 @@ const MAP_PUSH_FLAGS: &[i64] = &[0, 2];
 const TIMER_INIT_FLAGS: &[i64] = &[0, 1, 7];
 const LWT_SEG6_ACTIONS: &[i64] = &[2, 3, 9, 10];
 const BPF_CSUM_LEVELS: &[i64] = &[0, 1, 2, 3];
+const BPF_ANCESTOR_CGROUP_LEVEL_MAX: i64 = i32::MAX as i64;
 const SKB_CHANGE_PROTO_PROTOCOLS: &[i64] = &[0x0800, 0x86dd];
 const BPF_F_HDR_FIELD_MASK: i64 = 0x0f;
 const BPF_F_HDR_FIELD_SIZE_BIT_0: i64 = 1 << 0;
@@ -1440,6 +1441,12 @@ impl BpfHelper {
                 "helper 'bpf_loop' requires arg0 nr_loops to be between 0 and BPF_MAX_LOOPS (8 * 1024 * 1024)",
             )),
             (Self::BpfLoop, 3) => Some((0, 0, "helper 'bpf_loop' requires arg3 flags to be 0")),
+            (Self::GetCurrentAncestorCgroupId, 0)
+            | (Self::SkAncestorCgroupId | Self::SkbAncestorCgroupId, 1) => Some((
+                0,
+                BPF_ANCESTOR_CGROUP_LEVEL_MAX,
+                "ancestor cgroup helpers require ancestor_level to be between 0 and i32::MAX",
+            )),
             (Self::SkbChangeType, 1) => Some((
                 0,
                 PACKET_OTHERHOST,

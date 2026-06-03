@@ -5033,6 +5033,39 @@ fn test_verify_mir_for_probe_context_get_netns_cookie_accepts_sk_msg() {
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_get_current_ancestor_cgroup_id_rejects_invalid_level() {
+    for level in [-1, i64::from(i32::MAX) + 1] {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let dst = func.alloc_vreg();
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: BpfHelper::GetCurrentAncestorCgroupId as u32,
+                args: vec![MirValue::Const(level)],
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(dst, MirType::I64);
+
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "vfs_read");
+        let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect_err("expected bpf_get_current_ancestor_cgroup_id level range error");
+        assert!(
+            err.iter().any(|e| e.message.contains(
+                "ancestor cgroup helpers require ancestor_level to be between 0 and i32::MAX"
+            )),
+            "unexpected errors for level {level}: {:?}",
+            err
+        );
+    }
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_sk_cgroup_helpers_reject_sk_msg() {
     for (helper, args) in [
         (BpfHelper::SkCgroupId, vec![]),
@@ -5174,6 +5207,47 @@ fn test_verify_mir_for_probe_context_sk_cgroup_helpers_accept_cgroup_skb() {
 }
 
 #[test]
+fn test_verify_mir_for_probe_context_sk_ancestor_cgroup_id_rejects_invalid_level() {
+    for level in [-1, i64::from(i32::MAX) + 1] {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let sk = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: BpfHelper::SkAncestorCgroupId as u32,
+                args: vec![MirValue::VReg(sk), MirValue::Const(level)],
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            sk,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(dst, MirType::I64);
+
+        let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSkb, "/sys/fs/cgroup:ingress");
+        let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect_err("expected bpf_sk_ancestor_cgroup_id level range error");
+        assert!(
+            err.iter().any(|e| e.message.contains(
+                "ancestor cgroup helpers require ancestor_level to be between 0 and i32::MAX"
+            )),
+            "unexpected errors for level {level}: {:?}",
+            err
+        );
+    }
+}
+
+#[test]
 fn test_verify_mir_for_probe_context_tc_egress_skb_metadata_helpers_accept_tc_egress() {
     for (helper, extra_args) in [
         (BpfHelper::GetCgroupClassid, vec![]),
@@ -5222,6 +5296,54 @@ fn test_verify_mir_for_probe_context_tc_egress_skb_metadata_helpers_accept_tc_eg
         let probe_ctx = ProbeContext::new(EbpfProgramType::TcAction, "demo-action");
         verify_mir_for_probe_context(&func, &types, &probe_ctx)
             .expect("expected tc_action skb metadata helper to verify");
+    }
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_skb_ancestor_cgroup_id_rejects_invalid_level() {
+    for level in [-1, i64::from(i32::MAX) + 1] {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let ctx = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::LoadCtxField {
+                dst: ctx,
+                field: CtxField::Context,
+                slot: None,
+            });
+        func.block_mut(entry)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst,
+                helper: BpfHelper::SkbAncestorCgroupId as u32,
+                args: vec![MirValue::VReg(ctx), MirValue::Const(level)],
+            });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(
+            ctx,
+            MirType::Ptr {
+                pointee: Box::new(MirType::U8),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(dst, MirType::I64);
+
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Tc, "lo:egress");
+        let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect_err("expected bpf_skb_ancestor_cgroup_id level range error");
+        assert!(
+            err.iter().any(|e| e.message.contains(
+                "ancestor cgroup helpers require ancestor_level to be between 0 and i32::MAX"
+            )),
+            "unexpected errors for level {level}: {:?}",
+            err
+        );
     }
 }
 

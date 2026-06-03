@@ -535,7 +535,7 @@ metadata as ordinary `ctx.cgroup_classid` and `ctx.route_realm` fields; TC actio
 and TC/TCX egress also expose `ctx.skb_cgroup_id`. LWT programs expose `ctx.cgroup_classid` and
 `ctx.route_realm` through the same helper surface. `ctx.skb_ancestor_cgroup_id.N` exposes the
 parameterized skb ancestor cgroup helper with a constant numeric
-ancestor level. `ctx.csum_level` exposes the checksum-level query form
+ancestor level in `0..i32::MAX`. `ctx.csum_level` exposes the checksum-level query form
 of `bpf_csum_level` on `lwt_xmit`, tc_action, TC, TCX, Netkit, `sk_skb`, and `sk_skb_parser`
 programs; inc/dec/reset remain helper-call operations because they mutate skb metadata.
 `ctx.hash_recalc` exposes `bpf_get_hash_recalc` on LWT and the same
@@ -779,8 +779,9 @@ tracing-style runtime contexts: `ctx.pid` / `ctx.tid`, `ctx.tgid`,
 `ctx.uid_gid` expose the kernel-packed `u64` helper values directly. The
 current-task cgroup ID is available as the ordinary `ctx.cgroup_id` field on
 runtime-context programs. Ancestor IDs use a constant numeric cell-path level,
-for example `ctx.ancestor_cgroup_id.0`, and return the same scalar ID shape as
-`bpf_get_current_cgroup_id`. Extension, syscall, and `struct_ops` callback
+for example `ctx.ancestor_cgroup_id.0`; the level must be in `0..i32::MAX`, and
+the projection returns the same scalar ID shape as `bpf_get_current_cgroup_id`.
+Extension, syscall, and `struct_ops` callback
 specs do not expose this field surface.
 
 `ctx.ktime` remains the preferred ordinary timestamp surface. Specific
@@ -874,7 +875,7 @@ as `bpf_probe_read_kernel`, and each helper's own floor. Helper-call
 projections such as `task.pt_regs.arg0` and
 parameterized helper projections such as `ancestor_cgroup_id.N`,
 `skb_ancestor_cgroup_id.N`, `sk.ancestor_cgroup_id.N`, or
-`socket.ancestor_cgroup_id.N` use
+`socket.ancestor_cgroup_id.N` use a non-negative `N` that fits `i32`,
 `source = helper_call` and a null `offset`, because they are not direct
 struct-field byte offsets.
 `context_writes` rows report the assignment kind, whether the write requires a

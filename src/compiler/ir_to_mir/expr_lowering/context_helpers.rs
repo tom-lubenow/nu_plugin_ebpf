@@ -75,6 +75,14 @@ impl<'a> HirToMirLowering<'a> {
                             level
                         ))
                     })?;
+                    if level_i32 < 0 {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "typed field path '{}' requires ancestor level 0..{}, got {}",
+                            path_desc,
+                            i32::MAX,
+                            level
+                        )));
+                    }
                     Some((
                         BpfHelper::SkAncestorCgroupId,
                         vec![MirValue::Const(i64::from(level_i32))],
