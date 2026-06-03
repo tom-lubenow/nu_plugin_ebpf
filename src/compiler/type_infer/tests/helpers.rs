@@ -5833,6 +5833,35 @@ fn make_sysctl_get_name_call(flags: i64) -> (MirFunction, VReg) {
     (func, dst)
 }
 
+fn make_sysctl_helper_call(helper: BpfHelper, buf_len: i64) -> (MirFunction, VReg) {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let buf_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let mut args = vec![
+        MirValue::VReg(ctx),
+        MirValue::StackSlot(buf_slot),
+        MirValue::Const(buf_len),
+    ];
+    if matches!(helper, BpfHelper::SysctlGetName) {
+        args.push(MirValue::Const(0));
+    }
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::LoadCtxField {
+        dst: ctx,
+        field: CtxField::Context,
+        slot: None,
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: helper as u32,
+        args,
+    });
+    block.terminator = MirInst::Return { val: None };
+    (func, dst)
+}
+
 #[test]
 fn test_infer_sysctl_get_name_accepts_base_name_flag() {
     let (func, dst) = make_sysctl_get_name_call(1);
@@ -5856,6 +5885,28 @@ fn test_type_error_sysctl_get_name_rejects_invalid_flags() {
         e.message
             .contains("helper 'bpf_sysctl_get_name' requires arg3 flags")
     }));
+}
+
+#[test]
+fn test_type_error_sysctl_helpers_reject_zero_buf_len() {
+    for helper in [
+        BpfHelper::SysctlGetName,
+        BpfHelper::SysctlGetCurrentValue,
+        BpfHelper::SysctlGetNewValue,
+        BpfHelper::SysctlSetNewValue,
+    ] {
+        let (func, _) = make_sysctl_helper_call(helper, 0);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSysctl, "/sys/fs/cgroup");
+        let mut ti = TypeInference::new(Some(probe_ctx));
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected sysctl helper zero-length buffer error");
+        assert!(
+            errs.iter().any(|e| e.message.contains("arg2 must be > 0")),
+            "unexpected errors for {helper:?}: {:?}",
+            errs
+        );
+    }
 }
 
 fn make_sockopt_helper_call(

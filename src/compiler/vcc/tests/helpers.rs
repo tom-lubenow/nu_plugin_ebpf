@@ -7179,6 +7179,51 @@ fn make_sysctl_get_name_vcc_call(flags: i64) -> (MirFunction, HashMap<VReg, MirT
     (func, types)
 }
 
+fn make_sysctl_helper_vcc_call(
+    helper: BpfHelper,
+    buf_len: i64,
+) -> (MirFunction, HashMap<VReg, MirType>) {
+    let (mut func, entry) = new_mir_function();
+    let ctx = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let buf_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+    let mut args = vec![
+        MirValue::VReg(ctx),
+        MirValue::StackSlot(buf_slot),
+        MirValue::Const(buf_len),
+    ];
+    if matches!(helper, BpfHelper::SysctlGetName) {
+        args.push(MirValue::Const(0));
+    }
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: CtxField::Context,
+            slot: None,
+        });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: helper as u32,
+            args,
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        ctx,
+        MirType::Ptr {
+            pointee: Box::new(MirType::U8),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(dst, MirType::I64);
+    (func, types)
+}
+
 #[test]
 fn test_verify_mir_sysctl_get_name_accepts_base_name_flag() {
     let (func, types) = make_sysctl_get_name_vcc_call(1);
@@ -7198,6 +7243,25 @@ fn test_verify_mir_sysctl_get_name_rejects_invalid_flags() {
         "unexpected errors: {:?}",
         err
     );
+}
+
+#[test]
+fn test_verify_mir_sysctl_helpers_reject_zero_buf_len() {
+    for helper in [
+        BpfHelper::SysctlGetName,
+        BpfHelper::SysctlGetCurrentValue,
+        BpfHelper::SysctlGetNewValue,
+        BpfHelper::SysctlSetNewValue,
+    ] {
+        let (func, types) = make_sysctl_helper_vcc_call(helper, 0);
+        let err = verify_mir_for_program(&func, &types, EbpfProgramType::CgroupSysctl.info())
+            .expect_err("expected sysctl helper zero-length buffer error");
+        assert!(
+            err.iter().any(|e| e.message.contains("arg2 must be > 0")),
+            "unexpected errors for {helper:?}: {:?}",
+            err
+        );
+    }
 }
 
 fn make_sockopt_helper_vcc_call(
