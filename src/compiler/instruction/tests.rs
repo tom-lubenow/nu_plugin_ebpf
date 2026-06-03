@@ -3491,7 +3491,7 @@ fn test_lwt_helpers_contract() {
 fn test_packet_output_helpers_contract() {
     for helper in [BpfHelper::SkbOutput, BpfHelper::XdpOutput] {
         let semantics = helper.semantics();
-        assert_eq!(semantics.positive_size_args, &[4]);
+        assert!(semantics.positive_size_args.is_empty());
         assert_eq!(semantics.ptr_arg_rules.len(), 3);
 
         let ctx = semantics.ptr_arg_rules[0];
@@ -3523,6 +3523,11 @@ fn test_packet_output_helpers_contract() {
         assert!(!data.allowed.allow_user);
         assert_eq!(data.fixed_size, None);
         assert_eq!(data.size_from_arg, Some(4));
+        assert_eq!(helper.zero_size_pointer_arg_size_arg(3), Some(4));
+        assert_eq!(
+            helper.scalar_arg_nonnegative_requirement(4),
+            Some("perf output helpers require arg4 size to be >= 0")
+        );
 
         assert_eq!(
             helper.scalar_arg_range_requirement(2),
@@ -3538,7 +3543,7 @@ fn test_packet_output_helpers_contract() {
 #[test]
 fn test_perf_event_output_helper_contract() {
     let semantics = BpfHelper::PerfEventOutput.semantics();
-    assert_eq!(semantics.positive_size_args, &[4]);
+    assert!(semantics.positive_size_args.is_empty());
     assert_eq!(semantics.ptr_arg_rules.len(), 3);
 
     let ctx = semantics.ptr_arg_rules[0];
@@ -3570,6 +3575,14 @@ fn test_perf_event_output_helper_contract() {
     assert!(!data.allowed.allow_user);
     assert_eq!(data.fixed_size, None);
     assert_eq!(data.size_from_arg, Some(4));
+    assert_eq!(
+        BpfHelper::PerfEventOutput.zero_size_pointer_arg_size_arg(3),
+        Some(4)
+    );
+    assert_eq!(
+        BpfHelper::PerfEventOutput.scalar_arg_nonnegative_requirement(4),
+        Some("perf output helpers require arg4 size to be >= 0")
+    );
 
     assert_eq!(
         BpfHelper::PerfEventOutput.scalar_arg_range_requirement(2),
@@ -4912,6 +4925,16 @@ fn test_helper_signature_ringbuf_release_helpers_return_void() {
 
 #[test]
 fn test_ringbuf_helper_flag_contracts() {
+    let semantics = BpfHelper::RingbufOutput.semantics();
+    assert!(semantics.positive_size_args.is_empty());
+    assert_eq!(
+        BpfHelper::RingbufOutput.zero_size_pointer_arg_size_arg(1),
+        Some(2)
+    );
+    assert_eq!(
+        BpfHelper::RingbufOutput.scalar_arg_nonnegative_requirement(2),
+        Some("helper 'bpf_ringbuf_output' requires arg2 size to be >= 0")
+    );
     assert_eq!(
         BpfHelper::RingbufOutput.scalar_arg_range_requirement(3),
         Some((

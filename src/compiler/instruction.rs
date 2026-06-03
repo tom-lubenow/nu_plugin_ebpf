@@ -1392,6 +1392,8 @@ impl BpfHelper {
             (Self::DPath, 1) => Some(2),
             (Self::SeqPrintf, 3) => Some(4),
             (Self::SeqWrite, 1) => Some(2),
+            (Self::RingbufOutput, 1) => Some(2),
+            (Self::PerfEventOutput | Self::SkbOutput | Self::XdpOutput, 3) => Some(4),
             (Self::KallsymsLookupName, 0) => Some(1),
             _ => None,
         }
@@ -1482,6 +1484,12 @@ impl BpfHelper {
             }
             (Self::RedirectNeigh, 2) => {
                 Some("helper 'bpf_redirect_neigh' requires arg2 plen to be >= 0")
+            }
+            (Self::RingbufOutput, 2) => {
+                Some("helper 'bpf_ringbuf_output' requires arg2 size to be >= 0")
+            }
+            (Self::PerfEventOutput | Self::SkbOutput | Self::XdpOutput, 4) => {
+                Some("perf output helpers require arg4 size to be >= 0")
             }
             _ => None,
         }

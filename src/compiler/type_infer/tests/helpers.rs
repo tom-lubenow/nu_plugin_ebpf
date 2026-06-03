@@ -7212,6 +7212,7 @@ fn test_infer_perf_event_output_helper_accepts_lwt_program() {
     let ctx = func.alloc_vreg();
     let map = func.alloc_vreg();
     let dst = func.alloc_vreg();
+    let dst_null = func.alloc_vreg();
     let data_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
     let block = func.block_mut(BlockId(0));
     block.instructions.push(MirInst::LoadCtxField {
@@ -7237,6 +7238,17 @@ fn test_infer_perf_event_output_helper_accepts_lwt_program() {
             MirValue::Const(8),
         ],
     });
+    block.instructions.push(MirInst::CallHelper {
+        dst: dst_null,
+        helper: BpfHelper::PerfEventOutput as u32,
+        args: vec![
+            MirValue::VReg(ctx),
+            MirValue::VReg(map),
+            MirValue::Const(0),
+            MirValue::Const(0),
+            MirValue::Const(0),
+        ],
+    });
     block.terminator = MirInst::Return { val: None };
 
     let probe_ctx = ProbeContext::new(EbpfProgramType::LwtOut, "demo-route");
@@ -7245,6 +7257,7 @@ fn test_infer_perf_event_output_helper_accepts_lwt_program() {
         .infer(&func)
         .expect("expected bpf_perf_event_output to infer on lwt_out");
     assert_eq!(types.get(&dst), Some(&MirType::I64));
+    assert_eq!(types.get(&dst_null), Some(&MirType::I64));
 }
 
 fn make_perf_event_output_call(flags: i64, size: i64, data_size: usize) -> (MirFunction, VReg) {
@@ -7532,6 +7545,44 @@ fn make_packet_output_call_with_arg0_and_flags(
     (func, dst)
 }
 
+fn make_packet_output_null_data_call_with_arg0(
+    helper: BpfHelper,
+    arg0_field: Option<CtxField>,
+) -> (MirFunction, VReg, VReg) {
+    let mut func = make_test_function();
+    let ctx = func.alloc_vreg();
+    let map = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    if let Some(field) = arg0_field {
+        block.instructions.push(MirInst::LoadCtxField {
+            dst: ctx,
+            field,
+            slot: None,
+        });
+    }
+    block.instructions.push(MirInst::LoadMapFd {
+        dst: map,
+        map: MapRef {
+            name: "demo_packet_events".to_string(),
+            kind: MapKind::PerfEventArray,
+        },
+    });
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: helper as u32,
+        args: vec![
+            MirValue::VReg(ctx),
+            MirValue::VReg(map),
+            MirValue::Const(0),
+            MirValue::Const(0),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+    (func, dst, ctx)
+}
+
 #[test]
 fn test_infer_packet_output_helper_accepts_typed_skb_argument() {
     let (func, dst) =
@@ -7542,6 +7593,32 @@ fn test_infer_packet_output_helper_accepts_typed_skb_argument() {
         .infer(&func)
         .expect("expected packet output helper to infer");
     assert_eq!(types.get(&dst), Some(&MirType::I64));
+}
+
+#[test]
+fn test_infer_packet_output_helpers_accept_zero_size_null_data() {
+    for (helper, arg0_field, arg0_hint, probe_ctx) in [
+        (
+            BpfHelper::SkbOutput,
+            Some(CtxField::Arg(0)),
+            None,
+            ProbeContext::new(EbpfProgramType::Fentry, "netif_receive_skb"),
+        ),
+        (
+            BpfHelper::XdpOutput,
+            None,
+            Some(MirType::named_kernel_struct_ptr("xdp_buff")),
+            ProbeContext::new(EbpfProgramType::Fentry, "xdp_do_redirect"),
+        ),
+    ] {
+        let (func, dst, ctx) = make_packet_output_null_data_call_with_arg0(helper, arg0_field);
+        let hints = arg0_hint.map(|ty| HashMap::from([(ctx, ty)]));
+        let mut ti = TypeInference::new_with_env(Some(probe_ctx), None, None, hints.as_ref(), None);
+        let types = ti
+            .infer(&func)
+            .expect("expected packet output helper to infer with null zero-size data");
+        assert_eq!(types.get(&dst), Some(&MirType::I64));
+    }
 }
 
 #[test]
@@ -11724,6 +11801,32 @@ fn test_infer_helper_ringbuf_query_accepts_overwrite_pos_selector() {
     let types = ti
         .infer(&func)
         .expect("expected ringbuf_query overwrite-pos selector to infer");
+    assert_eq!(types.get(&dst), Some(&MirType::I64));
+}
+
+#[test]
+fn test_infer_helper_ringbuf_output_accepts_zero_size_null_data() {
+    let mut func = make_test_function();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: BpfHelper::RingbufOutput as u32,
+        args: vec![
+            MirValue::StackSlot(map_slot),
+            MirValue::Const(0),
+            MirValue::Const(0),
+            MirValue::Const(0),
+        ],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let mut ti = TypeInference::new(None);
+    let types = ti
+        .infer(&func)
+        .expect("expected ringbuf_output to infer with null zero-size data");
     assert_eq!(types.get(&dst), Some(&MirType::I64));
 }
 

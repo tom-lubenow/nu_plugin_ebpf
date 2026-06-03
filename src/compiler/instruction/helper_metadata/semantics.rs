@@ -2365,7 +2365,7 @@ impl BpfHelper {
             },
             BpfHelper::RingbufOutput => HelperSemantics {
                 ptr_arg_rules: RINGBUF_OUTPUT_RULES,
-                positive_size_args: &[2],
+                positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },
             BpfHelper::RingbufQuery => HelperSemantics {
@@ -2390,7 +2390,7 @@ impl BpfHelper {
             },
             BpfHelper::PerfEventOutput => HelperSemantics {
                 ptr_arg_rules: PERF_EVENT_OUTPUT_RULES,
-                positive_size_args: &[4],
+                positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },
             BpfHelper::PerfEventRead => HelperSemantics {
@@ -2405,7 +2405,7 @@ impl BpfHelper {
             },
             BpfHelper::SkbOutput | BpfHelper::XdpOutput => HelperSemantics {
                 ptr_arg_rules: PACKET_OUTPUT_RULES,
-                positive_size_args: &[4],
+                positive_size_args: &[],
                 ringbuf_record_arg0: false,
             },
             BpfHelper::PerfProgReadValue => HelperSemantics {

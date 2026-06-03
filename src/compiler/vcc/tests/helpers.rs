@@ -5088,6 +5088,31 @@ fn test_verify_mir_helper_ringbuf_output_checks_data_bounds() {
 }
 
 #[test]
+fn test_verify_mir_helper_ringbuf_output_accepts_zero_size_null_data() {
+    let (mut func, entry) = new_mir_function();
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: BpfHelper::RingbufOutput as u32,
+            args: vec![
+                MirValue::StackSlot(map_slot),
+                MirValue::Const(0),
+                MirValue::Const(0),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(dst, MirType::I64);
+    verify_mir(&func, &types).expect("expected ringbuf_output with null zero-size data to verify");
+}
+
+#[test]
 fn test_verify_mir_helper_ringbuf_rejects_invalid_flags() {
     let cases = [
         (
@@ -7971,6 +7996,7 @@ fn test_verify_mir_for_probe_context_perf_event_output_helper_accepts_lwt() {
     let ctx = func.alloc_vreg();
     let map = func.alloc_vreg();
     let dst = func.alloc_vreg();
+    let dst_null = func.alloc_vreg();
     let data_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
 
     func.block_mut(entry)
@@ -8000,6 +8026,19 @@ fn test_verify_mir_for_probe_context_perf_event_output_helper_accepts_lwt() {
                 MirValue::Const(8),
             ],
         });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: dst_null,
+            helper: BpfHelper::PerfEventOutput as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::VReg(map),
+                MirValue::Const(0),
+                MirValue::Const(0),
+                MirValue::Const(0),
+            ],
+        });
     func.block_mut(entry).terminator = MirInst::Return { val: None };
 
     let mut types = HashMap::new();
@@ -8018,6 +8057,7 @@ fn test_verify_mir_for_probe_context_perf_event_output_helper_accepts_lwt() {
         },
     );
     types.insert(dst, MirType::I64);
+    types.insert(dst_null, MirType::I64);
 
     let probe_ctx = ProbeContext::new(EbpfProgramType::LwtOut, "demo-route");
     verify_mir_for_probe_context(&func, &types, &probe_ctx)
@@ -8581,6 +8621,59 @@ fn make_packet_output_vcc_call_with_arg0(
     (func, types)
 }
 
+fn make_packet_output_vcc_null_data_call_with_arg0(
+    helper: BpfHelper,
+    arg0_field: CtxField,
+    arg0_type: MirType,
+) -> (MirFunction, HashMap<VReg, MirType>) {
+    let (mut func, entry) = new_mir_function();
+    let ctx = func.alloc_vreg();
+    let map = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadCtxField {
+            dst: ctx,
+            field: arg0_field,
+            slot: None,
+        });
+    func.block_mut(entry).instructions.push(MirInst::LoadMapFd {
+        dst: map,
+        map: MapRef {
+            name: "demo_packet_events".to_string(),
+            kind: MapKind::PerfEventArray,
+        },
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: helper as u32,
+            args: vec![
+                MirValue::VReg(ctx),
+                MirValue::VReg(map),
+                MirValue::Const(0),
+                MirValue::Const(0),
+                MirValue::Const(0),
+            ],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(ctx, arg0_type);
+    types.insert(
+        map,
+        MirType::MapRef {
+            key_ty: Box::new(MirType::U32),
+            val_ty: Box::new(MirType::U32),
+        },
+    );
+    types.insert(dst, MirType::I64);
+
+    (func, types)
+}
+
 #[test]
 fn test_verify_mir_for_probe_context_packet_output_helpers_accept_typed_packet_args() {
     for (helper, arg0_type, probe_ctx) in [
@@ -8599,6 +8692,27 @@ fn test_verify_mir_for_probe_context_packet_output_helpers_accept_typed_packet_a
             make_packet_output_vcc_call_with_arg0(helper, 0, 8, 8, CtxField::Arg(0), arg0_type);
         verify_mir_for_probe_context(&func, &types, &probe_ctx)
             .expect("expected packet output helper to verify");
+    }
+}
+
+#[test]
+fn test_verify_mir_for_probe_context_packet_output_helpers_accept_zero_size_null_data() {
+    for (helper, arg0_type, probe_ctx) in [
+        (
+            BpfHelper::SkbOutput,
+            kernel_struct_ptr("sk_buff"),
+            ProbeContext::new(EbpfProgramType::Fentry, "netif_receive_skb"),
+        ),
+        (
+            BpfHelper::XdpOutput,
+            kernel_struct_ptr("xdp_buff"),
+            ProbeContext::new(EbpfProgramType::Fentry, "xdp_do_redirect"),
+        ),
+    ] {
+        let (func, types) =
+            make_packet_output_vcc_null_data_call_with_arg0(helper, CtxField::Arg(0), arg0_type);
+        verify_mir_for_probe_context(&func, &types, &probe_ctx)
+            .expect("expected packet output helper to verify with null zero-size data");
     }
 }
 
