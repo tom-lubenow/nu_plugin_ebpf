@@ -103,6 +103,7 @@ history and release notes, not here.
   - Record constants and typed globals can carry nested string, binary, numeric-list, fixed-array, and record fields when their layout is explicit or inferable; fixed-array record elements can carry nested string and numeric-list fields while preserving the materialization metadata needed for ordinary string/list operations.
   - Keep implicit mutable globals consistent with leading typed `mut` and explicit `global-*` declarations.
   - Add clearer diagnostics when a Nushell value cannot be represented as fixed-layout eBPF data.
+  - Typed global numeric-list initializer rejects now name the offending initializer item path and value kind, rather than only rejecting the whole list.
 
 ## Language Surface and Control Flow
 

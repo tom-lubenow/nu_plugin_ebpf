@@ -252,6 +252,23 @@ fn named_global_numeric_constant_i64(value: &Value) -> Option<i64> {
     }
 }
 
+fn named_global_constant_kind(value: &Value) -> &'static str {
+    match value {
+        Value::Bool { .. } => "bool",
+        Value::Int { .. } => "int",
+        Value::Float { .. } => "float",
+        Value::Filesize { .. } => "filesize",
+        Value::Duration { .. } => "duration",
+        Value::String { .. } => "string",
+        Value::Glob { .. } => "glob",
+        Value::Binary { .. } => "binary",
+        Value::List { .. } => "list",
+        Value::Record { .. } => "record",
+        Value::Nothing { .. } => "nothing",
+        _ => "unsupported value",
+    }
+}
+
 impl ParsedNamedGlobalType {
     fn is_fixed_array_element_type(&self) -> bool {
         matches!(
@@ -1151,13 +1168,19 @@ impl ParsedNamedGlobalType {
                         spec, path_suffix
                     )));
                 };
-                if !vals
+                if let Some((idx, item)) = vals
                     .iter()
-                    .all(|item| named_global_numeric_constant_i64(item).is_some())
+                    .enumerate()
+                    .find(|(_, item)| named_global_numeric_constant_i64(item).is_none())
                 {
+                    let item_path_suffix = path
+                        .map(|prefix| format!(" field '{}[{idx}]'", prefix))
+                        .unwrap_or_else(|| format!("[{idx}]"));
                     return Err(CompileError::UnsupportedInstruction(format!(
-                        "global type spec '{}' initializer{} requires a numeric constant list",
-                        spec, path_suffix
+                        "global type spec '{}' initializer{} requires a numeric constant item, found {}",
+                        spec,
+                        item_path_suffix,
+                        named_global_constant_kind(item)
                     )));
                 }
                 if vals.len() > *max_len {

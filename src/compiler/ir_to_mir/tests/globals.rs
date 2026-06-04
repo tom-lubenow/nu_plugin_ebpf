@@ -5975,8 +5975,9 @@ fn test_lower_global_define_type_list_int_rejects_bool_items() {
     .expect_err("global-define --type list:int:N should reject bool items");
 
     assert!(
-        err.to_string()
-            .contains("global type spec 'list:int:4' initializer requires a numeric constant list"),
+        err.to_string().contains(
+            "global type spec 'list:int:4' initializer[0] requires a numeric constant item, found bool"
+        ),
         "unexpected error: {err}"
     );
 }

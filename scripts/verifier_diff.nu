@@ -14385,7 +14385,7 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "global type spec 'list:int:4' initializer requires a numeric constant list"
+        error_contains: "global type spec 'list:int:4' initializer[0] requires a numeric constant item, found bool"
     }
     {
         name: "global-define-type-bound-list-int-initializer"
