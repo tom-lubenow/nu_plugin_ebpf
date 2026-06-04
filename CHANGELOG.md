@@ -89,6 +89,8 @@ documentation changes that matter to external alpha consumers.
   mismatches with targeted `bpf_list_head` / `bpf_rb_root` diagnostics.
 - Added rbtree remove source verifier coverage for rejecting list-node operands
   with targeted `bpf_rb_node` diagnostics.
+- Added bpf_wq source verifier coverage for rejecting non-WQ map fields passed
+  to init/start/callback kfuncs.
 - Improved typed `global-define` array initializer diagnostics so top-level
   bad items use `initializer[0]` style paths instead of record-field wording.
 - Added verifier coverage for BTF target diagnostic help, typed global
