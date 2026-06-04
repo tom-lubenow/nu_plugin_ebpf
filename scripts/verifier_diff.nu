@@ -37291,6 +37291,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-binary-list-bytes-reverse"
+        category: "language-core"
+        tags: [binary list bytes reverse get starts-with]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ([0x[01 02] 0x[03 04]] | bytes reverse | get 0 | bytes starts-with 0x[02]) == 1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-binary-bytes-build-starts-with"
         category: "language-core"
         tags: [binary bytes build starts-with]

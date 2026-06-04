@@ -44,6 +44,7 @@ impl Plugin for EbpfPlugin {
             Box::new(BytesStartsWith),
             Box::new(BytesEndsWith),
             Box::new(BytesIndexOf),
+            Box::new(BytesReverse),
             // Helper commands for use in eBPF closures
             Box::new(Emit),
             Box::new(Count),
@@ -144,6 +145,15 @@ mod tests {
                 nu_protocol::Type::list(nu_protocol::Type::Int)
             )),
             "bytes index-of should accept list<binary> input"
+        );
+
+        let reverse = BytesReverse.signature();
+        assert!(
+            reverse.input_output_types.contains(&(
+                nu_protocol::Type::list(nu_protocol::Type::Binary),
+                nu_protocol::Type::list(nu_protocol::Type::Binary)
+            )),
+            "bytes reverse should accept list<binary> input"
         );
     }
 }

@@ -3974,24 +3974,46 @@ impl<'a> HirToMirLowering<'a> {
                     ));
                 }
 
-                let mut output = input_reg
+                let input_value = input_reg
                     .and_then(|reg| self.get_metadata(reg))
-                    .and_then(|meta| match meta.constant_value.as_ref() {
-                        Some(nu_protocol::Value::Binary { val, .. }) => Some(val.clone()),
-                        _ => None,
-                    })
+                    .and_then(|meta| meta.constant_value.as_ref().cloned())
                     .ok_or_else(|| {
                         CompileError::UnsupportedInstruction(
-                            "bytes reverse requires compile-time known binary input in eBPF".into(),
+                            "bytes reverse requires compile-time known binary or list<binary> input in eBPF".into(),
                         )
                     })?;
-                output.reverse();
+                let output = match input_value {
+                    nu_protocol::Value::Binary { mut val, .. } => {
+                        val.reverse();
+                        nu_protocol::Value::binary(val, nu_protocol::Span::unknown())
+                    }
+                    nu_protocol::Value::List { vals, .. } => {
+                        let mut reversed = Vec::with_capacity(vals.len());
+                        for (item_index, item) in vals.into_iter().enumerate() {
+                            let nu_protocol::Value::Binary { mut val, .. } = item else {
+                                return Err(CompileError::UnsupportedInstruction(format!(
+                                    "bytes reverse requires binary list items in eBPF; item {item_index} has type {}",
+                                    item.get_type()
+                                )));
+                            };
+                            val.reverse();
+                            reversed.push(nu_protocol::Value::binary(
+                                val,
+                                nu_protocol::Span::unknown(),
+                            ));
+                        }
+                        nu_protocol::Value::list(reversed, nu_protocol::Span::unknown())
+                    }
+                    other => {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "bytes reverse requires binary or list<binary> input in eBPF, got {}",
+                            other.get_type()
+                        )));
+                    }
+                };
 
                 self.reset_call_result_metadata(src_dst);
-                self.lower_constant_value(
-                    src_dst,
-                    &nu_protocol::Value::binary(output, nu_protocol::Span::unknown()),
-                )?;
+                self.lower_constant_value(src_dst, &output)?;
             }
 
             "bytes build" => {

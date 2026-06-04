@@ -300,6 +300,7 @@ pub enum FixedLayoutValueConsumer {
     BinaryBytesTransform,
     BytesPredicate,
     BytesIndexOf,
+    BytesReverse,
     BytesCollect,
     StrJoin,
     Length,
@@ -544,6 +545,7 @@ pub fn compile_time_value_flows_to_fixed_layout_aggregate_consumer(
         FixedLayoutValueConsumer::BinaryBytesTransform,
         FixedLayoutValueConsumer::BytesPredicate,
         FixedLayoutValueConsumer::BytesIndexOf,
+        FixedLayoutValueConsumer::BytesReverse,
         FixedLayoutValueConsumer::BytesCollect,
         FixedLayoutValueConsumer::StrJoin,
         FixedLayoutValueConsumer::Length,
@@ -728,6 +730,15 @@ fn compile_time_value_consumer_matches(
                     .flags
                     .iter()
                     .all(|flag| matches!(flag.as_slice(), b"all" | b"end"))
+                && args.parser_info.is_empty()
+        }
+        FixedLayoutValueConsumer::BytesReverse => {
+            decl_name == Some("bytes reverse")
+                && call_args_tracked_only_in_pipeline(src_dst, args, tracked_regs)
+                && args.positional.is_empty()
+                && args.rest.is_empty()
+                && args.named.is_empty()
+                && args.flags.is_empty()
                 && args.parser_info.is_empty()
         }
         FixedLayoutValueConsumer::BytesCollect => {

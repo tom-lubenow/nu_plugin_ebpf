@@ -16,6 +16,9 @@ pub struct BytesEndsWith;
 #[derive(Clone)]
 pub struct BytesIndexOf;
 
+#[derive(Clone)]
+pub struct BytesReverse;
+
 fn binary_predicate_signature(name: &str) -> Signature {
     Signature::build(name)
         .input_output_types(vec![
@@ -27,6 +30,15 @@ fn binary_predicate_signature(name: &str) -> Signature {
             SyntaxShape::Binary,
             "The binary pattern to match",
         )
+        .category(Category::Bytes)
+}
+
+fn binary_transform_signature(name: &str) -> Signature {
+    Signature::build(name)
+        .input_output_types(vec![
+            (Type::Binary, Type::Binary),
+            (Type::list(Type::Binary), Type::list(Type::Binary)),
+        ])
         .category(Category::Bytes)
 }
 
@@ -45,6 +57,11 @@ fn binary_search_signature(name: &str) -> Signature {
         .switch("end", "Search from the end of the binary input", None)
         .required("pattern", SyntaxShape::Binary, "The binary pattern to find")
         .category(Category::Bytes)
+}
+
+fn reversed_binary(mut val: Vec<u8>) -> Vec<u8> {
+    val.reverse();
+    val
 }
 
 fn run_binary_predicate(
@@ -73,6 +90,41 @@ fn run_binary_predicate(
         other => {
             return Err(
                 LabeledError::new("Invalid byte predicate input").with_label(
+                    format!("expected binary or list<binary>, got {}", other.get_type()),
+                    span,
+                ),
+            );
+        }
+    };
+
+    Ok(PipelineData::Value(output, None))
+}
+
+fn run_binary_transform(
+    call: &EvaluatedCall,
+    input: PipelineData,
+    transform: impl Fn(Vec<u8>) -> Vec<u8>,
+) -> Result<PipelineData, LabeledError> {
+    let input = input.into_value(call.head)?;
+    let span = input.span();
+
+    let output = match input {
+        Value::Binary { val, .. } => Value::binary(transform(val), span),
+        Value::List { vals, .. } => {
+            let mut out = Vec::with_capacity(vals.len());
+            for (idx, item) in vals.into_iter().enumerate() {
+                let item_span = item.span();
+                let Value::Binary { val, .. } = item else {
+                    return Err(LabeledError::new("Invalid byte transform input")
+                        .with_label(format!("expected binary at list index {}", idx), item_span));
+                };
+                out.push(Value::binary(transform(val), item_span));
+            }
+            Value::list(out, span)
+        }
+        other => {
+            return Err(
+                LabeledError::new("Invalid byte transform input").with_label(
                     format!("expected binary or list<binary>, got {}", other.get_type()),
                     span,
                 ),
@@ -130,6 +182,46 @@ fn all_binary_indexes(input: &[u8], pattern: &[u8], search_from_end: bool) -> Ve
         .into_iter()
         .map(|offset| Value::int(offset, nu_protocol::Span::unknown()))
         .collect()
+}
+
+impl PluginCommand for BytesReverse {
+    type Plugin = EbpfPlugin;
+
+    fn name(&self) -> &str {
+        "bytes reverse"
+    }
+
+    fn description(&self) -> &str {
+        "Reverse binary input or each binary list item."
+    }
+
+    fn signature(&self) -> Signature {
+        binary_transform_signature(self.name())
+    }
+
+    fn examples(&self) -> Vec<Example<'_>> {
+        vec![Example {
+            example: "[0x[01 02] 0x[03 04]] | bytes reverse",
+            description: "Reverse each binary value in a list",
+            result: Some(Value::list(
+                vec![
+                    Value::binary(vec![0x02, 0x01], nu_protocol::Span::unknown()),
+                    Value::binary(vec![0x04, 0x03], nu_protocol::Span::unknown()),
+                ],
+                nu_protocol::Span::unknown(),
+            )),
+        }]
+    }
+
+    fn run(
+        &self,
+        _plugin: &EbpfPlugin,
+        _engine: &EngineInterface,
+        call: &EvaluatedCall,
+        input: PipelineData,
+    ) -> Result<PipelineData, LabeledError> {
+        run_binary_transform(call, input, reversed_binary)
+    }
 }
 
 impl PluginCommand for BytesStartsWith {

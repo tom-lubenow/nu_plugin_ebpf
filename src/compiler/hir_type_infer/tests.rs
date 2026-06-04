@@ -746,6 +746,11 @@ fn test_list_push_binary_item_allowed_for_bytes_index_of() {
 }
 
 #[test]
+fn test_list_push_binary_item_allowed_for_bytes_reverse() {
+    assert_list_push_binary_item_allowed_for_pipeline_command(DeclId::new(188), "bytes reverse");
+}
+
+#[test]
 fn test_list_push_binary_item_allowed_for_item_access() {
     let scenarios = [
         ("first", 85, None),
