@@ -119,11 +119,11 @@ documentation changes that matter to external alpha consumers.
 - Added type-inference unit coverage for list push front/back known-zero meta
   diagnostics on nonzero and dynamic operands.
 - Added lower verifier/VCC unit coverage for list push front/back known-zero
-  meta diagnostics.
+  meta diagnostics on nonzero and dynamic operands.
 - Added type-inference unit coverage for rbtree add known-zero meta diagnostics
   on nonzero and dynamic operands.
 - Added lower verifier/VCC unit coverage for rbtree add known-zero meta
-  diagnostics.
+  diagnostics on nonzero and dynamic operands.
 - Improved typed `global-define` array initializer diagnostics so top-level
   bad items use `initializer[0]` style paths instead of record-field wording.
 - Added verifier coverage for BTF target diagnostic help, typed global
