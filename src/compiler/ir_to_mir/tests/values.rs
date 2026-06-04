@@ -3983,6 +3983,56 @@ fn make_split_list_string_get_join_then_starts_with_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_split_list_string_program(
+    split_decl: DeclId,
+    values: &[&str],
+    separator: &str,
+) -> HirProgram {
+    let mut next_reg = 2u32;
+    let mut stmts = vec![HirStmt::LoadValue {
+        dst: RegId::new(0),
+        val: Box::new(Value::list(
+            values
+                .iter()
+                .map(|value| Value::string(*value, Span::test_data()))
+                .collect(),
+            Span::test_data(),
+        )),
+    }];
+
+    let separator_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::LoadValue {
+        dst: separator_reg,
+        val: Box::new(Value::string(separator, Span::test_data())),
+    });
+
+    stmts.push(HirStmt::Call {
+        decl_id: split_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            positional: vec![separator_reg],
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: next_reg,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_record_list_compact_length_program(
     compact_decl: DeclId,
     length_decl: DeclId,
@@ -5914,6 +5964,67 @@ fn make_record_mixed_values_reverse_first_starts_with_program(
         ast: Vec::new(),
         comments: Vec::new(),
         register_count: 6,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_record_mixed_values_split_list_length_program(
+    values_decl: DeclId,
+    split_decl: DeclId,
+    length_decl: DeclId,
+) -> HirProgram {
+    let mut record = Record::new();
+    record.push("pid", Value::int(7, Span::test_data()));
+    record.push("comm", Value::string("nu", Span::test_data()));
+
+    let stmts = vec![
+        HirStmt::LoadValue {
+            dst: RegId::new(0),
+            val: Box::new(Value::record(record, Span::test_data())),
+        },
+        HirStmt::Call {
+            decl_id: values_decl,
+            src_dst: RegId::new(1),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(0)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::LoadValue {
+            dst: RegId::new(2),
+            val: Box::new(Value::string("nu", Span::test_data())),
+        },
+        HirStmt::Call {
+            decl_id: split_decl,
+            src_dst: RegId::new(3),
+            args: HirCallArgs {
+                positional: vec![RegId::new(2)],
+                pipeline_input: Some(RegId::new(1)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::Call {
+            decl_id: length_decl,
+            src_dst: RegId::new(4),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(3)),
+                ..HirCallArgs::default()
+            },
+        },
+    ];
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(4) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 5,
         file_count: 0,
     };
     HirProgram::new(func, HashMap::new(), vec![], None)
@@ -25738,7 +25849,7 @@ fn test_lower_split_list_regex_after_mode_keeps_separator_in_previous_group() {
 }
 
 #[test]
-fn test_lower_split_list_rejects_heterogeneous_group_layouts() {
+fn test_lower_split_list_heterogeneous_groups_feed_metadata_consumers() {
     let split_decl = DeclId::new(489);
     let get_decl = DeclId::new(490);
     let join_decl = DeclId::new(491);
@@ -25763,6 +25874,43 @@ fn test_lower_split_list_rejects_heterogeneous_group_layouts() {
         (starts_with_decl, "str starts-with".to_string()),
     ]);
 
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("split list heterogeneous groups should feed metadata consumers");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"b-c\0")
+            )),
+        "expected split list heterogeneous group to feed str join with b-c"
+    );
+    assert_no_runtime_list_operations(&result.program, "split list heterogeneous metadata");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("split list heterogeneous group metadata consumer should compile");
+}
+
+#[test]
+fn test_lower_split_list_rejects_materialized_heterogeneous_group_layouts() {
+    let split_decl = DeclId::new(505);
+    let hir = make_split_list_string_program(split_decl, &["a", "x", "b", "c", "x", "d"], "x");
+    let decl_names = HashMap::from([(split_decl, "split list".to_string())]);
+
     let err = lower_hir_to_mir_with_hints(
         &hir,
         None,
@@ -25771,7 +25919,7 @@ fn test_lower_split_list_rejects_heterogeneous_group_layouts() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("split list should reject heterogeneous fixed-layout result groups");
+    .expect_err("materialized split list heterogeneous groups should be rejected");
 
     assert!(
         err.to_string()
@@ -31599,6 +31747,35 @@ fn test_lower_values_on_mixed_constant_record_reverse_feeds_first() {
     assert_no_runtime_list_operations(&result.program, "mixed record values reverse first");
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("mixed record values reverse/first should compile through codegen");
+}
+
+#[test]
+fn test_lower_values_on_mixed_constant_record_split_list_feeds_length() {
+    let values_decl = DeclId::new(1135);
+    let split_decl = DeclId::new(1136);
+    let length_decl = DeclId::new(1137);
+    let hir =
+        make_record_mixed_values_split_list_length_program(values_decl, split_decl, length_decl);
+    let decl_names = HashMap::from([
+        (values_decl, "values".to_string()),
+        (split_decl, "split list".to_string()),
+        (length_decl, "length".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("mixed constant record values should feed metadata-only split list length");
+
+    assert_program_returns_constant(&result.program, 2, "mixed record values split list length");
+    assert_no_runtime_list_operations(&result.program, "mixed record values split list length");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("mixed record values split list length should compile through codegen");
 }
 
 #[test]

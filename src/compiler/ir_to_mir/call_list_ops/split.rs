@@ -104,7 +104,7 @@ impl<'a> HirToMirLowering<'a> {
         );
         if !crate::compiler::hir::supports_constant_value(&result)
             && !(self.current_call_result_metadata_only
-                && Self::split_list_result_is_nested_float_only(&result))
+                && Self::split_list_result_is_metadata_only_supported(&result))
         {
             return Err(CompileError::UnsupportedInstruction(
                 "split list result requires homogeneous fixed-layout groups in eBPF".into(),
@@ -119,12 +119,20 @@ impl<'a> HirToMirLowering<'a> {
         Ok(())
     }
 
-    fn split_list_result_is_nested_float_only(value: &nu_protocol::Value) -> bool {
+    fn split_list_result_is_metadata_only_supported(value: &nu_protocol::Value) -> bool {
         match value {
-            nu_protocol::Value::Float { .. } => true,
+            nu_protocol::Value::Bool { .. }
+            | nu_protocol::Value::Int { .. }
+            | nu_protocol::Value::Filesize { .. }
+            | nu_protocol::Value::Duration { .. }
+            | nu_protocol::Value::Nothing { .. }
+            | nu_protocol::Value::Binary { .. }
+            | nu_protocol::Value::String { .. }
+            | nu_protocol::Value::Glob { .. } => true,
+            nu_protocol::Value::Float { val, .. } => val.is_finite(),
             nu_protocol::Value::List { vals, .. } => vals
                 .iter()
-                .all(Self::split_list_result_is_nested_float_only),
+                .all(Self::split_list_result_is_metadata_only_supported),
             _ => false,
         }
     }

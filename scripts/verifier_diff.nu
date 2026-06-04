@@ -38036,6 +38036,20 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-list-split-list-heterogeneous-materialized-reject"
+        category: "language-core"
+        tags: [aggregate list split-list reject]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ["a" "x" "b" "c" "x" "d"] | split list "x"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "split list result requires homogeneous fixed-layout groups"
+    }
+    {
         name: "core-string-split-chars-join"
         category: "language-core"
         tags: [string split chars join]
@@ -39168,6 +39182,19 @@ const FIXTURES = [
             '  let first_ok = (({ pid: 7 comm: "nu" } | values | first) == 7)'
             '  let last_ok = ({ pid: 7 comm: "nu" } | values | last | str starts-with "nu")'
             '  $first_ok and ($last_ok and ({ pid: 7 comm: "nu" } | values | reverse | first | str starts-with "nu"))'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-record-values-mixed-split-list"
+        category: "language-core"
+        tags: [aggregate record values list mixed split-list length]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  { pid: 7 comm: "nu" } | values | split list "nu" | length'
             '}'
         ]
         local: "accept"
