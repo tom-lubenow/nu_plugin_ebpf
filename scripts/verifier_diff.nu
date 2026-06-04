@@ -29813,6 +29813,26 @@ const FIXTURES = [
         error_contains: "arg0 must be > 0"
     }
     {
+        name: "source-kfunc-percpu-obj-new-rejects-dynamic-meta"
+        category: "helper-state"
+        tags: [kfunc object ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let meta = ($ctx.pid + 1)'
+            '  let obj = (kfunc-call "bpf_percpu_obj_new_impl" 1 $meta)'
+            '  if $obj {'
+            '    kfunc-call "bpf_percpu_obj_drop_impl" $obj 0'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'bpf_percpu_obj_new_impl' arg1 must be known zero"
+    }
+    {
         name: "source-kfunc-percpu-obj-drop-rejects-dynamic-meta"
         category: "helper-state"
         tags: [kfunc object ref-lifetime source reject]
@@ -30213,6 +30233,32 @@ const FIXTURES = [
         local: "reject"
         kernel: "skip"
         error_contains: "kfunc 'bpf_list_push_front_impl' arg2 must be known zero"
+    }
+    {
+        name: "source-kfunc-list-push-back-rejects-dynamic-meta"
+        category: "helper-state"
+        tags: [kfunc object graph source reject]
+        requires: [kernel-btf]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  map-define graph_items --kind hash --value-type "record{lock:bpf_spin_lock,root:bpf_list_head:node_data:node,cookie:u64}"'
+            '  let entry = (0 | map-get graph_items --kind hash)'
+            '  if $entry {'
+            '    let obj = (kfunc-call "bpf_obj_new_impl" 1 0)'
+            '    if $obj {'
+            '      let meta = ($ctx.packet_len + 1)'
+            '      helper-call "bpf_spin_lock" $entry.lock'
+            '      kfunc-call "bpf_list_push_back_impl" $entry.root $obj $meta 0'
+            '      helper-call "bpf_spin_unlock" $entry.lock'
+            '    }'
+            '  }'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'bpf_list_push_back_impl' arg2 must be known zero"
     }
     {
         name: "source-kfunc-list-push-back-map-root"

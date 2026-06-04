@@ -100,6 +100,8 @@ documentation changes that matter to external alpha consumers.
   aux operands.
 - Improved known-zero kfunc aux diagnostics so scalar nonzero operands report
   the required zero contract instead of a generic pointer/null mismatch.
+- Added source verifier coverage for known-zero percpu object-new and list
+  push-back aux/meta rejects.
 - Improved typed `global-define` array initializer diagnostics so top-level
   bad items use `initializer[0]` style paths instead of record-field wording.
 - Added verifier coverage for BTF target diagnostic help, typed global
