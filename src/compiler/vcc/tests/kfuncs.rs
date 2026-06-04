@@ -15314,6 +15314,60 @@ fn test_verify_mir_kfunc_bpf_wq_set_callback_rejects_nonzero_flags() {
 }
 
 #[test]
+fn test_verify_mir_kfunc_bpf_wq_set_callback_rejects_dynamic_flags() {
+    let (mut func, entry) = new_mir_function();
+    func.param_count = 1;
+
+    let wq = func.alloc_vreg();
+    func.param_non_null.insert(wq.0 as usize);
+    let callback = func.alloc_vreg();
+    let flags = func.alloc_vreg();
+    let aux = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadSubprogram {
+            dst: callback,
+            subfn: crate::compiler::mir::SubfunctionId(0),
+        });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: aux,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_wq_set_callback_impl".to_string(),
+        btf_id: None,
+        args: vec![wq, callback, flags, aux],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        wq,
+        MirType::Ptr {
+            pointee: Box::new(MirType::bpf_wq_struct()),
+            address_space: AddressSpace::Map,
+        },
+    );
+    types.insert(callback, bpf_wq_callback_type());
+    types.insert(flags, MirType::I64);
+    types.insert(aux, MirType::I64);
+    types.insert(dst, MirType::I64);
+
+    let err = verify_mir(&func, &types)
+        .expect_err("expected bpf_wq_set_callback_impl dynamic flags error");
+    assert!(
+        err.iter().any(|e| {
+            e.message
+                .contains("kfunc 'bpf_wq_set_callback_impl' arg2 must be known zero")
+        }),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_kfunc_bpf_wq_set_callback_rejects_nonzero_aux() {
     let (mut func, entry) = new_mir_function();
     func.param_count = 1;
@@ -15361,6 +15415,60 @@ fn test_verify_mir_kfunc_bpf_wq_set_callback_rejects_nonzero_aux() {
 
     let err =
         verify_mir(&func, &types).expect_err("expected bpf_wq_set_callback_impl nonzero aux error");
+    assert!(
+        err.iter().any(|e| {
+            e.message
+                .contains("kfunc 'bpf_wq_set_callback_impl' arg3 must be known zero")
+        }),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_kfunc_bpf_wq_set_callback_rejects_dynamic_aux() {
+    let (mut func, entry) = new_mir_function();
+    func.param_count = 1;
+
+    let wq = func.alloc_vreg();
+    func.param_non_null.insert(wq.0 as usize);
+    let callback = func.alloc_vreg();
+    let flags = func.alloc_vreg();
+    let aux = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadSubprogram {
+            dst: callback,
+            subfn: crate::compiler::mir::SubfunctionId(0),
+        });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: flags,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_wq_set_callback_impl".to_string(),
+        btf_id: None,
+        args: vec![wq, callback, flags, aux],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        wq,
+        MirType::Ptr {
+            pointee: Box::new(MirType::bpf_wq_struct()),
+            address_space: AddressSpace::Map,
+        },
+    );
+    types.insert(callback, bpf_wq_callback_type());
+    types.insert(flags, MirType::I64);
+    types.insert(aux, MirType::I64);
+    types.insert(dst, MirType::I64);
+
+    let err =
+        verify_mir(&func, &types).expect_err("expected bpf_wq_set_callback_impl dynamic aux error");
     assert!(
         err.iter().any(|e| {
             e.message
