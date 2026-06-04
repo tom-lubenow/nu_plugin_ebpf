@@ -528,11 +528,17 @@ impl<'a> HirToMirLowering<'a> {
                 "seq date does not accept positional arguments in eBPF".into(),
             ));
         }
-        if !self.named_flags.is_empty() {
-            return Err(CompileError::UnsupportedInstruction(
-                "seq date does not accept named flags in eBPF".into(),
-            ));
+        for flag in &self.named_flags {
+            if !matches!(flag.as_str(), "reverse" | "r") {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "seq date --{flag} is not supported in eBPF"
+                )));
+            }
         }
+        let reverse = self
+            .named_flags
+            .iter()
+            .any(|flag| matches!(flag.as_str(), "reverse" | "r"));
         self.require_only_named_args(
             "seq date",
             &[
@@ -581,6 +587,15 @@ impl<'a> HirToMirLowering<'a> {
             self.seq_date_integer_named_arg("periods", "p", "seq date --periods")?
         {
             let count = Self::seq_date_positive_count(periods, "periods")?;
+            let count = if reverse {
+                count.checked_add(2).ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(
+                        "seq date --periods is too large to model in eBPF".into(),
+                    )
+                })?
+            } else {
+                count
+            };
             if count > MAX_SEQ_DATE_LIST_CAPACITY {
                 return Err(CompileError::UnsupportedInstruction(format!(
                     "seq date output exceeds fixed string-list capacity {MAX_SEQ_DATE_LIST_CAPACITY}"
@@ -588,7 +603,7 @@ impl<'a> HirToMirLowering<'a> {
             }
             Self::seq_date_values_for_count(
                 begin,
-                step,
+                if reverse { -step } else { step },
                 count,
                 MAX_SEQ_DATE_LIST_CAPACITY,
                 &output_format,
@@ -596,12 +611,22 @@ impl<'a> HirToMirLowering<'a> {
         } else if let Some(days) =
             self.seq_date_integer_named_arg("days", "d", "seq date --days")?
         {
-            let day_count = Self::seq_date_positive_count(days, "days")?;
-            let end_offset = days.checked_sub(1).ok_or_else(|| {
-                CompileError::UnsupportedInstruction(
-                    "seq date --days requires a positive integer in eBPF".into(),
-                )
-            })?;
+            let _day_count = Self::seq_date_positive_count(days, "days")?;
+            let end_offset = if reverse {
+                days.checked_add(1)
+                    .and_then(|days| days.checked_neg())
+                    .ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "seq date --days is too large to model in eBPF".into(),
+                        )
+                    })?
+            } else {
+                days.checked_sub(1).ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(
+                        "seq date --days requires a positive integer in eBPF".into(),
+                    )
+                })?
+            };
             let end = begin
                 .checked_add_signed(Duration::try_days(end_offset).ok_or_else(|| {
                     CompileError::UnsupportedInstruction(
@@ -618,7 +643,6 @@ impl<'a> HirToMirLowering<'a> {
                 MAX_SEQ_DATE_LIST_CAPACITY,
                 &output_format,
             )?;
-            debug_assert!(values.len() <= day_count);
             values
         } else {
             let end_raw = self

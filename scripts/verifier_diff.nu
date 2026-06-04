@@ -35374,6 +35374,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-seq-date-reverse-periods-join"
+        category: "language-core"
+        tags: [aggregate list seq date reverse periods str join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  seq date --begin-date "2020-01-01" --periods 3 --increment 2 --reverse | str join "," | str starts-with "2020-01-01,2019-12-30,2019-12-28,2019-12-26,2019-12-24"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-seq-date-over-capacity-reject"
         category: "language-core"
         tags: [aggregate list seq date reject]
