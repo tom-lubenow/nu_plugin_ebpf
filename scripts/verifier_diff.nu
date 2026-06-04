@@ -14945,6 +14945,21 @@ const FIXTURES = [
         error_contains: "record field 'inner.bad' must use name:type syntax"
     }
     {
+        name: "global-define-type-nested-record-invalid-array-length-rejects-path"
+        category: "globals"
+        tags: [globals records arrays diagnostics global-define reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  global-define --type "record{items:array{u32:x}}" seen_state'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "record field 'items' type spec 'array{u32:x}' has an invalid array length"
+    }
+    {
         name: "global-define-type-record-partial-list-field-zero-fills"
         category: "globals"
         tags: [globals records list global-define zero-fill accept]

@@ -21,7 +21,8 @@ documentation changes that matter to external alpha consumers.
 - Improved typed `global-define` record initializer diagnostics so nested
   unexpected fields name the full path, for example `inner.extra`.
 - Improved typed `global-define` nested record type-spec diagnostics so malformed
-  fields name paths such as `inner.bad`.
+  fields, invalid length/capacity specs, and unsupported field specs name paths
+  such as `inner.bad` or `items`.
 - Improved typed `global-define` array initializer diagnostics so top-level
   bad items use `initializer[0]` style paths instead of record-field wording.
 - Added verifier coverage for BTF target diagnostic help, typed global

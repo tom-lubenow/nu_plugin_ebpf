@@ -145,6 +145,20 @@ fn record_field_path(parent_path: Option<&str>, field: &str) -> String {
     }
 }
 
+fn type_spec_subject(spec: &str, record_path: Option<&str>) -> String {
+    match record_path {
+        Some(path) => format!("record field '{path}' type spec '{spec}'"),
+        None => format!("global type spec '{spec}'"),
+    }
+}
+
+fn array_type_spec_subject(spec: &str, record_path: Option<&str>) -> String {
+    match record_path {
+        Some(path) => format!("record field '{path}' array type spec '{spec}'"),
+        None => format!("array global type spec '{spec}'"),
+    }
+}
+
 fn split_top_level_field<'a>(
     field: &'a str,
     parent_path: Option<&str>,
@@ -182,6 +196,7 @@ fn split_top_level_field<'a>(
 fn split_top_level_type_len<'a>(
     body: &'a str,
     spec: &str,
+    record_path: Option<&str>,
 ) -> Result<(&'a str, &'a str), CompileError> {
     let mut depth = 0usize;
     let mut separator = None;
@@ -191,9 +206,10 @@ fn split_top_level_type_len<'a>(
             '{' => depth = depth.saturating_add(1),
             '}' => {
                 if depth == 0 {
+                    let subject = array_type_spec_subject(spec, record_path);
                     return Err(CompileError::UnsupportedInstruction(format!(
-                        "array global type spec '{}' has an unmatched '}}'",
-                        spec
+                        "{} has an unmatched '}}'",
+                        subject
                     )));
                 }
                 depth -= 1;
@@ -210,9 +226,10 @@ fn split_top_level_type_len<'a>(
         return Ok((elem.trim(), rest[1..].trim()));
     }
 
+    let subject = array_type_spec_subject(spec, record_path);
     Err(CompileError::UnsupportedInstruction(format!(
-        "array global type spec '{}' must use array{{type:N}} syntax",
-        spec
+        "{} must use array{{type:N}} syntax",
+        subject
     )))
 }
 
@@ -582,21 +599,27 @@ impl ParsedNamedGlobalType {
             .strip_prefix("array{")
             .and_then(|rest| rest.strip_suffix('}'))
         {
-            let (elem_spec, len_spec) = split_top_level_type_len(body, spec)?;
+            let (elem_spec, len_spec) = split_top_level_type_len(body, spec, record_path)?;
             if elem_spec.is_empty() || len_spec.is_empty() {
+                let subject = array_type_spec_subject(spec, record_path);
                 return Err(CompileError::UnsupportedInstruction(format!(
-                    "array global type spec '{}' must use array{{type:N}} syntax",
-                    spec
+                    "{} must use array{{type:N}} syntax",
+                    subject
                 )));
             }
 
             let len = len_spec.parse::<usize>().map_err(|_| {
+                let subject = type_spec_subject(spec, record_path);
                 CompileError::UnsupportedInstruction(format!(
-                    "global type spec '{}' has an invalid array length",
-                    spec
+                    "{subject} has an invalid array length"
                 ))
             })?;
             if len == 0 {
+                if let Some(path) = record_path {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "record field '{path}' type spec '{spec}' requires a positive fixed-array length"
+                    )));
+                }
                 return Err(CompileError::UnsupportedInstruction(
                     "global fixed-array declarations require a positive length".into(),
                 ));
@@ -604,6 +627,12 @@ impl ParsedNamedGlobalType {
 
             let parsed_elem = Self::parse_with_context_at_path(elem_spec, context, record_path)?;
             if !parsed_elem.is_fixed_array_element_type() {
+                if let Some(path) = record_path {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "record field '{path}' fixed-array type spec '{spec}' requires elements that can be embedded in fixed arrays, got '{}'",
+                        elem_spec
+                    )));
+                }
                 return Err(CompileError::UnsupportedInstruction(format!(
                     "global fixed-array declarations require elements that can be embedded in fixed arrays, got '{}'",
                     elem_spec
@@ -635,9 +664,9 @@ impl ParsedNamedGlobalType {
             .or_else(|| spec.strip_prefix("binary:"))
             .map(|len| {
                 len.parse::<usize>().map_err(|_| {
+                    let subject = type_spec_subject(spec, record_path);
                     CompileError::UnsupportedInstruction(format!(
-                        "global type spec '{}' has an invalid byte length",
-                        spec
+                        "{subject} has an invalid byte length"
                     ))
                 })
             })
@@ -645,6 +674,11 @@ impl ParsedNamedGlobalType {
 
         if let Some(len) = byte_len {
             if len == 0 {
+                if let Some(path) = record_path {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "record field '{path}' type spec '{spec}' requires a positive byte-array length"
+                    )));
+                }
                 return Err(CompileError::UnsupportedInstruction(
                     "global byte-array declarations require a positive length".into(),
                 ));
@@ -667,15 +701,21 @@ impl ParsedNamedGlobalType {
             .strip_prefix("string:")
             .map(|len| {
                 len.parse::<usize>().map_err(|_| {
+                    let subject = type_spec_subject(spec, record_path);
                     CompileError::UnsupportedInstruction(format!(
-                        "global type spec '{}' has an invalid string capacity",
-                        spec
+                        "{subject} has an invalid string capacity"
                     ))
                 })
             })
             .transpose()?
         {
             if content_cap == 0 || content_cap >= MAX_STRING_SIZE {
+                if let Some(path) = record_path {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "record field '{path}' type spec '{spec}' requires a string capacity between 1 and {}",
+                        MAX_STRING_SIZE - 1
+                    )));
+                }
                 return Err(CompileError::UnsupportedInstruction(format!(
                     "global string declarations require a capacity between 1 and {}",
                     MAX_STRING_SIZE - 1
@@ -709,15 +749,21 @@ impl ParsedNamedGlobalType {
             .or_else(|| spec.strip_prefix("list:i64:"))
             .map(|len| {
                 len.parse::<usize>().map_err(|_| {
+                    let subject = type_spec_subject(spec, record_path);
                     CompileError::UnsupportedInstruction(format!(
-                        "global type spec '{}' has an invalid list capacity",
-                        spec
+                        "{subject} has an invalid list capacity"
                     ))
                 })
             })
             .transpose()?
         {
             if max_len > MAX_NAMED_GLOBAL_NUMERIC_LIST_CAPACITY {
+                if let Some(path) = record_path {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "record field '{path}' type spec '{spec}' requires a numeric list capacity of at most {}",
+                        MAX_NAMED_GLOBAL_NUMERIC_LIST_CAPACITY
+                    )));
+                }
                 return Err(CompileError::UnsupportedInstruction(format!(
                     "global numeric list declarations require a capacity of at most {}",
                     MAX_NAMED_GLOBAL_NUMERIC_LIST_CAPACITY
@@ -753,9 +799,12 @@ impl ParsedNamedGlobalType {
         } else {
             ""
         };
+        let subject = record_path
+            .map(|path| format!("record field '{path}' type spec '{spec}'"))
+            .unwrap_or_else(|| format!("{context_name} type spec '{spec}'"));
         Err(CompileError::UnsupportedInstruction(format!(
-            "unsupported {context_name} type spec '{}'; expected one of i8, i16, i32, int/i64, duration, filesize, u8, u16, u32, u64, bool, bytes:N, binary:N, string:N, list:int:N/list:i64:N, array{{type:N}}, or nested record{{field:type,...}}{}",
-            spec, map_suffix
+            "unsupported {subject}; expected one of i8, i16, i32, int/i64, duration, filesize, u8, u16, u32, u64, bool, bytes:N, binary:N, string:N, list:int:N/list:i64:N, array{{type:N}}, or nested record{{field:type,...}}{}",
+            map_suffix
         )))
     }
 

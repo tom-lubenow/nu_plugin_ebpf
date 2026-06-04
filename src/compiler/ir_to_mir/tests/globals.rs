@@ -5989,8 +5989,7 @@ fn test_lower_global_define_type_list_int_rejects_bool_items() {
     );
 }
 
-#[test]
-fn test_lower_global_define_type_nested_record_rejects_malformed_field_path() {
+fn lower_global_define_type_spec_error(type_spec: &str) -> CompileError {
     let define_decl = DeclId::new(9212);
     let decl_names = HashMap::from([(define_decl, "global-define".to_string())]);
 
@@ -6004,7 +6003,7 @@ fn test_lower_global_define_type_nested_record_rejects_malformed_field_path() {
                 },
                 HirStmt::LoadLiteral {
                     dst: RegId::new(1),
-                    lit: HirLiteral::String("record{inner:record{bad}}".into()),
+                    lit: HirLiteral::String(type_spec.into()),
                 },
                 HirStmt::Call {
                     decl_id: define_decl,
@@ -6027,7 +6026,7 @@ fn test_lower_global_define_type_nested_record_rejects_malformed_field_path() {
     };
     let hir = HirProgram::new(func, HashMap::new(), vec![], None);
 
-    let err = lower_hir_to_mir_with_hints(
+    lower_hir_to_mir_with_hints(
         &hir,
         None,
         &decl_names,
@@ -6035,11 +6034,38 @@ fn test_lower_global_define_type_nested_record_rejects_malformed_field_path() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("global-define --type record should reject malformed nested fields");
+    .expect_err("global-define --type should reject malformed type specs")
+}
+
+#[test]
+fn test_lower_global_define_type_nested_record_rejects_malformed_field_path() {
+    let err = lower_global_define_type_spec_error("record{inner:record{bad}}");
 
     assert!(
         err.to_string()
             .contains("record field 'inner.bad' must use name:type syntax"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_global_define_type_nested_record_rejects_invalid_array_length_path() {
+    let err = lower_global_define_type_spec_error("record{items:array{u32:x}}");
+
+    assert!(
+        err.to_string()
+            .contains("record field 'items' type spec 'array{u32:x}' has an invalid array length"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_global_define_type_nested_record_rejects_unsupported_type_path() {
+    let err = lower_global_define_type_spec_error("record{inner:bogus}");
+
+    assert!(
+        err.to_string()
+            .contains("unsupported record field 'inner' type spec 'bogus'"),
         "unexpected error: {err}"
     );
 }
