@@ -540,16 +540,27 @@ impl<'a> HirToMirLowering<'a> {
     pub(super) fn constant_fixed_array_rodata_repr(
         values: &[Value],
     ) -> Result<(MirType, Vec<u8>), CompileError> {
+        fn fixed_array_element_error(idx: usize, value: &Value, err: CompileError) -> CompileError {
+            CompileError::UnsupportedInstruction(format!(
+                "constant fixed array element {} of type {} cannot be represented as fixed-layout eBPF data: {}",
+                idx,
+                value.get_type(),
+                err
+            ))
+        }
+
         let Some((first, rest)) = values.split_first() else {
             return Err(CompileError::UnsupportedInstruction(
                 "constant fixed arrays require at least one element to infer layout".into(),
             ));
         };
 
-        let (elem_ty, mut data) = Self::constant_fixed_array_element_rodata_repr(first)?;
+        let (elem_ty, mut data) = Self::constant_fixed_array_element_rodata_repr(first)
+            .map_err(|err| fixed_array_element_error(0, first, err))?;
         for (idx, value) in rest.iter().enumerate() {
             let actual_idx = idx + 1;
-            let (item_ty, item_data) = Self::constant_fixed_array_element_rodata_repr(value)?;
+            let (item_ty, item_data) = Self::constant_fixed_array_element_rodata_repr(value)
+                .map_err(|err| fixed_array_element_error(actual_idx, value, err))?;
             if item_ty != elem_ty {
                 return Err(CompileError::UnsupportedInstruction(format!(
                     "constant fixed arrays require homogeneous element layouts; element 0 has {:?}, element {} has {:?}",

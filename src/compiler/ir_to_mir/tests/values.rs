@@ -36944,6 +36944,52 @@ fn test_lower_load_value_unsupported_non_numeric_list_is_rejected() {
 }
 
 #[test]
+fn test_lower_load_value_empty_binary_fixed_array_names_element_index() {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::LoadValue {
+                dst: RegId::new(0),
+                val: Box::new(Value::list(
+                    vec![
+                        Value::binary(Vec::new(), Span::test_data()),
+                        Value::binary(Vec::new(), Span::test_data()),
+                    ],
+                    Span::test_data(),
+                )),
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 1,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("empty binary fixed-array elements should reject");
+
+    assert!(
+        err.to_string().contains("constant fixed array element 0"),
+        "expected fixed-array element index in diagnostic, got: {err}"
+    );
+    assert!(
+        err.to_string()
+            .contains("empty binary constants do not establish a fixed byte-buffer layout")
+    );
+}
+
+#[test]
 fn test_lower_load_value_record_list_uses_fixed_array_readonly_global() {
     let mut first = Record::new();
     first.push("pid", Value::int(7, Span::test_data()));
