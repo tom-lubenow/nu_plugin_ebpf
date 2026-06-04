@@ -49,6 +49,7 @@ const NU_CLOSURE_COMMANDS: &[&str] = &[
     "char",
     "seq",
     "seq char",
+    "seq date",
     "fill",
     "is-empty",
     "is-not-empty",

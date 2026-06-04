@@ -9,6 +9,7 @@ use crate::compiler::mir::{
     STRING_COUNTER_MAP_NAME,
 };
 use crate::compiler::{ProgramIntrinsic, TypeInference};
+use chrono::{Duration, NaiveDate};
 
 const BPF_SK_LOOKUP_F_REPLACE: u64 = 1 << 0;
 const BPF_SK_LOOKUP_F_NO_REUSEPORT: u64 = 1 << 1;
@@ -510,6 +511,130 @@ impl<'a> HirToMirLowering<'a> {
         self.lower_constant_value(src_dst, &nu_protocol::Value::list(values, Span::unknown()))
     }
 
+    fn lower_seq_date_constant(&mut self, src_dst: RegId) -> Result<(), CompileError> {
+        const MAX_SEQ_DATE_LIST_CAPACITY: usize = 60;
+        const SEQ_DATE_FORMAT: &str = "%Y-%m-%d";
+
+        if self.pipeline_input.is_some() || self.pipeline_input_reg.is_some() {
+            return Err(CompileError::UnsupportedInstruction(
+                "seq date does not accept pipeline input in eBPF".into(),
+            ));
+        }
+        if !self.positional_args.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(
+                "seq date does not accept positional arguments in eBPF".into(),
+            ));
+        }
+        if !self.named_flags.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(
+                "seq date does not accept named flags in eBPF".into(),
+            ));
+        }
+        self.require_only_named_args(
+            "seq date",
+            &["begin-date", "b", "end-date", "e", "increment", "n"],
+        )?;
+
+        let begin_raw = self
+            .seq_date_string_named_arg("begin-date", "b", "seq date --begin-date")?
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "seq date requires explicit --begin-date and --end-date in eBPF".into(),
+                )
+            })?;
+        let end_raw = self
+            .seq_date_string_named_arg("end-date", "e", "seq date --end-date")?
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "seq date requires explicit --begin-date and --end-date in eBPF".into(),
+                )
+            })?;
+
+        let begin = Self::seq_date_parse_default_format(&begin_raw, "begin-date")?;
+        let end = Self::seq_date_parse_default_format(&end_raw, "end-date")?;
+        let step_days = self.seq_date_increment_days()?.unwrap_or(1);
+        if step_days <= 0 {
+            return Err(CompileError::UnsupportedInstruction(
+                "seq date --increment requires a positive integer day count in eBPF".into(),
+            ));
+        }
+
+        let ascending = begin <= end;
+        let signed_step = if ascending { step_days } else { -step_days };
+        let delta = Duration::try_days(signed_step).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "seq date --increment is too large to model in eBPF".into(),
+            )
+        })?;
+        let mut date = begin;
+        let mut values = Vec::new();
+        loop {
+            if values.len() >= MAX_SEQ_DATE_LIST_CAPACITY {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "seq date output exceeds fixed string-list capacity {MAX_SEQ_DATE_LIST_CAPACITY}"
+                )));
+            }
+            values.push(nu_protocol::Value::string(
+                date.format(SEQ_DATE_FORMAT).to_string(),
+                Span::unknown(),
+            ));
+            if date == end {
+                break;
+            }
+
+            let next = date.checked_add_signed(delta).ok_or_else(|| {
+                CompileError::UnsupportedInstruction("seq date overflows in eBPF".into())
+            })?;
+            if (ascending && next > end) || (!ascending && next < end) {
+                break;
+            }
+            date = next;
+        }
+
+        self.lower_constant_value(src_dst, &nu_protocol::Value::list(values, Span::unknown()))
+    }
+
+    fn seq_date_named_arg_reg(&self, long: &str, short: &str) -> Option<RegId> {
+        self.named_args
+            .get(long)
+            .or_else(|| self.named_args.get(short))
+            .map(|(_, reg)| *reg)
+    }
+
+    fn seq_date_string_named_arg(
+        &self,
+        long: &str,
+        short: &str,
+        context: &str,
+    ) -> Result<Option<String>, CompileError> {
+        self.seq_date_named_arg_reg(long, short)
+            .map(|reg| self.literal_string_arg(reg, context))
+            .transpose()
+    }
+
+    fn seq_date_increment_days(&self) -> Result<Option<i64>, CompileError> {
+        self.seq_date_named_arg_reg("increment", "n")
+            .map(|reg| {
+                self.get_metadata(reg)
+                    .and_then(|meta| meta.literal_int)
+                    .ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "seq date --increment requires a compile-time known integer day count in eBPF"
+                                .into(),
+                        )
+                    })
+            })
+            .transpose()
+    }
+
+    fn seq_date_parse_default_format(raw: &str, arg_name: &str) -> Result<NaiveDate, CompileError> {
+        NaiveDate::parse_from_str(raw, "%Y-%m-%d").map_err(|_| {
+            CompileError::UnsupportedInstruction(format!(
+                "seq date --{arg_name} requires YYYY-MM-DD dates in eBPF"
+            ))
+        })
+    }
+
     fn seq_char_arg(&self, reg: RegId) -> Result<u8, CompileError> {
         let value = self.literal_string_arg(reg, "seq char")?;
         let bytes = value.as_bytes();
@@ -873,6 +998,10 @@ impl<'a> HirToMirLowering<'a> {
 
             "seq char" => {
                 self.lower_seq_char_constant(src_dst)?;
+            }
+
+            "seq date" => {
+                self.lower_seq_date_constant(src_dst)?;
             }
 
             "random int" => {

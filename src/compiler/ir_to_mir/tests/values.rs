@@ -549,6 +549,151 @@ fn make_seq_program(seq_decl: DeclId, seq_args: &[HirLiteral]) -> HirProgram {
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_seq_date_program(
+    seq_date_decl: DeclId,
+    named_args: &[(&str, HirLiteral)],
+    flags: &[&str],
+) -> HirProgram {
+    let mut stmts = Vec::new();
+    let mut named = Vec::new();
+    let mut next_reg = 0u32;
+    for (name, lit) in named_args {
+        let reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadLiteral {
+            dst: reg,
+            lit: lit.clone(),
+        });
+        named.push((name.as_bytes().to_vec(), reg));
+    }
+
+    let seq_date_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::Call {
+        decl_id: seq_date_decl,
+        src_dst: seq_date_reg,
+        args: HirCallArgs {
+            named,
+            flags: flags.iter().map(|flag| flag.as_bytes().to_vec()).collect(),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: seq_date_reg },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: next_reg,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_seq_date_join_then_starts_with_program(
+    seq_date_decl: DeclId,
+    join_decl: DeclId,
+    starts_with_decl: DeclId,
+    begin: &str,
+    end: &str,
+    increment: Option<i64>,
+    separator: &str,
+    expected_prefix: &str,
+) -> HirProgram {
+    let mut stmts = Vec::new();
+    let mut named = Vec::new();
+    let mut next_reg = 0u32;
+    for (name, lit) in [
+        ("begin-date", HirLiteral::String(begin.as_bytes().to_vec())),
+        ("end-date", HirLiteral::String(end.as_bytes().to_vec())),
+    ] {
+        let reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadLiteral { dst: reg, lit });
+        named.push((name.as_bytes().to_vec(), reg));
+    }
+    if let Some(increment) = increment {
+        let reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadLiteral {
+            dst: reg,
+            lit: HirLiteral::Int(increment),
+        });
+        named.push((b"increment".to_vec(), reg));
+    }
+
+    let seq_date_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::Call {
+        decl_id: seq_date_decl,
+        src_dst: seq_date_reg,
+        args: HirCallArgs {
+            named,
+            ..HirCallArgs::default()
+        },
+    });
+
+    let separator_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::LoadLiteral {
+        dst: separator_reg,
+        lit: HirLiteral::String(separator.as_bytes().to_vec()),
+    });
+
+    let join_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::Call {
+        decl_id: join_decl,
+        src_dst: join_reg,
+        args: HirCallArgs {
+            positional: vec![separator_reg],
+            pipeline_input: Some(seq_date_reg),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let prefix_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::LoadLiteral {
+        dst: prefix_reg,
+        lit: HirLiteral::String(expected_prefix.as_bytes().to_vec()),
+    });
+
+    let starts_with_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::Call {
+        decl_id: starts_with_decl,
+        src_dst: starts_with_reg,
+        args: HirCallArgs {
+            positional: vec![prefix_reg],
+            pipeline_input: Some(join_reg),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return {
+                src: starts_with_reg,
+            },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: next_reg,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_seq_join_then_starts_with_program(
     seq_decl: DeclId,
     join_decl: DeclId,
@@ -14262,6 +14407,154 @@ fn test_lower_seq_char_rejects_invalid_arguments() {
             &HashMap::new(),
         ) {
             Ok(_) => panic!("seq char should reject {context}"),
+            Err(err) => err,
+        };
+
+        assert!(
+            err.to_string().contains(expected_error),
+            "unexpected error for {context}: {err}"
+        );
+    }
+}
+
+#[test]
+fn test_lower_seq_date_range_feeds_str_join() {
+    let scenarios = [
+        (
+            "ascending increment",
+            "2020-01-01",
+            "2020-01-05",
+            Some(2),
+            ",",
+            "2020-01-01,2020-01-03,2020-01-05",
+        ),
+        (
+            "descending default",
+            "2020-01-03",
+            "2020-01-01",
+            None,
+            "|",
+            "2020-01-03|2020-01-02|2020-01-01",
+        ),
+    ];
+
+    for (index, (context, begin, end, increment, separator, expected)) in
+        scenarios.into_iter().enumerate()
+    {
+        let base_decl = 780 + index * 3;
+        let seq_date_decl = DeclId::new(base_decl);
+        let join_decl = DeclId::new(base_decl + 1);
+        let starts_with_decl = DeclId::new(base_decl + 2);
+        let hir = make_seq_date_join_then_starts_with_program(
+            seq_date_decl,
+            join_decl,
+            starts_with_decl,
+            begin,
+            end,
+            increment,
+            separator,
+            expected,
+        );
+        let decl_names = HashMap::from([
+            (seq_date_decl, "seq date".to_string()),
+            (join_decl, "str join".to_string()),
+            (starts_with_decl, "str starts-with".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("seq date {context} range should lower: {err}"));
+
+        assert!(
+            result
+                .program
+                .main
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .any(|inst| matches!(
+                    inst,
+                    MirInst::StringAppend {
+                        val_type: StringAppendType::Literal { bytes },
+                        ..
+                    } if bytes.starts_with(format!("{expected}\0").as_bytes())
+                )),
+            "expected seq date {context} range to feed str join with {expected}"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("seq date {context} range should compile: {err}"));
+    }
+}
+
+#[test]
+fn test_lower_seq_date_rejects_unsupported_forms() {
+    let scenarios = [
+        (
+            "missing begin-date",
+            vec![("end-date", HirLiteral::String(b"2020-01-03".to_vec()))],
+            Vec::new(),
+            "seq date requires explicit --begin-date and --end-date",
+        ),
+        (
+            "non-default output format",
+            vec![
+                ("begin-date", HirLiteral::String(b"2020-01-01".to_vec())),
+                ("end-date", HirLiteral::String(b"2020-01-03".to_vec())),
+                ("output-format", HirLiteral::String(b"%m/%d/%Y".to_vec())),
+            ],
+            Vec::new(),
+            "seq date does not accept named argument 'output-format'",
+        ),
+        (
+            "reverse flag",
+            vec![
+                ("begin-date", HirLiteral::String(b"2020-01-01".to_vec())),
+                ("end-date", HirLiteral::String(b"2020-01-03".to_vec())),
+            ],
+            vec!["reverse"],
+            "seq date does not accept named flags",
+        ),
+        (
+            "zero increment",
+            vec![
+                ("begin-date", HirLiteral::String(b"2020-01-01".to_vec())),
+                ("end-date", HirLiteral::String(b"2020-01-03".to_vec())),
+                ("increment", HirLiteral::Int(0)),
+            ],
+            Vec::new(),
+            "seq date --increment requires a positive integer day count",
+        ),
+        (
+            "over capacity",
+            vec![
+                ("begin-date", HirLiteral::String(b"2020-01-01".to_vec())),
+                ("end-date", HirLiteral::String(b"2020-03-15".to_vec())),
+            ],
+            Vec::new(),
+            "seq date output exceeds fixed string-list capacity 60",
+        ),
+    ];
+
+    for (index, (context, named_args, flags, expected_error)) in scenarios.into_iter().enumerate() {
+        let seq_date_decl = DeclId::new(790 + index);
+        let hir = make_seq_date_program(seq_date_decl, &named_args, &flags);
+        let decl_names = HashMap::from([(seq_date_decl, "seq date".to_string())]);
+
+        let err = match lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        ) {
+            Ok(_) => panic!("seq date should reject {context}"),
             Err(err) => err,
         };
 

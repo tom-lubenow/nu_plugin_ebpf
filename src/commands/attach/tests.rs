@@ -50,8 +50,9 @@ fn test_extract_decl_names_from_formatted_instructions_preserves_user_function_n
 }
 
 #[test]
-fn test_known_closure_commands_include_metadata_record_transpose() {
+fn test_known_closure_commands_include_metadata_commands() {
     assert!(super::compilation::is_known_closure_command("transpose"));
+    assert!(super::compilation::is_known_closure_command("seq date"));
 }
 
 #[test]

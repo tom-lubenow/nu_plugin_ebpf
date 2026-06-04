@@ -35296,6 +35296,46 @@ const FIXTURES = [
         error_contains: "seq char output exceeds fixed string-list capacity 60"
     }
     {
+        name: "core-seq-date-join"
+        category: "language-core"
+        tags: [aggregate list seq date str join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  seq date --begin-date "2020-01-01" --end-date "2020-01-05" --increment 2 | str join "," | str starts-with "2020-01-01,2020-01-03,2020-01-05"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-seq-date-length"
+        category: "language-core"
+        tags: [aggregate list seq date length]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  (seq date --begin-date "2020-01-05" --end-date "2020-01-01" | length) == 5'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-seq-date-over-capacity-reject"
+        category: "language-core"
+        tags: [aggregate list seq date reject]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  seq date --begin-date "2020-01-01" --end-date "2020-03-15" | length'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "seq date output exceeds fixed string-list capacity 60"
+    }
+    {
         name: "core-list-math-product"
         category: "language-core"
         tags: [aggregate list math product]
