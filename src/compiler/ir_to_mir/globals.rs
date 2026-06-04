@@ -174,6 +174,20 @@ fn type_spec_subject(
     }
 }
 
+fn graph_root_type_spec_subject(
+    spec: &str,
+    context: NamedTypeSpecContext,
+    record_path: Option<&str>,
+) -> String {
+    match record_path {
+        Some(_) => type_spec_subject(spec, context, record_path),
+        None => format!(
+            "{} graph root type spec '{spec}'",
+            context.diagnostic_name()
+        ),
+    }
+}
+
 fn array_type_spec_subject(
     spec: &str,
     context: NamedTypeSpecContext,
@@ -978,10 +992,10 @@ impl ParsedNamedGlobalType {
         };
 
         let parts = split_top_level_colon_parts(rest, spec, context, record_path)?;
+        let subject = graph_root_type_spec_subject(spec, context, record_path);
         if parts.len() < 2 || parts.len() > 3 {
             return Err(CompileError::UnsupportedInstruction(format!(
-                "map value graph root type spec '{}' must use {}:TYPE:FIELD or {}:TYPE:FIELD:record{{...}} syntax",
-                spec,
+                "{subject} must use {}:TYPE:FIELD or {}:TYPE:FIELD:record{{...}} syntax",
                 kind.root_struct_name(),
                 kind.root_struct_name()
             )));
@@ -990,15 +1004,13 @@ impl ParsedNamedGlobalType {
         let node_field = parts[1];
         if !Self::is_valid_kernel_type_name(value_type) {
             return Err(CompileError::UnsupportedInstruction(format!(
-                "map value graph root type spec '{}' requires a named object type like {}:node_data:node",
-                spec,
+                "{subject} requires a named object type like {}:node_data:node",
                 kind.root_struct_name()
             )));
         }
         if !Self::is_valid_kernel_type_name(node_field) {
             return Err(CompileError::UnsupportedInstruction(format!(
-                "map value graph root type spec '{}' requires a valid node field name like {}:node_data:node",
-                spec,
+                "{subject} requires a valid node field name like {}:node_data:node",
                 kind.root_struct_name()
             )));
         }
@@ -1006,8 +1018,7 @@ impl ParsedNamedGlobalType {
         let object_ty = if let Some(payload_spec) = parts.get(2) {
             if payload_spec.is_empty() {
                 return Err(CompileError::UnsupportedInstruction(format!(
-                    "map value graph root type spec '{}' has an empty object payload schema",
-                    spec
+                    "{subject} has an empty object payload schema"
                 )));
             }
             let payload = Self::parse_with_context_at_path(
@@ -1016,7 +1027,7 @@ impl ParsedNamedGlobalType {
                 record_path,
             )?;
             Some(Self::graph_object_type_from_payload(
-                kind, value_type, node_field, payload.ty, spec,
+                kind, value_type, node_field, payload.ty, &subject,
             )?)
         } else {
             None
@@ -1042,7 +1053,7 @@ impl ParsedNamedGlobalType {
         value_type: &str,
         node_field: &str,
         payload_ty: MirType,
-        spec: &str,
+        subject: &str,
     ) -> Result<MirType, CompileError> {
         let MirType::Struct {
             fields: payload_fields,
@@ -1050,8 +1061,7 @@ impl ParsedNamedGlobalType {
         } = payload_ty
         else {
             return Err(CompileError::UnsupportedInstruction(format!(
-                "map value graph root type spec '{}' requires the object payload schema to be record{{...}}",
-                spec
+                "{subject} requires the object payload schema to be record{{...}}"
             )));
         };
         if payload_fields
@@ -1059,8 +1069,7 @@ impl ParsedNamedGlobalType {
             .any(|field| !field.synthetic && field.name == node_field)
         {
             return Err(CompileError::UnsupportedInstruction(format!(
-                "map value graph root type spec '{}' object payload duplicates node field '{}'",
-                spec, node_field
+                "{subject} object payload duplicates node field '{node_field}'"
             )));
         }
 

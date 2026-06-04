@@ -34,6 +34,8 @@ documentation changes that matter to external alpha consumers.
   the offending field path in nested globals and map key/value schemas.
 - Improved nested map-value object type-spec diagnostics for dynptr, graph root,
   graph node, and kptr rejects so they report the offending record field.
+- Improved nested map-value graph-root schema diagnostics so malformed object
+  type, node field, and payload conflicts report the offending record field.
 - Improved typed `global-define` array initializer diagnostics so top-level
   bad items use `initializer[0]` style paths instead of record-field wording.
 - Added verifier coverage for BTF target diagnostic help, typed global

@@ -5404,6 +5404,9 @@ fn test_map_value_type_spec_rejects_graph_root_payload_duplicate_node_field() {
     .expect_err("graph object payload should not redeclare node field");
 
     let msg = err.to_string();
+    assert!(msg.contains(
+        "record field 'root' type spec 'bpf_list_head:node_data:node:record{node:u64,cookie:u64}'"
+    ));
     assert!(msg.contains("object payload duplicates node field"));
 }
 
@@ -5427,8 +5430,20 @@ fn test_map_value_type_spec_rejects_invalid_graph_root_schema() {
     .expect_err("invalid graph object type name should be rejected");
 
     let msg = err.to_string();
-    assert!(msg.contains("map value graph root type spec"));
+    assert!(msg.contains("record field 'root' type spec 'bpf_rb_root:rb-item:rb'"));
     assert!(msg.contains("requires a named object type"));
+}
+
+#[test]
+fn test_map_value_type_spec_rejects_invalid_graph_root_node_field_with_path() {
+    let err = HirToMirLowering::parse_named_map_value_type_spec(
+        "record{root:bpf_list_head:node_data:node-field,counter:u64}",
+    )
+    .expect_err("invalid graph node field name should be rejected");
+
+    let msg = err.to_string();
+    assert!(msg.contains("record field 'root' type spec 'bpf_list_head:node_data:node-field'"));
+    assert!(msg.contains("requires a valid node field name"));
 }
 
 #[test]

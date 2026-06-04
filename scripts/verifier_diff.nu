@@ -13810,6 +13810,21 @@ const FIXTURES = [
         error_contains: "map value type spec 'bpf_list_head:node_data:node:record{refs:bpf_refcount' has unmatched '{' braces"
     }
     {
+        name: "map-define-value-type-invalid-graph-root-field-rejects-path"
+        category: "maps"
+        tags: [maps map-define graph records diagnostics reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define graph_items --kind hash --value-type "record{root:bpf_list_head:node_data:node-field,cookie:u64}"'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "record field 'root' type spec 'bpf_list_head:node_data:node-field' requires a valid node field name"
+    }
+    {
         name: "map-define-key-type-duplicate-record-field-rejects-path"
         category: "maps"
         tags: [maps map-define records diagnostics reject]
