@@ -24,14 +24,20 @@ struct RuntimeStringIndexSearchBounds {
     empty_index: RuntimeStringEmptyIndex,
     dynamic_start: Option<RuntimeStringDynamicStart>,
     dynamic_end: Option<RuntimeStringDynamicEnd>,
-    empty_requires_known_len: bool,
 }
 
 #[derive(Clone, Copy)]
 enum RuntimeStringEmptyIndex {
+    Bound(RuntimeStringEmptyBound),
+    Max(RuntimeStringEmptyBound, RuntimeStringEmptyBound),
+}
+
+#[derive(Clone, Copy)]
+enum RuntimeStringEmptyBound {
     Const(i64),
     RuntimeLen,
     MinRuntimeLen(usize),
+    RuntimeLenMinus(usize),
 }
 
 #[derive(Clone, Copy)]
@@ -1624,12 +1630,6 @@ impl<'a> HirToMirLowering<'a> {
             })?;
 
             if operands.needle_len == 0 {
-                if bounds.empty_requires_known_len {
-                    return Err(CompileError::UnsupportedInstruction(
-                        "str index-of --range with an empty substring and negative runtime bound requires a compile-time known input string length in eBPF"
-                            .into(),
-                    ));
-                }
                 self.lower_runtime_string_index_empty_match(
                     result_vreg,
                     input_len_vreg,
@@ -1760,19 +1760,79 @@ impl<'a> HirToMirLowering<'a> {
         empty_index: RuntimeStringEmptyIndex,
     ) {
         match empty_index {
-            RuntimeStringEmptyIndex::Const(value) => {
+            RuntimeStringEmptyIndex::Bound(bound) => {
+                self.lower_runtime_string_empty_bound(result_vreg, input_len_vreg, bound);
+            }
+            RuntimeStringEmptyIndex::Max(lhs, rhs) => {
+                let lhs_vreg = self.func.alloc_vreg();
+                self.lower_runtime_string_empty_bound(lhs_vreg, input_len_vreg, lhs);
+                self.vreg_type_hints.insert(lhs_vreg, MirType::I64);
+
+                let rhs_vreg = self.func.alloc_vreg();
+                self.lower_runtime_string_empty_bound(rhs_vreg, input_len_vreg, rhs);
+                self.vreg_type_hints.insert(rhs_vreg, MirType::I64);
+
+                let lhs_is_greater = self.func.alloc_vreg();
+                self.emit(MirInst::BinOp {
+                    dst: lhs_is_greater,
+                    op: BinOpKind::Gt,
+                    lhs: MirValue::VReg(lhs_vreg),
+                    rhs: MirValue::VReg(rhs_vreg),
+                });
+                self.vreg_type_hints.insert(lhs_is_greater, MirType::Bool);
+
+                let lhs_block = self.func.alloc_block();
+                let rhs_block = self.func.alloc_block();
+                let continuation_block = self.func.alloc_block();
+                self.terminate(MirInst::Branch {
+                    cond: lhs_is_greater,
+                    if_true: lhs_block,
+                    if_false: rhs_block,
+                });
+
+                self.current_block = lhs_block;
+                self.emit(MirInst::Copy {
+                    dst: result_vreg,
+                    src: MirValue::VReg(lhs_vreg),
+                });
+                self.terminate(MirInst::Jump {
+                    target: continuation_block,
+                });
+
+                self.current_block = rhs_block;
+                self.emit(MirInst::Copy {
+                    dst: result_vreg,
+                    src: MirValue::VReg(rhs_vreg),
+                });
+                self.terminate(MirInst::Jump {
+                    target: continuation_block,
+                });
+
+                self.current_block = continuation_block;
+            }
+        }
+    }
+
+    fn lower_runtime_string_empty_bound(
+        &mut self,
+        result_vreg: VReg,
+        input_len_vreg: VReg,
+        bound: RuntimeStringEmptyBound,
+    ) {
+        match bound {
+            RuntimeStringEmptyBound::Const(value) => {
                 self.emit(MirInst::Copy {
                     dst: result_vreg,
                     src: MirValue::Const(value),
                 });
             }
-            RuntimeStringEmptyIndex::RuntimeLen => {
+            RuntimeStringEmptyBound::RuntimeLen => {
                 self.emit(MirInst::Copy {
                     dst: result_vreg,
                     src: MirValue::VReg(input_len_vreg),
                 });
             }
-            RuntimeStringEmptyIndex::MinRuntimeLen(bound) => {
+            RuntimeStringEmptyBound::MinRuntimeLen(bound) => {
                 if bound == 0 {
                     self.emit(MirInst::Copy {
                         dst: result_vreg,
@@ -1811,6 +1871,55 @@ impl<'a> HirToMirLowering<'a> {
                 self.emit(MirInst::Copy {
                     dst: result_vreg,
                     src: MirValue::Const(bound as i64),
+                });
+                self.terminate(MirInst::Jump {
+                    target: continuation_block,
+                });
+
+                self.current_block = continuation_block;
+            }
+            RuntimeStringEmptyBound::RuntimeLenMinus(distance) => {
+                if distance == 0 {
+                    self.emit(MirInst::Copy {
+                        dst: result_vreg,
+                        src: MirValue::VReg(input_len_vreg),
+                    });
+                    return;
+                }
+
+                let subtract_block = self.func.alloc_block();
+                let zero_block = self.func.alloc_block();
+                let continuation_block = self.func.alloc_block();
+                let len_is_greater = self.func.alloc_vreg();
+                self.emit(MirInst::BinOp {
+                    dst: len_is_greater,
+                    op: BinOpKind::Gt,
+                    lhs: MirValue::VReg(input_len_vreg),
+                    rhs: MirValue::Const(distance as i64),
+                });
+                self.vreg_type_hints.insert(len_is_greater, MirType::Bool);
+                self.terminate(MirInst::Branch {
+                    cond: len_is_greater,
+                    if_true: subtract_block,
+                    if_false: zero_block,
+                });
+
+                self.current_block = subtract_block;
+                self.emit(MirInst::BinOp {
+                    dst: result_vreg,
+                    op: BinOpKind::Sub,
+                    lhs: MirValue::VReg(input_len_vreg),
+                    rhs: MirValue::Const(distance as i64),
+                });
+                self.vreg_type_hints.insert(result_vreg, MirType::I64);
+                self.terminate(MirInst::Jump {
+                    target: continuation_block,
+                });
+
+                self.current_block = zero_block;
+                self.emit(MirInst::Copy {
+                    dst: result_vreg,
+                    src: MirValue::Const(0),
                 });
                 self.terminate(MirInst::Jump {
                     target: continuation_block,
@@ -3301,13 +3410,12 @@ impl<'a> HirToMirLowering<'a> {
                 search_start: 0,
                 search_end: input_max_len,
                 empty_index: if search_from_end {
-                    RuntimeStringEmptyIndex::RuntimeLen
+                    RuntimeStringEmptyIndex::Bound(RuntimeStringEmptyBound::RuntimeLen)
                 } else {
-                    RuntimeStringEmptyIndex::Const(0)
+                    RuntimeStringEmptyIndex::Bound(RuntimeStringEmptyBound::Const(0))
                 },
                 dynamic_start: None,
                 dynamic_end: None,
-                empty_requires_known_len: false,
             });
         };
         let range = self
@@ -3338,8 +3446,6 @@ impl<'a> HirToMirLowering<'a> {
                 end
             }
         });
-        let empty_requires_known_len =
-            range.start.is_some_and(|start| start < 0) || adjusted_end.is_some_and(|end| end < 0);
         let (search_end, dynamic_end) = match adjusted_end {
             Some(end) if end < 0 => match Self::runtime_negative_range_distance(end, input_max_len)
             {
@@ -3354,32 +3460,12 @@ impl<'a> HirToMirLowering<'a> {
         };
         let search_end = search_end.max(search_start);
 
-        let empty_start = range.start.unwrap_or(0);
+        let empty_start = Self::runtime_empty_start_bound(range.start, input_max_len);
         let empty_index = if search_from_end {
-            range
-                .end
-                .map_or(RuntimeStringEmptyIndex::RuntimeLen, |end| {
-                    let adjusted_end = if range.inclusive {
-                        end.saturating_add(1)
-                    } else {
-                        end
-                    };
-                    if adjusted_end < 0 || empty_start < 0 {
-                        RuntimeStringEmptyIndex::RuntimeLen
-                    } else {
-                        RuntimeStringEmptyIndex::MinRuntimeLen(
-                            adjusted_end.max(empty_start).min(input_max_len as i64) as usize,
-                        )
-                    }
-                })
+            let empty_end = Self::runtime_empty_end_bound(adjusted_end, input_max_len);
+            RuntimeStringEmptyIndex::Max(empty_start, empty_end)
         } else {
-            if empty_start < 0 {
-                RuntimeStringEmptyIndex::RuntimeLen
-            } else {
-                RuntimeStringEmptyIndex::MinRuntimeLen(
-                    empty_start.min(input_max_len as i64) as usize
-                )
-            }
+            RuntimeStringEmptyIndex::Bound(empty_start)
         };
 
         Ok(RuntimeStringIndexSearchBounds {
@@ -3388,7 +3474,6 @@ impl<'a> HirToMirLowering<'a> {
             empty_index,
             dynamic_start,
             dynamic_end,
-            empty_requires_known_len,
         })
     }
 
@@ -3396,6 +3481,47 @@ impl<'a> HirToMirLowering<'a> {
         debug_assert!(bound < 0);
         let distance = bound.saturating_abs() as usize;
         (distance < input_max_len).then_some(distance)
+    }
+
+    fn runtime_empty_start_bound(
+        start: Option<i64>,
+        input_max_len: usize,
+    ) -> RuntimeStringEmptyBound {
+        match start {
+            Some(start) if start < 0 => Self::runtime_negative_range_distance(start, input_max_len)
+                .map_or(
+                    RuntimeStringEmptyBound::Const(0),
+                    RuntimeStringEmptyBound::RuntimeLenMinus,
+                ),
+            Some(start) => Self::runtime_empty_min_len_bound(start, input_max_len),
+            None => RuntimeStringEmptyBound::Const(0),
+        }
+    }
+
+    fn runtime_empty_end_bound(
+        adjusted_end: Option<i64>,
+        input_max_len: usize,
+    ) -> RuntimeStringEmptyBound {
+        match adjusted_end {
+            Some(end) if end < 0 => Self::runtime_negative_range_distance(end, input_max_len)
+                .map_or(
+                    RuntimeStringEmptyBound::Const(0),
+                    RuntimeStringEmptyBound::RuntimeLenMinus,
+                ),
+            Some(end) => Self::runtime_empty_min_len_bound(end.max(0), input_max_len),
+            None => RuntimeStringEmptyBound::RuntimeLen,
+        }
+    }
+
+    fn runtime_empty_min_len_bound(bound: i64, input_max_len: usize) -> RuntimeStringEmptyBound {
+        let bound = bound.min(input_max_len as i64) as usize;
+        if bound == 0 {
+            RuntimeStringEmptyBound::Const(0)
+        } else if bound >= input_max_len {
+            RuntimeStringEmptyBound::RuntimeLen
+        } else {
+            RuntimeStringEmptyBound::MinRuntimeLen(bound)
+        }
     }
 
     fn capitalize_first_char(input: &str) -> String {

@@ -2157,21 +2157,141 @@ fn test_lower_global_get_string_index_of_negative_start_range_runtime_length() {
 }
 
 #[test]
-fn test_lower_global_get_string_index_of_empty_negative_range_runtime_length_is_rejected() {
-    let err = lower_global_get_string_index_of_runtime_length(
+fn test_lower_global_get_string_index_of_empty_negative_end_range_runtime_length() {
+    let result = lower_global_get_string_index_of_runtime_length(
         false,
         "",
         Some((Some(1), Some(-2), RangeInclusion::Inclusive)),
     )
-    .expect_err("empty runtime str index-of --range should reject negative bounds");
+    .expect("empty runtime str index-of --range should support a negative end bound");
 
-    match err {
-        CompileError::UnsupportedInstruction(message) => assert!(
-            message.contains("empty substring and negative runtime bound"),
-            "unexpected error: {message}"
-        ),
-        other => panic!("unexpected error: {other:?}"),
-    }
+    assert!(
+        !result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::StrCmp { .. })),
+        "expected empty negative-end runtime index-of --range not to compare bytes"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op: BinOpKind::Lt,
+                    rhs: MirValue::Const(1),
+                    ..
+                }
+            )),
+        "expected empty negative-end runtime index-of --range to clamp the positive start against runtime length"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("empty negative-end runtime index-of --range should compile through codegen");
+}
+
+#[test]
+fn test_lower_global_get_string_index_of_empty_negative_start_range_runtime_length() {
+    let result = lower_global_get_string_index_of_runtime_length(
+        false,
+        "",
+        Some((Some(-3), None, RangeInclusion::Inclusive)),
+    )
+    .expect("empty runtime str index-of --range should support a negative start bound");
+
+    assert!(
+        !result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::StrCmp { .. })),
+        "expected empty negative-start runtime index-of --range not to compare bytes"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op: BinOpKind::Sub,
+                    rhs: MirValue::Const(3),
+                    ..
+                }
+            )),
+        "expected empty negative-start runtime index-of --range to compute len - 3 when length permits"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("empty negative-start runtime index-of --range should compile through codegen");
+}
+
+#[test]
+fn test_lower_global_get_string_index_of_empty_end_negative_range_runtime_length() {
+    let result = lower_global_get_string_index_of_runtime_length(
+        true,
+        "",
+        Some((Some(1), Some(-2), RangeInclusion::Inclusive)),
+    )
+    .expect("empty runtime str index-of --end --range should support a negative end bound");
+
+    assert!(
+        !result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::StrCmp { .. })),
+        "expected empty negative-end runtime index-of --end --range not to compare bytes"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op: BinOpKind::Sub,
+                    rhs: MirValue::Const(1),
+                    ..
+                }
+            )),
+        "expected empty negative-end runtime index-of --end --range to compute the resolved end bound"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op: BinOpKind::Gt,
+                    lhs: MirValue::VReg(_),
+                    rhs: MirValue::VReg(_),
+                    ..
+                }
+            )),
+        "expected empty negative-end runtime index-of --end --range to select max(start, end)"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("empty negative-end runtime index-of --end --range should compile through codegen");
 }
 
 #[test]
