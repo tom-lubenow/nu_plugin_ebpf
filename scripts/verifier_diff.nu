@@ -31204,6 +31204,85 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "source-kfunc-rbtree-add-rejects-missing-spin-lock"
+        category: "helper-state"
+        tags: [kfunc object graph callback source reject]
+        requires: [kernel-btf]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  map-define rb_items --kind hash --value-type "record{lock:bpf_spin_lock,root:bpf_rb_root:rb_item:rb,cookie:u64}"'
+            '  let entry = (0 | map-get rb_items --kind hash)'
+            '  if $entry {'
+            '    let obj = (kfunc-call "bpf_obj_new_impl" 1 0)'
+            '    if $obj {'
+            '      kfunc-call "bpf_rbtree_add_impl" $entry.root $obj {|a b| 0} 0 0'
+            '    }'
+            '  }'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "requires bpf_spin_lock from the same map value"
+    }
+    {
+        name: "source-kfunc-rbtree-add-same-key-repeated-map-root"
+        category: "helper-state"
+        tags: [kfunc object graph callback source accept]
+        requires: [kernel-btf]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  map-define rb_items --kind hash --value-type "record{lock:bpf_spin_lock,root:bpf_rb_root:rb_item:rb,cookie:u64}"'
+            '  let key = 0'
+            '  let lock_entry = ($key | map-get rb_items --kind hash)'
+            '  if $lock_entry {'
+            '    let root_entry = ($key | map-get rb_items --kind hash)'
+            '    if $root_entry {'
+            '      let obj = (kfunc-call "bpf_obj_new_impl" 1 0)'
+            '      if $obj {'
+            '        helper-call "bpf_spin_lock" $lock_entry.lock'
+            '        kfunc-call "bpf_rbtree_add_impl" $root_entry.root $obj {|a b| 0} 0 0'
+            '        helper-call "bpf_spin_unlock" $lock_entry.lock'
+            '      }'
+            '    }'
+            '  }'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "source-kfunc-rbtree-add-rejects-different-key-repeated-map-root"
+        category: "helper-state"
+        tags: [kfunc object graph callback source reject]
+        requires: [kernel-btf]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  map-define rb_items --kind hash --value-type "record{lock:bpf_spin_lock,root:bpf_rb_root:rb_item:rb,cookie:u64}"'
+            '  let lock_entry = (0 | map-get rb_items --kind hash)'
+            '  if $lock_entry {'
+            '    let root_entry = (1 | map-get rb_items --kind hash)'
+            '    if $root_entry {'
+            '      let obj = (kfunc-call "bpf_obj_new_impl" 1 0)'
+            '      if $obj {'
+            '        helper-call "bpf_spin_lock" $lock_entry.lock'
+            '        kfunc-call "bpf_rbtree_add_impl" $root_entry.root $obj {|a b| 0} 0 0'
+            '        helper-call "bpf_spin_unlock" $lock_entry.lock'
+            '      }'
+            '    }'
+            '  }'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "requires bpf_spin_lock from the same map value"
+    }
+    {
         name: "source-kfunc-rbtree-add-rejects-dynamic-meta"
         category: "helper-state"
         tags: [kfunc object graph callback source reject]
