@@ -376,6 +376,40 @@ impl ProbeContext {
         }
     }
 
+    pub(crate) fn btf_target_resolution_error(&self, message: String) -> String {
+        if !self.btf_resolution_reason_supports_target_help(&message) {
+            return message;
+        }
+
+        let Some(help) = self
+            .program_type()
+            .kernel_target_validation()
+            .and_then(|kind| kind.unsupported_target_help())
+        else {
+            return message;
+        };
+
+        format!("{message}; {help}")
+    }
+
+    fn btf_resolution_reason_supports_target_help(&self, reason: &str) -> bool {
+        reason.contains("failed to read /sys/kernel/btf/vmlinux")
+            || reason.contains("failed to parse")
+            || self.btf_callable_not_found_reason_mentions_target(reason)
+            || reason.contains("missing a function prototype in kernel BTF")
+            || reason.contains("unsupported trampoline type")
+    }
+
+    fn btf_callable_not_found_reason_mentions_target(&self, reason: &str) -> bool {
+        let callable_name = match self.btf_callable_surface() {
+            Some(ProgramBtfCallableSurface::TpBtf) => format!("btf_trace_{}", self.target),
+            Some(ProgramBtfCallableSurface::LsmHook) => format!("bpf_lsm_{}", self.target),
+            Some(ProgramBtfCallableSurface::FunctionTrampoline) => self.target.clone(),
+            Some(ProgramBtfCallableSurface::StructOpsCallback) | None => return false,
+        };
+        reason.contains(&format!("Type '{callable_name}' not found"))
+    }
+
     pub(crate) fn btf_arg_unavailable_error(&self, arg_idx: usize) -> String {
         format!(
             "ctx.arg{} is not available on {}",
@@ -419,31 +453,31 @@ impl ProbeContext {
             Some(ProgramBtfCallableSurface::TpBtf) => btf
                 .tp_btf_arg_index_by_name(&self.target, arg_name)
                 .map_err(|e| {
-                    format!(
+                    self.btf_target_resolution_error(format!(
                         "failed to resolve ctx.arg.{} for tp_btf:{}: {}",
                         arg_name, self.target, e
-                    )
+                    ))
                 }),
             Some(ProgramBtfCallableSurface::LsmHook) => btf
                 .lsm_hook_arg_index_by_name(&self.target, arg_name)
                 .map_err(|e| {
-                    format!(
+                    self.btf_target_resolution_error(format!(
                         "failed to resolve ctx.arg.{} for {}: {}",
                         arg_name,
                         self.btf_context_label(),
                         e
-                    )
+                    ))
                 }),
             Some(ProgramBtfCallableSurface::FunctionTrampoline) => btf
                 .function_trampoline_arg_index_by_name(&self.target, arg_name)
                 .map_err(|e| {
-                    format!(
+                    self.btf_target_resolution_error(format!(
                         "failed to resolve ctx.arg.{} for {}:{}: {}",
                         arg_name,
                         self.program_type().section_prefix(),
                         self.target,
                         e
-                    )
+                    ))
                 }),
             None => Ok(None),
         }
@@ -471,32 +505,32 @@ impl ProbeContext {
             }
             Some(ProgramBtfCallableSurface::TpBtf) => {
                 btf.tp_btf_arg(&self.target, arg_idx).map_err(|e| {
-                    format!(
+                    self.btf_target_resolution_error(format!(
                         "failed to resolve ctx.arg{} for tp_btf:{}: {}",
                         arg_idx, self.target, e
-                    )
+                    ))
                 })
             }
             Some(ProgramBtfCallableSurface::LsmHook) => {
                 btf.lsm_hook_arg(&self.target, arg_idx).map_err(|e| {
-                    format!(
+                    self.btf_target_resolution_error(format!(
                         "failed to resolve ctx.arg{} for {}: {}",
                         arg_idx,
                         self.btf_context_label(),
                         e
-                    )
+                    ))
                 })
             }
             Some(ProgramBtfCallableSurface::FunctionTrampoline) => btf
                 .function_trampoline_arg(&self.target, arg_idx)
                 .map_err(|e| {
-                    format!(
+                    self.btf_target_resolution_error(format!(
                         "failed to resolve ctx.arg{} for {}:{}: {}",
                         arg_idx,
                         self.program_type().section_prefix(),
                         self.target,
                         e
-                    )
+                    ))
                 }),
             None => Ok(None),
         }
@@ -521,30 +555,30 @@ impl ProbeContext {
             }
             Some(ProgramBtfCallableSurface::TpBtf) => {
                 btf.tp_btf_arg_infos(&self.target).map_err(|e| {
-                    format!(
+                    self.btf_target_resolution_error(format!(
                         "failed to resolve context arguments for tp_btf:{}: {}",
                         self.target, e
-                    )
+                    ))
                 })
             }
             Some(ProgramBtfCallableSurface::LsmHook) => {
                 btf.lsm_hook_arg_infos(&self.target).map_err(|e| {
-                    format!(
+                    self.btf_target_resolution_error(format!(
                         "failed to resolve context arguments for {}: {}",
                         self.btf_context_label(),
                         e
-                    )
+                    ))
                 })
             }
             Some(ProgramBtfCallableSurface::FunctionTrampoline) => btf
                 .function_trampoline_arg_infos(&self.target)
                 .map_err(|e| {
-                    format!(
+                    self.btf_target_resolution_error(format!(
                         "failed to resolve context arguments for {}:{}: {}",
                         self.program_type().section_prefix(),
                         self.target,
                         e
-                    )
+                    ))
                 }),
             None => Ok(Vec::new()),
         }
@@ -570,31 +604,31 @@ impl ProbeContext {
             Some(ProgramBtfCallableSurface::TpBtf) => btf
                 .tp_btf_arg_type_info(&self.target, arg_idx)
                 .map_err(|e| {
-                    format!(
+                    self.btf_target_resolution_error(format!(
                         "failed to resolve ctx.arg{} type for tp_btf:{}: {}",
                         arg_idx, self.target, e
-                    )
+                    ))
                 }),
             Some(ProgramBtfCallableSurface::LsmHook) => btf
                 .lsm_hook_arg_type_info(&self.target, arg_idx)
                 .map_err(|e| {
-                    format!(
+                    self.btf_target_resolution_error(format!(
                         "failed to resolve ctx.arg{} type for {}: {}",
                         arg_idx,
                         self.btf_context_label(),
                         e
-                    )
+                    ))
                 }),
             Some(ProgramBtfCallableSurface::FunctionTrampoline) => btf
                 .function_trampoline_arg_type_info(&self.target, arg_idx)
                 .map_err(|e| {
-                    format!(
+                    self.btf_target_resolution_error(format!(
                         "failed to resolve ctx.arg{} type for {}:{}: {}",
                         arg_idx,
                         self.program_type().section_prefix(),
                         self.target,
                         e
-                    )
+                    ))
                 }),
             None => Ok(None),
         }
@@ -630,33 +664,33 @@ impl ProbeContext {
             Some(ProgramBtfCallableSurface::TpBtf) => btf
                 .tp_btf_arg_field(&self.target, arg_idx, field_path)
                 .map_err(|e| {
-                    format!(
+                    self.btf_target_resolution_error(format!(
                         "failed to resolve ctx.arg{}.{} for tp_btf:{}: {}",
                         arg_idx, path_desc, self.target, e
-                    )
+                    ))
                 }),
             Some(ProgramBtfCallableSurface::LsmHook) => btf
                 .lsm_hook_arg_field(&self.target, arg_idx, field_path)
                 .map_err(|e| {
-                    format!(
+                    self.btf_target_resolution_error(format!(
                         "failed to resolve ctx.arg{}.{} for {}: {}",
                         arg_idx,
                         path_desc,
                         self.btf_context_label(),
                         e
-                    )
+                    ))
                 }),
             Some(ProgramBtfCallableSurface::FunctionTrampoline) => btf
                 .function_trampoline_arg_field(&self.target, arg_idx, field_path)
                 .map_err(|e| {
-                    format!(
+                    self.btf_target_resolution_error(format!(
                         "failed to resolve ctx.arg{}.{} for {}:{}: {}",
                         arg_idx,
                         path_desc,
                         self.program_type().section_prefix(),
                         self.target,
                         e
-                    )
+                    ))
                 }),
             None => Ok(None),
         }
@@ -670,11 +704,11 @@ impl ProbeContext {
         KernelBtf::get()
             .function_trampoline_ret(&self.target)
             .map_err(|e| {
-                format!(
+                self.btf_target_resolution_error(format!(
                     "failed to resolve ctx.retval for {}: {}",
                     self.btf_context_label(),
                     e
-                )
+                ))
             })
     }
 
@@ -686,11 +720,11 @@ impl ProbeContext {
         KernelBtf::get()
             .function_trampoline_ret_type_info(&self.target)
             .map_err(|e| {
-                format!(
+                self.btf_target_resolution_error(format!(
                     "failed to resolve ctx.retval type for {}: {}",
                     self.btf_context_label(),
                     e
-                )
+                ))
             })
     }
 
@@ -782,12 +816,12 @@ impl ProbeContext {
         KernelBtf::get()
             .function_trampoline_ret_field(&self.target, field_path)
             .map_err(|e| {
-                format!(
+                self.btf_target_resolution_error(format!(
                     "failed to resolve ctx.retval.{} for {}: {}",
                     path_desc,
                     self.btf_context_label(),
                     e
-                )
+                ))
             })
     }
 

@@ -13065,6 +13065,22 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "tp-btf-missing-target-help-reject"
+        category: "tracing"
+        tags: [tp-btf context diagnostic reject]
+        requires: [kernel-btf]
+        target: "tp_btf:nu_plugin_ebpf_missing_tracepoint_for_help"
+        program: [
+            '{|ctx|'
+            '  ($ctx.arg0.orig_ax + $ctx.pid) | count'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "tracepoint name"
+    }
+    {
         name: "fentry-context"
         category: "tracing"
         tags: [fentry context]
@@ -13177,6 +13193,22 @@ const FIXTURES = [
         error_contains: "helper 'bpf_get_func_ret' is only valid in fexit and fmod_ret programs"
     }
     {
+        name: "fentry-missing-target-help-reject"
+        category: "tracing"
+        tags: [fentry context diagnostic reject]
+        requires: [kernel-btf]
+        target: "fentry:nu_plugin_ebpf_missing_function_for_help"
+        program: [
+            '{|ctx|'
+            '  ($ctx.arg.file.f_flags + $ctx.pid) | count'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "target signature"
+    }
+    {
         name: "fexit-sleepable-context"
         category: "tracing"
         tags: [fexit sleepable context]
@@ -13266,6 +13298,22 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
+    }
+    {
+        name: "lsm-missing-target-help-reject"
+        category: "tracing"
+        tags: [lsm context diagnostic reject]
+        requires: [kernel-btf]
+        target: "lsm:nu_plugin_ebpf_missing_hook_for_help"
+        program: [
+            '{|ctx|'
+            '  ($ctx.arg.file.f_flags + $ctx.pid) | count'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "LSM hook name"
     }
     {
         name: "lsm-cgroup-context"

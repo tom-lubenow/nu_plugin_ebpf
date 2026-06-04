@@ -699,6 +699,56 @@ fn test_kernel_target_validation_help_is_modeled() {
 }
 
 #[test]
+fn test_btf_target_resolution_errors_include_actionable_help() {
+    let fentry = ProbeContext::new(EbpfProgramType::Fentry, "missing_kernel_symbol");
+    let fentry_error = fentry.btf_target_resolution_error(
+        "failed to resolve ctx.arg0 for fentry:missing_kernel_symbol: Type 'missing_kernel_symbol' not found"
+            .into(),
+    );
+    assert!(fentry_error.contains("fentry:missing_kernel_symbol"));
+    assert!(fentry_error.contains("trampoline-compatible target signature"));
+    assert!(fentry_error.contains("use kprobe/kretprobe for broader coverage"));
+
+    let tp_btf = ProbeContext::new(EbpfProgramType::TpBtf, "missing_tracepoint");
+    let tp_btf_error = tp_btf.btf_target_resolution_error(
+        "failed to resolve ctx.arg0 for tp_btf:missing_tracepoint: Type 'btf_trace_missing_tracepoint' not found"
+            .into(),
+    );
+    assert!(tp_btf_error.contains("tp_btf:missing_tracepoint"));
+    assert!(tp_btf_error.contains("BTF-enabled tracepoint name"));
+    assert!(tp_btf_error.contains("Use raw_tracepoint or ordinary tracepoint targets"));
+
+    let lsm = ProbeContext::new(EbpfProgramType::Lsm, "missing_hook");
+    let lsm_error = lsm.btf_target_resolution_error(
+        "failed to resolve ctx.arg0 for lsm:missing_hook: Type 'bpf_lsm_missing_hook' not found"
+            .into(),
+    );
+    assert!(lsm_error.contains("lsm:missing_hook"));
+    assert!(lsm_error.contains("valid LSM hook name"));
+    assert!(lsm_error.contains("use a different probe family for non-LSM targets"));
+}
+
+#[test]
+fn test_btf_field_resolution_errors_do_not_include_target_help() {
+    let fentry = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
+    let field_error = fentry.btf_target_resolution_error(
+        "failed to resolve ctx.arg0.missing for fentry:security_file_open: Kernel BTF error: kernel BTF type 'file' has no member 'missing'"
+            .into(),
+    );
+    assert!(field_error.contains("has no member 'missing'"));
+    assert!(!field_error.contains("trampoline-compatible target signature"));
+    assert!(!field_error.contains("use kprobe/kretprobe"));
+
+    let nested_type_error = fentry.btf_target_resolution_error(
+        "failed to resolve ctx.arg0.child for fentry:security_file_open: Type 'unrelated_nested_type' not found"
+            .into(),
+    );
+    assert!(nested_type_error.contains("Type 'unrelated_nested_type' not found"));
+    assert!(!nested_type_error.contains("trampoline-compatible target signature"));
+    assert!(!nested_type_error.contains("use kprobe/kretprobe"));
+}
+
+#[test]
 fn test_program_type_metadata_for_raw_tracepoint() {
     let info = EbpfProgramType::RawTracepoint.info();
     assert_eq!(info.canonical_prefix, "raw_tracepoint");
