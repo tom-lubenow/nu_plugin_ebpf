@@ -28571,6 +28571,120 @@ fn make_bytes_at_list_get_then_pipeline_call_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_bytes_at_list_access_then_pipeline_call_program(
+    at_decl: DeclId,
+    access_decl: DeclId,
+    consumer_decl: DeclId,
+    items: &[&[u8]],
+    start: Option<i64>,
+    end: Option<i64>,
+    inclusion: RangeInclusion,
+    consumer_arg: Option<HirLiteral>,
+) -> HirProgram {
+    let item_count = items.len();
+    let item_count_u32 = u32::try_from(item_count).expect("test binary-list length fits in u32");
+    let mut stmts = vec![HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List {
+            capacity: item_count,
+        },
+    }];
+
+    for (index, item) in items.iter().enumerate() {
+        let item_reg = RegId::new(u32::try_from(index).expect("test index fits in u32") + 1);
+        stmts.push(HirStmt::LoadLiteral {
+            dst: item_reg,
+            lit: HirLiteral::Binary(item.to_vec()),
+        });
+        stmts.push(HirStmt::ListPush {
+            src_dst: RegId::new(0),
+            item: item_reg,
+        });
+    }
+
+    let range_start_reg = RegId::new(item_count_u32 + 1);
+    let range_step_reg = RegId::new(item_count_u32 + 2);
+    let range_end_reg = RegId::new(item_count_u32 + 3);
+    let range_reg = RegId::new(item_count_u32 + 4);
+    let sliced_reg = RegId::new(item_count_u32 + 5);
+    let access_reg = RegId::new(item_count_u32 + 6);
+
+    stmts.push(HirStmt::LoadLiteral {
+        dst: range_start_reg,
+        lit: start.map_or(HirLiteral::Nothing, HirLiteral::Int),
+    });
+    stmts.push(HirStmt::LoadLiteral {
+        dst: range_step_reg,
+        lit: HirLiteral::Int(1),
+    });
+    stmts.push(HirStmt::LoadLiteral {
+        dst: range_end_reg,
+        lit: end.map_or(HirLiteral::Nothing, HirLiteral::Int),
+    });
+    stmts.push(HirStmt::LoadLiteral {
+        dst: range_reg,
+        lit: HirLiteral::Range {
+            start: range_start_reg,
+            step: range_step_reg,
+            end: range_end_reg,
+            inclusion,
+        },
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: at_decl,
+        src_dst: sliced_reg,
+        args: HirCallArgs {
+            positional: vec![range_reg],
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: access_decl,
+        src_dst: access_reg,
+        args: HirCallArgs {
+            pipeline_input: Some(sliced_reg),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let mut consumer_args = HirCallArgs {
+        pipeline_input: Some(access_reg),
+        ..HirCallArgs::default()
+    };
+    let consumer_reg = if let Some(arg) = consumer_arg {
+        let arg_reg = RegId::new(item_count_u32 + 7);
+        stmts.push(HirStmt::LoadLiteral {
+            dst: arg_reg,
+            lit: arg,
+        });
+        consumer_args.positional.push(arg_reg);
+        RegId::new(item_count_u32 + 8)
+    } else {
+        RegId::new(item_count_u32 + 7)
+    };
+    stmts.push(HirStmt::Call {
+        decl_id: consumer_decl,
+        src_dst: consumer_reg,
+        args: consumer_args,
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: consumer_reg },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: consumer_reg.get() + 1,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 #[test]
 fn test_lower_bytes_at_materializes_non_empty_slice() {
     let bytes_at_decl = DeclId::new(224);
@@ -28928,6 +29042,73 @@ fn test_lower_bytes_at_binary_list_folds_unmaterializable_slices_through_get() {
         compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
             .unwrap_or_else(|err| {
                 panic!("bytes at {context} consumed through get should compile: {err}")
+            });
+    }
+}
+
+#[test]
+fn test_lower_bytes_at_binary_list_folds_unmaterializable_slices_through_first_last() {
+    let scenarios = [
+        (
+            "unequal last non-empty slice",
+            "last",
+            vec![&[0x01][..], &[0x02, 0x03][..]],
+            Some(0),
+            Some(2),
+            "bytes starts-with",
+            Some(HirLiteral::Binary(vec![0x02, 0x03])),
+            1,
+        ),
+        (
+            "empty first slice",
+            "first",
+            vec![&[0x01][..], &[0x02][..]],
+            Some(1),
+            Some(0),
+            "bytes length",
+            None,
+            0,
+        ),
+    ];
+
+    for (index, (context, access, items, start, end, consumer, consumer_arg, expected)) in
+        scenarios.into_iter().enumerate()
+    {
+        let base_decl = 759 + index * 3;
+        let bytes_at_decl = DeclId::new(base_decl);
+        let access_decl = DeclId::new(base_decl + 1);
+        let consumer_decl = DeclId::new(base_decl + 2);
+        let hir = make_bytes_at_list_access_then_pipeline_call_program(
+            bytes_at_decl,
+            access_decl,
+            consumer_decl,
+            &items,
+            start,
+            end,
+            RangeInclusion::Inclusive,
+            consumer_arg,
+        );
+        let decl_names = HashMap::from([
+            (bytes_at_decl, "bytes at".to_string()),
+            (access_decl, access.to_string()),
+            (consumer_decl, consumer.to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("bytes at should fold {context} through {access}: {err}"));
+
+        assert_program_returns_constant(&result.program, expected, context);
+        assert_no_runtime_list_operations(&result.program, context);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("bytes at {context} consumed through {access} should compile: {err}")
             });
     }
 }
@@ -29532,6 +29713,116 @@ fn make_bytes_add_list_get_then_pipeline_call_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_bytes_add_list_access_then_pipeline_call_program(
+    add_decl: DeclId,
+    access_decl: DeclId,
+    consumer_decl: DeclId,
+    items: &[&[u8]],
+    data: Vec<u8>,
+    index: Option<i64>,
+    from_end: bool,
+    consumer_arg: Option<HirLiteral>,
+) -> HirProgram {
+    let item_count = items.len();
+    let item_count_u32 = u32::try_from(item_count).expect("test binary-list length fits in u32");
+    let mut stmts = vec![HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List {
+            capacity: item_count,
+        },
+    }];
+
+    for (item_index, item) in items.iter().enumerate() {
+        let item_reg = RegId::new(u32::try_from(item_index).expect("test index fits in u32") + 1);
+        stmts.push(HirStmt::LoadLiteral {
+            dst: item_reg,
+            lit: HirLiteral::Binary(item.to_vec()),
+        });
+        stmts.push(HirStmt::ListPush {
+            src_dst: RegId::new(0),
+            item: item_reg,
+        });
+    }
+
+    let data_reg = RegId::new(item_count_u32 + 1);
+    let index_reg = index.map(|raw_index| {
+        let reg = RegId::new(item_count_u32 + 2);
+        stmts.push(HirStmt::LoadLiteral {
+            dst: reg,
+            lit: HirLiteral::Int(raw_index),
+        });
+        reg
+    });
+    let added_reg = RegId::new(item_count_u32 + 2 + u32::from(index_reg.is_some()));
+    let access_reg = RegId::new(added_reg.get() + 1);
+
+    stmts.push(HirStmt::LoadLiteral {
+        dst: data_reg,
+        lit: HirLiteral::Binary(data),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: add_decl,
+        src_dst: added_reg,
+        args: HirCallArgs {
+            positional: vec![data_reg],
+            named: index_reg
+                .map(|reg| vec![(b"index".to_vec(), reg)])
+                .unwrap_or_default(),
+            pipeline_input: Some(RegId::new(0)),
+            flags: if from_end {
+                vec![b"end".to_vec()]
+            } else {
+                Vec::new()
+            },
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: access_decl,
+        src_dst: access_reg,
+        args: HirCallArgs {
+            pipeline_input: Some(added_reg),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let mut consumer_args = HirCallArgs {
+        pipeline_input: Some(access_reg),
+        ..HirCallArgs::default()
+    };
+    let consumer_reg = if let Some(arg) = consumer_arg {
+        let arg_reg = RegId::new(access_reg.get() + 1);
+        stmts.push(HirStmt::LoadLiteral {
+            dst: arg_reg,
+            lit: arg,
+        });
+        consumer_args.positional.push(arg_reg);
+        RegId::new(access_reg.get() + 2)
+    } else {
+        RegId::new(access_reg.get() + 1)
+    };
+    stmts.push(HirStmt::Call {
+        decl_id: consumer_decl,
+        src_dst: consumer_reg,
+        args: consumer_args,
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: consumer_reg },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: consumer_reg.get() + 1,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 #[test]
 fn test_lower_bytes_add_with_index_materializes_inserted_binary() {
     let bytes_add_decl = DeclId::new(227);
@@ -29840,6 +30131,71 @@ fn test_lower_bytes_add_binary_list_folds_unmaterializable_results_through_get()
         compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
             .unwrap_or_else(|err| {
                 panic!("bytes add {context} consumed through get should compile: {err}")
+            });
+    }
+}
+
+#[test]
+fn test_lower_bytes_add_binary_list_folds_unmaterializable_results_through_first_last() {
+    let scenarios = [
+        (
+            "unequal last non-empty result",
+            "last",
+            vec![&[0x01][..], &[0x02, 0x03][..]],
+            Vec::new(),
+            "bytes starts-with",
+            Some(HirLiteral::Binary(vec![0x02, 0x03])),
+            1,
+        ),
+        (
+            "empty first result",
+            "first",
+            vec![&[][..], &[][..]],
+            Vec::new(),
+            "bytes length",
+            None,
+            0,
+        ),
+    ];
+
+    for (index, (context, access, items, data, consumer, consumer_arg, expected)) in
+        scenarios.into_iter().enumerate()
+    {
+        let base_decl = 765 + index * 3;
+        let bytes_add_decl = DeclId::new(base_decl);
+        let access_decl = DeclId::new(base_decl + 1);
+        let consumer_decl = DeclId::new(base_decl + 2);
+        let hir = make_bytes_add_list_access_then_pipeline_call_program(
+            bytes_add_decl,
+            access_decl,
+            consumer_decl,
+            &items,
+            data,
+            None,
+            false,
+            consumer_arg,
+        );
+        let decl_names = HashMap::from([
+            (bytes_add_decl, "bytes add".to_string()),
+            (access_decl, access.to_string()),
+            (consumer_decl, consumer.to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("bytes add should fold {context} through {access}: {err}"));
+
+        assert_program_returns_constant(&result.program, expected, context);
+        assert_no_runtime_list_operations(&result.program, context);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("bytes add {context} consumed through {access} should compile: {err}")
             });
     }
 }
@@ -30428,6 +30784,82 @@ fn make_bytes_pattern_transform_list_get_then_pipeline_call_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_bytes_pattern_transform_list_access_then_pipeline_call_program(
+    transform_decl: DeclId,
+    access_decl: DeclId,
+    consumer_decl: DeclId,
+    command: &str,
+    items: &[&[u8]],
+    pattern: Vec<u8>,
+    replacement: Option<Vec<u8>>,
+    flags: Vec<&str>,
+    consumer_arg: Option<HirLiteral>,
+) -> HirProgram {
+    let mut stmts = Vec::new();
+    let (input_reg, positional, next_reg) =
+        make_bytes_pattern_transform_list_prefix(&mut stmts, items, pattern, replacement, command);
+    let transformed_reg = RegId::new(next_reg);
+    let access_reg = RegId::new(next_reg + 1);
+
+    stmts.push(HirStmt::Call {
+        decl_id: transform_decl,
+        src_dst: transformed_reg,
+        args: HirCallArgs {
+            positional,
+            pipeline_input: Some(input_reg),
+            flags: flags
+                .into_iter()
+                .map(|flag| flag.as_bytes().to_vec())
+                .collect(),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: access_decl,
+        src_dst: access_reg,
+        args: HirCallArgs {
+            pipeline_input: Some(transformed_reg),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let mut consumer_args = HirCallArgs {
+        pipeline_input: Some(access_reg),
+        ..HirCallArgs::default()
+    };
+    let consumer_reg = if let Some(arg) = consumer_arg {
+        let arg_reg = RegId::new(access_reg.get() + 1);
+        stmts.push(HirStmt::LoadLiteral {
+            dst: arg_reg,
+            lit: arg,
+        });
+        consumer_args.positional.push(arg_reg);
+        RegId::new(access_reg.get() + 2)
+    } else {
+        RegId::new(access_reg.get() + 1)
+    };
+    stmts.push(HirStmt::Call {
+        decl_id: consumer_decl,
+        src_dst: consumer_reg,
+        args: consumer_args,
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: consumer_reg },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: consumer_reg.get() + 1,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 #[test]
 fn test_lower_bytes_remove_materializes_first_removed_binary() {
     let bytes_remove_decl = DeclId::new(233);
@@ -30796,6 +31228,72 @@ fn test_lower_bytes_remove_binary_list_folds_unmaterializable_results_through_ge
         compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
             .unwrap_or_else(|err| {
                 panic!("bytes remove {context} consumed through get should compile: {err}")
+            });
+    }
+}
+
+#[test]
+fn test_lower_bytes_remove_binary_list_folds_unmaterializable_results_through_first_last() {
+    let scenarios = [
+        (
+            "unequal last non-empty result",
+            "last",
+            vec![&[0x01][..], &[0x02, 0x03][..]],
+            vec![0xff],
+            "bytes starts-with",
+            Some(HirLiteral::Binary(vec![0x02, 0x03])),
+            1,
+        ),
+        (
+            "empty first result",
+            "first",
+            vec![&[0x10][..], &[0x10][..]],
+            vec![0x10],
+            "bytes length",
+            None,
+            0,
+        ),
+    ];
+
+    for (index, (context, access, items, pattern, consumer, consumer_arg, expected)) in
+        scenarios.into_iter().enumerate()
+    {
+        let base_decl = 771 + index * 3;
+        let bytes_remove_decl = DeclId::new(base_decl);
+        let access_decl = DeclId::new(base_decl + 1);
+        let consumer_decl = DeclId::new(base_decl + 2);
+        let hir = make_bytes_pattern_transform_list_access_then_pipeline_call_program(
+            bytes_remove_decl,
+            access_decl,
+            consumer_decl,
+            "bytes remove",
+            &items,
+            pattern,
+            None,
+            Vec::new(),
+            consumer_arg,
+        );
+        let decl_names = HashMap::from([
+            (bytes_remove_decl, "bytes remove".to_string()),
+            (access_decl, access.to_string()),
+            (consumer_decl, consumer.to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("bytes remove should fold {context} through {access}: {err}"));
+
+        assert_program_returns_constant(&result.program, expected, context);
+        assert_no_runtime_list_operations(&result.program, context);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("bytes remove {context} consumed through {access} should compile: {err}")
             });
     }
 }
@@ -31223,6 +31721,74 @@ fn test_lower_bytes_replace_binary_list_folds_unmaterializable_results_through_g
         compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
             .unwrap_or_else(|err| {
                 panic!("bytes replace {context} consumed through get should compile: {err}")
+            });
+    }
+}
+
+#[test]
+fn test_lower_bytes_replace_binary_list_folds_unmaterializable_results_through_first_last() {
+    let scenarios = [
+        (
+            "unequal last non-empty result",
+            "last",
+            vec![&[0x10, 0xaa][..], &[0x10, 0xbb, 0xcc][..]],
+            Vec::new(),
+            "bytes starts-with",
+            Some(HirLiteral::Binary(vec![0xbb, 0xcc])),
+            1,
+        ),
+        (
+            "empty first result",
+            "first",
+            vec![&[0x10][..], &[0x10][..]],
+            Vec::new(),
+            "bytes length",
+            None,
+            0,
+        ),
+    ];
+
+    for (index, (context, access, items, replacement, consumer, consumer_arg, expected)) in
+        scenarios.into_iter().enumerate()
+    {
+        let base_decl = 777 + index * 3;
+        let bytes_replace_decl = DeclId::new(base_decl);
+        let access_decl = DeclId::new(base_decl + 1);
+        let consumer_decl = DeclId::new(base_decl + 2);
+        let hir = make_bytes_pattern_transform_list_access_then_pipeline_call_program(
+            bytes_replace_decl,
+            access_decl,
+            consumer_decl,
+            "bytes replace",
+            &items,
+            vec![0x10],
+            Some(replacement),
+            Vec::new(),
+            consumer_arg,
+        );
+        let decl_names = HashMap::from([
+            (bytes_replace_decl, "bytes replace".to_string()),
+            (access_decl, access.to_string()),
+            (consumer_decl, consumer.to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("bytes replace should fold {context} through {access}: {err}")
+        });
+
+        assert_program_returns_constant(&result.program, expected, context);
+        assert_no_runtime_list_operations(&result.program, context);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("bytes replace {context} consumed through {access} should compile: {err}")
             });
     }
 }
@@ -32781,6 +33347,78 @@ fn make_bytes_split_get_then_pipeline_call_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_bytes_split_access_then_pipeline_call_program(
+    split_decl: DeclId,
+    access_decl: DeclId,
+    consumer_decl: DeclId,
+    input: Vec<u8>,
+    separator: HirLiteral,
+    consumer_arg: Option<HirLiteral>,
+) -> HirProgram {
+    let mut stmts = vec![
+        HirStmt::LoadLiteral {
+            dst: RegId::new(0),
+            lit: HirLiteral::Binary(input),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: separator,
+        },
+        HirStmt::Call {
+            decl_id: split_decl,
+            src_dst: RegId::new(2),
+            args: HirCallArgs {
+                positional: vec![RegId::new(1)],
+                pipeline_input: Some(RegId::new(0)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::Call {
+            decl_id: access_decl,
+            src_dst: RegId::new(3),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(2)),
+                ..HirCallArgs::default()
+            },
+        },
+    ];
+
+    let mut consumer_args = HirCallArgs {
+        pipeline_input: Some(RegId::new(3)),
+        ..HirCallArgs::default()
+    };
+    let consumer_reg = if let Some(arg) = consumer_arg {
+        stmts.push(HirStmt::LoadLiteral {
+            dst: RegId::new(4),
+            lit: arg,
+        });
+        consumer_args.positional.push(RegId::new(4));
+        RegId::new(5)
+    } else {
+        RegId::new(4)
+    };
+    stmts.push(HirStmt::Call {
+        decl_id: consumer_decl,
+        src_dst: consumer_reg,
+        args: consumer_args,
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: consumer_reg },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: consumer_reg.get() + 1,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_bytes_split_program(
     split_decl: DeclId,
     input: Vec<u8>,
@@ -33099,6 +33737,78 @@ fn test_lower_bytes_split_folds_unmaterializable_parts_through_get() {
         compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
             .unwrap_or_else(|err| {
                 panic!("bytes split {context} consumed through get should compile: {err}")
+            });
+    }
+}
+
+#[test]
+fn test_lower_bytes_split_folds_unmaterializable_parts_through_first_last() {
+    let scenarios = [
+        (
+            "unequal last non-empty part",
+            "last",
+            vec![0x61, 0x20, 0x62, 0x62],
+            HirLiteral::Binary(vec![0x20]),
+            "bytes starts-with",
+            Some(HirLiteral::Binary(vec![0x62, 0x62])),
+            1,
+        ),
+        (
+            "empty first part",
+            "first",
+            vec![0x20, 0x61],
+            HirLiteral::Binary(vec![0x20]),
+            "bytes length",
+            None,
+            0,
+        ),
+        (
+            "string separator unequal last part",
+            "last",
+            vec![0x61, 0x2d, 0x2d, 0x62, 0x62],
+            HirLiteral::String(b"--".to_vec()),
+            "bytes starts-with",
+            Some(HirLiteral::Binary(vec![0x62, 0x62])),
+            1,
+        ),
+    ];
+
+    for (offset, (context, access, input, separator, consumer, consumer_arg, expected)) in
+        scenarios.into_iter().enumerate()
+    {
+        let base_decl = 783 + offset * 3;
+        let bytes_split_decl = DeclId::new(base_decl);
+        let access_decl = DeclId::new(base_decl + 1);
+        let consumer_decl = DeclId::new(base_decl + 2);
+        let hir = make_bytes_split_access_then_pipeline_call_program(
+            bytes_split_decl,
+            access_decl,
+            consumer_decl,
+            input,
+            separator,
+            consumer_arg,
+        );
+        let decl_names = HashMap::from([
+            (bytes_split_decl, "bytes split".to_string()),
+            (access_decl, access.to_string()),
+            (consumer_decl, consumer.to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("bytes split should fold {context} through {access}: {err}"));
+
+        assert_program_returns_constant(&result.program, expected, context);
+        assert_no_runtime_list_operations(&result.program, context);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("bytes split {context} consumed through {access} should compile: {err}")
             });
     }
 }

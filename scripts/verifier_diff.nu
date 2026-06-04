@@ -37434,6 +37434,32 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-binary-list-bytes-at-unequal-last"
+        category: "language-core"
+        tags: [binary list bytes at unequal last starts-with]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [0x[01] 0x[02 03]] | bytes at 0..2 | last | bytes starts-with 0x[02 03]'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-binary-list-bytes-at-empty-first-length"
+        category: "language-core"
+        tags: [binary list bytes at empty first length]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [0x[01] 0x[02]] | bytes at 1..0 | first | bytes length'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-binary-bytes-add-starts-with"
         category: "language-core"
         tags: [binary bytes add starts-with]
@@ -37525,6 +37551,32 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-binary-list-bytes-add-unequal-last"
+        category: "language-core"
+        tags: [binary list bytes add unequal last starts-with]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [0x[01] 0x[02 03]] | bytes add 0x[] | last | bytes starts-with 0x[02 03]'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-binary-list-bytes-add-empty-first-length"
+        category: "language-core"
+        tags: [binary list bytes add empty first length]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [0x[] 0x[]] | bytes add 0x[] | first | bytes length'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-binary-list-bytes-remove-collect"
         category: "language-core"
         tags: [binary list bytes remove collect starts-with]
@@ -37590,6 +37642,32 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-binary-list-bytes-remove-unequal-last"
+        category: "language-core"
+        tags: [binary list bytes remove unequal last starts-with]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [0x[01] 0x[02 03]] | bytes remove 0x[ff] | last | bytes starts-with 0x[02 03]'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-binary-list-bytes-remove-empty-first-length"
+        category: "language-core"
+        tags: [binary list bytes remove empty first length]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [0x[10] 0x[10]] | bytes remove 0x[10] | first | bytes length'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-binary-list-bytes-replace-collect"
         category: "language-core"
         tags: [binary list bytes replace collect starts-with]
@@ -37649,6 +37727,32 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  [0x[10] 0x[10]] | bytes replace 0x[10] 0x[] | get 0 | bytes length'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-binary-list-bytes-replace-unequal-last"
+        category: "language-core"
+        tags: [binary list bytes replace unequal last starts-with]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [0x[10 aa] 0x[10 bb cc]] | bytes replace 0x[10] 0x[] | last | bytes starts-with 0x[bb cc]'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-binary-list-bytes-replace-empty-first-length"
+        category: "language-core"
+        tags: [binary list bytes replace empty first length]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [0x[10] 0x[10]] | bytes replace 0x[10] 0x[] | first | bytes length'
             '}'
         ]
         local: "accept"
@@ -38052,6 +38156,45 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  0x[20 61] | bytes split 0x[20] | get 0 | bytes length'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-binary-bytes-split-unequal-last"
+        category: "language-core"
+        tags: [binary bytes split unequal last starts-with]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  0x[61 20 62 62] | bytes split 0x[20] | last | bytes starts-with 0x[62 62]'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-binary-bytes-split-empty-first-length"
+        category: "language-core"
+        tags: [binary bytes split empty first length]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  0x[20 61] | bytes split 0x[20] | first | bytes length'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-binary-bytes-split-string-separator-unequal-last"
+        category: "language-core"
+        tags: [binary bytes split string separator unequal last starts-with]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  0x[61 2d 2d 62 62] | bytes split "--" | last | bytes starts-with 0x[62 62]'
             '}'
         ]
         local: "accept"
