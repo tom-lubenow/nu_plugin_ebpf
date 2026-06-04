@@ -36630,6 +36630,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-scalar-bits-shift-unsigned-i64-left-u32-runtime"
+        category: "language-core"
+        tags: [scalar bits shl number-bytes runtime context]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  (($ctx.pid | bits shl 1 --number-bytes 8) >= 0)'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-scalar-bits-shift-default"
         category: "language-core"
         tags: [scalar bits shl shr default]

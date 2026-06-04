@@ -18907,6 +18907,57 @@ fn make_runtime_scalar_bits_shift_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_ctx_pid_bits_shift_program(bits_decl: DeclId, count: i64, number_bytes: i64) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![string_member("pid")],
+                    })),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(count),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::Int(number_bytes),
+                },
+                HirStmt::Call {
+                    decl_id: bits_decl,
+                    src_dst: RegId::new(4),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        positional: vec![RegId::new(2)],
+                        named: vec![(b"number-bytes".to_vec(), RegId::new(3))],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(4) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 5,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
 fn make_integer_list_pipeline_call_program(decl_id: DeclId, values: &[i64]) -> HirProgram {
     let func = HirFunction {
         blocks: vec![HirBlock {
@@ -22648,9 +22699,80 @@ fn test_lower_bits_shift_unsigned_i64_right_on_runtime_scalar_integer_input() {
 }
 
 #[test]
-fn test_lower_bits_shift_unsigned_i64_left_rejects_runtime_scalar_integer_input() {
+fn test_lower_bits_shift_unsigned_i64_left_on_runtime_u32_context_input() {
     let bits_decl = DeclId::new(70144);
-    let random_decl = DeclId::new(70145);
+    let hir = make_ctx_pid_bits_shift_program(bits_decl, 1, 8);
+    let decl_names = HashMap::from([(bits_decl, "bits shl".to_string())]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bits shl --number-bytes 8 should lower safe runtime u32 input");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::Shl,
+                ..
+            }
+        )),
+        "expected runtime u32 bits shl --number-bytes 8 to emit a left shift"
+    );
+    assert!(
+        !result
+            .program
+            .main
+            .blocks
+            .iter()
+            .any(|block| matches!(block.terminator, MirInst::Branch { .. })),
+        "runtime u32 bits shl --number-bytes 8 should not need sign branching"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("bits shl --number-bytes 8 runtime u32 input should compile");
+}
+
+#[test]
+fn test_lower_bits_shift_unsigned_i64_left_rejects_unsafe_runtime_u32_count() {
+    let bits_decl = DeclId::new(70145);
+    let hir = make_ctx_pid_bits_shift_program(bits_decl, 32, 8);
+    let decl_names = HashMap::from([(bits_decl, "bits shl".to_string())]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("bits shl --number-bytes 8 should reject u32 shifts that can exceed i64::MAX");
+
+    assert!(
+        err.to_string()
+            .contains("runtime u32 input supports shift counts from 0 through 31"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_bits_shift_unsigned_i64_left_rejects_runtime_scalar_integer_input() {
+    let bits_decl = DeclId::new(70146);
+    let random_decl = DeclId::new(70147);
     let hir = make_runtime_scalar_bits_shift_program(bits_decl, random_decl, 1, false, Some(8));
     let decl_names = HashMap::from([
         (bits_decl, "bits shl".to_string()),
