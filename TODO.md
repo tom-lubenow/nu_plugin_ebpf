@@ -137,6 +137,7 @@ history and release notes, not here.
   - Include the offending surface, the current program family, and a suggested supported rewrite when possible.
   - Keep aliases in diagnostics when users wrote aliases, not only canonical field names.
   - BTF-backed fentry/fexit/fmod_ret, `tp_btf`, and LSM target/context resolution now carries the modeled target-family help into compile-time diagnostics, with verifier coverage for invalid target names.
+  - Annotated mutable record global initializer rejects now name nested field paths such as `stats.extra` and `stats.hits` when partial initializers contain extra fields or type mismatches, with verifier coverage for source-reachable nested extra fields and Rust unit coverage for HIR-level type mismatches that Nushell parsing rejects first.
   - Untyped fixed-layout record constant and fixed-array rejects now name nested field paths such as `meta.comm` or element indexes such as `element 0` when a value cannot be represented, with verifier coverage for source-reachable empty binary record fields and Rust unit coverage for HIR-level fixed-array element rejects.
 
 - [~] Prepare for external alpha consumption.

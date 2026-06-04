@@ -8018,6 +8018,117 @@ fn test_lower_leading_annotated_mut_record_partial_initializer_rejects_unknown_f
 }
 
 #[test]
+fn test_lower_leading_annotated_mut_record_partial_initializer_rejects_nested_unknown_field_path() {
+    let global_var = VarId::new(361);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::LoadVariable {
+                dst: RegId::new(0),
+                var_id: global_var,
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let mut stats = Record::new();
+    stats.push("hits", Value::int(7, Span::test_data()));
+    stats.push("extra", Value::bool(true, Span::test_data()));
+
+    let mut initial = Record::new();
+    initial.push("stats", Value::record(stats, Span::test_data()));
+
+    let mut hir = HirProgram::new(func, HashMap::new(), vec![], None);
+    hir.annotated_mut_globals = vec![AnnotatedMutGlobal {
+        var_id: global_var,
+        declared_type: Type::Record(Box::new([(
+            "stats".to_string(),
+            Type::Record(Box::new([("hits".to_string(), Type::Int)])),
+        )])),
+        initial_value: Value::record(initial, Span::test_data()),
+    }];
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("extra nested record fields should name the nested path");
+
+    assert!(
+        err.to_string()
+            .contains("unexpected record field 'stats.extra'"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_leading_annotated_mut_record_partial_initializer_rejects_nested_type_mismatch_path() {
+    let global_var = VarId::new(362);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::LoadVariable {
+                dst: RegId::new(0),
+                var_id: global_var,
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let mut stats = Record::new();
+    stats.push("hits", Value::bool(true, Span::test_data()));
+
+    let mut initial = Record::new();
+    initial.push("stats", Value::record(stats, Span::test_data()));
+
+    let mut hir = HirProgram::new(func, HashMap::new(), vec![], None);
+    hir.annotated_mut_globals = vec![AnnotatedMutGlobal {
+        var_id: global_var,
+        declared_type: Type::Record(Box::new([(
+            "stats".to_string(),
+            Type::Record(Box::new([("hits".to_string(), Type::Int)])),
+        )])),
+        initial_value: Value::record(initial, Span::test_data()),
+    }];
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("nested record field type mismatches should name the nested path");
+
+    assert!(
+        err.to_string().contains("initializer field 'stats.hits'"),
+        "unexpected error: {err}"
+    );
+    assert!(
+        err.to_string()
+            .contains("of type bool does not match declared type int"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn test_lower_leading_annotated_mut_record_partial_initializer_rejects_missing_string_capacity() {
     let global_var = VarId::new(357);
     let func = HirFunction {

@@ -13857,6 +13857,21 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "annotated-mut-record-nested-extra-field-rejects-path"
+        category: "globals"
+        tags: [globals records diagnostics reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  mut state: record<stats: record<hits: int>> = { stats: { hits: 7 extra: true } }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "unexpected record field 'stats.extra'"
+    }
+    {
         name: "annotated-mut-list-spread-initializer"
         category: "globals"
         tags: [globals list list-spread accept]

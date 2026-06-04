@@ -15,10 +15,17 @@ documentation changes that matter to external alpha consumers.
   name the record path, for example `meta.comm`.
 - Improved untyped fixed-array diagnostics so unsupported elements name the
   element index before the underlying layout reason.
+- Improved annotated mutable record global diagnostics so nested initializer
+  extra fields and type mismatches name paths such as `stats.extra` and
+  `stats.hits`.
 - Added verifier coverage for BTF target diagnostic help, typed global
-  numeric-list initializer errors, and untyped record field layout rejects.
+  numeric-list initializer errors, untyped record field layout rejects, and
+  nested annotated mutable record extra-field rejects.
 - Added Rust unit coverage for untyped fixed-array element layout rejects, which
   are currently reached through HIR-level constant materialization rather than
   ordinary source list literals.
+- Added Rust unit coverage for nested annotated mutable record initializer type
+  mismatch paths that Nushell source parsing rejects before verifier fixtures
+  can reach plugin lowering.
 - Documented external-alpha packaging, compatibility, troubleshooting, and
   status-driven target selection expectations.

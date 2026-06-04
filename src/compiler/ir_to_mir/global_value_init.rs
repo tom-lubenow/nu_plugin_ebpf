@@ -199,13 +199,26 @@ impl<'a> HirToMirLowering<'a> {
     fn typed_mutable_fixed_array_repr(
         declared_elem_type: &nu_protocol::Type,
         values: &[Value],
+        parent_path: Option<&str>,
     ) -> Result<Option<(MirType, Vec<u8>)>, CompileError> {
+        fn element_path(parent_path: Option<&str>, idx: usize) -> String {
+            match parent_path {
+                Some(parent) => format!("{parent}[{idx}]"),
+                None => format!("element {idx}"),
+            }
+        }
+
         let Some((first, rest)) = values.split_first() else {
             return Ok(None);
         };
 
+        let first_path = element_path(parent_path, 0);
         let Some((elem_ty, mut data, elem_list_max_len, elem_string_slot_len)) =
-            Self::typed_mutable_global_repr(declared_elem_type, first)?
+            Self::typed_mutable_global_repr_with_path(
+                declared_elem_type,
+                first,
+                Some(&first_path),
+            )?
         else {
             return Ok(None);
         };
@@ -213,12 +226,13 @@ impl<'a> HirToMirLowering<'a> {
 
         for (idx, value) in rest.iter().enumerate() {
             let actual_idx = idx + 1;
+            let path = element_path(parent_path, actual_idx);
             let Some((item_ty, item_data, item_list_max_len, item_string_slot_len)) =
-                Self::typed_mutable_global_repr(declared_elem_type, value)?
+                Self::typed_mutable_global_repr_with_path(declared_elem_type, value, Some(&path))?
             else {
                 return Err(CompileError::UnsupportedInstruction(format!(
-                    "annotated mutable fixed-array global element {} of declared type {} is not yet supported",
-                    actual_idx, declared_elem_type
+                    "annotated mutable fixed-array global {} of declared type {} is not yet supported",
+                    path, declared_elem_type
                 )));
             };
             let _ = (item_list_max_len, item_string_slot_len);
@@ -244,6 +258,42 @@ impl<'a> HirToMirLowering<'a> {
         declared_type: &nu_protocol::Type,
         value: &Value,
     ) -> Result<Option<(MirType, Vec<u8>, Option<usize>, Option<usize>)>, CompileError> {
+        Self::typed_mutable_global_repr_with_path(declared_type, value, None)
+    }
+
+    fn typed_mutable_global_repr_with_path(
+        declared_type: &nu_protocol::Type,
+        value: &Value,
+        path: Option<&str>,
+    ) -> Result<Option<(MirType, Vec<u8>, Option<usize>, Option<usize>)>, CompileError> {
+        fn field_path(parent_path: Option<&str>, field_name: &str) -> String {
+            match parent_path {
+                Some(parent) => format!("{parent}.{field_name}"),
+                None => field_name.to_string(),
+            }
+        }
+
+        fn initializer_mismatch_error(
+            path: Option<&str>,
+            declared_type: &nu_protocol::Type,
+            value: &Value,
+        ) -> CompileError {
+            let msg = match path {
+                Some(path) => format!(
+                    "annotated mutable global initializer field '{}' of type {} does not match declared type {}",
+                    path,
+                    value.get_type(),
+                    declared_type
+                ),
+                None => format!(
+                    "annotated mutable global initializer of type {} does not match declared type {}",
+                    value.get_type(),
+                    declared_type
+                ),
+            };
+            CompileError::UnsupportedInstruction(msg)
+        }
+
         if matches!(value, Value::Nothing { .. }) {
             return Self::typed_mutable_global_zero_repr(declared_type);
         }
@@ -265,11 +315,7 @@ impl<'a> HirToMirLowering<'a> {
             && !allow_declared_fixed_array_initializer
             && !value.is_subtype_of(declared_type)
         {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "annotated mutable global initializer of type {} does not match declared type {}",
-                value.get_type(),
-                declared_type
-            )));
+            return Err(initializer_mismatch_error(path, declared_type, value));
         }
 
         match declared_type {
@@ -359,7 +405,8 @@ impl<'a> HirToMirLowering<'a> {
                 let Value::List { vals, .. } = value else {
                     return Ok(None);
                 };
-                let Some((ty, data)) = Self::typed_mutable_fixed_array_repr(inner.as_ref(), vals)?
+                let Some((ty, data)) =
+                    Self::typed_mutable_fixed_array_repr(inner.as_ref(), vals, path)?
                 else {
                     return Ok(None);
                 };
@@ -374,17 +421,23 @@ impl<'a> HirToMirLowering<'a> {
                     .iter()
                     .find(|(name, _)| !fields.iter().any(|(field_name, _)| field_name == *name))
                 {
+                    let extra_path = field_path(path, extra_name);
                     return Err(CompileError::UnsupportedInstruction(format!(
                         "annotated mutable global initializer contains unexpected record field '{}'",
-                        extra_name
+                        extra_path
                     )));
                 }
 
                 let mut field_reprs = Vec::with_capacity(fields.len());
 
                 for (field_name, field_type) in fields.iter() {
+                    let child_path = field_path(path, field_name);
                     let field_repr = if let Some(field_value) = val.get(field_name) {
-                        Self::typed_mutable_global_repr(field_type, field_value)?
+                        Self::typed_mutable_global_repr_with_path(
+                            field_type,
+                            field_value,
+                            Some(&child_path),
+                        )?
                     } else {
                         Self::typed_mutable_global_zero_repr(field_type)?
                     };
@@ -394,7 +447,7 @@ impl<'a> HirToMirLowering<'a> {
                         if val.get(field_name).is_some() {
                             return Err(CompileError::UnsupportedInstruction(format!(
                                 "record field '{}' of declared type {} is not yet supported in annotated mutable globals",
-                                field_name, field_type
+                                child_path, field_type
                             )));
                         }
 
