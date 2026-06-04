@@ -1678,6 +1678,197 @@ fn test_lower_global_get_string_contains_runtime_length() {
         .expect("runtime contains should compile through codegen");
 }
 
+fn lower_global_get_string_index_of_runtime_length(search_from_end: bool) -> MirLoweringResult {
+    let define_decl = DeclId::new(1318);
+    let get_decl = DeclId::new(1319);
+    let index_of_decl = DeclId::new(1320);
+    let decl_names = HashMap::from([
+        (define_decl, "global-define".to_string()),
+        (get_decl, "global-get".to_string()),
+        (index_of_decl, "str index-of".to_string()),
+    ]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::String("left".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("string:8".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String("hello".into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        named: vec![(b"type".to_vec(), RegId::new(1))],
+                        pipeline_input: Some(RegId::new(2)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: get_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::String("l".into()),
+                },
+                HirStmt::Call {
+                    decl_id: index_of_decl,
+                    src_dst: RegId::new(5),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(4)],
+                        flags: search_from_end
+                            .then(|| b"end".to_vec())
+                            .into_iter()
+                            .collect(),
+                        pipeline_input: Some(RegId::new(3)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(5) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 6,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("global-get string should run str index-of using runtime length")
+}
+
+#[test]
+fn test_lower_global_get_string_index_of_runtime_length() {
+    let result = lower_global_get_string_index_of_runtime_length(false);
+
+    let comparisons = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .filter(|inst| matches!(inst, MirInst::StrCmp { len: 1, .. }))
+        .count();
+    assert_eq!(
+        comparisons, 8,
+        "expected runtime index-of to test each possible substring offset for string:8"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op: BinOpKind::Ge,
+                    rhs: MirValue::Const(3),
+                    ..
+                }
+            )),
+        "expected runtime index-of to guard offset 2 by requiring length at least 3"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Copy {
+                    src: MirValue::Const(2),
+                    ..
+                }
+            )),
+        "expected runtime index-of to emit the first matching byte offset"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("runtime index-of should compile through codegen");
+}
+
+#[test]
+fn test_lower_global_get_string_index_of_end_runtime_length() {
+    let result = lower_global_get_string_index_of_runtime_length(true);
+
+    let comparisons = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .filter(|inst| matches!(inst, MirInst::StrCmp { len: 1, .. }))
+        .count();
+    assert_eq!(
+        comparisons, 8,
+        "expected runtime index-of --end to test each possible substring offset for string:8"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StrCmp {
+                    lhs_offset: 7,
+                    rhs_offset: 0,
+                    len: 1,
+                    ..
+                }
+            )),
+        "expected runtime index-of --end to probe the highest bounded offset"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Copy {
+                    src: MirValue::Const(3),
+                    ..
+                }
+            )),
+        "expected runtime index-of --end to emit the last matching byte offset"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("runtime index-of --end should compile through codegen");
+}
+
 #[test]
 fn test_lower_global_set_and_get_record_string_field_materializes_string_slot() {
     let capture_var = VarId::new(300);
