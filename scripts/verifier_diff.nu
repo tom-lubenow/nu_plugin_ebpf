@@ -13825,6 +13825,21 @@ const FIXTURES = [
         error_contains: "record field 'root' type spec 'bpf_list_head:node_data:node-field' requires a valid node field name"
     }
     {
+        name: "map-define-value-type-graph-root-payload-non-record-rejects-path"
+        category: "maps"
+        tags: [maps map-define graph records diagnostics reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define graph_items --kind hash --value-type "record{root:bpf_list_head:node_data:node:u64,cookie:u64}"'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "record field 'root' type spec 'bpf_list_head:node_data:node:u64' requires the object payload schema to be record{...}"
+    }
+    {
         name: "map-define-key-type-duplicate-record-field-rejects-path"
         category: "maps"
         tags: [maps map-define records diagnostics reject]

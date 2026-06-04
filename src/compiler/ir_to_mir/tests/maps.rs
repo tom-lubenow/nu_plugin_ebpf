@@ -5411,6 +5411,30 @@ fn test_map_value_type_spec_rejects_graph_root_payload_duplicate_node_field() {
 }
 
 #[test]
+fn test_map_value_type_spec_rejects_empty_graph_root_payload_with_path() {
+    let err = HirToMirLowering::parse_named_map_value_type_spec(
+        "record{root:bpf_list_head:node_data:node:,counter:u64}",
+    )
+    .expect_err("empty graph object payload schema should be rejected");
+
+    let msg = err.to_string();
+    assert!(msg.contains("record field 'root' type spec 'bpf_list_head:node_data:node:'"));
+    assert!(msg.contains("empty object payload schema"));
+}
+
+#[test]
+fn test_map_value_type_spec_rejects_non_record_graph_root_payload_with_path() {
+    let err = HirToMirLowering::parse_named_map_value_type_spec(
+        "record{root:bpf_rb_root:rb_item:rb:u64,counter:u64}",
+    )
+    .expect_err("graph object payload schema should be record typed");
+
+    let msg = err.to_string();
+    assert!(msg.contains("record field 'root' type spec 'bpf_rb_root:rb_item:rb:u64'"));
+    assert!(msg.contains("requires the object payload schema to be record{...}"));
+}
+
+#[test]
 fn test_map_value_type_spec_rejects_bare_graph_root() {
     let err =
         HirToMirLowering::parse_named_map_value_type_spec("record{root:bpf_list_head,counter:u64}")

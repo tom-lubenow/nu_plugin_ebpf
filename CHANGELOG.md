@@ -36,6 +36,8 @@ documentation changes that matter to external alpha consumers.
   graph node, and kptr rejects so they report the offending record field.
 - Improved nested map-value graph-root schema diagnostics so malformed object
   type, node field, and payload conflicts report the offending record field.
+- Added coverage for nested map-value graph-root payload rejects so empty and
+  non-record payload schemas keep the offending record field in diagnostics.
 - Improved typed `global-define` array initializer diagnostics so top-level
   bad items use `initializer[0]` style paths instead of record-field wording.
 - Added verifier coverage for BTF target diagnostic help, typed global
