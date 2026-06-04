@@ -695,17 +695,35 @@ fn compile_time_value_consumer_matches(
                 && args.parser_info.is_empty()
         }
         FixedLayoutValueConsumer::BinaryBytesTransform => {
-            matches!(decl_name, Some("bytes at" | "bytes add"))
-                && call_args_tracked_only_in_pipeline(src_dst, args, tracked_regs)
-                && args.positional.len() == 1
+            matches!(
+                decl_name,
+                Some("bytes at" | "bytes add" | "bytes remove" | "bytes replace")
+            ) && call_args_tracked_only_in_pipeline(src_dst, args, tracked_regs)
                 && args.rest.is_empty()
                 && match decl_name {
-                    Some("bytes at") => args.named.is_empty() && args.flags.is_empty(),
+                    Some("bytes at") => {
+                        args.positional.len() == 1 && args.named.is_empty() && args.flags.is_empty()
+                    }
                     Some("bytes add") => {
-                        args.named
-                            .iter()
-                            .all(|(name, _)| name.as_slice() == b"index")
+                        args.positional.len() == 1
+                            && args
+                                .named
+                                .iter()
+                                .all(|(name, _)| name.as_slice() == b"index")
                             && args.flags.iter().all(|flag| flag.as_slice() == b"end")
+                    }
+                    Some("bytes remove") => {
+                        args.positional.len() == 1
+                            && args.named.is_empty()
+                            && args
+                                .flags
+                                .iter()
+                                .all(|flag| matches!(flag.as_slice(), b"all" | b"end"))
+                    }
+                    Some("bytes replace") => {
+                        args.positional.len() == 2
+                            && args.named.is_empty()
+                            && args.flags.iter().all(|flag| flag.as_slice() == b"all")
                     }
                     _ => false,
                 }

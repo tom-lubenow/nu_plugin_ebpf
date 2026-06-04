@@ -19,6 +19,12 @@ pub struct BytesIndexOf;
 #[derive(Clone)]
 pub struct BytesReverse;
 
+#[derive(Clone)]
+pub struct BytesRemove;
+
+#[derive(Clone)]
+pub struct BytesReplace;
+
 fn binary_predicate_signature(name: &str) -> Signature {
     Signature::build(name)
         .input_output_types(vec![
@@ -42,6 +48,38 @@ fn binary_transform_signature(name: &str) -> Signature {
         .category(Category::Bytes)
 }
 
+fn binary_remove_signature(name: &str) -> Signature {
+    Signature::build(name)
+        .input_output_types(vec![
+            (Type::Binary, Type::Binary),
+            (Type::list(Type::Binary), Type::list(Type::Binary)),
+        ])
+        .switch("all", "Remove all matching byte sequences", None)
+        .switch("end", "Remove the last matching byte sequence", None)
+        .required(
+            "pattern",
+            SyntaxShape::Binary,
+            "The binary pattern to remove",
+        )
+        .category(Category::Bytes)
+}
+
+fn binary_replace_signature(name: &str) -> Signature {
+    Signature::build(name)
+        .input_output_types(vec![
+            (Type::Binary, Type::Binary),
+            (Type::list(Type::Binary), Type::list(Type::Binary)),
+        ])
+        .switch("all", "Replace all matching byte sequences", None)
+        .required(
+            "pattern",
+            SyntaxShape::Binary,
+            "The binary pattern to replace",
+        )
+        .required("replacement", SyntaxShape::Binary, "The binary replacement")
+        .category(Category::Bytes)
+}
+
 fn binary_search_signature(name: &str) -> Signature {
     Signature::build(name)
         .input_output_types(vec![
@@ -62,6 +100,50 @@ fn binary_search_signature(name: &str) -> Signature {
 fn reversed_binary(mut val: Vec<u8>) -> Vec<u8> {
     val.reverse();
     val
+}
+
+fn pattern_transform_binary(
+    input: &[u8],
+    pattern: &[u8],
+    replacement: &[u8],
+    apply_all: bool,
+    from_end: bool,
+) -> Vec<u8> {
+    let mut output = Vec::new();
+    if apply_all {
+        let mut index = 0;
+        while index < input.len() {
+            if input[index..].starts_with(pattern) {
+                output.extend_from_slice(replacement);
+                index += pattern.len();
+            } else {
+                output.push(input[index]);
+                index += 1;
+            }
+        }
+        return output;
+    }
+
+    let found = if pattern.len() > input.len() {
+        None
+    } else if from_end {
+        input
+            .windows(pattern.len())
+            .rposition(|candidate| candidate == pattern)
+    } else {
+        input
+            .windows(pattern.len())
+            .position(|candidate| candidate == pattern)
+    };
+
+    if let Some(found) = found {
+        output.extend_from_slice(&input[..found]);
+        output.extend_from_slice(replacement);
+        output.extend_from_slice(&input[found + pattern.len()..]);
+    } else {
+        output.extend_from_slice(input);
+    }
+    output
 }
 
 fn run_binary_predicate(
@@ -119,6 +201,56 @@ fn run_binary_transform(
                         .with_label(format!("expected binary at list index {}", idx), item_span));
                 };
                 out.push(Value::binary(transform(val), item_span));
+            }
+            Value::list(out, span)
+        }
+        other => {
+            return Err(
+                LabeledError::new("Invalid byte transform input").with_label(
+                    format!("expected binary or list<binary>, got {}", other.get_type()),
+                    span,
+                ),
+            );
+        }
+    };
+
+    Ok(PipelineData::Value(output, None))
+}
+
+fn run_binary_pattern_transform(
+    call: &EvaluatedCall,
+    input: PipelineData,
+    replacement: &[u8],
+    apply_all: bool,
+    from_end: bool,
+) -> Result<PipelineData, LabeledError> {
+    let pattern: Vec<u8> = call.req(0)?;
+    if pattern.is_empty() {
+        return Err(LabeledError::new("Invalid byte pattern").with_label(
+            "byte pattern transforms require a non-empty binary pattern",
+            call.head,
+        ));
+    }
+    let input = input.into_value(call.head)?;
+    let span = input.span();
+
+    let output = match input {
+        Value::Binary { val, .. } => Value::binary(
+            pattern_transform_binary(&val, &pattern, replacement, apply_all, from_end),
+            span,
+        ),
+        Value::List { vals, .. } => {
+            let mut out = Vec::with_capacity(vals.len());
+            for (idx, item) in vals.into_iter().enumerate() {
+                let item_span = item.span();
+                let Value::Binary { val, .. } = item else {
+                    return Err(LabeledError::new("Invalid byte transform input")
+                        .with_label(format!("expected binary at list index {}", idx), item_span));
+                };
+                out.push(Value::binary(
+                    pattern_transform_binary(&val, &pattern, replacement, apply_all, from_end),
+                    item_span,
+                ));
             }
             Value::list(out, span)
         }
@@ -221,6 +353,90 @@ impl PluginCommand for BytesReverse {
         input: PipelineData,
     ) -> Result<PipelineData, LabeledError> {
         run_binary_transform(call, input, reversed_binary)
+    }
+}
+
+impl PluginCommand for BytesRemove {
+    type Plugin = EbpfPlugin;
+
+    fn name(&self) -> &str {
+        "bytes remove"
+    }
+
+    fn description(&self) -> &str {
+        "Remove a binary pattern from binary input or each binary list item."
+    }
+
+    fn signature(&self) -> Signature {
+        binary_remove_signature(self.name())
+    }
+
+    fn examples(&self) -> Vec<Example<'_>> {
+        vec![Example {
+            example: "[0x[01 02] 0x[03 02]] | bytes remove 0x[02]",
+            description: "Remove the pattern from each binary value in a list",
+            result: Some(Value::list(
+                vec![
+                    Value::binary(vec![0x01], nu_protocol::Span::unknown()),
+                    Value::binary(vec![0x03], nu_protocol::Span::unknown()),
+                ],
+                nu_protocol::Span::unknown(),
+            )),
+        }]
+    }
+
+    fn run(
+        &self,
+        _plugin: &EbpfPlugin,
+        _engine: &EngineInterface,
+        call: &EvaluatedCall,
+        input: PipelineData,
+    ) -> Result<PipelineData, LabeledError> {
+        let apply_all = call.has_flag("all")?;
+        let from_end = call.has_flag("end")?;
+        run_binary_pattern_transform(call, input, &[], apply_all, from_end)
+    }
+}
+
+impl PluginCommand for BytesReplace {
+    type Plugin = EbpfPlugin;
+
+    fn name(&self) -> &str {
+        "bytes replace"
+    }
+
+    fn description(&self) -> &str {
+        "Replace a binary pattern in binary input or each binary list item."
+    }
+
+    fn signature(&self) -> Signature {
+        binary_replace_signature(self.name())
+    }
+
+    fn examples(&self) -> Vec<Example<'_>> {
+        vec![Example {
+            example: "[0x[01 02] 0x[03 02]] | bytes replace 0x[02] 0x[04]",
+            description: "Replace the pattern in each binary value in a list",
+            result: Some(Value::list(
+                vec![
+                    Value::binary(vec![0x01, 0x04], nu_protocol::Span::unknown()),
+                    Value::binary(vec![0x03, 0x04], nu_protocol::Span::unknown()),
+                ],
+                nu_protocol::Span::unknown(),
+            )),
+        }]
+    }
+
+    fn run(
+        &self,
+        _plugin: &EbpfPlugin,
+        _engine: &EngineInterface,
+        call: &EvaluatedCall,
+        input: PipelineData,
+    ) -> Result<PipelineData, LabeledError> {
+        let replacement: Vec<u8> = call.req(1)?;
+        let apply_all = call.has_flag("all")?;
+        run_binary_pattern_transform(call, input, &replacement, apply_all, false)
     }
 }
 

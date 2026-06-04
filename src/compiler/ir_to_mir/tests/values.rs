@@ -29735,6 +29735,244 @@ fn make_bytes_pattern_transform_then_length_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_bytes_pattern_transform_list_prefix(
+    stmts: &mut Vec<HirStmt>,
+    items: &[&[u8]],
+    pattern: Vec<u8>,
+    replacement: Option<Vec<u8>>,
+    command: &str,
+) -> (RegId, Vec<RegId>, u32) {
+    let item_count = items.len();
+    let item_count_u32 = u32::try_from(item_count).expect("test binary-list length fits in u32");
+    stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List {
+            capacity: item_count,
+        },
+    });
+    for (item_index, item) in items.iter().enumerate() {
+        let item_reg = RegId::new(u32::try_from(item_index).expect("test index fits in u32") + 1);
+        stmts.push(HirStmt::LoadLiteral {
+            dst: item_reg,
+            lit: HirLiteral::Binary(item.to_vec()),
+        });
+        stmts.push(HirStmt::ListPush {
+            src_dst: RegId::new(0),
+            item: item_reg,
+        });
+    }
+
+    let pattern_reg = RegId::new(item_count_u32 + 1);
+    stmts.push(HirStmt::LoadLiteral {
+        dst: pattern_reg,
+        lit: HirLiteral::Binary(pattern),
+    });
+    let mut positional = vec![pattern_reg];
+    let next_reg = if command == "bytes replace" {
+        let replacement_reg = RegId::new(item_count_u32 + 2);
+        stmts.push(HirStmt::LoadLiteral {
+            dst: replacement_reg,
+            lit: HirLiteral::Binary(
+                replacement.expect("bytes replace requires replacement fixture data"),
+            ),
+        });
+        positional.push(replacement_reg);
+        item_count_u32 + 3
+    } else {
+        item_count_u32 + 2
+    };
+
+    (RegId::new(0), positional, next_reg)
+}
+
+fn make_bytes_pattern_transform_list_collect_then_starts_with_program(
+    transform_decl: DeclId,
+    collect_decl: DeclId,
+    starts_with_decl: DeclId,
+    command: &str,
+    items: &[&[u8]],
+    pattern: Vec<u8>,
+    replacement: Option<Vec<u8>>,
+    flags: Vec<&str>,
+    expected_prefix: Vec<u8>,
+) -> HirProgram {
+    let mut stmts = Vec::new();
+    let (input_reg, positional, next_reg) =
+        make_bytes_pattern_transform_list_prefix(&mut stmts, items, pattern, replacement, command);
+    let transformed_reg = RegId::new(next_reg);
+    let collected_reg = RegId::new(next_reg + 1);
+    let expected_reg = RegId::new(next_reg + 2);
+    let starts_with_reg = RegId::new(next_reg + 3);
+
+    stmts.push(HirStmt::Call {
+        decl_id: transform_decl,
+        src_dst: transformed_reg,
+        args: HirCallArgs {
+            positional,
+            pipeline_input: Some(input_reg),
+            flags: flags
+                .into_iter()
+                .map(|flag| flag.as_bytes().to_vec())
+                .collect(),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: collect_decl,
+        src_dst: collected_reg,
+        args: HirCallArgs {
+            pipeline_input: Some(transformed_reg),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::LoadLiteral {
+        dst: expected_reg,
+        lit: HirLiteral::Binary(expected_prefix),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: starts_with_decl,
+        src_dst: starts_with_reg,
+        args: HirCallArgs {
+            positional: vec![expected_reg],
+            pipeline_input: Some(collected_reg),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return {
+                src: starts_with_reg,
+            },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: starts_with_reg.get() + 1,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_bytes_pattern_transform_list_collect_then_length_program(
+    transform_decl: DeclId,
+    collect_decl: DeclId,
+    length_decl: DeclId,
+    command: &str,
+    items: &[&[u8]],
+    pattern: Vec<u8>,
+    replacement: Option<Vec<u8>>,
+    flags: Vec<&str>,
+) -> HirProgram {
+    let mut stmts = Vec::new();
+    let (input_reg, positional, next_reg) =
+        make_bytes_pattern_transform_list_prefix(&mut stmts, items, pattern, replacement, command);
+    let transformed_reg = RegId::new(next_reg);
+    let collected_reg = RegId::new(next_reg + 1);
+    let length_reg = RegId::new(next_reg + 2);
+
+    stmts.push(HirStmt::Call {
+        decl_id: transform_decl,
+        src_dst: transformed_reg,
+        args: HirCallArgs {
+            positional,
+            pipeline_input: Some(input_reg),
+            flags: flags
+                .into_iter()
+                .map(|flag| flag.as_bytes().to_vec())
+                .collect(),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: collect_decl,
+        src_dst: collected_reg,
+        args: HirCallArgs {
+            pipeline_input: Some(transformed_reg),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: length_decl,
+        src_dst: length_reg,
+        args: HirCallArgs {
+            pipeline_input: Some(collected_reg),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: length_reg },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: length_reg.get() + 1,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_bytes_pattern_transform_list_then_pipeline_call_program(
+    transform_decl: DeclId,
+    consumer_decl: DeclId,
+    command: &str,
+    items: &[&[u8]],
+    pattern: Vec<u8>,
+    replacement: Option<Vec<u8>>,
+    flags: Vec<&str>,
+) -> HirProgram {
+    let mut stmts = Vec::new();
+    let (input_reg, positional, next_reg) =
+        make_bytes_pattern_transform_list_prefix(&mut stmts, items, pattern, replacement, command);
+    let transformed_reg = RegId::new(next_reg);
+    let consumer_reg = RegId::new(next_reg + 1);
+
+    stmts.push(HirStmt::Call {
+        decl_id: transform_decl,
+        src_dst: transformed_reg,
+        args: HirCallArgs {
+            positional,
+            pipeline_input: Some(input_reg),
+            flags: flags
+                .into_iter()
+                .map(|flag| flag.as_bytes().to_vec())
+                .collect(),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: consumer_decl,
+        src_dst: consumer_reg,
+        args: HirCallArgs {
+            pipeline_input: Some(transformed_reg),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: consumer_reg },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: consumer_reg.get() + 1,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 #[test]
 fn test_lower_bytes_remove_materializes_first_removed_binary() {
     let bytes_remove_decl = DeclId::new(233);
@@ -29889,6 +30127,211 @@ fn test_lower_bytes_remove_accepts_empty_result() {
 }
 
 #[test]
+fn test_lower_bytes_remove_binary_list_materializes_removed_list() {
+    let bytes_remove_decl = DeclId::new(691);
+    let bytes_collect_decl = DeclId::new(692);
+    let bytes_starts_with_decl = DeclId::new(693);
+    let hir = make_bytes_pattern_transform_list_collect_then_starts_with_program(
+        bytes_remove_decl,
+        bytes_collect_decl,
+        bytes_starts_with_decl,
+        "bytes remove",
+        &[&[0x10, 0xaa], &[0x10, 0xbb]],
+        vec![0x10],
+        None,
+        Vec::new(),
+        vec![0xaa, 0xbb],
+    );
+    let decl_names = HashMap::from([
+        (bytes_remove_decl, "bytes remove".to_string()),
+        (bytes_collect_decl, "bytes collect".to_string()),
+        (bytes_starts_with_decl, "bytes starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bytes remove should lower compile-time binary-list input and pattern");
+
+    assert!(
+        result
+            .readonly_globals
+            .iter()
+            .any(|global| global.data == vec![0xaa, 0xbb]),
+        "expected bytes remove binary-list output to feed bytes collect with removed bytes"
+    );
+    assert_binary_starts_with_folded_true(&result.program, "bytes remove binary-list");
+    assert_no_runtime_list_operations(&result.program, "compile-time bytes remove binary-list");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("bytes remove binary-list output consumed by bytes collect should compile");
+}
+
+#[test]
+fn test_lower_bytes_remove_binary_list_folds_empty_and_unequal_results_for_bytes_collect() {
+    let scenarios: Vec<(&str, Vec<&[u8]>, i64)> = vec![
+        ("empty list", Vec::new(), 0),
+        ("empty binary outputs", vec![&[0x10][..], &[0x10][..]], 0),
+        (
+            "unequal binary outputs",
+            vec![&[0x10][..], &[0x10, 0x20][..]],
+            1,
+        ),
+    ];
+
+    for (index, (context, items, expected_len)) in scenarios.into_iter().enumerate() {
+        let base_decl = 694 + index * 3;
+        let bytes_remove_decl = DeclId::new(base_decl);
+        let bytes_collect_decl = DeclId::new(base_decl + 1);
+        let bytes_length_decl = DeclId::new(base_decl + 2);
+        let hir = make_bytes_pattern_transform_list_collect_then_length_program(
+            bytes_remove_decl,
+            bytes_collect_decl,
+            bytes_length_decl,
+            "bytes remove",
+            &items,
+            vec![0x10],
+            None,
+            Vec::new(),
+        );
+        let decl_names = HashMap::from([
+            (bytes_remove_decl, "bytes remove".to_string()),
+            (bytes_collect_decl, "bytes collect".to_string()),
+            (bytes_length_decl, "bytes length".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("bytes remove should fold binary-list {context} through bytes collect: {err}")
+        });
+
+        assert_program_returns_constant(&result.program, expected_len, context);
+        assert_no_runtime_list_operations(&result.program, context);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!(
+                    "bytes remove binary-list {context} consumed by bytes collect should compile: {err}"
+                )
+            });
+    }
+}
+
+#[test]
+fn test_lower_bytes_remove_binary_list_folds_empty_results_for_list_metadata_consumers() {
+    let scenarios: Vec<(&str, &str, Vec<&[u8]>, i64)> = vec![
+        ("empty list length", "length", Vec::new(), 0),
+        (
+            "empty binary output list length",
+            "length",
+            vec![&[0x10][..], &[0x10][..]],
+            2,
+        ),
+        ("empty list predicate", "is-empty", Vec::new(), 1),
+    ];
+
+    for (index, (context, consumer, items, expected)) in scenarios.into_iter().enumerate() {
+        let base_decl = 703 + index * 2;
+        let bytes_remove_decl = DeclId::new(base_decl);
+        let consumer_decl = DeclId::new(base_decl + 1);
+        let hir = make_bytes_pattern_transform_list_then_pipeline_call_program(
+            bytes_remove_decl,
+            consumer_decl,
+            "bytes remove",
+            &items,
+            vec![0x10],
+            None,
+            Vec::new(),
+        );
+        let decl_names = HashMap::from([
+            (bytes_remove_decl, "bytes remove".to_string()),
+            (consumer_decl, consumer.to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("bytes remove should fold {context} through {consumer}: {err}")
+        });
+
+        assert_program_returns_constant(&result.program, expected, context);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("bytes remove {context} consumed by {consumer} should compile: {err}")
+            });
+    }
+}
+
+#[test]
+fn test_lower_bytes_remove_binary_list_rejects_unmaterializable_results() {
+    let scenarios = [
+        (
+            "empty binary outputs",
+            vec![&[0x10][..], &[0x10][..]],
+            vec![0x10],
+            "bytes remove requires non-empty binary list results",
+        ),
+        (
+            "unequal binary outputs",
+            vec![&[0x01][..], &[0x02, 0x03][..]],
+            vec![0xff],
+            "bytes remove requires equal-length binary list results",
+        ),
+    ];
+
+    for (index, (context, items, pattern, expected_error)) in scenarios.into_iter().enumerate() {
+        let bytes_remove_decl = DeclId::new(709 + index * 2);
+        let get_decl = DeclId::new(710 + index * 2);
+        let hir = make_bytes_pattern_transform_list_then_pipeline_call_program(
+            bytes_remove_decl,
+            get_decl,
+            "bytes remove",
+            &items,
+            pattern,
+            None,
+            Vec::new(),
+        );
+        let decl_names = HashMap::from([
+            (bytes_remove_decl, "bytes remove".to_string()),
+            (get_decl, "get".to_string()),
+        ]);
+
+        let err = match lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        ) {
+            Ok(_) => panic!("bytes remove should reject unmaterialized {context}"),
+            Err(err) => err,
+        };
+
+        assert!(
+            err.to_string().contains(expected_error),
+            "unexpected error for {context}: {err}"
+        );
+    }
+}
+
+#[test]
 fn test_lower_bytes_replace_materializes_first_replaced_binary() {
     let bytes_replace_decl = DeclId::new(239);
     let bytes_starts_with_decl = DeclId::new(240);
@@ -30035,6 +30478,218 @@ fn test_lower_bytes_replace_accepts_empty_result() {
     assert_program_returns_constant(&result.program, 0, "empty bytes replace length");
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("empty bytes replace output consumed by bytes length should compile");
+}
+
+#[test]
+fn test_lower_bytes_replace_binary_list_materializes_replaced_list() {
+    let bytes_replace_decl = DeclId::new(713);
+    let bytes_collect_decl = DeclId::new(714);
+    let bytes_starts_with_decl = DeclId::new(715);
+    let hir = make_bytes_pattern_transform_list_collect_then_starts_with_program(
+        bytes_replace_decl,
+        bytes_collect_decl,
+        bytes_starts_with_decl,
+        "bytes replace",
+        &[&[0x10, 0xaa], &[0x10, 0xbb]],
+        vec![0x10],
+        Some(vec![0xa0]),
+        Vec::new(),
+        vec![0xa0, 0xaa, 0xa0, 0xbb],
+    );
+    let decl_names = HashMap::from([
+        (bytes_replace_decl, "bytes replace".to_string()),
+        (bytes_collect_decl, "bytes collect".to_string()),
+        (bytes_starts_with_decl, "bytes starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bytes replace should lower compile-time binary-list input, pattern, and replacement");
+
+    assert!(
+        result
+            .readonly_globals
+            .iter()
+            .any(|global| global.data == vec![0xa0, 0xaa, 0xa0, 0xbb]),
+        "expected bytes replace binary-list output to feed bytes collect with replaced bytes"
+    );
+    assert_binary_starts_with_folded_true(&result.program, "bytes replace binary-list");
+    assert_no_runtime_list_operations(&result.program, "compile-time bytes replace binary-list");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("bytes replace binary-list output consumed by bytes collect should compile");
+}
+
+#[test]
+fn test_lower_bytes_replace_binary_list_folds_empty_and_unequal_results_for_bytes_collect() {
+    let scenarios: Vec<(&str, Vec<&[u8]>, Vec<u8>, i64)> = vec![
+        ("empty list", Vec::new(), Vec::new(), 0),
+        (
+            "empty binary outputs",
+            vec![&[0x10][..], &[0x10][..]],
+            Vec::new(),
+            0,
+        ),
+        (
+            "unequal binary outputs",
+            vec![&[0x10, 0xaa][..], &[0x10, 0xbb, 0xcc][..]],
+            Vec::new(),
+            3,
+        ),
+    ];
+
+    for (index, (context, items, replacement, expected_len)) in scenarios.into_iter().enumerate() {
+        let base_decl = 716 + index * 3;
+        let bytes_replace_decl = DeclId::new(base_decl);
+        let bytes_collect_decl = DeclId::new(base_decl + 1);
+        let bytes_length_decl = DeclId::new(base_decl + 2);
+        let hir = make_bytes_pattern_transform_list_collect_then_length_program(
+            bytes_replace_decl,
+            bytes_collect_decl,
+            bytes_length_decl,
+            "bytes replace",
+            &items,
+            vec![0x10],
+            Some(replacement),
+            Vec::new(),
+        );
+        let decl_names = HashMap::from([
+            (bytes_replace_decl, "bytes replace".to_string()),
+            (bytes_collect_decl, "bytes collect".to_string()),
+            (bytes_length_decl, "bytes length".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("bytes replace should fold binary-list {context} through bytes collect: {err}")
+        });
+
+        assert_program_returns_constant(&result.program, expected_len, context);
+        assert_no_runtime_list_operations(&result.program, context);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!(
+                    "bytes replace binary-list {context} consumed by bytes collect should compile: {err}"
+                )
+            });
+    }
+}
+
+#[test]
+fn test_lower_bytes_replace_binary_list_folds_empty_results_for_list_metadata_consumers() {
+    let scenarios: Vec<(&str, &str, Vec<&[u8]>, i64)> = vec![
+        ("empty list length", "length", Vec::new(), 0),
+        (
+            "empty binary output list length",
+            "length",
+            vec![&[0x10][..], &[0x10][..]],
+            2,
+        ),
+        ("empty list predicate", "is-empty", Vec::new(), 1),
+    ];
+
+    for (index, (context, consumer, items, expected)) in scenarios.into_iter().enumerate() {
+        let base_decl = 725 + index * 2;
+        let bytes_replace_decl = DeclId::new(base_decl);
+        let consumer_decl = DeclId::new(base_decl + 1);
+        let hir = make_bytes_pattern_transform_list_then_pipeline_call_program(
+            bytes_replace_decl,
+            consumer_decl,
+            "bytes replace",
+            &items,
+            vec![0x10],
+            Some(Vec::new()),
+            Vec::new(),
+        );
+        let decl_names = HashMap::from([
+            (bytes_replace_decl, "bytes replace".to_string()),
+            (consumer_decl, consumer.to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("bytes replace should fold {context} through {consumer}: {err}")
+        });
+
+        assert_program_returns_constant(&result.program, expected, context);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("bytes replace {context} consumed by {consumer} should compile: {err}")
+            });
+    }
+}
+
+#[test]
+fn test_lower_bytes_replace_binary_list_rejects_unmaterializable_results() {
+    let scenarios = [
+        (
+            "empty binary outputs",
+            vec![&[0x10][..], &[0x10][..]],
+            Vec::new(),
+            "bytes replace requires non-empty binary list results",
+        ),
+        (
+            "unequal binary outputs",
+            vec![&[0x10, 0xaa][..], &[0x10, 0xbb, 0xcc][..]],
+            Vec::new(),
+            "bytes replace requires equal-length binary list results",
+        ),
+    ];
+
+    for (index, (context, items, replacement, expected_error)) in scenarios.into_iter().enumerate()
+    {
+        let bytes_replace_decl = DeclId::new(731 + index * 2);
+        let get_decl = DeclId::new(732 + index * 2);
+        let hir = make_bytes_pattern_transform_list_then_pipeline_call_program(
+            bytes_replace_decl,
+            get_decl,
+            "bytes replace",
+            &items,
+            vec![0x10],
+            Some(replacement),
+            Vec::new(),
+        );
+        let decl_names = HashMap::from([
+            (bytes_replace_decl, "bytes replace".to_string()),
+            (get_decl, "get".to_string()),
+        ]);
+
+        let err = match lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        ) {
+            Ok(_) => panic!("bytes replace should reject unmaterialized {context}"),
+            Err(err) => err,
+        };
+
+        assert!(
+            err.to_string().contains(expected_error),
+            "unexpected error for {context}: {err}"
+        );
+    }
 }
 
 fn make_bytes_collect_then_starts_with_program(

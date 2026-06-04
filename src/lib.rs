@@ -45,6 +45,8 @@ impl Plugin for EbpfPlugin {
             Box::new(BytesEndsWith),
             Box::new(BytesIndexOf),
             Box::new(BytesReverse),
+            Box::new(BytesRemove),
+            Box::new(BytesReplace),
             // Helper commands for use in eBPF closures
             Box::new(Emit),
             Box::new(Count),
@@ -154,6 +156,24 @@ mod tests {
                 nu_protocol::Type::list(nu_protocol::Type::Binary)
             )),
             "bytes reverse should accept list<binary> input"
+        );
+
+        let remove = BytesRemove.signature();
+        assert!(
+            remove.input_output_types.contains(&(
+                nu_protocol::Type::list(nu_protocol::Type::Binary),
+                nu_protocol::Type::list(nu_protocol::Type::Binary)
+            )),
+            "bytes remove should accept list<binary> input"
+        );
+
+        let replace = BytesReplace.signature();
+        assert!(
+            replace.input_output_types.contains(&(
+                nu_protocol::Type::list(nu_protocol::Type::Binary),
+                nu_protocol::Type::list(nu_protocol::Type::Binary)
+            )),
+            "bytes replace should accept list<binary> input"
         );
     }
 }

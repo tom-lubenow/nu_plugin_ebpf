@@ -751,6 +751,116 @@ fn test_list_push_binary_item_allowed_for_bytes_reverse() {
 }
 
 #[test]
+fn test_list_push_binary_item_allowed_for_bytes_remove() {
+    let bytes_remove_decl = DeclId::new(189);
+    let mut func = HirFunction {
+        blocks: Vec::new(),
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 4,
+        file_count: 0,
+    };
+
+    let mut block = HirBlock {
+        id: HirBlockId(0),
+        stmts: Vec::new(),
+        terminator: HirTerminator::Return { src: RegId::new(3) },
+    };
+
+    block.stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List { capacity: 1 },
+    });
+    block.stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(1),
+        lit: HirLiteral::Binary(vec![0x01]),
+    });
+    block.stmts.push(HirStmt::ListPush {
+        src_dst: RegId::new(0),
+        item: RegId::new(1),
+    });
+    block.stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(2),
+        lit: HirLiteral::Binary(vec![0x01]),
+    });
+    block.stmts.push(HirStmt::Call {
+        decl_id: bytes_remove_decl,
+        src_dst: RegId::new(3),
+        args: HirCallArgs {
+            positional: vec![RegId::new(2)],
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    func.blocks.push(block);
+
+    let program = HirProgram::new(func, HashMap::new(), Vec::new(), None);
+    let decl_names = HashMap::from([(bytes_remove_decl, "bytes remove".to_string())]);
+    infer_hir(&program, &decl_names)
+        .expect("bytes remove should allow compile-time binary list builders");
+}
+
+#[test]
+fn test_list_push_binary_item_allowed_for_bytes_replace() {
+    let bytes_replace_decl = DeclId::new(190);
+    let mut func = HirFunction {
+        blocks: Vec::new(),
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 5,
+        file_count: 0,
+    };
+
+    let mut block = HirBlock {
+        id: HirBlockId(0),
+        stmts: Vec::new(),
+        terminator: HirTerminator::Return { src: RegId::new(4) },
+    };
+
+    block.stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List { capacity: 1 },
+    });
+    block.stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(1),
+        lit: HirLiteral::Binary(vec![0x01]),
+    });
+    block.stmts.push(HirStmt::ListPush {
+        src_dst: RegId::new(0),
+        item: RegId::new(1),
+    });
+    block.stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(2),
+        lit: HirLiteral::Binary(vec![0x01]),
+    });
+    block.stmts.push(HirStmt::LoadLiteral {
+        dst: RegId::new(3),
+        lit: HirLiteral::Binary(vec![0x02]),
+    });
+    block.stmts.push(HirStmt::Call {
+        decl_id: bytes_replace_decl,
+        src_dst: RegId::new(4),
+        args: HirCallArgs {
+            positional: vec![RegId::new(2), RegId::new(3)],
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    func.blocks.push(block);
+
+    let program = HirProgram::new(func, HashMap::new(), Vec::new(), None);
+    let decl_names = HashMap::from([(bytes_replace_decl, "bytes replace".to_string())]);
+    infer_hir(&program, &decl_names)
+        .expect("bytes replace should allow compile-time binary list builders");
+}
+
+#[test]
 fn test_list_push_binary_item_allowed_for_item_access() {
     let scenarios = [
         ("first", 85, None),

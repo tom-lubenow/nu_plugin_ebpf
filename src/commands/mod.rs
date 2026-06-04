@@ -74,7 +74,9 @@ pub(crate) fn validate_probe_id(id: i64, span: Span) -> Result<u32, LabeledError
 }
 
 pub use attach::EbpfAttach;
-pub use bytes::{BytesEndsWith, BytesIndexOf, BytesReverse, BytesStartsWith};
+pub use bytes::{
+    BytesEndsWith, BytesIndexOf, BytesRemove, BytesReplace, BytesReverse, BytesStartsWith,
+};
 pub use counters::EbpfCounters;
 pub use detach::EbpfDetach;
 pub use helpers::{

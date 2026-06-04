@@ -125,6 +125,50 @@ impl<'a> HirToMirLowering<'a> {
         output
     }
 
+    fn bytes_pattern_transform_output(
+        input: &[u8],
+        pattern: &[u8],
+        replacement: &[u8],
+        apply_all: bool,
+        from_end: bool,
+    ) -> Vec<u8> {
+        let mut output = Vec::new();
+        if apply_all {
+            let mut index = 0;
+            while index < input.len() {
+                if input[index..].starts_with(pattern) {
+                    output.extend_from_slice(replacement);
+                    index += pattern.len();
+                } else {
+                    output.push(input[index]);
+                    index += 1;
+                }
+            }
+            return output;
+        }
+
+        let found = if pattern.len() > input.len() {
+            None
+        } else if from_end {
+            input
+                .windows(pattern.len())
+                .rposition(|candidate| candidate == pattern)
+        } else {
+            input
+                .windows(pattern.len())
+                .position(|candidate| candidate == pattern)
+        };
+
+        if let Some(found) = found {
+            output.extend_from_slice(&input[..found]);
+            output.extend_from_slice(replacement);
+            output.extend_from_slice(&input[found + pattern.len()..]);
+        } else {
+            output.extend_from_slice(input);
+        }
+        output
+    }
+
     fn lower_synthetic_follow_cell_path(
         &mut self,
         src_dst: RegId,
@@ -4360,13 +4404,10 @@ impl<'a> HirToMirLowering<'a> {
 
                 let input = input_reg
                     .and_then(|reg| self.get_metadata(reg))
-                    .and_then(|meta| match meta.constant_value.as_ref() {
-                        Some(nu_protocol::Value::Binary { val, .. }) => Some(val.clone()),
-                        _ => None,
-                    })
+                    .and_then(|meta| meta.constant_value.as_ref().cloned())
                     .ok_or_else(|| {
                         CompileError::UnsupportedInstruction(format!(
-                            "{cmd_name} requires compile-time known binary input in eBPF"
+                            "{cmd_name} requires compile-time known binary or list<binary> input in eBPF"
                         ))
                     })?;
                 let (_, pattern_reg) = self.positional_args[0];
@@ -4404,45 +4445,86 @@ impl<'a> HirToMirLowering<'a> {
                     Vec::new()
                 };
 
-                let mut output = Vec::new();
-                if apply_all {
-                    let mut index = 0;
-                    while index < input.len() {
-                        if input[index..].starts_with(&pattern) {
-                            output.extend_from_slice(&replacement);
-                            index += pattern.len();
+                match input {
+                    nu_protocol::Value::Binary { val, .. } => {
+                        let output = Self::bytes_pattern_transform_output(
+                            &val,
+                            &pattern,
+                            &replacement,
+                            apply_all,
+                            from_end,
+                        );
+                        self.reset_call_result_metadata(src_dst);
+                        self.lower_constant_value(
+                            src_dst,
+                            &nu_protocol::Value::binary(output, nu_protocol::Span::unknown()),
+                        )?;
+                    }
+                    nu_protocol::Value::List { vals, .. } => {
+                        if vals.is_empty() && !self.current_call_result_metadata_only {
+                            return Err(CompileError::UnsupportedInstruction(format!(
+                                "{cmd_name} requires a non-empty list<binary> result in eBPF"
+                            )));
+                        }
+                        let mut expected_len = None;
+                        let mut has_empty_output = false;
+                        let mut has_unequal_output_len = false;
+                        let mut values = Vec::with_capacity(vals.len());
+                        for (item_index, item) in vals.iter().enumerate() {
+                            let nu_protocol::Value::Binary { val, .. } = item else {
+                                return Err(CompileError::UnsupportedInstruction(format!(
+                                    "{cmd_name} requires binary list items in eBPF; item {item_index} has type {}",
+                                    item.get_type()
+                                )));
+                            };
+                            let output = Self::bytes_pattern_transform_output(
+                                val,
+                                &pattern,
+                                &replacement,
+                                apply_all,
+                                from_end,
+                            );
+                            if output.is_empty() {
+                                has_empty_output = true;
+                            }
+                            if let Some(expected_len) = expected_len {
+                                if output.len() != expected_len {
+                                    has_unequal_output_len = true;
+                                }
+                            } else {
+                                expected_len = Some(output.len());
+                            }
+                            values.push(nu_protocol::Value::binary(
+                                output,
+                                nu_protocol::Span::unknown(),
+                            ));
+                        }
+                        if has_empty_output && !self.current_call_result_metadata_only {
+                            return Err(CompileError::UnsupportedInstruction(format!(
+                                "{cmd_name} requires non-empty binary list results in eBPF"
+                            )));
+                        }
+                        if has_unequal_output_len && !self.current_call_result_metadata_only {
+                            return Err(CompileError::UnsupportedInstruction(format!(
+                                "{cmd_name} requires equal-length binary list results in eBPF"
+                            )));
+                        }
+
+                        self.reset_call_result_metadata(src_dst);
+                        let value = nu_protocol::Value::list(values, nu_protocol::Span::unknown());
+                        if vals.is_empty() || has_empty_output || has_unequal_output_len {
+                            self.lower_compile_time_only_constant_value(src_dst, &value);
                         } else {
-                            output.push(input[index]);
-                            index += 1;
+                            self.lower_constant_value(src_dst, &value)?;
                         }
                     }
-                } else {
-                    let found = if pattern.len() > input.len() {
-                        None
-                    } else if from_end {
-                        input
-                            .windows(pattern.len())
-                            .rposition(|candidate| candidate == pattern.as_slice())
-                    } else {
-                        input
-                            .windows(pattern.len())
-                            .position(|candidate| candidate == pattern.as_slice())
-                    };
-
-                    if let Some(found) = found {
-                        output.extend_from_slice(&input[..found]);
-                        output.extend_from_slice(&replacement);
-                        output.extend_from_slice(&input[found + pattern.len()..]);
-                    } else {
-                        output.extend_from_slice(&input);
+                    other => {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "{cmd_name} requires binary or list<binary> input in eBPF, got {}",
+                            other.get_type()
+                        )));
                     }
                 }
-
-                self.reset_call_result_metadata(src_dst);
-                self.lower_constant_value(
-                    src_dst,
-                    &nu_protocol::Value::binary(output, nu_protocol::Span::unknown()),
-                )?;
             }
 
             "bytes collect" => {
