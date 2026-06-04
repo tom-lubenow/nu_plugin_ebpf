@@ -437,26 +437,44 @@ impl<'a> HirToMirLowering<'a> {
             ));
         };
         let prefix_len = prefix.len();
+        let input_max_len = self.string_input_max_len(&input_meta, input_slot_size);
 
         if prefix_len == 0 {
             self.emit(MirInst::Copy {
                 dst: result_vreg,
                 src: MirValue::Const(1),
             });
-        } else if prefix_len > input_slot_size.saturating_sub(1) {
+        } else if prefix_len > input_max_len
+            || Self::exact_string_len(&input_meta).is_some_and(|len| len < prefix_len)
+        {
             self.emit(MirInst::Copy {
                 dst: result_vreg,
                 src: MirValue::Const(0),
             });
         } else {
+            let bytes_match = if input_meta.string_len_vreg.is_some() {
+                self.func.alloc_vreg()
+            } else {
+                result_vreg
+            };
             self.emit(MirInst::StrCmp {
-                dst: result_vreg,
+                dst: bytes_match,
                 lhs: input_slot,
                 lhs_offset: 0,
                 rhs: prefix_slot,
                 rhs_offset: 0,
                 len: prefix_len,
             });
+            self.vreg_type_hints.insert(bytes_match, MirType::Bool);
+            if let Some(input_len_vreg) = input_meta.string_len_vreg {
+                self.lower_string_len_guarded_match(
+                    result_vreg,
+                    input_len_vreg,
+                    BinOpKind::Ge,
+                    prefix_len,
+                    bytes_match,
+                );
+            }
         }
 
         self.reset_call_result_metadata(src_dst);
@@ -464,6 +482,85 @@ impl<'a> HirToMirLowering<'a> {
         out_meta.field_type = Some(MirType::Bool);
         self.vreg_type_hints.insert(result_vreg, MirType::Bool);
         Ok(())
+    }
+
+    fn lower_string_len_guarded_match(
+        &mut self,
+        result_vreg: VReg,
+        input_len_vreg: VReg,
+        op: BinOpKind,
+        expected_len: usize,
+        bytes_match: VReg,
+    ) {
+        let len_matches = self.func.alloc_vreg();
+        self.emit(MirInst::BinOp {
+            dst: len_matches,
+            op,
+            lhs: MirValue::VReg(input_len_vreg),
+            rhs: MirValue::Const(expected_len as i64),
+        });
+        self.vreg_type_hints.insert(len_matches, MirType::Bool);
+        self.emit(MirInst::BinOp {
+            dst: result_vreg,
+            op: BinOpKind::And,
+            lhs: MirValue::VReg(len_matches),
+            rhs: MirValue::VReg(bytes_match),
+        });
+        self.vreg_type_hints.insert(result_vreg, MirType::Bool);
+    }
+
+    fn lower_string_runtime_suffix_match(
+        &mut self,
+        result_vreg: VReg,
+        input_slot: StackSlotId,
+        input_len_vreg: VReg,
+        input_max_len: usize,
+        suffix_slot: StackSlotId,
+        suffix_len: usize,
+    ) {
+        self.emit(MirInst::Copy {
+            dst: result_vreg,
+            src: MirValue::Const(0),
+        });
+        self.vreg_type_hints.insert(result_vreg, MirType::Bool);
+
+        for input_len in suffix_len..=input_max_len {
+            let len_matches = self.func.alloc_vreg();
+            self.emit(MirInst::BinOp {
+                dst: len_matches,
+                op: BinOpKind::Eq,
+                lhs: MirValue::VReg(input_len_vreg),
+                rhs: MirValue::Const(input_len as i64),
+            });
+            self.vreg_type_hints.insert(len_matches, MirType::Bool);
+
+            let bytes_match = self.func.alloc_vreg();
+            self.emit(MirInst::StrCmp {
+                dst: bytes_match,
+                lhs: input_slot,
+                lhs_offset: input_len - suffix_len,
+                rhs: suffix_slot,
+                rhs_offset: 0,
+                len: suffix_len,
+            });
+            self.vreg_type_hints.insert(bytes_match, MirType::Bool);
+
+            let candidate = self.func.alloc_vreg();
+            self.emit(MirInst::BinOp {
+                dst: candidate,
+                op: BinOpKind::And,
+                lhs: MirValue::VReg(len_matches),
+                rhs: MirValue::VReg(bytes_match),
+            });
+            self.vreg_type_hints.insert(candidate, MirType::Bool);
+
+            self.emit(MirInst::BinOp {
+                dst: result_vreg,
+                op: BinOpKind::Or,
+                lhs: MirValue::VReg(result_vreg),
+                rhs: MirValue::VReg(candidate),
+            });
+        }
     }
 
     pub(super) fn lower_string_ends_with(
@@ -541,11 +638,6 @@ impl<'a> HirToMirLowering<'a> {
                 "str ends-with could not determine input string capacity in eBPF".into(),
             )
         })?;
-        let input_len = Self::exact_string_len(&input_meta).ok_or_else(|| {
-            CompileError::UnsupportedInstruction(
-                "str ends-with requires a compile-time known input string length in eBPF".into(),
-            )
-        })?;
         if ignore_case {
             let input = self.exact_string_input(input_reg, "str ends-with --ignore-case")?;
             let matches = input.to_lowercase().ends_with(&suffix.to_lowercase());
@@ -563,26 +655,49 @@ impl<'a> HirToMirLowering<'a> {
             ));
         };
         let suffix_len = suffix.len();
+        let input_max_len = self.string_input_max_len(&input_meta, input_slot_size);
 
         if suffix_len == 0 {
             self.emit(MirInst::Copy {
                 dst: result_vreg,
                 src: MirValue::Const(1),
             });
-        } else if suffix_len > input_len || input_len > input_slot_size.saturating_sub(1) {
+        } else if suffix_len > input_max_len {
             self.emit(MirInst::Copy {
                 dst: result_vreg,
                 src: MirValue::Const(0),
             });
+        } else if let Some(input_len) = Self::exact_string_len(&input_meta) {
+            if suffix_len > input_len || input_len > input_slot_size.saturating_sub(1) {
+                self.emit(MirInst::Copy {
+                    dst: result_vreg,
+                    src: MirValue::Const(0),
+                });
+            } else {
+                self.emit(MirInst::StrCmp {
+                    dst: result_vreg,
+                    lhs: input_slot,
+                    lhs_offset: input_len - suffix_len,
+                    rhs: suffix_slot,
+                    rhs_offset: 0,
+                    len: suffix_len,
+                });
+            }
         } else {
-            self.emit(MirInst::StrCmp {
-                dst: result_vreg,
-                lhs: input_slot,
-                lhs_offset: input_len - suffix_len,
-                rhs: suffix_slot,
-                rhs_offset: 0,
-                len: suffix_len,
-            });
+            let input_len_vreg = input_meta.string_len_vreg.ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "str ends-with requires tracked string input with runtime length in eBPF"
+                        .into(),
+                )
+            })?;
+            self.lower_string_runtime_suffix_match(
+                result_vreg,
+                input_slot,
+                input_len_vreg,
+                input_max_len,
+                suffix_slot,
+                suffix_len,
+            );
         }
 
         self.reset_call_result_metadata(src_dst);
@@ -2995,6 +3110,13 @@ impl<'a> HirToMirLowering<'a> {
             Some(nu_protocol::Value::Binary { val, .. }) => Some(val.len()),
             _ => meta.literal_string.as_ref().map(|val| val.len()),
         }
+    }
+
+    fn string_input_max_len(&self, meta: &RegMetadata, slot_size: usize) -> usize {
+        let slot_max_len = slot_size.saturating_sub(1);
+        meta.string_len_bound
+            .unwrap_or(slot_max_len)
+            .min(slot_max_len)
     }
 
     fn exact_string_value(meta: &RegMetadata) -> Option<String> {

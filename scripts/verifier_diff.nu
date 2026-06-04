@@ -37660,6 +37660,21 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-runtime-string-starts-with-tracked-length"
+        category: "language-core"
+        tags: [string str starts-with runtime globals]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "hello" | global-define --type string:8 left'
+            '  let left = (global-get left)'
+            '  $left | str starts-with "hello"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-string-starts-with-ignore-case"
         category: "language-core"
         tags: [string str starts-with ignore-case]
@@ -37706,6 +37721,21 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  "a" | str ends-with "abcdef"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-runtime-string-ends-with-tracked-length"
+        category: "language-core"
+        tags: [string str ends-with runtime globals]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "hello" | global-define --type string:8 left'
+            '  let left = (global-get left)'
+            '  $left | str ends-with "lo"'
             '}'
         ]
         local: "accept"
