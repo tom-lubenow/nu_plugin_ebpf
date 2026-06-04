@@ -39159,6 +39159,21 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-record-values-mixed-first-last"
+        category: "language-core"
+        tags: [aggregate record values list mixed first last reverse string]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let first_ok = (({ pid: 7 comm: "nu" } | values | first) == 7)'
+            '  let last_ok = ({ pid: 7 comm: "nu" } | values | last | str starts-with "nu")'
+            '  $first_ok and ($last_ok and ({ pid: 7 comm: "nu" } | values | reverse | first | str starts-with "nu"))'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-record-columns-get"
         category: "language-core"
         tags: [aggregate record columns list string]
