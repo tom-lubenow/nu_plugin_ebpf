@@ -34,7 +34,7 @@
 //!   Generic named map operations
 
 mod attach;
-mod bytes_predicates;
+mod bytes;
 mod counters;
 mod detach;
 mod helpers;
@@ -74,7 +74,7 @@ pub(crate) fn validate_probe_id(id: i64, span: Span) -> Result<u32, LabeledError
 }
 
 pub use attach::EbpfAttach;
-pub use bytes_predicates::{BytesEndsWith, BytesStartsWith};
+pub use bytes::{BytesEndsWith, BytesIndexOf, BytesStartsWith};
 pub use counters::EbpfCounters;
 pub use detach::EbpfDetach;
 pub use helpers::{

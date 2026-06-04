@@ -26739,6 +26739,24 @@ fn make_bytes_list_predicate_get_program(
     pattern: Vec<u8>,
     index: i64,
 ) -> HirProgram {
+    make_bytes_list_arg_get_program_with_flags(
+        predicate_decl,
+        get_decl,
+        input,
+        pattern,
+        Vec::new(),
+        index,
+    )
+}
+
+fn make_bytes_list_arg_get_program_with_flags(
+    decl_id: DeclId,
+    get_decl: DeclId,
+    input: Vec<Vec<u8>>,
+    pattern: Vec<u8>,
+    flags: Vec<Vec<u8>>,
+    index: i64,
+) -> HirProgram {
     let input_values = input
         .into_iter()
         .map(|item| Value::binary(item, Span::test_data()))
@@ -26756,11 +26774,12 @@ fn make_bytes_list_predicate_get_program(
                     lit: HirLiteral::Binary(pattern),
                 },
                 HirStmt::Call {
-                    decl_id: predicate_decl,
+                    decl_id,
                     src_dst: RegId::new(2),
                     args: HirCallArgs {
                         positional: vec![RegId::new(1)],
                         pipeline_input: Some(RegId::new(0)),
+                        flags,
                         ..HirCallArgs::default()
                     },
                 },
@@ -27103,6 +27122,47 @@ fn test_lower_bytes_index_of_on_binary_returns_first_offset() {
 }
 
 #[test]
+fn test_lower_bytes_index_of_on_binary_list_materializes_numeric_list() {
+    let bytes_index_of_decl = DeclId::new(80620);
+    let get_decl = DeclId::new(80621);
+    let hir = make_bytes_list_arg_get_program_with_flags(
+        bytes_index_of_decl,
+        get_decl,
+        vec![vec![1, 2], vec![3, 2, 2]],
+        vec![2],
+        Vec::new(),
+        1,
+    );
+    let decl_names = HashMap::from([
+        (bytes_index_of_decl, "bytes index-of".to_string()),
+        (get_decl, "get".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bytes index-of should lower on compile-time binary-list input");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::ListNew { max_len: 2, .. })),
+        "expected bytes index-of list output to materialize a numeric list"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("bytes index-of binary-list output should compile through codegen");
+}
+
+#[test]
 fn test_lower_bytes_index_of_from_end_on_binary_returns_last_offset() {
     let bytes_index_of_decl = DeclId::new(215);
     let hir = make_bytes_arg_pipeline_call_program_with_flags(
@@ -27141,6 +27201,47 @@ fn test_lower_bytes_index_of_from_end_on_binary_returns_last_offset() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("bytes index-of --end on literal binaries should compile through codegen");
+}
+
+#[test]
+fn test_lower_bytes_index_of_from_end_on_binary_list_materializes_numeric_list() {
+    let bytes_index_of_decl = DeclId::new(80622);
+    let get_decl = DeclId::new(80623);
+    let hir = make_bytes_list_arg_get_program_with_flags(
+        bytes_index_of_decl,
+        get_decl,
+        vec![vec![2, 1, 2], vec![3, 4]],
+        vec![2],
+        vec![b"end".to_vec()],
+        0,
+    );
+    let decl_names = HashMap::from([
+        (bytes_index_of_decl, "bytes index-of".to_string()),
+        (get_decl, "get".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bytes index-of --end should lower on compile-time binary-list input");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::ListNew { max_len: 2, .. })),
+        "expected bytes index-of --end list output to materialize a numeric list"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("bytes index-of --end binary-list output should compile through codegen");
 }
 
 #[test]
@@ -27191,6 +27292,40 @@ fn test_lower_bytes_index_of_all_on_binary_returns_offsets() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("bytes index-of --all output should compile through codegen");
+}
+
+#[test]
+fn test_lower_bytes_index_of_all_rejects_binary_list_input() {
+    let bytes_index_of_decl = DeclId::new(80624);
+    let get_decl = DeclId::new(80625);
+    let hir = make_bytes_list_arg_get_program_with_flags(
+        bytes_index_of_decl,
+        get_decl,
+        vec![vec![1, 2], vec![3, 2]],
+        vec![2],
+        vec![b"all".to_vec()],
+        0,
+    );
+    let decl_names = HashMap::from([
+        (bytes_index_of_decl, "bytes index-of".to_string()),
+        (get_decl, "get".to_string()),
+    ]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("bytes index-of --all should reject binary-list input");
+
+    assert!(
+        err.to_string()
+            .contains("bytes index-of --all requires compile-time known binary input"),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]

@@ -40,9 +40,10 @@ impl Plugin for EbpfPlugin {
             Box::new(EbpfSpec),
             Box::new(EbpfStacks),
             Box::new(EbpfTrace),
-            // Widen selected built-in byte predicates for eBPF closures
+            // Widen selected built-in byte commands for eBPF closures
             Box::new(BytesStartsWith),
             Box::new(BytesEndsWith),
+            Box::new(BytesIndexOf),
             // Helper commands for use in eBPF closures
             Box::new(Emit),
             Box::new(Count),
@@ -117,7 +118,7 @@ mod tests {
     }
 
     #[test]
-    fn test_byte_predicate_signatures_accept_binary_lists() {
+    fn test_byte_signatures_accept_binary_lists() {
         let starts_with = BytesStartsWith.signature();
         assert!(
             starts_with.input_output_types.contains(&(
@@ -134,6 +135,15 @@ mod tests {
                 nu_protocol::Type::list(nu_protocol::Type::Bool)
             )),
             "bytes ends-with should accept list<binary> input"
+        );
+
+        let index_of = BytesIndexOf.signature();
+        assert!(
+            index_of.input_output_types.contains(&(
+                nu_protocol::Type::list(nu_protocol::Type::Binary),
+                nu_protocol::Type::list(nu_protocol::Type::Int)
+            )),
+            "bytes index-of should accept list<binary> input"
         );
     }
 }

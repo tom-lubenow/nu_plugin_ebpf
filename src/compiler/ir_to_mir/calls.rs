@@ -61,6 +61,20 @@ impl<'a> HirToMirLowering<'a> {
         offsets
     }
 
+    fn bytes_index_of_offset(input: &[u8], pattern: &[u8], from_end: bool) -> i64 {
+        if pattern.len() > input.len() {
+            return -1;
+        }
+
+        let mut matches = input.windows(pattern.len());
+        let found = if from_end {
+            matches.rposition(|candidate| candidate == pattern)
+        } else {
+            matches.position(|candidate| candidate == pattern)
+        };
+        found.map(|idx| idx as i64).unwrap_or(-1)
+    }
+
     fn bytes_at_output(input: &[u8], range: MaybeOpenRange) -> Vec<u8> {
         let len = input.len() as i64;
         let start = range
@@ -3847,16 +3861,12 @@ impl<'a> HirToMirLowering<'a> {
                     ));
                 }
 
-                let input = input_reg
+                let input_value = input_reg
                     .and_then(|reg| self.get_metadata(reg))
-                    .and_then(|meta| match meta.constant_value.as_ref() {
-                        Some(nu_protocol::Value::Binary { val, .. }) => Some(val.clone()),
-                        _ => None,
-                    })
+                    .and_then(|meta| meta.constant_value.as_ref().cloned())
                     .ok_or_else(|| {
                         CompileError::UnsupportedInstruction(
-                            "bytes index-of requires compile-time known binary input in eBPF"
-                                .into(),
+                            "bytes index-of requires compile-time known binary or list<binary> input in eBPF".into(),
                         )
                     })?;
                 let (_, pattern_reg) = self.positional_args[0];
@@ -3879,6 +3889,12 @@ impl<'a> HirToMirLowering<'a> {
                 }
 
                 if return_all {
+                    let nu_protocol::Value::Binary { val: input, .. } = input_value else {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "bytes index-of --all requires compile-time known binary input in eBPF"
+                                .into(),
+                        ));
+                    };
                     const MAX_BYTES_INDEX_OF_ALL_MATCHES: usize = 60;
                     let offsets =
                         Self::bytes_index_of_all_offsets(&input, &pattern, search_from_end);
@@ -3898,28 +3914,49 @@ impl<'a> HirToMirLowering<'a> {
                         &nu_protocol::Value::list(values, nu_protocol::Span::unknown()),
                     )?;
                 } else {
-                    let index = if pattern.len() > input.len() {
-                        -1
-                    } else {
-                        let mut matches = input.windows(pattern.len());
-                        let found = if search_from_end {
-                            matches.rposition(|candidate| candidate == pattern.as_slice())
-                        } else {
-                            matches.position(|candidate| candidate == pattern.as_slice())
-                        };
-                        found.map(|idx| idx as i64).unwrap_or(-1)
-                    };
+                    match input_value {
+                        nu_protocol::Value::Binary { val: input, .. } => {
+                            let index =
+                                Self::bytes_index_of_offset(&input, &pattern, search_from_end);
 
-                    self.emit(MirInst::Copy {
-                        dst: result_vreg,
-                        src: MirValue::Const(index),
-                    });
-                    self.reset_call_result_metadata(src_dst);
-                    let out_meta = self.get_or_create_metadata(src_dst);
-                    out_meta.field_type = Some(MirType::I64);
-                    out_meta.constant_value =
-                        Some(nu_protocol::Value::int(index, nu_protocol::Span::unknown()));
-                    self.vreg_type_hints.insert(result_vreg, MirType::I64);
+                            self.emit(MirInst::Copy {
+                                dst: result_vreg,
+                                src: MirValue::Const(index),
+                            });
+                            self.reset_call_result_metadata(src_dst);
+                            let out_meta = self.get_or_create_metadata(src_dst);
+                            out_meta.field_type = Some(MirType::I64);
+                            out_meta.constant_value =
+                                Some(nu_protocol::Value::int(index, nu_protocol::Span::unknown()));
+                            self.vreg_type_hints.insert(result_vreg, MirType::I64);
+                        }
+                        nu_protocol::Value::List { vals, .. } => {
+                            let mut indexes = Vec::with_capacity(vals.len());
+                            for (item_index, item) in vals.into_iter().enumerate() {
+                                let nu_protocol::Value::Binary { val, .. } = item else {
+                                    return Err(CompileError::UnsupportedInstruction(format!(
+                                        "bytes index-of requires binary list items in eBPF; item {item_index} has type {}",
+                                        item.get_type()
+                                    )));
+                                };
+                                indexes.push(nu_protocol::Value::int(
+                                    Self::bytes_index_of_offset(&val, &pattern, search_from_end),
+                                    nu_protocol::Span::unknown(),
+                                ));
+                            }
+                            self.reset_call_result_metadata(src_dst);
+                            self.lower_constant_value(
+                                src_dst,
+                                &nu_protocol::Value::list(indexes, nu_protocol::Span::unknown()),
+                            )?;
+                        }
+                        other => {
+                            return Err(CompileError::UnsupportedInstruction(format!(
+                                "bytes index-of requires binary or list<binary> input in eBPF, got {}",
+                                other.get_type()
+                            )));
+                        }
+                    }
                 }
             }
 

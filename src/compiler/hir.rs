@@ -299,6 +299,7 @@ pub enum FixedLayoutValueConsumer {
     MapContainsProbe,
     BinaryBytesTransform,
     BytesPredicate,
+    BytesIndexOf,
     BytesCollect,
     StrJoin,
     Length,
@@ -542,6 +543,7 @@ pub fn compile_time_value_flows_to_fixed_layout_aggregate_consumer(
         FixedLayoutValueConsumer::MapContainsProbe,
         FixedLayoutValueConsumer::BinaryBytesTransform,
         FixedLayoutValueConsumer::BytesPredicate,
+        FixedLayoutValueConsumer::BytesIndexOf,
         FixedLayoutValueConsumer::BytesCollect,
         FixedLayoutValueConsumer::StrJoin,
         FixedLayoutValueConsumer::Length,
@@ -714,6 +716,18 @@ fn compile_time_value_consumer_matches(
                 && args.rest.is_empty()
                 && args.named.is_empty()
                 && args.flags.is_empty()
+                && args.parser_info.is_empty()
+        }
+        FixedLayoutValueConsumer::BytesIndexOf => {
+            decl_name == Some("bytes index-of")
+                && call_args_tracked_only_in_pipeline(src_dst, args, tracked_regs)
+                && args.positional.len() == 1
+                && args.rest.is_empty()
+                && args.named.is_empty()
+                && args
+                    .flags
+                    .iter()
+                    .all(|flag| matches!(flag.as_slice(), b"all" | b"end"))
                 && args.parser_info.is_empty()
         }
         FixedLayoutValueConsumer::BytesCollect => {
