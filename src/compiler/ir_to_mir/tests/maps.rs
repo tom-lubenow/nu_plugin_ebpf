@@ -5362,6 +5362,49 @@ fn test_map_value_type_spec_supports_graph_root_payload_schema() {
 }
 
 #[test]
+fn test_map_value_type_spec_supports_nested_graph_root_payload_refcount() {
+    let (ty, semantics) = HirToMirLowering::parse_named_map_value_type_spec(
+        "record{root:bpf_rb_root:rb_item:rb:record{meta:record{refs:bpf_refcount},cookie:u64},counter:u64}",
+    )
+    .expect("graph root object payload schema should allow nested bpf_refcount fields");
+
+    assert!(semantics.is_none());
+    let MirType::Struct { fields, .. } = ty else {
+        panic!("expected record map value type, got {ty:?}");
+    };
+    let root = fields
+        .iter()
+        .find(|field| field.name == "root")
+        .and_then(|field| field.ty.bpf_graph_root_info())
+        .expect("root should carry contains metadata");
+    assert_eq!(root.kind, BpfGraphRootKind::RbRoot);
+    let object_ty = root
+        .object_type
+        .expect("root should carry object payload schema");
+    assert!(
+        object_ty.contains_bpf_refcount_struct(),
+        "nested graph payload refcount should be visible to refcount acquire checks"
+    );
+    let MirType::Struct {
+        name: Some(name),
+        fields: object_fields,
+        ..
+    } = object_ty
+    else {
+        panic!("expected named graph object payload type, got {object_ty:?}");
+    };
+    assert_eq!(name, "rb_item");
+    let meta = object_fields
+        .iter()
+        .find(|field| field.name == "meta")
+        .expect("graph payload should include meta record");
+    assert!(
+        meta.ty.contains_bpf_refcount_struct(),
+        "nested meta record should contain bpf_refcount"
+    );
+}
+
+#[test]
 fn test_map_value_type_spec_rejects_graph_root_payload_unmatched_braces_with_context() {
     let err = HirToMirLowering::parse_named_map_value_type_spec(
         "bpf_list_head:node_data:node:record{refs:bpf_refcount",
