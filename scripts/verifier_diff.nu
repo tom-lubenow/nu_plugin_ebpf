@@ -27655,6 +27655,21 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "map-define-rejects-top-level-graph-root-schema"
+        category: "maps"
+        tags: [maps map-define graph reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define graph_items --kind hash --value-type "bpf_list_head:node_data:node:record{refs:bpf_refcount,cookie:u64}"'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "must wrap bpf_list_head in a map-value record field"
+    }
+    {
         name: "map-define-rejects-bare-graph-root"
         category: "maps"
         tags: [maps map-define graph reject]
