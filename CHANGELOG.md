@@ -102,6 +102,8 @@ documentation changes that matter to external alpha consumers.
   aux operands.
 - Improved known-zero kfunc aux diagnostics so scalar nonzero operands report
   the required zero contract instead of a generic pointer/null mismatch.
+- Added type-inference and lower verifier/VCC coverage for packet dynptr
+  kfunc flag known-zero diagnostics on nonzero and dynamic operands.
 - Added type-inference unit coverage for bpf_wq init/start known-zero flag
   diagnostics on nonzero and dynamic operands.
 - Added source verifier coverage for known-zero percpu object-new and list

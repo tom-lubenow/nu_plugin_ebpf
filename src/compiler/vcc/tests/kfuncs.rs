@@ -2357,6 +2357,26 @@ fn make_packet_dynptr_kfunc_vcc_function(
     repeat_constructor: bool,
     read_size: bool,
 ) -> (MirFunction, HashMap<VReg, MirType>) {
+    make_packet_dynptr_kfunc_vcc_function_with_optional_flags(
+        kfunc,
+        Some(flags_value),
+        repeat_constructor,
+        read_size,
+    )
+}
+
+fn make_packet_dynptr_kfunc_vcc_function_with_dynamic_flags(
+    kfunc: &str,
+) -> (MirFunction, HashMap<VReg, MirType>) {
+    make_packet_dynptr_kfunc_vcc_function_with_optional_flags(kfunc, None, false, false)
+}
+
+fn make_packet_dynptr_kfunc_vcc_function_with_optional_flags(
+    kfunc: &str,
+    flags_value: Option<i64>,
+    repeat_constructor: bool,
+    read_size: bool,
+) -> (MirFunction, HashMap<VReg, MirType>) {
     let (mut func, entry) = new_mir_function();
 
     let ctx = func.alloc_vreg();
@@ -2374,10 +2394,12 @@ fn make_packet_dynptr_kfunc_vcc_function(
             field: CtxField::Context,
             slot: None,
         });
-    func.block_mut(entry).instructions.push(MirInst::Copy {
-        dst: flags,
-        src: MirValue::Const(flags_value),
-    });
+    if let Some(flags_value) = flags_value {
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: flags,
+            src: MirValue::Const(flags_value),
+        });
+    }
     func.block_mut(entry).instructions.push(MirInst::Copy {
         dst: dptr,
         src: MirValue::StackSlot(dptr_slot),
@@ -2886,6 +2908,22 @@ fn test_verify_mir_packet_dynptr_kfuncs_require_zero_flags() {
     for kfunc in ["bpf_dynptr_from_xdp", "bpf_dynptr_from_skb"] {
         let (func, types) = make_packet_dynptr_kfunc_vcc_function(kfunc, 1, false, false);
         let err = verify_mir(&func, &types).expect_err("expected packet dynptr kfunc flags error");
+        assert!(
+            err.iter().any(|e| e
+                .message
+                .contains(&format!("kfunc '{kfunc}' arg1 must be known zero"))),
+            "unexpected error messages for {kfunc}: {:?}",
+            err
+        );
+    }
+}
+
+#[test]
+fn test_verify_mir_packet_dynptr_kfuncs_reject_dynamic_flags() {
+    for kfunc in ["bpf_dynptr_from_xdp", "bpf_dynptr_from_skb"] {
+        let (func, types) = make_packet_dynptr_kfunc_vcc_function_with_dynamic_flags(kfunc);
+        let err = verify_mir(&func, &types)
+            .expect_err("expected packet dynptr kfunc dynamic flags error");
         assert!(
             err.iter().any(|e| e
                 .message

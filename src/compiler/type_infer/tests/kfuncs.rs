@@ -2204,6 +2204,24 @@ fn make_packet_dynptr_kfunc_type_call_with_arg0_copy(
     arg0_field: CtxField,
     copy_arg0: bool,
 ) -> MirFunction {
+    make_packet_dynptr_kfunc_type_call_with_optional_flags(
+        kfunc,
+        Some(flags_value),
+        arg0_field,
+        copy_arg0,
+    )
+}
+
+fn make_packet_dynptr_kfunc_type_call_with_dynamic_flags(kfunc: &str) -> MirFunction {
+    make_packet_dynptr_kfunc_type_call_with_optional_flags(kfunc, None, CtxField::Context, false)
+}
+
+fn make_packet_dynptr_kfunc_type_call_with_optional_flags(
+    kfunc: &str,
+    flags_value: Option<i64>,
+    arg0_field: CtxField,
+    copy_arg0: bool,
+) -> MirFunction {
     let mut func = make_test_function();
     let ctx = func.alloc_vreg();
     let call_ctx = if copy_arg0 { func.alloc_vreg() } else { ctx };
@@ -2223,10 +2241,12 @@ fn make_packet_dynptr_kfunc_type_call_with_arg0_copy(
             src: MirValue::VReg(ctx),
         });
     }
-    block.instructions.push(MirInst::Copy {
-        dst: flags,
-        src: MirValue::Const(flags_value),
-    });
+    if let Some(flags_value) = flags_value {
+        block.instructions.push(MirInst::Copy {
+            dst: flags,
+            src: MirValue::Const(flags_value),
+        });
+    }
     block.instructions.push(MirInst::Copy {
         dst: dptr,
         src: MirValue::StackSlot(dptr_slot),
@@ -2249,6 +2269,24 @@ fn test_type_error_packet_dynptr_kfuncs_require_zero_flags() {
         let errs = ti
             .infer(&func)
             .expect_err("expected packet dynptr kfunc flags error");
+        assert!(
+            errs.iter().any(|e| e
+                .message
+                .contains(&format!("kfunc '{kfunc}' arg1 must be known zero"))),
+            "unexpected errors for {kfunc}: {:?}",
+            errs
+        );
+    }
+}
+
+#[test]
+fn test_type_error_packet_dynptr_kfuncs_reject_dynamic_flags() {
+    for kfunc in ["bpf_dynptr_from_xdp", "bpf_dynptr_from_skb"] {
+        let func = make_packet_dynptr_kfunc_type_call_with_dynamic_flags(kfunc);
+        let mut ti = TypeInference::new(None);
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected packet dynptr kfunc dynamic flags error");
         assert!(
             errs.iter().any(|e| e
                 .message
