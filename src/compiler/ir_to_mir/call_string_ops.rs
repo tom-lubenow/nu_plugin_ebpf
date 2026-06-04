@@ -3285,7 +3285,10 @@ impl<'a> HirToMirLowering<'a> {
                 }
                 Some(format!("record<{}>", parts.join(", ")))
             }
-            AnnotatedValueSemantics::FixedArray { .. } => None,
+            AnnotatedValueSemantics::FixedArray { elem, .. } => {
+                let elem_type = Self::describe_annotated_semantics_type(elem)?;
+                Some(format!("list<{elem_type}>"))
+            }
         }
     }
 
