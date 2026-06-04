@@ -159,6 +159,43 @@ fn array_type_spec_subject(spec: &str, record_path: Option<&str>) -> String {
     }
 }
 
+fn validate_type_spec_candidate_braces(
+    spec: &str,
+    record_path: Option<&str>,
+) -> Result<(), CompileError> {
+    if !(spec.starts_with("record{") || spec.starts_with("array{")) {
+        return Ok(());
+    }
+
+    let mut depth = 0usize;
+    for ch in spec.chars() {
+        match ch {
+            '{' => depth = depth.saturating_add(1),
+            '}' => {
+                if depth == 0 {
+                    let subject = type_spec_subject(spec, record_path);
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{} has an unmatched '}}'",
+                        subject
+                    )));
+                }
+                depth -= 1;
+            }
+            _ => {}
+        }
+    }
+
+    if depth != 0 {
+        let subject = type_spec_subject(spec, record_path);
+        return Err(CompileError::UnsupportedInstruction(format!(
+            "{} has unmatched '{{' braces",
+            subject
+        )));
+    }
+
+    Ok(())
+}
+
 fn split_top_level_field<'a>(
     field: &'a str,
     parent_path: Option<&str>,
@@ -339,6 +376,8 @@ impl ParsedNamedGlobalType {
         context: NamedTypeSpecContext,
         record_path: Option<&str>,
     ) -> Result<Self, CompileError> {
+        validate_type_spec_candidate_braces(spec, record_path)?;
+
         let scalar_shape = match spec {
             "i8" => Some((MirType::I8, NamedGlobalTypeShape::I8)),
             "i16" => Some((MirType::I16, NamedGlobalTypeShape::I16)),

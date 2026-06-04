@@ -6071,6 +6071,17 @@ fn test_lower_global_define_type_nested_record_rejects_unsupported_type_path() {
 }
 
 #[test]
+fn test_lower_global_define_type_record_candidate_rejects_unmatched_braces() {
+    let err = lower_global_define_type_spec_error("record{inner:record{pid:u32");
+
+    assert!(
+        err.to_string()
+            .contains("global type spec 'record{inner:record{pid:u32' has unmatched '{' braces"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn test_lower_global_define_type_nested_record_rejects_unexpected_field_path() {
     let define_decl = DeclId::new(9210);
     let decl_names = HashMap::from([(define_decl, "global-define".to_string())]);
