@@ -5414,7 +5414,7 @@ fn test_map_value_type_spec_rejects_bare_graph_root() {
             .expect_err("bare list root should require named object schema support");
 
     let msg = err.to_string();
-    assert!(msg.contains("map value graph type spec"));
+    assert!(msg.contains("record field 'root' type spec 'bpf_list_head'"));
     assert!(msg.contains("named object type schema"));
     assert!(msg.contains("contains:TYPE:FIELD"));
 }
@@ -5438,7 +5438,7 @@ fn test_map_value_type_spec_rejects_bare_graph_node() {
             .expect_err("bare rbtree node should require named object schema support");
 
     let msg = err.to_string();
-    assert!(msg.contains("map value graph type spec"));
+    assert!(msg.contains("record field 'node' type spec 'bpf_rb_node'"));
     assert!(msg.contains("matching bpf_list_node/bpf_rb_node object fields"));
 }
 
@@ -5449,7 +5449,7 @@ fn test_map_value_type_spec_rejects_dynptr() {
             .expect_err("dynptr map value type should be rejected");
 
     let msg = err.to_string();
-    assert!(msg.contains("map value dynptr type spec"));
+    assert!(msg.contains("record field 'dptr' type spec 'bpf_dynptr'"));
     assert!(msg.contains("stack-only verifier state"));
 }
 
@@ -5835,10 +5835,9 @@ fn test_map_value_type_spec_rejects_invalid_kptr_type_name() {
     let err = HirToMirLowering::parse_named_map_value_type_spec("record{task:kptr:task-struct}")
         .expect_err("invalid kptr type name should fail");
 
-    assert!(
-        err.to_string()
-            .contains("requires a kernel struct type name")
-    );
+    assert!(err.to_string().contains(
+        "record field 'task' type spec 'kptr:task-struct' requires a kernel struct type name"
+    ));
 }
 
 #[test]

@@ -524,6 +524,12 @@ impl ParsedNamedGlobalType {
         }
 
         if context == NamedTypeSpecContext::MapValue && Self::is_dynptr_type_spec_candidate(spec) {
+            if record_path.is_some() {
+                let subject = type_spec_subject(spec, context, record_path);
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{subject} is not supported; bpf_dynptr objects are stack-only verifier state for dynptr helpers and cannot be embedded in map-value schemas"
+                )));
+            }
             return Err(CompileError::UnsupportedInstruction(format!(
                 "map value dynptr type spec '{}' is not supported; bpf_dynptr objects are stack-only verifier state for dynptr helpers and cannot be embedded in map-value schemas",
                 spec
@@ -533,6 +539,12 @@ impl ParsedNamedGlobalType {
         if context == NamedTypeSpecContext::MapValue
             && Self::is_graph_object_type_spec_candidate(spec)
         {
+            if record_path.is_some() {
+                let subject = type_spec_subject(spec, context, record_path);
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{subject} is not supported yet; bpf_list_head/bpf_rb_root roots require a named object type schema so the compiler can emit BTF contains:TYPE:FIELD declaration tags with matching bpf_list_node/bpf_rb_node object fields"
+                )));
+            }
             return Err(CompileError::UnsupportedInstruction(format!(
                 "map value graph type spec '{}' is not supported yet; bpf_list_head/bpf_rb_root roots require a named object type schema so the compiler can emit BTF contains:TYPE:FIELD declaration tags with matching bpf_list_node/bpf_rb_node object fields",
                 spec
@@ -543,6 +555,12 @@ impl ParsedNamedGlobalType {
             && let Some(pointee_name) = spec.strip_prefix("kptr:")
         {
             if !Self::is_valid_kernel_type_name(pointee_name) {
+                if record_path.is_some() {
+                    let subject = type_spec_subject(spec, context, record_path);
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{subject} requires a kernel struct type name like kptr:task_struct"
+                    )));
+                }
                 return Err(CompileError::UnsupportedInstruction(format!(
                     "map value kptr type spec '{}' requires a kernel struct type name like kptr:task_struct",
                     spec

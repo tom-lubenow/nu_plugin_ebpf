@@ -13825,6 +13825,21 @@ const FIXTURES = [
         error_contains: "record field 'pid' is duplicated in type spec 'record{pid:u32,pid:u64}'"
     }
     {
+        name: "map-define-value-type-invalid-kptr-field-rejects-path"
+        category: "maps"
+        tags: [maps map-define records kptr diagnostics reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define state --kind hash --value-type "record{task:kptr:task-struct}"'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "record field 'task' type spec 'kptr:task-struct' requires a kernel struct type name"
+    }
+    {
         name: "annotated-mut-record-alignment"
         category: "globals"
         tags: [globals records alignment accept]
