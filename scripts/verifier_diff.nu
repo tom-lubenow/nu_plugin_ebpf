@@ -37408,6 +37408,32 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-binary-list-bytes-at-unequal-get"
+        category: "language-core"
+        tags: [binary list bytes at unequal get starts-with]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [0x[01] 0x[02 03]] | bytes at 0..2 | get 1 | bytes starts-with 0x[02 03]'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-binary-list-bytes-at-empty-get-length"
+        category: "language-core"
+        tags: [binary list bytes at empty get length]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [0x[01] 0x[02]] | bytes at 1..0 | get 0 | bytes length'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-binary-bytes-add-starts-with"
         category: "language-core"
         tags: [binary bytes add starts-with]
