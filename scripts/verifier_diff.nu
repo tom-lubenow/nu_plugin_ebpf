@@ -36800,6 +36800,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-scalar-bits-rotate-unsigned-i64-left-u32-runtime"
+        category: "language-core"
+        tags: [scalar bits rol number-bytes runtime context]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  (($ctx.pid | bits rol 1 --number-bytes 8) >= 0)'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-scalar-bits-rotate-default"
         category: "language-core"
         tags: [scalar bits rol ror default]

@@ -23650,6 +23650,68 @@ fn test_lower_bits_rotate_unsigned_i64_rejects_runtime_scalar_integer_input() {
 }
 
 #[test]
+fn test_lower_bits_rotate_unsigned_i64_left_on_runtime_u32_context_input() {
+    let bits_decl = DeclId::new(70844);
+    let hir = make_ctx_pid_bits_shift_program(bits_decl, 1, 8);
+    let decl_names = HashMap::from([(bits_decl, "bits rol".to_string())]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bits rol --number-bytes 8 should lower safe runtime u32 input");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::Shl,
+                ..
+            }
+        )),
+        "expected safe runtime u32 bits rol --number-bytes 8 to emit a left shift"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("bits rol --number-bytes 8 runtime u32 input should compile");
+}
+
+#[test]
+fn test_lower_bits_rotate_unsigned_i64_left_rejects_unsafe_runtime_u32_count() {
+    let bits_decl = DeclId::new(70845);
+    let hir = make_ctx_pid_bits_shift_program(bits_decl, 32, 8);
+    let decl_names = HashMap::from([(bits_decl, "bits rol".to_string())]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("bits rol --number-bytes 8 should reject u32 rotates that can exceed i64::MAX");
+
+    assert!(
+        err.to_string()
+            .contains("runtime u32 input supports rotate counts from 0 through 31"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn test_lower_bits_rotate_signed_i64_on_known_integer_lists() {
     for (offset, command_name, values, expected_values) in [
         (0, "bits rol", vec![4i64, 3, 2], vec![8i64, 6, 4]),

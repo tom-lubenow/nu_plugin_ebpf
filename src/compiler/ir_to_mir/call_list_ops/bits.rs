@@ -709,6 +709,31 @@ impl<'a> HirToMirLowering<'a> {
         Ok(())
     }
 
+    fn validate_bits_unsigned_i64_left_rotate_runtime_scalar(
+        &self,
+        cmd_name: &str,
+        input_meta: Option<&RegMetadata>,
+        input_vreg: VReg,
+        rotate_count: i64,
+    ) -> Result<(), CompileError> {
+        let input_ty = input_meta
+            .and_then(|meta| meta.field_type.as_ref())
+            .or_else(|| self.vreg_type_hints.get(&input_vreg));
+        let Some((ty_name, max_count)) =
+            input_ty.and_then(Self::bits_unsigned_i64_left_shift_runtime_limit)
+        else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} unsigned --number-bytes 8 requires compile-time known integer input or runtime u8, u16, or u32 input in eBPF; use --signed --number-bytes 8 for generic runtime 64-bit rotates"
+            )));
+        };
+        if rotate_count > max_count && rotate_count != 64 {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} unsigned --number-bytes 8 runtime {ty_name} input supports rotate counts from 0 through {max_count}, or 64, in eBPF; got {rotate_count}"
+            )));
+        }
+        Ok(())
+    }
+
     fn bits_binary_shift_rotate_count(&self, cmd_name: &str) -> Result<usize, CompileError> {
         if !self.parser_info_args.is_empty() {
             return Err(CompileError::UnsupportedInstruction(format!(
@@ -963,11 +988,6 @@ impl<'a> HirToMirLowering<'a> {
                     "{cmd_name} integer mode supports --number-bytes 1, 2, 4, or 8 in eBPF; got {number_bytes}"
                 ))
             })?;
-            if matches!(mode, BitsShiftMode::UnsignedI64) && auto_input.is_none() {
-                return Err(CompileError::UnsupportedInstruction(format!(
-                    "{cmd_name} unsigned --number-bytes 8 requires compile-time known integer input in eBPF; use --signed --number-bytes 8 for runtime 64-bit rotates"
-                )));
-            }
             mode
         } else if signed {
             BitsShiftMode::SignedI64
@@ -1930,6 +1950,11 @@ impl<'a> HirToMirLowering<'a> {
             && input_meta.list_buffer.is_some()
         {
             let spec = self.bits_rotate_spec(cmd_name, None)?;
+            if spec.mode == BitsShiftMode::UnsignedI64 {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{cmd_name} unsigned --number-bytes 8 requires compile-time known integer input or runtime u8, u16, or u32 scalar input for safe bits rol counts in eBPF; use --signed --number-bytes 8 for runtime list input"
+                )));
+            }
             return self.lower_bits_rotate_runtime_list(
                 cmd_name,
                 src_dst,
@@ -1968,7 +1993,22 @@ impl<'a> HirToMirLowering<'a> {
             out_meta.literal_int = Some(output);
         } else {
             let spec = self.bits_rotate_spec(cmd_name, None)?;
-            self.emit_bits_rotate_value(cmd_name, result_vreg, lhs_value, spec);
+            if spec.mode == BitsShiftMode::UnsignedI64 {
+                if cmd_name != "bits rol" {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{cmd_name} unsigned --number-bytes 8 requires compile-time known integer input in eBPF; use --signed --number-bytes 8 for runtime 64-bit rotates"
+                    )));
+                }
+                self.validate_bits_unsigned_i64_left_rotate_runtime_scalar(
+                    cmd_name,
+                    input_meta.as_ref(),
+                    input_vreg,
+                    spec.count,
+                )?;
+                self.emit_bits_rotate_unsigned_i64_left_value(result_vreg, lhs_value, spec.count);
+            } else {
+                self.emit_bits_rotate_value(cmd_name, result_vreg, lhs_value, spec);
+            }
             self.reset_call_result_metadata(src_dst);
             self.get_or_create_metadata(src_dst).field_type = Some(MirType::I64);
         }
@@ -2129,6 +2169,20 @@ impl<'a> HirToMirLowering<'a> {
                 );
                 self.emit_sign_extend_i64(dst, MirValue::VReg(rotated_vreg), sign_bit);
             }
+        }
+        self.vreg_type_hints.insert(dst, MirType::I64);
+    }
+
+    fn emit_bits_rotate_unsigned_i64_left_value(&mut self, dst: VReg, src: MirValue, count: i64) {
+        if count == 0 || count == 64 {
+            self.emit(MirInst::Copy { dst, src });
+        } else {
+            self.emit(MirInst::BinOp {
+                dst,
+                op: BinOpKind::Shl,
+                lhs: src,
+                rhs: MirValue::Const(count),
+            });
         }
         self.vreg_type_hints.insert(dst, MirType::I64);
     }
