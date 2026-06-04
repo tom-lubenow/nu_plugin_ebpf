@@ -30089,6 +30089,37 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "source-kfunc-list-front-refcount-acquire-rejects-object-without-refcount"
+        category: "helper-state"
+        tags: [kfunc object graph bpf_refcount source reject]
+        requires: [kernel-btf]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  map-define graph_items --kind hash --value-type "record{lock:bpf_spin_lock,root:bpf_list_head:node_data:node:record{cookie:u64}}"'
+            '  let entry = (0 | map-get graph_items --kind hash)'
+            '  if $entry {'
+            '    helper-call "bpf_spin_lock" $entry.lock'
+            '    let node = (kfunc-call "bpf_list_front" $entry.root)'
+            '    if $node {'
+            '      let clone = (kfunc-call "bpf_refcount_acquire_impl" $node 0)'
+            '      helper-call "bpf_spin_unlock" $entry.lock'
+            '      if $clone {'
+            '        kfunc-call "bpf_obj_drop_impl" $clone 0'
+            '      }'
+            '    } else {'
+            '      helper-call "bpf_spin_unlock" $entry.lock'
+            '      0'
+            '    }'
+            '  }'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "arg0 expects object pointer containing bpf_refcount"
+    }
+    {
         name: "source-kfunc-list-front-same-key-repeated-map-root"
         category: "helper-state"
         tags: [kfunc object graph source accept]
@@ -30362,6 +30393,37 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
+    }
+    {
+        name: "source-kfunc-list-back-refcount-acquire-rejects-object-without-refcount"
+        category: "helper-state"
+        tags: [kfunc object graph bpf_refcount source reject]
+        requires: [kernel-btf]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  map-define graph_items --kind hash --value-type "record{lock:bpf_spin_lock,root:bpf_list_head:node_data:node:record{cookie:u64}}"'
+            '  let entry = (0 | map-get graph_items --kind hash)'
+            '  if $entry {'
+            '    helper-call "bpf_spin_lock" $entry.lock'
+            '    let node = (kfunc-call "bpf_list_back" $entry.root)'
+            '    if $node {'
+            '      let clone = (kfunc-call "bpf_refcount_acquire_impl" $node 0)'
+            '      helper-call "bpf_spin_unlock" $entry.lock'
+            '      if $clone {'
+            '        kfunc-call "bpf_obj_drop_impl" $clone 0'
+            '      }'
+            '    } else {'
+            '      helper-call "bpf_spin_unlock" $entry.lock'
+            '      0'
+            '    }'
+            '  }'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "arg0 expects object pointer containing bpf_refcount"
     }
     {
         name: "source-kfunc-rbtree-first-map-root"
