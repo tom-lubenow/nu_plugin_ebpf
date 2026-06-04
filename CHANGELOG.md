@@ -61,6 +61,8 @@ documentation changes that matter to external alpha consumers.
   `bpf_refcount` is nested inside a payload record.
 - Added list-back source verifier coverage for missing-lock and repeated
   same-map/same-key graph-root lock provenance.
+- Added rbtree remove source verifier coverage for missing-lock and repeated
+  same-map/same-key graph-root lock provenance.
 - Improved typed `global-define` array initializer diagnostics so top-level
   bad items use `initializer[0]` style paths instead of record-field wording.
 - Added verifier coverage for BTF target diagnostic help, typed global
