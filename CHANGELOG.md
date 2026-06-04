@@ -112,6 +112,8 @@ documentation changes that matter to external alpha consumers.
   known-zero meta diagnostics.
 - Added type-inference unit coverage for list push front/back known-zero meta
   diagnostics.
+- Added lower verifier/VCC unit coverage for list push front/back known-zero
+  meta diagnostics.
 - Added type-inference unit coverage for rbtree add known-zero meta
   diagnostics.
 - Added lower verifier/VCC unit coverage for rbtree add known-zero meta
