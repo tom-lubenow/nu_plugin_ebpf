@@ -39028,6 +39028,32 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-record-transpose-ignore-titles-get"
+        category: "language-core"
+        tags: [aggregate record transpose list get ignore-titles]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ({ pid: 7 cpu: 2 } | transpose --ignore-titles val | get 1 | get val) == 2'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-record-transpose-ignore-titles-mixed-get"
+        category: "language-core"
+        tags: [aggregate record transpose list get string ignore-titles]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  { pid: 7 comm: "nu" } | transpose --ignore-titles val | get 1 | get val | str starts-with "nu"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-record-transpose-length"
         category: "language-core"
         tags: [aggregate record transpose list length]

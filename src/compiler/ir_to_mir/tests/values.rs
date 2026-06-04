@@ -5821,28 +5821,40 @@ fn make_record_transpose_get_field_program(
     record: Record,
     row_index: i64,
     field_name: &str,
+    ignore_titles: bool,
 ) -> HirProgram {
-    let stmts = vec![
+    let mut stmts = vec![
         HirStmt::LoadValue {
             dst: RegId::new(0),
             val: Box::new(Value::record(record, Span::test_data())),
         },
         HirStmt::LoadValue {
             dst: RegId::new(2),
-            val: Box::new(Value::string("key", Span::test_data())),
+            val: Box::new(Value::string(
+                if ignore_titles { "val" } else { "key" },
+                Span::test_data(),
+            )),
         },
-        HirStmt::LoadValue {
+    ];
+    let mut transpose_args = HirCallArgs {
+        positional: vec![RegId::new(2)],
+        pipeline_input: Some(RegId::new(0)),
+        ..HirCallArgs::default()
+    };
+    if ignore_titles {
+        transpose_args.flags = vec![b"ignore-titles".to_vec()];
+    } else {
+        stmts.push(HirStmt::LoadValue {
             dst: RegId::new(3),
             val: Box::new(Value::string("value", Span::test_data())),
-        },
+        });
+        transpose_args.positional.push(RegId::new(3));
+    }
+    stmts.extend([
         HirStmt::Call {
             decl_id: transpose_decl,
             src_dst: RegId::new(1),
-            args: HirCallArgs {
-                positional: vec![RegId::new(2), RegId::new(3)],
-                pipeline_input: Some(RegId::new(0)),
-                ..HirCallArgs::default()
-            },
+            args: transpose_args,
         },
         HirStmt::LoadLiteral {
             dst: RegId::new(4),
@@ -5870,7 +5882,7 @@ fn make_record_transpose_get_field_program(
                 ..HirCallArgs::default()
             },
         },
-    ];
+    ]);
 
     let func = HirFunction {
         blocks: vec![HirBlock {
@@ -5897,8 +5909,14 @@ fn make_record_transpose_get_field_then_starts_with_program(
         ("pid", Value::int(7, Span::test_data())),
         ("comm", Value::string("nu", Span::test_data())),
     ]);
-    let mut hir =
-        make_record_transpose_get_field_program(transpose_decl, get_decl, record, 1, "value");
+    let mut hir = make_record_transpose_get_field_program(
+        transpose_decl,
+        get_decl,
+        record,
+        1,
+        "value",
+        false,
+    );
     let block = &mut hir.main.blocks[0];
     block.stmts.push(HirStmt::LoadValue {
         dst: RegId::new(8),
@@ -30569,7 +30587,14 @@ fn test_lower_transpose_on_constant_record_materializes_rows() {
         ("pid", Value::int(7, Span::test_data())),
         ("cpu", Value::int(2, Span::test_data())),
     ]);
-    let hir = make_record_transpose_get_field_program(transpose_decl, get_decl, record, 1, "value");
+    let hir = make_record_transpose_get_field_program(
+        transpose_decl,
+        get_decl,
+        record,
+        1,
+        "value",
+        false,
+    );
     let decl_names = HashMap::from([
         (transpose_decl, "transpose".to_string()),
         (get_decl, "get".to_string()),
@@ -30588,6 +30613,37 @@ fn test_lower_transpose_on_constant_record_materializes_rows() {
     assert_returned_scalar_i64_or_const(&result, 2);
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("record transpose followed by row/value get should compile through codegen");
+}
+
+#[test]
+fn test_lower_transpose_ignore_titles_on_constant_record_materializes_rows() {
+    let transpose_decl = DeclId::new(231);
+    let get_decl = DeclId::new(232);
+    let record = test_record(vec![
+        ("pid", Value::int(7, Span::test_data())),
+        ("cpu", Value::int(2, Span::test_data())),
+    ]);
+    let hir =
+        make_record_transpose_get_field_program(transpose_decl, get_decl, record, 1, "val", true);
+    let decl_names = HashMap::from([
+        (transpose_decl, "transpose".to_string()),
+        (get_decl, "get".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("transpose --ignore-titles should lower compile-time known homogeneous record rows");
+
+    assert_returned_scalar_i64_or_const(&result, 2);
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "record transpose --ignore-titles followed by row/value get should compile through codegen",
+    );
 }
 
 #[test]
@@ -30619,6 +30675,55 @@ fn test_lower_transpose_on_mixed_constant_record_feeds_metadata_get() {
     assert_no_runtime_list_operations(&result.program, "mixed record transpose get");
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("mixed record transpose/get should compile through codegen");
+}
+
+#[test]
+fn test_lower_transpose_ignore_titles_on_mixed_constant_record_feeds_metadata_get() {
+    let transpose_decl = DeclId::new(233);
+    let get_decl = DeclId::new(234);
+    let starts_with_decl = DeclId::new(235);
+    let record = test_record(vec![
+        ("pid", Value::int(7, Span::test_data())),
+        ("comm", Value::string("nu", Span::test_data())),
+    ]);
+    let mut hir =
+        make_record_transpose_get_field_program(transpose_decl, get_decl, record, 1, "val", true);
+    let block = &mut hir.main.blocks[0];
+    block.stmts.push(HirStmt::LoadValue {
+        dst: RegId::new(8),
+        val: Box::new(Value::string("nu", Span::test_data())),
+    });
+    block.stmts.push(HirStmt::Call {
+        decl_id: starts_with_decl,
+        src_dst: RegId::new(9),
+        args: HirCallArgs {
+            positional: vec![RegId::new(8)],
+            pipeline_input: Some(RegId::new(7)),
+            ..HirCallArgs::default()
+        },
+    });
+    block.terminator = HirTerminator::Return { src: RegId::new(9) };
+    hir.main.register_count = 10;
+
+    let decl_names = HashMap::from([
+        (transpose_decl, "transpose".to_string()),
+        (get_decl, "get".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("transpose --ignore-titles should feed metadata-only get for mixed record rows");
+
+    assert_no_runtime_list_operations(&result.program, "mixed record transpose ignore-titles get");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("mixed record transpose --ignore-titles/get should compile through codegen");
 }
 
 #[test]

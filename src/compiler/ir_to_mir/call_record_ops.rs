@@ -902,15 +902,22 @@ impl<'a> HirToMirLowering<'a> {
             .pipeline_input_reg
             .or(src_dst_had_value.then_some(src_dst));
 
-        if !self.named_flags.is_empty()
-            || !self.named_args.is_empty()
-            || !self.parser_info_args.is_empty()
-        {
+        if !self.named_args.is_empty() || !self.parser_info_args.is_empty() {
             return Err(CompileError::UnsupportedInstruction(
                 "transpose supports only record input and positional output column names in eBPF"
                     .into(),
             ));
         }
+        let ignore_titles = match self.named_flags.as_slice() {
+            [] => false,
+            [flag] if matches!(flag.as_str(), "ignore-titles" | "i") => true,
+            _ => {
+                return Err(CompileError::UnsupportedInstruction(
+                    "transpose supports only the --ignore-titles flag for record input in eBPF"
+                        .into(),
+                ));
+            }
+        };
 
         let mut output_names = ["column0".to_string(), "column1".to_string()];
         for (idx, (_, reg)) in self.positional_args.iter().enumerate() {
@@ -937,11 +944,15 @@ impl<'a> HirToMirLowering<'a> {
         let mut rows = Vec::with_capacity(val.len());
         for (key, value) in val.iter() {
             let mut row = nu_protocol::Record::new();
-            row.push(
-                output_names[0].clone(),
-                nu_protocol::Value::string(key.to_string(), Span::unknown()),
-            );
-            row.push(output_names[1].clone(), value.clone());
+            if ignore_titles {
+                row.push(output_names[0].clone(), value.clone());
+            } else {
+                row.push(
+                    output_names[0].clone(),
+                    nu_protocol::Value::string(key.to_string(), Span::unknown()),
+                );
+                row.push(output_names[1].clone(), value.clone());
+            }
             rows.push(nu_protocol::Value::record(row, Span::unknown()));
         }
         let value_list = nu_protocol::Value::list(rows, Span::unknown());
