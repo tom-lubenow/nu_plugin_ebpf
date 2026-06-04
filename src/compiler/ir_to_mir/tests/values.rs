@@ -7629,6 +7629,54 @@ fn test_lower_empty_predicates_on_literal_binary_use_constant_length() {
 }
 
 #[test]
+fn test_lower_empty_predicates_on_known_scalars_use_non_empty_constant() {
+    let scalar_values = [
+        ("bool", Value::bool(false, Span::test_data())),
+        ("int", Value::int(0, Span::test_data())),
+        ("float", Value::float(0.0, Span::test_data())),
+        (
+            "filesize",
+            Value::filesize(Filesize::new(0), Span::test_data()),
+        ),
+        ("duration", Value::duration(0, Span::test_data())),
+    ];
+
+    for (value_index, (label, value)) in scalar_values.into_iter().enumerate() {
+        for (command_index, (command, expected)) in [("is-empty", 0), ("is-not-empty", 1)]
+            .into_iter()
+            .enumerate()
+        {
+            let predicate_decl = DeclId::new(93_200 + (value_index * 2) + command_index);
+            let hir = make_value_pipeline_call_program(predicate_decl, value.clone());
+            let decl_names = HashMap::from([(predicate_decl, command.to_string())]);
+
+            let result = lower_hir_to_mir_with_hints(
+                &hir,
+                None,
+                &decl_names,
+                None,
+                &HashMap::new(),
+                &HashMap::new(),
+            )
+            .unwrap_or_else(|err| {
+                panic!("{command} should fold known {label} scalar input: {err}")
+            });
+
+            assert_program_returns_constant(
+                &result.program,
+                expected,
+                &format!("{label} {command}"),
+            );
+            assert_no_runtime_list_operations(&result.program, &format!("{label} {command}"));
+            compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+                .unwrap_or_else(|err| {
+                    panic!("{command} known {label} scalar should compile through codegen: {err}")
+                });
+        }
+    }
+}
+
+#[test]
 fn test_lower_is_empty_on_string_list_builder_uses_constant_length() {
     let is_empty_decl = DeclId::new(273);
     let hir = make_string_list_builder_pipeline_call_program(is_empty_decl, &["ab"]);

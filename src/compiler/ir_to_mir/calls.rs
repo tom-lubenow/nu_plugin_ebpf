@@ -3482,6 +3482,11 @@ impl<'a> HirToMirLowering<'a> {
                             nu_protocol::Value::Nothing { .. } => Some(true),
                             nu_protocol::Value::List { vals, .. } => Some(vals.is_empty()),
                             nu_protocol::Value::Binary { val, .. } => Some(val.is_empty()),
+                            nu_protocol::Value::Bool { .. }
+                            | nu_protocol::Value::Int { .. }
+                            | nu_protocol::Value::Float { .. }
+                            | nu_protocol::Value::Filesize { .. }
+                            | nu_protocol::Value::Duration { .. } => Some(false),
                             _ => None,
                         })
                     }

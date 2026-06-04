@@ -37280,6 +37280,32 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-scalar-is-empty"
+        category: "language-core"
+        tags: [scalar int is-empty]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  0 | is-empty'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-scalar-is-not-empty"
+        category: "language-core"
+        tags: [scalar bool duration is-not-empty]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  (false | is-not-empty) and (0sec | is-not-empty)'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-binary-list-append-collect"
         category: "language-core"
         tags: [binary list append bytes collect]
