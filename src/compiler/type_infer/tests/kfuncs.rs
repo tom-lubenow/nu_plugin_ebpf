@@ -3024,6 +3024,44 @@ fn test_infer_kfunc_percpu_obj_new_pointer_return() {
 }
 
 #[test]
+fn test_type_error_kfunc_object_new_rejects_nonzero_meta() {
+    for kfunc in ["bpf_obj_new_impl", "bpf_percpu_obj_new_impl"] {
+        let mut func = make_test_function();
+        let type_id = func.alloc_vreg();
+        let meta = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::Copy {
+            dst: meta,
+            src: MirValue::Const(1),
+        });
+        block.instructions.push(MirInst::Copy {
+            dst: type_id,
+            src: MirValue::Const(1),
+        });
+        block.instructions.push(MirInst::CallKfunc {
+            dst,
+            kfunc: kfunc.to_string(),
+            btf_id: None,
+            args: vec![type_id, meta],
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let mut ti = TypeInference::new(None);
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected object-new nonzero meta type error");
+        assert!(
+            errs.iter().any(|e| e
+                .message
+                .contains(&format!("kfunc '{kfunc}' arg1 must be known zero"))),
+            "unexpected errors for {kfunc}: {:?}",
+            errs
+        );
+    }
+}
+
+#[test]
 fn test_infer_kfunc_get_task_exe_file_pointer_return() {
     let mut func = make_test_function();
     let pid = func.alloc_vreg();
