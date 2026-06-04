@@ -4407,6 +4407,71 @@ fn test_type_error_kfunc_bpf_wq_set_callback_rejects_nonzero_flags() {
 }
 
 #[test]
+fn test_type_error_kfunc_bpf_wq_set_callback_rejects_nonzero_aux() {
+    let mut func = make_test_function();
+    let wq = func.alloc_vreg();
+    let callback = func.alloc_vreg();
+    let flags = func.alloc_vreg();
+    let aux = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: flags,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: aux,
+        src: MirValue::Const(1),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_wq_set_callback_impl".to_string(),
+        btf_id: None,
+        args: vec![wq, callback, flags, aux],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let hints = HashMap::from([
+        (
+            wq,
+            MirType::Ptr {
+                pointee: Box::new(MirType::bpf_wq_struct()),
+                address_space: AddressSpace::Map,
+            },
+        ),
+        (
+            callback,
+            MirType::Subprogram {
+                args: vec![
+                    MirType::named_kernel_struct_ptr("bpf_map"),
+                    MirType::Ptr {
+                        pointee: Box::new(MirType::U32),
+                        address_space: AddressSpace::Map,
+                    },
+                    MirType::Ptr {
+                        pointee: Box::new(MirType::bpf_wq_struct()),
+                        address_space: AddressSpace::Map,
+                    },
+                ],
+                ret: Box::new(MirType::I64),
+            },
+        ),
+    ]);
+    let mut ti = TypeInference::new_with_env(None, None, None, Some(&hints), None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_wq_set_callback_impl nonzero aux error");
+    assert!(
+        errs.iter().any(|e| {
+            e.message
+                .contains("kfunc 'bpf_wq_set_callback_impl' arg3 must be known zero")
+        }),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
 fn test_type_error_kfunc_bpf_wq_start_rejects_stack_wq() {
     let mut func = make_test_function();
     let wq = func.alloc_vreg();

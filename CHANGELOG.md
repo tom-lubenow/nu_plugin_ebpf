@@ -102,6 +102,8 @@ documentation changes that matter to external alpha consumers.
   the required zero contract instead of a generic pointer/null mismatch.
 - Added source verifier coverage for known-zero percpu object-new and list
   push-back aux/meta rejects.
+- Added type-inference unit coverage for bpf_wq callback aux known-zero
+  diagnostics.
 - Improved typed `global-define` array initializer diagnostics so top-level
   bad items use `initializer[0]` style paths instead of record-field wording.
 - Added verifier coverage for BTF target diagnostic help, typed global
