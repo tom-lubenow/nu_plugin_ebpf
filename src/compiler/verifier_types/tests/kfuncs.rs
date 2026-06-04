@@ -13847,6 +13847,69 @@ fn test_kfunc_refcount_acquire_rejects_task_reference() {
 }
 
 #[test]
+fn test_kfunc_refcount_acquire_rejects_object_without_refcount_payload() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let type_id = func.alloc_vreg();
+    let meta = func.alloc_vreg();
+    let object = func.alloc_vreg();
+    let acquired = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: type_id,
+        src: MirValue::Const(1),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: meta,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: object,
+        kfunc: "bpf_obj_new_impl".to_string(),
+        btf_id: None,
+        args: vec![type_id, meta],
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: acquired,
+        kfunc: "bpf_refcount_acquire_impl".to_string(),
+        btf_id: None,
+        args: vec![object, meta],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let object_ty = MirType::Struct {
+        name: Some("plain_object".to_string()),
+        kernel_btf_type_id: None,
+        fields: vec![StructField {
+            name: "cookie".to_string(),
+            ty: MirType::U64,
+            offset: 0,
+            synthetic: false,
+            bitfield: None,
+        }],
+    };
+    let object_ptr_ty = MirType::Ptr {
+        pointee: Box::new(object_ty),
+        address_space: AddressSpace::Kernel,
+    };
+    let mut types = HashMap::new();
+    types.insert(type_id, MirType::I64);
+    types.insert(meta, MirType::I64);
+    types.insert(object, object_ptr_ty.clone());
+    types.insert(acquired, object_ptr_ty);
+
+    let err = verify_mir(&func, &types).expect_err("expected refcount payload error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("arg0 expects object pointer containing bpf_refcount")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_kfunc_task_release_requires_tracked_reference() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

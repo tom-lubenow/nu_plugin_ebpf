@@ -1178,6 +1178,7 @@ impl<'a> TypeInference<'a> {
                                     )));
                                 } else if kfunc == "bpf_refcount_acquire_impl"
                                     && idx == 0
+                                    && !matches!(pointee.as_ref(), MirType::Unknown)
                                     && !pointee.contains_bpf_refcount_struct()
                                 {
                                     errors.push(TypeError::new(format!(

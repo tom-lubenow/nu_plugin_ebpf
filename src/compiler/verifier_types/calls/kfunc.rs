@@ -184,6 +184,15 @@ pub(in crate::compiler::verifier_types) fn check_kfunc_arg(
                                 "kfunc '{}' arg{} expects {} pointer, got {:?}",
                                 kfunc, arg_idx, expected, pointee
                             )));
+                        } else if kfunc == "bpf_refcount_acquire_impl"
+                            && arg_idx == 0
+                            && !matches!(pointee.as_ref(), MirType::Unknown)
+                            && !pointee.contains_bpf_refcount_struct()
+                        {
+                            errors.push(VerifierTypeError::new(format!(
+                                "kfunc '{kfunc}' arg0 expects object pointer containing bpf_refcount, got {:?}",
+                                pointee
+                            )));
                         } else if kfunc_arg_requires_skb_context_or_pointer(kfunc, arg_idx)
                             && !kfunc_arg_accepts_raw_skb_context_source(
                                 kfunc, arg_idx, arg, state, program, probe_ctx,

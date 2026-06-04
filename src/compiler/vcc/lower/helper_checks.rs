@@ -226,6 +226,19 @@ impl<'a> VccLowerer<'a> {
                 ),
             ));
         }
+        if kfunc == "bpf_refcount_acquire_impl"
+            && arg_idx == 0
+            && !matches!(pointee.as_ref(), MirType::Unknown)
+            && !pointee.contains_bpf_refcount_struct()
+        {
+            return Err(VccError::new(
+                VccErrorKind::PointerBounds,
+                format!(
+                    "kfunc '{kfunc}' arg0 expects object pointer containing bpf_refcount, got {:?}",
+                    pointee
+                ),
+            ));
+        }
         if !kfunc_arg_requires_skb_context_or_pointer(kfunc, arg_idx) {
             return Ok(());
         }
