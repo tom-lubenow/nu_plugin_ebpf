@@ -14884,6 +14884,21 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "global-define-type-array-bad-item-rejects-index"
+        category: "globals"
+        tags: [globals arrays diagnostics global-define reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  [true] | global-define --type "array{u32:2}" ports'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "initializer[0] requires a u32-compatible constant"
+    }
+    {
         name: "global-define-type-record-list-field-initializer"
         category: "globals"
         tags: [globals records list global-define accept]

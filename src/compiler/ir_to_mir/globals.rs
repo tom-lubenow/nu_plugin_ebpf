@@ -1020,9 +1020,15 @@ impl ParsedNamedGlobalType {
         spec: &str,
         path: Option<&str>,
     ) -> Result<Vec<u8>, CompileError> {
-        let path_suffix = path
-            .map(|field_path| format!(" field '{}'", field_path))
-            .unwrap_or_default();
+        fn initializer_path_suffix(path: Option<&str>) -> String {
+            match path {
+                Some(path) if path.starts_with('[') => path.to_string(),
+                Some(path) => format!(" field '{path}'"),
+                None => String::new(),
+            }
+        }
+
+        let path_suffix = initializer_path_suffix(path);
 
         if matches!(value, Value::Nothing { .. }) {
             return Ok(vec![0u8; self.ty.size()]);
@@ -1173,9 +1179,10 @@ impl ParsedNamedGlobalType {
                     .enumerate()
                     .find(|(_, item)| named_global_numeric_constant_i64(item).is_none())
                 {
-                    let item_path_suffix = path
-                        .map(|prefix| format!(" field '{}[{idx}]'", prefix))
+                    let item_path = path
+                        .map(|prefix| format!("{prefix}[{idx}]"))
                         .unwrap_or_else(|| format!("[{idx}]"));
+                    let item_path_suffix = initializer_path_suffix(Some(&item_path));
                     return Err(CompileError::UnsupportedInstruction(format!(
                         "global type spec '{}' initializer{} requires a numeric constant item, found {}",
                         spec,

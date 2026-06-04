@@ -6055,6 +6055,69 @@ fn test_lower_global_define_type_nested_record_rejects_unexpected_field_path() {
 }
 
 #[test]
+fn test_lower_global_define_type_array_rejects_bad_item_index_path() {
+    let define_decl = DeclId::new(9211);
+    let decl_names = HashMap::from([(define_decl, "global-define".to_string())]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::list(
+                        vec![Value::bool(true, Span::test_data())],
+                        Span::test_data(),
+                    )),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("ports".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String("array{u32:2}".into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        named: vec![(b"type".to_vec(), RegId::new(2))],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("global-define --type array should reject non-numeric items");
+
+    assert!(
+        err.to_string().contains(
+            "global type spec 'array{u32:2}' initializer[0] requires a u32-compatible constant"
+        ),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn test_lower_global_define_type_record_with_list_initializer_uses_named_data_global() {
     let define_decl = DeclId::new(1076);
     let get_decl = DeclId::new(1077);
