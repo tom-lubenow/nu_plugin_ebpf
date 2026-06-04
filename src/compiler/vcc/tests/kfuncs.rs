@@ -13196,6 +13196,54 @@ fn test_verify_mir_kfunc_rbtree_remove_acquires_object_reference() {
 }
 
 #[test]
+fn test_verify_mir_kfunc_object_new_rejects_nonzero_meta() {
+    for kfunc in ["bpf_obj_new_impl", "bpf_percpu_obj_new_impl"] {
+        let (mut func, entry) = new_mir_function();
+
+        let type_id = func.alloc_vreg();
+        let meta = func.alloc_vreg();
+        let obj = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: type_id,
+            src: MirValue::Const(1),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: meta,
+            src: MirValue::Const(1),
+        });
+        func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+            dst: obj,
+            kfunc: kfunc.to_string(),
+            btf_id: None,
+            args: vec![type_id, meta],
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(type_id, MirType::I64);
+        types.insert(meta, MirType::I64);
+        types.insert(
+            obj,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+
+        let err =
+            verify_mir(&func, &types).expect_err(&format!("expected {kfunc} nonzero meta error"));
+        assert!(
+            err.iter().any(|e| e
+                .message
+                .contains(&format!("kfunc '{kfunc}' arg1 must be known zero"))),
+            "unexpected errors for {kfunc}: {:?}",
+            err
+        );
+    }
+}
+
+#[test]
 fn test_verify_mir_kfunc_obj_new_release_semantics() {
     let (mut func, entry) = new_mir_function();
     let release = func.alloc_block();
