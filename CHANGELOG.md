@@ -94,6 +94,8 @@ documentation changes that matter to external alpha consumers.
 - Added bpf_wq init source verifier coverage for rejecting nonzero flags.
 - Added lower VCC/verifier_types coverage for bpf_wq init/start known-zero
   flag enforcement.
+- Added bpf_wq source verifier coverage for rejecting unknown scalar init,
+  start, and callback flags.
 - Improved typed `global-define` array initializer diagnostics so top-level
   bad items use `initializer[0]` style paths instead of record-field wording.
 - Added verifier coverage for BTF target diagnostic help, typed global
