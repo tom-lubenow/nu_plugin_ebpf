@@ -721,15 +721,123 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(());
         }
 
-        let Some(actual) = self.source_literal_string(src) else {
-            return Err(CompileError::UnsupportedInstruction(
-                "Match against string patterns requires a compile-time known source string in eBPF"
-                    .into(),
-            ));
-        };
+        if let Some(actual) = self.source_literal_string(src) {
+            self.terminate_known_match_result(actual == expected, if_true, if_false);
+            return Ok(());
+        }
 
-        self.terminate_known_match_result(actual == expected, if_true, if_false);
+        let source = self
+            .get_metadata(src)
+            .and_then(|meta| self.string_equality_source(meta))
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "Match against string patterns requires a compile-time known or tracked source string in eBPF"
+                        .into(),
+                )
+            })?;
+        self.terminate_string_literal_match(expected, source, if_true, if_false)
+    }
+
+    fn terminate_string_literal_match(
+        &mut self,
+        expected: &str,
+        source: StringEqualitySource,
+        if_true: BlockId,
+        if_false: BlockId,
+    ) -> Result<(), CompileError> {
+        let expected_len = expected.len();
+        if expected_len > source.max_len {
+            self.terminate_known_match_mismatch(if_false);
+            return Ok(());
+        }
+
+        let len_matches = self.func.alloc_vreg();
+        self.emit(MirInst::BinOp {
+            dst: len_matches,
+            op: BinOpKind::Eq,
+            lhs: MirValue::VReg(source.len_vreg),
+            rhs: MirValue::Const(expected_len as i64),
+        });
+        self.vreg_type_hints.insert(len_matches, MirType::Bool);
+
+        if expected_len == 0 {
+            self.terminate(MirInst::Branch {
+                cond: len_matches,
+                if_true,
+                if_false,
+            });
+            return Ok(());
+        }
+
+        let expected_slot = self.alloc_string_literal_compare_slot(expected.as_bytes())?;
+        let bytes_match = self.func.alloc_vreg();
+        self.emit(MirInst::StrCmp {
+            dst: bytes_match,
+            lhs: source.slot,
+            lhs_offset: 0,
+            rhs: expected_slot,
+            rhs_offset: 0,
+            len: expected_len,
+        });
+        self.vreg_type_hints.insert(bytes_match, MirType::Bool);
+
+        let matches = self.func.alloc_vreg();
+        self.emit(MirInst::BinOp {
+            dst: matches,
+            op: BinOpKind::And,
+            lhs: MirValue::VReg(len_matches),
+            rhs: MirValue::VReg(bytes_match),
+        });
+        self.vreg_type_hints.insert(matches, MirType::Bool);
+        self.terminate(MirInst::Branch {
+            cond: matches,
+            if_true,
+            if_false,
+        });
         Ok(())
+    }
+
+    fn alloc_string_literal_compare_slot(
+        &mut self,
+        bytes: &[u8],
+    ) -> Result<StackSlotId, CompileError> {
+        let max_content_len = MAX_STRING_SIZE.saturating_sub(1);
+        if bytes.len() > max_content_len {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "string pattern is {} bytes; eBPF lowering supports at most {} bytes",
+                bytes.len(),
+                max_content_len
+            )));
+        }
+
+        let aligned_len = align_to_eight(bytes.len() + 1).min(MAX_STRING_SIZE).max(16);
+        let slot = self
+            .func
+            .alloc_stack_slot(aligned_len, 8, StackSlotKind::StringBuffer);
+        self.record_stack_slot_type(
+            slot,
+            MirType::Array {
+                elem: Box::new(MirType::U8),
+                len: aligned_len,
+            },
+        );
+
+        let mut literal_bytes = vec![0u8; aligned_len];
+        literal_bytes[..bytes.len()].copy_from_slice(bytes);
+        let len_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::Copy {
+            dst: len_vreg,
+            src: MirValue::Const(0),
+        });
+        self.emit(MirInst::StringAppend {
+            dst_buffer: slot,
+            dst_len: len_vreg,
+            val: MirValue::Const(0),
+            val_type: StringAppendType::Literal {
+                bytes: literal_bytes,
+            },
+        });
+        Ok(slot)
     }
 
     fn scalar_match_kind_for_value(value: &Value) -> Option<ScalarMatchKind> {

@@ -934,7 +934,8 @@ each tracked source fits the 64-byte append-copy cap and the result fits the
 compiler string limit.
 Tracked string equality with `==` / `!=` is supported when one operand is a
 compile-time known string literal, using the tracked runtime length and a
-bounded byte comparison.
+bounded byte comparison. Literal string `match` patterns against tracked string
+sources use the same bounded comparison.
 
 | Primitive | Supported eBPF subset |
 |-----------|-----------------------|

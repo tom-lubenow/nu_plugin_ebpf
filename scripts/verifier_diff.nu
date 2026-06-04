@@ -35966,6 +35966,21 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-runtime-match-tracked-string"
+        category: "language-core"
+        tags: [control-flow "match" scalar string runtime globals]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "lo" | global-define --type string:8 left'
+            '  let left = (global-get left)'
+            '  match $left { "lo" => 10, _ => 20 }'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-constant-match-filesize"
         category: "language-core"
         tags: [control-flow "match" scalar filesize constant]

@@ -4,7 +4,7 @@ use crate::compiler::hir::{
 };
 use crate::compiler::mir::{COUNTER_MAP_NAME, StructField};
 use crate::compiler::{EbpfProgramType, compile_mir_to_ebpf_with_hints};
-use nu_protocol::ast::{CellPath, PathMember};
+use nu_protocol::ast::{CellPath, PathMember, Pattern};
 use nu_protocol::casing::Casing;
 use nu_protocol::{Record, RegId, Span, Value, VarId};
 use std::collections::HashMap;
@@ -1236,6 +1236,108 @@ fn test_lower_global_get_string_compares_literal_equality_and_inequality() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("runtime string equality and inequality should compile through codegen");
+}
+
+#[test]
+fn test_lower_global_get_string_match_literal_pattern() {
+    let define_decl = DeclId::new(1307);
+    let get_decl = DeclId::new(1308);
+    let decl_names = HashMap::from([
+        (define_decl, "global-define".to_string()),
+        (get_decl, "global-get".to_string()),
+    ]);
+
+    let func = HirFunction {
+        blocks: vec![
+            HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(0),
+                        lit: HirLiteral::String("left".into()),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::String("string:8".into()),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::String("lo".into()),
+                    },
+                    HirStmt::Call {
+                        decl_id: define_decl,
+                        src_dst: RegId::new(2),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(0)],
+                            named: vec![(b"type".to_vec(), RegId::new(1))],
+                            pipeline_input: Some(RegId::new(2)),
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::Call {
+                        decl_id: get_decl,
+                        src_dst: RegId::new(3),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(0)],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                ],
+                terminator: HirTerminator::Match {
+                    pattern: Box::new(Pattern::Value(Value::string("lo", Span::test_data()))),
+                    src: RegId::new(3),
+                    if_true: HirBlockId(1),
+                    if_false: HirBlockId(2),
+                },
+            },
+            HirBlock {
+                id: HirBlockId(1),
+                stmts: vec![HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::Int(10),
+                }],
+                terminator: HirTerminator::Return { src: RegId::new(4) },
+            },
+            HirBlock {
+                id: HirBlockId(2),
+                stmts: vec![HirStmt::LoadLiteral {
+                    dst: RegId::new(5),
+                    lit: HirLiteral::Int(20),
+                }],
+                terminator: HirTerminator::Return { src: RegId::new(5) },
+            },
+        ],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 6,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("global-get string should match against a literal pattern");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::StrCmp { len: 2, .. })),
+        "expected runtime string match to lower through bounded StrCmp"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("runtime string match should compile through codegen");
 }
 
 #[test]
