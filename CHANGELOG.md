@@ -112,6 +112,8 @@ documentation changes that matter to external alpha consumers.
   diagnostics.
 - Added type-inference unit coverage for rbtree add known-zero meta
   diagnostics.
+- Added lower verifier/VCC unit coverage for rbtree add known-zero meta
+  diagnostics.
 - Improved typed `global-define` array initializer diagnostics so top-level
   bad items use `initializer[0]` style paths instead of record-field wording.
 - Added verifier coverage for BTF target diagnostic help, typed global

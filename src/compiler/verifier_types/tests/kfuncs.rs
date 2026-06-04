@@ -13284,6 +13284,130 @@ fn test_kfunc_rbtree_add_consumes_object_reference() {
 }
 
 #[test]
+fn test_kfunc_rbtree_add_rejects_nonzero_meta() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    let add = func.alloc_block();
+    let done = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 2;
+
+    let tree = func.alloc_vreg();
+    func.param_non_null.insert(tree.0 as usize);
+    let lock = func.alloc_vreg();
+    func.param_non_null.insert(lock.0 as usize);
+    let new_meta = func.alloc_vreg();
+    let add_meta = func.alloc_vreg();
+    let off = func.alloc_vreg();
+    let less = func.alloc_vreg();
+    let type_id = func.alloc_vreg();
+    let obj = func.alloc_vreg();
+    let cond = func.alloc_vreg();
+    let lock_ret = func.alloc_vreg();
+    let add_ret = func.alloc_vreg();
+    let unlock_ret = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: new_meta,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: add_meta,
+        src: MirValue::Const(1),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: off,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadSubprogram {
+            dst: less,
+            subfn: SubfunctionId(0),
+        });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: type_id,
+        src: MirValue::Const(1),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst: obj,
+        kfunc: "bpf_obj_new_impl".to_string(),
+        btf_id: None,
+        args: vec![type_id, new_meta],
+    });
+    func.block_mut(entry).instructions.push(MirInst::BinOp {
+        dst: cond,
+        op: BinOpKind::Ne,
+        lhs: MirValue::VReg(obj),
+        rhs: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond,
+        if_true: add,
+        if_false: done,
+    };
+
+    push_bpf_spin_lock_call(&mut func, add, lock_ret, lock);
+    func.block_mut(add).instructions.push(MirInst::CallKfunc {
+        dst: add_ret,
+        kfunc: "bpf_rbtree_add_impl".to_string(),
+        btf_id: None,
+        args: vec![tree, obj, less, add_meta, off],
+    });
+    push_bpf_spin_unlock_call(&mut func, add, unlock_ret, lock);
+    func.block_mut(add).terminator = MirInst::Return { val: None };
+    func.block_mut(done).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        tree,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(new_meta, MirType::I64);
+    types.insert(add_meta, MirType::I64);
+    types.insert(off, MirType::I64);
+    types.insert(
+        less,
+        MirType::Subprogram {
+            args: vec![
+                MirType::Ptr {
+                    pointee: Box::new(MirType::bpf_rb_node_struct()),
+                    address_space: AddressSpace::Kernel,
+                },
+                MirType::Ptr {
+                    pointee: Box::new(MirType::bpf_rb_node_struct()),
+                    address_space: AddressSpace::Kernel,
+                },
+            ],
+            ret: Box::new(MirType::I64),
+        },
+    );
+    types.insert(type_id, MirType::I64);
+    types.insert(
+        obj,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Unknown),
+            address_space: AddressSpace::Kernel,
+        },
+    );
+    types.insert(cond, MirType::Bool);
+    types.insert(add_ret, MirType::I64);
+    insert_bpf_spin_lock_types(&mut types, lock, lock_ret, unlock_ret);
+
+    let err = verify_mir(&func, &types).expect_err("expected rbtree_add nonzero meta error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("kfunc 'bpf_rbtree_add_impl' arg3 must be known zero")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_kfunc_rbtree_add_rejects_task_reference_on_arg1() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
