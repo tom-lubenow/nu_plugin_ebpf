@@ -3127,6 +3127,41 @@ fn test_type_error_kfunc_object_new_rejects_nonzero_meta() {
 }
 
 #[test]
+fn test_type_error_kfunc_object_new_rejects_dynamic_meta() {
+    for kfunc in ["bpf_obj_new_impl", "bpf_percpu_obj_new_impl"] {
+        let mut func = make_test_function();
+        let type_id = func.alloc_vreg();
+        let meta = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::Copy {
+            dst: type_id,
+            src: MirValue::Const(1),
+        });
+        block.instructions.push(MirInst::CallKfunc {
+            dst,
+            kfunc: kfunc.to_string(),
+            btf_id: None,
+            args: vec![type_id, meta],
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let hints = HashMap::from([(meta, MirType::I64)]);
+        let mut ti = TypeInference::new_with_env(None, None, None, Some(&hints), None);
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected object-new dynamic meta type error");
+        assert!(
+            errs.iter().any(|e| e
+                .message
+                .contains(&format!("kfunc '{kfunc}' arg1 must be known zero"))),
+            "unexpected errors for {kfunc}: {:?}",
+            errs
+        );
+    }
+}
+
+#[test]
 fn test_infer_kfunc_get_task_exe_file_pointer_return() {
     let mut func = make_test_function();
     let pid = func.alloc_vreg();
@@ -3635,6 +3670,56 @@ fn test_type_error_kfunc_object_drop_rejects_nonzero_meta() {
         let errs = ti
             .infer(&func)
             .expect_err("expected object-drop nonzero meta type error");
+        assert!(
+            errs.iter().any(|e| e
+                .message
+                .contains(&format!("kfunc '{drop_kfunc}' arg1 must be known zero"))),
+            "unexpected errors for {drop_kfunc}: {:?}",
+            errs
+        );
+    }
+}
+
+#[test]
+fn test_type_error_kfunc_object_drop_rejects_dynamic_meta() {
+    for (new_kfunc, drop_kfunc) in [
+        ("bpf_obj_new_impl", "bpf_obj_drop_impl"),
+        ("bpf_percpu_obj_new_impl", "bpf_percpu_obj_drop_impl"),
+    ] {
+        let mut func = make_test_function();
+        let type_id = func.alloc_vreg();
+        let new_meta = func.alloc_vreg();
+        let obj = func.alloc_vreg();
+        let drop_meta = func.alloc_vreg();
+        let drop_ret = func.alloc_vreg();
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::Copy {
+            dst: type_id,
+            src: MirValue::Const(1),
+        });
+        block.instructions.push(MirInst::Copy {
+            dst: new_meta,
+            src: MirValue::Const(0),
+        });
+        block.instructions.push(MirInst::CallKfunc {
+            dst: obj,
+            kfunc: new_kfunc.to_string(),
+            btf_id: None,
+            args: vec![type_id, new_meta],
+        });
+        block.instructions.push(MirInst::CallKfunc {
+            dst: drop_ret,
+            kfunc: drop_kfunc.to_string(),
+            btf_id: None,
+            args: vec![obj, drop_meta],
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let hints = HashMap::from([(drop_meta, MirType::I64)]);
+        let mut ti = TypeInference::new_with_env(None, None, None, Some(&hints), None);
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected object-drop dynamic meta type error");
         assert!(
             errs.iter().any(|e| e
                 .message
