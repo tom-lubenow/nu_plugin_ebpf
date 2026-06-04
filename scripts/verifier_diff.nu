@@ -27637,7 +27637,7 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "map value graph type spec"
+        error_contains: "record field 'root' type spec 'bpf_list_head'"
     }
     {
         name: "map-define-rejects-bare-rbtree-node"
@@ -27652,7 +27652,7 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "matching bpf_list_node/bpf_rb_node object fields"
+        error_contains: "record field 'node' type spec 'bpf_rb_node'"
     }
     {
         name: "map-define-bpf-timer-rejects-array-field"
