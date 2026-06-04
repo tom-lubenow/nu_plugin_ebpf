@@ -31,6 +31,12 @@ enum KnownSourceMatchKind {
     NonScalar,
 }
 
+#[derive(Debug, Clone)]
+enum StringConcatSource {
+    Literal(Vec<u8>),
+    Slot { slot: StackSlotId, max_len: usize },
+}
+
 impl<'a> HirToMirLowering<'a> {
     pub(super) fn lower_binary_op(
         &mut self,
@@ -116,19 +122,10 @@ impl<'a> HirToMirLowering<'a> {
         if matches!(
             op,
             Operator::Math(Math::Add) | Operator::Math(Math::Concatenate)
-        ) && (self
-            .get_metadata(lhs_dst)
-            .map(|meta| meta.string_slot.is_some() || meta.literal_string.is_some())
-            .unwrap_or(false)
-            || self
-                .get_metadata(rhs)
-                .map(|meta| meta.string_slot.is_some() || meta.literal_string.is_some())
-                .unwrap_or(false))
-        {
-            return Err(CompileError::UnsupportedInstruction(
-                "string concatenation with + requires compile-time constant operands in eBPF"
-                    .into(),
-            ));
+        ) {
+            if self.lower_runtime_string_concat(lhs_dst, lhs_vreg, rhs)? {
+                return Ok(());
+            }
         }
 
         if matches!(op, Operator::Math(Math::Pow)) {
@@ -159,6 +156,126 @@ impl<'a> HirToMirLowering<'a> {
         self.clear_source_var(lhs_dst);
         self.set_reg_constant_value(lhs_dst, constant_value);
 
+        Ok(())
+    }
+
+    fn lower_runtime_string_concat(
+        &mut self,
+        lhs_dst: RegId,
+        lhs_vreg: VReg,
+        rhs: RegId,
+    ) -> Result<bool, CompileError> {
+        let lhs_meta = self.get_metadata(lhs_dst).cloned();
+        let rhs_meta = self.get_metadata(rhs).cloned();
+        let lhs_source = lhs_meta
+            .as_ref()
+            .and_then(|meta| self.string_concat_source(meta));
+        let rhs_source = rhs_meta
+            .as_ref()
+            .and_then(|meta| self.string_concat_source(meta));
+
+        match (lhs_source, rhs_source) {
+            (None, None) => Ok(false),
+            (Some(lhs_source), Some(rhs_source)) => {
+                self.lower_string_like_literal(lhs_dst, lhs_vreg, b"")?;
+                self.append_string_concat_source(lhs_dst, lhs_source)?;
+                self.append_string_concat_source(lhs_dst, rhs_source)?;
+                self.clear_source_var(lhs_dst);
+                self.set_reg_constant_value(lhs_dst, None);
+                Ok(true)
+            }
+            _ => Err(CompileError::UnsupportedInstruction(
+                "string concatenation with + requires string operands in eBPF".into(),
+            )),
+        }
+    }
+
+    fn string_concat_source(&self, meta: &RegMetadata) -> Option<StringConcatSource> {
+        if let Some(slot) = meta.string_slot {
+            let max_len = meta
+                .string_len_bound
+                .or_else(|| {
+                    self.stack_slot_size(slot)
+                        .map(|size| size.saturating_sub(1))
+                })
+                .unwrap_or(0);
+            return Some(StringConcatSource::Slot { slot, max_len });
+        }
+
+        if let Some(value) = meta.literal_string.as_ref() {
+            return Some(StringConcatSource::Literal(value.as_bytes().to_vec()));
+        }
+
+        match meta.constant_value.as_ref()? {
+            Value::String { val, .. } | Value::Glob { val, .. } => {
+                Some(StringConcatSource::Literal(val.as_bytes().to_vec()))
+            }
+            _ => None,
+        }
+    }
+
+    fn append_string_concat_source(
+        &mut self,
+        dst: RegId,
+        source: StringConcatSource,
+    ) -> Result<(), CompileError> {
+        let dst_slot = self
+            .get_metadata(dst)
+            .and_then(|meta| meta.string_slot)
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "string concatenation result buffer is unavailable in eBPF".into(),
+                )
+            })?;
+        let dst_len = self
+            .get_metadata(dst)
+            .and_then(|meta| meta.string_len_vreg)
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "string concatenation result length is unavailable in eBPF".into(),
+                )
+            })?;
+        let current_bound = self
+            .get_metadata(dst)
+            .and_then(|meta| meta.string_len_bound)
+            .unwrap_or(0);
+
+        let (val_type, append_max) = match source {
+            StringConcatSource::Literal(bytes) => {
+                let append_max = bytes
+                    .iter()
+                    .rposition(|byte| *byte != 0)
+                    .map(|idx| idx + 1)
+                    .unwrap_or(0);
+                (StringAppendType::Literal { bytes }, append_max)
+            }
+            StringConcatSource::Slot { slot, max_len } => {
+                if max_len > STRING_APPEND_COPY_CAP {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "string concatenation with + supports tracked string operands up to {STRING_APPEND_COPY_CAP} bytes in eBPF"
+                    )));
+                }
+                (StringAppendType::StringSlot { slot, max_len }, max_len)
+            }
+        };
+
+        let new_bound = current_bound.saturating_add(append_max);
+        let new_size = self.ensure_string_slot_capacity(dst_slot, new_bound)?;
+        {
+            let meta = self.get_or_create_metadata(dst);
+            meta.string_len_bound = Some(new_bound);
+            meta.field_type = Some(MirType::Array {
+                elem: Box::new(MirType::U8),
+                len: new_size,
+            });
+        }
+
+        self.emit(MirInst::StringAppend {
+            dst_buffer: dst_slot,
+            dst_len,
+            val: MirValue::Const(0),
+            val_type,
+        });
         Ok(())
     }
 

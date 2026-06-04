@@ -928,6 +928,11 @@ The compiler intentionally supports ordinary Nushell forms before adding new
 helper-style commands. Current aggregate lowering is focused on values whose
 eBPF layout and verifier bounds are explicit:
 
+String concatenation with `+` folds compile-time string operands and supports
+tracked string operands by copying them into a fresh bounded string buffer when
+each tracked source fits the 64-byte append-copy cap and the result fits the
+compiler string limit.
+
 | Primitive | Supported eBPF subset |
 |-----------|-----------------------|
 | `where` | Stack-backed numeric lists with a closure predicate; scalar pipeline filtering also lowers to an early return when the predicate is false |

@@ -1,9 +1,9 @@
 use super::*;
-use crate::compiler::EbpfProgramType;
 use crate::compiler::hir::{
     HirBlock, HirBlockId, HirFunction, HirLiteral, HirProgram, HirStmt, HirTerminator,
 };
 use crate::compiler::mir::{COUNTER_MAP_NAME, StructField};
+use crate::compiler::{EbpfProgramType, compile_mir_to_ebpf_with_hints};
 use nu_protocol::ast::{CellPath, PathMember};
 use nu_protocol::casing::Casing;
 use nu_protocol::{Record, RegId, Span, Value, VarId};
@@ -1030,6 +1030,105 @@ fn test_lower_global_set_and_get_string_materializes_string_slot() {
             )),
         "expected global-get on string global to materialize a stack string slot"
     );
+}
+
+#[test]
+fn test_lower_global_get_string_concatenates_literal_suffix() {
+    let define_decl = DeclId::new(1301);
+    let get_decl = DeclId::new(1302);
+    let length_decl = DeclId::new(1303);
+    let decl_names = HashMap::from([
+        (define_decl, "global-define".to_string()),
+        (get_decl, "global-get".to_string()),
+        (length_decl, "str length".to_string()),
+    ]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::String("left".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("string:8".into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        named: vec![(b"type".to_vec(), RegId::new(1))],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: get_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::String("lo".into()),
+                },
+                HirStmt::BinaryOp {
+                    lhs_dst: RegId::new(3),
+                    op: nu_protocol::ast::Operator::Math(nu_protocol::ast::Math::Add),
+                    rhs: RegId::new(4),
+                },
+                HirStmt::Call {
+                    decl_id: length_decl,
+                    src_dst: RegId::new(5),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(3)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(5) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 6,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("global-get string should concatenate a literal suffix");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"lo")
+            )),
+        "expected runtime string concat to append the literal suffix"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("runtime string concat should compile through codegen");
 }
 
 #[test]

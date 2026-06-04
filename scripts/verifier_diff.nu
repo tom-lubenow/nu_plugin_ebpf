@@ -13967,9 +13967,9 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
-        name: "global-runtime-string-concat-rejects"
+        name: "global-runtime-string-concat"
         category: "globals"
-        tags: [globals string global-define reject]
+        tags: [globals string global-define accept]
         target: "raw_tracepoint:sys_enter"
         program: [
             '{|ctx|'
@@ -13979,9 +13979,8 @@ const FIXTURES = [
             '  $greeting | str length'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "string concatenation with + requires compile-time constant operands in eBPF"
+        local: "accept"
+        kernel: "accept"
     }
     {
         name: "global-define-type-record-builder-initializer"
