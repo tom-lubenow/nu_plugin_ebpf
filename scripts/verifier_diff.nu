@@ -14064,6 +14064,76 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "global-define-type-array-bytes-take-length"
+        category: "globals"
+        tags: [globals arrays binary bytes take length get global-define accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  global-define --type "array{bytes:4:2}" buffers'
+            '  (((global-get buffers) | take 1 | bytes length) | get 0) == 4'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "global-define-type-array-u32-skip-length"
+        category: "globals"
+        tags: [globals arrays skip length global-define accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  global-define --type "array{u32:2}" ports'
+            '  ((global-get ports) | skip 1 | length) == 1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "global-define-type-array-u32-drop-length"
+        category: "globals"
+        tags: [globals arrays drop length global-define accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  global-define --type "array{u32:2}" ports'
+            '  ((global-get ports) | drop 1 | length) == 1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "global-define-type-array-u32-first-count-length"
+        category: "globals"
+        tags: [globals arrays first length global-define accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  global-define --type "array{u32:2}" ports'
+            '  ((global-get ports) | first 1 | length) == 1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "global-define-type-array-u32-last-count-get"
+        category: "globals"
+        tags: [globals arrays get first last global-define accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  global-define --type "array{u32:2}" ports'
+            '  (((global-get ports) | last 1) | get 0) == 0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "global-define-type-bound-record-empty-binary-field-zero-fills"
         category: "globals"
         tags: [globals records binary bytes global-define zero-fill accept]

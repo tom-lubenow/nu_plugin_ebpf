@@ -4505,6 +4505,383 @@ fn test_lower_last_on_typed_u32_array_global_projects_scalar_element() {
 }
 
 #[test]
+fn test_lower_take_on_typed_bytes_array_global_preserves_binary_slice_metadata() {
+    let define_decl = DeclId::new(9108);
+    let global_get_decl = DeclId::new(9109);
+    let take_decl = DeclId::new(9110);
+    let bytes_length_decl = DeclId::new(9111);
+    let get_decl = DeclId::new(9117);
+    let decl_names = HashMap::from([
+        (define_decl, "global-define".to_string()),
+        (global_get_decl, "global-get".to_string()),
+        (take_decl, "take".to_string()),
+        (bytes_length_decl, "bytes length".to_string()),
+        (get_decl, "get".to_string()),
+    ]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::String("buffers".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("array{bytes:4:2}".into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        named: vec![(b"type".to_vec(), RegId::new(1))],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: global_get_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::Int(1),
+                },
+                HirStmt::Call {
+                    decl_id: take_decl,
+                    src_dst: RegId::new(5),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(3)),
+                        positional: vec![RegId::new(4)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: bytes_length_decl,
+                    src_dst: RegId::new(6),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(5)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(7),
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::Call {
+                    decl_id: get_decl,
+                    src_dst: RegId::new(8),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(6)),
+                        positional: vec![RegId::new(7)],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(8) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 9,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("take should project typed fixed-array binary slices");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::ListNew { max_len: 1, .. })),
+        "expected bytes length on take 1 array{{bytes:4:2}} to materialize one length"
+    );
+    assert!(
+        result
+            .readonly_globals
+            .iter()
+            .any(|global| global.data == 4i64.to_le_bytes().to_vec()),
+        "expected typed binary slice element length metadata to be preserved"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("typed fixed-array bytes take slice should compile through codegen");
+}
+
+#[test]
+fn test_lower_last_count_on_typed_u32_array_global_offsets_slice_for_get() {
+    let define_decl = DeclId::new(9112);
+    let global_get_decl = DeclId::new(9113);
+    let last_decl = DeclId::new(9114);
+    let get_decl = DeclId::new(9115);
+    let count_decl = DeclId::new(9116);
+    let decl_names = HashMap::from([
+        (define_decl, "global-define".to_string()),
+        (global_get_decl, "global-get".to_string()),
+        (last_decl, "last".to_string()),
+        (get_decl, "get".to_string()),
+        (count_decl, "count".to_string()),
+    ]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::String("ports".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("array{u32:2}".into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        named: vec![(b"type".to_vec(), RegId::new(1))],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: global_get_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::Int(1),
+                },
+                HirStmt::Call {
+                    decl_id: last_decl,
+                    src_dst: RegId::new(5),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(3)),
+                        positional: vec![RegId::new(4)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(6),
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::Call {
+                    decl_id: get_decl,
+                    src_dst: RegId::new(7),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(5)),
+                        positional: vec![RegId::new(6)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: count_decl,
+                    src_dst: RegId::new(7),
+                    args: HirCallArgs::default(),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(7) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 8,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("last count should project typed fixed-array scalar slices");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op: BinOpKind::Add,
+                    rhs: MirValue::Const(4),
+                    ..
+                }
+            )),
+        "expected last 1 on array{{u32:2}} to offset the slice by one u32 element"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Load {
+                    ty: MirType::U32,
+                    ..
+                }
+            )),
+        "expected get 0 from last-count slice to load a U32 element"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("typed fixed-array u32 last-count slice should compile through codegen");
+}
+
+#[test]
+fn test_lower_skip_on_typed_u32_array_global_preserves_slice_length() {
+    let define_decl = DeclId::new(9118);
+    let global_get_decl = DeclId::new(9119);
+    let skip_decl = DeclId::new(9120);
+    let length_decl = DeclId::new(9121);
+    let decl_names = HashMap::from([
+        (define_decl, "global-define".to_string()),
+        (global_get_decl, "global-get".to_string()),
+        (skip_decl, "skip".to_string()),
+        (length_decl, "length".to_string()),
+    ]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::String("ports".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("array{u32:2}".into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        named: vec![(b"type".to_vec(), RegId::new(1))],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: global_get_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::Int(1),
+                },
+                HirStmt::Call {
+                    decl_id: skip_decl,
+                    src_dst: RegId::new(5),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(3)),
+                        positional: vec![RegId::new(4)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: length_decl,
+                    src_dst: RegId::new(6),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(5)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(6) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 7,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("skip should project typed fixed-array scalar slices");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op: BinOpKind::Add,
+                    rhs: MirValue::Const(4),
+                    ..
+                }
+            )),
+        "expected skip 1 on array{{u32:2}} to offset the slice by one u32 element"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Copy {
+                    src: MirValue::Const(1),
+                    ..
+                }
+            )),
+        "expected length on typed fixed-array slice to use the projected slice length"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("typed fixed-array u32 skip slice should compile through codegen");
+}
+
+#[test]
 fn test_lower_global_define_empty_binary_without_type_still_rejects_empty_layout() {
     let define_decl = DeclId::new(1074);
     let decl_names = HashMap::from([(define_decl, "global-define".to_string())]);

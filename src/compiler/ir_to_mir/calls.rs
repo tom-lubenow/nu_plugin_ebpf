@@ -3484,6 +3484,19 @@ impl<'a> HirToMirLowering<'a> {
                             | AnnotatedValueSemantics::NumericList { .. }
                             | AnnotatedValueSemantics::Record(_) => None,
                         }
+                    } else if let Some(len) =
+                        (!matches!(meta.constant_value, Some(nu_protocol::Value::List { .. })))
+                            .then(|| {
+                                meta.field_type.as_ref().and_then(|ty| {
+                                    Self::aggregate_call_value_type(ty).and_then(|ty| match ty {
+                                        MirType::Array { len, .. } => Some(*len),
+                                        _ => None,
+                                    })
+                                })
+                            })
+                            .flatten()
+                    {
+                        Some(len == 0)
                     } else {
                         meta.constant_value.as_ref().and_then(|value| match value {
                             nu_protocol::Value::Record { val, .. } => Some(val.is_empty()),
@@ -3505,7 +3518,7 @@ impl<'a> HirToMirLowering<'a> {
                     });
                 } else {
                     return Err(CompileError::UnsupportedInstruction(format!(
-                        "{cmd_name} requires a stack-backed list, tracked string, metadata-backed record, or literal null input in eBPF"
+                        "{cmd_name} requires a stack-backed list, tracked string, typed fixed array, metadata-backed record, or literal null input in eBPF"
                     )));
                 }
 
@@ -3556,6 +3569,20 @@ impl<'a> HirToMirLowering<'a> {
                             | AnnotatedValueSemantics::Record(_) => None,
                         })
                         .or_else(|| {
+                            (!matches!(meta.constant_value, Some(nu_protocol::Value::List { .. })))
+                                .then(|| {
+                                    meta.field_type.as_ref().and_then(|ty| {
+                                        Self::aggregate_call_value_type(ty).and_then(
+                                            |ty| match ty {
+                                                MirType::Array { len, .. } => Some(*len),
+                                                _ => None,
+                                            },
+                                        )
+                                    })
+                                })
+                                .flatten()
+                        })
+                        .or_else(|| {
                             meta.constant_value.as_ref().and_then(|value| match value {
                                 nu_protocol::Value::Nothing { .. } => Some(0),
                                 nu_protocol::Value::List { vals, .. } => Some(vals.len()),
@@ -3570,7 +3597,7 @@ impl<'a> HirToMirLowering<'a> {
                     });
                 } else {
                     return Err(CompileError::UnsupportedInstruction(
-                        "length requires a stack-backed list, literal binary, or literal null input in eBPF"
+                        "length requires a stack-backed list, typed fixed array, literal binary, or literal null input in eBPF"
                             .into(),
                     ));
                 }

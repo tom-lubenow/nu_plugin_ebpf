@@ -131,6 +131,166 @@ impl<'a> HirToMirLowering<'a> {
         })
     }
 
+    fn typed_fixed_array_slice_bounds(
+        cmd_name: &str,
+        count: usize,
+        array_len: usize,
+    ) -> Result<(usize, usize), CompileError> {
+        let (start, len) = match cmd_name {
+            "take" | "first" => (0, count.min(array_len)),
+            "skip" => {
+                let start = count.min(array_len);
+                (start, array_len.saturating_sub(start))
+            }
+            "drop" => (0, array_len.saturating_sub(count.min(array_len))),
+            "last" => {
+                let len = count.min(array_len);
+                (array_len.saturating_sub(len), len)
+            }
+            _ => {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "unsupported typed fixed-array slice command '{cmd_name}'"
+                )));
+            }
+        };
+        Ok((start, len))
+    }
+
+    fn lower_typed_fixed_array_count_slice(
+        &mut self,
+        cmd_name: &str,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+        input_reg: RegId,
+        mut input_vreg: VReg,
+        input_meta: &RegMetadata,
+        count: usize,
+    ) -> Result<bool, CompileError> {
+        if matches!(
+            input_meta.constant_value,
+            Some(nu_protocol::Value::List { .. })
+        ) && !matches!(
+            input_meta.annotated_semantics,
+            Some(AnnotatedValueSemantics::FixedArray { .. })
+        ) {
+            return Ok(false);
+        }
+
+        let Some(mut base_runtime_ty) = self.typed_value_runtime_type(input_reg, input_vreg) else {
+            return Ok(false);
+        };
+        let Some((elem_ty, array_len)) = Self::aggregate_call_value_type(&base_runtime_ty)
+            .and_then(|ty| match ty {
+                MirType::Array { elem, len } => Some((elem.as_ref().clone(), *len)),
+                _ => None,
+            })
+        else {
+            return Ok(false);
+        };
+
+        let (slice_start, slice_len) =
+            Self::typed_fixed_array_slice_bounds(cmd_name, count, array_len)?;
+        if slice_len == 0 {
+            self.lower_compile_time_list_transform_result(
+                src_dst,
+                &nu_protocol::Value::list(Vec::new(), Span::unknown()),
+            )?;
+            return Ok(true);
+        }
+
+        if !matches!(base_runtime_ty, MirType::Ptr { .. })
+            && Self::aggregate_call_value_type(&base_runtime_ty).is_some()
+        {
+            input_vreg = self.materialized_metadata_aggregate_vreg(input_reg, input_vreg)?;
+            base_runtime_ty = self
+                .typed_value_runtime_type(input_reg, input_vreg)
+                .ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "{cmd_name} requires typed fixed-array input in eBPF"
+                    ))
+                })?;
+        }
+
+        let MirType::Ptr { address_space, .. } = base_runtime_ty else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires typed fixed-array pointer input in eBPF"
+            )));
+        };
+
+        let elem_size = elem_ty.size();
+        let byte_offset = slice_start.checked_mul(elem_size).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} typed fixed-array slice offset overflowed in eBPF"
+            ))
+        })?;
+        let byte_offset = i64::try_from(byte_offset).map_err(|_| {
+            CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} typed fixed-array slice offset is too large for eBPF"
+            ))
+        })?;
+
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+        let out_ty = MirType::Array {
+            elem: Box::new(elem_ty),
+            len: slice_len,
+        };
+        self.vreg_type_hints.insert(
+            result_vreg,
+            MirType::Ptr {
+                pointee: Box::new(out_ty.clone()),
+                address_space,
+            },
+        );
+
+        if byte_offset == 0 {
+            self.emit(MirInst::Copy {
+                dst: result_vreg,
+                src: MirValue::VReg(input_vreg),
+            });
+        } else {
+            self.emit(MirInst::BinOp {
+                dst: result_vreg,
+                op: BinOpKind::Add,
+                lhs: MirValue::VReg(input_vreg),
+                rhs: MirValue::Const(byte_offset),
+            });
+        }
+
+        let constant_value = match &input_meta.constant_value {
+            Some(nu_protocol::Value::List { vals, .. }) => Some(nu_protocol::Value::list(
+                vals.iter()
+                    .skip(slice_start)
+                    .take(slice_len)
+                    .cloned()
+                    .collect(),
+                Span::unknown(),
+            )),
+            _ => None,
+        };
+        let annotated_semantics = match &input_meta.annotated_semantics {
+            Some(AnnotatedValueSemantics::FixedArray { elem, .. }) => {
+                Some(AnnotatedValueSemantics::FixedArray {
+                    elem: elem.clone(),
+                    len: slice_len,
+                })
+            }
+            _ => None,
+        };
+
+        self.reset_call_result_metadata(src_dst);
+        let out_meta = self.get_or_create_metadata(src_dst);
+        out_meta.field_type = Some(out_ty);
+        out_meta.root_ctx_field = input_meta.root_ctx_field.clone();
+        out_meta.constant_value = constant_value;
+        out_meta.annotated_semantics = annotated_semantics;
+        Ok(true)
+    }
+
     pub(super) fn lower_stack_list_first_or_last_scalar(
         &mut self,
         cmd_name: &str,
@@ -451,6 +611,20 @@ impl<'a> HirToMirLowering<'a> {
                     "{cmd_name} requires a pipeline input with tracked metadata in eBPF"
                 ))
             })?;
+        if let Some(input_reg) = input_reg
+            && self.lower_typed_fixed_array_count_slice(
+                cmd_name,
+                src_dst,
+                dst_vreg,
+                src_dst_had_value,
+                input_reg,
+                input_vreg,
+                &input_meta,
+                count,
+            )?
+        {
+            return Ok(());
+        }
         let Some((_input_slot, max_len)) = input_meta.list_buffer else {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "{cmd_name} requires a stack-backed list input in eBPF"
@@ -746,6 +920,20 @@ impl<'a> HirToMirLowering<'a> {
                     "last requires a stack-backed list input in eBPF".into(),
                 )
             })?;
+        if let Some(input_reg) = input_reg
+            && self.lower_typed_fixed_array_count_slice(
+                "last",
+                src_dst,
+                dst_vreg,
+                src_dst_had_value,
+                input_reg,
+                input_vreg,
+                &input_meta,
+                count,
+            )?
+        {
+            return Ok(());
+        }
         let Some((_input_slot, max_len)) = input_meta.list_buffer else {
             return Err(CompileError::UnsupportedInstruction(
                 "last requires a stack-backed list input in eBPF".into(),
