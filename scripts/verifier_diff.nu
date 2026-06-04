@@ -36598,6 +36598,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-list-bits-binary-get-fold"
+        category: "language-core"
+        tags: [aggregate list binary bits xor get bytes starts-with]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ([0x[01] 0x[02 03]] | bits xor 0x[ff] | get 1 | bytes starts-with 0x[fd fc]) == 1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-scalar-bits-not-signed"
         category: "language-core"
         tags: [scalar bits "not" signed]
@@ -36723,6 +36736,32 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  ([0x[ff] 0x[00 01]] | bits not | bytes collect | bytes length) == 3'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-list-bits-not-binary-first-last-fold"
+        category: "language-core"
+        tags: [aggregate list binary bits "not" first last bytes length starts-with]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  (([0x[ff] 0x[00 01]] | bits not | first | bytes length) == 1) and (([0x[ff] 0x[00 01]] | bits not | last | bytes starts-with 0x[ff fe]) == 1)'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-list-bits-not-binary-empty-predicate-fold"
+        category: "language-core"
+        tags: [aggregate list binary bits "not" is-not-empty]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  [0x[]] | bits not | is-not-empty'
             '}'
         ]
         local: "accept"
