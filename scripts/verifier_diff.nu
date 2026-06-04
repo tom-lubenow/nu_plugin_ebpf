@@ -37594,11 +37594,11 @@ const FIXTURES = [
     {
         name: "core-string-list-str-length-chars-sum"
         category: "language-core"
-        tags: [string list split row str length chars sum]
+        tags: [string list str length chars sum]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  ("Amélie,字" | split row "," | str length --chars | math sum) == 8'
+            '  (["Amélie" "字"] | str length --chars | math sum) == 8'
             '}'
         ]
         local: "accept"

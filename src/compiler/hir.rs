@@ -733,7 +733,10 @@ fn compile_time_value_consumer_matches(
                     Some("length") => args.flags.is_empty(),
                     Some("bytes length") => args.flags.is_empty(),
                     Some("str length") => args.flags.iter().all(|flag| {
-                        matches!(flag.as_slice(), b"utf-8-bytes" | b"grapheme-clusters")
+                        matches!(
+                            flag.as_slice(),
+                            b"utf-8-bytes" | b"chars" | b"grapheme-clusters"
+                        )
                     }),
                     _ => false,
                 }

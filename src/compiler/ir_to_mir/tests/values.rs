@@ -3533,6 +3533,67 @@ fn make_string_list_str_length_sum_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_string_list_builder_str_length_sum_program(
+    str_length_decl: DeclId,
+    sum_decl: DeclId,
+    values: &[&str],
+    flags: Vec<Vec<u8>>,
+) -> HirProgram {
+    let value_count = values.len();
+    let value_count_u32 = u32::try_from(value_count).expect("test string-list length fits in u32");
+    let mut stmts = vec![HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List {
+            capacity: value_count,
+        },
+    }];
+
+    for (index, value) in values.iter().enumerate() {
+        let item_reg = RegId::new(u32::try_from(index).expect("test index fits in u32") + 2);
+        stmts.push(HirStmt::LoadValue {
+            dst: item_reg,
+            val: Box::new(Value::string(*value, Span::test_data())),
+        });
+        stmts.push(HirStmt::ListPush {
+            src_dst: RegId::new(0),
+            item: item_reg,
+        });
+    }
+
+    stmts.push(HirStmt::Call {
+        decl_id: str_length_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            flags,
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: sum_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: value_count_u32 + 2,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_string_list_builder_predicate_join_then_starts_with_program(
     predicate_decl: DeclId,
     join_decl: DeclId,
@@ -9312,6 +9373,56 @@ fn test_lower_str_length_chars_on_known_string_list_materializes_numeric_lengths
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
         "str length --chars string-list result consumed by math sum should compile through codegen",
+    );
+}
+
+#[test]
+fn test_lower_str_length_chars_on_string_list_builder_materializes_numeric_lengths() {
+    let str_length_decl = DeclId::new(16_204);
+    let sum_decl = DeclId::new(16_205);
+    let hir = make_string_list_builder_str_length_sum_program(
+        str_length_decl,
+        sum_decl,
+        &["Amélie", "字"],
+        vec![b"chars".to_vec()],
+    );
+    let decl_names = HashMap::from([
+        (str_length_decl, "str length".to_string()),
+        (sum_decl, "math sum".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str length --chars should consume compile-time string-list builders");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .all(|inst| !matches!(inst, MirInst::ListPush { .. })),
+        "expected str length --chars to consume string-list builders without runtime list pushes"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::ListGet { .. })),
+        "expected math sum to consume the char length numeric-list result"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "str length --chars string-list builder result consumed by math sum should compile through codegen",
     );
 }
 
