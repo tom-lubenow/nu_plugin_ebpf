@@ -14401,6 +14401,52 @@ fn test_verify_mir_kfunc_bpf_wq_init_accepts_map_backed_wq_and_map_fd() {
 }
 
 #[test]
+fn test_verify_mir_kfunc_bpf_wq_init_rejects_nonzero_flags() {
+    let (mut func, entry) = new_mir_function();
+    func.param_count = 1;
+
+    let wq = func.alloc_vreg();
+    func.param_non_null.insert(wq.0 as usize);
+    let map_fd = func.alloc_vreg();
+    let flags = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::LoadMapFd {
+        dst: map_fd,
+        map: MapRef {
+            name: "work_items".to_string(),
+            kind: MapKind::Array,
+        },
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: flags,
+        src: MirValue::Const(1),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_wq_init".to_string(),
+        btf_id: None,
+        args: vec![wq, map_fd, flags],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let value_ty = wq_init_test_value_ty();
+    let mut types = HashMap::new();
+    types.insert(wq, wq_init_test_map_ptr_ty(value_ty.clone()));
+    types.insert(map_fd, wq_init_test_map_ref_ty(value_ty));
+    types.insert(flags, MirType::I64);
+    types.insert(dst, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected bpf_wq_init nonzero flags error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("kfunc 'bpf_wq_init' arg2 must be known zero")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_kfunc_bpf_wq_init_rejects_mismatched_map_fd() {
     let (mut func, entry) = new_mir_function();
     let wq_loaded = func.alloc_block();
@@ -15014,6 +15060,48 @@ fn test_verify_mir_kfunc_bpf_wq_set_callback_requires_null_checked_map_lookup() 
     assert!(
         err.iter()
             .any(|e| e.message.contains("may dereference null pointer")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_kfunc_bpf_wq_start_rejects_nonzero_flags() {
+    let (mut func, entry) = new_mir_function();
+    func.param_count = 1;
+
+    let wq = func.alloc_vreg();
+    func.param_non_null.insert(wq.0 as usize);
+    let flags = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: flags,
+        src: MirValue::Const(1),
+    });
+    func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_wq_start".to_string(),
+        btf_id: None,
+        args: vec![wq, flags],
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        wq,
+        MirType::Ptr {
+            pointee: Box::new(MirType::bpf_wq_struct()),
+            address_space: AddressSpace::Map,
+        },
+    );
+    types.insert(flags, MirType::I64);
+    types.insert(dst, MirType::I64);
+
+    let err = verify_mir(&func, &types).expect_err("expected bpf_wq_start nonzero flags error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("kfunc 'bpf_wq_start' arg1 must be known zero")),
         "unexpected error messages: {:?}",
         err
     );
