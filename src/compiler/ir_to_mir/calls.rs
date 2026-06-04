@@ -4026,13 +4026,27 @@ impl<'a> HirToMirLowering<'a> {
                             "bytes reverse requires compile-time known binary or list<binary> input in eBPF".into(),
                         )
                     })?;
-                let output = match input_value {
+                match input_value {
                     nu_protocol::Value::Binary { mut val, .. } => {
                         val.reverse();
-                        nu_protocol::Value::binary(val, nu_protocol::Span::unknown())
+                        self.reset_call_result_metadata(src_dst);
+                        self.lower_constant_value(
+                            src_dst,
+                            &nu_protocol::Value::binary(val, nu_protocol::Span::unknown()),
+                        )?;
                     }
                     nu_protocol::Value::List { vals, .. } => {
+                        let is_empty = vals.is_empty();
+                        if is_empty && !self.current_call_result_metadata_only {
+                            return Err(CompileError::UnsupportedInstruction(
+                                "bytes reverse requires a non-empty list<binary> result in eBPF"
+                                    .into(),
+                            ));
+                        }
                         let mut reversed = Vec::with_capacity(vals.len());
+                        let mut expected_len = None;
+                        let mut has_empty_output = false;
+                        let mut has_unequal_output_len = false;
                         for (item_index, item) in vals.into_iter().enumerate() {
                             let nu_protocol::Value::Binary { mut val, .. } = item else {
                                 return Err(CompileError::UnsupportedInstruction(format!(
@@ -4041,12 +4055,42 @@ impl<'a> HirToMirLowering<'a> {
                                 )));
                             };
                             val.reverse();
+                            if val.is_empty() {
+                                has_empty_output = true;
+                            }
+                            if let Some(expected_len) = expected_len {
+                                if val.len() != expected_len {
+                                    has_unequal_output_len = true;
+                                }
+                            } else {
+                                expected_len = Some(val.len());
+                            }
                             reversed.push(nu_protocol::Value::binary(
                                 val,
                                 nu_protocol::Span::unknown(),
                             ));
                         }
-                        nu_protocol::Value::list(reversed, nu_protocol::Span::unknown())
+                        if has_empty_output && !self.current_call_result_metadata_only {
+                            return Err(CompileError::UnsupportedInstruction(
+                                "bytes reverse requires non-empty binary list results in eBPF"
+                                    .into(),
+                            ));
+                        }
+                        if has_unequal_output_len && !self.current_call_result_metadata_only {
+                            return Err(CompileError::UnsupportedInstruction(
+                                "bytes reverse requires equal-length binary list results in eBPF"
+                                    .into(),
+                            ));
+                        }
+
+                        self.reset_call_result_metadata(src_dst);
+                        let value =
+                            nu_protocol::Value::list(reversed, nu_protocol::Span::unknown());
+                        if is_empty || has_empty_output || has_unequal_output_len {
+                            self.lower_compile_time_only_constant_value(src_dst, &value);
+                        } else {
+                            self.lower_constant_value(src_dst, &value)?;
+                        }
                     }
                     other => {
                         return Err(CompileError::UnsupportedInstruction(format!(
@@ -4054,10 +4098,7 @@ impl<'a> HirToMirLowering<'a> {
                             other.get_type()
                         )));
                     }
-                };
-
-                self.reset_call_result_metadata(src_dst);
-                self.lower_constant_value(src_dst, &output)?;
+                }
             }
 
             "bytes build" => {

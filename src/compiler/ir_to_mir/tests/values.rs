@@ -27632,6 +27632,313 @@ fn test_lower_bytes_reverse_accepts_empty_binary() {
         .expect("empty bytes reverse output consumed by bytes length should compile");
 }
 
+fn make_bytes_reverse_list_then_pipeline_call_program(
+    reverse_decl: DeclId,
+    consumer_decl: DeclId,
+    items: &[&[u8]],
+) -> HirProgram {
+    let item_count = items.len();
+    let item_count_u32 = u32::try_from(item_count).expect("test binary-list length fits in u32");
+    let mut stmts = vec![HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List {
+            capacity: item_count,
+        },
+    }];
+
+    for (index, item) in items.iter().enumerate() {
+        let item_reg = RegId::new(u32::try_from(index).expect("test index fits in u32") + 1);
+        stmts.push(HirStmt::LoadLiteral {
+            dst: item_reg,
+            lit: HirLiteral::Binary(item.to_vec()),
+        });
+        stmts.push(HirStmt::ListPush {
+            src_dst: RegId::new(0),
+            item: item_reg,
+        });
+    }
+
+    let reversed_reg = RegId::new(item_count_u32 + 1);
+    let consumer_reg = RegId::new(item_count_u32 + 2);
+    stmts.push(HirStmt::Call {
+        decl_id: reverse_decl,
+        src_dst: reversed_reg,
+        args: HirCallArgs {
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: consumer_decl,
+        src_dst: consumer_reg,
+        args: HirCallArgs {
+            pipeline_input: Some(reversed_reg),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: consumer_reg },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: consumer_reg.get() + 1,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_bytes_reverse_list_collect_then_length_program(
+    reverse_decl: DeclId,
+    collect_decl: DeclId,
+    length_decl: DeclId,
+    items: &[&[u8]],
+) -> HirProgram {
+    let item_count = items.len();
+    let item_count_u32 = u32::try_from(item_count).expect("test binary-list length fits in u32");
+    let mut stmts = vec![HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List {
+            capacity: item_count,
+        },
+    }];
+
+    for (index, item) in items.iter().enumerate() {
+        let item_reg = RegId::new(u32::try_from(index).expect("test index fits in u32") + 1);
+        stmts.push(HirStmt::LoadLiteral {
+            dst: item_reg,
+            lit: HirLiteral::Binary(item.to_vec()),
+        });
+        stmts.push(HirStmt::ListPush {
+            src_dst: RegId::new(0),
+            item: item_reg,
+        });
+    }
+
+    let reversed_reg = RegId::new(item_count_u32 + 1);
+    let collected_reg = RegId::new(item_count_u32 + 2);
+    let length_reg = RegId::new(item_count_u32 + 3);
+    stmts.push(HirStmt::Call {
+        decl_id: reverse_decl,
+        src_dst: reversed_reg,
+        args: HirCallArgs {
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: collect_decl,
+        src_dst: collected_reg,
+        args: HirCallArgs {
+            pipeline_input: Some(reversed_reg),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: length_decl,
+        src_dst: length_reg,
+        args: HirCallArgs {
+            pipeline_input: Some(collected_reg),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: length_reg },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: length_reg.get() + 1,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_bytes_reverse_list_get_then_pipeline_call_program(
+    reverse_decl: DeclId,
+    get_decl: DeclId,
+    consumer_decl: DeclId,
+    items: &[&[u8]],
+    get_index: i64,
+    consumer_arg: Option<HirLiteral>,
+) -> HirProgram {
+    let item_count = items.len();
+    let item_count_u32 = u32::try_from(item_count).expect("test binary-list length fits in u32");
+    let mut stmts = vec![HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List {
+            capacity: item_count,
+        },
+    }];
+
+    for (index, item) in items.iter().enumerate() {
+        let item_reg = RegId::new(u32::try_from(index).expect("test index fits in u32") + 1);
+        stmts.push(HirStmt::LoadLiteral {
+            dst: item_reg,
+            lit: HirLiteral::Binary(item.to_vec()),
+        });
+        stmts.push(HirStmt::ListPush {
+            src_dst: RegId::new(0),
+            item: item_reg,
+        });
+    }
+
+    let reversed_reg = RegId::new(item_count_u32 + 1);
+    let index_reg = RegId::new(item_count_u32 + 2);
+    let get_reg = RegId::new(item_count_u32 + 3);
+    stmts.push(HirStmt::Call {
+        decl_id: reverse_decl,
+        src_dst: reversed_reg,
+        args: HirCallArgs {
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::LoadLiteral {
+        dst: index_reg,
+        lit: HirLiteral::Int(get_index),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: get_decl,
+        src_dst: get_reg,
+        args: HirCallArgs {
+            positional: vec![index_reg],
+            pipeline_input: Some(reversed_reg),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let mut consumer_args = HirCallArgs {
+        pipeline_input: Some(get_reg),
+        ..HirCallArgs::default()
+    };
+    let consumer_reg = if let Some(arg) = consumer_arg {
+        let arg_reg = RegId::new(item_count_u32 + 4);
+        stmts.push(HirStmt::LoadLiteral {
+            dst: arg_reg,
+            lit: arg,
+        });
+        consumer_args.positional.push(arg_reg);
+        RegId::new(item_count_u32 + 5)
+    } else {
+        RegId::new(item_count_u32 + 4)
+    };
+    stmts.push(HirStmt::Call {
+        decl_id: consumer_decl,
+        src_dst: consumer_reg,
+        args: consumer_args,
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: consumer_reg },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: consumer_reg.get() + 1,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_bytes_reverse_list_access_then_pipeline_call_program(
+    reverse_decl: DeclId,
+    access_decl: DeclId,
+    consumer_decl: DeclId,
+    items: &[&[u8]],
+    consumer_arg: Option<HirLiteral>,
+) -> HirProgram {
+    let item_count = items.len();
+    let item_count_u32 = u32::try_from(item_count).expect("test binary-list length fits in u32");
+    let mut stmts = vec![HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List {
+            capacity: item_count,
+        },
+    }];
+
+    for (index, item) in items.iter().enumerate() {
+        let item_reg = RegId::new(u32::try_from(index).expect("test index fits in u32") + 1);
+        stmts.push(HirStmt::LoadLiteral {
+            dst: item_reg,
+            lit: HirLiteral::Binary(item.to_vec()),
+        });
+        stmts.push(HirStmt::ListPush {
+            src_dst: RegId::new(0),
+            item: item_reg,
+        });
+    }
+
+    let reversed_reg = RegId::new(item_count_u32 + 1);
+    let access_reg = RegId::new(item_count_u32 + 2);
+    stmts.push(HirStmt::Call {
+        decl_id: reverse_decl,
+        src_dst: reversed_reg,
+        args: HirCallArgs {
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: access_decl,
+        src_dst: access_reg,
+        args: HirCallArgs {
+            pipeline_input: Some(reversed_reg),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let mut consumer_args = HirCallArgs {
+        pipeline_input: Some(access_reg),
+        ..HirCallArgs::default()
+    };
+    let consumer_reg = if let Some(arg) = consumer_arg {
+        let arg_reg = RegId::new(item_count_u32 + 3);
+        stmts.push(HirStmt::LoadLiteral {
+            dst: arg_reg,
+            lit: arg,
+        });
+        consumer_args.positional.push(arg_reg);
+        RegId::new(item_count_u32 + 4)
+    } else {
+        RegId::new(item_count_u32 + 3)
+    };
+    stmts.push(HirStmt::Call {
+        decl_id: consumer_decl,
+        src_dst: consumer_reg,
+        args: consumer_args,
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: consumer_reg },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: consumer_reg.get() + 1,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 #[test]
 fn test_lower_bytes_reverse_on_binary_list_materializes_reversed_list() {
     let bytes_reverse_decl = DeclId::new(80630);
@@ -27730,6 +28037,271 @@ fn test_lower_bytes_reverse_on_binary_list_materializes_reversed_list() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("bytes reverse binary-list output should compile through codegen");
+}
+
+#[test]
+fn test_lower_bytes_reverse_binary_list_folds_empty_and_unequal_results_for_bytes_collect() {
+    let scenarios = [
+        ("empty binary items", vec![&[][..], &[][..]], 0),
+        (
+            "unequal binary items",
+            vec![&[0x01][..], &[0x02, 0x03][..]],
+            3,
+        ),
+    ];
+
+    for (index, (context, items, expected_len)) in scenarios.into_iter().enumerate() {
+        let base_decl = 80700 + index * 3;
+        let bytes_reverse_decl = DeclId::new(base_decl);
+        let bytes_collect_decl = DeclId::new(base_decl + 1);
+        let bytes_length_decl = DeclId::new(base_decl + 2);
+        let hir = make_bytes_reverse_list_collect_then_length_program(
+            bytes_reverse_decl,
+            bytes_collect_decl,
+            bytes_length_decl,
+            &items,
+        );
+        let decl_names = HashMap::from([
+            (bytes_reverse_decl, "bytes reverse".to_string()),
+            (bytes_collect_decl, "bytes collect".to_string()),
+            (bytes_length_decl, "bytes length".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("bytes reverse should fold binary-list {context} through bytes collect: {err}")
+        });
+
+        assert_program_returns_constant(&result.program, expected_len, context);
+        assert_no_runtime_list_operations(&result.program, context);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!(
+                    "bytes reverse binary-list {context} consumed by bytes collect should compile: {err}"
+                )
+            });
+    }
+}
+
+#[test]
+fn test_lower_bytes_reverse_binary_list_folds_unmaterializable_results_for_list_metadata_consumers()
+{
+    let scenarios = [
+        ("empty list length", "length", Vec::<&[u8]>::new(), 0),
+        (
+            "empty binary item length",
+            "length",
+            vec![&[][..], &[][..]],
+            2,
+        ),
+        ("empty list predicate", "is-empty", Vec::<&[u8]>::new(), 1),
+    ];
+
+    for (index, (context, consumer, items, expected)) in scenarios.into_iter().enumerate() {
+        let base_decl = 80706 + index * 2;
+        let bytes_reverse_decl = DeclId::new(base_decl);
+        let consumer_decl = DeclId::new(base_decl + 1);
+        let hir = make_bytes_reverse_list_then_pipeline_call_program(
+            bytes_reverse_decl,
+            consumer_decl,
+            &items,
+        );
+        let decl_names = HashMap::from([
+            (bytes_reverse_decl, "bytes reverse".to_string()),
+            (consumer_decl, consumer.to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("bytes reverse should fold {context} through {consumer}: {err}")
+        });
+
+        assert_program_returns_constant(&result.program, expected, context);
+        assert_no_runtime_list_operations(&result.program, context);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("bytes reverse {context} consumed by {consumer} should compile: {err}")
+            });
+    }
+}
+
+#[test]
+fn test_lower_bytes_reverse_binary_list_folds_unmaterializable_results_through_get() {
+    let scenarios = [
+        (
+            "unequal selected non-empty result",
+            vec![&[0x01][..], &[0x02, 0x03][..]],
+            1,
+            "bytes starts-with",
+            Some(HirLiteral::Binary(vec![0x03, 0x02])),
+            1,
+        ),
+        (
+            "empty selected result",
+            vec![&[][..], &[][..]],
+            0,
+            "bytes length",
+            None,
+            0,
+        ),
+    ];
+
+    for (index, (context, items, get_index, consumer, consumer_arg, expected)) in
+        scenarios.into_iter().enumerate()
+    {
+        let base_decl = 80712 + index * 3;
+        let bytes_reverse_decl = DeclId::new(base_decl);
+        let get_decl = DeclId::new(base_decl + 1);
+        let consumer_decl = DeclId::new(base_decl + 2);
+        let hir = make_bytes_reverse_list_get_then_pipeline_call_program(
+            bytes_reverse_decl,
+            get_decl,
+            consumer_decl,
+            &items,
+            get_index,
+            consumer_arg,
+        );
+        let decl_names = HashMap::from([
+            (bytes_reverse_decl, "bytes reverse".to_string()),
+            (get_decl, "get".to_string()),
+            (consumer_decl, consumer.to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("bytes reverse should fold {context} through get: {err}"));
+
+        assert_program_returns_constant(&result.program, expected, context);
+        assert_no_runtime_list_operations(&result.program, context);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("bytes reverse {context} consumed through get should compile: {err}")
+            });
+    }
+}
+
+#[test]
+fn test_lower_bytes_reverse_binary_list_folds_unmaterializable_results_through_first_last() {
+    let scenarios = [
+        (
+            "unequal last non-empty result",
+            "last",
+            vec![&[0x01][..], &[0x02, 0x03][..]],
+            "bytes starts-with",
+            Some(HirLiteral::Binary(vec![0x03, 0x02])),
+            1,
+        ),
+        (
+            "empty first result",
+            "first",
+            vec![&[][..], &[][..]],
+            "bytes length",
+            None,
+            0,
+        ),
+    ];
+
+    for (index, (context, access, items, consumer, consumer_arg, expected)) in
+        scenarios.into_iter().enumerate()
+    {
+        let base_decl = 80718 + index * 3;
+        let bytes_reverse_decl = DeclId::new(base_decl);
+        let access_decl = DeclId::new(base_decl + 1);
+        let consumer_decl = DeclId::new(base_decl + 2);
+        let hir = make_bytes_reverse_list_access_then_pipeline_call_program(
+            bytes_reverse_decl,
+            access_decl,
+            consumer_decl,
+            &items,
+            consumer_arg,
+        );
+        let decl_names = HashMap::from([
+            (bytes_reverse_decl, "bytes reverse".to_string()),
+            (access_decl, access.to_string()),
+            (consumer_decl, consumer.to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("bytes reverse should fold {context} through {access}: {err}")
+        });
+
+        assert_program_returns_constant(&result.program, expected, context);
+        assert_no_runtime_list_operations(&result.program, context);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("bytes reverse {context} consumed through {access} should compile: {err}")
+            });
+    }
+}
+
+#[test]
+fn test_lower_bytes_reverse_binary_list_rejects_unmaterializable_results() {
+    let scenarios = [
+        (
+            "empty list",
+            Vec::<&[u8]>::new(),
+            "bytes reverse requires a non-empty list<binary> result",
+        ),
+        (
+            "empty binary items",
+            vec![&[][..], &[][..]],
+            "bytes reverse requires non-empty binary list results",
+        ),
+        (
+            "unequal binary items",
+            vec![&[0x01][..], &[0x02, 0x03][..]],
+            "bytes reverse requires equal-length binary list results",
+        ),
+    ];
+
+    for (index, (context, items, expected_error)) in scenarios.into_iter().enumerate() {
+        let bytes_reverse_decl = DeclId::new(80724 + index);
+        let hir = make_binary_list_builder_pipeline_call_program(bytes_reverse_decl, &items);
+        let decl_names = HashMap::from([(bytes_reverse_decl, "bytes reverse".to_string())]);
+
+        let err = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .expect_err("bytes reverse should reject unmaterializable binary-list results");
+
+        assert!(
+            err.to_string().contains(expected_error),
+            "unexpected {context} error: {err}"
+        );
+    }
 }
 
 fn make_bytes_build_then_starts_with_program(
