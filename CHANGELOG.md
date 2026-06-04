@@ -54,6 +54,9 @@ documentation changes that matter to external alpha consumers.
 - Added list front/back source verifier coverage for rejecting
   `bpf_refcount_acquire_impl` on projected graph payloads without
   `bpf_refcount`.
+- Added rbtree remove/left/right source verifier coverage for rejecting
+  `bpf_refcount_acquire_impl` on projected graph payloads without
+  `bpf_refcount`.
 - Improved typed `global-define` array initializer diagnostics so top-level
   bad items use `initializer[0]` style paths instead of record-field wording.
 - Added verifier coverage for BTF target diagnostic help, typed global
