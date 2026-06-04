@@ -36585,6 +36585,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-list-bits-binary-bytes-fold"
+        category: "language-core"
+        tags: [aggregate list binary bits xor bytes collect length]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  (([0x[aa] 0x[bb cc]] | bits xor 0x[ff] | bytes collect | bytes length) == 3) and (([0x[aa] 0x[bb cc]] | bits xor 0x[ff] | length) == 2)'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-scalar-bits-not-signed"
         category: "language-core"
         tags: [scalar bits "not" signed]
@@ -36703,6 +36716,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-list-bits-not-binary-bytes-fold"
+        category: "language-core"
+        tags: [aggregate list binary bits "not" bytes collect length]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ([0x[ff] 0x[00 01]] | bits not | bytes collect | bytes length) == 3'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-list-bits-not-default"
         category: "language-core"
         tags: [aggregate list bits "not"]
@@ -36775,6 +36801,19 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  (0x[4f f4] | bits shl 4 | bytes starts-with 0x[ff 40]) and (0x[4f f4] | bits shr 4 --signed --number-bytes 8 | bytes starts-with 0x[04 ff]) and (0x[c0 ff ee] | bits rol 10 --signed --number-bytes 8 | bytes starts-with 0x[ff bb 03]) and (0x[ff bb 03] | bits ror 10 --number-bytes 8 | bytes starts-with 0x[c0 ff ee])'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-list-bits-shift-rotate-binary-bytes-fold"
+        category: "language-core"
+        tags: [aggregate list binary bits shl ror bytes collect length]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  (([0x[80] 0x[01 02]] | bits shl 1 | bytes collect | bytes length) == 3) and (([0x[80] 0x[01 02]] | bits ror 1 | bytes collect | bytes length) == 3)'
             '}'
         ]
         local: "accept"

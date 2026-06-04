@@ -298,6 +298,7 @@ pub enum FixedLayoutValueConsumer {
     MapDeleteKey,
     MapContainsProbe,
     BinaryBytesTransform,
+    BitsBinaryTransform,
     BytesPredicate,
     BytesIndexOf,
     BytesReverse,
@@ -577,6 +578,112 @@ pub fn compile_time_value_flows_to_fixed_layout_aggregate_consumer(
     })
 }
 
+pub fn compile_time_value_flows_to_bits_binary_transform_aggregate_consumer(
+    stmts: &[HirStmt],
+    stmt_index: usize,
+    dst: RegId,
+    decl_names: &HashMap<DeclId, String>,
+) -> bool {
+    compile_time_value_flows_to_fixed_layout_consumer(
+        stmts,
+        stmt_index,
+        dst,
+        decl_names,
+        FixedLayoutValueConsumer::BitsBinaryTransform,
+        CompileTimeValueFlow::AggregateBuilder,
+    )
+}
+
+pub fn compile_time_list_push_item_is_constant(
+    stmts: &[HirStmt],
+    stmt_index: usize,
+    item: RegId,
+) -> bool {
+    let mut constant_regs = HashSet::new();
+    let mut constant_vars = HashSet::new();
+
+    for stmt in stmts.iter().take(stmt_index) {
+        match stmt {
+            HirStmt::LoadLiteral { dst, lit } => {
+                if lit.to_constant_value().is_some() {
+                    constant_regs.insert(*dst);
+                } else {
+                    constant_regs.remove(dst);
+                }
+            }
+            HirStmt::LoadValue { dst, .. } => {
+                constant_regs.insert(*dst);
+            }
+            HirStmt::Move { dst, src } | HirStmt::Clone { dst, src } => {
+                if constant_regs.contains(src) {
+                    constant_regs.insert(*dst);
+                } else {
+                    constant_regs.remove(dst);
+                }
+            }
+            HirStmt::StoreVariable { var_id, src } => {
+                if constant_regs.contains(src) {
+                    constant_vars.insert(*var_id);
+                } else {
+                    constant_vars.remove(var_id);
+                }
+            }
+            HirStmt::LoadVariable { dst, var_id } => {
+                if constant_vars.contains(var_id) {
+                    constant_regs.insert(*dst);
+                } else {
+                    constant_regs.remove(dst);
+                }
+            }
+            HirStmt::DropVariable { var_id } => {
+                constant_vars.remove(var_id);
+            }
+            HirStmt::Drop { src } | HirStmt::Drain { src } | HirStmt::DrainIfEnd { src } => {
+                constant_regs.remove(src);
+            }
+            HirStmt::LoadEnv { dst, .. }
+            | HirStmt::LoadEnvOpt { dst, .. }
+            | HirStmt::OnErrorInto { dst, .. } => {
+                constant_regs.remove(dst);
+            }
+            HirStmt::Call { src_dst, .. }
+            | HirStmt::StringAppend { src_dst, .. }
+            | HirStmt::GlobFrom { src_dst, .. }
+            | HirStmt::ListPush { src_dst, .. }
+            | HirStmt::ListSpread { src_dst, .. }
+            | HirStmt::RecordInsert { src_dst, .. }
+            | HirStmt::RecordSpread { src_dst, .. }
+            | HirStmt::Not { src_dst }
+            | HirStmt::BinaryOp {
+                lhs_dst: src_dst, ..
+            }
+            | HirStmt::FollowCellPath { src_dst, .. }
+            | HirStmt::UpsertCellPath { src_dst, .. } => {
+                constant_regs.remove(src_dst);
+            }
+            HirStmt::CloneCellPath { dst, .. } => {
+                constant_regs.remove(dst);
+            }
+            HirStmt::Collect { src_dst }
+            | HirStmt::Span { src_dst }
+            | HirStmt::CheckErrRedirected { src: src_dst } => {
+                constant_regs.remove(src_dst);
+            }
+            HirStmt::StoreEnv { .. }
+            | HirStmt::RedirectOut { .. }
+            | HirStmt::RedirectErr { .. }
+            | HirStmt::OpenFile { .. }
+            | HirStmt::WriteFile { .. }
+            | HirStmt::CloseFile { .. }
+            | HirStmt::OnError { .. }
+            | HirStmt::PopErrorHandler
+            | HirStmt::CheckMatchGuard { .. } => {}
+        }
+    }
+
+    constant_regs.contains(&item)
+}
+
 fn remove_call_consumed_compile_time_regs(
     regs: &mut HashSet<RegId>,
     src_dst: RegId,
@@ -728,6 +835,44 @@ fn compile_time_value_consumer_matches(
                     _ => false,
                 }
                 && args.parser_info.is_empty()
+        }
+        FixedLayoutValueConsumer::BitsBinaryTransform => {
+            call_args_tracked_only_in_pipeline(src_dst, args, tracked_regs)
+                && args.rest.is_empty()
+                && args.parser_info.is_empty()
+                && match decl_name {
+                    Some("bits and" | "bits or" | "bits xor") => {
+                        args.positional.len() == 1
+                            && args
+                                .named
+                                .iter()
+                                .all(|(name, _)| matches!(name.as_slice(), b"endian" | b"e"))
+                            && args.flags.is_empty()
+                    }
+                    Some("bits not") => {
+                        args.positional.is_empty()
+                            && args
+                                .named
+                                .iter()
+                                .all(|(name, _)| matches!(name.as_slice(), b"number-bytes" | b"n"))
+                            && args
+                                .flags
+                                .iter()
+                                .all(|flag| matches!(flag.as_slice(), b"signed" | b"s"))
+                    }
+                    Some("bits shl" | "bits shr" | "bits rol" | "bits ror") => {
+                        args.positional.len() == 1
+                            && args
+                                .named
+                                .iter()
+                                .all(|(name, _)| matches!(name.as_slice(), b"number-bytes" | b"n"))
+                            && args
+                                .flags
+                                .iter()
+                                .all(|flag| matches!(flag.as_slice(), b"signed" | b"s"))
+                    }
+                    _ => false,
+                }
         }
         FixedLayoutValueConsumer::BytesPredicate => {
             matches!(decl_name, Some("bytes starts-with" | "bytes ends-with"))

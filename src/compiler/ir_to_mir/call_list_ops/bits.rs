@@ -410,6 +410,50 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
+    fn lower_bits_binary_list_output(
+        &mut self,
+        cmd_name: &str,
+        src_dst: RegId,
+        output: Vec<nu_protocol::Value>,
+    ) -> Result<(), CompileError> {
+        let mut expected_len = None;
+        let mut has_empty_output = false;
+        let mut has_unequal_output_len = false;
+        for value in &output {
+            let nu_protocol::Value::Binary { val, .. } = value else {
+                unreachable!("validated bits binary-list output");
+            };
+            if val.is_empty() {
+                has_empty_output = true;
+            }
+            if let Some(expected_len) = expected_len {
+                if val.len() != expected_len {
+                    has_unequal_output_len = true;
+                }
+            } else {
+                expected_len = Some(val.len());
+            }
+        }
+
+        let is_empty = output.is_empty();
+        if (is_empty || has_empty_output || has_unequal_output_len)
+            && !self.current_call_result_metadata_only
+        {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} binary list output requires non-empty equal-length binary items in eBPF"
+            )));
+        }
+
+        self.reset_call_result_metadata(src_dst);
+        let value = nu_protocol::Value::list(output, nu_protocol::Span::unknown());
+        if is_empty || has_empty_output || has_unequal_output_len {
+            self.lower_compile_time_only_constant_value(src_dst, &value);
+        } else {
+            self.lower_constant_value(src_dst, &value)?;
+        }
+        Ok(())
+    }
+
     fn bits_not_signed_flag(&self, cmd_name: &str) -> Result<bool, CompileError> {
         Ok(match self.named_flags.as_slice() {
             [] => false,
@@ -1075,10 +1119,10 @@ impl<'a> HirToMirLowering<'a> {
             .as_ref()
             .and_then(|meta| meta.constant_value.clone())
         {
-            if !vals.is_empty()
-                && vals
-                    .iter()
-                    .all(|value| matches!(value, nu_protocol::Value::Binary { .. }))
+            if vals
+                .iter()
+                .all(|value| matches!(value, nu_protocol::Value::Binary { .. }))
+                && (!vals.is_empty() || rhs_binary_const.is_some())
             {
                 let Some(rhs_binary) = rhs_binary_const.as_ref() else {
                     return Err(CompileError::UnsupportedInstruction(format!(
@@ -1101,30 +1145,7 @@ impl<'a> HirToMirLowering<'a> {
                         ))
                     })
                     .collect::<Result<Vec<_>, CompileError>>()?;
-                let output_len = output
-                    .first()
-                    .and_then(|value| match value {
-                        nu_protocol::Value::Binary { val, .. } => Some(val.len()),
-                        _ => None,
-                    })
-                    .unwrap_or(0);
-                let equal_non_empty_output = output_len > 0
-                    && output.iter().all(|value| match value {
-                        nu_protocol::Value::Binary { val, .. } => val.len() == output_len,
-                        _ => false,
-                    });
-                if !equal_non_empty_output {
-                    return Err(CompileError::UnsupportedInstruction(format!(
-                        "{cmd_name} binary list output requires non-empty equal-length binary items in eBPF"
-                    )));
-                }
-
-                self.reset_call_result_metadata(src_dst);
-                self.lower_constant_value(
-                    src_dst,
-                    &nu_protocol::Value::list(output, nu_protocol::Span::unknown()),
-                )?;
-                return Ok(());
+                return self.lower_bits_binary_list_output(cmd_name, src_dst, output);
             }
 
             if vals.len() > MAX_BITS_STACK_LIST_CAPACITY {
@@ -1332,30 +1353,7 @@ impl<'a> HirToMirLowering<'a> {
                         ))
                     })
                     .collect::<Result<Vec<_>, CompileError>>()?;
-                let output_len = output
-                    .first()
-                    .and_then(|value| match value {
-                        nu_protocol::Value::Binary { val, .. } => Some(val.len()),
-                        _ => None,
-                    })
-                    .unwrap_or(0);
-                let equal_non_empty_output = output_len > 0
-                    && output.iter().all(|value| match value {
-                        nu_protocol::Value::Binary { val, .. } => val.len() == output_len,
-                        _ => false,
-                    });
-                if !equal_non_empty_output {
-                    return Err(CompileError::UnsupportedInstruction(format!(
-                        "{cmd_name} binary list output requires non-empty equal-length binary items in eBPF"
-                    )));
-                }
-
-                self.reset_call_result_metadata(src_dst);
-                self.lower_constant_value(
-                    src_dst,
-                    &nu_protocol::Value::list(output, nu_protocol::Span::unknown()),
-                )?;
-                return Ok(());
+                return self.lower_bits_binary_list_output(cmd_name, src_dst, output);
             }
 
             if vals.len() > MAX_BITS_STACK_LIST_CAPACITY {
@@ -1871,30 +1869,7 @@ impl<'a> HirToMirLowering<'a> {
                         ))
                     })
                     .collect::<Result<Vec<_>, CompileError>>()?;
-                let output_len = output
-                    .first()
-                    .and_then(|value| match value {
-                        nu_protocol::Value::Binary { val, .. } => Some(val.len()),
-                        _ => None,
-                    })
-                    .unwrap_or(0);
-                let equal_non_empty_output = output_len > 0
-                    && output.iter().all(|value| match value {
-                        nu_protocol::Value::Binary { val, .. } => val.len() == output_len,
-                        _ => false,
-                    });
-                if !equal_non_empty_output {
-                    return Err(CompileError::UnsupportedInstruction(format!(
-                        "{cmd_name} binary list output requires non-empty equal-length binary items in eBPF"
-                    )));
-                }
-
-                self.reset_call_result_metadata(src_dst);
-                self.lower_constant_value(
-                    src_dst,
-                    &nu_protocol::Value::list(output, nu_protocol::Span::unknown()),
-                )?;
-                return Ok(());
+                return self.lower_bits_binary_list_output(cmd_name, src_dst, output);
             }
 
             if vals.len() > MAX_BITS_STACK_LIST_CAPACITY {
@@ -2340,30 +2315,7 @@ impl<'a> HirToMirLowering<'a> {
                         ))
                     })
                     .collect::<Result<Vec<_>, CompileError>>()?;
-                let output_len = output
-                    .first()
-                    .and_then(|value| match value {
-                        nu_protocol::Value::Binary { val, .. } => Some(val.len()),
-                        _ => None,
-                    })
-                    .unwrap_or(0);
-                let equal_non_empty_output = output_len > 0
-                    && output.iter().all(|value| match value {
-                        nu_protocol::Value::Binary { val, .. } => val.len() == output_len,
-                        _ => false,
-                    });
-                if !equal_non_empty_output {
-                    return Err(CompileError::UnsupportedInstruction(format!(
-                        "{cmd_name} binary list output requires non-empty equal-length binary items in eBPF"
-                    )));
-                }
-
-                self.reset_call_result_metadata(src_dst);
-                self.lower_constant_value(
-                    src_dst,
-                    &nu_protocol::Value::list(output, nu_protocol::Span::unknown()),
-                )?;
-                return Ok(());
+                return self.lower_bits_binary_list_output(cmd_name, src_dst, output);
             }
 
             let mode = self.bits_not_mode(cmd_name)?;

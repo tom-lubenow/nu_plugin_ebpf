@@ -577,11 +577,16 @@ impl<'a> HirToMirLowering<'a> {
                     continue;
                 }
                 if let HirStmt::ListPush { src_dst, item } = stmt
-                    && self.is_compile_time_only_fixed_layout_builder_value(
+                    && (self.is_compile_time_only_fixed_layout_builder_value(
                         &block.stmts,
                         stmt_index,
                         *src_dst,
-                    )
+                    ) || self.is_compile_time_only_bits_binary_transform_builder_value(
+                        &block.stmts,
+                        stmt_index,
+                        *src_dst,
+                        *item,
+                    ))
                 {
                     self.lower_compile_time_only_list_push(*src_dst, *item)?;
                     continue;
@@ -1120,6 +1125,22 @@ impl<'a> HirToMirLowering<'a> {
             dst,
             self.decl_names,
         )
+    }
+
+    fn is_compile_time_only_bits_binary_transform_builder_value(
+        &self,
+        stmts: &[HirStmt],
+        stmt_index: usize,
+        dst: RegId,
+        item: RegId,
+    ) -> bool {
+        compile_time_list_push_item_is_constant(stmts, stmt_index, item)
+            && compile_time_value_flows_to_bits_binary_transform_aggregate_consumer(
+                stmts,
+                stmt_index,
+                dst,
+                self.decl_names,
+            )
     }
 
     fn is_compile_time_only_fixed_layout_aggregate_value(

@@ -15,6 +15,8 @@ use super::hindley_milner::{
 };
 use super::hir::{
     AnnotatedMutGlobal, HirBlock, HirFunction, HirLiteral, HirProgram, HirStmt, HirTerminator,
+    compile_time_list_push_item_is_constant,
+    compile_time_value_flows_to_bits_binary_transform_aggregate_consumer,
     compile_time_value_flows_to_fixed_layout_aggregate_consumer, supports_numeric_constant_list,
 };
 use super::mir::AddressSpace;
@@ -210,13 +212,19 @@ impl<'a> HirTypeInference<'a> {
 
         for (stmt_index, stmt) in block.stmts.iter().enumerate() {
             let compile_time_only_fixed_layout_list_builder = match stmt {
-                HirStmt::ListPush { src_dst, .. } => {
+                HirStmt::ListPush { src_dst, item } => {
                     compile_time_value_flows_to_fixed_layout_aggregate_consumer(
                         &block.stmts,
                         stmt_index,
                         *src_dst,
                         self.decl_names,
-                    )
+                    ) || (compile_time_list_push_item_is_constant(&block.stmts, stmt_index, *item)
+                        && compile_time_value_flows_to_bits_binary_transform_aggregate_consumer(
+                            &block.stmts,
+                            stmt_index,
+                            *src_dst,
+                            self.decl_names,
+                        ))
                 }
                 _ => false,
             };

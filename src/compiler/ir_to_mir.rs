@@ -16,6 +16,8 @@ use super::hindley_milner::HMType;
 use super::hir::{
     CompileTimeValueFlow, FixedLayoutValueConsumer, HirBlockId, HirCallArgs, HirClosureParamSource,
     HirFunction, HirLiteral, HirProgram, HirStmt, HirTerminator,
+    compile_time_list_push_item_is_constant,
+    compile_time_value_flows_to_bits_binary_transform_aggregate_consumer,
     compile_time_value_flows_to_fixed_layout_aggregate_consumer,
     compile_time_value_flows_to_fixed_layout_consumer, lower_ir_to_hir,
 };
