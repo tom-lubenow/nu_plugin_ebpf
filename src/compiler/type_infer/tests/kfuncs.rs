@@ -5059,6 +5059,82 @@ fn test_infer_kfunc_rbtree_navigation_pointer_returns() {
 }
 
 #[test]
+fn test_type_error_kfunc_rbtree_add_rejects_nonzero_meta() {
+    let object_ty = MirType::Struct {
+        name: Some("rb_item".to_string()),
+        kernel_btf_type_id: None,
+        fields: vec![StructField {
+            name: "rb".to_string(),
+            ty: MirType::bpf_rb_node_struct(),
+            offset: 0,
+            synthetic: false,
+            bitfield: None,
+        }],
+    };
+    let root_ptr_ty = MirType::Ptr {
+        pointee: Box::new(MirType::bpf_rb_root_struct_with_object(
+            "rb_item",
+            "rb",
+            object_ty.clone(),
+        )),
+        address_space: AddressSpace::Map,
+    };
+    let object_ptr_ty = MirType::Ptr {
+        pointee: Box::new(object_ty),
+        address_space: AddressSpace::Kernel,
+    };
+    let rb_node_ptr_ty = MirType::Ptr {
+        pointee: Box::new(MirType::bpf_rb_node_struct()),
+        address_space: AddressSpace::Kernel,
+    };
+    let callback_ty = MirType::Subprogram {
+        args: vec![rb_node_ptr_ty.clone(), rb_node_ptr_ty],
+        ret: Box::new(MirType::I64),
+    };
+
+    let mut func = make_test_function();
+    let root = func.alloc_vreg();
+    let node = func.alloc_vreg();
+    let callback = func.alloc_vreg();
+    let meta = func.alloc_vreg();
+    let off = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: meta,
+        src: MirValue::Const(1),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: off,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_rbtree_add_impl".to_string(),
+        btf_id: None,
+        args: vec![root, node, callback, meta, off],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let hints = HashMap::from([
+        (root, root_ptr_ty),
+        (node, object_ptr_ty),
+        (callback, callback_ty),
+    ]);
+    let mut ti = TypeInference::new_with_env(None, None, None, Some(&hints), None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected rbtree-add nonzero meta type error");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("kfunc 'bpf_rbtree_add_impl' arg3 must be known zero")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
 fn test_type_error_kfunc_rejects_mismatched_graph_node_kind() {
     let mut func = make_test_function();
     let type_id = func.alloc_vreg();
