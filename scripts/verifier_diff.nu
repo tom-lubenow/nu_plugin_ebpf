@@ -27761,6 +27761,26 @@ const FIXTURES = [
         error_contains: "kfunc 'bpf_wq_set_callback_impl' arg3 expects null (0) or pointer"
     }
     {
+        name: "bpf-wq-set-callback-rejects-dynamic-aux"
+        category: "helper-state"
+        tags: [bpf_wq kfunc-call callback reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define work_items --kind array --value-type "record{work:bpf_wq,cookie:u64}" --max-entries 1'
+            '  let aux = (helper-call "bpf_get_prandom_u32")'
+            '  let entry = (0 | map-get work_items --kind array)'
+            '  if $entry {'
+            '    kfunc-call "bpf_wq_set_callback_impl" $entry.work {|map key work| 0} 0 $aux'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'bpf_wq_set_callback_impl' arg3 expects null (0) or pointer"
+    }
+    {
         name: "map-define-bpf-refcount-slot"
         category: "maps"
         tags: [maps map-define bpf_refcount accept]
