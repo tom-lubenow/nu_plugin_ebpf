@@ -42,6 +42,8 @@ documentation changes that matter to external alpha consumers.
   with diagnostics that name the nested payload field.
 - Added coverage for top-level graph-root payload `array{bpf_refcount:N}`
   rejects so they fail during payload parsing before wrapper validation.
+- Added compatibility-scanner coverage for rbtree graph-root payload schemas
+  that derive both rbtree and `bpf_refcount` map-value feature floors.
 - Improved typed `global-define` array initializer diagnostics so top-level
   bad items use `initializer[0]` style paths instead of record-field wording.
 - Added verifier coverage for BTF target diagnostic help, typed global

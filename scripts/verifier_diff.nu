@@ -848,6 +848,19 @@ const PROGRAM_MAP_VALUE_KERNEL_FEATURE_EXPECTATIONS = [
             "map-value:bpf_rb_node"
         ]
     }
+    {
+        program: [
+            '{|ctx|'
+            '  map-define rb_items --kind hash --value-type "record{root:bpf_rb_root:rb_item:rb:record{refs:bpf_refcount,cookie:u64}}"'
+            '  0'
+            '}'
+        ]
+        feature_keys: [
+            "map-value:bpf_rb_root"
+            "map-value:bpf_rb_node"
+            "map-value:bpf_refcount"
+        ]
+    }
 ]
 
 const PROGRAM_GLOBAL_KERNEL_FEATURE_EXPECTATIONS = [

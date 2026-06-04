@@ -2883,6 +2883,17 @@ fn test_verifier_diff_program_map_value_scanner_matches_rust_map_value_keys() {
                 MapValueCompatibilityRequirement::BpfRbNode,
             ]),
         },
+        MapValueScannerCheck {
+            program: r#"{|ctx|
+  map-define rb_items --kind hash --value-type "record{root:bpf_rb_root:rb_item:rb:record{refs:bpf_refcount,cookie:u64}}"
+  0
+}"#,
+            expected_keys: map_value_feature_keys([
+                MapValueCompatibilityRequirement::BpfRbRoot,
+                MapValueCompatibilityRequirement::BpfRbNode,
+                MapValueCompatibilityRequirement::BpfRefcount,
+            ]),
+        },
     ];
 
     let programs = checks
