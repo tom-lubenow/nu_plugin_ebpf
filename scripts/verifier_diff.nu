@@ -13810,6 +13810,21 @@ const FIXTURES = [
         error_contains: "map value type spec 'bpf_list_head:node_data:node:record{refs:bpf_refcount' has unmatched '{' braces"
     }
     {
+        name: "map-define-key-type-duplicate-record-field-rejects-path"
+        category: "maps"
+        tags: [maps map-define records diagnostics reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define dup_keys --kind hash --key-type "record{pid:u32,pid:u64}" --value-type int'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "record field 'pid' is duplicated in type spec 'record{pid:u32,pid:u64}'"
+    }
+    {
         name: "annotated-mut-record-alignment"
         category: "globals"
         tags: [globals records alignment accept]

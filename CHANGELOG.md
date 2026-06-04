@@ -30,6 +30,8 @@ documentation changes that matter to external alpha consumers.
   or `map value` instead of `global` when schemas reject before lowering.
 - Improved map graph-root type-spec diagnostics so malformed payload schemas keep
   `map value` context in brace-balance errors.
+- Improved record type-spec diagnostics so duplicate and reserved fields report
+  the offending field path in nested globals and map key/value schemas.
 - Improved typed `global-define` array initializer diagnostics so top-level
   bad items use `initializer[0]` style paths instead of record-field wording.
 - Added verifier coverage for BTF target diagnostic help, typed global

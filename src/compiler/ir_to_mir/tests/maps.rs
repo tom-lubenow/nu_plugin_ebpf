@@ -324,6 +324,30 @@ fn test_map_key_type_spec_rejects_empty_record_with_context() {
     );
 }
 
+#[test]
+fn test_map_key_type_spec_rejects_duplicate_record_field_with_context() {
+    let err = HirToMirLowering::parse_named_map_key_type_spec("record{pid:u32,pid:u64}")
+        .expect_err("map key type parser should reject duplicate record fields");
+
+    assert!(
+        err.to_string()
+            .contains("record field 'pid' is duplicated in type spec 'record{pid:u32,pid:u64}'"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_map_value_type_spec_rejects_reserved_record_field_with_context() {
+    let err = HirToMirLowering::parse_named_map_value_type_spec("record{__layout_pad0:u32}")
+        .expect_err("map value type parser should reject reserved record fields");
+
+    assert!(
+        err.to_string()
+            .contains("record field '__layout_pad0' uses reserved prefix '__layout_pad'"),
+        "unexpected error: {err}"
+    );
+}
+
 fn validate_manual_map_value_type_for_kind(ty: MirType, kind: MapKind) -> Result<(), CompileError> {
     HirToMirLowering::validate_named_map_value_type_for_map(
         &MapRef {

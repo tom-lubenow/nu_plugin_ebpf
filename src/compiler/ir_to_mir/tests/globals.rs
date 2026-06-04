@@ -6071,6 +6071,17 @@ fn test_lower_global_define_type_nested_record_rejects_unsupported_type_path() {
 }
 
 #[test]
+fn test_lower_global_define_type_nested_record_rejects_duplicate_field_path() {
+    let err = lower_global_define_type_spec_error("record{inner:record{pid:u32,pid:u64}}");
+
+    assert!(
+        err.to_string()
+            .contains("record field 'inner.pid' is duplicated"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn test_lower_global_define_type_record_candidate_rejects_unmatched_braces() {
     let err = lower_global_define_type_spec_error("record{inner:record{pid:u32");
 

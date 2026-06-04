@@ -565,7 +565,7 @@ impl ParsedNamedGlobalType {
             .and_then(|rest| rest.strip_suffix('}'))
         {
             if body.trim().is_empty() {
-                if context != NamedTypeSpecContext::Global {
+                if record_path.is_some() || context != NamedTypeSpecContext::Global {
                     let subject = type_spec_subject(spec, context, record_path);
                     return Err(CompileError::UnsupportedInstruction(format!(
                         "{subject} requires at least one record field"
@@ -585,7 +585,7 @@ impl ParsedNamedGlobalType {
 
             for field in split_top_level_fields(body, spec, context, record_path)? {
                 if field.is_empty() {
-                    if context != NamedTypeSpecContext::Global {
+                    if record_path.is_some() || context != NamedTypeSpecContext::Global {
                         let subject = type_spec_subject(spec, context, record_path);
                         return Err(CompileError::UnsupportedInstruction(format!(
                             "{subject} contains an empty record field"
@@ -607,6 +607,13 @@ impl ParsedNamedGlobalType {
                     )));
                 }
                 if name.starts_with(NAMED_TYPE_PADDING_FIELD_PREFIX) {
+                    if record_path.is_some() || context != NamedTypeSpecContext::Global {
+                        let field_path = record_field_path(record_path, name);
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "record field '{field_path}' uses reserved prefix '{}'",
+                            NAMED_TYPE_PADDING_FIELD_PREFIX
+                        )));
+                    }
                     return Err(CompileError::UnsupportedInstruction(format!(
                         "record type specs reserve field names starting with '{}'",
                         NAMED_TYPE_PADDING_FIELD_PREFIX
@@ -617,10 +624,11 @@ impl ParsedNamedGlobalType {
                     .iter()
                     .any(|existing: &StructField| existing.name == name)
                 {
-                    if context != NamedTypeSpecContext::Global {
+                    if record_path.is_some() || context != NamedTypeSpecContext::Global {
+                        let field_path = record_field_path(record_path, name);
                         return Err(CompileError::UnsupportedInstruction(format!(
-                            "record type spec '{}' does not support duplicate field name '{}'",
-                            spec, name
+                            "record field '{field_path}' is duplicated in type spec '{}'",
+                            spec
                         )));
                     }
                     return Err(CompileError::UnsupportedInstruction(format!(
