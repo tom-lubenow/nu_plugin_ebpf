@@ -1176,6 +1176,14 @@ impl<'a> TypeInference<'a> {
                                         "kfunc '{}' arg{} expects {} pointer, got {:?}",
                                         kfunc, idx, expected, pointee
                                     )));
+                                } else if kfunc == "bpf_refcount_acquire_impl"
+                                    && idx == 0
+                                    && !pointee.contains_bpf_refcount_struct()
+                                {
+                                    errors.push(TypeError::new(format!(
+                                        "kfunc '{kfunc}' arg0 expects object pointer containing bpf_refcount, got {:?}",
+                                        pointee
+                                    )));
                                 } else if Self::kfunc_arg_requires_skb_context_or_pointer(
                                     kfunc, idx,
                                 ) && !direct_ctx_field_sources.get(arg).is_some_and(

@@ -44,6 +44,8 @@ documentation changes that matter to external alpha consumers.
   rejects so they fail during payload parsing before wrapper validation.
 - Added compatibility-scanner coverage for rbtree graph-root payload schemas
   that derive both rbtree and `bpf_refcount` map-value feature floors.
+- Tightened `bpf_refcount_acquire_impl` type checks so graph object pointers
+  must contain a `bpf_refcount` field before acquiring a referenced clone.
 - Improved typed `global-define` array initializer diagnostics so top-level
   bad items use `initializer[0]` style paths instead of record-field wording.
 - Added verifier coverage for BTF target diagnostic help, typed global
