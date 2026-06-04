@@ -81,6 +81,8 @@ documentation changes that matter to external alpha consumers.
   protected by a spin lock from a different map value.
 - Added rbtree remove source verifier coverage for rejecting a graph root
   protected by a spin lock from a different map value.
+- Added rbtree right/root source verifier coverage for rejecting list-node
+  operands with targeted `bpf_rb_node` diagnostics.
 - Improved typed `global-define` array initializer diagnostics so top-level
   bad items use `initializer[0]` style paths instead of record-field wording.
 - Added verifier coverage for BTF target diagnostic help, typed global

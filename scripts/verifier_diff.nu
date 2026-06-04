@@ -31725,6 +31725,62 @@ const FIXTURES = [
         error_contains: "expects bpf_rb_node pointer"
     }
     {
+        name: "source-kfunc-rbtree-right-rejects-list-node"
+        category: "helper-state"
+        tags: [kfunc object graph source reject]
+        requires: [kernel-btf]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  map-define graph_items --kind hash --value-type "record{lock:bpf_spin_lock,root:bpf_list_head:node_data:node,cookie:u64}"'
+            '  let entry = (0 | map-get graph_items --kind hash)'
+            '  if $entry {'
+            '    helper-call "bpf_spin_lock" $entry.lock'
+            '    let node = (kfunc-call "bpf_list_front" $entry.root)'
+            '    helper-call "bpf_spin_unlock" $entry.lock'
+            '    if $node {'
+            '      let right = (kfunc-call "bpf_rbtree_right" $node)'
+            '      if $right {'
+            '        0'
+            '      }'
+            '    }'
+            '  }'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "expects bpf_rb_node pointer"
+    }
+    {
+        name: "source-kfunc-rbtree-root-rejects-list-node"
+        category: "helper-state"
+        tags: [kfunc object graph source reject]
+        requires: [kernel-btf]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  map-define graph_items --kind hash --value-type "record{lock:bpf_spin_lock,root:bpf_list_head:node_data:node,cookie:u64}"'
+            '  let entry = (0 | map-get graph_items --kind hash)'
+            '  if $entry {'
+            '    helper-call "bpf_spin_lock" $entry.lock'
+            '    let node = (kfunc-call "bpf_list_front" $entry.root)'
+            '    helper-call "bpf_spin_unlock" $entry.lock'
+            '    if $node {'
+            '      let root = (kfunc-call "bpf_rbtree_root" $node)'
+            '      if $root {'
+            '        0'
+            '      }'
+            '    }'
+            '  }'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "expects bpf_rb_node pointer"
+    }
+    {
         name: "source-kfunc-rbtree-add-map-root"
         category: "helper-state"
         tags: [kfunc object graph callback source accept]
