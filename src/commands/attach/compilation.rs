@@ -137,6 +137,7 @@ const NU_CLOSURE_COMMANDS: &[&str] = &[
     "rename",
     "merge",
     "columns",
+    "transpose",
     "values",
     "insert",
     "update",
@@ -175,7 +176,7 @@ fn build_decl_names(engine: &EngineInterface) -> Result<HashMap<DeclId, String>,
     Ok(decl_names)
 }
 
-fn is_known_closure_command(name: &str) -> bool {
+pub(super) fn is_known_closure_command(name: &str) -> bool {
     ProgramIntrinsic::from_command_name(name).is_some() || NU_CLOSURE_COMMANDS.contains(&name)
 }
 

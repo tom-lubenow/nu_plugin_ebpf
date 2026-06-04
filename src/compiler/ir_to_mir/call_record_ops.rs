@@ -891,6 +891,77 @@ impl<'a> HirToMirLowering<'a> {
         self.lower_known_string_list_result(src_dst, result_vreg, columns)
     }
 
+    pub(super) fn lower_metadata_record_transpose(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+    ) -> Result<(), CompileError> {
+        let _ = dst_vreg;
+        let input_reg = self
+            .pipeline_input_reg
+            .or(src_dst_had_value.then_some(src_dst));
+
+        if !self.named_flags.is_empty()
+            || !self.named_args.is_empty()
+            || !self.parser_info_args.is_empty()
+        {
+            return Err(CompileError::UnsupportedInstruction(
+                "transpose supports only record input and positional output column names in eBPF"
+                    .into(),
+            ));
+        }
+
+        let mut output_names = ["column0".to_string(), "column1".to_string()];
+        for (idx, (_, reg)) in self.positional_args.iter().enumerate() {
+            let name = self.top_level_field_name_arg(*reg, "transpose")?;
+            if idx < output_names.len() {
+                output_names[idx] = name;
+            }
+        }
+
+        let input_meta = input_reg
+            .and_then(|reg| self.get_metadata(reg).cloned())
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "transpose requires compile-time known record input in eBPF".into(),
+                )
+            })?;
+        let Some(nu_protocol::Value::Record { val, .. }) = input_meta.constant_value.as_ref()
+        else {
+            return Err(CompileError::UnsupportedInstruction(
+                "transpose requires compile-time known record values in eBPF".into(),
+            ));
+        };
+
+        let mut rows = Vec::with_capacity(val.len());
+        for (key, value) in val.iter() {
+            let mut row = nu_protocol::Record::new();
+            row.push(
+                output_names[0].clone(),
+                nu_protocol::Value::string(key.to_string(), Span::unknown()),
+            );
+            row.push(output_names[1].clone(), value.clone());
+            rows.push(nu_protocol::Value::record(row, Span::unknown()));
+        }
+        let value_list = nu_protocol::Value::list(rows, Span::unknown());
+
+        if self.current_call_result_metadata_only {
+            self.lower_compile_time_only_constant_value(src_dst, &value_list);
+            return Ok(());
+        }
+
+        if crate::compiler::hir::supports_constant_value(&value_list) {
+            self.lower_constant_value(src_dst, &value_list)?;
+            return Ok(());
+        }
+
+        Err(CompileError::UnsupportedInstruction(
+            "transpose output requires homogeneous row value layouts unless consumed by metadata-only fixed-list operations in eBPF"
+                .into(),
+        ))
+    }
+
     pub(super) fn lower_metadata_record_get(
         &mut self,
         src_dst: RegId,

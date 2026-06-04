@@ -39002,6 +39002,45 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-record-transpose-get"
+        category: "language-core"
+        tags: [aggregate record transpose list get]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ({ pid: 7 cpu: 2 } | transpose key value | get 1 | get value) == 2'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-record-transpose-mixed-get"
+        category: "language-core"
+        tags: [aggregate record transpose list get string]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  { pid: 7 comm: "nu" } | transpose key value | get 1 | get value | str starts-with "nu"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-record-transpose-length"
+        category: "language-core"
+        tags: [aggregate record transpose list length]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  { pid: 7 comm: "nu" } | transpose key value | length'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-describe-known-record"
         category: "language-core"
         tags: [describe aggregate record string]
@@ -39140,6 +39179,20 @@ const FIXTURES = [
         local: "reject"
         kernel: "skip"
         error_contains: "values supports only numeric scalar record fields"
+    }
+    {
+        name: "core-record-transpose-runtime-reject"
+        category: "language-core"
+        tags: [aggregate record transpose reject runtime]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  { pid: $ctx.pid } | transpose key value'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "transpose requires compile-time known record values"
     }
     {
         name: "core-record-insert-field"

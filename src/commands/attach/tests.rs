@@ -50,6 +50,11 @@ fn test_extract_decl_names_from_formatted_instructions_preserves_user_function_n
 }
 
 #[test]
+fn test_known_closure_commands_include_metadata_record_transpose() {
+    assert!(super::compilation::is_known_closure_command("transpose"));
+}
+
+#[test]
 fn test_parse_inline_user_function_signatures_extracts_closure_local_def() {
     let source = r#"{|ctx|
             def bump [msg] { "ok" }

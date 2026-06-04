@@ -1510,6 +1510,7 @@ impl<'a> HirToMirLowering<'a> {
             FixedLayoutValueConsumer::StrJoin,
             FixedLayoutValueConsumer::Length,
             FixedLayoutValueConsumer::EmptyPredicate,
+            FixedLayoutValueConsumer::Get,
             FixedLayoutValueConsumer::Slice,
             FixedLayoutValueConsumer::Reverse,
             FixedLayoutValueConsumer::AppendPrepend,

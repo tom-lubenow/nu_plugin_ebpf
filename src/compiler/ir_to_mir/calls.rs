@@ -4262,6 +4262,10 @@ impl<'a> HirToMirLowering<'a> {
                 self.lower_metadata_record_columns(src_dst, dst_vreg, src_dst_had_value)?;
             }
 
+            "transpose" => {
+                self.lower_metadata_record_transpose(src_dst, dst_vreg, src_dst_had_value)?;
+            }
+
             "values" => {
                 self.lower_metadata_record_values(src_dst, dst_vreg, src_dst_had_value)?;
             }
@@ -4303,6 +4307,20 @@ impl<'a> HirToMirLowering<'a> {
                 } else {
                     let (_, arg_reg) = self.positional_args[0];
                     if let Some(path) = self.field_path_arg(arg_reg, "get")? {
+                        if let Some(meta) = input_meta.as_ref()
+                            && let Some(value) = meta.constant_value.as_ref()
+                            && matches!(value, nu_protocol::Value::Record { .. })
+                        {
+                            let projected = Self::constant_follow_cell_path(value, &path)
+                                .ok_or_else(|| {
+                                    CompileError::UnsupportedInstruction(format!(
+                                        "get field path '{}' was not found in compile-time known record in eBPF",
+                                        Self::typed_value_path_desc(&path.members)
+                                    ))
+                                })?;
+                            self.lower_compile_time_list_transform_result(src_dst, &projected)?;
+                            return Ok(());
+                        }
                         let input_reg = input_reg.ok_or_else(|| {
                             CompileError::UnsupportedInstruction(
                                 "get FIELD requires record, context, or typed pointer input in eBPF"
