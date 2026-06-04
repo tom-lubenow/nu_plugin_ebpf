@@ -1589,12 +1589,9 @@ impl<'a> HirToMirLowering<'a> {
                 search_from_end,
             );
         } else {
-            if !self.named_args.is_empty() {
-                return Err(CompileError::UnsupportedInstruction(
-                    "str index-of --range requires a compile-time known input string length in eBPF"
-                        .into(),
-                ));
-            }
+            let has_range = self.named_args.contains_key("range");
+            let (search_start, search_end) =
+                self.string_index_of_runtime_search_bounds(operands.input_max_len)?;
             let input_len_vreg = operands.input_len_vreg.ok_or_else(|| {
                 CompileError::UnsupportedInstruction(
                     "str index-of requires tracked string input with runtime length in eBPF".into(),
@@ -1602,6 +1599,12 @@ impl<'a> HirToMirLowering<'a> {
             })?;
 
             if operands.needle_len == 0 {
+                if has_range {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "str index-of --range with an empty substring requires a compile-time known input string length in eBPF"
+                            .into(),
+                    ));
+                }
                 self.emit(MirInst::Copy {
                     dst: result_vreg,
                     src: if search_from_end {
@@ -1610,7 +1613,9 @@ impl<'a> HirToMirLowering<'a> {
                         MirValue::Const(0)
                     },
                 });
-            } else if operands.needle_len > operands.input_max_len {
+            } else if operands.needle_len > operands.input_max_len
+                || search_start.saturating_add(operands.needle_len) > search_end
+            {
                 self.emit(MirInst::Copy {
                     dst: result_vreg,
                     src: MirValue::Const(-1),
@@ -1620,6 +1625,8 @@ impl<'a> HirToMirLowering<'a> {
                     result_vreg,
                     &operands,
                     input_len_vreg,
+                    search_start,
+                    search_end,
                     search_from_end,
                 );
             }
@@ -1730,22 +1737,24 @@ impl<'a> HirToMirLowering<'a> {
         result_vreg: VReg,
         operands: &TrackedStringSearchOperands,
         input_len_vreg: VReg,
+        search_start: usize,
+        search_end: usize,
         search_from_end: bool,
     ) {
         let not_found_block = self.func.alloc_block();
         let continuation_block = self.func.alloc_block();
-        let last_offset = operands.input_max_len - operands.needle_len;
+        let last_offset = search_end - operands.needle_len;
 
         let offsets: Box<dyn Iterator<Item = usize>> = if search_from_end {
-            Box::new((0..=last_offset).rev())
+            Box::new((search_start..=last_offset).rev())
         } else {
-            Box::new(0..=last_offset)
+            Box::new(search_start..=last_offset)
         };
 
         for offset in offsets {
             let found_block = self.func.alloc_block();
             let is_last_probe = if search_from_end {
-                offset == 0
+                offset == search_start
             } else {
                 offset == last_offset
             };
@@ -3138,6 +3147,39 @@ impl<'a> HirToMirLowering<'a> {
                 )
             })?;
         Ok(Self::string_range_byte_bounds(range, input_len))
+    }
+
+    fn string_index_of_runtime_search_bounds(
+        &self,
+        input_max_len: usize,
+    ) -> Result<(usize, usize), CompileError> {
+        for key in self.named_args.keys() {
+            if key != "range" {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "str index-of does not support named argument --{key} in eBPF"
+                )));
+            }
+        }
+
+        let Some((_, range_reg)) = self.named_args.get("range").copied() else {
+            return Ok((0, input_max_len));
+        };
+        let range = self
+            .get_metadata(range_reg)
+            .and_then(|meta| meta.maybe_open_range)
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "str index-of --range requires a compile-time known range in eBPF".into(),
+                )
+            })?;
+        if range.start.is_some_and(|start| start < 0) || range.end.is_some_and(|end| end < 0) {
+            return Err(CompileError::UnsupportedInstruction(
+                "str index-of --range on runtime strings requires non-negative bounds in eBPF"
+                    .into(),
+            ));
+        }
+
+        Ok(Self::string_range_byte_bounds(range, input_max_len))
     }
 
     fn capitalize_first_char(input: &str) -> String {

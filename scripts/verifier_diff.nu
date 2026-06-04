@@ -38403,6 +38403,37 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-runtime-string-index-of-range-tracked-length"
+        category: "language-core"
+        tags: [string str index-of range runtime globals]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "hello" | global-define --type string:8 left'
+            '  let left = (global-get left)'
+            '  $left | str index-of "l" --range 2..5'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-runtime-string-index-of-negative-range-reject"
+        category: "language-core"
+        tags: [string str index-of range runtime globals reject]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "hello" | global-define --type string:8 left'
+            '  let left = (global-get left)'
+            '  $left | str index-of "l" --range 1..-2'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "str index-of --range on runtime strings requires non-negative bounds"
+    }
+    {
         name: "core-string-index-of-range"
         category: "language-core"
         tags: [string str index-of range]

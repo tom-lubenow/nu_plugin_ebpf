@@ -4,7 +4,7 @@ use crate::compiler::hir::{
 };
 use crate::compiler::mir::{BinOpKind, COUNTER_MAP_NAME, StructField};
 use crate::compiler::{EbpfProgramType, compile_mir_to_ebpf_with_hints};
-use nu_protocol::ast::{CellPath, PathMember, Pattern};
+use nu_protocol::ast::{CellPath, PathMember, Pattern, RangeInclusion};
 use nu_protocol::casing::Casing;
 use nu_protocol::{Record, RegId, Span, Value, VarId};
 use std::collections::HashMap;
@@ -1678,7 +1678,10 @@ fn test_lower_global_get_string_contains_runtime_length() {
         .expect("runtime contains should compile through codegen");
 }
 
-fn lower_global_get_string_index_of_runtime_length(search_from_end: bool) -> MirLoweringResult {
+fn lower_global_get_string_index_of_runtime_length(
+    search_from_end: bool,
+    range: Option<(Option<i64>, Option<i64>, RangeInclusion)>,
+) -> Result<MirLoweringResult, CompileError> {
     let define_decl = DeclId::new(1318);
     let get_decl = DeclId::new(1319);
     let index_of_decl = DeclId::new(1320);
@@ -1688,65 +1691,99 @@ fn lower_global_get_string_index_of_runtime_length(search_from_end: bool) -> Mir
         (index_of_decl, "str index-of".to_string()),
     ]);
 
+    let mut stmts = vec![
+        HirStmt::LoadLiteral {
+            dst: RegId::new(0),
+            lit: HirLiteral::String("left".into()),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: HirLiteral::String("string:8".into()),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(2),
+            lit: HirLiteral::String("hello".into()),
+        },
+        HirStmt::Call {
+            decl_id: define_decl,
+            src_dst: RegId::new(2),
+            args: HirCallArgs {
+                positional: vec![RegId::new(0)],
+                named: vec![(b"type".to_vec(), RegId::new(1))],
+                pipeline_input: Some(RegId::new(2)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::Call {
+            decl_id: get_decl,
+            src_dst: RegId::new(3),
+            args: HirCallArgs {
+                positional: vec![RegId::new(0)],
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(4),
+            lit: HirLiteral::String("l".into()),
+        },
+    ];
+    let mut named = Vec::new();
+    let mut register_count = 6;
+    if let Some((start, end, inclusion)) = range {
+        let start_reg = RegId::new(6);
+        let step_reg = RegId::new(7);
+        let end_reg = RegId::new(8);
+        let range_reg = RegId::new(9);
+        register_count = 10;
+        stmts.push(HirStmt::LoadLiteral {
+            dst: start_reg,
+            lit: start.map_or(HirLiteral::Nothing, HirLiteral::Int),
+        });
+        stmts.push(HirStmt::LoadLiteral {
+            dst: step_reg,
+            lit: HirLiteral::Int(1),
+        });
+        stmts.push(HirStmt::LoadLiteral {
+            dst: end_reg,
+            lit: end.map_or(HirLiteral::Nothing, HirLiteral::Int),
+        });
+        stmts.push(HirStmt::LoadLiteral {
+            dst: range_reg,
+            lit: HirLiteral::Range {
+                start: start_reg,
+                step: step_reg,
+                end: end_reg,
+                inclusion,
+            },
+        });
+        named.push((b"range".to_vec(), range_reg));
+    }
+    stmts.push(HirStmt::Call {
+        decl_id: index_of_decl,
+        src_dst: RegId::new(5),
+        args: HirCallArgs {
+            positional: vec![RegId::new(4)],
+            named,
+            flags: search_from_end
+                .then(|| b"end".to_vec())
+                .into_iter()
+                .collect(),
+            pipeline_input: Some(RegId::new(3)),
+            ..HirCallArgs::default()
+        },
+    });
+
     let func = HirFunction {
         blocks: vec![HirBlock {
             id: HirBlockId(0),
-            stmts: vec![
-                HirStmt::LoadLiteral {
-                    dst: RegId::new(0),
-                    lit: HirLiteral::String("left".into()),
-                },
-                HirStmt::LoadLiteral {
-                    dst: RegId::new(1),
-                    lit: HirLiteral::String("string:8".into()),
-                },
-                HirStmt::LoadLiteral {
-                    dst: RegId::new(2),
-                    lit: HirLiteral::String("hello".into()),
-                },
-                HirStmt::Call {
-                    decl_id: define_decl,
-                    src_dst: RegId::new(2),
-                    args: HirCallArgs {
-                        positional: vec![RegId::new(0)],
-                        named: vec![(b"type".to_vec(), RegId::new(1))],
-                        pipeline_input: Some(RegId::new(2)),
-                        ..HirCallArgs::default()
-                    },
-                },
-                HirStmt::Call {
-                    decl_id: get_decl,
-                    src_dst: RegId::new(3),
-                    args: HirCallArgs {
-                        positional: vec![RegId::new(0)],
-                        ..HirCallArgs::default()
-                    },
-                },
-                HirStmt::LoadLiteral {
-                    dst: RegId::new(4),
-                    lit: HirLiteral::String("l".into()),
-                },
-                HirStmt::Call {
-                    decl_id: index_of_decl,
-                    src_dst: RegId::new(5),
-                    args: HirCallArgs {
-                        positional: vec![RegId::new(4)],
-                        flags: search_from_end
-                            .then(|| b"end".to_vec())
-                            .into_iter()
-                            .collect(),
-                        pipeline_input: Some(RegId::new(3)),
-                        ..HirCallArgs::default()
-                    },
-                },
-            ],
+            stmts,
             terminator: HirTerminator::Return { src: RegId::new(5) },
         }],
         entry: HirBlockId(0),
         spans: Vec::new(),
         ast: Vec::new(),
         comments: Vec::new(),
-        register_count: 6,
+        register_count,
         file_count: 0,
     };
     let hir = HirProgram::new(func, HashMap::new(), vec![], None);
@@ -1759,12 +1796,12 @@ fn lower_global_get_string_index_of_runtime_length(search_from_end: bool) -> Mir
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect("global-get string should run str index-of using runtime length")
 }
 
 #[test]
 fn test_lower_global_get_string_index_of_runtime_length() {
-    let result = lower_global_get_string_index_of_runtime_length(false);
+    let result = lower_global_get_string_index_of_runtime_length(false, None)
+        .expect("global-get string should run str index-of using runtime length");
 
     let comparisons = result
         .program
@@ -1817,7 +1854,8 @@ fn test_lower_global_get_string_index_of_runtime_length() {
 
 #[test]
 fn test_lower_global_get_string_index_of_end_runtime_length() {
-    let result = lower_global_get_string_index_of_runtime_length(true);
+    let result = lower_global_get_string_index_of_runtime_length(true, None)
+        .expect("global-get string should run str index-of --end using runtime length");
 
     let comparisons = result
         .program
@@ -1867,6 +1905,81 @@ fn test_lower_global_get_string_index_of_end_runtime_length() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("runtime index-of --end should compile through codegen");
+}
+
+#[test]
+fn test_lower_global_get_string_index_of_range_runtime_length() {
+    let result = lower_global_get_string_index_of_runtime_length(
+        false,
+        Some((Some(2), Some(5), RangeInclusion::Inclusive)),
+    )
+    .expect("global-get string should run str index-of --range using runtime length");
+
+    let comparisons = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .filter(|inst| matches!(inst, MirInst::StrCmp { len: 1, .. }))
+        .count();
+    assert_eq!(
+        comparisons, 4,
+        "expected runtime index-of --range to test offsets 2 through 5 for string:8"
+    );
+    assert!(
+        !result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StrCmp {
+                    lhs_offset: 1,
+                    len: 1,
+                    ..
+                }
+            )),
+        "expected runtime index-of --range to skip offsets before the bounded range"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op: BinOpKind::Ge,
+                    rhs: MirValue::Const(4),
+                    ..
+                }
+            )),
+        "expected runtime index-of --range to guard offset 3 by requiring length at least 4"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("runtime index-of --range should compile through codegen");
+}
+
+#[test]
+fn test_lower_global_get_string_index_of_negative_range_runtime_length_is_rejected() {
+    let err = lower_global_get_string_index_of_runtime_length(
+        false,
+        Some((Some(1), Some(-2), RangeInclusion::Inclusive)),
+    )
+    .expect_err("runtime str index-of --range should reject negative bounds");
+
+    match err {
+        CompileError::UnsupportedInstruction(message) => assert!(
+            message.contains("requires non-negative bounds"),
+            "unexpected error: {message}"
+        ),
+        other => panic!("unexpected error: {other:?}"),
+    }
 }
 
 #[test]
