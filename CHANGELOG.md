@@ -28,6 +28,8 @@ documentation changes that matter to external alpha consumers.
   fallbacks.
 - Improved map key/value type-spec diagnostics so parser errors name `map key`
   or `map value` instead of `global` when schemas reject before lowering.
+- Improved map graph-root type-spec diagnostics so malformed payload schemas keep
+  `map value` context in brace-balance errors.
 - Improved typed `global-define` array initializer diagnostics so top-level
   bad items use `initializer[0]` style paths instead of record-field wording.
 - Added verifier coverage for BTF target diagnostic help, typed global

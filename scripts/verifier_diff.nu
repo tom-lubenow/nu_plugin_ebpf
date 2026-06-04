@@ -13795,6 +13795,21 @@ const FIXTURES = [
         error_contains: "map value type spec 'array{u32:x}' has an invalid array length"
     }
     {
+        name: "map-define-graph-root-payload-unmatched-braces-rejects-context"
+        category: "maps"
+        tags: [maps map-define graph diagnostics reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define graph_items --kind hash --value-type "bpf_list_head:node_data:node:record{refs:bpf_refcount"'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "map value type spec 'bpf_list_head:node_data:node:record{refs:bpf_refcount' has unmatched '{' braces"
+    }
+    {
         name: "annotated-mut-record-alignment"
         category: "globals"
         tags: [globals records alignment accept]

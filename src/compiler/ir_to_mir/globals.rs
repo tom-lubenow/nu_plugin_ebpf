@@ -301,6 +301,8 @@ fn split_top_level_type_len<'a>(
 fn split_top_level_colon_parts<'a>(
     body: &'a str,
     spec: &str,
+    context: NamedTypeSpecContext,
+    record_path: Option<&str>,
 ) -> Result<Vec<&'a str>, CompileError> {
     let mut parts = Vec::new();
     let mut depth = 0usize;
@@ -311,9 +313,10 @@ fn split_top_level_colon_parts<'a>(
             '{' => depth = depth.saturating_add(1),
             '}' => {
                 if depth == 0 {
+                    let subject = type_spec_subject(spec, context, record_path);
                     return Err(CompileError::UnsupportedInstruction(format!(
-                        "global type spec '{}' has an unmatched '}}'",
-                        spec
+                        "{} has an unmatched '}}'",
+                        subject
                     )));
                 }
                 depth -= 1;
@@ -327,9 +330,10 @@ fn split_top_level_colon_parts<'a>(
     }
 
     if depth != 0 {
+        let subject = type_spec_subject(spec, context, record_path);
         return Err(CompileError::UnsupportedInstruction(format!(
-            "global type spec '{}' has unmatched '{{' braces",
-            spec
+            "{} has unmatched '{{' braces",
+            subject
         )));
     }
 
@@ -481,7 +485,7 @@ impl ParsedNamedGlobalType {
         }
 
         if context == NamedTypeSpecContext::MapValue
-            && let Some(root) = Self::parse_graph_root_type_spec(spec, record_path)?
+            && let Some(root) = Self::parse_graph_root_type_spec(spec, context, record_path)?
         {
             let ty = match (root.kind, root.object_ty.clone()) {
                 (BpfGraphRootKind::ListHead, Some(object_ty)) => {
@@ -933,6 +937,7 @@ impl ParsedNamedGlobalType {
 
     fn parse_graph_root_type_spec(
         spec: &str,
+        context: NamedTypeSpecContext,
         record_path: Option<&str>,
     ) -> Result<Option<ParsedGraphRootTypeSpec>, CompileError> {
         let Some((kind, rest)) = spec
@@ -946,7 +951,7 @@ impl ParsedNamedGlobalType {
             return Ok(None);
         };
 
-        let parts = split_top_level_colon_parts(rest, spec)?;
+        let parts = split_top_level_colon_parts(rest, spec, context, record_path)?;
         if parts.len() < 2 || parts.len() > 3 {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "map value graph root type spec '{}' must use {}:TYPE:FIELD or {}:TYPE:FIELD:record{{...}} syntax",

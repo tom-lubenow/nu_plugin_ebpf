@@ -5338,6 +5338,21 @@ fn test_map_value_type_spec_supports_graph_root_payload_schema() {
 }
 
 #[test]
+fn test_map_value_type_spec_rejects_graph_root_payload_unmatched_braces_with_context() {
+    let err = HirToMirLowering::parse_named_map_value_type_spec(
+        "bpf_list_head:node_data:node:record{refs:bpf_refcount",
+    )
+    .expect_err("graph root payload schema with unmatched braces should reject");
+
+    assert!(
+        err.to_string().contains(
+            "map value type spec 'bpf_list_head:node_data:node:record{refs:bpf_refcount' has unmatched '{' braces"
+        ),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn test_map_value_type_spec_supports_rbtree_root_schema() {
     let (ty, semantics) =
         HirToMirLowering::parse_named_map_value_type_spec("record{root:bpf_rb_root:rb_item:rb}")
