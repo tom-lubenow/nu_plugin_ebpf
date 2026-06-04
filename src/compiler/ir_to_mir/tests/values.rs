@@ -603,7 +603,7 @@ fn make_seq_date_join_then_starts_with_program(
     end: Option<&str>,
     days: Option<i64>,
     periods: Option<i64>,
-    increment: Option<i64>,
+    increment: Option<HirLiteral>,
     input_format: Option<&str>,
     output_format: Option<&str>,
     separator: &str,
@@ -653,7 +653,7 @@ fn make_seq_date_join_then_starts_with_program(
         next_reg += 1;
         stmts.push(HirStmt::LoadLiteral {
             dst: reg,
-            lit: HirLiteral::Int(increment),
+            lit: increment,
         });
         named.push((b"increment".to_vec(), reg));
     }
@@ -14475,7 +14475,7 @@ fn test_lower_seq_date_range_feeds_str_join() {
             Some("2020-01-05"),
             None,
             None,
-            Some(2),
+            Some(HirLiteral::Int(2)),
             None,
             None,
             ",",
@@ -14499,7 +14499,7 @@ fn test_lower_seq_date_range_feeds_str_join() {
             None,
             Some(5),
             None,
-            Some(2),
+            Some(HirLiteral::Int(2)),
             None,
             None,
             ",",
@@ -14511,7 +14511,7 @@ fn test_lower_seq_date_range_feeds_str_join() {
             None,
             None,
             Some(4),
-            Some(3),
+            Some(HirLiteral::Int(3)),
             None,
             None,
             ",",
@@ -14535,7 +14535,7 @@ fn test_lower_seq_date_range_feeds_str_join() {
             None,
             Some(3),
             Some(4),
-            Some(2),
+            Some(HirLiteral::Int(2)),
             None,
             None,
             ",",
@@ -14564,6 +14564,30 @@ fn test_lower_seq_date_range_feeds_str_join() {
             Some("%Y-%m-%d %H:%M:%S"),
             ",",
             "2020-01-01 00:00:00,2020-01-02 00:00:00",
+        ),
+        (
+            "duration increment",
+            "2020-01-01",
+            Some("2020-01-02"),
+            None,
+            None,
+            Some(HirLiteral::Duration(6 * 60 * 60 * 1_000_000_000)),
+            None,
+            Some("%Y-%m-%d %H:%M:%S"),
+            ",",
+            "2020-01-01 00:00:00,2020-01-01 06:00:00,2020-01-01 12:00:00,2020-01-01 18:00:00,2020-01-02 00:00:00",
+        ),
+        (
+            "datetime input format duration increment",
+            "2020-01-01 00:00:00",
+            Some("2020-01-01 00:10:00"),
+            None,
+            None,
+            Some(HirLiteral::Duration(5 * 60 * 1_000_000_000)),
+            Some("%Y-%m-%d %H:%M:%S"),
+            Some("%Y-%m-%d %H:%M:%S"),
+            ",",
+            "2020-01-01 00:00:00,2020-01-01 00:05:00,2020-01-01 00:10:00",
         ),
     ];
 
@@ -14690,7 +14714,17 @@ fn test_lower_seq_date_rejects_unsupported_forms() {
                 ("increment", HirLiteral::Int(0)),
             ],
             Vec::new(),
-            "seq date --increment requires a positive integer day count",
+            "seq date --increment requires a positive duration",
+        ),
+        (
+            "negative duration increment",
+            vec![
+                ("begin-date", HirLiteral::String(b"2020-01-01".to_vec())),
+                ("end-date", HirLiteral::String(b"2020-01-03".to_vec())),
+                ("increment", HirLiteral::Duration(-1_000_000_000)),
+            ],
+            Vec::new(),
+            "seq date --increment requires a positive duration",
         ),
         (
             "zero days",

@@ -9,7 +9,7 @@ use crate::compiler::mir::{
     STRING_COUNTER_MAP_NAME,
 };
 use crate::compiler::{ProgramIntrinsic, TypeInference};
-use chrono::{Duration, NaiveDate};
+use chrono::{Duration, NaiveDate, NaiveDateTime};
 
 const BPF_SK_LOOKUP_F_REPLACE: u64 = 1 << 0;
 const BPF_SK_LOOKUP_F_NO_REUSEPORT: u64 = 1 << 1;
@@ -568,10 +568,12 @@ impl<'a> HirToMirLowering<'a> {
             })?;
 
         let begin = Self::seq_date_parse_with_format(&begin_raw, "begin-date", &input_format)?;
-        let step_days = self.seq_date_increment_days()?.unwrap_or(1);
-        if step_days <= 0 {
+        let step = self
+            .seq_date_increment()?
+            .unwrap_or_else(|| Duration::days(1));
+        if step <= Duration::zero() {
             return Err(CompileError::UnsupportedInstruction(
-                "seq date --increment requires a positive integer day count in eBPF".into(),
+                "seq date --increment requires a positive duration in eBPF".into(),
             ));
         }
 
@@ -586,7 +588,7 @@ impl<'a> HirToMirLowering<'a> {
             }
             Self::seq_date_values_for_count(
                 begin,
-                step_days,
+                step,
                 count,
                 MAX_SEQ_DATE_LIST_CAPACITY,
                 &output_format,
@@ -612,7 +614,7 @@ impl<'a> HirToMirLowering<'a> {
             let values = Self::seq_date_values_between(
                 begin,
                 end,
-                step_days,
+                step,
                 MAX_SEQ_DATE_LIST_CAPACITY,
                 &output_format,
             )?;
@@ -631,7 +633,7 @@ impl<'a> HirToMirLowering<'a> {
             Self::seq_date_values_between(
                 begin,
                 end,
-                step_days,
+                step,
                 MAX_SEQ_DATE_LIST_CAPACITY,
                 &output_format,
             )?
@@ -641,19 +643,14 @@ impl<'a> HirToMirLowering<'a> {
     }
 
     fn seq_date_values_between(
-        begin: NaiveDate,
-        end: NaiveDate,
-        step_days: i64,
+        begin: NaiveDateTime,
+        end: NaiveDateTime,
+        step: Duration,
         max_len: usize,
         output_format: &str,
     ) -> Result<Vec<String>, CompileError> {
         let ascending = begin <= end;
-        let signed_step = if ascending { step_days } else { -step_days };
-        let delta = Duration::try_days(signed_step).ok_or_else(|| {
-            CompileError::UnsupportedInstruction(
-                "seq date --increment is too large to model in eBPF".into(),
-            )
-        })?;
+        let delta = if ascending { step } else { -step };
         let mut date = begin;
         let mut values = Vec::new();
         loop {
@@ -680,8 +677,8 @@ impl<'a> HirToMirLowering<'a> {
     }
 
     fn seq_date_values_for_count(
-        begin: NaiveDate,
-        step_days: i64,
+        begin: NaiveDateTime,
+        step: Duration,
         count: usize,
         max_len: usize,
         output_format: &str,
@@ -691,16 +688,11 @@ impl<'a> HirToMirLowering<'a> {
                 "seq date output exceeds fixed string-list capacity {max_len}"
             )));
         }
-        let delta = Duration::try_days(step_days).ok_or_else(|| {
-            CompileError::UnsupportedInstruction(
-                "seq date --increment is too large to model in eBPF".into(),
-            )
-        })?;
         let mut date = begin;
         let mut values = Vec::with_capacity(count);
         for index in 0..count {
             if index > 0 {
-                date = date.checked_add_signed(delta).ok_or_else(|| {
+                date = date.checked_add_signed(step).ok_or_else(|| {
                     CompileError::UnsupportedInstruction("seq date overflows in eBPF".into())
                 })?;
             }
@@ -728,8 +720,34 @@ impl<'a> HirToMirLowering<'a> {
             .transpose()
     }
 
-    fn seq_date_increment_days(&self) -> Result<Option<i64>, CompileError> {
-        self.seq_date_integer_named_arg("increment", "n", "seq date --increment")
+    fn seq_date_increment(&self) -> Result<Option<Duration>, CompileError> {
+        self.seq_date_named_arg_reg("increment", "n")
+            .map(|reg| {
+                let meta = self.get_metadata(reg).ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(
+                        "seq date --increment requires a compile-time known integer day count or duration in eBPF"
+                            .into(),
+                    )
+                })?;
+                if let Some(nanos) = meta.constant_value.as_ref().and_then(|value| match value {
+                    nu_protocol::Value::Duration { val, .. } => Some(*val),
+                    _ => None,
+                }) {
+                    return Ok(Duration::nanoseconds(nanos));
+                }
+                if let Some(value) = meta.literal_int {
+                    return Duration::try_days(value).ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "seq date --increment is too large to model in eBPF".into(),
+                        )
+                    });
+                }
+                Err(CompileError::UnsupportedInstruction(
+                    "seq date --increment requires a compile-time known integer day count or duration in eBPF"
+                        .into(),
+                ))
+            })
+            .transpose()
     }
 
     fn seq_date_integer_named_arg(
@@ -768,18 +786,24 @@ impl<'a> HirToMirLowering<'a> {
         raw: &str,
         arg_name: &str,
         input_format: &str,
-    ) -> Result<NaiveDate, CompileError> {
-        NaiveDate::parse_from_str(raw, input_format).map_err(|_| {
+    ) -> Result<NaiveDateTime, CompileError> {
+        if let Ok(timestamp) = NaiveDateTime::parse_from_str(raw, input_format) {
+            return Ok(timestamp);
+        }
+        let date = NaiveDate::parse_from_str(raw, input_format).map_err(|_| {
             CompileError::UnsupportedInstruction(format!(
                 "seq date --{arg_name} does not match --input-format '{input_format}' in eBPF"
             ))
+        })?;
+        date.and_hms_opt(0, 0, 0).ok_or_else(|| {
+            CompileError::UnsupportedInstruction("seq date overflows in eBPF".into())
         })
     }
 
-    fn seq_date_format_value(date: NaiveDate, output_format: &str) -> Result<String, CompileError> {
-        let timestamp = date.and_hms_opt(0, 0, 0).ok_or_else(|| {
-            CompileError::UnsupportedInstruction("seq date overflows in eBPF".into())
-        })?;
+    fn seq_date_format_value(
+        timestamp: NaiveDateTime,
+        output_format: &str,
+    ) -> Result<String, CompileError> {
         let output = timestamp.format(output_format).to_string();
         if output.as_bytes().contains(&0) {
             return Err(CompileError::UnsupportedInstruction(

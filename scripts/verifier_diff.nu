@@ -35361,6 +35361,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-seq-date-duration-increment-join"
+        category: "language-core"
+        tags: [aggregate list seq date duration increment str join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  seq date --begin-date "2020-01-01" --end-date "2020-01-02" --increment 6hr --output-format "%Y-%m-%d %H:%M:%S" | str join "," | str starts-with "2020-01-01 00:00:00,2020-01-01 06:00:00,2020-01-01 12:00:00,2020-01-01 18:00:00,2020-01-02 00:00:00"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-seq-date-over-capacity-reject"
         category: "language-core"
         tags: [aggregate list seq date reject]
