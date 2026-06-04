@@ -18,6 +18,19 @@ struct TrackedStringSearchOperands {
     needle_len: usize,
 }
 
+struct RuntimeStringIndexSearchBounds {
+    search_start: usize,
+    search_end: usize,
+    empty_index: RuntimeStringEmptyIndex,
+}
+
+#[derive(Clone, Copy)]
+enum RuntimeStringEmptyIndex {
+    Const(i64),
+    RuntimeLen,
+    MinRuntimeLen(usize),
+}
+
 const MAX_STRING_EXPAND_RESULTS: usize = 60;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1589,9 +1602,8 @@ impl<'a> HirToMirLowering<'a> {
                 search_from_end,
             );
         } else {
-            let has_range = self.named_args.contains_key("range");
-            let (search_start, search_end) =
-                self.string_index_of_runtime_search_bounds(operands.input_max_len)?;
+            let bounds = self
+                .string_index_of_runtime_search_bounds(operands.input_max_len, search_from_end)?;
             let input_len_vreg = operands.input_len_vreg.ok_or_else(|| {
                 CompileError::UnsupportedInstruction(
                     "str index-of requires tracked string input with runtime length in eBPF".into(),
@@ -1599,22 +1611,13 @@ impl<'a> HirToMirLowering<'a> {
             })?;
 
             if operands.needle_len == 0 {
-                if has_range {
-                    return Err(CompileError::UnsupportedInstruction(
-                        "str index-of --range with an empty substring requires a compile-time known input string length in eBPF"
-                            .into(),
-                    ));
-                }
-                self.emit(MirInst::Copy {
-                    dst: result_vreg,
-                    src: if search_from_end {
-                        MirValue::VReg(input_len_vreg)
-                    } else {
-                        MirValue::Const(0)
-                    },
-                });
+                self.lower_runtime_string_index_empty_match(
+                    result_vreg,
+                    input_len_vreg,
+                    bounds.empty_index,
+                );
             } else if operands.needle_len > operands.input_max_len
-                || search_start.saturating_add(operands.needle_len) > search_end
+                || bounds.search_start.saturating_add(operands.needle_len) > bounds.search_end
             {
                 self.emit(MirInst::Copy {
                     dst: result_vreg,
@@ -1625,8 +1628,8 @@ impl<'a> HirToMirLowering<'a> {
                     result_vreg,
                     &operands,
                     input_len_vreg,
-                    search_start,
-                    search_end,
+                    bounds.search_start,
+                    bounds.search_end,
                     search_from_end,
                 );
             }
@@ -1730,6 +1733,74 @@ impl<'a> HirToMirLowering<'a> {
         });
 
         self.current_block = continuation_block;
+    }
+
+    fn lower_runtime_string_index_empty_match(
+        &mut self,
+        result_vreg: VReg,
+        input_len_vreg: VReg,
+        empty_index: RuntimeStringEmptyIndex,
+    ) {
+        match empty_index {
+            RuntimeStringEmptyIndex::Const(value) => {
+                self.emit(MirInst::Copy {
+                    dst: result_vreg,
+                    src: MirValue::Const(value),
+                });
+            }
+            RuntimeStringEmptyIndex::RuntimeLen => {
+                self.emit(MirInst::Copy {
+                    dst: result_vreg,
+                    src: MirValue::VReg(input_len_vreg),
+                });
+            }
+            RuntimeStringEmptyIndex::MinRuntimeLen(bound) => {
+                if bound == 0 {
+                    self.emit(MirInst::Copy {
+                        dst: result_vreg,
+                        src: MirValue::Const(0),
+                    });
+                    return;
+                }
+
+                let runtime_len_block = self.func.alloc_block();
+                let const_bound_block = self.func.alloc_block();
+                let continuation_block = self.func.alloc_block();
+                let len_is_smaller = self.func.alloc_vreg();
+                self.emit(MirInst::BinOp {
+                    dst: len_is_smaller,
+                    op: BinOpKind::Lt,
+                    lhs: MirValue::VReg(input_len_vreg),
+                    rhs: MirValue::Const(bound as i64),
+                });
+                self.vreg_type_hints.insert(len_is_smaller, MirType::Bool);
+                self.terminate(MirInst::Branch {
+                    cond: len_is_smaller,
+                    if_true: runtime_len_block,
+                    if_false: const_bound_block,
+                });
+
+                self.current_block = runtime_len_block;
+                self.emit(MirInst::Copy {
+                    dst: result_vreg,
+                    src: MirValue::VReg(input_len_vreg),
+                });
+                self.terminate(MirInst::Jump {
+                    target: continuation_block,
+                });
+
+                self.current_block = const_bound_block;
+                self.emit(MirInst::Copy {
+                    dst: result_vreg,
+                    src: MirValue::Const(bound as i64),
+                });
+                self.terminate(MirInst::Jump {
+                    target: continuation_block,
+                });
+
+                self.current_block = continuation_block;
+            }
+        }
     }
 
     fn lower_runtime_string_index_of_match(
@@ -3152,7 +3223,8 @@ impl<'a> HirToMirLowering<'a> {
     fn string_index_of_runtime_search_bounds(
         &self,
         input_max_len: usize,
-    ) -> Result<(usize, usize), CompileError> {
+        search_from_end: bool,
+    ) -> Result<RuntimeStringIndexSearchBounds, CompileError> {
         for key in self.named_args.keys() {
             if key != "range" {
                 return Err(CompileError::UnsupportedInstruction(format!(
@@ -3162,7 +3234,15 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         let Some((_, range_reg)) = self.named_args.get("range").copied() else {
-            return Ok((0, input_max_len));
+            return Ok(RuntimeStringIndexSearchBounds {
+                search_start: 0,
+                search_end: input_max_len,
+                empty_index: if search_from_end {
+                    RuntimeStringEmptyIndex::RuntimeLen
+                } else {
+                    RuntimeStringEmptyIndex::Const(0)
+                },
+            });
         };
         let range = self
             .get_metadata(range_reg)
@@ -3179,7 +3259,30 @@ impl<'a> HirToMirLowering<'a> {
             ));
         }
 
-        Ok(Self::string_range_byte_bounds(range, input_max_len))
+        let (search_start, search_end) = Self::string_range_byte_bounds(range, input_max_len);
+        let start = range.start.unwrap_or(0);
+        let empty_index = if search_from_end {
+            range
+                .end
+                .map_or(RuntimeStringEmptyIndex::RuntimeLen, |end| {
+                    let adjusted_end = if range.inclusive {
+                        end.saturating_add(1)
+                    } else {
+                        end
+                    };
+                    RuntimeStringEmptyIndex::MinRuntimeLen(
+                        adjusted_end.max(start).min(input_max_len as i64) as usize,
+                    )
+                })
+        } else {
+            RuntimeStringEmptyIndex::MinRuntimeLen(start.min(input_max_len as i64) as usize)
+        };
+
+        Ok(RuntimeStringIndexSearchBounds {
+            search_start,
+            search_end,
+            empty_index,
+        })
     }
 
     fn capitalize_first_char(input: &str) -> String {

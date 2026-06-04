@@ -38434,6 +38434,36 @@ const FIXTURES = [
         error_contains: "str index-of --range on runtime strings requires non-negative bounds"
     }
     {
+        name: "core-runtime-string-index-of-empty-range-tracked-length"
+        category: "language-core"
+        tags: [string str index-of range empty runtime globals]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "hello" | global-define --type string:8 left'
+            '  let left = (global-get left)'
+            '  $left | str index-of "" --range 2..5'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-runtime-string-index-of-empty-end-range-tracked-length"
+        category: "language-core"
+        tags: [string str index-of end range empty runtime globals]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "hello" | global-define --type string:8 left'
+            '  let left = (global-get left)'
+            '  $left | str index-of --end "" --range 2..5'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-string-index-of-range"
         category: "language-core"
         tags: [string str index-of range]

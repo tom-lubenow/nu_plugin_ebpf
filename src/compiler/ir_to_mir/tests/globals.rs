@@ -1680,6 +1680,7 @@ fn test_lower_global_get_string_contains_runtime_length() {
 
 fn lower_global_get_string_index_of_runtime_length(
     search_from_end: bool,
+    needle: &str,
     range: Option<(Option<i64>, Option<i64>, RangeInclusion)>,
 ) -> Result<MirLoweringResult, CompileError> {
     let define_decl = DeclId::new(1318);
@@ -1724,7 +1725,7 @@ fn lower_global_get_string_index_of_runtime_length(
         },
         HirStmt::LoadLiteral {
             dst: RegId::new(4),
-            lit: HirLiteral::String("l".into()),
+            lit: HirLiteral::String(needle.into()),
         },
     ];
     let mut named = Vec::new();
@@ -1800,7 +1801,7 @@ fn lower_global_get_string_index_of_runtime_length(
 
 #[test]
 fn test_lower_global_get_string_index_of_runtime_length() {
-    let result = lower_global_get_string_index_of_runtime_length(false, None)
+    let result = lower_global_get_string_index_of_runtime_length(false, "l", None)
         .expect("global-get string should run str index-of using runtime length");
 
     let comparisons = result
@@ -1854,7 +1855,7 @@ fn test_lower_global_get_string_index_of_runtime_length() {
 
 #[test]
 fn test_lower_global_get_string_index_of_end_runtime_length() {
-    let result = lower_global_get_string_index_of_runtime_length(true, None)
+    let result = lower_global_get_string_index_of_runtime_length(true, "l", None)
         .expect("global-get string should run str index-of --end using runtime length");
 
     let comparisons = result
@@ -1911,6 +1912,7 @@ fn test_lower_global_get_string_index_of_end_runtime_length() {
 fn test_lower_global_get_string_index_of_range_runtime_length() {
     let result = lower_global_get_string_index_of_runtime_length(
         false,
+        "l",
         Some((Some(2), Some(5), RangeInclusion::Inclusive)),
     )
     .expect("global-get string should run str index-of --range using runtime length");
@@ -1969,6 +1971,7 @@ fn test_lower_global_get_string_index_of_range_runtime_length() {
 fn test_lower_global_get_string_index_of_negative_range_runtime_length_is_rejected() {
     let err = lower_global_get_string_index_of_runtime_length(
         false,
+        "l",
         Some((Some(1), Some(-2), RangeInclusion::Inclusive)),
     )
     .expect_err("runtime str index-of --range should reject negative bounds");
@@ -1980,6 +1983,118 @@ fn test_lower_global_get_string_index_of_negative_range_runtime_length_is_reject
         ),
         other => panic!("unexpected error: {other:?}"),
     }
+}
+
+#[test]
+fn test_lower_global_get_string_index_of_empty_range_runtime_length() {
+    let result = lower_global_get_string_index_of_runtime_length(
+        false,
+        "",
+        Some((Some(2), Some(5), RangeInclusion::Inclusive)),
+    )
+    .expect("global-get string should run empty str index-of --range using runtime length");
+
+    assert!(
+        !result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::StrCmp { .. })),
+        "expected empty runtime index-of --range not to compare bytes"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op: BinOpKind::Lt,
+                    rhs: MirValue::Const(2),
+                    ..
+                }
+            )),
+        "expected empty runtime index-of --range to clamp start against runtime length"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Copy {
+                    src: MirValue::Const(2),
+                    ..
+                }
+            )),
+        "expected empty runtime index-of --range to emit the static start bound"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("empty runtime index-of --range should compile through codegen");
+}
+
+#[test]
+fn test_lower_global_get_string_index_of_empty_end_range_runtime_length() {
+    let result = lower_global_get_string_index_of_runtime_length(
+        true,
+        "",
+        Some((Some(2), Some(5), RangeInclusion::Inclusive)),
+    )
+    .expect("global-get string should run empty str index-of --end --range using runtime length");
+
+    assert!(
+        !result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::StrCmp { .. })),
+        "expected empty runtime index-of --end --range not to compare bytes"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op: BinOpKind::Lt,
+                    rhs: MirValue::Const(6),
+                    ..
+                }
+            )),
+        "expected empty runtime index-of --end --range to clamp end against runtime length"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Copy {
+                    src: MirValue::Const(6),
+                    ..
+                }
+            )),
+        "expected empty runtime index-of --end --range to emit the static end bound"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("empty runtime index-of --end --range should compile through codegen");
 }
 
 #[test]
