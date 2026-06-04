@@ -47,6 +47,61 @@ for live experimentation.
 5. For `dry-run-only`, `vm-only`, or `unsafe-opt-in` targets, keep host testing
    to `--dry-run` unless you are intentionally using an isolated environment.
 
+## Packaging And Compatibility
+
+External alpha users should build and register the plugin from the checked-out
+repository:
+
+```bash
+cargo install --path .
+```
+
+The plugin currently tracks Nushell `0.110` crates. Use the same Nushell minor
+version for `plugin add` / `plugin use`; after upgrading Nushell, rebuild the
+plugin and re-register it if Nushell reports a protocol or signature mismatch.
+There is not yet a binary distribution, package manager formula, or stable
+plugin ABI promise.
+
+The installed binary is usually `~/.cargo/bin/nu_plugin_ebpf`. Live attach
+requires either root or Linux BPF capabilities on that exact binary:
+
+```bash
+sudo setcap cap_bpf,cap_perfmon=ep ~/.cargo/bin/nu_plugin_ebpf
+```
+
+Use `ebpf setup --check` to inspect the current capability state. Re-run
+`setcap` after reinstalling because `cargo install` replaces the binary and can
+drop capabilities. Some live targets still need additional host resources such
+as tracefs, bpffs, BTF, cgroup v2, pinned maps, network interfaces, or device
+nodes even when the binary has capabilities.
+
+Kernel feature detection is best effort. The compiler checks source-backed
+minimum and maximum-exclusive kernel windows that it knows about, but distro
+backports, kernel config, disabled helpers/kfuncs, and attach-resource state
+remain kernel-authoritative. Treat `--dry-run` as a compiler/object check, not
+as a proof that live attach will succeed on every host.
+
+## Status-Driven Examples
+
+| Goal | Status to prefer | Example |
+|------|------------------|---------|
+| First live tracing test | `live-supported` | `kprobe:sys_read` |
+| Tracepoint payload work | `live-supported` or `host-gated` | `tracepoint:syscalls/sys_enter_openat` |
+| Packet or cgroup experiments | `host-gated` | `xdp:lo`, `tcx:lo:ingress`, `cgroup_skb:/sys/fs/cgroup:egress` |
+| Advanced modeled sections | `dry-run-only` | `netfilter:ipv4:pre_routing:priority=-100:defrag` |
+| Behavior-changing kernel hooks | `vm-only` or `unsafe-opt-in` | `struct_ops:sched_ext_ops` |
+
+For a status-driven inventory, run:
+
+```nushell
+ebpf spec --list | select canonical_prefix external_alpha_status live_attach_default_test_lane live_attach_status
+```
+
+Use the result to choose a target before writing a larger program. If a target
+is `dry-run-only`, keep the example as an object-generation or compiler
+coverage test. If a target is `vm-only` or `unsafe-opt-in`, do not use it on a
+production host.
+
 ## Safe Starting Points
 
 Good first live examples are observational and bounded:
@@ -104,3 +159,21 @@ ebpf attach --dry-run TARGET { ... }
 ```
 
 Then only live-load on a host where the failure mode is acceptable.
+
+## Troubleshooting
+
+If Nushell cannot load the plugin, confirm that the binary path passed to
+`plugin add` exists, that the plugin was built against the same Nushell minor
+version, and that `plugin use ebpf` has been run in the current session or
+configuration.
+
+If live attach fails before kernel load, inspect `ebpf spec TARGET` for
+`external_alpha_status`, `live_attach_status`, `live_attach_unsupported_reason`,
+`live_attach_opt_in_reason`, `capabilities`, and compatibility floors. Prefer
+fixing the target, host prerequisites, or explicit opt-in flags before assuming
+the kernel verifier is involved.
+
+If live attach reaches the kernel and fails, keep the dry-run object as a
+compiler artifact but treat the verifier/attach error as authoritative. Check
+kernel version, BTF, tracefs/bpffs mounts, cgroup paths, pinned map paths,
+network interface names, capabilities, and attach-family-specific resources.

@@ -141,10 +141,7 @@ history and release notes, not here.
 - [~] Prepare for external alpha consumption.
   - Keep the derived `external_alpha_status` labels in `ebpf spec` aligned with live-attach policy and default test lanes: `live-supported`, `host-gated`, `dry-run-only`, `vm-only`, and `unsafe-opt-in`.
   - Define explicit feature gates for unstable surfaces that need user-facing opt-ins beyond the existing live-attach safety gates.
-  - Grow `docs/external-alpha.md` with deeper troubleshooting, packaging expectations, and more status-driven examples.
-  - Expand documentation that maps program families to live, compile/dry-run-only, VM-only, unsafe-opt-in, or intentionally unsupported status.
-  - Add release notes or a changelog so `TODO.md` does not become a historical progress log again.
-  - Decide packaging expectations for the plugin binary, Nushell version compatibility, capabilities setup, and kernel feature detection.
+  - Keep `CHANGELOG.md` and `docs/external-alpha.md` aligned with status labels, packaging expectations, Nushell compatibility, capability setup, kernel feature detection, and troubleshooting guidance as the alpha surface changes.
 
 ## Definition of Complete Enough
 

@@ -20,6 +20,9 @@ A [Nushell](https://nushell.sh/) plugin that compiles Nushell closures to eBPF b
 
 This is an internal alpha, not a polished external release. The compiler has broad unit coverage and useful live support for the core tracing, packet, socket, cgroup, and TCX surfaces, plus compile/dry-run coverage for many advanced eBPF section families. The main remaining risks are kernel-version compatibility, incomplete live attach paths for newer program families, and verifier-parity gaps around richer helper/kfunc state transitions.
 
+For external-alpha usage guidance, see [docs/external-alpha.md](docs/external-alpha.md).
+For user-facing changes, see [CHANGELOG.md](CHANGELOG.md).
+
 ## Requirements
 
 - Linux kernel 4.18+ for the basic tracing paths
