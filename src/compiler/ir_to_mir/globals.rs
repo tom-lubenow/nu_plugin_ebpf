@@ -1303,9 +1303,12 @@ impl ParsedNamedGlobalType {
                     .iter()
                     .find(|(name, _)| !fields.iter().any(|field| field.name == **name))
                 {
+                    let extra_path = path
+                        .map(|prefix| format!("{prefix}.{extra_name}"))
+                        .unwrap_or_else(|| extra_name.to_string());
                     return Err(CompileError::UnsupportedInstruction(format!(
-                        "global type spec '{}' initializer{} contains unexpected field '{}'",
-                        spec, path_suffix, extra_name
+                        "global type spec '{}' initializer contains unexpected field '{}'",
+                        spec, extra_path
                     )));
                 }
 

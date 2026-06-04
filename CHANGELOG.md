@@ -18,9 +18,11 @@ documentation changes that matter to external alpha consumers.
 - Improved annotated mutable record global diagnostics so nested initializer
   extra fields and type mismatches name paths such as `stats.extra` and
   `stats.hits`.
+- Improved typed `global-define` record initializer diagnostics so nested
+  unexpected fields name the full path, for example `inner.extra`.
 - Added verifier coverage for BTF target diagnostic help, typed global
   numeric-list initializer errors, untyped record field layout rejects, and
-  nested annotated mutable record extra-field rejects.
+  nested annotated mutable record and typed `global-define` extra-field rejects.
 - Added Rust unit coverage for untyped fixed-array element layout rejects, which
   are currently reached through HIR-level constant materialization rather than
   ordinary source list literals.

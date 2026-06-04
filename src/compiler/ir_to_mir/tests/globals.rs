@@ -5990,6 +5990,71 @@ fn test_lower_global_define_type_list_int_rejects_bool_items() {
 }
 
 #[test]
+fn test_lower_global_define_type_nested_record_rejects_unexpected_field_path() {
+    let define_decl = DeclId::new(9210);
+    let decl_names = HashMap::from([(define_decl, "global-define".to_string())]);
+
+    let mut inner = Record::with_capacity(2);
+    inner.push("pid", Value::int(7, Span::test_data()));
+    inner.push("extra", Value::bool(true, Span::test_data()));
+
+    let mut state = Record::with_capacity(1);
+    state.push("inner", Value::record(inner, Span::test_data()));
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::record(state, Span::test_data())),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("seen_state".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String("record{inner:record{pid:int}}".into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        named: vec![(b"type".to_vec(), RegId::new(2))],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("global-define --type record should reject nested unexpected fields");
+
+    assert!(
+        err.to_string().contains("unexpected field 'inner.extra'"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn test_lower_global_define_type_record_with_list_initializer_uses_named_data_global() {
     let define_decl = DeclId::new(1076);
     let get_decl = DeclId::new(1077);

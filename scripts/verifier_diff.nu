@@ -14900,6 +14900,21 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "global-define-type-nested-record-extra-field-rejects-path"
+        category: "globals"
+        tags: [globals records diagnostics global-define reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  { inner: { pid: 7 extra: true } } | global-define --type "record{inner:record{pid:int}}" seen_state'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "unexpected field 'inner.extra'"
+    }
+    {
         name: "global-define-type-record-partial-list-field-zero-fills"
         category: "globals"
         tags: [globals records list global-define zero-fill accept]
