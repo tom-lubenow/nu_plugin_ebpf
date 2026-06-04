@@ -138,7 +138,7 @@ impl<'a> HirToMirLowering<'a> {
         dst_vreg: VReg,
         src_dst_had_value: bool,
     ) -> Result<(), CompileError> {
-        let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
+        let mut input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
         let input_reg = self
             .pipeline_input_reg
             .or(src_dst_had_value.then_some(src_dst));
@@ -243,6 +243,98 @@ impl<'a> HirToMirLowering<'a> {
                 _ => None,
             };
             self.vreg_type_hints.insert(result_vreg, MirType::I64);
+        } else if let Some(mut base_runtime_ty) =
+            self.typed_value_runtime_type(input_reg, input_vreg)
+            && let Some(array_len) =
+                Self::aggregate_call_value_type(&base_runtime_ty).and_then(|ty| match ty {
+                    MirType::Array { len, .. } => Some(*len),
+                    _ => None,
+                })
+        {
+            if array_len == 0 {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{cmd_name} requires a non-empty typed fixed-array input in eBPF"
+                )));
+            }
+
+            let idx_usize = if cmd_name == "first" {
+                0
+            } else {
+                array_len.saturating_sub(1)
+            };
+            let idx_i64 = i64::try_from(idx_usize).map_err(|_| {
+                CompileError::UnsupportedInstruction(format!(
+                    "{cmd_name} typed fixed-array index is too large for eBPF"
+                ))
+            })?;
+
+            let result_vreg = if src_dst_had_value {
+                self.assign_fresh_vreg(src_dst)
+            } else {
+                dst_vreg
+            };
+
+            if !matches!(base_runtime_ty, MirType::Ptr { .. })
+                && Self::aggregate_call_value_type(&base_runtime_ty).is_some()
+            {
+                input_vreg = self.materialized_metadata_aggregate_vreg(input_reg, input_vreg)?;
+                base_runtime_ty = self
+                    .typed_value_runtime_type(input_reg, input_vreg)
+                    .ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(format!(
+                            "{cmd_name} requires typed fixed-array input in eBPF"
+                        ))
+                    })?;
+            }
+
+            let projected_constant =
+                input_meta
+                    .as_ref()
+                    .and_then(|meta| match &meta.constant_value {
+                        Some(nu_protocol::Value::List { vals, .. }) => vals.get(idx_usize).cloned(),
+                        _ => None,
+                    });
+            let projected_semantics =
+                input_meta
+                    .as_ref()
+                    .and_then(|meta| match &meta.annotated_semantics {
+                        Some(AnnotatedValueSemantics::FixedArray { elem, .. }) => {
+                            Some((**elem).clone())
+                        }
+                        _ => None,
+                    });
+            let projected_string_bytes = match projected_constant.as_ref() {
+                Some(nu_protocol::Value::String { val, .. })
+                | Some(nu_protocol::Value::Glob { val, .. })
+                    if matches!(
+                        projected_semantics,
+                        Some(AnnotatedValueSemantics::String { .. })
+                    ) =>
+                {
+                    Some(val.as_bytes().to_vec())
+                }
+                _ => None,
+            };
+
+            if let Some(bytes) = projected_string_bytes {
+                self.reset_call_result_metadata(src_dst);
+                self.lower_string_like_literal(src_dst, result_vreg, &bytes)?;
+                self.set_reg_constant_value(src_dst, projected_constant);
+            } else {
+                let root_ctx_field = self
+                    .get_metadata(input_reg)
+                    .and_then(|meta| meta.root_ctx_field.clone());
+                self.lower_dynamic_typed_numeric_get(
+                    src_dst,
+                    input_vreg,
+                    &base_runtime_ty,
+                    MirValue::Const(idx_i64),
+                    root_ctx_field.as_ref(),
+                )?;
+                let out_meta = self.get_or_create_metadata(src_dst);
+                out_meta.constant_value = projected_constant;
+                out_meta.annotated_semantics = projected_semantics;
+            }
         } else {
             let result_vreg = if src_dst_had_value {
                 self.assign_fresh_vreg(src_dst)
