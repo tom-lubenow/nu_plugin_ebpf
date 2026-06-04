@@ -568,11 +568,22 @@ impl<'a> HirToMirLowering<'a> {
         ))
     }
 
-    pub(super) fn constant_record_rodata_repr(
+    fn constant_record_rodata_repr_with_path(
         record: &nu_protocol::Record,
+        parent_path: Option<&str>,
     ) -> Result<(MirType, Vec<u8>), CompileError> {
+        fn fixed_layout_field_error(path: &str, value: &Value, err: CompileError) -> CompileError {
+            CompileError::UnsupportedInstruction(format!(
+                "record field '{}' of type {} cannot be represented as fixed-layout eBPF data: {}",
+                path,
+                value.get_type(),
+                err
+            ))
+        }
+
         fn constant_record_field_rodata_repr(
             value: &Value,
+            path: &str,
         ) -> Result<(MirType, Vec<u8>), CompileError> {
             if let Some(repr) = HirToMirLowering::scalar_constant_rodata_repr(value) {
                 return Ok(repr);
@@ -582,26 +593,32 @@ impl<'a> HirToMirLowering<'a> {
                 return Ok((ty, data));
             }
             if let Value::Binary { val, .. } = value {
-                return HirToMirLowering::binary_constant_rodata_repr(val);
+                return HirToMirLowering::binary_constant_rodata_repr(val)
+                    .map_err(|err| fixed_layout_field_error(path, value, err));
             }
             if crate::compiler::hir::supports_numeric_constant_list(value)
                 && let Value::List { vals, .. } = value
                 && let Some((ty, data, _max_len)) =
-                    HirToMirLowering::mutable_numeric_list_global_repr(vals)?
+                    HirToMirLowering::mutable_numeric_list_global_repr(vals)
+                        .map_err(|err| fixed_layout_field_error(path, value, err))?
             {
                 return Ok((ty, data));
             }
             if crate::compiler::hir::supports_fixed_array_constant_list(value)
                 && let Value::List { vals, .. } = value
             {
-                return HirToMirLowering::constant_fixed_array_rodata_repr(vals);
+                return HirToMirLowering::constant_fixed_array_rodata_repr(vals)
+                    .map_err(|err| fixed_layout_field_error(path, value, err));
             }
 
             match value {
-                Value::Record { val, .. } => HirToMirLowering::constant_record_rodata_repr(val),
+                Value::Record { val, .. } => {
+                    HirToMirLowering::constant_record_rodata_repr_with_path(val, Some(path))
+                }
                 _ => Err(CompileError::UnsupportedInstruction(format!(
-                    "LoadValue of type {} is not supported in eBPF lowering",
-                    value.get_type()
+                    "record field '{}' of type {} cannot be represented as fixed-layout eBPF data; supported fixed-layout record fields are bool/numeric scalar, string, non-empty binary, numeric constant list, homogeneous fixed array, or nested record",
+                    path,
+                    value.get_type(),
                 ))),
             }
         }
@@ -609,11 +626,21 @@ impl<'a> HirToMirLowering<'a> {
         let mut fields = Vec::with_capacity(record.len());
 
         for (field_name, field_value) in record.iter() {
-            let (field_ty, field_data) = constant_record_field_rodata_repr(field_value)?;
+            let path = match parent_path {
+                Some(parent) => format!("{parent}.{field_name}"),
+                None => field_name.clone(),
+            };
+            let (field_ty, field_data) = constant_record_field_rodata_repr(field_value, &path)?;
             fields.push((field_name.clone(), field_ty, field_data));
         }
 
         Self::record_type_and_data_from_field_reprs(&fields)
+    }
+
+    pub(super) fn constant_record_rodata_repr(
+        record: &nu_protocol::Record,
+    ) -> Result<(MirType, Vec<u8>), CompileError> {
+        Self::constant_record_rodata_repr_with_path(record, None)
     }
 
     fn lower_constant_record_value(

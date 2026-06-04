@@ -15161,6 +15161,21 @@ const FIXTURES = [
         error_contains: "empty binary constants do not establish a fixed byte-buffer layout"
     }
     {
+        name: "global-define-record-empty-binary-field-without-type-rejects"
+        category: "globals"
+        tags: [globals records binary global-define reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  { pid: 7 meta: { comm: 0x[] } } | global-define scratch'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "record field 'meta.comm'"
+    }
+    {
         name: "map-define-null-only-lookup-keeps-value-layout"
         category: "maps"
         tags: [maps map-define accept]

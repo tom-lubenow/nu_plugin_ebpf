@@ -5263,10 +5263,13 @@ fn test_lower_global_define_type_bound_record_empty_binary_field_zero_fills_decl
 }
 
 #[test]
-fn test_lower_constant_record_empty_binary_field_without_typed_consumer_rejects_layout() {
+fn test_lower_constant_record_empty_binary_field_without_typed_consumer_names_field_path() {
+    let mut meta = Record::with_capacity(1);
+    meta.push("comm", Value::binary(Vec::new(), Span::test_data()));
+
     let mut state = Record::with_capacity(2);
     state.push("pid", Value::int(7, Span::test_data()));
-    state.push("comm", Value::binary(Vec::new(), Span::test_data()));
+    state.push("meta", Value::record(meta, Span::test_data()));
 
     let func = HirFunction {
         blocks: vec![HirBlock {
@@ -5299,6 +5302,10 @@ fn test_lower_constant_record_empty_binary_field_without_typed_consumer_rejects_
     assert!(
         err.to_string()
             .contains("empty binary constants do not establish a fixed byte-buffer layout")
+    );
+    assert!(
+        err.to_string().contains("record field 'meta.comm'"),
+        "expected nested record field path in diagnostic, got: {err}"
     );
 }
 
