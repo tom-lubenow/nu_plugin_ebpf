@@ -5447,6 +5447,18 @@ fn test_map_value_type_spec_rejects_graph_root_payload_refcount_array_with_path(
 }
 
 #[test]
+fn test_map_value_type_spec_rejects_top_level_graph_root_payload_refcount_array_with_path() {
+    let err = HirToMirLowering::parse_named_map_value_type_spec(
+        "bpf_list_head:node_data:node:record{refs:array{bpf_refcount:2},cookie:u64}",
+    )
+    .expect_err("top-level graph object payload should reject arrays of bpf_refcount fields");
+
+    let msg = err.to_string();
+    assert!(msg.contains("record field 'refs' type spec 'array{bpf_refcount:2}'"));
+    assert!(msg.contains("arrays of verifier-managed bpf_refcount fields are not supported"));
+}
+
+#[test]
 fn test_map_value_type_spec_rejects_nested_graph_root_payload_refcount_array_with_path() {
     let err = HirToMirLowering::parse_named_map_value_type_spec(
         "record{root:bpf_rb_root:rb_item:rb:record{nested:record{refs:array{bpf_refcount:2}},cookie:u64},counter:u64}",
