@@ -137,7 +137,18 @@ fn split_top_level_fields<'a>(body: &'a str, spec: &str) -> Result<Vec<&'a str>,
     Ok(fields)
 }
 
-fn split_top_level_field<'a>(field: &'a str) -> Result<(&'a str, &'a str), CompileError> {
+fn record_field_path(parent_path: Option<&str>, field: &str) -> String {
+    match (parent_path, field.trim()) {
+        (Some(parent), field) if !field.is_empty() => format!("{parent}.{field}"),
+        (Some(parent), _) => parent.to_string(),
+        (None, field) => field.to_string(),
+    }
+}
+
+fn split_top_level_field<'a>(
+    field: &'a str,
+    parent_path: Option<&str>,
+) -> Result<(&'a str, &'a str), CompileError> {
     let mut depth = 0usize;
 
     for (idx, ch) in field.char_indices() {
@@ -145,9 +156,10 @@ fn split_top_level_field<'a>(field: &'a str) -> Result<(&'a str, &'a str), Compi
             '{' => depth = depth.saturating_add(1),
             '}' => {
                 if depth == 0 {
+                    let field_path = record_field_path(parent_path, field);
                     return Err(CompileError::UnsupportedInstruction(format!(
                         "record field '{}' has an unmatched '}}'",
-                        field
+                        field_path
                     )));
                 }
                 depth -= 1;
@@ -160,9 +172,10 @@ fn split_top_level_field<'a>(field: &'a str) -> Result<(&'a str, &'a str), Compi
         }
     }
 
+    let field_path = record_field_path(parent_path, field);
     Err(CompileError::UnsupportedInstruction(format!(
         "record field '{}' must use name:type syntax",
-        field
+        field_path
     )))
 }
 
@@ -301,6 +314,14 @@ impl ParsedNamedGlobalType {
     }
 
     fn parse_with_context(spec: &str, context: NamedTypeSpecContext) -> Result<Self, CompileError> {
+        Self::parse_with_context_at_path(spec, context, None)
+    }
+
+    fn parse_with_context_at_path(
+        spec: &str,
+        context: NamedTypeSpecContext,
+        record_path: Option<&str>,
+    ) -> Result<Self, CompileError> {
         let scalar_shape = match spec {
             "i8" => Some((MirType::I8, NamedGlobalTypeShape::I8)),
             "i16" => Some((MirType::I16, NamedGlobalTypeShape::I16)),
@@ -376,7 +397,7 @@ impl ParsedNamedGlobalType {
         }
 
         if context == NamedTypeSpecContext::MapValue
-            && let Some(root) = Self::parse_graph_root_type_spec(spec)?
+            && let Some(root) = Self::parse_graph_root_type_spec(spec, record_path)?
         {
             let ty = match (root.kind, root.object_ty.clone()) {
                 (BpfGraphRootKind::ListHead, Some(object_ty)) => {
@@ -476,11 +497,13 @@ impl ParsedNamedGlobalType {
                     )));
                 }
 
-                let (name, field_spec) = split_top_level_field(field)?;
+                let (name, field_spec) = split_top_level_field(field, record_path)?;
                 if name.is_empty() || field_spec.is_empty() {
+                    let invalid_field = if name.is_empty() { field } else { name };
+                    let field_path = record_field_path(record_path, invalid_field);
                     return Err(CompileError::UnsupportedInstruction(format!(
                         "record field '{}' must use name:type syntax",
-                        field
+                        field_path
                     )));
                 }
                 if name.starts_with(NAMED_TYPE_PADDING_FIELD_PREFIX) {
@@ -500,7 +523,9 @@ impl ParsedNamedGlobalType {
                     )));
                 }
 
-                let parsed_field = Self::parse_with_context(field_spec, context)?;
+                let field_path = record_field_path(record_path, name);
+                let parsed_field =
+                    Self::parse_with_context_at_path(field_spec, context, Some(&field_path))?;
                 if let Some(semantics) = parsed_field.semantics.clone() {
                     field_semantics.push((name.to_string(), semantics));
                 }
@@ -577,7 +602,7 @@ impl ParsedNamedGlobalType {
                 ));
             }
 
-            let parsed_elem = Self::parse_with_context(elem_spec, context)?;
+            let parsed_elem = Self::parse_with_context_at_path(elem_spec, context, record_path)?;
             if !parsed_elem.is_fixed_array_element_type() {
                 return Err(CompileError::UnsupportedInstruction(format!(
                     "global fixed-array declarations require elements that can be embedded in fixed arrays, got '{}'",
@@ -747,6 +772,7 @@ impl ParsedNamedGlobalType {
 
     fn parse_graph_root_type_spec(
         spec: &str,
+        record_path: Option<&str>,
     ) -> Result<Option<ParsedGraphRootTypeSpec>, CompileError> {
         let Some((kind, rest)) = spec
             .strip_prefix("bpf_list_head:")
@@ -792,8 +818,11 @@ impl ParsedNamedGlobalType {
                     spec
                 )));
             }
-            let payload =
-                Self::parse_with_context(payload_spec, NamedTypeSpecContext::GraphObjectPayload)?;
+            let payload = Self::parse_with_context_at_path(
+                payload_spec,
+                NamedTypeSpecContext::GraphObjectPayload,
+                record_path,
+            )?;
             Some(Self::graph_object_type_from_payload(
                 kind, value_type, node_field, payload.ty, spec,
             )?)

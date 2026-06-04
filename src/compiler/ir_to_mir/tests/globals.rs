@@ -5990,6 +5990,61 @@ fn test_lower_global_define_type_list_int_rejects_bool_items() {
 }
 
 #[test]
+fn test_lower_global_define_type_nested_record_rejects_malformed_field_path() {
+    let define_decl = DeclId::new(9212);
+    let decl_names = HashMap::from([(define_decl, "global-define".to_string())]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::String("seen_state".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("record{inner:record{bad}}".into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        named: vec![(b"type".to_vec(), RegId::new(1))],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(2) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("global-define --type record should reject malformed nested fields");
+
+    assert!(
+        err.to_string()
+            .contains("record field 'inner.bad' must use name:type syntax"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn test_lower_global_define_type_nested_record_rejects_unexpected_field_path() {
     let define_decl = DeclId::new(9210);
     let decl_names = HashMap::from([(define_decl, "global-define".to_string())]);

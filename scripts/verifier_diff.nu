@@ -14930,6 +14930,21 @@ const FIXTURES = [
         error_contains: "unexpected field 'inner.extra'"
     }
     {
+        name: "global-define-type-nested-record-malformed-field-rejects-path"
+        category: "globals"
+        tags: [globals records diagnostics global-define reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  global-define --type "record{inner:record{bad}}" seen_state'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "record field 'inner.bad' must use name:type syntax"
+    }
+    {
         name: "global-define-type-record-partial-list-field-zero-fills"
         category: "globals"
         tags: [globals records list global-define zero-fill accept]
