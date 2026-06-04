@@ -4442,6 +4442,66 @@ fn test_type_infer_kfunc_bpf_wq_init_accepts_map_backed_wq_and_map_fd() {
 }
 
 #[test]
+fn test_type_error_kfunc_bpf_wq_init_rejects_nonzero_flags() {
+    let mut func = make_test_function();
+    let wq = func.alloc_vreg();
+    let map_fd = func.alloc_vreg();
+    let flags = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: flags,
+        src: MirValue::Const(1),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_wq_init".to_string(),
+        btf_id: None,
+        args: vec![wq, map_fd, flags],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let value_ty = MirType::Struct {
+        name: Some("wq_value".to_string()),
+        kernel_btf_type_id: None,
+        fields: vec![StructField {
+            name: "work".to_string(),
+            ty: MirType::bpf_wq_struct(),
+            offset: 0,
+            synthetic: false,
+            bitfield: None,
+        }],
+    };
+    let hints = HashMap::from([
+        (
+            wq,
+            MirType::Ptr {
+                pointee: Box::new(value_ty.clone()),
+                address_space: AddressSpace::Map,
+            },
+        ),
+        (
+            map_fd,
+            MirType::MapRef {
+                key_ty: Box::new(MirType::U32),
+                val_ty: Box::new(value_ty),
+            },
+        ),
+    ]);
+    let mut ti = TypeInference::new_with_env(None, None, None, Some(&hints), None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_wq_init nonzero flags error");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("kfunc 'bpf_wq_init' arg2 must be known zero")),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
 fn test_type_infer_kfunc_bpf_wq_set_callback_accepts_callback_and_zero_aux() {
     let mut func = make_test_function();
     let wq = func.alloc_vreg();
@@ -4622,6 +4682,45 @@ fn test_type_error_kfunc_bpf_wq_set_callback_rejects_nonzero_aux() {
             e.message
                 .contains("kfunc 'bpf_wq_set_callback_impl' arg3 must be known zero")
         }),
+        "unexpected errors: {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_type_error_kfunc_bpf_wq_start_rejects_nonzero_flags() {
+    let mut func = make_test_function();
+    let wq = func.alloc_vreg();
+    let flags = func.alloc_vreg();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: flags,
+        src: MirValue::Const(1),
+    });
+    block.instructions.push(MirInst::CallKfunc {
+        dst,
+        kfunc: "bpf_wq_start".to_string(),
+        btf_id: None,
+        args: vec![wq, flags],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let hints = HashMap::from([(
+        wq,
+        MirType::Ptr {
+            pointee: Box::new(MirType::bpf_wq_struct()),
+            address_space: AddressSpace::Map,
+        },
+    )]);
+    let mut ti = TypeInference::new_with_env(None, None, None, Some(&hints), None);
+    let errs = ti
+        .infer(&func)
+        .expect_err("expected bpf_wq_start nonzero flags error");
+    assert!(
+        errs.iter().any(|e| e
+            .message
+            .contains("kfunc 'bpf_wq_start' arg1 must be known zero")),
         "unexpected errors: {:?}",
         errs
     );
