@@ -115,11 +115,11 @@ documentation changes that matter to external alpha consumers.
 - Added lower verifier/VCC unit coverage for object and percpu object-drop
   known-zero meta diagnostics.
 - Added type-inference unit coverage for list push front/back known-zero meta
-  diagnostics.
+  diagnostics on nonzero and dynamic operands.
 - Added lower verifier/VCC unit coverage for list push front/back known-zero
   meta diagnostics.
-- Added type-inference unit coverage for rbtree add known-zero meta
-  diagnostics.
+- Added type-inference unit coverage for rbtree add known-zero meta diagnostics
+  on nonzero and dynamic operands.
 - Added lower verifier/VCC unit coverage for rbtree add known-zero meta
   diagnostics.
 - Improved typed `global-define` array initializer diagnostics so top-level
