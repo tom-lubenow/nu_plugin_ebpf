@@ -71,6 +71,8 @@ documentation changes that matter to external alpha consumers.
   repeated same-map/same-key graph-root lock provenance.
 - Added rbtree first source verifier coverage for missing-lock graph-root lock
   provenance.
+- Added list-back source verifier coverage for rejecting a graph-root protected
+  by a spin lock from a different map value.
 - Improved typed `global-define` array initializer diagnostics so top-level
   bad items use `initializer[0]` style paths instead of record-field wording.
 - Added verifier coverage for BTF target diagnostic help, typed global

@@ -30730,6 +30730,33 @@ const FIXTURES = [
         error_contains: "requires bpf_spin_lock from the same map value"
     }
     {
+        name: "source-kfunc-list-back-rejects-different-map-spin-lock"
+        category: "helper-state"
+        tags: [kfunc object graph source reject]
+        requires: [kernel-btf]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  map-define graph_items --kind hash --value-type "record{root:bpf_list_head:node_data:node,cookie:u64}"'
+            '  map-define locks --kind hash --value-type "record{lock:bpf_spin_lock,cookie:u64}"'
+            '  let entry = (0 | map-get graph_items --kind hash)'
+            '  if $entry {'
+            '    let lock_entry = (0 | map-get locks --kind hash)'
+            '    if $lock_entry {'
+            '      helper-call "bpf_spin_lock" $lock_entry.lock'
+            '      let obj = (kfunc-call "bpf_list_back" $entry.root)'
+            '      helper-call "bpf_spin_unlock" $lock_entry.lock'
+            '      if $obj { 0 }'
+            '    }'
+            '  }'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "requires bpf_spin_lock from the same map value"
+    }
+    {
         name: "source-kfunc-list-back-projects-object-payload"
         category: "helper-state"
         tags: [kfunc object graph source accept]
