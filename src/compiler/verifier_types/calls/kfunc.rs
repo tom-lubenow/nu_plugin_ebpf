@@ -240,10 +240,17 @@ pub(in crate::compiler::verifier_types) fn check_kfunc_arg(
                 }
                 _ => {
                     if kfunc_pointer_arg_allows_const_zero(kfunc, arg_idx) {
-                        errors.push(VerifierTypeError::new(format!(
-                            "kfunc '{}' arg{} expects null (0) or pointer, got {:?}",
-                            kfunc, arg_idx, ty
-                        )));
+                        if kfunc_arg_requires_known_zero(kfunc, arg_idx) {
+                            errors.push(VerifierTypeError::new(format!(
+                                "kfunc '{}' arg{} must be known zero",
+                                kfunc, arg_idx
+                            )));
+                        } else {
+                            errors.push(VerifierTypeError::new(format!(
+                                "kfunc '{}' arg{} expects null (0) or pointer, got {:?}",
+                                kfunc, arg_idx, ty
+                            )));
+                        }
                     } else {
                         errors.push(VerifierTypeError::new(format!(
                             "kfunc '{}' arg{} expects pointer, got {:?}",

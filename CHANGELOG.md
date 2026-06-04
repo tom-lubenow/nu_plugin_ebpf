@@ -98,6 +98,8 @@ documentation changes that matter to external alpha consumers.
   start, and callback flags.
 - Added lower and source verifier coverage for rejecting nonzero bpf_wq callback
   aux operands.
+- Improved known-zero kfunc aux diagnostics so scalar nonzero operands report
+  the required zero contract instead of a generic pointer/null mismatch.
 - Improved typed `global-define` array initializer diagnostics so top-level
   bad items use `initializer[0]` style paths instead of record-field wording.
 - Added verifier coverage for BTF target diagnostic help, typed global

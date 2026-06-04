@@ -166,13 +166,15 @@ impl<'a> VccLowerer<'a> {
                     if !self.is_pointer_reg(*arg)
                         && Self::kfunc_pointer_arg_allows_const_zero(kfunc, idx)
                     {
+                        let message = if Self::kfunc_arg_requires_known_zero(kfunc, idx) {
+                            format!("kfunc '{}' arg{} must be known zero", kfunc, idx)
+                        } else {
+                            format!("kfunc '{}' arg{} expects null (0) or pointer value", kfunc, idx)
+                        };
                         out.push(VccInst::AssertConstEq {
                             value: VccValue::Reg(VccReg(arg.0)),
                             expected: 0,
-                            message: format!(
-                                "kfunc '{}' arg{} expects null (0) or pointer value",
-                                kfunc, idx
-                            ),
+                            message,
                         });
                         continue;
                     }
