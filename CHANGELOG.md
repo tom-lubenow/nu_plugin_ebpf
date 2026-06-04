@@ -91,6 +91,7 @@ documentation changes that matter to external alpha consumers.
   with targeted `bpf_rb_node` diagnostics.
 - Added bpf_wq source verifier coverage for rejecting non-WQ map fields passed
   to init/start/callback kfuncs.
+- Added bpf_wq init source verifier coverage for rejecting nonzero flags.
 - Improved typed `global-define` array initializer diagnostics so top-level
   bad items use `initializer[0]` style paths instead of record-field wording.
 - Added verifier coverage for BTF target diagnostic help, typed global

@@ -27625,6 +27625,25 @@ const FIXTURES = [
         error_contains: "kfunc-call 'bpf_wq_init' requires arg0 to be a bpf_wq field projected from a concrete map value"
     }
     {
+        name: "bpf-wq-init-rejects-nonzero-flags"
+        category: "helper-state"
+        tags: [bpf_wq kfunc-call flags reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define work_items --kind array --value-type "record{work:bpf_wq,cookie:u64}" --max-entries 1'
+            '  let entry = (0 | map-get work_items --kind array)'
+            '  if $entry {'
+            '    kfunc-call "bpf_wq_init" $entry.work work_items 1'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'bpf_wq_init' arg2 must be known zero"
+    }
+    {
         name: "bpf-wq-start-rejects-nonzero-flags"
         category: "helper-state"
         tags: [bpf_wq kfunc-call flags reject]
