@@ -1257,6 +1257,71 @@ fn test_type_error_kfunc_list_push_front_requires_graph_root_space() {
 }
 
 #[test]
+fn test_type_error_kfunc_list_push_rejects_nonzero_meta() {
+    let object_ty = MirType::Struct {
+        name: Some("node_data".to_string()),
+        kernel_btf_type_id: None,
+        fields: vec![StructField {
+            name: "node".to_string(),
+            ty: MirType::bpf_list_node_struct(),
+            offset: 0,
+            synthetic: false,
+            bitfield: None,
+        }],
+    };
+    let root_ptr_ty = MirType::Ptr {
+        pointee: Box::new(MirType::bpf_list_head_root_struct_with_object(
+            "node_data",
+            "node",
+            object_ty.clone(),
+        )),
+        address_space: AddressSpace::Map,
+    };
+    let object_ptr_ty = MirType::Ptr {
+        pointee: Box::new(object_ty),
+        address_space: AddressSpace::Kernel,
+    };
+
+    for kfunc in ["bpf_list_push_front_impl", "bpf_list_push_back_impl"] {
+        let mut func = make_test_function();
+        let root = func.alloc_vreg();
+        let node = func.alloc_vreg();
+        let meta = func.alloc_vreg();
+        let off = func.alloc_vreg();
+        let dst = func.alloc_vreg();
+        let block = func.block_mut(BlockId(0));
+        block.instructions.push(MirInst::Copy {
+            dst: meta,
+            src: MirValue::Const(1),
+        });
+        block.instructions.push(MirInst::Copy {
+            dst: off,
+            src: MirValue::Const(0),
+        });
+        block.instructions.push(MirInst::CallKfunc {
+            dst,
+            kfunc: kfunc.to_string(),
+            btf_id: None,
+            args: vec![root, node, meta, off],
+        });
+        block.terminator = MirInst::Return { val: None };
+
+        let hints = HashMap::from([(root, root_ptr_ty.clone()), (node, object_ptr_ty.clone())]);
+        let mut ti = TypeInference::new_with_env(None, None, None, Some(&hints), None);
+        let errs = ti
+            .infer(&func)
+            .expect_err("expected list-push nonzero meta type error");
+        assert!(
+            errs.iter().any(|e| e
+                .message
+                .contains(&format!("kfunc '{kfunc}' arg2 must be known zero"))),
+            "unexpected errors for {kfunc}: {:?}",
+            errs
+        );
+    }
+}
+
+#[test]
 fn test_type_error_kfunc_path_d_path_requires_kernel_path_arg() {
     let mut func = make_test_function();
     let path = func.alloc_vreg();
