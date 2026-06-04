@@ -681,6 +681,18 @@ fn test_list_push_binary_item_allowed_for_find() {
 }
 
 #[test]
+fn test_list_push_binary_item_allowed_for_bytes_predicates() {
+    let scenarios = [
+        ("bytes starts-with", DeclId::new(185)),
+        ("bytes ends-with", DeclId::new(186)),
+    ];
+
+    for (decl_name, decl_id) in scenarios {
+        assert_list_push_binary_item_allowed_for_item_command(decl_id, decl_name);
+    }
+}
+
+#[test]
 fn test_list_push_binary_item_allowed_for_item_access() {
     let scenarios = [
         ("first", 85, None),

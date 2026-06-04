@@ -40,6 +40,9 @@ impl Plugin for EbpfPlugin {
             Box::new(EbpfSpec),
             Box::new(EbpfStacks),
             Box::new(EbpfTrace),
+            // Widen selected built-in byte predicates for eBPF closures
+            Box::new(BytesStartsWith),
+            Box::new(BytesEndsWith),
             // Helper commands for use in eBPF closures
             Box::new(Emit),
             Box::new(Count),
@@ -111,5 +114,26 @@ mod tests {
             .find(|flag| flag.long == "kind")
             .expect("helper-call should expose --kind for ambiguous map helpers");
         assert!(matches!(kind_flag.arg, Some(SyntaxShape::String)));
+    }
+
+    #[test]
+    fn test_byte_predicate_signatures_accept_binary_lists() {
+        let starts_with = BytesStartsWith.signature();
+        assert!(
+            starts_with.input_output_types.contains(&(
+                nu_protocol::Type::list(nu_protocol::Type::Binary),
+                nu_protocol::Type::list(nu_protocol::Type::Bool)
+            )),
+            "bytes starts-with should accept list<binary> input"
+        );
+
+        let ends_with = BytesEndsWith.signature();
+        assert!(
+            ends_with.input_output_types.contains(&(
+                nu_protocol::Type::list(nu_protocol::Type::Binary),
+                nu_protocol::Type::list(nu_protocol::Type::Bool)
+            )),
+            "bytes ends-with should accept list<binary> input"
+        );
     }
 }

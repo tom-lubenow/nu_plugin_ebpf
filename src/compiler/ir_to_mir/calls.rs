@@ -3736,15 +3736,12 @@ impl<'a> HirToMirLowering<'a> {
                     )));
                 }
 
-                let input = input_reg
+                let input_value = input_reg
                     .and_then(|reg| self.get_metadata(reg))
-                    .and_then(|meta| match meta.constant_value.as_ref() {
-                        Some(nu_protocol::Value::Binary { val, .. }) => Some(val.clone()),
-                        _ => None,
-                    })
+                    .and_then(|meta| meta.constant_value.as_ref().cloned())
                     .ok_or_else(|| {
                         CompileError::UnsupportedInstruction(format!(
-                            "{cmd_name} requires compile-time known binary input in eBPF"
+                            "{cmd_name} requires compile-time known binary or list<binary> input in eBPF"
                         ))
                     })?;
                 let (_, pattern_reg) = self.positional_args[0];
@@ -3759,24 +3756,60 @@ impl<'a> HirToMirLowering<'a> {
                             "{cmd_name} requires a compile-time known binary pattern in eBPF"
                         ))
                     })?;
-                let matched = if cmd_name == "bytes starts-with" {
-                    input.starts_with(&pattern)
-                } else {
-                    input.ends_with(&pattern)
+
+                let matches_input = |input: &[u8]| {
+                    if cmd_name == "bytes starts-with" {
+                        input.starts_with(&pattern)
+                    } else {
+                        input.ends_with(&pattern)
+                    }
                 };
 
-                self.emit(MirInst::Copy {
-                    dst: result_vreg,
-                    src: MirValue::Const(if matched { 1 } else { 0 }),
-                });
-                self.reset_call_result_metadata(src_dst);
-                let out_meta = self.get_or_create_metadata(src_dst);
-                out_meta.field_type = Some(MirType::Bool);
-                out_meta.constant_value = Some(nu_protocol::Value::bool(
-                    matched,
-                    nu_protocol::Span::unknown(),
-                ));
-                self.vreg_type_hints.insert(result_vreg, MirType::Bool);
+                match input_value {
+                    nu_protocol::Value::Binary { val, .. } => {
+                        let matched = matches_input(&val);
+                        self.emit(MirInst::Copy {
+                            dst: result_vreg,
+                            src: MirValue::Const(if matched { 1 } else { 0 }),
+                        });
+                        self.reset_call_result_metadata(src_dst);
+                        let out_meta = self.get_or_create_metadata(src_dst);
+                        out_meta.field_type = Some(MirType::Bool);
+                        out_meta.constant_value = Some(nu_protocol::Value::bool(
+                            matched,
+                            nu_protocol::Span::unknown(),
+                        ));
+                        self.vreg_type_hints.insert(result_vreg, MirType::Bool);
+                    }
+                    nu_protocol::Value::List { vals, .. } => {
+                        let matched_values = vals
+                            .iter()
+                            .enumerate()
+                            .map(|(index, item)| {
+                                let nu_protocol::Value::Binary { val, .. } = item else {
+                                    return Err(CompileError::UnsupportedInstruction(format!(
+                                        "{cmd_name} requires binary list items in eBPF; item {index} has type {}",
+                                        item.get_type()
+                                    )));
+                                };
+                                Ok(nu_protocol::Value::bool(
+                                    matches_input(val),
+                                    nu_protocol::Span::unknown(),
+                                ))
+                            })
+                            .collect::<Result<Vec<_>, _>>()?;
+                        self.lower_constant_value(
+                            src_dst,
+                            &nu_protocol::Value::list(matched_values, nu_protocol::Span::unknown()),
+                        )?;
+                    }
+                    other => {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "{cmd_name} requires compile-time known binary or list<binary> input in eBPF; got {}",
+                            other.get_type()
+                        )));
+                    }
+                }
             }
 
             "bytes index-of" => {

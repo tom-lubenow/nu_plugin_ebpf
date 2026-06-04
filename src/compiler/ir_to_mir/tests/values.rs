@@ -26732,6 +26732,64 @@ fn make_bytes_arg_pipeline_call_program_with_flags(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_bytes_list_predicate_get_program(
+    predicate_decl: DeclId,
+    get_decl: DeclId,
+    input: Vec<Vec<u8>>,
+    pattern: Vec<u8>,
+    index: i64,
+) -> HirProgram {
+    let input_values = input
+        .into_iter()
+        .map(|item| Value::binary(item, Span::test_data()))
+        .collect::<Vec<_>>();
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::list(input_values, Span::test_data())),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Binary(pattern),
+                },
+                HirStmt::Call {
+                    decl_id: predicate_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::Int(index),
+                },
+                HirStmt::Call {
+                    decl_id: get_decl,
+                    src_dst: RegId::new(4),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(3)],
+                        pipeline_input: Some(RegId::new(2)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(4) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 5,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_bytes_index_of_all_join_starts_with_program(
     index_of_decl: DeclId,
     join_decl: DeclId,
@@ -26921,6 +26979,86 @@ fn test_lower_bytes_ends_with_on_binary_returns_false() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("bytes ends-with on literal binaries should compile through codegen");
+}
+
+#[test]
+fn test_lower_bytes_starts_with_on_binary_list_materializes_bool_list() {
+    let bytes_starts_with_decl = DeclId::new(7212);
+    let get_decl = DeclId::new(7213);
+    let hir = make_bytes_list_predicate_get_program(
+        bytes_starts_with_decl,
+        get_decl,
+        vec![vec![1, 2], vec![3, 4]],
+        vec![3],
+        1,
+    );
+    let decl_names = HashMap::from([
+        (bytes_starts_with_decl, "bytes starts-with".to_string()),
+        (get_decl, "get".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bytes starts-with should lower on compile-time binary-list input");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::ListNew { max_len: 2, .. })),
+        "expected bytes starts-with list output to materialize a bool list"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("bytes starts-with binary-list output should compile through codegen");
+}
+
+#[test]
+fn test_lower_bytes_ends_with_on_binary_list_materializes_bool_list() {
+    let bytes_ends_with_decl = DeclId::new(7214);
+    let get_decl = DeclId::new(7215);
+    let hir = make_bytes_list_predicate_get_program(
+        bytes_ends_with_decl,
+        get_decl,
+        vec![vec![1, 2], vec![3, 4]],
+        vec![2],
+        0,
+    );
+    let decl_names = HashMap::from([
+        (bytes_ends_with_decl, "bytes ends-with".to_string()),
+        (get_decl, "get".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bytes ends-with should lower on compile-time binary-list input");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::ListNew { max_len: 2, .. })),
+        "expected bytes ends-with list output to materialize a bool list"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("bytes ends-with binary-list output should compile through codegen");
 }
 
 #[test]

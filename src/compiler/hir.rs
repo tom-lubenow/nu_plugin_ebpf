@@ -298,6 +298,7 @@ pub enum FixedLayoutValueConsumer {
     MapDeleteKey,
     MapContainsProbe,
     BinaryBytesTransform,
+    BytesPredicate,
     BytesCollect,
     StrJoin,
     Length,
@@ -540,6 +541,7 @@ pub fn compile_time_value_flows_to_fixed_layout_aggregate_consumer(
         FixedLayoutValueConsumer::MapDeleteKey,
         FixedLayoutValueConsumer::MapContainsProbe,
         FixedLayoutValueConsumer::BinaryBytesTransform,
+        FixedLayoutValueConsumer::BytesPredicate,
         FixedLayoutValueConsumer::BytesCollect,
         FixedLayoutValueConsumer::StrJoin,
         FixedLayoutValueConsumer::Length,
@@ -703,6 +705,15 @@ fn compile_time_value_consumer_matches(
                     }
                     _ => false,
                 }
+                && args.parser_info.is_empty()
+        }
+        FixedLayoutValueConsumer::BytesPredicate => {
+            matches!(decl_name, Some("bytes starts-with" | "bytes ends-with"))
+                && call_args_tracked_only_in_pipeline(src_dst, args, tracked_regs)
+                && args.positional.len() == 1
+                && args.rest.is_empty()
+                && args.named.is_empty()
+                && args.flags.is_empty()
                 && args.parser_info.is_empty()
         }
         FixedLayoutValueConsumer::BytesCollect => {
