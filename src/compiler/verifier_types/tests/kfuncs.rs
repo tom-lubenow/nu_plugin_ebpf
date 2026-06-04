@@ -13771,6 +13771,52 @@ fn test_kfunc_object_new_rejects_nonzero_meta() {
 }
 
 #[test]
+fn test_kfunc_object_new_rejects_dynamic_meta() {
+    for kfunc in ["bpf_obj_new_impl", "bpf_percpu_obj_new_impl"] {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        func.entry = entry;
+
+        let type_id = func.alloc_vreg();
+        let meta = func.alloc_vreg();
+        let obj = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: type_id,
+            src: MirValue::Const(1),
+        });
+        func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+            dst: obj,
+            kfunc: kfunc.to_string(),
+            btf_id: None,
+            args: vec![type_id, meta],
+        });
+        func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(type_id, MirType::I64);
+        types.insert(meta, MirType::I64);
+        types.insert(
+            obj,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+
+        let err =
+            verify_mir(&func, &types).expect_err(&format!("expected {kfunc} dynamic meta error"));
+        assert!(
+            err.iter().any(|e| e
+                .message
+                .contains(&format!("kfunc '{kfunc}' arg1 must be known zero"))),
+            "unexpected errors for {kfunc}: {:?}",
+            err
+        );
+    }
+}
+
+#[test]
 fn test_kfunc_obj_new_release_semantics() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
@@ -13913,6 +13959,88 @@ fn test_kfunc_object_drop_rejects_nonzero_meta() {
 
         let err = verify_mir(&func, &types)
             .expect_err(&format!("expected {drop_kfunc} nonzero meta error"));
+        assert!(
+            err.iter().any(|e| e
+                .message
+                .contains(&format!("kfunc '{drop_kfunc}' arg1 must be known zero"))),
+            "unexpected errors for {drop_kfunc}: {:?}",
+            err
+        );
+    }
+}
+
+#[test]
+fn test_kfunc_object_drop_rejects_dynamic_meta() {
+    for (new_kfunc, drop_kfunc) in [
+        ("bpf_obj_new_impl", "bpf_obj_drop_impl"),
+        ("bpf_percpu_obj_new_impl", "bpf_percpu_obj_drop_impl"),
+    ] {
+        let mut func = MirFunction::new();
+        let entry = func.alloc_block();
+        let release = func.alloc_block();
+        let done = func.alloc_block();
+        func.entry = entry;
+
+        let new_meta = func.alloc_vreg();
+        let drop_meta = func.alloc_vreg();
+        let type_id = func.alloc_vreg();
+        let obj = func.alloc_vreg();
+        let cond = func.alloc_vreg();
+        let release_ret = func.alloc_vreg();
+
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: new_meta,
+            src: MirValue::Const(0),
+        });
+        func.block_mut(entry).instructions.push(MirInst::Copy {
+            dst: type_id,
+            src: MirValue::Const(1),
+        });
+        func.block_mut(entry).instructions.push(MirInst::CallKfunc {
+            dst: obj,
+            kfunc: new_kfunc.to_string(),
+            btf_id: None,
+            args: vec![type_id, new_meta],
+        });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: cond,
+            op: BinOpKind::Ne,
+            lhs: MirValue::VReg(obj),
+            rhs: MirValue::Const(0),
+        });
+        func.block_mut(entry).terminator = MirInst::Branch {
+            cond,
+            if_true: release,
+            if_false: done,
+        };
+
+        func.block_mut(release)
+            .instructions
+            .push(MirInst::CallKfunc {
+                dst: release_ret,
+                kfunc: drop_kfunc.to_string(),
+                btf_id: None,
+                args: vec![obj, drop_meta],
+            });
+        func.block_mut(release).terminator = MirInst::Return { val: None };
+        func.block_mut(done).terminator = MirInst::Return { val: None };
+
+        let mut types = HashMap::new();
+        types.insert(new_meta, MirType::I64);
+        types.insert(drop_meta, MirType::I64);
+        types.insert(type_id, MirType::I64);
+        types.insert(
+            obj,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Unknown),
+                address_space: AddressSpace::Kernel,
+            },
+        );
+        types.insert(cond, MirType::Bool);
+        types.insert(release_ret, MirType::I64);
+
+        let err = verify_mir(&func, &types)
+            .expect_err(&format!("expected {drop_kfunc} dynamic meta error"));
         assert!(
             err.iter().any(|e| e
                 .message

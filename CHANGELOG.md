@@ -111,11 +111,11 @@ documentation changes that matter to external alpha consumers.
 - Added type-inference unit coverage for object and percpu object-new
   known-zero meta diagnostics on nonzero and dynamic operands.
 - Added lower verifier/VCC unit coverage for object and percpu object-new
-  known-zero meta diagnostics.
+  known-zero meta diagnostics on nonzero and dynamic operands.
 - Added type-inference unit coverage for object and percpu object-drop
   known-zero meta diagnostics on nonzero and dynamic operands.
 - Added lower verifier/VCC unit coverage for object and percpu object-drop
-  known-zero meta diagnostics.
+  known-zero meta diagnostics on nonzero and dynamic operands.
 - Added type-inference unit coverage for list push front/back known-zero meta
   diagnostics on nonzero and dynamic operands.
 - Added lower verifier/VCC unit coverage for list push front/back known-zero
