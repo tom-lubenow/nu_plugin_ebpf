@@ -37781,6 +37781,21 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-runtime-string-contains-tracked-length"
+        category: "language-core"
+        tags: [string str contains runtime globals]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "hello" | global-define --type string:8 left'
+            '  let left = (global-get left)'
+            '  $left | str contains "ll"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-string-list-contains-join"
         category: "language-core"
         tags: [string list str contains join]

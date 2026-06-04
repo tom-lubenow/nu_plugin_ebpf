@@ -16,6 +16,16 @@ struct KnownStringSearchOperands {
     needle_len: usize,
 }
 
+struct TrackedStringSearchOperands {
+    input_slot: StackSlotId,
+    input_slot_size: usize,
+    input_len: Option<usize>,
+    input_len_vreg: Option<VReg>,
+    input_max_len: usize,
+    needle_slot: StackSlotId,
+    needle_len: usize,
+}
+
 const MAX_STRING_EXPAND_RESULTS: usize = 60;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -771,69 +781,36 @@ impl<'a> HirToMirLowering<'a> {
             return self.lower_bool_result(src_dst, result_vreg, matches);
         }
 
-        let operands = self.known_string_search_operands(input_reg, needle_reg, "str contains")?;
+        let operands =
+            self.tracked_string_search_operands(input_reg, needle_reg, "str contains")?;
 
         if operands.needle_len == 0 {
             self.emit(MirInst::Copy {
                 dst: result_vreg,
                 src: MirValue::Const(1),
             });
-        } else if operands.needle_len > operands.input_len
-            || operands.input_len > operands.input_slot_size.saturating_sub(1)
-        {
+        } else if operands.needle_len > operands.input_max_len {
             self.emit(MirInst::Copy {
                 dst: result_vreg,
                 src: MirValue::Const(0),
             });
-        } else {
-            let found_block = self.func.alloc_block();
-            let not_found_block = self.func.alloc_block();
-            let continuation_block = self.func.alloc_block();
-            let last_offset = operands.input_len - operands.needle_len;
-
-            for offset in 0..=last_offset {
-                let next_block = if offset == last_offset {
-                    not_found_block
-                } else {
-                    self.func.alloc_block()
-                };
-                let candidate_vreg = self.func.alloc_vreg();
-                self.emit(MirInst::StrCmp {
-                    dst: candidate_vreg,
-                    lhs: operands.input_slot,
-                    lhs_offset: offset,
-                    rhs: operands.needle_slot,
-                    rhs_offset: 0,
-                    len: operands.needle_len,
+        } else if let Some(input_len) = operands.input_len {
+            if operands.needle_len > input_len
+                || input_len > operands.input_slot_size.saturating_sub(1)
+            {
+                self.emit(MirInst::Copy {
+                    dst: result_vreg,
+                    src: MirValue::Const(0),
                 });
-                self.vreg_type_hints.insert(candidate_vreg, MirType::Bool);
-                self.terminate(MirInst::Branch {
-                    cond: candidate_vreg,
-                    if_true: found_block,
-                    if_false: next_block,
-                });
-                self.current_block = next_block;
+            } else {
+                self.lower_known_string_contains_match(result_vreg, &operands, input_len);
             }
-
-            self.current_block = found_block;
-            self.emit(MirInst::Copy {
-                dst: result_vreg,
-                src: MirValue::Const(1),
-            });
-            self.terminate(MirInst::Jump {
-                target: continuation_block,
-            });
-
-            self.current_block = not_found_block;
-            self.emit(MirInst::Copy {
-                dst: result_vreg,
-                src: MirValue::Const(0),
-            });
-            self.terminate(MirInst::Jump {
-                target: continuation_block,
-            });
-
-            self.current_block = continuation_block;
+        } else if let Some(input_len_vreg) = operands.input_len_vreg {
+            self.lower_runtime_string_contains_match(result_vreg, &operands, input_len_vreg);
+        } else {
+            return Err(CompileError::UnsupportedInstruction(
+                "str contains requires tracked string input with runtime length in eBPF".into(),
+            ));
         }
 
         self.reset_call_result_metadata(src_dst);
@@ -841,6 +818,124 @@ impl<'a> HirToMirLowering<'a> {
         out_meta.field_type = Some(MirType::Bool);
         self.vreg_type_hints.insert(result_vreg, MirType::Bool);
         Ok(())
+    }
+
+    fn lower_known_string_contains_match(
+        &mut self,
+        result_vreg: VReg,
+        operands: &TrackedStringSearchOperands,
+        input_len: usize,
+    ) {
+        if operands.needle_len > input_len || input_len > operands.input_slot_size.saturating_sub(1)
+        {
+            self.emit(MirInst::Copy {
+                dst: result_vreg,
+                src: MirValue::Const(0),
+            });
+            return;
+        }
+
+        let found_block = self.func.alloc_block();
+        let not_found_block = self.func.alloc_block();
+        let continuation_block = self.func.alloc_block();
+        let last_offset = input_len - operands.needle_len;
+
+        for offset in 0..=last_offset {
+            let next_block = if offset == last_offset {
+                not_found_block
+            } else {
+                self.func.alloc_block()
+            };
+            let candidate_vreg = self.func.alloc_vreg();
+            self.emit(MirInst::StrCmp {
+                dst: candidate_vreg,
+                lhs: operands.input_slot,
+                lhs_offset: offset,
+                rhs: operands.needle_slot,
+                rhs_offset: 0,
+                len: operands.needle_len,
+            });
+            self.vreg_type_hints.insert(candidate_vreg, MirType::Bool);
+            self.terminate(MirInst::Branch {
+                cond: candidate_vreg,
+                if_true: found_block,
+                if_false: next_block,
+            });
+            self.current_block = next_block;
+        }
+
+        self.current_block = found_block;
+        self.emit(MirInst::Copy {
+            dst: result_vreg,
+            src: MirValue::Const(1),
+        });
+        self.terminate(MirInst::Jump {
+            target: continuation_block,
+        });
+
+        self.current_block = not_found_block;
+        self.emit(MirInst::Copy {
+            dst: result_vreg,
+            src: MirValue::Const(0),
+        });
+        self.terminate(MirInst::Jump {
+            target: continuation_block,
+        });
+
+        self.current_block = continuation_block;
+    }
+
+    fn lower_runtime_string_contains_match(
+        &mut self,
+        result_vreg: VReg,
+        operands: &TrackedStringSearchOperands,
+        input_len_vreg: VReg,
+    ) {
+        self.emit(MirInst::Copy {
+            dst: result_vreg,
+            src: MirValue::Const(0),
+        });
+        self.vreg_type_hints.insert(result_vreg, MirType::Bool);
+
+        let last_offset = operands.input_max_len - operands.needle_len;
+
+        for offset in 0..=last_offset {
+            let len_matches = self.func.alloc_vreg();
+            self.emit(MirInst::BinOp {
+                dst: len_matches,
+                op: BinOpKind::Ge,
+                lhs: MirValue::VReg(input_len_vreg),
+                rhs: MirValue::Const((offset + operands.needle_len) as i64),
+            });
+            self.vreg_type_hints.insert(len_matches, MirType::Bool);
+
+            let bytes_match = self.func.alloc_vreg();
+            self.emit(MirInst::StrCmp {
+                dst: bytes_match,
+                lhs: operands.input_slot,
+                lhs_offset: offset,
+                rhs: operands.needle_slot,
+                rhs_offset: 0,
+                len: operands.needle_len,
+            });
+            self.vreg_type_hints.insert(bytes_match, MirType::Bool);
+
+            let candidate = self.func.alloc_vreg();
+            self.emit(MirInst::BinOp {
+                dst: candidate,
+                op: BinOpKind::And,
+                lhs: MirValue::VReg(len_matches),
+                rhs: MirValue::VReg(bytes_match),
+            });
+            self.vreg_type_hints.insert(candidate, MirType::Bool);
+
+            self.emit(MirInst::BinOp {
+                dst: result_vreg,
+                op: BinOpKind::Or,
+                lhs: MirValue::VReg(result_vreg),
+                rhs: MirValue::VReg(candidate),
+            });
+        }
     }
 
     pub(super) fn lower_string_distance(
@@ -3098,6 +3193,59 @@ impl<'a> HirToMirLowering<'a> {
             input_slot,
             input_slot_size,
             input_len,
+            needle_slot,
+            needle_len: needle.len(),
+        })
+    }
+
+    fn tracked_string_search_operands(
+        &self,
+        input_reg: Option<RegId>,
+        needle_reg: RegId,
+        command: &str,
+    ) -> Result<TrackedStringSearchOperands, CompileError> {
+        let input_meta = input_reg
+            .and_then(|reg| self.get_metadata(reg).cloned())
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "{command} requires tracked string input in eBPF"
+                ))
+            })?;
+        let input_slot = input_meta.string_slot.ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "{command} requires tracked string input in eBPF"
+            ))
+        })?;
+        let input_slot_size = self.stack_slot_size(input_slot).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "{command} could not determine input string capacity in eBPF"
+            ))
+        })?;
+        let input_max_len = self.string_input_max_len(&input_meta, input_slot_size);
+
+        let needle = self.literal_string_arg(needle_reg, command)?;
+        if needle.as_bytes().contains(&0) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{command} does not support NUL bytes in the substring in eBPF"
+            )));
+        }
+        let needle_meta = self.get_metadata(needle_reg).cloned().ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "{command} requires a tracked string substring in eBPF"
+            ))
+        })?;
+        let needle_slot = needle_meta.string_slot.ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "{command} requires a tracked string substring in eBPF"
+            ))
+        })?;
+
+        Ok(TrackedStringSearchOperands {
+            input_slot,
+            input_slot_size,
+            input_len: Self::exact_string_len(&input_meta),
+            input_len_vreg: input_meta.string_len_vreg,
+            input_max_len,
             needle_slot,
             needle_len: needle.len(),
         })
