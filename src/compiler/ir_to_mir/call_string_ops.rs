@@ -26,6 +26,13 @@ enum FillAlignment {
     CenterRight,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StringLengthMode {
+    Utf8Bytes,
+    Chars,
+    GraphemeClusters,
+}
+
 enum KnownFillInput {
     Scalar(String),
     List(Vec<String>),
@@ -242,41 +249,35 @@ impl<'a> HirToMirLowering<'a> {
                 "str length does not accept arguments in eBPF".into(),
             ));
         }
-        let use_grapheme_clusters = self.string_grapheme_cluster_indexing_flag("str length")?;
-
-        if use_grapheme_clusters {
-            if let Some(input) = self.exact_string_list_input(input_reg, "str length")? {
-                let lengths = input
-                    .into_iter()
-                    .map(|item| {
-                        nu_protocol::Value::int(
-                            UnicodeSegmentation::graphemes(item.as_str(), true).count() as i64,
-                            Span::unknown(),
-                        )
-                    })
-                    .collect();
-                self.lower_constant_value(
-                    src_dst,
-                    &nu_protocol::Value::list(lengths, Span::unknown()),
-                )?;
-                return Ok(());
-            }
-
-            let input = self.exact_string_input(input_reg, "str length --grapheme-clusters")?;
-            let grapheme_len = UnicodeSegmentation::graphemes(input.as_str(), true).count() as i64;
-            return self.lower_i64_result(src_dst, result_vreg, grapheme_len);
-        }
+        let length_mode = self.string_length_mode()?;
 
         if let Some(input) = self.exact_string_list_input(input_reg, "str length")? {
             let lengths = input
                 .into_iter()
-                .map(|item| nu_protocol::Value::int(item.len() as i64, Span::unknown()))
+                .map(|item| {
+                    nu_protocol::Value::int(
+                        Self::known_string_length(&item, length_mode),
+                        Span::unknown(),
+                    )
+                })
                 .collect();
             self.lower_constant_value(
                 src_dst,
                 &nu_protocol::Value::list(lengths, Span::unknown()),
             )?;
             return Ok(());
+        }
+
+        match length_mode {
+            StringLengthMode::Chars | StringLengthMode::GraphemeClusters => {
+                let input = self.exact_string_input(input_reg, "str length")?;
+                return self.lower_i64_result(
+                    src_dst,
+                    result_vreg,
+                    Self::known_string_length(&input, length_mode),
+                );
+            }
+            StringLengthMode::Utf8Bytes => {}
         }
 
         let input_meta = input_reg.and_then(|reg| self.get_metadata(reg).cloned());
@@ -309,6 +310,39 @@ impl<'a> HirToMirLowering<'a> {
         out_meta.field_type = Some(MirType::I64);
         self.vreg_type_hints.insert(result_vreg, MirType::I64);
         Ok(())
+    }
+
+    fn string_length_mode(&self) -> Result<StringLengthMode, CompileError> {
+        let mut mode = None;
+        for flag in &self.named_flags {
+            let next = match flag.as_str() {
+                "utf-8-bytes" => StringLengthMode::Utf8Bytes,
+                "chars" => StringLengthMode::Chars,
+                "grapheme-clusters" => StringLengthMode::GraphemeClusters,
+                _ => {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "str length currently supports only --utf-8-bytes, --chars, and --grapheme-clusters flags in eBPF"
+                            .into(),
+                    ));
+                }
+            };
+            if mode.replace(next).is_some() {
+                return Err(CompileError::UnsupportedInstruction(
+                    "str length accepts only one length mode flag in eBPF".into(),
+                ));
+            }
+        }
+        Ok(mode.unwrap_or(StringLengthMode::Utf8Bytes))
+    }
+
+    fn known_string_length(input: &str, mode: StringLengthMode) -> i64 {
+        match mode {
+            StringLengthMode::Utf8Bytes => input.len() as i64,
+            StringLengthMode::Chars => input.chars().count() as i64,
+            StringLengthMode::GraphemeClusters => {
+                UnicodeSegmentation::graphemes(input, true).count() as i64
+            }
+        }
     }
 
     pub(super) fn lower_string_starts_with(

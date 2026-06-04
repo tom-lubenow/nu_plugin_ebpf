@@ -9141,6 +9141,31 @@ fn test_lower_str_length_grapheme_clusters_on_known_string_materializes_count() 
 }
 
 #[test]
+fn test_lower_str_length_chars_on_known_string_materializes_count() {
+    let str_length_decl = DeclId::new(16_201);
+    let hir = make_string_pipeline_call_program_with_flags(
+        str_length_decl,
+        "Amélie",
+        vec![b"chars".to_vec()],
+    );
+    let decl_names = HashMap::from([(str_length_decl, "str length".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str length --chars should lower on compile-time known strings");
+
+    assert_program_returns_constant(&result.program, 7, "str length --chars");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("str length --chars should compile through codegen");
+}
+
+#[test]
 fn test_lower_str_length_on_known_string_list_materializes_numeric_lengths() {
     let str_length_decl = DeclId::new(402);
     let sum_decl = DeclId::new(403);
@@ -9237,6 +9262,56 @@ fn test_lower_str_length_grapheme_clusters_on_known_string_list_materializes_num
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
         "str length --grapheme-clusters string-list result consumed by math sum should compile through codegen",
+    );
+}
+
+#[test]
+fn test_lower_str_length_chars_on_known_string_list_materializes_numeric_lengths() {
+    let str_length_decl = DeclId::new(16_202);
+    let sum_decl = DeclId::new(16_203);
+    let hir = make_string_list_str_length_sum_program(
+        str_length_decl,
+        sum_decl,
+        &["Amélie", "字"],
+        vec![b"chars".to_vec()],
+    );
+    let decl_names = HashMap::from([
+        (str_length_decl, "str length".to_string()),
+        (sum_decl, "math sum".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str length --chars should lower for compile-time known string-list input");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .all(|inst| !matches!(inst, MirInst::StringAppend { .. })),
+        "expected compile-time str length --chars string-list input not to materialize runtime strings"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::ListGet { .. })),
+        "expected math sum to consume the char length numeric-list result"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "str length --chars string-list result consumed by math sum should compile through codegen",
     );
 }
 

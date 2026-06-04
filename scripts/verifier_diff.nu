@@ -37553,6 +37553,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-string-str-length-chars"
+        category: "language-core"
+        tags: [string str length chars]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ("Amélie" | str length --chars) == 7'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-string-list-str-length-sum"
         category: "language-core"
         tags: [string list str length sum]
@@ -37573,6 +37586,19 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  ["🇯🇵" "ほげ"] | str length --grapheme-clusters | math sum'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-string-list-str-length-chars-sum"
+        category: "language-core"
+        tags: [string list split row str length chars sum]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  ("Amélie,字" | split row "," | str length --chars | math sum) == 8'
             '}'
         ]
         local: "accept"
