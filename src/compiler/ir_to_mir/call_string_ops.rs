@@ -22,6 +22,9 @@ struct RuntimeStringIndexSearchBounds {
     search_start: usize,
     search_end: usize,
     empty_index: RuntimeStringEmptyIndex,
+    dynamic_start: Option<RuntimeStringDynamicStart>,
+    dynamic_end: Option<RuntimeStringDynamicEnd>,
+    empty_requires_known_len: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -29,6 +32,16 @@ enum RuntimeStringEmptyIndex {
     Const(i64),
     RuntimeLen,
     MinRuntimeLen(usize),
+}
+
+#[derive(Clone, Copy)]
+struct RuntimeStringDynamicStart {
+    distance_from_end: usize,
+}
+
+#[derive(Clone, Copy)]
+struct RuntimeStringDynamicEnd {
+    distance_from_end: usize,
 }
 
 const MAX_STRING_EXPAND_RESULTS: usize = 60;
@@ -1611,6 +1624,12 @@ impl<'a> HirToMirLowering<'a> {
             })?;
 
             if operands.needle_len == 0 {
+                if bounds.empty_requires_known_len {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "str index-of --range with an empty substring and negative runtime bound requires a compile-time known input string length in eBPF"
+                            .into(),
+                    ));
+                }
                 self.lower_runtime_string_index_empty_match(
                     result_vreg,
                     input_len_vreg,
@@ -1628,8 +1647,7 @@ impl<'a> HirToMirLowering<'a> {
                     result_vreg,
                     &operands,
                     input_len_vreg,
-                    bounds.search_start,
-                    bounds.search_end,
+                    &bounds,
                     search_from_end,
                 );
             }
@@ -1808,24 +1826,23 @@ impl<'a> HirToMirLowering<'a> {
         result_vreg: VReg,
         operands: &TrackedStringSearchOperands,
         input_len_vreg: VReg,
-        search_start: usize,
-        search_end: usize,
+        bounds: &RuntimeStringIndexSearchBounds,
         search_from_end: bool,
     ) {
         let not_found_block = self.func.alloc_block();
         let continuation_block = self.func.alloc_block();
-        let last_offset = search_end - operands.needle_len;
+        let last_offset = bounds.search_end - operands.needle_len;
 
         let offsets: Box<dyn Iterator<Item = usize>> = if search_from_end {
-            Box::new((search_start..=last_offset).rev())
+            Box::new((bounds.search_start..=last_offset).rev())
         } else {
-            Box::new(search_start..=last_offset)
+            Box::new(bounds.search_start..=last_offset)
         };
 
         for offset in offsets {
             let found_block = self.func.alloc_block();
             let is_last_probe = if search_from_end {
-                offset == search_start
+                offset == bounds.search_start
             } else {
                 offset == last_offset
             };
@@ -1863,6 +1880,52 @@ impl<'a> HirToMirLowering<'a> {
                 rhs: MirValue::VReg(bytes_match),
             });
             self.vreg_type_hints.insert(candidate_vreg, MirType::Bool);
+
+            let mut candidate_vreg = candidate_vreg;
+            if let Some(dynamic_start) = bounds.dynamic_start {
+                let start_matches = self.func.alloc_vreg();
+                self.emit(MirInst::BinOp {
+                    dst: start_matches,
+                    op: BinOpKind::Le,
+                    lhs: MirValue::VReg(input_len_vreg),
+                    rhs: MirValue::Const((offset + dynamic_start.distance_from_end) as i64),
+                });
+                self.vreg_type_hints.insert(start_matches, MirType::Bool);
+
+                let combined = self.func.alloc_vreg();
+                self.emit(MirInst::BinOp {
+                    dst: combined,
+                    op: BinOpKind::And,
+                    lhs: MirValue::VReg(candidate_vreg),
+                    rhs: MirValue::VReg(start_matches),
+                });
+                self.vreg_type_hints.insert(combined, MirType::Bool);
+                candidate_vreg = combined;
+            }
+
+            if let Some(dynamic_end) = bounds.dynamic_end {
+                let end_matches = self.func.alloc_vreg();
+                self.emit(MirInst::BinOp {
+                    dst: end_matches,
+                    op: BinOpKind::Ge,
+                    lhs: MirValue::VReg(input_len_vreg),
+                    rhs: MirValue::Const(
+                        (offset + operands.needle_len + dynamic_end.distance_from_end) as i64,
+                    ),
+                });
+                self.vreg_type_hints.insert(end_matches, MirType::Bool);
+
+                let combined = self.func.alloc_vreg();
+                self.emit(MirInst::BinOp {
+                    dst: combined,
+                    op: BinOpKind::And,
+                    lhs: MirValue::VReg(candidate_vreg),
+                    rhs: MirValue::VReg(end_matches),
+                });
+                self.vreg_type_hints.insert(combined, MirType::Bool);
+                candidate_vreg = combined;
+            }
+
             self.terminate(MirInst::Branch {
                 cond: candidate_vreg,
                 if_true: found_block,
@@ -3242,6 +3305,9 @@ impl<'a> HirToMirLowering<'a> {
                 } else {
                     RuntimeStringEmptyIndex::Const(0)
                 },
+                dynamic_start: None,
+                dynamic_end: None,
+                empty_requires_known_len: false,
             });
         };
         let range = self
@@ -3252,15 +3318,43 @@ impl<'a> HirToMirLowering<'a> {
                     "str index-of --range requires a compile-time known range in eBPF".into(),
                 )
             })?;
-        if range.start.is_some_and(|start| start < 0) || range.end.is_some_and(|end| end < 0) {
-            return Err(CompileError::UnsupportedInstruction(
-                "str index-of --range on runtime strings requires non-negative bounds in eBPF"
-                    .into(),
-            ));
-        }
+        let (search_start, dynamic_start) = match range.start {
+            Some(start) if start < 0 => {
+                let distance = Self::runtime_negative_range_distance(start, input_max_len);
+                (
+                    0,
+                    distance
+                        .map(|distance_from_end| RuntimeStringDynamicStart { distance_from_end }),
+                )
+            }
+            Some(start) => (start.min(input_max_len as i64) as usize, None),
+            None => (0, None),
+        };
 
-        let (search_start, search_end) = Self::string_range_byte_bounds(range, input_max_len);
-        let start = range.start.unwrap_or(0);
+        let adjusted_end = range.end.map(|end| {
+            if range.inclusive {
+                end.saturating_add(1)
+            } else {
+                end
+            }
+        });
+        let empty_requires_known_len =
+            range.start.is_some_and(|start| start < 0) || adjusted_end.is_some_and(|end| end < 0);
+        let (search_end, dynamic_end) = match adjusted_end {
+            Some(end) if end < 0 => match Self::runtime_negative_range_distance(end, input_max_len)
+            {
+                Some(distance_from_end) => (
+                    input_max_len,
+                    Some(RuntimeStringDynamicEnd { distance_from_end }),
+                ),
+                None => (0, None),
+            },
+            Some(end) => (end.max(0).min(input_max_len as i64) as usize, None),
+            None => (input_max_len, None),
+        };
+        let search_end = search_end.max(search_start);
+
+        let empty_start = range.start.unwrap_or(0);
         let empty_index = if search_from_end {
             range
                 .end
@@ -3270,19 +3364,38 @@ impl<'a> HirToMirLowering<'a> {
                     } else {
                         end
                     };
-                    RuntimeStringEmptyIndex::MinRuntimeLen(
-                        adjusted_end.max(start).min(input_max_len as i64) as usize,
-                    )
+                    if adjusted_end < 0 || empty_start < 0 {
+                        RuntimeStringEmptyIndex::RuntimeLen
+                    } else {
+                        RuntimeStringEmptyIndex::MinRuntimeLen(
+                            adjusted_end.max(empty_start).min(input_max_len as i64) as usize,
+                        )
+                    }
                 })
         } else {
-            RuntimeStringEmptyIndex::MinRuntimeLen(start.min(input_max_len as i64) as usize)
+            if empty_start < 0 {
+                RuntimeStringEmptyIndex::RuntimeLen
+            } else {
+                RuntimeStringEmptyIndex::MinRuntimeLen(
+                    empty_start.min(input_max_len as i64) as usize
+                )
+            }
         };
 
         Ok(RuntimeStringIndexSearchBounds {
             search_start,
             search_end,
             empty_index,
+            dynamic_start,
+            dynamic_end,
+            empty_requires_known_len,
         })
+    }
+
+    fn runtime_negative_range_distance(bound: i64, input_max_len: usize) -> Option<usize> {
+        debug_assert!(bound < 0);
+        let distance = bound.saturating_abs() as usize;
+        (distance < input_max_len).then_some(distance)
     }
 
     fn capitalize_first_char(input: &str) -> String {

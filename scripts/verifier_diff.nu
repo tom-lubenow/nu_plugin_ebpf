@@ -38418,9 +38418,9 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
-        name: "core-runtime-string-index-of-negative-range-reject"
+        name: "core-runtime-string-index-of-negative-range-tracked-length"
         category: "language-core"
-        tags: [string str index-of range runtime globals reject]
+        tags: [string str index-of range runtime globals]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
@@ -38429,9 +38429,39 @@ const FIXTURES = [
             '  $left | str index-of "l" --range 1..-2'
             '}'
         ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-runtime-string-index-of-negative-start-range-tracked-length"
+        category: "language-core"
+        tags: [string str index-of range runtime globals]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "hello" | global-define --type string:8 left'
+            '  let left = (global-get left)'
+            '  $left | str index-of "l" --range -3..'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-runtime-string-index-of-empty-negative-range-reject"
+        category: "language-core"
+        tags: [string str index-of range empty runtime globals reject]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  "hello" | global-define --type string:8 left'
+            '  let left = (global-get left)'
+            '  $left | str index-of "" --range 1..-2'
+            '}'
+        ]
         local: "reject"
         kernel: "skip"
-        error_contains: "str index-of --range on runtime strings requires non-negative bounds"
+        error_contains: "str index-of --range with an empty substring and negative runtime bound"
     }
     {
         name: "core-runtime-string-index-of-empty-range-tracked-length"

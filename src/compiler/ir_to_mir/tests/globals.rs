@@ -1968,24 +1968,6 @@ fn test_lower_global_get_string_index_of_range_runtime_length() {
 }
 
 #[test]
-fn test_lower_global_get_string_index_of_negative_range_runtime_length_is_rejected() {
-    let err = lower_global_get_string_index_of_runtime_length(
-        false,
-        "l",
-        Some((Some(1), Some(-2), RangeInclusion::Inclusive)),
-    )
-    .expect_err("runtime str index-of --range should reject negative bounds");
-
-    match err {
-        CompileError::UnsupportedInstruction(message) => assert!(
-            message.contains("requires non-negative bounds"),
-            "unexpected error: {message}"
-        ),
-        other => panic!("unexpected error: {other:?}"),
-    }
-}
-
-#[test]
 fn test_lower_global_get_string_index_of_empty_range_runtime_length() {
     let result = lower_global_get_string_index_of_runtime_length(
         false,
@@ -2095,6 +2077,101 @@ fn test_lower_global_get_string_index_of_empty_end_range_runtime_length() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("empty runtime index-of --end --range should compile through codegen");
+}
+
+#[test]
+fn test_lower_global_get_string_index_of_negative_end_range_runtime_length() {
+    let result = lower_global_get_string_index_of_runtime_length(
+        false,
+        "l",
+        Some((Some(1), Some(-2), RangeInclusion::Inclusive)),
+    )
+    .expect("global-get string should run str index-of with a negative end range");
+
+    assert!(
+        !result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StrCmp {
+                    lhs_offset: 0,
+                    len: 1,
+                    ..
+                }
+            )),
+        "expected negative-end runtime index-of --range to preserve the static start bound"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op: BinOpKind::Ge,
+                    rhs: MirValue::Const(5),
+                    ..
+                }
+            )),
+        "expected negative-end runtime index-of --range to guard offset 3 by requiring length at least 5"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("negative-end runtime index-of --range should compile through codegen");
+}
+
+#[test]
+fn test_lower_global_get_string_index_of_negative_start_range_runtime_length() {
+    let result = lower_global_get_string_index_of_runtime_length(
+        false,
+        "l",
+        Some((Some(-3), None, RangeInclusion::Inclusive)),
+    )
+    .expect("global-get string should run str index-of with a negative start range");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op: BinOpKind::Le,
+                    rhs: MirValue::Const(5),
+                    ..
+                }
+            )),
+        "expected negative-start runtime index-of --range to guard offset 2 with length <= 5"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("negative-start runtime index-of --range should compile through codegen");
+}
+
+#[test]
+fn test_lower_global_get_string_index_of_empty_negative_range_runtime_length_is_rejected() {
+    let err = lower_global_get_string_index_of_runtime_length(
+        false,
+        "",
+        Some((Some(1), Some(-2), RangeInclusion::Inclusive)),
+    )
+    .expect_err("empty runtime str index-of --range should reject negative bounds");
+
+    match err {
+        CompileError::UnsupportedInstruction(message) => assert!(
+            message.contains("empty substring and negative runtime bound"),
+            "unexpected error: {message}"
+        ),
+        other => panic!("unexpected error: {other:?}"),
+    }
 }
 
 #[test]
