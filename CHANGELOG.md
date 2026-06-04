@@ -104,8 +104,8 @@ documentation changes that matter to external alpha consumers.
   diagnostics on nonzero and dynamic operands.
 - Added source verifier coverage for known-zero percpu object-new and list
   push-back aux/meta rejects.
-- Added type-inference unit coverage for bpf_wq callback aux known-zero
-  diagnostics.
+- Added type-inference unit coverage for bpf_wq callback flag/aux known-zero
+  diagnostics on nonzero and dynamic operands.
 - Added type-inference unit coverage for object and percpu object-new
   known-zero meta diagnostics.
 - Added lower verifier/VCC unit coverage for object and percpu object-new
