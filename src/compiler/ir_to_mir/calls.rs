@@ -3476,6 +3476,14 @@ impl<'a> HirToMirLowering<'a> {
                 } else if let Some(empty) = input_meta.as_ref().and_then(|meta| {
                     if !meta.record_fields.is_empty() {
                         Some(false)
+                    } else if let Some(semantics) = &meta.annotated_semantics {
+                        match semantics {
+                            AnnotatedValueSemantics::Binary { len } => Some(*len == 0),
+                            AnnotatedValueSemantics::FixedArray { len, .. } => Some(*len == 0),
+                            AnnotatedValueSemantics::String { .. }
+                            | AnnotatedValueSemantics::NumericList { .. }
+                            | AnnotatedValueSemantics::Record(_) => None,
+                        }
                     } else {
                         meta.constant_value.as_ref().and_then(|value| match value {
                             nu_protocol::Value::Record { val, .. } => Some(val.is_empty()),
@@ -3538,12 +3546,23 @@ impl<'a> HirToMirLowering<'a> {
                         list: input_vreg,
                     });
                 } else if let Some(len) = input_meta.as_ref().and_then(|meta| {
-                    meta.constant_value.as_ref().and_then(|value| match value {
-                        nu_protocol::Value::Nothing { .. } => Some(0),
-                        nu_protocol::Value::List { vals, .. } => Some(vals.len()),
-                        nu_protocol::Value::Binary { val, .. } => Some(val.len()),
-                        _ => None,
-                    })
+                    meta.annotated_semantics
+                        .as_ref()
+                        .and_then(|semantics| match semantics {
+                            AnnotatedValueSemantics::Binary { len }
+                            | AnnotatedValueSemantics::FixedArray { len, .. } => Some(*len),
+                            AnnotatedValueSemantics::String { .. }
+                            | AnnotatedValueSemantics::NumericList { .. }
+                            | AnnotatedValueSemantics::Record(_) => None,
+                        })
+                        .or_else(|| {
+                            meta.constant_value.as_ref().and_then(|value| match value {
+                                nu_protocol::Value::Nothing { .. } => Some(0),
+                                nu_protocol::Value::List { vals, .. } => Some(vals.len()),
+                                nu_protocol::Value::Binary { val, .. } => Some(val.len()),
+                                _ => None,
+                            })
+                        })
                 }) {
                     self.emit(MirInst::Copy {
                         dst: result_vreg,
@@ -3622,10 +3641,33 @@ impl<'a> HirToMirLowering<'a> {
                             ));
                         }
                     }
-                } else if let Some(AnnotatedValueSemantics::Binary { len }) =
-                    input_meta.and_then(|meta| meta.annotated_semantics)
+                } else if let Some(AnnotatedValueSemantics::Binary { len }) = input_meta
+                    .as_ref()
+                    .and_then(|meta| meta.annotated_semantics.as_ref())
                 {
-                    len
+                    *len
+                } else if let Some(AnnotatedValueSemantics::FixedArray { elem, len }) = input_meta
+                    .as_ref()
+                    .and_then(|meta| meta.annotated_semantics.as_ref())
+                {
+                    if let AnnotatedValueSemantics::Binary { len: elem_len } = elem.as_ref() {
+                        let lengths = (0..*len)
+                            .map(|_| {
+                                nu_protocol::Value::int(
+                                    *elem_len as i64,
+                                    nu_protocol::Span::unknown(),
+                                )
+                            })
+                            .collect();
+                        return self.lower_constant_value(
+                            src_dst,
+                            &nu_protocol::Value::list(lengths, nu_protocol::Span::unknown()),
+                        );
+                    }
+                    return Err(CompileError::UnsupportedInstruction(
+                        "bytes length requires compile-time known binary or list<binary> input in eBPF"
+                            .into(),
+                    ));
                 } else {
                     return Err(CompileError::UnsupportedInstruction(
                         "bytes length requires compile-time known binary or list<binary> input in eBPF"

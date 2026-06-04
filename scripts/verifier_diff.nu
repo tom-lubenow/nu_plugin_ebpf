@@ -13948,6 +13948,36 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "global-define-type-bytes-length-command"
+        category: "globals"
+        tags: [globals binary length global-define accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  0x[] | global-define --type bytes:8 scratch'
+            '  let b = (global-get scratch)'
+            '  ($b | length) == 8'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "global-define-type-bytes-is-empty"
+        category: "globals"
+        tags: [globals binary is-empty global-define accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  0x[] | global-define --type bytes:8 scratch'
+            '  let b = (global-get scratch)'
+            '  ($b | is-empty) == false'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "global-define-type-record-bytes-field-length"
         category: "globals"
         tags: [globals records binary bytes length global-define accept]
@@ -13957,6 +13987,21 @@ const FIXTURES = [
             '  { pid: 7 comm: 0x[] } | global-define --type "record{pid:int,comm:bytes:4}" seen_state'
             '  let state = (global-get seen_state)'
             '  ($state.comm | bytes length) == 4'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "global-define-type-array-bytes-bytes-length"
+        category: "globals"
+        tags: [globals arrays binary bytes length global-define accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  global-define --type "array{bytes:4:2}" buffers'
+            '  let lens = ((global-get buffers) | bytes length)'
+            '  ($lens | get 1) == 4'
             '}'
         ]
         local: "accept"
