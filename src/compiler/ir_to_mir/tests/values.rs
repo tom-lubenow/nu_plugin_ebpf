@@ -4614,6 +4614,82 @@ fn make_fill_literal_then_starts_with_program(
     program
 }
 
+fn make_ctx_pid_fill_then_starts_with_program(
+    fill_decl: DeclId,
+    starts_with_decl: DeclId,
+    width: Option<i64>,
+) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let mut stmts = vec![
+        HirStmt::LoadVariable {
+            dst: RegId::new(0),
+            var_id: ctx_var,
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: HirLiteral::CellPath(Box::new(CellPath {
+                members: vec![string_member("pid")],
+            })),
+        },
+        HirStmt::FollowCellPath {
+            src_dst: RegId::new(0),
+            path: RegId::new(1),
+        },
+    ];
+    let mut next_reg = 4u32;
+    let mut named = Vec::new();
+    if let Some(width) = width {
+        let width_reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadLiteral {
+            dst: width_reg,
+            lit: HirLiteral::Int(width),
+        });
+        named.push((b"width".to_vec(), width_reg));
+    }
+
+    stmts.push(HirStmt::Call {
+        decl_id: fill_decl,
+        src_dst: RegId::new(2),
+        args: HirCallArgs {
+            named,
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let prefix_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::LoadValue {
+        dst: prefix_reg,
+        val: Box::new(Value::string("0", Span::test_data())),
+    });
+    stmts.push(HirStmt::Call {
+        decl_id: starts_with_decl,
+        src_dst: RegId::new(3),
+        args: HirCallArgs {
+            positional: vec![prefix_reg],
+            pipeline_input: Some(RegId::new(2)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(3) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: next_reg,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
 fn make_string_list_fill_join_then_starts_with_program(
     fill_decl: DeclId,
     join_decl: DeclId,
@@ -13480,6 +13556,126 @@ fn test_lower_fill_right_on_known_int_materializes_padded_literal() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("fill int result consumed by str starts-with should compile through codegen");
+}
+
+#[test]
+fn test_lower_fill_on_runtime_unsigned_int_materializes_tracked_string() {
+    let fill_decl = DeclId::new(507);
+    let starts_with_decl = DeclId::new(508);
+    let hir = make_ctx_pid_fill_then_starts_with_program(fill_decl, starts_with_decl, None);
+    let decl_names = HashMap::from([
+        (fill_decl, "fill".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("fill should lower for runtime unsigned integer input when no padding is needed");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Integer,
+                    ..
+                }
+            )),
+        "expected runtime integer fill to format the input through StringAppend::Integer"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::StrCmp { len: 1, .. })),
+        "expected runtime fill output to remain a tracked string consumed by str starts-with"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("runtime integer fill result consumed by str starts-with should compile");
+}
+
+#[test]
+fn test_lower_fill_width_one_on_runtime_unsigned_int_materializes_tracked_string() {
+    let fill_decl = DeclId::new(1507);
+    let starts_with_decl = DeclId::new(1508);
+    let hir = make_ctx_pid_fill_then_starts_with_program(fill_decl, starts_with_decl, Some(1));
+    let decl_names = HashMap::from([
+        (fill_decl, "fill".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("fill --width 1 should lower for runtime unsigned integer input");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Integer,
+                    ..
+                }
+            )),
+        "expected runtime integer fill --width 1 to format through StringAppend::Integer"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("runtime integer fill --width 1 result should compile");
+}
+
+#[test]
+fn test_lower_fill_width_two_rejects_runtime_unsigned_int() {
+    let fill_decl = DeclId::new(2507);
+    let starts_with_decl = DeclId::new(2508);
+    let hir = make_ctx_pid_fill_then_starts_with_program(fill_decl, starts_with_decl, Some(2));
+    let decl_names = HashMap::from([
+        (fill_decl, "fill".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("fill --width 2 should reject runtime integer input because padding is dynamic");
+
+    assert!(
+        err.to_string()
+            .contains("fill requires compile-time known string, int, float, or filesize input"),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]

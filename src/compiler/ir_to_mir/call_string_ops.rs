@@ -2777,6 +2777,7 @@ impl<'a> HirToMirLowering<'a> {
         dst_vreg: VReg,
         src_dst_had_value: bool,
     ) -> Result<(), CompileError> {
+        let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
         let input_reg = self
             .pipeline_input_reg
             .or(src_dst_had_value.then_some(src_dst));
@@ -2806,6 +2807,14 @@ impl<'a> HirToMirLowering<'a> {
         let alignment = self.fill_alignment()?;
         let fill = self.fill_character()?;
 
+        if width <= 1 && self.fill_input_is_runtime_unsigned_integer(input_reg, input_vreg) {
+            return self.lower_runtime_unsigned_integer_fill_result(
+                src_dst,
+                result_vreg,
+                input_vreg,
+            );
+        }
+
         match self.fill_input(input_reg)? {
             KnownFillInput::List(input) => {
                 let output = input
@@ -2819,6 +2828,84 @@ impl<'a> HirToMirLowering<'a> {
                 self.lower_known_string_result(src_dst, result_vreg, output)
             }
         }
+    }
+
+    fn fill_input_is_runtime_unsigned_integer(
+        &self,
+        input_reg: Option<RegId>,
+        input_vreg: VReg,
+    ) -> bool {
+        let Some(meta) = input_reg.and_then(|reg| self.get_metadata(reg)) else {
+            return false;
+        };
+        if meta.constant_value.is_some()
+            || meta.literal_int.is_some()
+            || meta.literal_string.is_some()
+            || meta.string_slot.is_some()
+            || meta.list_buffer.is_some()
+        {
+            return false;
+        }
+
+        let input_ty = meta
+            .field_type
+            .as_ref()
+            .or_else(|| self.vreg_type_hints.get(&input_vreg));
+        matches!(
+            input_ty,
+            Some(MirType::U8 | MirType::U16 | MirType::U32 | MirType::U64)
+        )
+    }
+
+    fn lower_runtime_unsigned_integer_fill_result(
+        &mut self,
+        src_dst: RegId,
+        result_vreg: VReg,
+        input_vreg: VReg,
+    ) -> Result<(), CompileError> {
+        let aligned_len = align_to_eight(MAX_INT_STRING_LEN + 1)
+            .min(MAX_STRING_SIZE)
+            .max(16);
+        let slot = self
+            .func
+            .alloc_stack_slot(aligned_len, 8, StackSlotKind::StringBuffer);
+        let array_ty = MirType::Array {
+            elem: Box::new(MirType::U8),
+            len: aligned_len,
+        };
+        self.record_stack_slot_type(slot, array_ty.clone());
+
+        let len_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::Copy {
+            dst: len_vreg,
+            src: MirValue::Const(0),
+        });
+        self.vreg_type_hints.insert(len_vreg, MirType::I64);
+        self.emit(MirInst::StringAppend {
+            dst_buffer: slot,
+            dst_len: len_vreg,
+            val: MirValue::VReg(input_vreg),
+            val_type: StringAppendType::Integer,
+        });
+        self.emit(MirInst::Copy {
+            dst: result_vreg,
+            src: MirValue::StackSlot(slot),
+        });
+        self.vreg_type_hints.insert(
+            result_vreg,
+            MirType::Ptr {
+                pointee: Box::new(array_ty.clone()),
+                address_space: AddressSpace::Stack,
+            },
+        );
+
+        self.reset_call_result_metadata(src_dst);
+        let meta = self.get_or_create_metadata(src_dst);
+        meta.string_slot = Some(slot);
+        meta.string_len_vreg = Some(len_vreg);
+        meta.string_len_bound = Some(MAX_INT_STRING_LEN);
+        meta.field_type = Some(array_ty);
+        Ok(())
     }
 
     fn fill_input(&self, input_reg: Option<RegId>) -> Result<KnownFillInput, CompileError> {

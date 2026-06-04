@@ -37941,6 +37941,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-runtime-unsigned-int-fill"
+        category: "language-core"
+        tags: [int runtime fill context]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  $ctx.pid | fill | str starts-with "0"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-float-fill-right"
         category: "language-core"
         tags: [float fill right]
