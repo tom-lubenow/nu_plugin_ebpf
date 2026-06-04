@@ -29826,6 +29826,85 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "source-kfunc-list-push-front-rejects-missing-spin-lock"
+        category: "helper-state"
+        tags: [kfunc object graph source reject]
+        requires: [kernel-btf]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  map-define graph_items --kind hash --value-type "record{root:bpf_list_head:node_data:node,cookie:u64}"'
+            '  let entry = (0 | map-get graph_items --kind hash)'
+            '  if $entry {'
+            '    let obj = (kfunc-call "bpf_obj_new_impl" 1 0)'
+            '    if $obj {'
+            '      kfunc-call "bpf_list_push_front_impl" $entry.root $obj 0 0'
+            '    }'
+            '  }'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "requires bpf_spin_lock from the same map value"
+    }
+    {
+        name: "source-kfunc-list-push-front-same-key-repeated-map-root"
+        category: "helper-state"
+        tags: [kfunc object graph source accept]
+        requires: [kernel-btf]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  map-define graph_items --kind hash --value-type "record{lock:bpf_spin_lock,root:bpf_list_head:node_data:node,cookie:u64}"'
+            '  let key = 0'
+            '  let lock_entry = ($key | map-get graph_items --kind hash)'
+            '  if $lock_entry {'
+            '    let root_entry = ($key | map-get graph_items --kind hash)'
+            '    if $root_entry {'
+            '      let obj = (kfunc-call "bpf_obj_new_impl" 1 0)'
+            '      if $obj {'
+            '        helper-call "bpf_spin_lock" $lock_entry.lock'
+            '        kfunc-call "bpf_list_push_front_impl" $root_entry.root $obj 0 0'
+            '        helper-call "bpf_spin_unlock" $lock_entry.lock'
+            '      }'
+            '    }'
+            '  }'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "source-kfunc-list-push-front-rejects-different-key-repeated-map-root"
+        category: "helper-state"
+        tags: [kfunc object graph source reject]
+        requires: [kernel-btf]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  map-define graph_items --kind hash --value-type "record{lock:bpf_spin_lock,root:bpf_list_head:node_data:node,cookie:u64}"'
+            '  let lock_entry = (0 | map-get graph_items --kind hash)'
+            '  if $lock_entry {'
+            '    let root_entry = (1 | map-get graph_items --kind hash)'
+            '    if $root_entry {'
+            '      let obj = (kfunc-call "bpf_obj_new_impl" 1 0)'
+            '      if $obj {'
+            '        helper-call "bpf_spin_lock" $lock_entry.lock'
+            '        kfunc-call "bpf_list_push_front_impl" $root_entry.root $obj 0 0'
+            '        helper-call "bpf_spin_unlock" $lock_entry.lock'
+            '      }'
+            '    }'
+            '  }'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "requires bpf_spin_lock from the same map value"
+    }
+    {
         name: "source-kfunc-list-front-rejects-missing-spin-lock"
         category: "helper-state"
         tags: [kfunc object graph source reject]
@@ -29924,6 +30003,85 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
+    }
+    {
+        name: "source-kfunc-list-push-back-rejects-missing-spin-lock"
+        category: "helper-state"
+        tags: [kfunc object graph source reject]
+        requires: [kernel-btf]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  map-define graph_items --kind hash --value-type "record{root:bpf_list_head:node_data:node,cookie:u64}"'
+            '  let entry = (0 | map-get graph_items --kind hash)'
+            '  if $entry {'
+            '    let obj = (kfunc-call "bpf_obj_new_impl" 1 0)'
+            '    if $obj {'
+            '      kfunc-call "bpf_list_push_back_impl" $entry.root $obj 0 0'
+            '    }'
+            '  }'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "requires bpf_spin_lock from the same map value"
+    }
+    {
+        name: "source-kfunc-list-push-back-same-key-repeated-map-root"
+        category: "helper-state"
+        tags: [kfunc object graph source accept]
+        requires: [kernel-btf]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  map-define graph_items --kind hash --value-type "record{lock:bpf_spin_lock,root:bpf_list_head:node_data:node,cookie:u64}"'
+            '  let key = 0'
+            '  let lock_entry = ($key | map-get graph_items --kind hash)'
+            '  if $lock_entry {'
+            '    let root_entry = ($key | map-get graph_items --kind hash)'
+            '    if $root_entry {'
+            '      let obj = (kfunc-call "bpf_obj_new_impl" 1 0)'
+            '      if $obj {'
+            '        helper-call "bpf_spin_lock" $lock_entry.lock'
+            '        kfunc-call "bpf_list_push_back_impl" $root_entry.root $obj 0 0'
+            '        helper-call "bpf_spin_unlock" $lock_entry.lock'
+            '      }'
+            '    }'
+            '  }'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "source-kfunc-list-push-back-rejects-different-key-repeated-map-root"
+        category: "helper-state"
+        tags: [kfunc object graph source reject]
+        requires: [kernel-btf]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  map-define graph_items --kind hash --value-type "record{lock:bpf_spin_lock,root:bpf_list_head:node_data:node,cookie:u64}"'
+            '  let lock_entry = (0 | map-get graph_items --kind hash)'
+            '  if $lock_entry {'
+            '    let root_entry = (1 | map-get graph_items --kind hash)'
+            '    if $root_entry {'
+            '      let obj = (kfunc-call "bpf_obj_new_impl" 1 0)'
+            '      if $obj {'
+            '        helper-call "bpf_spin_lock" $lock_entry.lock'
+            '        kfunc-call "bpf_list_push_back_impl" $root_entry.root $obj 0 0'
+            '        helper-call "bpf_spin_unlock" $lock_entry.lock'
+            '      }'
+            '    }'
+            '  }'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "requires bpf_spin_lock from the same map value"
     }
     {
         name: "source-kfunc-list-pop-front-map-root"
