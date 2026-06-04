@@ -1132,6 +1132,113 @@ fn test_lower_global_get_string_concatenates_literal_suffix() {
 }
 
 #[test]
+fn test_lower_global_get_string_compares_literal_equality_and_inequality() {
+    let define_decl = DeclId::new(1304);
+    let get_decl = DeclId::new(1306);
+    let decl_names = HashMap::from([
+        (define_decl, "global-define".to_string()),
+        (get_decl, "global-get".to_string()),
+    ]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::String("left".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("string:8".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::String("lo".into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        named: vec![(b"type".to_vec(), RegId::new(1))],
+                        pipeline_input: Some(RegId::new(2)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: get_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::String("lo".into()),
+                },
+                HirStmt::BinaryOp {
+                    lhs_dst: RegId::new(3),
+                    op: nu_protocol::ast::Operator::Comparison(nu_protocol::ast::Comparison::Equal),
+                    rhs: RegId::new(4),
+                },
+                HirStmt::Call {
+                    decl_id: get_decl,
+                    src_dst: RegId::new(5),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(6),
+                    lit: HirLiteral::String("no".into()),
+                },
+                HirStmt::BinaryOp {
+                    lhs_dst: RegId::new(5),
+                    op: nu_protocol::ast::Operator::Comparison(
+                        nu_protocol::ast::Comparison::NotEqual,
+                    ),
+                    rhs: RegId::new(6),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(5) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 7,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("global-get string should compare against literals");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::StrCmp { len: 2, .. })),
+        "expected runtime string equality/inequality to lower through bounded StrCmp"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("runtime string equality and inequality should compile through codegen");
+}
+
+#[test]
 fn test_lower_global_set_and_get_record_string_field_materializes_string_slot() {
     let capture_var = VarId::new(300);
     let get_decl = DeclId::new(94);

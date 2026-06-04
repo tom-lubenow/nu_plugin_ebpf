@@ -932,6 +932,9 @@ String concatenation with `+` folds compile-time string operands and supports
 tracked string operands by copying them into a fresh bounded string buffer when
 each tracked source fits the 64-byte append-copy cap and the result fits the
 compiler string limit.
+Tracked string equality with `==` / `!=` is supported when one operand is a
+compile-time known string literal, using the tracked runtime length and a
+bounded byte comparison.
 
 | Primitive | Supported eBPF subset |
 |-----------|-----------------------|

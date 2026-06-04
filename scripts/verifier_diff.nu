@@ -13983,6 +13983,21 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "global-runtime-string-equality"
+        category: "globals"
+        tags: [globals string global-define equality accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  "lo" | global-define --type string:8 left'
+            '  let left = (global-get left)'
+            '  $left == "lo"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "global-define-type-record-builder-initializer"
         category: "globals"
         tags: [globals records global-define accept]

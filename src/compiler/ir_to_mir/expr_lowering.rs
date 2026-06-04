@@ -37,6 +37,14 @@ enum StringConcatSource {
     Slot { slot: StackSlotId, max_len: usize },
 }
 
+#[derive(Debug, Clone)]
+struct StringEqualitySource {
+    slot: StackSlotId,
+    len_vreg: VReg,
+    exact_len: Option<usize>,
+    max_len: usize,
+}
+
 impl<'a> HirToMirLowering<'a> {
     pub(super) fn lower_binary_op(
         &mut self,
@@ -104,6 +112,13 @@ impl<'a> HirToMirLowering<'a> {
                 )
                 | (Some(KnownSourceMatchKind::Scalar(ScalarMatchKind::String)), _)
                 | (_, Some(KnownSourceMatchKind::Scalar(ScalarMatchKind::String))) => {
+                    if self.lower_runtime_string_equality(
+                        lhs_dst,
+                        rhs,
+                        matches!(op, Operator::Comparison(Comparison::NotEqual)),
+                    )? {
+                        return Ok(());
+                    }
                     return Err(CompileError::UnsupportedInstruction(
                         "string equality requires compile-time constant operands in eBPF".into(),
                     ));
@@ -157,6 +172,154 @@ impl<'a> HirToMirLowering<'a> {
         self.set_reg_constant_value(lhs_dst, constant_value);
 
         Ok(())
+    }
+
+    fn lower_runtime_string_equality(
+        &mut self,
+        lhs_dst: RegId,
+        rhs: RegId,
+        invert: bool,
+    ) -> Result<bool, CompileError> {
+        let lhs_meta = self.get_metadata(lhs_dst).cloned();
+        let rhs_meta = self.get_metadata(rhs).cloned();
+        let lhs_source = lhs_meta
+            .as_ref()
+            .and_then(|meta| self.string_equality_source(meta));
+        let rhs_source = rhs_meta
+            .as_ref()
+            .and_then(|meta| self.string_equality_source(meta));
+
+        let (lhs_source, rhs_source) = match (lhs_source, rhs_source) {
+            (None, None) => return Ok(false),
+            (Some(lhs_source), Some(rhs_source)) => (lhs_source, rhs_source),
+            _ => {
+                return Err(CompileError::UnsupportedInstruction(
+                    "string equality requires string operands in eBPF".into(),
+                ));
+            }
+        };
+
+        let (known_source, other_source) = if lhs_source.exact_len.is_some() {
+            (&lhs_source, &rhs_source)
+        } else if rhs_source.exact_len.is_some() {
+            (&rhs_source, &lhs_source)
+        } else {
+            return Err(CompileError::UnsupportedInstruction(
+                "string equality requires at least one compile-time known string operand in eBPF"
+                    .into(),
+            ));
+        };
+        let compare_len = known_source
+            .exact_len
+            .expect("known source should have exact length");
+        let result_vreg = self.assign_fresh_vreg(lhs_dst);
+
+        if compare_len > other_source.max_len {
+            self.lower_runtime_string_equality_const(lhs_dst, result_vreg, invert, false);
+            return Ok(true);
+        }
+
+        let len_matches = self.func.alloc_vreg();
+        self.emit(MirInst::BinOp {
+            dst: len_matches,
+            op: BinOpKind::Eq,
+            lhs: MirValue::VReg(other_source.len_vreg),
+            rhs: MirValue::Const(compare_len as i64),
+        });
+        self.vreg_type_hints.insert(len_matches, MirType::Bool);
+
+        let equal_vreg = if compare_len == 0 {
+            len_matches
+        } else {
+            let bytes_match = self.func.alloc_vreg();
+            self.emit(MirInst::StrCmp {
+                dst: bytes_match,
+                lhs: other_source.slot,
+                lhs_offset: 0,
+                rhs: known_source.slot,
+                rhs_offset: 0,
+                len: compare_len,
+            });
+            self.vreg_type_hints.insert(bytes_match, MirType::Bool);
+
+            let equal_vreg = self.func.alloc_vreg();
+            self.emit(MirInst::BinOp {
+                dst: equal_vreg,
+                op: BinOpKind::And,
+                lhs: MirValue::VReg(len_matches),
+                rhs: MirValue::VReg(bytes_match),
+            });
+            self.vreg_type_hints.insert(equal_vreg, MirType::Bool);
+            equal_vreg
+        };
+
+        if invert {
+            self.emit(MirInst::BinOp {
+                dst: result_vreg,
+                op: BinOpKind::Eq,
+                lhs: MirValue::VReg(equal_vreg),
+                rhs: MirValue::Const(0),
+            });
+        } else {
+            self.emit(MirInst::Copy {
+                dst: result_vreg,
+                src: MirValue::VReg(equal_vreg),
+            });
+        }
+        self.finish_runtime_bool_result(lhs_dst, result_vreg);
+        Ok(true)
+    }
+
+    fn lower_runtime_string_equality_const(
+        &mut self,
+        dst: RegId,
+        dst_vreg: VReg,
+        invert: bool,
+        equal: bool,
+    ) {
+        let result = if invert { !equal } else { equal };
+        self.emit(MirInst::Copy {
+            dst: dst_vreg,
+            src: MirValue::Const(if result { 1 } else { 0 }),
+        });
+        self.finish_runtime_bool_result(dst, dst_vreg);
+    }
+
+    fn finish_runtime_bool_result(&mut self, dst: RegId, dst_vreg: VReg) {
+        self.reset_call_result_metadata(dst);
+        let meta = self.get_or_create_metadata(dst);
+        meta.field_type = Some(MirType::Bool);
+        self.vreg_type_hints.insert(dst_vreg, MirType::Bool);
+    }
+
+    fn string_equality_source(&self, meta: &RegMetadata) -> Option<StringEqualitySource> {
+        let slot = meta.string_slot?;
+        let len_vreg = meta.string_len_vreg?;
+        let slot_max_len = self
+            .stack_slot_size(slot)
+            .map(|size| size.saturating_sub(1))
+            .unwrap_or_else(|| meta.string_len_bound.unwrap_or(0));
+        let max_len = meta
+            .string_len_bound
+            .unwrap_or(slot_max_len)
+            .min(slot_max_len);
+        Some(StringEqualitySource {
+            slot,
+            len_vreg,
+            exact_len: Self::exact_string_metadata_len(meta),
+            max_len,
+        })
+    }
+
+    fn exact_string_metadata_len(meta: &RegMetadata) -> Option<usize> {
+        if let Some(value) = meta.literal_string.as_ref() {
+            return Some(value.len());
+        }
+
+        match meta.constant_value.as_ref()? {
+            Value::String { val, .. } | Value::Glob { val, .. } => Some(val.len()),
+            _ => None,
+        }
     }
 
     fn lower_runtime_string_concat(
