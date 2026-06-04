@@ -35322,6 +35322,32 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-seq-date-days-join"
+        category: "language-core"
+        tags: [aggregate list seq date days str join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  seq date --begin-date "2020-01-01" --days 5 --increment 2 | str join "," | str starts-with "2020-01-01,2020-01-03,2020-01-05"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "core-seq-date-periods-join"
+        category: "language-core"
+        tags: [aggregate list seq date periods str join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  seq date --begin-date "2020-01-01" --periods 4 --increment 3 | str join "," | str starts-with "2020-01-01,2020-01-04,2020-01-07,2020-01-10"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-seq-date-over-capacity-reject"
         category: "language-core"
         tags: [aggregate list seq date reject]
@@ -35329,6 +35355,20 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  seq date --begin-date "2020-01-01" --end-date "2020-03-15" | length'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "seq date output exceeds fixed string-list capacity 60"
+    }
+    {
+        name: "core-seq-date-periods-over-capacity-reject"
+        category: "language-core"
+        tags: [aggregate list seq date periods reject]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  seq date --begin-date "2020-01-01" --periods 61 | length'
             '}'
         ]
         local: "reject"

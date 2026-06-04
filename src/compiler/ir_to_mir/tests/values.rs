@@ -600,7 +600,9 @@ fn make_seq_date_join_then_starts_with_program(
     join_decl: DeclId,
     starts_with_decl: DeclId,
     begin: &str,
-    end: &str,
+    end: Option<&str>,
+    days: Option<i64>,
+    periods: Option<i64>,
     increment: Option<i64>,
     separator: &str,
     expected_prefix: &str,
@@ -608,14 +610,41 @@ fn make_seq_date_join_then_starts_with_program(
     let mut stmts = Vec::new();
     let mut named = Vec::new();
     let mut next_reg = 0u32;
-    for (name, lit) in [
-        ("begin-date", HirLiteral::String(begin.as_bytes().to_vec())),
-        ("end-date", HirLiteral::String(end.as_bytes().to_vec())),
-    ] {
+
+    let begin_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::LoadLiteral {
+        dst: begin_reg,
+        lit: HirLiteral::String(begin.as_bytes().to_vec()),
+    });
+    named.push((b"begin-date".to_vec(), begin_reg));
+
+    if let Some(end) = end {
         let reg = RegId::new(next_reg);
         next_reg += 1;
-        stmts.push(HirStmt::LoadLiteral { dst: reg, lit });
-        named.push((name.as_bytes().to_vec(), reg));
+        stmts.push(HirStmt::LoadLiteral {
+            dst: reg,
+            lit: HirLiteral::String(end.as_bytes().to_vec()),
+        });
+        named.push((b"end-date".to_vec(), reg));
+    }
+    if let Some(days) = days {
+        let reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadLiteral {
+            dst: reg,
+            lit: HirLiteral::Int(days),
+        });
+        named.push((b"days".to_vec(), reg));
+    }
+    if let Some(periods) = periods {
+        let reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadLiteral {
+            dst: reg,
+            lit: HirLiteral::Int(periods),
+        });
+        named.push((b"periods".to_vec(), reg));
     }
     if let Some(increment) = increment {
         let reg = RegId::new(next_reg);
@@ -14423,7 +14452,9 @@ fn test_lower_seq_date_range_feeds_str_join() {
         (
             "ascending increment",
             "2020-01-01",
-            "2020-01-05",
+            Some("2020-01-05"),
+            None,
+            None,
             Some(2),
             ",",
             "2020-01-01,2020-01-03,2020-01-05",
@@ -14431,14 +14462,56 @@ fn test_lower_seq_date_range_feeds_str_join() {
         (
             "descending default",
             "2020-01-03",
-            "2020-01-01",
+            Some("2020-01-01"),
+            None,
+            None,
             None,
             "|",
             "2020-01-03|2020-01-02|2020-01-01",
         ),
+        (
+            "days increment",
+            "2020-01-01",
+            None,
+            Some(5),
+            None,
+            Some(2),
+            ",",
+            "2020-01-01,2020-01-03,2020-01-05",
+        ),
+        (
+            "periods increment",
+            "2020-01-01",
+            None,
+            None,
+            Some(4),
+            Some(3),
+            ",",
+            "2020-01-01,2020-01-04,2020-01-07,2020-01-10",
+        ),
+        (
+            "days overrides end",
+            "2020-01-01",
+            Some("2020-01-10"),
+            Some(3),
+            None,
+            None,
+            ",",
+            "2020-01-01,2020-01-02,2020-01-03",
+        ),
+        (
+            "periods overrides days",
+            "2020-01-01",
+            None,
+            Some(3),
+            Some(4),
+            Some(2),
+            ",",
+            "2020-01-01,2020-01-03,2020-01-05,2020-01-07",
+        ),
     ];
 
-    for (index, (context, begin, end, increment, separator, expected)) in
+    for (index, (context, begin, end, days, periods, increment, separator, expected)) in
         scenarios.into_iter().enumerate()
     {
         let base_decl = 780 + index * 3;
@@ -14451,6 +14524,8 @@ fn test_lower_seq_date_range_feeds_str_join() {
             starts_with_decl,
             begin,
             end,
+            days,
+            periods,
             increment,
             separator,
             expected,
@@ -14499,7 +14574,13 @@ fn test_lower_seq_date_rejects_unsupported_forms() {
             "missing begin-date",
             vec![("end-date", HirLiteral::String(b"2020-01-03".to_vec()))],
             Vec::new(),
-            "seq date requires explicit --begin-date and --end-date",
+            "seq date requires explicit --begin-date",
+        ),
+        (
+            "missing range selector",
+            vec![("begin-date", HirLiteral::String(b"2020-01-01".to_vec()))],
+            Vec::new(),
+            "seq date requires explicit --end-date, --days, or --periods",
         ),
         (
             "non-default output format",
@@ -14529,6 +14610,33 @@ fn test_lower_seq_date_rejects_unsupported_forms() {
             ],
             Vec::new(),
             "seq date --increment requires a positive integer day count",
+        ),
+        (
+            "zero days",
+            vec![
+                ("begin-date", HirLiteral::String(b"2020-01-01".to_vec())),
+                ("days", HirLiteral::Int(0)),
+            ],
+            Vec::new(),
+            "seq date --days requires a positive integer",
+        ),
+        (
+            "negative periods",
+            vec![
+                ("begin-date", HirLiteral::String(b"2020-01-01".to_vec())),
+                ("periods", HirLiteral::Int(-1)),
+            ],
+            Vec::new(),
+            "seq date --periods requires a positive integer",
+        ),
+        (
+            "periods over capacity",
+            vec![
+                ("begin-date", HirLiteral::String(b"2020-01-01".to_vec())),
+                ("periods", HirLiteral::Int(61)),
+            ],
+            Vec::new(),
+            "seq date output exceeds fixed string-list capacity 60",
         ),
         (
             "over capacity",
