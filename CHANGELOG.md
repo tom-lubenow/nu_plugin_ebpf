@@ -26,6 +26,8 @@ documentation changes that matter to external alpha consumers.
 - Improved typed `global-define` record/array type-spec candidate diagnostics so
   unbalanced braces report brace errors instead of generic unsupported-type
   fallbacks.
+- Improved map key/value type-spec diagnostics so parser errors name `map key`
+  or `map value` instead of `global` when schemas reject before lowering.
 - Improved typed `global-define` array initializer diagnostics so top-level
   bad items use `initializer[0]` style paths instead of record-field wording.
 - Added verifier coverage for BTF target diagnostic help, typed global

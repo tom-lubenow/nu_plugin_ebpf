@@ -13780,6 +13780,21 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "map-define-value-type-invalid-array-length-rejects-context"
+        category: "maps"
+        tags: [maps map-define arrays diagnostics reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define bad_values --kind hash --value-type "array{u32:x}"'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "map value type spec 'array{u32:x}' has an invalid array length"
+    }
+    {
         name: "annotated-mut-record-alignment"
         category: "globals"
         tags: [globals records alignment accept]

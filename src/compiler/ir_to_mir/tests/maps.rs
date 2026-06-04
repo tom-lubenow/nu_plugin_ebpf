@@ -276,6 +276,54 @@ fn validate_map_value_type_spec_for_kind(spec: &str, kind: MapKind) -> Result<()
     )
 }
 
+#[test]
+fn test_map_value_type_spec_rejects_invalid_array_length_with_context() {
+    let err = HirToMirLowering::parse_named_map_value_type_spec("array{u32:x}")
+        .expect_err("map value type parser should reject invalid array lengths");
+
+    assert!(
+        err.to_string()
+            .contains("map value type spec 'array{u32:x}' has an invalid array length"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_map_key_type_spec_rejects_invalid_array_length_with_context() {
+    let err = HirToMirLowering::parse_named_map_key_type_spec("array{u32:x}")
+        .expect_err("map key type parser should reject invalid array lengths");
+
+    assert!(
+        err.to_string()
+            .contains("map key type spec 'array{u32:x}' has an invalid array length"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_map_value_type_spec_rejects_zero_byte_length_with_context() {
+    let err = HirToMirLowering::parse_named_map_value_type_spec("bytes:0")
+        .expect_err("map value type parser should reject zero byte lengths");
+
+    assert!(
+        err.to_string()
+            .contains("map value type spec 'bytes:0' requires a positive byte-array length"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_map_key_type_spec_rejects_empty_record_with_context() {
+    let err = HirToMirLowering::parse_named_map_key_type_spec("record{}")
+        .expect_err("map key type parser should reject empty records");
+
+    assert!(
+        err.to_string()
+            .contains("map key type spec 'record{}' requires at least one record field"),
+        "unexpected error: {err}"
+    );
+}
+
 fn validate_manual_map_value_type_for_kind(ty: MirType, kind: MapKind) -> Result<(), CompileError> {
     HirToMirLowering::validate_named_map_value_type_for_map(
         &MapRef {
@@ -5032,7 +5080,7 @@ fn test_map_value_type_spec_rejects_fixed_array_kptr_element() {
 
     assert!(
         err.to_string()
-            .contains("require elements that can be embedded in fixed arrays"),
+            .contains("elements that can be embedded in fixed arrays"),
         "unexpected error: {err}"
     );
 }
