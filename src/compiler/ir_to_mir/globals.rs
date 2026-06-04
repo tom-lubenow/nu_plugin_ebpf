@@ -761,6 +761,14 @@ impl ParsedNamedGlobalType {
             }
 
             let parsed_elem = Self::parse_with_context_at_path(elem_spec, context, record_path)?;
+            if context == NamedTypeSpecContext::GraphObjectPayload
+                && parsed_elem.ty.contains_bpf_refcount_struct()
+            {
+                let subject = type_spec_subject(spec, context, record_path);
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{subject} has bpf_refcount, but arrays of verifier-managed bpf_refcount fields are not supported"
+                )));
+            }
             if !parsed_elem.is_fixed_array_element_type() {
                 if let Some(path) = record_path {
                     return Err(CompileError::UnsupportedInstruction(format!(

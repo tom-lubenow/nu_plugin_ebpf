@@ -13840,6 +13840,21 @@ const FIXTURES = [
         error_contains: "record field 'root' type spec 'bpf_list_head:node_data:node:u64' requires the object payload schema to be record{...}"
     }
     {
+        name: "map-define-value-type-graph-root-payload-refcount-array-rejects-path"
+        category: "maps"
+        tags: [maps map-define graph records bpf_refcount diagnostics reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define graph_items --kind hash --value-type "record{root:bpf_list_head:node_data:node:record{refs:array{bpf_refcount:2},cookie:u64},count:u64}"'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "record field 'root.refs' type spec 'array{bpf_refcount:2}' has bpf_refcount, but arrays of verifier-managed bpf_refcount fields are not supported"
+    }
+    {
         name: "map-define-key-type-duplicate-record-field-rejects-path"
         category: "maps"
         tags: [maps map-define records diagnostics reject]

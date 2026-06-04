@@ -38,6 +38,8 @@ documentation changes that matter to external alpha consumers.
   type, node field, and payload conflicts report the offending record field.
 - Added coverage for nested map-value graph-root payload rejects so empty and
   non-record payload schemas keep the offending record field in diagnostics.
+- Rejected `array{bpf_refcount:N}` inside map-value graph-root payload schemas
+  with diagnostics that name the nested payload field.
 - Improved typed `global-define` array initializer diagnostics so top-level
   bad items use `initializer[0]` style paths instead of record-field wording.
 - Added verifier coverage for BTF target diagnostic help, typed global
