@@ -18708,6 +18708,24 @@ const FIXTURES = [
         error_contains: "kfunc 'bpf_dynptr_from_xdp' arg1 must be known zero"
     }
     {
+        name: "dynptr-kfunc-from-xdp-rejects-dynamic-flags"
+        category: "helper-state"
+        tags: [kfunc dynptr xdp flags reject]
+        requires: [kernel-btf]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  let d = "0123456789abcdef"'
+            '  let flags = (helper-call "bpf_get_prandom_u32")'
+            '  kfunc-call "bpf_dynptr_from_xdp" $ctx $flags $d'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'bpf_dynptr_from_xdp' arg1 must be known zero"
+    }
+    {
         name: "dynptr-kfunc-from-xdp-rejects-non-xdp-program"
         category: "helper-state"
         tags: [kfunc dynptr xdp program-policy reject]
@@ -19051,6 +19069,24 @@ const FIXTURES = [
             '{|ctx|'
             '  let d = "0123456789abcdef"'
             '  kfunc-call "bpf_dynptr_from_skb" $ctx 1 $d'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'bpf_dynptr_from_skb' arg1 must be known zero"
+    }
+    {
+        name: "dynptr-kfunc-from-skb-rejects-dynamic-flags"
+        category: "helper-state"
+        tags: [kfunc dynptr skb tc flags reject]
+        requires: [kernel-btf]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let d = "0123456789abcdef"'
+            '  let flags = (helper-call "bpf_get_prandom_u32")'
+            '  kfunc-call "bpf_dynptr_from_skb" $ctx $flags $d'
             '  0'
             '}'
         ]
