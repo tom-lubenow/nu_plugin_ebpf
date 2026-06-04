@@ -3481,6 +3481,7 @@ impl<'a> HirToMirLowering<'a> {
                             nu_protocol::Value::Record { val, .. } => Some(val.is_empty()),
                             nu_protocol::Value::Nothing { .. } => Some(true),
                             nu_protocol::Value::List { vals, .. } => Some(vals.is_empty()),
+                            nu_protocol::Value::Binary { val, .. } => Some(val.is_empty()),
                             _ => None,
                         })
                     }

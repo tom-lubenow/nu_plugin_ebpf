@@ -7596,6 +7596,39 @@ fn test_lower_is_empty_on_string_compares_length_to_zero() {
 }
 
 #[test]
+fn test_lower_empty_predicates_on_literal_binary_use_constant_length() {
+    let scenarios = [
+        ("is-empty", Vec::new(), 1),
+        ("is-empty", vec![0x01, 0x02], 0),
+        ("is-not-empty", Vec::new(), 0),
+        ("is-not-empty", vec![0x01, 0x02], 1),
+    ];
+
+    for (index, (command, input, expected)) in scenarios.into_iter().enumerate() {
+        let predicate_decl = DeclId::new(93_100 + index);
+        let hir = make_binary_pipeline_call_program(predicate_decl, input);
+        let decl_names = HashMap::from([(predicate_decl, command.to_string())]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("{command} should lower on literal binary input: {err}"));
+
+        assert_program_returns_constant(&result.program, expected, command);
+        assert_no_runtime_list_operations(&result.program, command);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("{command} literal binary result should compile through codegen: {err}")
+            });
+    }
+}
+
+#[test]
 fn test_lower_is_empty_on_string_list_builder_uses_constant_length() {
     let is_empty_decl = DeclId::new(273);
     let hir = make_string_list_builder_pipeline_call_program(is_empty_decl, &["ab"]);
@@ -28758,6 +28791,36 @@ fn assert_program_returns_constant(program: &MirProgram, expected: i64, context:
 
 fn assert_binary_starts_with_folded_true(program: &MirProgram, context: &str) {
     assert_program_returns_constant(program, 1, context);
+}
+
+fn make_binary_pipeline_call_program(decl_id: DeclId, input: Vec<u8>) -> HirProgram {
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::Binary(input),
+                },
+                HirStmt::Call {
+                    decl_id,
+                    src_dst: RegId::new(1),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(1) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 2,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
 fn make_binary_list_builder_pipeline_call_program(decl_id: DeclId, items: &[&[u8]]) -> HirProgram {
