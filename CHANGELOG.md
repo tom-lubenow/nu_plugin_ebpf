@@ -93,7 +93,7 @@ documentation changes that matter to external alpha consumers.
   to init/start/callback kfuncs.
 - Added bpf_wq init source verifier coverage for rejecting nonzero flags.
 - Added lower VCC/verifier_types coverage for bpf_wq init/start known-zero
-  flag enforcement.
+  flag enforcement on nonzero and dynamic operands.
 - Added bpf_wq source verifier coverage for rejecting unknown scalar init,
   start, and callback flags.
 - Added lower and source verifier coverage for rejecting nonzero bpf_wq callback
