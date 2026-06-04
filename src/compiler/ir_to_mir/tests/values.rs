@@ -604,6 +604,8 @@ fn make_seq_date_join_then_starts_with_program(
     days: Option<i64>,
     periods: Option<i64>,
     increment: Option<i64>,
+    input_format: Option<&str>,
+    output_format: Option<&str>,
     separator: &str,
     expected_prefix: &str,
 ) -> HirProgram {
@@ -654,6 +656,24 @@ fn make_seq_date_join_then_starts_with_program(
             lit: HirLiteral::Int(increment),
         });
         named.push((b"increment".to_vec(), reg));
+    }
+    if let Some(input_format) = input_format {
+        let reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadLiteral {
+            dst: reg,
+            lit: HirLiteral::String(input_format.as_bytes().to_vec()),
+        });
+        named.push((b"input-format".to_vec(), reg));
+    }
+    if let Some(output_format) = output_format {
+        let reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadLiteral {
+            dst: reg,
+            lit: HirLiteral::String(output_format.as_bytes().to_vec()),
+        });
+        named.push((b"output-format".to_vec(), reg));
     }
 
     let seq_date_reg = RegId::new(next_reg);
@@ -14456,6 +14476,8 @@ fn test_lower_seq_date_range_feeds_str_join() {
             None,
             None,
             Some(2),
+            None,
+            None,
             ",",
             "2020-01-01,2020-01-03,2020-01-05",
         ),
@@ -14463,6 +14485,8 @@ fn test_lower_seq_date_range_feeds_str_join() {
             "descending default",
             "2020-01-03",
             Some("2020-01-01"),
+            None,
+            None,
             None,
             None,
             None,
@@ -14476,6 +14500,8 @@ fn test_lower_seq_date_range_feeds_str_join() {
             Some(5),
             None,
             Some(2),
+            None,
+            None,
             ",",
             "2020-01-01,2020-01-03,2020-01-05",
         ),
@@ -14486,6 +14512,8 @@ fn test_lower_seq_date_range_feeds_str_join() {
             None,
             Some(4),
             Some(3),
+            None,
+            None,
             ",",
             "2020-01-01,2020-01-04,2020-01-07,2020-01-10",
         ),
@@ -14494,6 +14522,8 @@ fn test_lower_seq_date_range_feeds_str_join() {
             "2020-01-01",
             Some("2020-01-10"),
             Some(3),
+            None,
+            None,
             None,
             None,
             ",",
@@ -14506,13 +14536,52 @@ fn test_lower_seq_date_range_feeds_str_join() {
             Some(3),
             Some(4),
             Some(2),
+            None,
+            None,
             ",",
             "2020-01-01,2020-01-03,2020-01-05,2020-01-07",
         ),
+        (
+            "custom input and output formats",
+            "01/01/2020",
+            Some("01/03/2020"),
+            None,
+            None,
+            None,
+            Some("%m/%d/%Y"),
+            Some("%Y/%m/%d"),
+            ",",
+            "2020/01/01,2020/01/02,2020/01/03",
+        ),
+        (
+            "periods output format with time fields",
+            "2020-01-01",
+            None,
+            None,
+            Some(2),
+            None,
+            None,
+            Some("%Y-%m-%d %H:%M:%S"),
+            ",",
+            "2020-01-01 00:00:00,2020-01-02 00:00:00",
+        ),
     ];
 
-    for (index, (context, begin, end, days, periods, increment, separator, expected)) in
-        scenarios.into_iter().enumerate()
+    for (
+        index,
+        (
+            context,
+            begin,
+            end,
+            days,
+            periods,
+            increment,
+            input_format,
+            output_format,
+            separator,
+            expected,
+        ),
+    ) in scenarios.into_iter().enumerate()
     {
         let base_decl = 780 + index * 3;
         let seq_date_decl = DeclId::new(base_decl);
@@ -14527,6 +14596,8 @@ fn test_lower_seq_date_range_feeds_str_join() {
             days,
             periods,
             increment,
+            input_format,
+            output_format,
             separator,
             expected,
         );
@@ -14583,14 +14654,24 @@ fn test_lower_seq_date_rejects_unsupported_forms() {
             "seq date requires explicit --end-date, --days, or --periods",
         ),
         (
-            "non-default output format",
+            "input format mismatch",
             vec![
                 ("begin-date", HirLiteral::String(b"2020-01-01".to_vec())),
                 ("end-date", HirLiteral::String(b"2020-01-03".to_vec())),
-                ("output-format", HirLiteral::String(b"%m/%d/%Y".to_vec())),
+                ("input-format", HirLiteral::String(b"%m/%d/%Y".to_vec())),
             ],
             Vec::new(),
-            "seq date does not accept named argument 'output-format'",
+            "seq date --begin-date does not match --input-format",
+        ),
+        (
+            "non-string output format",
+            vec![
+                ("begin-date", HirLiteral::String(b"2020-01-01".to_vec())),
+                ("end-date", HirLiteral::String(b"2020-01-03".to_vec())),
+                ("output-format", HirLiteral::Int(1)),
+            ],
+            Vec::new(),
+            "seq date --output-format requires a compile-time string literal",
         ),
         (
             "reverse flag",

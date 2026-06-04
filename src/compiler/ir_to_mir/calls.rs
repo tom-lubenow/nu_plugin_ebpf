@@ -511,7 +511,11 @@ impl<'a> HirToMirLowering<'a> {
         self.lower_constant_value(src_dst, &nu_protocol::Value::list(values, Span::unknown()))
     }
 
-    fn lower_seq_date_constant(&mut self, src_dst: RegId) -> Result<(), CompileError> {
+    fn lower_seq_date_constant(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+    ) -> Result<(), CompileError> {
         const MAX_SEQ_DATE_LIST_CAPACITY: usize = 60;
 
         if self.pipeline_input.is_some() || self.pipeline_input_reg.is_some() {
@@ -542,9 +546,19 @@ impl<'a> HirToMirLowering<'a> {
                 "d",
                 "periods",
                 "p",
+                "input-format",
+                "i",
+                "output-format",
+                "o",
             ],
         )?;
 
+        let input_format = self
+            .seq_date_string_named_arg("input-format", "i", "seq date --input-format")?
+            .unwrap_or_else(|| "%Y-%m-%d".to_string());
+        let output_format = self
+            .seq_date_string_named_arg("output-format", "o", "seq date --output-format")?
+            .unwrap_or_else(|| "%Y-%m-%d".to_string());
         let begin_raw = self
             .seq_date_string_named_arg("begin-date", "b", "seq date --begin-date")?
             .ok_or_else(|| {
@@ -553,7 +567,7 @@ impl<'a> HirToMirLowering<'a> {
                 )
             })?;
 
-        let begin = Self::seq_date_parse_default_format(&begin_raw, "begin-date")?;
+        let begin = Self::seq_date_parse_with_format(&begin_raw, "begin-date", &input_format)?;
         let step_days = self.seq_date_increment_days()?.unwrap_or(1);
         if step_days <= 0 {
             return Err(CompileError::UnsupportedInstruction(
@@ -570,7 +584,13 @@ impl<'a> HirToMirLowering<'a> {
                     "seq date output exceeds fixed string-list capacity {MAX_SEQ_DATE_LIST_CAPACITY}"
                 )));
             }
-            Self::seq_date_values_for_count(begin, step_days, count, MAX_SEQ_DATE_LIST_CAPACITY)?
+            Self::seq_date_values_for_count(
+                begin,
+                step_days,
+                count,
+                MAX_SEQ_DATE_LIST_CAPACITY,
+                &output_format,
+            )?
         } else if let Some(days) =
             self.seq_date_integer_named_arg("days", "d", "seq date --days")?
         {
@@ -589,8 +609,13 @@ impl<'a> HirToMirLowering<'a> {
                 .ok_or_else(|| {
                     CompileError::UnsupportedInstruction("seq date overflows in eBPF".into())
                 })?;
-            let values =
-                Self::seq_date_values_between(begin, end, step_days, MAX_SEQ_DATE_LIST_CAPACITY)?;
+            let values = Self::seq_date_values_between(
+                begin,
+                end,
+                step_days,
+                MAX_SEQ_DATE_LIST_CAPACITY,
+                &output_format,
+            )?;
             debug_assert!(values.len() <= day_count);
             values
         } else {
@@ -602,11 +627,17 @@ impl<'a> HirToMirLowering<'a> {
                             .into(),
                     )
                 })?;
-            let end = Self::seq_date_parse_default_format(&end_raw, "end-date")?;
-            Self::seq_date_values_between(begin, end, step_days, MAX_SEQ_DATE_LIST_CAPACITY)?
+            let end = Self::seq_date_parse_with_format(&end_raw, "end-date", &input_format)?;
+            Self::seq_date_values_between(
+                begin,
+                end,
+                step_days,
+                MAX_SEQ_DATE_LIST_CAPACITY,
+                &output_format,
+            )?
         };
 
-        self.lower_constant_value(src_dst, &nu_protocol::Value::list(values, Span::unknown()))
+        self.lower_known_string_list_result(src_dst, dst_vreg, values)
     }
 
     fn seq_date_values_between(
@@ -614,9 +645,8 @@ impl<'a> HirToMirLowering<'a> {
         end: NaiveDate,
         step_days: i64,
         max_len: usize,
-    ) -> Result<Vec<nu_protocol::Value>, CompileError> {
-        const SEQ_DATE_FORMAT: &str = "%Y-%m-%d";
-
+        output_format: &str,
+    ) -> Result<Vec<String>, CompileError> {
         let ascending = begin <= end;
         let signed_step = if ascending { step_days } else { -step_days };
         let delta = Duration::try_days(signed_step).ok_or_else(|| {
@@ -632,10 +662,7 @@ impl<'a> HirToMirLowering<'a> {
                     "seq date output exceeds fixed string-list capacity {max_len}"
                 )));
             }
-            values.push(nu_protocol::Value::string(
-                date.format(SEQ_DATE_FORMAT).to_string(),
-                Span::unknown(),
-            ));
+            values.push(Self::seq_date_format_value(date, output_format)?);
             if date == end {
                 break;
             }
@@ -657,9 +684,8 @@ impl<'a> HirToMirLowering<'a> {
         step_days: i64,
         count: usize,
         max_len: usize,
-    ) -> Result<Vec<nu_protocol::Value>, CompileError> {
-        const SEQ_DATE_FORMAT: &str = "%Y-%m-%d";
-
+        output_format: &str,
+    ) -> Result<Vec<String>, CompileError> {
         if count > max_len {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "seq date output exceeds fixed string-list capacity {max_len}"
@@ -678,10 +704,7 @@ impl<'a> HirToMirLowering<'a> {
                     CompileError::UnsupportedInstruction("seq date overflows in eBPF".into())
                 })?;
             }
-            values.push(nu_protocol::Value::string(
-                date.format(SEQ_DATE_FORMAT).to_string(),
-                Span::unknown(),
-            ));
+            values.push(Self::seq_date_format_value(date, output_format)?);
         }
 
         Ok(values)
@@ -741,12 +764,37 @@ impl<'a> HirToMirLowering<'a> {
         })
     }
 
-    fn seq_date_parse_default_format(raw: &str, arg_name: &str) -> Result<NaiveDate, CompileError> {
-        NaiveDate::parse_from_str(raw, "%Y-%m-%d").map_err(|_| {
+    fn seq_date_parse_with_format(
+        raw: &str,
+        arg_name: &str,
+        input_format: &str,
+    ) -> Result<NaiveDate, CompileError> {
+        NaiveDate::parse_from_str(raw, input_format).map_err(|_| {
             CompileError::UnsupportedInstruction(format!(
-                "seq date --{arg_name} requires YYYY-MM-DD dates in eBPF"
+                "seq date --{arg_name} does not match --input-format '{input_format}' in eBPF"
             ))
         })
+    }
+
+    fn seq_date_format_value(date: NaiveDate, output_format: &str) -> Result<String, CompileError> {
+        let timestamp = date.and_hms_opt(0, 0, 0).ok_or_else(|| {
+            CompileError::UnsupportedInstruction("seq date overflows in eBPF".into())
+        })?;
+        let output = timestamp.format(output_format).to_string();
+        if output.as_bytes().contains(&0) {
+            return Err(CompileError::UnsupportedInstruction(
+                "seq date --output-format produced NUL bytes, which are not supported in eBPF"
+                    .into(),
+            ));
+        }
+        if output.len().saturating_add(1) > MAX_STRING_SIZE {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "seq date --output-format produced {} bytes; eBPF lowering supports at most {} bytes",
+                output.len(),
+                MAX_STRING_SIZE - 1
+            )));
+        }
+        Ok(output)
     }
 
     fn seq_char_arg(&self, reg: RegId) -> Result<u8, CompileError> {
@@ -1115,7 +1163,7 @@ impl<'a> HirToMirLowering<'a> {
             }
 
             "seq date" => {
-                self.lower_seq_date_constant(src_dst)?;
+                self.lower_seq_date_constant(src_dst, dst_vreg)?;
             }
 
             "random int" => {

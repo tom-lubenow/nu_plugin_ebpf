@@ -35348,6 +35348,19 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-seq-date-format-join"
+        category: "language-core"
+        tags: [aggregate list seq date format str join]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  seq date --input-format "%m/%d/%Y" --output-format "%Y/%m/%d" --begin-date "01/01/2020" --end-date "01/03/2020" | str join "," | str starts-with "2020/01/01,2020/01/02,2020/01/03"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-seq-date-over-capacity-reject"
         category: "language-core"
         tags: [aggregate list seq date reject]
