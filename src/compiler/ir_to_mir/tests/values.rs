@@ -32114,6 +32114,84 @@ fn make_bytes_split_then_pipeline_call_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_bytes_split_get_then_pipeline_call_program(
+    split_decl: DeclId,
+    get_decl: DeclId,
+    consumer_decl: DeclId,
+    input: Vec<u8>,
+    separator: HirLiteral,
+    index: i64,
+    consumer_arg: Option<HirLiteral>,
+) -> HirProgram {
+    let mut stmts = vec![
+        HirStmt::LoadLiteral {
+            dst: RegId::new(0),
+            lit: HirLiteral::Binary(input),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: separator,
+        },
+        HirStmt::Call {
+            decl_id: split_decl,
+            src_dst: RegId::new(2),
+            args: HirCallArgs {
+                positional: vec![RegId::new(1)],
+                pipeline_input: Some(RegId::new(0)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(3),
+            lit: HirLiteral::Int(index),
+        },
+        HirStmt::Call {
+            decl_id: get_decl,
+            src_dst: RegId::new(4),
+            args: HirCallArgs {
+                positional: vec![RegId::new(3)],
+                pipeline_input: Some(RegId::new(2)),
+                ..HirCallArgs::default()
+            },
+        },
+    ];
+
+    let mut consumer_args = HirCallArgs {
+        pipeline_input: Some(RegId::new(4)),
+        ..HirCallArgs::default()
+    };
+    let consumer_reg = if let Some(arg) = consumer_arg {
+        stmts.push(HirStmt::LoadLiteral {
+            dst: RegId::new(5),
+            lit: arg,
+        });
+        consumer_args.positional.push(RegId::new(5));
+        RegId::new(6)
+    } else {
+        RegId::new(5)
+    };
+    stmts.push(HirStmt::Call {
+        decl_id: consumer_decl,
+        src_dst: consumer_reg,
+        args: consumer_args,
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: consumer_reg },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: consumer_reg.get() + 1,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_bytes_split_program(
     split_decl: DeclId,
     input: Vec<u8>,
@@ -32359,6 +32437,79 @@ fn test_lower_bytes_split_folds_empty_parts_for_list_metadata_consumers() {
         compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
             .unwrap_or_else(|err| {
                 panic!("bytes split {context} consumed by {command} should compile: {err}")
+            });
+    }
+}
+
+#[test]
+fn test_lower_bytes_split_folds_unmaterializable_parts_through_get() {
+    let scenarios = [
+        (
+            "unequal selected non-empty part",
+            vec![0x61, 0x20, 0x62, 0x62],
+            HirLiteral::Binary(vec![0x20]),
+            1,
+            "bytes starts-with",
+            Some(HirLiteral::Binary(vec![0x62, 0x62])),
+            1,
+        ),
+        (
+            "empty selected part",
+            vec![0x20, 0x61],
+            HirLiteral::Binary(vec![0x20]),
+            0,
+            "bytes length",
+            None,
+            0,
+        ),
+        (
+            "string separator unequal selected part",
+            vec![0x61, 0x2d, 0x2d, 0x62, 0x62],
+            HirLiteral::String(b"--".to_vec()),
+            1,
+            "bytes starts-with",
+            Some(HirLiteral::Binary(vec![0x62, 0x62])),
+            1,
+        ),
+    ];
+
+    for (offset, (context, input, separator, index, consumer, consumer_arg, expected)) in
+        scenarios.into_iter().enumerate()
+    {
+        let base_decl = 280 + offset * 3;
+        let bytes_split_decl = DeclId::new(base_decl);
+        let get_decl = DeclId::new(base_decl + 1);
+        let consumer_decl = DeclId::new(base_decl + 2);
+        let hir = make_bytes_split_get_then_pipeline_call_program(
+            bytes_split_decl,
+            get_decl,
+            consumer_decl,
+            input,
+            separator,
+            index,
+            consumer_arg,
+        );
+        let decl_names = HashMap::from([
+            (bytes_split_decl, "bytes split".to_string()),
+            (get_decl, "get".to_string()),
+            (consumer_decl, consumer.to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("bytes split should fold {context} through get: {err}"));
+
+        assert_program_returns_constant(&result.program, expected, context);
+        assert_no_runtime_list_operations(&result.program, context);
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("bytes split {context} consumed through get should compile: {err}")
             });
     }
 }
