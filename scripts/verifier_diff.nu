@@ -31531,6 +31531,40 @@ const FIXTURES = [
         error_contains: "expects bpf_rb_root pointer"
     }
     {
+        name: "source-kfunc-rbtree-remove-rejects-list-node"
+        category: "helper-state"
+        tags: [kfunc object graph source reject]
+        requires: [kernel-btf]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  map-define rb_items --kind hash --value-type "record{lock:bpf_spin_lock,root:bpf_rb_root:rb_item:rb,cookie:u64}"'
+            '  map-define graph_items --kind hash --value-type "record{lock:bpf_spin_lock,root:bpf_list_head:node_data:node,cookie:u64}"'
+            '  let rb_entry = (0 | map-get rb_items --kind hash)'
+            '  if $rb_entry {'
+            '    let graph_entry = (0 | map-get graph_items --kind hash)'
+            '    if $graph_entry {'
+            '      helper-call "bpf_spin_lock" $graph_entry.lock'
+            '      let node = (kfunc-call "bpf_list_front" $graph_entry.root)'
+            '      helper-call "bpf_spin_unlock" $graph_entry.lock'
+            '      if $node {'
+            '        helper-call "bpf_spin_lock" $rb_entry.lock'
+            '        let obj = (kfunc-call "bpf_rbtree_remove" $rb_entry.root $node)'
+            '        helper-call "bpf_spin_unlock" $rb_entry.lock'
+            '        if $obj {'
+            '          kfunc-call "bpf_obj_drop_impl" $obj 0'
+            '        }'
+            '      }'
+            '    }'
+            '  }'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "expects bpf_rb_node pointer"
+    }
+    {
         name: "source-kfunc-rbtree-remove-projects-object-payload"
         category: "helper-state"
         tags: [kfunc object graph source accept]
