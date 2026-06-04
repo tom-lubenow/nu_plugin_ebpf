@@ -3585,46 +3585,52 @@ impl<'a> HirToMirLowering<'a> {
                     ));
                 }
 
-                let input = input_reg
-                    .and_then(|reg| self.get_metadata(reg))
+                let input_meta = input_reg.and_then(|reg| self.get_metadata(reg)).cloned();
+                let len = if let Some(input) = input_meta
+                    .as_ref()
                     .and_then(|meta| meta.constant_value.as_ref())
                     .cloned()
-                    .ok_or_else(|| {
-                        CompileError::UnsupportedInstruction(
-                            "bytes length requires compile-time known binary or list<binary> input in eBPF"
-                                .into(),
-                        )
-                    })?;
-                let len = match input {
-                    nu_protocol::Value::Binary { val, .. } => val.len(),
-                    nu_protocol::Value::List { vals, .. } => {
-                        let lengths = vals
-                            .iter()
-                            .enumerate()
-                            .map(|(index, item)| {
-                                let nu_protocol::Value::Binary { val, .. } = item else {
-                                    return Err(CompileError::UnsupportedInstruction(format!(
-                                        "bytes length requires binary list items in eBPF; item {index} has type {}",
-                                        item.get_type()
-                                    )));
-                                };
-                                Ok(nu_protocol::Value::int(
-                                    val.len() as i64,
-                                    nu_protocol::Span::unknown(),
-                                ))
-                            })
-                            .collect::<Result<Vec<_>, _>>()?;
-                        return self.lower_constant_value(
-                            src_dst,
-                            &nu_protocol::Value::list(lengths, nu_protocol::Span::unknown()),
-                        );
+                {
+                    match input {
+                        nu_protocol::Value::Binary { val, .. } => val.len(),
+                        nu_protocol::Value::List { vals, .. } => {
+                            let lengths = vals
+                                .iter()
+                                .enumerate()
+                                .map(|(index, item)| {
+                                    let nu_protocol::Value::Binary { val, .. } = item else {
+                                        return Err(CompileError::UnsupportedInstruction(format!(
+                                            "bytes length requires binary list items in eBPF; item {index} has type {}",
+                                            item.get_type()
+                                        )));
+                                    };
+                                    Ok(nu_protocol::Value::int(
+                                        val.len() as i64,
+                                        nu_protocol::Span::unknown(),
+                                    ))
+                                })
+                                .collect::<Result<Vec<_>, _>>()?;
+                            return self.lower_constant_value(
+                                src_dst,
+                                &nu_protocol::Value::list(lengths, nu_protocol::Span::unknown()),
+                            );
+                        }
+                        _ => {
+                            return Err(CompileError::UnsupportedInstruction(
+                                "bytes length requires compile-time known binary or list<binary> input in eBPF"
+                                    .into(),
+                            ));
+                        }
                     }
-                    _ => {
-                        return Err(CompileError::UnsupportedInstruction(
-                            "bytes length requires compile-time known binary or list<binary> input in eBPF"
-                                .into(),
-                        ));
-                    }
+                } else if let Some(AnnotatedValueSemantics::Binary { len }) =
+                    input_meta.and_then(|meta| meta.annotated_semantics)
+                {
+                    len
+                } else {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "bytes length requires compile-time known binary or list<binary> input in eBPF"
+                            .into(),
+                    ));
                 };
                 self.emit(MirInst::Copy {
                     dst: result_vreg,

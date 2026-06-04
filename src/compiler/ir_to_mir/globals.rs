@@ -616,7 +616,7 @@ impl ParsedNamedGlobalType {
                 list_max_len: None,
                 string_slot_len: None,
                 string_content_cap: None,
-                semantics: None,
+                semantics: Some(AnnotatedValueSemantics::Binary { len }),
                 shape: NamedGlobalTypeShape::Bytes { len },
             });
         }
@@ -1327,6 +1327,10 @@ impl<'a> HirToMirLowering<'a> {
             {
                 Some(existing.clone())
             }
+            (
+                AnnotatedValueSemantics::Binary { len: existing_len },
+                AnnotatedValueSemantics::Binary { len: incoming_len },
+            ) if existing_len == incoming_len => Some(existing.clone()),
             (
                 AnnotatedValueSemantics::NumericList {
                     max_len: existing_max_len,

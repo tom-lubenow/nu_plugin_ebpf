@@ -3271,6 +3271,7 @@ impl<'a> HirToMirLowering<'a> {
 
     fn describe_annotated_semantics_type(semantics: &AnnotatedValueSemantics) -> Option<String> {
         match semantics {
+            AnnotatedValueSemantics::Binary { .. } => Some("binary".to_string()),
             AnnotatedValueSemantics::String { .. } => Some("string".to_string()),
             AnnotatedValueSemantics::NumericList { .. } => Some("list<int>".to_string()),
             AnnotatedValueSemantics::Record(fields) => {

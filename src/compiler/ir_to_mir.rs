@@ -264,6 +264,9 @@ struct RegMetadata {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AnnotatedValueSemantics {
+    Binary {
+        len: usize,
+    },
     String {
         slot_len: usize,
         content_cap: usize,

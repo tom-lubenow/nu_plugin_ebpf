@@ -17,6 +17,9 @@ impl<'a> HirToMirLowering<'a> {
         value: &Value,
     ) -> Result<Option<AnnotatedValueSemantics>, CompileError> {
         match value {
+            Value::Binary { val, .. } => {
+                Ok(Some(AnnotatedValueSemantics::Binary { len: val.len() }))
+            }
             Value::String { .. } | Value::Glob { .. } => {
                 let Some((_ty, _data, slot_len)) = Self::mutable_string_global_repr(value) else {
                     return Ok(None);

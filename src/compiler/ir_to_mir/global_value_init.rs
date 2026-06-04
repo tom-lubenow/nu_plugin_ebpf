@@ -475,6 +475,12 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         match declared_type {
+            nu_protocol::Type::Binary => {
+                let Value::Binary { val, .. } = value else {
+                    return Ok(None);
+                };
+                return Ok(Some(AnnotatedValueSemantics::Binary { len: val.len() }));
+            }
             nu_protocol::Type::String | nu_protocol::Type::Glob => {
                 let Some((_ty, _data, slot_len)) = Self::mutable_string_global_repr(value) else {
                     return Ok(None);
