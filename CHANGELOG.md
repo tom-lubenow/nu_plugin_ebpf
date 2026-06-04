@@ -48,6 +48,9 @@ documentation changes that matter to external alpha consumers.
   must contain a `bpf_refcount` field before acquiring a referenced clone.
 - Kept lower verifier/VCC `bpf_refcount_acquire_impl` checks in lockstep with
   type inference for object payloads that lack `bpf_refcount`.
+- Added rbtree source verifier coverage for rejecting
+  `bpf_refcount_acquire_impl` on projected graph payloads without
+  `bpf_refcount`.
 - Improved typed `global-define` array initializer diagnostics so top-level
   bad items use `initializer[0]` style paths instead of record-field wording.
 - Added verifier coverage for BTF target diagnostic help, typed global
