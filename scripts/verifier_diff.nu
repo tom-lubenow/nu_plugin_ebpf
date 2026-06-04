@@ -39145,6 +39145,20 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "core-record-values-mixed-metadata-consumers"
+        category: "language-core"
+        tags: [aggregate record values list mixed length get string]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let length_ok = (({ pid: 7 comm: "nu" } | values | length) == 2)'
+            '  $length_ok and ({ pid: 7 comm: "nu" } | values | get 1 | str starts-with "nu")'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-record-columns-get"
         category: "language-core"
         tags: [aggregate record columns list string]

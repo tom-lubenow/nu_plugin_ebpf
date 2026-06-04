@@ -758,7 +758,9 @@ impl<'a> HirToMirLowering<'a> {
                 .collect::<Vec<_>>();
             let value_list = nu_protocol::Value::list(vals, Span::unknown());
             if self.current_call_result_metadata_only
-                && Self::record_values_list_is_finite_float_only(&value_list)
+                && !crate::compiler::hir::supports_numeric_constant_list(&value_list)
+                && !crate::compiler::hir::supports_fixed_array_constant_list(&value_list)
+                && Self::record_values_list_is_metadata_only_supported(&value_list)
             {
                 self.lower_compile_time_only_constant_value(src_dst, &value_list);
                 return Ok(());
@@ -820,14 +822,26 @@ impl<'a> HirToMirLowering<'a> {
         Ok(())
     }
 
-    fn record_values_list_is_finite_float_only(value: &nu_protocol::Value) -> bool {
+    fn record_values_list_is_metadata_only_supported(value: &nu_protocol::Value) -> bool {
         matches!(
             value,
-            nu_protocol::Value::List { vals, .. } if !vals.is_empty()
-                && vals.iter().all(|value| {
-                    matches!(value, nu_protocol::Value::Float { val, .. } if val.is_finite())
-                })
+            nu_protocol::Value::List { vals, .. } if vals.iter().all(Self::record_values_metadata_only_value_supported)
         )
+    }
+
+    fn record_values_metadata_only_value_supported(value: &nu_protocol::Value) -> bool {
+        match value {
+            nu_protocol::Value::Bool { .. }
+            | nu_protocol::Value::Int { .. }
+            | nu_protocol::Value::Filesize { .. }
+            | nu_protocol::Value::Duration { .. }
+            | nu_protocol::Value::Nothing { .. }
+            | nu_protocol::Value::Binary { .. }
+            | nu_protocol::Value::String { .. }
+            | nu_protocol::Value::Glob { .. } => true,
+            nu_protocol::Value::Float { val, .. } => val.is_finite(),
+            _ => false,
+        }
     }
 
     pub(super) fn lower_metadata_record_columns(

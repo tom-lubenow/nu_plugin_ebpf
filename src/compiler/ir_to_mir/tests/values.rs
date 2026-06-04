@@ -5634,6 +5634,116 @@ fn make_record_mixed_string_values_program(values_decl: DeclId) -> HirProgram {
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_record_mixed_values_length_program(values_decl: DeclId, length_decl: DeclId) -> HirProgram {
+    let mut record = Record::new();
+    record.push("pid", Value::int(7, Span::test_data()));
+    record.push("comm", Value::string("nu", Span::test_data()));
+
+    let stmts = vec![
+        HirStmt::LoadValue {
+            dst: RegId::new(0),
+            val: Box::new(Value::record(record, Span::test_data())),
+        },
+        HirStmt::Call {
+            decl_id: values_decl,
+            src_dst: RegId::new(1),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(0)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::Call {
+            decl_id: length_decl,
+            src_dst: RegId::new(2),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(1)),
+                ..HirCallArgs::default()
+            },
+        },
+    ];
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(2) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
+fn make_record_mixed_values_then_get_then_starts_with_program(
+    values_decl: DeclId,
+    get_decl: DeclId,
+    starts_with_decl: DeclId,
+) -> HirProgram {
+    let mut record = Record::new();
+    record.push("pid", Value::int(7, Span::test_data()));
+    record.push("comm", Value::string("nu", Span::test_data()));
+
+    let stmts = vec![
+        HirStmt::LoadValue {
+            dst: RegId::new(0),
+            val: Box::new(Value::record(record, Span::test_data())),
+        },
+        HirStmt::Call {
+            decl_id: values_decl,
+            src_dst: RegId::new(1),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(0)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(2),
+            lit: HirLiteral::Int(1),
+        },
+        HirStmt::Call {
+            decl_id: get_decl,
+            src_dst: RegId::new(3),
+            args: HirCallArgs {
+                positional: vec![RegId::new(2)],
+                pipeline_input: Some(RegId::new(1)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::LoadValue {
+            dst: RegId::new(4),
+            val: Box::new(Value::string("nu", Span::test_data())),
+        },
+        HirStmt::Call {
+            decl_id: starts_with_decl,
+            src_dst: RegId::new(5),
+            args: HirCallArgs {
+                positional: vec![RegId::new(4)],
+                pipeline_input: Some(RegId::new(3)),
+                ..HirCallArgs::default()
+            },
+        },
+    ];
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(5) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 6,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_record_string_values_then_get_then_starts_with_program(
     values_decl: DeclId,
     get_decl: DeclId,
@@ -31124,6 +31234,79 @@ fn test_lower_values_rejects_heterogeneous_metadata_record_field() {
             .contains("values supports only numeric scalar record fields"),
         "unexpected error: {err}"
     );
+}
+
+#[test]
+fn test_lower_values_on_mixed_constant_record_feeds_metadata_length() {
+    let values_decl = DeclId::new(1121);
+    let length_decl = DeclId::new(1122);
+    let hir = make_record_mixed_values_length_program(values_decl, length_decl);
+    let decl_names = HashMap::from([
+        (values_decl, "values".to_string()),
+        (length_decl, "length".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("mixed constant record values should feed metadata-only length");
+
+    assert_program_returns_constant(&result.program, 2, "mixed record values length");
+    assert_no_runtime_list_operations(&result.program, "mixed record values length");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("mixed record values length should compile through codegen");
+}
+
+#[test]
+fn test_lower_values_on_mixed_constant_record_feeds_metadata_get() {
+    let values_decl = DeclId::new(1123);
+    let get_decl = DeclId::new(1124);
+    let starts_with_decl = DeclId::new(1125);
+    let hir = make_record_mixed_values_then_get_then_starts_with_program(
+        values_decl,
+        get_decl,
+        starts_with_decl,
+    );
+    let decl_names = HashMap::from([
+        (values_decl, "values".to_string()),
+        (get_decl, "get".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("mixed constant record values should feed metadata-only get");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"nu\0")
+            )),
+        "expected mixed values | get 1 to feed the constant string value"
+    );
+    assert_no_runtime_list_operations(&result.program, "mixed record values get");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("mixed record values get should compile through codegen");
 }
 
 #[test]
