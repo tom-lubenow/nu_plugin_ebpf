@@ -36948,6 +36948,67 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "source-kfunc-sched-ext-init-dsq"
+        category: "kfunc"
+        tags: [kfunc sched-ext dsq source accept]
+        target: "struct_ops:sched_ext_ops"
+        program: [
+            '{'
+            '    name: "nu.demo_1"'
+            '    init: {|ctx|'
+            '        let err = (kfunc-call "scx_bpf_create_dsq" 1 0)'
+            '        if $err == 0 {'
+            '            kfunc-call "scx_bpf_destroy_dsq" 1'
+            '        }'
+            '        0'
+            '    }'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-kfunc-sched-ext-dispatch-core"
+        category: "kfunc"
+        tags: [kfunc sched-ext dispatch dsq source accept]
+        target: "struct_ops:sched_ext_ops"
+        program: [
+            '{'
+            '    name: "nu.demo_1"'
+            '    dispatch: {|ctx|'
+            '        let slots = (kfunc-call "scx_bpf_dispatch_nr_slots")'
+            '        if $slots {'
+            '            kfunc-call "scx_bpf_dispatch_cancel"'
+            '        }'
+            '        let moved = (kfunc-call "scx_bpf_dsq_move_to_local" 0)'
+            '        let queued = (kfunc-call "scx_bpf_dsq_nr_queued" 0)'
+            '        if ($moved + $queued) { 0 } else { 0 }'
+            '    }'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-kfunc-sched-ext-enqueue-dsq-insert"
+        category: "kfunc"
+        tags: [kfunc sched-ext dsq source accept]
+        target: "struct_ops:sched_ext_ops"
+        program: [
+            '{'
+            '    name: "nu.demo_1"'
+            '    enqueue: {|ctx|'
+            '        let p = $ctx.arg.p'
+            '        kfunc-call "scx_bpf_dsq_insert" $p 0 0 0'
+            '        kfunc-call "scx_bpf_dsq_insert_vtime" $p 0 0 0 0'
+            '        0'
+            '    }'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "struct-ops-callback-target-rejects-attach"
         category: "program-model"
         tags: [struct-ops callback attach reject]

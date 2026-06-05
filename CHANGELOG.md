@@ -6,6 +6,9 @@ documentation changes that matter to external alpha consumers.
 
 ## Unreleased
 
+- Added source verifier coverage for sched_ext DSQ `init`, `dispatch`, and
+  `enqueue` kfunc flows, including DSQ create/destroy, dispatch counters and
+  cancel/move helpers, and stable DSQ insert variants.
 - Added source verifier coverage for sched_ext `select_cpu` kfunc flows,
   including scalar/task queries, cpumask reference release, per-node idle-pick
   flag rejects, and `scx_bpf_task_cgroup` leak rejects.
