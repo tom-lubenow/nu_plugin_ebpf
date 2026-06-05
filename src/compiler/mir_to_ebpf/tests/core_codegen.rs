@@ -967,6 +967,31 @@ fn test_ensure_reg_rematerializes_spilled_const() {
 }
 
 #[test]
+fn test_ensure_reg_rematerializes_large_spilled_const() {
+    let program = LirProgram::new(LirFunction::new());
+    let mut compiler = MirToEbpfCompiler::new(&program, None);
+
+    compiler.vreg_spills.insert(VReg(0), -8);
+    compiler
+        .vreg_remat
+        .insert(VReg(0), RematExpr::Const(0x1_0000_0000));
+
+    let reg = compiler
+        .ensure_reg(VReg(0))
+        .expect("large rematerialized ensure_reg should succeed");
+    assert_eq!(reg, EbpfReg::R0);
+    assert_eq!(compiler.instructions.len(), 2);
+
+    let lo = compiler.instructions[0];
+    let hi = compiler.instructions[1];
+    assert_eq!(lo.opcode, opcode::LD_DW_IMM);
+    assert_eq!(lo.dst_reg, EbpfReg::R0.as_u8());
+    assert_eq!(lo.imm, 0);
+    assert_eq!(hi.opcode, 0);
+    assert_eq!(hi.imm, 1);
+}
+
+#[test]
 fn test_compile_instruction_stores_non_remat_spilled_def() {
     let program = LirProgram::new(LirFunction::new());
     let mut compiler = MirToEbpfCompiler::new(&program, None);

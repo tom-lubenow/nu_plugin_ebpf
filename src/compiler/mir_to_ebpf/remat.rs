@@ -197,13 +197,7 @@ impl<'a> MirToEbpfCompiler<'a> {
     fn emit_remat_expr(&mut self, dst: EbpfReg, expr: RematExpr) -> Result<(), CompileError> {
         match expr {
             RematExpr::Const(value) => {
-                let imm = i32::try_from(value).map_err(|_| {
-                    CompileError::UnsupportedInstruction(format!(
-                        "rematerialized constant {} out of i32 range",
-                        value
-                    ))
-                })?;
-                self.instructions.push(EbpfInsn::mov64_imm(dst, imm));
+                self.emit_load_const(dst, value);
             }
             RematExpr::StackAddr { slot, addend } => {
                 let base = self.slot_offsets.get(&slot).copied().ok_or_else(|| {
