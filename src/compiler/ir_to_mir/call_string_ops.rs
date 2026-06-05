@@ -2815,8 +2815,13 @@ impl<'a> HirToMirLowering<'a> {
                     || (width == 2
                         && matches!(alignment, FillAlignment::Left | FillAlignment::Center)
                         && fill.len() <= 1)
+                    || (width == 3 && alignment == FillAlignment::Left && fill.len() <= 1)
                     || (width == 2
                         && matches!(alignment, FillAlignment::Right | FillAlignment::CenterRight)
+                        && fill.len() <= 1
+                        && matches!(input_ty, MirType::U8 | MirType::U16 | MirType::U32))
+                    || (width == 3
+                        && alignment == FillAlignment::Right
                         && fill.len() <= 1
                         && matches!(input_ty, MirType::U8 | MirType::U16 | MirType::U32))
             });
@@ -2884,7 +2889,11 @@ impl<'a> HirToMirLowering<'a> {
         alignment: FillAlignment,
         fill: &str,
     ) -> Result<(), CompileError> {
-        let pad_len = if width == 2 { fill.len() } else { 0 };
+        let pad_len = if (2..=3).contains(&width) {
+            fill.len() * (width - 1)
+        } else {
+            0
+        };
         let string_len_bound = MAX_INT_STRING_LEN + pad_len;
         let aligned_len = align_to_eight(string_len_bound + 1)
             .min(MAX_STRING_SIZE)
@@ -2904,41 +2913,32 @@ impl<'a> HirToMirLowering<'a> {
             src: MirValue::Const(0),
         });
         self.vreg_type_hints.insert(len_vreg, MirType::I64);
-        if width == 2
-            && matches!(alignment, FillAlignment::Right | FillAlignment::CenterRight)
-            && !fill.is_empty()
-        {
-            let needs_padding = self.func.alloc_vreg();
-            self.emit(MirInst::BinOp {
-                dst: needs_padding,
-                op: BinOpKind::Lt,
-                lhs: MirValue::VReg(input_vreg),
-                rhs: MirValue::Const(10),
-            });
-            self.vreg_type_hints.insert(needs_padding, MirType::Bool);
-
-            let pad_block = self.func.alloc_block();
-            let continuation_block = self.func.alloc_block();
-            self.terminate(MirInst::Branch {
-                cond: needs_padding,
-                if_true: pad_block,
-                if_false: continuation_block,
-            });
-
-            self.current_block = pad_block;
-            self.emit(MirInst::StringAppend {
-                dst_buffer: slot,
-                dst_len: len_vreg,
-                val: MirValue::Const(0),
-                val_type: StringAppendType::Literal {
-                    bytes: fill.as_bytes().to_vec(),
-                },
-            });
-            self.terminate(MirInst::Jump {
-                target: continuation_block,
-            });
-
-            self.current_block = continuation_block;
+        if !fill.is_empty() {
+            if width == 2 && matches!(alignment, FillAlignment::Right | FillAlignment::CenterRight)
+            {
+                self.emit_runtime_fill_padding_if_lt(
+                    slot,
+                    len_vreg,
+                    MirValue::VReg(input_vreg),
+                    10,
+                    fill,
+                );
+            } else if width == 3 && alignment == FillAlignment::Right {
+                self.emit_runtime_fill_padding_if_lt(
+                    slot,
+                    len_vreg,
+                    MirValue::VReg(input_vreg),
+                    10,
+                    fill,
+                );
+                self.emit_runtime_fill_padding_if_lt(
+                    slot,
+                    len_vreg,
+                    MirValue::VReg(input_vreg),
+                    100,
+                    fill,
+                );
+            }
         }
         self.emit(MirInst::StringAppend {
             dst_buffer: slot,
@@ -2946,41 +2946,31 @@ impl<'a> HirToMirLowering<'a> {
             val: MirValue::VReg(input_vreg),
             val_type: StringAppendType::Integer,
         });
-        if width == 2
-            && matches!(alignment, FillAlignment::Left | FillAlignment::Center)
-            && !fill.is_empty()
-        {
-            let needs_padding = self.func.alloc_vreg();
-            self.emit(MirInst::BinOp {
-                dst: needs_padding,
-                op: BinOpKind::Lt,
-                lhs: MirValue::VReg(len_vreg),
-                rhs: MirValue::Const(2),
-            });
-            self.vreg_type_hints.insert(needs_padding, MirType::Bool);
-
-            let pad_block = self.func.alloc_block();
-            let continuation_block = self.func.alloc_block();
-            self.terminate(MirInst::Branch {
-                cond: needs_padding,
-                if_true: pad_block,
-                if_false: continuation_block,
-            });
-
-            self.current_block = pad_block;
-            self.emit(MirInst::StringAppend {
-                dst_buffer: slot,
-                dst_len: len_vreg,
-                val: MirValue::Const(0),
-                val_type: StringAppendType::Literal {
-                    bytes: fill.as_bytes().to_vec(),
-                },
-            });
-            self.terminate(MirInst::Jump {
-                target: continuation_block,
-            });
-
-            self.current_block = continuation_block;
+        if !fill.is_empty() {
+            if width == 2 && matches!(alignment, FillAlignment::Left | FillAlignment::Center) {
+                self.emit_runtime_fill_padding_if_lt(
+                    slot,
+                    len_vreg,
+                    MirValue::VReg(len_vreg),
+                    2,
+                    fill,
+                );
+            } else if width == 3 && alignment == FillAlignment::Left {
+                self.emit_runtime_fill_padding_if_lt(
+                    slot,
+                    len_vreg,
+                    MirValue::VReg(len_vreg),
+                    2,
+                    fill,
+                );
+                self.emit_runtime_fill_padding_if_lt(
+                    slot,
+                    len_vreg,
+                    MirValue::VReg(len_vreg),
+                    3,
+                    fill,
+                );
+            }
         }
         self.emit(MirInst::Copy {
             dst: result_vreg,
@@ -3001,6 +2991,47 @@ impl<'a> HirToMirLowering<'a> {
         meta.string_len_bound = Some(string_len_bound);
         meta.field_type = Some(array_ty);
         Ok(())
+    }
+
+    fn emit_runtime_fill_padding_if_lt(
+        &mut self,
+        slot: StackSlotId,
+        len_vreg: VReg,
+        lhs: MirValue,
+        threshold: i64,
+        fill: &str,
+    ) {
+        let needs_padding = self.func.alloc_vreg();
+        self.emit(MirInst::BinOp {
+            dst: needs_padding,
+            op: BinOpKind::Lt,
+            lhs,
+            rhs: MirValue::Const(threshold),
+        });
+        self.vreg_type_hints.insert(needs_padding, MirType::Bool);
+
+        let pad_block = self.func.alloc_block();
+        let continuation_block = self.func.alloc_block();
+        self.terminate(MirInst::Branch {
+            cond: needs_padding,
+            if_true: pad_block,
+            if_false: continuation_block,
+        });
+
+        self.current_block = pad_block;
+        self.emit(MirInst::StringAppend {
+            dst_buffer: slot,
+            dst_len: len_vreg,
+            val: MirValue::Const(0),
+            val_type: StringAppendType::Literal {
+                bytes: fill.as_bytes().to_vec(),
+            },
+        });
+        self.terminate(MirInst::Jump {
+            target: continuation_block,
+        });
+
+        self.current_block = continuation_block;
     }
 
     fn fill_input(&self, input_reg: Option<RegId>) -> Result<KnownFillInput, CompileError> {
