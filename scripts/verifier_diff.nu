@@ -28331,6 +28331,27 @@ const FIXTURES = [
         error_contains: "requires arg0 to be a bpf_wq field projected from a concrete map value"
     }
     {
+        name: "bpf-wq-init-rejects-dynamic-non-map-field"
+        category: "helper-state"
+        tags: [bpf_wq kfunc-call dynamic branch reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define work_items_dyn --kind array --value-type "record{work:bpf_wq,cookie:u64}" --max-entries 1'
+            '  let entry = (0 | map-get work_items_dyn --kind array)'
+            '  if $entry {'
+            '    let selector = (helper-call "bpf_get_prandom_u32")'
+            '    let work = (if $selector == 0 { $entry.work } else { 0 })'
+            '    kfunc-call "bpf_wq_init" $work work_items_dyn 0'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc-call 'bpf_wq_init' requires arg0 to be a bpf_wq field projected from a concrete map value"
+    }
+    {
         name: "bpf-wq-start-requires-null-checked-map-lookup"
         category: "helper-state"
         tags: [bpf_wq kfunc-call nullability reject]
@@ -28535,7 +28556,7 @@ const FIXTURES = [
     {
         name: "bpf-wq-init-accepts-phi-joined-same-map-value-source"
         category: "helper-state"
-        tags: [bpf_wq kfunc-call phi accept]
+        tags: [bpf_wq kfunc-call phi dynamic branch accept]
         target: "raw_tracepoint:sys_enter"
         program: [
             '{|ctx|'
@@ -28559,7 +28580,7 @@ const FIXTURES = [
     {
         name: "bpf-wq-init-rejects-phi-joined-mismatched-map-value-source"
         category: "helper-state"
-        tags: [bpf_wq kfunc-call phi reject]
+        tags: [bpf_wq kfunc-call phi dynamic branch reject]
         target: "raw_tracepoint:sys_enter"
         program: [
             '{|ctx|'
@@ -28966,7 +28987,7 @@ const FIXTURES = [
     {
         name: "timer-init-accepts-phi-joined-same-map-value-source"
         category: "helper-state"
-        tags: [timer map-define phi accept]
+        tags: [timer map-define phi dynamic branch accept]
         target: "raw_tracepoint:sys_enter"
         program: [
             '{|ctx|'
@@ -28990,7 +29011,7 @@ const FIXTURES = [
     {
         name: "timer-init-rejects-phi-joined-mismatched-map-value-source"
         category: "helper-state"
-        tags: [timer map-define phi reject]
+        tags: [timer map-define phi dynamic branch reject]
         target: "raw_tracepoint:sys_enter"
         program: [
             '{|ctx|'
@@ -36119,6 +36140,27 @@ const FIXTURES = [
         error_contains: "requires arg0 to be a bpf_timer field projected from a concrete map value"
     }
     {
+        name: "timer-init-rejects-dynamic-non-map-timer"
+        category: "helper-state"
+        tags: [timer dynamic branch reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define timers_dyn_init --kind hash --key-type u32 --value-type "record{timer:bpf_timer,cookie:u64}"'
+            '  let entry = (0 | map-get timers_dyn_init --kind hash)'
+            '  if $entry {'
+            '    let selector = (helper-call "bpf_get_prandom_u32")'
+            '    let timer = (if $selector == 0 { $entry.timer } else { 0 })'
+            '    helper-call "bpf_timer_init" $timer timers_dyn_init 0 --kind hash'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper-call 'bpf_timer_init' requires arg0 to be a bpf_timer field projected from a concrete map value"
+    }
+    {
         name: "spin-lock-map-define-lock-unlock"
         category: "helper-state"
         tags: [spin-lock map-define accept]
@@ -36315,6 +36357,27 @@ const FIXTURES = [
         error_contains: "requires arg0 to be a bpf_timer field projected from a concrete map value"
     }
     {
+        name: "timer-set-callback-rejects-dynamic-non-map-timer"
+        category: "helper-state"
+        tags: [timer callback dynamic branch reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define timers_dyn_set --kind hash --key-type u32 --value-type "record{timer:bpf_timer,cookie:u64}"'
+            '  let entry = (0 | map-get timers_dyn_set --kind hash)'
+            '  if $entry {'
+            '    let selector = (helper-call "bpf_get_prandom_u32")'
+            '    let timer = (if $selector == 0 { $entry.timer } else { 0 })'
+            '    helper-call "bpf_timer_set_callback" $timer {|timer key val| 0}'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper-call 'bpf_timer_set_callback' requires arg0 to be a bpf_timer field projected from a concrete map value"
+    }
+    {
         name: "timer-start-rejects-non-map-timer"
         category: "helper-state"
         tags: [timer reject]
@@ -36327,6 +36390,27 @@ const FIXTURES = [
         local: "reject"
         kernel: "skip"
         error_contains: "requires arg0 to be a bpf_timer field projected from a concrete map value"
+    }
+    {
+        name: "timer-start-rejects-dynamic-non-map-timer"
+        category: "helper-state"
+        tags: [timer dynamic branch reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define timers_dyn_start --kind hash --key-type u32 --value-type "record{timer:bpf_timer,cookie:u64}"'
+            '  let entry = (0 | map-get timers_dyn_start --kind hash)'
+            '  if $entry {'
+            '    let selector = (helper-call "bpf_get_prandom_u32")'
+            '    let timer = (if $selector == 0 { $entry.timer } else { 0 })'
+            '    helper-call "bpf_timer_start" $timer 1000 0'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper-call 'bpf_timer_start' requires arg0 to be a bpf_timer field projected from a concrete map value"
     }
     {
         name: "timer-cancel-rejects-non-map-timer"
@@ -36342,6 +36426,27 @@ const FIXTURES = [
         local: "reject"
         kernel: "skip"
         error_contains: "requires arg0 to be a bpf_timer field projected from a concrete map value"
+    }
+    {
+        name: "timer-cancel-rejects-dynamic-non-map-timer"
+        category: "helper-state"
+        tags: [timer dynamic branch reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define timers_dyn_cancel --kind hash --key-type u32 --value-type "record{timer:bpf_timer,cookie:u64}"'
+            '  let entry = (0 | map-get timers_dyn_cancel --kind hash)'
+            '  if $entry {'
+            '    let selector = (helper-call "bpf_get_prandom_u32")'
+            '    let timer = (if $selector == 0 { $entry.timer } else { 0 })'
+            '    helper-call "bpf_timer_cancel" $timer'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper-call 'bpf_timer_cancel' requires arg0 to be a bpf_timer field projected from a concrete map value"
     }
     {
         name: "ringbuf-query-rejects-invalid-flags"

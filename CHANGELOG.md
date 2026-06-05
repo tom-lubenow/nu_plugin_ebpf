@@ -64,6 +64,8 @@ documentation changes that matter to external alpha consumers.
   attr-size rejects from branch-selected helper return ranges.
 - Rejected dynamic scalar ranges that do not prove helper multiple-of
   requirements, with trace-vprintk, seq-printf, and csum source coverage.
+- Added dynamic branch coverage for timer and workqueue map-origin rejects,
+  including phi-joined concrete-map source metadata.
 - Added actionable BTF target diagnostics for invalid `fentry`, `fexit`,
   `fmod_ret`, `tp_btf`, and LSM targets so compile-time errors include the
   modeled target-family rewrite guidance.
