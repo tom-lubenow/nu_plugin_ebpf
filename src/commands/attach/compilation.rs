@@ -700,6 +700,11 @@ fn eval_supported_constant_call(
             eval_supported_constant_no_argument_call(cmd_name, &call.arguments)?;
             eval_supported_constant_bytes_length(input, span)
         }
+        "char" => {
+            let output =
+                eval_supported_constant_char_call_args(working_set, &call.arguments, env, span)?;
+            eval_supported_constant_char(input, output, span)
+        }
         "str length" => {
             let mode = eval_supported_constant_str_length_mode_call(&call.arguments)?;
             eval_supported_constant_str_length(input, mode, span)
@@ -1056,6 +1061,10 @@ fn eval_supported_constant_external_call(
         "bytes length" => {
             eval_supported_constant_no_external_args(cmd_name, args, span)?;
             eval_supported_constant_bytes_length(input, span)
+        }
+        "char" => {
+            let output = eval_supported_constant_char_external_args(working_set, args, env, span)?;
+            eval_supported_constant_char(input, output, span)
         }
         "str" => eval_supported_constant_str_external_call(working_set, input, args, env, span),
         "str length" => {
@@ -1924,6 +1933,409 @@ fn eval_supported_constant_bytes_external_call(
             ),
         ),
     }
+}
+
+#[derive(Clone, Copy)]
+enum ConstantCharMode {
+    Named,
+    Unicode,
+    Integer,
+}
+
+enum ConstantCharArg {
+    String { val: String, span: Span },
+    Int { val: i64, span: Span },
+    Other { span: Span },
+}
+
+fn eval_supported_constant_char_call_args(
+    working_set: &StateWorkingSet,
+    args: &[nu_protocol::ast::Argument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<String, LabeledError> {
+    let mut positional = Vec::new();
+    let mut unicode = false;
+    let mut integer = false;
+    let mut list = false;
+
+    for arg in args {
+        match arg {
+            nu_protocol::ast::Argument::Positional(expr)
+            | nu_protocol::ast::Argument::Unknown(expr) => {
+                positional.push(eval_supported_constant_char_arg(working_set, expr, env)?);
+            }
+            nu_protocol::ast::Argument::Named(named) => {
+                if named.2.is_some() {
+                    return Err(LabeledError::new(
+                        "Unsupported annotated mutable global initializer",
+                    )
+                    .with_label(
+                        "`char` flags cannot receive values in compile-time global initializers",
+                        arg.span(),
+                    ));
+                }
+                match named.0.item.as_str() {
+                    "unicode" => unicode = true,
+                    "integer" => integer = true,
+                    "list" => list = true,
+                    _ => {
+                        return Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
+                        .with_label(
+                            "`char` supports only --unicode and --integer in compile-time global initializers",
+                            arg.span(),
+                        ));
+                    }
+                }
+            }
+            nu_protocol::ast::Argument::Spread(expr) => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`char` arguments cannot use spread syntax in compile-time global initializers",
+                        expr.span,
+                    ));
+            }
+        }
+    }
+
+    let mode = eval_supported_constant_char_mode(unicode, integer, list, span)?;
+    eval_supported_constant_char_output(mode, &positional, span)
+}
+
+fn eval_supported_constant_char_external_args(
+    working_set: &StateWorkingSet,
+    args: &[ExternalArgument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<String, LabeledError> {
+    let mut positional = Vec::new();
+    let mut unicode = false;
+    let mut integer = false;
+    let mut list = false;
+
+    for arg in args {
+        let ExternalArgument::Regular(expr) = arg else {
+            return Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    "`char` arguments cannot use spread syntax in compile-time global initializers",
+                    arg.expr().span,
+                ),
+            );
+        };
+        let value = eval_supported_constant_value_with_env(working_set, expr, env)?;
+        match value {
+            Value::String { val, .. } | Value::Glob { val, .. } => match val.as_str() {
+                "--unicode" => unicode = true,
+                "--integer" => integer = true,
+                "--list" => list = true,
+                _ if val.starts_with("--") => {
+                    return Err(LabeledError::new(
+                        "Unsupported annotated mutable global initializer",
+                    )
+                    .with_label(
+                        "`char` supports only --unicode and --integer in compile-time global initializers",
+                        expr.span,
+                    ));
+                }
+                _ => positional.push(ConstantCharArg::String {
+                    val,
+                    span: expr.span,
+                }),
+            },
+            Value::Int { val, .. } => positional.push(ConstantCharArg::Int {
+                val,
+                span: expr.span,
+            }),
+            _ => positional.push(ConstantCharArg::Other { span: expr.span }),
+        }
+    }
+
+    let mode = eval_supported_constant_char_mode(unicode, integer, list, span)?;
+    eval_supported_constant_char_output(mode, &positional, span)
+}
+
+fn eval_supported_constant_char_arg(
+    working_set: &StateWorkingSet,
+    expr: &nu_protocol::ast::Expression,
+    env: &HashMap<nu_protocol::VarId, Value>,
+) -> Result<ConstantCharArg, LabeledError> {
+    let value = eval_supported_constant_value_with_env(working_set, expr, env)?;
+    Ok(match value {
+        Value::String { val, .. } | Value::Glob { val, .. } => ConstantCharArg::String {
+            val,
+            span: expr.span,
+        },
+        Value::Int { val, .. } => ConstantCharArg::Int {
+            val,
+            span: expr.span,
+        },
+        _ => ConstantCharArg::Other { span: expr.span },
+    })
+}
+
+fn eval_supported_constant_char_mode(
+    unicode: bool,
+    integer: bool,
+    list: bool,
+    span: Span,
+) -> Result<ConstantCharMode, LabeledError> {
+    if list {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`char --list` produces a table and is not supported in compile-time global initializers",
+                span,
+            ),
+        );
+    }
+    if unicode && integer {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`char` supports only one of --unicode or --integer in compile-time global initializers",
+                span,
+            ),
+        );
+    }
+    Ok(if unicode {
+        ConstantCharMode::Unicode
+    } else if integer {
+        ConstantCharMode::Integer
+    } else {
+        ConstantCharMode::Named
+    })
+}
+
+fn eval_supported_constant_char_output(
+    mode: ConstantCharMode,
+    args: &[ConstantCharArg],
+    span: Span,
+) -> Result<String, LabeledError> {
+    if args.is_empty() {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`char` requires at least one character argument in compile-time global initializers",
+                span,
+            ),
+        );
+    }
+
+    let output = match mode {
+        ConstantCharMode::Named => eval_supported_constant_named_char_output(args, span)?,
+        ConstantCharMode::Unicode => eval_supported_constant_unicode_char_output(args)?,
+        ConstantCharMode::Integer => eval_supported_constant_integer_char_output(args)?,
+    };
+    if output.as_bytes().contains(&0) {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`char` output containing NUL bytes is not supported in compile-time global initializers",
+                span,
+            ),
+        );
+    }
+    Ok(output)
+}
+
+fn eval_supported_constant_named_char_output(
+    args: &[ConstantCharArg],
+    span: Span,
+) -> Result<String, LabeledError> {
+    let name = match &args[0] {
+        ConstantCharArg::String { val, .. } => val,
+        ConstantCharArg::Int { span, .. } | ConstantCharArg::Other { span, .. } => {
+            return Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    "`char` named character argument must be a compile-time string in global initializers",
+                    *span,
+                ),
+            );
+        }
+    };
+    for arg in &args[1..] {
+        match arg {
+            ConstantCharArg::String { .. } => {}
+            ConstantCharArg::Int { span, .. } | ConstantCharArg::Other { span, .. } => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`char` named-character extra argument must be a compile-time string in global initializers",
+                        *span,
+                    ));
+            }
+        }
+    }
+    eval_supported_constant_known_named_char(name).ok_or_else(|| {
+        LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+            format!("`char` named character '{name}' is not supported in global initializers"),
+            span,
+        )
+    })
+}
+
+fn eval_supported_constant_unicode_char_output(
+    args: &[ConstantCharArg],
+) -> Result<String, LabeledError> {
+    let mut output = String::new();
+    for arg in args {
+        let (raw, span) = match arg {
+            ConstantCharArg::String { val, span } => (val, *span),
+            ConstantCharArg::Int { span, .. } | ConstantCharArg::Other { span, .. } => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`char --unicode` requires compile-time string hexadecimal codepoints in global initializers",
+                        *span,
+                    ));
+            }
+        };
+        let codepoint = u32::from_str_radix(raw.trim(), 16).map_err(|_| {
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!("`char --unicode` requires hexadecimal codepoints, got '{raw}'"),
+                span,
+            )
+        })?;
+        output.push(eval_supported_constant_char_from_codepoint(
+            codepoint,
+            "char --unicode",
+            span,
+        )?);
+    }
+    Ok(output)
+}
+
+fn eval_supported_constant_integer_char_output(
+    args: &[ConstantCharArg],
+) -> Result<String, LabeledError> {
+    let mut output = String::new();
+    for arg in args {
+        let (raw, span) = match arg {
+            ConstantCharArg::Int { val, span } => (*val, *span),
+            ConstantCharArg::String { span, .. } | ConstantCharArg::Other { span, .. } => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`char --integer` requires compile-time integer codepoints in global initializers",
+                        *span,
+                    ));
+            }
+        };
+        let codepoint = u32::try_from(raw).map_err(|_| {
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!("`char --integer` codepoint {raw} is outside the valid Unicode range"),
+                span,
+            )
+        })?;
+        output.push(eval_supported_constant_char_from_codepoint(
+            codepoint,
+            "char --integer",
+            span,
+        )?);
+    }
+    Ok(output)
+}
+
+fn eval_supported_constant_known_named_char(name: &str) -> Option<String> {
+    let hex = match name {
+        "nul" | "null_byte" | "zero_byte" => "0",
+        "newline" | "enter" | "nl" | "line_feed" | "lf" | "eol" | "lsep" | "line_sep" => "a",
+        "carriage_return" | "cr" => "d",
+        "crlf" => "d a",
+        "tab" => "9",
+        "sp" | "space" => "20",
+        "pipe" => "7c",
+        "left_brace" | "lbrace" => "7b",
+        "right_brace" | "rbrace" => "7d",
+        "left_paren" | "lp" | "lparen" => "28",
+        "right_paren" | "rparen" | "rp" => "29",
+        "left_bracket" | "lbracket" => "5b",
+        "right_bracket" | "rbracket" => "5d",
+        "single_quote" | "squote" | "sq" => "27",
+        "double_quote" | "dquote" | "dq" => "22",
+        "path_sep" | "psep" | "separator" => "2f",
+        "esep" | "env_sep" => "3a",
+        "tilde" | "twiddle" | "squiggly" | "home" => "7e",
+        "hash" | "hashtag" | "pound_sign" | "sharp" | "root" => "23",
+        "nf_branch" => "e0a0",
+        "nf_segment" | "nf_left_segment" => "e0b0",
+        "nf_left_segment_thin" => "e0b1",
+        "nf_right_segment" => "e0b2",
+        "nf_right_segment_thin" => "e0b3",
+        "nf_git" => "f1d3",
+        "nf_git_branch" => "e709 e0a0",
+        "nf_folder1" => "f07c",
+        "nf_folder2" => "f115",
+        "nf_house1" => "f015",
+        "nf_house2" => "f7db",
+        "identical_to" | "hamburger" => "2261",
+        "not_identical_to" | "branch_untracked" => "2262",
+        "strictly_equivalent_to" | "branch_identical" => "2263",
+        "upwards_arrow" | "branch_ahead" => "2191",
+        "downwards_arrow" | "branch_behind" => "2193",
+        "up_down_arrow" | "branch_ahead_behind" => "2195",
+        "black_right_pointing_triangle" | "prompt" => "25b6",
+        "vector_or_cross_product" | "failed" => "2a2f",
+        "high_voltage_sign" | "elevated" => "26a1",
+        "sun" | "sunny" | "sunrise" => "2600 fe0f",
+        "moon" => "1f31b",
+        "cloudy" | "cloud" | "clouds" => "2601 fe0f",
+        "rainy" | "rain" => "1f326 fe0f",
+        "foggy" | "fog" => "1f32b fe0f",
+        "mist" | "haze" => "2591",
+        "snowy" | "snow" => "2744 fe0f",
+        "thunderstorm" | "thunder" => "1f329 fe0f",
+        "bel" => "7",
+        "backspace" => "8",
+        "file_separator" | "file_sep" | "fs" => "1c",
+        "group_separator" | "group_sep" | "gs" => "1d",
+        "record_separator" | "record_sep" | "rs" => "1e",
+        "unit_separator" | "unit_sep" | "us" => "1f",
+        _ => return None,
+    };
+    eval_supported_constant_chars_from_hex_sequence(hex).ok()
+}
+
+fn eval_supported_constant_chars_from_hex_sequence(hex: &str) -> Result<String, LabeledError> {
+    let mut output = String::new();
+    for part in hex.split_whitespace() {
+        let codepoint = u32::from_str_radix(part, 16).map_err(|_| {
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!("invalid `char` codepoint '{part}' in global initializers"),
+                Span::unknown(),
+            )
+        })?;
+        output.push(eval_supported_constant_char_from_codepoint(
+            codepoint,
+            "char",
+            Span::unknown(),
+        )?);
+    }
+    Ok(output)
+}
+
+fn eval_supported_constant_char_from_codepoint(
+    codepoint: u32,
+    context: &str,
+    span: Span,
+) -> Result<char, LabeledError> {
+    char::from_u32(codepoint).ok_or_else(|| {
+        LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+            format!("`{context}` codepoint U+{codepoint:X} is outside the valid Unicode range"),
+            span,
+        )
+    })
+}
+
+fn eval_supported_constant_char(
+    input: Option<Value>,
+    output: String,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    if input.is_some() {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`char` does not accept pipeline input in compile-time global initializers",
+                span,
+            ),
+        );
+    }
+    Ok(Value::string(output, span))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

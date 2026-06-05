@@ -1951,6 +1951,95 @@ fn test_map_leading_annotated_mut_globals_supports_constant_bytes_length_list_in
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_char_initializers() {
+    let cases = [
+        (
+            "{|| mut glyph: string = (char \"prompt\" \"ignored\" \"1f354\"); $glyph }",
+            "\u{25b6}",
+            "char named-character form should materialize the named glyph and ignore string extras",
+        ),
+        (
+            "{|| mut glyph: string = (char --unicode \"1F468\" \"200D\" \"1F466\"); $glyph }",
+            "\u{1f468}\u{200d}\u{1f466}",
+            "char --unicode should materialize joined hexadecimal codepoints",
+        ),
+        (
+            "{|| mut glyph: string = (char --integer 65 66); $glyph }",
+            "AB",
+            "char --integer should materialize joined integer codepoints",
+        ),
+    ];
+
+    for (source, expected, message) in cases {
+        let ir_block = IrBlock {
+            instructions: vec![
+                Instruction::StoreVariable {
+                    var_id: VarId::new(11),
+                    src: RegId::new(0),
+                },
+                Instruction::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: VarId::new(11),
+                },
+                Instruction::Return { src: RegId::new(0) },
+            ],
+            spans: vec![Span::test_data(); 3],
+            data: Vec::<u8>::new().into(),
+            ast: vec![None; 3],
+            comments: vec!["let".into(), "".into(), "".into()],
+            register_count: 1,
+            file_count: 0,
+        };
+
+        let globals =
+            super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+                .unwrap_or_else(|err| panic!("{message}: {err:?}"));
+
+        assert_eq!(globals.len(), 1);
+        assert_eq!(
+            globals[0]
+                .initial_value
+                .as_str()
+                .expect("char should produce a string"),
+            expected,
+            "{message}"
+        );
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_rejects_constant_char_nul_initializer() {
+    let source = "{|| mut glyph: string = (char \"nul\"); $glyph }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let err = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect_err("char NUL output should be rejected");
+
+    assert!(
+        format!("{err:?}").contains("NUL bytes"),
+        "unexpected error: {err:?}"
+    );
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_constant_str_length_initializer() {
     let source = "{|| mut count: int = (\"abcd\" | str length); $count }";
     let ir_block = IrBlock {
