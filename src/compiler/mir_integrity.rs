@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use super::mir::{MirFunction, MirInst, MirValue, StackSlotId, VReg};
+use super::mir::{BlockId, MirFunction, MirInst, MirValue, StackSlotId, VReg};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct MirIntegrityError {
@@ -18,7 +18,24 @@ impl MirIntegrityError {
 pub(crate) fn validate_mir_references(func: &MirFunction) -> Result<(), Vec<MirIntegrityError>> {
     let mut errors = Vec::new();
     let mut declared = HashSet::with_capacity(func.stack_slots.len());
+    let mut block_ids = HashSet::with_capacity(func.blocks.len());
     let total_vregs = (func.vreg_count as usize).max(func.param_count);
+
+    for block in &func.blocks {
+        if !block_ids.insert(block.id) {
+            errors.push(MirIntegrityError::new(format!(
+                "duplicate basic block declaration {}",
+                block.id.0
+            )));
+        }
+    }
+    if func.blocks.is_empty() {
+        errors.push(MirIntegrityError::new(
+            "MIR function must contain at least one basic block",
+        ));
+    } else {
+        check_block(func.entry, "function entry", &block_ids, &mut errors);
+    }
 
     for slot in &func.stack_slots {
         if !declared.insert(slot.id) {
@@ -48,9 +65,27 @@ pub(crate) fn validate_mir_references(func: &MirFunction) -> Result<(), Vec<MirI
 
     for block in &func.blocks {
         for inst in &block.instructions {
-            check_inst(inst, &declared, total_vregs, &mut errors);
+            if is_block_terminator(inst) || matches!(inst, MirInst::Placeholder) {
+                errors.push(MirIntegrityError::new(format!(
+                    "block {} instruction list contains terminator {:?}",
+                    block.id.0, inst
+                )));
+            }
+            check_inst(inst, &declared, &block_ids, total_vregs, &mut errors);
         }
-        check_inst(&block.terminator, &declared, total_vregs, &mut errors);
+        if !is_block_terminator(&block.terminator) {
+            errors.push(MirIntegrityError::new(format!(
+                "block {} has invalid terminator {:?}",
+                block.id.0, block.terminator
+            )));
+        }
+        check_inst(
+            &block.terminator,
+            &declared,
+            &block_ids,
+            total_vregs,
+            &mut errors,
+        );
     }
 
     if errors.is_empty() {
@@ -63,6 +98,7 @@ pub(crate) fn validate_mir_references(func: &MirFunction) -> Result<(), Vec<MirI
 fn check_inst(
     inst: &MirInst,
     declared: &HashSet<StackSlotId>,
+    block_ids: &HashSet<BlockId>,
     total_vregs: usize,
     errors: &mut Vec<MirIntegrityError>,
 ) {
@@ -161,13 +197,21 @@ fn check_inst(
         MirInst::ListGet { idx, .. } => {
             check_value(idx, "list index", declared, errors);
         }
-        MirInst::Phi { .. }
-        | MirInst::Jump { .. }
-        | MirInst::Branch { .. }
-        | MirInst::CallSubfn { .. }
-        | MirInst::LoopHeader { .. }
-        | MirInst::LoopBack { .. }
-        | MirInst::Placeholder => {}
+        MirInst::Phi { args, .. } => {
+            for (pred, _) in args {
+                check_block(*pred, "phi predecessor", block_ids, errors);
+            }
+        }
+        MirInst::CallSubfn { .. } | MirInst::Placeholder => {}
+        MirInst::Jump { target } => {
+            check_block(*target, "jump target", block_ids, errors);
+        }
+        MirInst::Branch {
+            if_true, if_false, ..
+        } => {
+            check_block(*if_true, "branch true target", block_ids, errors);
+            check_block(*if_false, "branch false target", block_ids, errors);
+        }
         MirInst::Return { val } => {
             if let Some(val) = val {
                 check_value(val, "return value", declared, errors);
@@ -176,7 +220,26 @@ fn check_inst(
         MirInst::TailCall { index, .. } => {
             check_value(index, "tail call index", declared, errors);
         }
+        MirInst::LoopHeader { body, exit, .. } => {
+            check_block(*body, "loop body target", block_ids, errors);
+            check_block(*exit, "loop exit target", block_ids, errors);
+        }
+        MirInst::LoopBack { header, .. } => {
+            check_block(*header, "loop back target", block_ids, errors);
+        }
     }
+}
+
+fn is_block_terminator(inst: &MirInst) -> bool {
+    matches!(
+        inst,
+        MirInst::Jump { .. }
+            | MirInst::Branch { .. }
+            | MirInst::Return { .. }
+            | MirInst::TailCall { .. }
+            | MirInst::LoopHeader { .. }
+            | MirInst::LoopBack { .. }
+    )
 }
 
 fn check_vreg(vreg: VReg, context: &str, total_vregs: usize, errors: &mut Vec<MirIntegrityError>) {
@@ -184,6 +247,20 @@ fn check_vreg(vreg: VReg, context: &str, total_vregs: usize, errors: &mut Vec<Mi
         errors.push(MirIntegrityError::new(format!(
             "{context} references out-of-range virtual register {} (valid range 0..{})",
             vreg.0, total_vregs
+        )));
+    }
+}
+
+fn check_block(
+    block: BlockId,
+    context: &str,
+    block_ids: &HashSet<BlockId>,
+    errors: &mut Vec<MirIntegrityError>,
+) {
+    if !block_ids.contains(&block) {
+        errors.push(MirIntegrityError::new(format!(
+            "{context} references missing basic block {}",
+            block.0
         )));
     }
 }

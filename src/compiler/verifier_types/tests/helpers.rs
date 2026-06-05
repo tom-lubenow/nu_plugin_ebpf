@@ -4980,6 +4980,26 @@ fn test_verify_mir_rejects_out_of_range_vreg_def() {
 }
 
 #[test]
+fn test_verify_mir_rejects_invalid_block_terminator() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).terminator = MirInst::Copy {
+        dst,
+        src: MirValue::Const(0),
+    };
+
+    let err = verify_mir(&func, &HashMap::new())
+        .expect_err("invalid terminator should be rejected before verifier propagation");
+    assert!(
+        err.iter().any(|e| e.message.contains("invalid terminator")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_accepts_helper_context_argument_from_ctx_pointer_load() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

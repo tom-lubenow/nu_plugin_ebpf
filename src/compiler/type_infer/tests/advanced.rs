@@ -138,6 +138,33 @@ fn test_type_inference_rejects_out_of_range_vreg_use() {
 }
 
 #[test]
+fn test_type_inference_rejects_missing_branch_target() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    let cond = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: cond,
+        src: MirValue::Const(1),
+    });
+    func.block_mut(entry).terminator = MirInst::Branch {
+        cond,
+        if_true: BlockId(99),
+        if_false: entry,
+    };
+
+    let mut infer = TypeInference::new(None);
+    let errs = infer
+        .infer(&func)
+        .expect_err("missing branch target should be rejected before type solving");
+    assert!(
+        errs.iter()
+            .any(|err| err.message.contains("missing basic block 99")),
+        "unexpected errors: {errs:?}"
+    );
+}
+
+#[test]
 fn test_infer_subfunction_schemes_orders_callees_before_callers() {
     let mut callee = MirFunction::with_name("id");
     callee.param_count = 1;
