@@ -62,6 +62,8 @@ documentation changes that matter to external alpha consumers.
   rejects from branch-selected helper return ranges.
 - Added source verifier coverage for dynamic syscall `bpf_sys_bpf` zero
   attr-size rejects from branch-selected helper return ranges.
+- Rejected dynamic scalar ranges that do not prove helper multiple-of
+  requirements, with trace-vprintk, seq-printf, and csum source coverage.
 - Added actionable BTF target diagnostics for invalid `fentry`, `fexit`,
   `fmod_ret`, `tp_btf`, and LSM targets so compile-time errors include the
   modeled target-family rewrite guidance.

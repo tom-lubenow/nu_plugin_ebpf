@@ -2,7 +2,8 @@ use super::*;
 use crate::compiler::elf::GetSocketCookieArgPolicy;
 use crate::compiler::instruction::{
     BPF_MTU_CHK_SEGS, helper_named_arg_shape, scalar_range_contains_only_allowed_values,
-    scalar_range_contains_only_bitmask, scalar_range_satisfies_bit_combination,
+    scalar_range_contains_only_bitmask, scalar_range_contains_only_multiple_of,
+    scalar_range_satisfies_bit_combination,
 };
 use crate::kernel_btf::KernelBtf;
 
@@ -289,8 +290,7 @@ impl<'a> TypeInference<'a> {
             return;
         };
         if let ValueRange::Known { min, max } = self.value_range_for(value, value_ranges)
-            && min == max
-            && min.rem_euclid(multiple) != 0
+            && !scalar_range_contains_only_multiple_of(min, max, multiple)
         {
             errors.push(TypeError::new(message));
         }

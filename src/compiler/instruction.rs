@@ -308,6 +308,16 @@ pub(crate) fn scalar_range_contains_only_bitmask(min: i64, max: i64, mask: i64) 
     }
 }
 
+pub(crate) fn scalar_range_contains_only_multiple_of(min: i64, max: i64, multiple: i64) -> bool {
+    if min > max || multiple == 0 {
+        return false;
+    }
+    if multiple == 1 || multiple == -1 {
+        return true;
+    }
+    min == max && min.rem_euclid(multiple) == 0
+}
+
 pub(crate) fn scalar_value_satisfies_bit_combination(
     value: i64,
     requirement: ScalarArgBitCombinationRequirement,

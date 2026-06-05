@@ -3,8 +3,8 @@ use crate::compiler::elf::GetSocketCookieArgPolicy;
 use crate::compiler::instruction::{
     BPF_MTU_CHK_SEGS, KfuncRefKind, helper_named_arg_shape, kfunc_arg_accepts_skb_pointee_name,
     kfunc_arg_pointee_mismatch, kfunc_arg_requires_skb_context_or_pointer,
-    scalar_range_contains_only_bitmask, scalar_value_satisfies_bit_combination,
-    unknown_kfunc_signature_message,
+    scalar_range_contains_only_bitmask, scalar_range_contains_only_multiple_of,
+    scalar_value_satisfies_bit_combination, unknown_kfunc_signature_message,
 };
 use crate::compiler::EbpfProgramType;
 
@@ -1275,23 +1275,44 @@ impl<'a> VccLowerer<'a> {
     }
 
     fn verify_helper_scalar_multiple_of(
-        &self,
+        &mut self,
+        helper_id: u32,
         helper: BpfHelper,
         arg_idx: usize,
         value: &MirValue,
+        out: &mut Vec<VccInst>,
     ) -> Result<(), VccError> {
         let Some((multiple, message)) = helper.scalar_arg_multiple_of_requirement(arg_idx) else {
             return Ok(());
         };
-        if let MirValue::Const(v) = value
-            && v.rem_euclid(multiple) != 0
-        {
-            return Err(VccError::new(
-                VccErrorKind::UnsupportedInstruction,
-                message,
-            ));
+        match value {
+            MirValue::Const(v) => {
+                if scalar_range_contains_only_multiple_of(*v, *v, multiple) {
+                    Ok(())
+                } else {
+                    Err(VccError::new(
+                        VccErrorKind::UnsupportedInstruction,
+                        message,
+                    ))
+                }
+            }
+            MirValue::VReg(vreg) => {
+                self.assert_scalar_reg(*vreg, out);
+                out.push(VccInst::AssertMultipleOf {
+                    value: VccValue::Reg(VccReg(vreg.0)),
+                    multiple,
+                    message: message.to_string(),
+                });
+                Ok(())
+            }
+            MirValue::StackSlot(_) => Err(VccError::new(
+                VccErrorKind::TypeMismatch {
+                    expected: VccTypeClass::Scalar,
+                    actual: VccTypeClass::Ptr,
+                },
+                format!("helper {} arg{} expects scalar value", helper_id, arg_idx),
+            )),
         }
-        Ok(())
     }
 
     fn verify_helper_scalar_range(
@@ -1561,7 +1582,7 @@ impl<'a> VccLowerer<'a> {
             }
         }
         for (arg_idx, value) in args.iter().enumerate().take(5) {
-            self.verify_helper_scalar_multiple_of(helper, arg_idx, value)?;
+            self.verify_helper_scalar_multiple_of(helper_id, helper, arg_idx, value, out)?;
             self.verify_helper_scalar_range(helper_id, helper, arg_idx, value, out)?;
             self.verify_program_helper_scalar_range(helper_id, helper, arg_idx, value, out)?;
             self.verify_helper_scalar_allowed_values(helper_id, helper, arg_idx, value, out)?;

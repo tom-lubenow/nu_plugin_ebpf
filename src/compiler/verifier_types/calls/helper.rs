@@ -4,7 +4,7 @@ use crate::compiler::instruction::{
     BPF_MTU_CHK_SEGS, HelperDynptrArgRole, KfuncRefKind, helper_named_arg_shape,
     helper_pointer_arg_ref_kind, kfunc_ref_kind_from_bpf_type_name,
     scalar_range_contains_only_allowed_values, scalar_range_contains_only_bitmask,
-    scalar_range_satisfies_bit_combination,
+    scalar_range_contains_only_multiple_of, scalar_range_satisfies_bit_combination,
 };
 use crate::compiler::{EbpfProgramType, ProbeContext, ProgramTypeInfo};
 
@@ -191,8 +191,7 @@ fn validate_helper_scalar_multiple_of(
         return;
     };
     if let ValueRange::Known { min, max } = value_range(value, state)
-        && min == max
-        && min.rem_euclid(multiple) != 0
+        && !scalar_range_contains_only_multiple_of(min, max, multiple)
     {
         errors.push(VerifierTypeError::new(message));
     }

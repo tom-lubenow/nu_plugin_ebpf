@@ -291,6 +291,11 @@ pub enum VccInst {
         max: i64,
         message: String,
     },
+    AssertMultipleOf {
+        value: VccValue,
+        multiple: i64,
+        message: String,
+    },
     AssertAllowedValues {
         value: VccValue,
         allowed: Vec<i64>,

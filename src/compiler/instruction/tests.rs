@@ -4276,6 +4276,11 @@ fn test_helper_get_stack_buffer_contract() {
         adjust_room_l2_len | (1 << 20),
         BPF_F_ADJ_ROOM_ALLOWED_MASK
     ));
+    assert!(scalar_range_contains_only_multiple_of(8, 8, 8));
+    assert!(!scalar_range_contains_only_multiple_of(10, 10, 8));
+    assert!(!scalar_range_contains_only_multiple_of(8, 10, 8));
+    assert!(scalar_range_contains_only_multiple_of(-16, -16, 8));
+    assert!(!scalar_range_contains_only_multiple_of(0, 8, 0));
 
     let semantics = BpfHelper::GetStack.semantics();
     assert!(semantics.positive_size_args.is_empty());

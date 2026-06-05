@@ -36554,6 +36554,25 @@ const FIXTURES = [
         error_contains: "helper 'bpf_trace_vprintk' requires arg3 to be a multiple of 8"
     }
     {
+        name: "trace-vprintk-rejects-dynamic-unaligned-data-len"
+        category: "helper-state"
+        tags: [helper-call trace-vprintk scalar-policy dynamic branch reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let fmt = "value %d\u{0}"'
+            '  let data = "0123456789abcdef"'
+            '  let selector = (helper-call "bpf_get_prandom_u32")'
+            '  let data_len = (if $selector == 0 { 8 } else { 10 })'
+            '  helper-call "bpf_trace_vprintk" $fmt 9 $data $data_len'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_trace_vprintk' requires arg3 to be a multiple of 8"
+    }
+    {
         name: "snprintf-btf-accepts-stack-btf-ptr"
         category: "helper-state"
         tags: [helper-call snprintf-btf accept]
@@ -36992,6 +37011,26 @@ const FIXTURES = [
             '  let fmt = "value\u{0}"'
             '  let data = "01234567"'
             '  helper-call "bpf_seq_printf" $ctx.meta.seq $fmt 6 $data 4'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_seq_printf' requires arg4 to be a multiple of 8"
+    }
+    {
+        name: "seq-printf-rejects-dynamic-unaligned-data-len"
+        category: "helper-state"
+        tags: [iter helper-call seq dynamic branch reject]
+        requires: [kernel-btf]
+        target: "iter:task"
+        program: [
+            '{|ctx|'
+            '  let fmt = "value\u{0}"'
+            '  let data = "01234567"'
+            '  let selector = (helper-call "bpf_get_prandom_u32")'
+            '  let data_len = (if $selector == 0 { 8 } else { 4 })'
+            '  helper-call "bpf_seq_printf" $ctx.meta.seq $fmt 6 $data $data_len'
             '  0'
             '}'
         ]
@@ -37559,6 +37598,23 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  helper-call "bpf_csum_diff" 0 2 0 0 0'
+            '  "ok"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_csum_diff' requires arg1 to be a multiple of 4"
+    }
+    {
+        name: "csum-diff-rejects-dynamic-unaligned-size"
+        category: "helper-state"
+        tags: [csum scalar-policy dynamic branch reject tc-action]
+        target: "tc_action:diff-action"
+        program: [
+            '{|ctx|'
+            '  let selector = (helper-call "bpf_get_prandom_u32")'
+            '  let size = (if $selector == 0 { 0 } else { 2 })'
+            '  helper-call "bpf_csum_diff" 0 $size 0 0 0'
             '  "ok"'
             '}'
         ]
