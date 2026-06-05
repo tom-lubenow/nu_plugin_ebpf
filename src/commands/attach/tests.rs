@@ -2795,6 +2795,331 @@ fn test_map_leading_annotated_mut_globals_rejects_constant_bytes_index_of_empty_
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_bytes_remove_initializers() {
+    let cases = [
+        (
+            "{|| mut removed: binary = (0x[01 02 03 02] | bytes remove 0x[02]); $removed }",
+            vec![1, 3, 2],
+            "bytes remove should remove the first matching pattern",
+        ),
+        (
+            "{|| mut removed: binary = (0x[01 02 03 02] | bytes remove 0x[02] --all); $removed }",
+            vec![1, 3],
+            "bytes remove --all should remove all non-overlapping matches",
+        ),
+        (
+            "{|| mut removed: binary = (0x[01 02 03 02] | bytes remove 0x[02] --end); $removed }",
+            vec![1, 2, 3],
+            "bytes remove --end should remove the last matching pattern",
+        ),
+    ];
+
+    for (source, expected, message) in cases {
+        let ir_block = IrBlock {
+            instructions: vec![
+                Instruction::StoreVariable {
+                    var_id: VarId::new(11),
+                    src: RegId::new(0),
+                },
+                Instruction::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: VarId::new(11),
+                },
+                Instruction::Return { src: RegId::new(0) },
+            ],
+            spans: vec![Span::test_data(); 3],
+            data: Vec::<u8>::new().into(),
+            ast: vec![None; 3],
+            comments: vec!["let".into(), "".into(), "".into()],
+            register_count: 1,
+            file_count: 0,
+        };
+
+        let globals =
+            super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+                .unwrap_or_else(|err| panic!("{message}: {err:?}"));
+
+        assert_eq!(globals.len(), 1);
+        assert_eq!(
+            globals[0]
+                .initial_value
+                .as_binary()
+                .expect("bytes remove should produce binary"),
+            expected.as_slice(),
+            "{message}"
+        );
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_bytes_remove_list_initializer() {
+    let source = "{|| mut removed: list<binary> = ([0x[01 02], 0x[03 02], 0x[]] | bytes remove 0x[02]); $removed }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant bytes remove list initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let removed = vals
+                .iter()
+                .map(|value| {
+                    value
+                        .as_binary()
+                        .expect("bytes remove should produce binary")
+                        .to_vec()
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(removed, vec![vec![1], vec![3], vec![]]);
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_let_bound_constant_bytes_remove_pattern() {
+    let source = "{|| let pattern = 0x[01 01]; mut removed: binary = (0x[01 01 01] | bytes remove $pattern --all); $removed }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(10),
+                src: RegId::new(0),
+            },
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(1),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 4],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 4],
+        comments: vec!["let".into(), "let".into(), "".into(), "".into()],
+        register_count: 2,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("let-bound constant bytes remove pattern should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(
+        globals[0]
+            .initial_value
+            .as_binary()
+            .expect("bytes remove should produce binary"),
+        &[1]
+    );
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_bytes_replace_initializers() {
+    let cases = [
+        (
+            "{|| mut replaced: binary = (0x[01 02 03 02] | bytes replace 0x[02] 0x[AA BB]); $replaced }",
+            vec![1, 0xAA, 0xBB, 3, 2],
+            "bytes replace should replace the first matching pattern",
+        ),
+        (
+            "{|| mut replaced: binary = (0x[01 02 03 02] | bytes replace 0x[02] 0x[AA] --all); $replaced }",
+            vec![1, 0xAA, 3, 0xAA],
+            "bytes replace --all should replace all non-overlapping matches",
+        ),
+    ];
+
+    for (source, expected, message) in cases {
+        let ir_block = IrBlock {
+            instructions: vec![
+                Instruction::StoreVariable {
+                    var_id: VarId::new(11),
+                    src: RegId::new(0),
+                },
+                Instruction::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: VarId::new(11),
+                },
+                Instruction::Return { src: RegId::new(0) },
+            ],
+            spans: vec![Span::test_data(); 3],
+            data: Vec::<u8>::new().into(),
+            ast: vec![None; 3],
+            comments: vec!["let".into(), "".into(), "".into()],
+            register_count: 1,
+            file_count: 0,
+        };
+
+        let globals =
+            super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+                .unwrap_or_else(|err| panic!("{message}: {err:?}"));
+
+        assert_eq!(globals.len(), 1);
+        assert_eq!(
+            globals[0]
+                .initial_value
+                .as_binary()
+                .expect("bytes replace should produce binary"),
+            expected.as_slice(),
+            "{message}"
+        );
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_bytes_replace_list_initializer() {
+    let source = "{|| mut replaced: list<binary> = ([0x[01 02], 0x[03 02]] | bytes replace 0x[02] 0x[04]); $replaced }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant bytes replace list initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let replaced = vals
+                .iter()
+                .map(|value| {
+                    value
+                        .as_binary()
+                        .expect("bytes replace should produce binary")
+                        .to_vec()
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(replaced, vec![vec![1, 4], vec![3, 4]]);
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_let_bound_constant_bytes_replace_args() {
+    let source = "{|| let pattern = 0x[01 01]; let replacement = 0x[FF]; mut replaced: binary = (0x[01 01 01] | bytes replace $pattern $replacement --all); $replaced }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(10),
+                src: RegId::new(0),
+            },
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(1),
+            },
+            Instruction::StoreVariable {
+                var_id: VarId::new(12),
+                src: RegId::new(2),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(12),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 5],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 5],
+        comments: vec![
+            "let".into(),
+            "let".into(),
+            "let".into(),
+            "".into(),
+            "".into(),
+        ],
+        register_count: 3,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("let-bound constant bytes replace args should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(
+        globals[0]
+            .initial_value
+            .as_binary()
+            .expect("bytes replace should produce binary"),
+        &[0xFF, 1]
+    );
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_rejects_constant_bytes_transform_empty_pattern() {
+    let cases = [
+        "{|| mut removed: binary = (0x[01 02] | bytes remove 0x[]); $removed }",
+        "{|| mut replaced: binary = (0x[01 02] | bytes replace 0x[] 0x[FF]); $replaced }",
+    ];
+
+    for source in cases {
+        let ir_block = IrBlock {
+            instructions: vec![
+                Instruction::StoreVariable {
+                    var_id: VarId::new(11),
+                    src: RegId::new(0),
+                },
+                Instruction::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: VarId::new(11),
+                },
+                Instruction::Return { src: RegId::new(0) },
+            ],
+            spans: vec![Span::test_data(); 3],
+            data: Vec::<u8>::new().into(),
+            ast: vec![None; 3],
+            comments: vec!["let".into(), "".into(), "".into()],
+            register_count: 1,
+            file_count: 0,
+        };
+
+        let err = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+            .expect_err("empty bytes transform pattern should be rejected");
+
+        assert!(
+            format!("{err:?}").contains("non-empty binary pattern"),
+            "unexpected error: {err:?}"
+        );
+    }
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_constant_char_initializers() {
     let cases = [
         (

@@ -738,6 +738,24 @@ fn eval_supported_constant_call(
             )?;
             eval_supported_constant_bytes_index_of(input, args, span)
         }
+        "bytes remove" => {
+            let args = eval_supported_constant_bytes_remove_call_args(
+                working_set,
+                &call.arguments,
+                env,
+                span,
+            )?;
+            eval_supported_constant_bytes_remove(input, args, span)
+        }
+        "bytes replace" => {
+            let args = eval_supported_constant_bytes_replace_call_args(
+                working_set,
+                &call.arguments,
+                env,
+                span,
+            )?;
+            eval_supported_constant_bytes_replace(input, args, span)
+        }
         "char" => {
             let output =
                 eval_supported_constant_char_call_args(working_set, &call.arguments, env, span)?;
@@ -1133,6 +1151,16 @@ fn eval_supported_constant_external_call(
             let args =
                 eval_supported_constant_bytes_index_of_external_args(working_set, args, env, span)?;
             eval_supported_constant_bytes_index_of(input, args, span)
+        }
+        "bytes remove" => {
+            let args =
+                eval_supported_constant_bytes_remove_external_args(working_set, args, env, span)?;
+            eval_supported_constant_bytes_remove(input, args, span)
+        }
+        "bytes replace" => {
+            let args =
+                eval_supported_constant_bytes_replace_external_args(working_set, args, env, span)?;
+            eval_supported_constant_bytes_replace(input, args, span)
         }
         "char" => {
             let output = eval_supported_constant_char_external_args(working_set, args, env, span)?;
@@ -2907,6 +2935,428 @@ fn eval_supported_constant_bytes_all_match_offsets_from_end(
     offsets
 }
 
+#[derive(Clone)]
+struct ConstantBytesRemoveArgs {
+    pattern: Vec<u8>,
+    remove_all: bool,
+    search_from_end: bool,
+}
+
+fn eval_supported_constant_bytes_remove_call_args(
+    working_set: &StateWorkingSet,
+    args: &[nu_protocol::ast::Argument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<ConstantBytesRemoveArgs, LabeledError> {
+    let mut pattern_expr = None;
+    let mut remove_all = false;
+    let mut search_from_end = false;
+    for arg in args {
+        match arg {
+            nu_protocol::ast::Argument::Positional(expr)
+            | nu_protocol::ast::Argument::Unknown(expr) => {
+                if pattern_expr.replace(expr).is_some() {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            "`bytes remove` accepts exactly one binary pattern argument in compile-time global initializers",
+                            arg.span(),
+                        ));
+                }
+            }
+            nu_protocol::ast::Argument::Named(named) => {
+                if named.2.is_some() {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            "`bytes remove` flags cannot receive values in compile-time global initializers",
+                            arg.span(),
+                        ));
+                }
+                match named.0.item.as_str() {
+                    "all" => remove_all = true,
+                    "end" => search_from_end = true,
+                    _ => {
+                        return Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
+                        .with_label(
+                            "`bytes remove` supports only --all and --end in compile-time global initializers",
+                            arg.span(),
+                        ));
+                    }
+                }
+            }
+            nu_protocol::ast::Argument::Spread(expr) => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`bytes remove` arguments cannot use spread syntax in compile-time global initializers",
+                        expr.span,
+                    ));
+            }
+        }
+    }
+
+    let Some(pattern_expr) = pattern_expr else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`bytes remove` requires exactly one binary pattern argument in compile-time global initializers",
+                span,
+            ),
+        );
+    };
+    let pattern =
+        eval_supported_constant_binary_argument(working_set, pattern_expr, env, "bytes remove")?;
+    eval_supported_constant_validate_bytes_pattern("bytes remove", &pattern, pattern_expr.span)?;
+
+    Ok(ConstantBytesRemoveArgs {
+        pattern,
+        remove_all,
+        search_from_end,
+    })
+}
+
+fn eval_supported_constant_bytes_remove_external_args(
+    working_set: &StateWorkingSet,
+    args: &[ExternalArgument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<ConstantBytesRemoveArgs, LabeledError> {
+    let mut pattern_expr = None;
+    let mut remove_all = false;
+    let mut search_from_end = false;
+    for arg in args {
+        let ExternalArgument::Regular(expr) = arg else {
+            return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                .with_label(
+                    "`bytes remove` arguments cannot use spread syntax in compile-time global initializers",
+                    arg.expr().span,
+                ));
+        };
+        let value = eval_supported_constant_value_with_env(working_set, expr, env)?;
+        match value {
+            Value::String { val, .. } | Value::Glob { val, .. }
+                if val == "--all" || val == "--end" =>
+            {
+                if val == "--all" {
+                    remove_all = true;
+                } else {
+                    search_from_end = true;
+                }
+            }
+            Value::String { val, .. } | Value::Glob { val, .. } if val.starts_with("--") => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`bytes remove` supports only --all and --end in compile-time global initializers",
+                        expr.span,
+                    ));
+            }
+            _ => {
+                if pattern_expr.replace(expr).is_some() {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            "`bytes remove` accepts exactly one binary pattern argument in compile-time global initializers",
+                            expr.span,
+                        ));
+                }
+            }
+        }
+    }
+
+    let Some(pattern_expr) = pattern_expr else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`bytes remove` requires exactly one binary pattern argument in compile-time global initializers",
+                span,
+            ),
+        );
+    };
+    let pattern =
+        eval_supported_constant_binary_argument(working_set, pattern_expr, env, "bytes remove")?;
+    eval_supported_constant_validate_bytes_pattern("bytes remove", &pattern, pattern_expr.span)?;
+
+    Ok(ConstantBytesRemoveArgs {
+        pattern,
+        remove_all,
+        search_from_end,
+    })
+}
+
+fn eval_supported_constant_bytes_remove(
+    input: Option<Value>,
+    args: ConstantBytesRemoveArgs,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    eval_supported_constant_bytes_transform_items("bytes remove", input, span, |bytes| {
+        eval_supported_constant_remove_bytes(bytes, &args)
+    })
+}
+
+fn eval_supported_constant_remove_bytes(input: Vec<u8>, args: &ConstantBytesRemoveArgs) -> Vec<u8> {
+    if args.remove_all {
+        return eval_supported_constant_replace_all_bytes(input, &args.pattern, &[]);
+    }
+    let index_args = ConstantBytesIndexOfArgs {
+        pattern: args.pattern.clone(),
+        search_from_end: args.search_from_end,
+        all_matches: false,
+    };
+    let offset = eval_supported_constant_bytes_match_offset(&input, &index_args);
+    if offset < 0 {
+        return input;
+    }
+    eval_supported_constant_replace_bytes_at(input, offset as usize, &args.pattern, &[])
+}
+
+#[derive(Clone)]
+struct ConstantBytesReplaceArgs {
+    pattern: Vec<u8>,
+    replacement: Vec<u8>,
+    replace_all: bool,
+}
+
+fn eval_supported_constant_bytes_replace_call_args(
+    working_set: &StateWorkingSet,
+    args: &[nu_protocol::ast::Argument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<ConstantBytesReplaceArgs, LabeledError> {
+    let mut positional = Vec::new();
+    let mut replace_all = false;
+    for arg in args {
+        match arg {
+            nu_protocol::ast::Argument::Positional(expr)
+            | nu_protocol::ast::Argument::Unknown(expr) => positional.push(expr),
+            nu_protocol::ast::Argument::Named(named) => {
+                if named.0.item != "all" || named.2.is_some() {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            "`bytes replace` accepts only the --all flag in compile-time global initializers",
+                            arg.span(),
+                        ));
+                }
+                replace_all = true;
+            }
+            nu_protocol::ast::Argument::Spread(expr) => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`bytes replace` arguments cannot use spread syntax in compile-time global initializers",
+                        expr.span,
+                    ));
+            }
+        }
+    }
+
+    let [pattern_expr, replacement_expr] = positional.as_slice() else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`bytes replace` requires exactly one binary pattern and one binary replacement in compile-time global initializers",
+                span,
+            ),
+        );
+    };
+    let pattern =
+        eval_supported_constant_binary_argument(working_set, pattern_expr, env, "bytes replace")?;
+    eval_supported_constant_validate_bytes_pattern("bytes replace", &pattern, pattern_expr.span)?;
+    let replacement = eval_supported_constant_binary_argument(
+        working_set,
+        replacement_expr,
+        env,
+        "bytes replace",
+    )?;
+
+    Ok(ConstantBytesReplaceArgs {
+        pattern,
+        replacement,
+        replace_all,
+    })
+}
+
+fn eval_supported_constant_bytes_replace_external_args(
+    working_set: &StateWorkingSet,
+    args: &[ExternalArgument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<ConstantBytesReplaceArgs, LabeledError> {
+    let mut positional = Vec::new();
+    let mut replace_all = false;
+    for arg in args {
+        let ExternalArgument::Regular(expr) = arg else {
+            return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                .with_label(
+                    "`bytes replace` arguments cannot use spread syntax in compile-time global initializers",
+                    arg.expr().span,
+                ));
+        };
+        let value = eval_supported_constant_value_with_env(working_set, expr, env)?;
+        match value {
+            Value::String { val, .. } | Value::Glob { val, .. } if val == "--all" => {
+                replace_all = true;
+            }
+            Value::String { val, .. } | Value::Glob { val, .. } if val.starts_with("--") => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`bytes replace` accepts only the --all flag in compile-time global initializers",
+                        expr.span,
+                    ));
+            }
+            _ => positional.push(expr),
+        }
+    }
+
+    let [pattern_expr, replacement_expr] = positional.as_slice() else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`bytes replace` requires exactly one binary pattern and one binary replacement in compile-time global initializers",
+                span,
+            ),
+        );
+    };
+    let pattern =
+        eval_supported_constant_binary_argument(working_set, pattern_expr, env, "bytes replace")?;
+    eval_supported_constant_validate_bytes_pattern("bytes replace", &pattern, pattern_expr.span)?;
+    let replacement = eval_supported_constant_binary_argument(
+        working_set,
+        replacement_expr,
+        env,
+        "bytes replace",
+    )?;
+
+    Ok(ConstantBytesReplaceArgs {
+        pattern,
+        replacement,
+        replace_all,
+    })
+}
+
+fn eval_supported_constant_bytes_replace(
+    input: Option<Value>,
+    args: ConstantBytesReplaceArgs,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    eval_supported_constant_bytes_transform_items("bytes replace", input, span, |bytes| {
+        eval_supported_constant_replace_bytes(bytes, &args)
+    })
+}
+
+fn eval_supported_constant_replace_bytes(
+    input: Vec<u8>,
+    args: &ConstantBytesReplaceArgs,
+) -> Vec<u8> {
+    if args.replace_all {
+        return eval_supported_constant_replace_all_bytes(input, &args.pattern, &args.replacement);
+    }
+    let index_args = ConstantBytesIndexOfArgs {
+        pattern: args.pattern.clone(),
+        search_from_end: false,
+        all_matches: false,
+    };
+    let offset = eval_supported_constant_bytes_match_offset(&input, &index_args);
+    if offset < 0 {
+        return input;
+    }
+    eval_supported_constant_replace_bytes_at(
+        input,
+        offset as usize,
+        &args.pattern,
+        &args.replacement,
+    )
+}
+
+fn eval_supported_constant_validate_bytes_pattern(
+    cmd_name: &str,
+    pattern: &[u8],
+    span: Span,
+) -> Result<(), LabeledError> {
+    if pattern.is_empty() {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!("`{cmd_name}` requires a non-empty binary pattern in compile-time global initializers"),
+                span,
+            ),
+        );
+    }
+    Ok(())
+}
+
+fn eval_supported_constant_bytes_transform_items<F>(
+    cmd_name: &str,
+    input: Option<Value>,
+    span: Span,
+    mut transform: F,
+) -> Result<Value, LabeledError>
+where
+    F: FnMut(Vec<u8>) -> Vec<u8>,
+{
+    let value = eval_supported_constant_required_pipeline_input(cmd_name, input, span)?;
+    let value_span = value.span();
+    match value {
+        Value::Binary { val, .. } => Ok(Value::binary(transform(val), value_span)),
+        Value::List { vals, .. } => {
+            let transformed = vals
+                .into_iter()
+                .enumerate()
+                .map(|(index, value)| {
+                    let Value::Binary { val, .. } = value else {
+                        return Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
+                        .with_label(
+                            format!(
+                                "`{cmd_name}` requires binary list items in compile-time global initializers; item {index} has type {}",
+                                value.get_type()
+                            ),
+                            span,
+                        ));
+                    };
+                    Ok(Value::binary(transform(val), value_span))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(Value::list(transformed, value_span))
+        }
+        other => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`{cmd_name}` in a compile-time global initializer requires binary or list<binary> input; got {}",
+                    other.get_type()
+                ),
+                span,
+            ),
+        ),
+    }
+}
+
+fn eval_supported_constant_replace_all_bytes(
+    input: Vec<u8>,
+    pattern: &[u8],
+    replacement: &[u8],
+) -> Vec<u8> {
+    let mut output = Vec::with_capacity(input.len());
+    let mut offset = 0;
+    while offset + pattern.len() <= input.len() {
+        if input[offset..offset + pattern.len()] == *pattern {
+            output.extend(replacement);
+            offset += pattern.len();
+        } else {
+            output.push(input[offset]);
+            offset += 1;
+        }
+    }
+    output.extend_from_slice(&input[offset..]);
+    output
+}
+
+fn eval_supported_constant_replace_bytes_at(
+    input: Vec<u8>,
+    offset: usize,
+    pattern: &[u8],
+    replacement: &[u8],
+) -> Vec<u8> {
+    let mut output = Vec::with_capacity(input.len() - pattern.len() + replacement.len());
+    output.extend_from_slice(&input[..offset]);
+    output.extend_from_slice(replacement);
+    output.extend_from_slice(&input[offset + pattern.len()..]);
+    output
+}
+
 fn eval_supported_constant_bytes_external_call(
     working_set: &StateWorkingSet,
     input: Option<Value>,
@@ -2987,6 +3437,24 @@ fn eval_supported_constant_bytes_external_call(
                 span,
             )?;
             eval_supported_constant_bytes_index_of(input, args, span)
+        }
+        "remove" => {
+            let args = eval_supported_constant_bytes_remove_external_args(
+                working_set,
+                remaining_args,
+                env,
+                span,
+            )?;
+            eval_supported_constant_bytes_remove(input, args, span)
+        }
+        "replace" => {
+            let args = eval_supported_constant_bytes_replace_external_args(
+                working_set,
+                remaining_args,
+                env,
+                span,
+            )?;
+            eval_supported_constant_bytes_replace(input, args, span)
         }
         _ => Err(
             LabeledError::new("Unsupported annotated mutable global initializer").with_label(
