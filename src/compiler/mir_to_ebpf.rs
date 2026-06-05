@@ -43,6 +43,7 @@ use crate::compiler::mir::{
     StackSlotKind, StringAppendType, SubfunctionId, TIMESTAMP_MAP_NAME, USTACK_MAP_NAME,
     UnaryOpKind, VReg,
 };
+use crate::compiler::mir_integrity::validate_mir_program_structural_references;
 use crate::compiler::mir_to_lir::lower_mir_to_lir_checked;
 use crate::compiler::passes::{ListLowering, MirPass, SsaDestruction};
 use crate::compiler::subfn_summaries::infer_subfunction_summaries;
@@ -623,6 +624,19 @@ fn validate_lir_function_for_codegen(func: &LirFunction) -> Result<(), CompileEr
     Ok(())
 }
 
+fn validate_mir_program_for_compile(mir: &MirProgram) -> Result<(), CompileError> {
+    if let Err(errors) = validate_mir_program_structural_references(mir) {
+        return Err(CompileError::UnsupportedInstruction(
+            errors
+                .into_iter()
+                .map(|err| err.message)
+                .collect::<Vec<_>>()
+                .join("; "),
+        ));
+    }
+    Ok(())
+}
+
 /// Compile a MIR program to eBPF
 pub fn compile_mir_to_ebpf(
     mir: &MirProgram,
@@ -663,6 +677,8 @@ pub fn compile_mir_to_ebpf_with_hints_and_globals(
     data_globals: Vec<DataGlobal>,
     bss_globals: Vec<BssGlobal>,
 ) -> Result<MirCompileResult, CompileError> {
+    validate_mir_program_for_compile(mir)?;
+
     let mut program = mir.clone();
     let mut normalized_type_hints = type_hints.cloned();
     let list_lowering = ListLowering;
@@ -677,6 +693,7 @@ pub fn compile_mir_to_ebpf_with_hints_and_globals(
         let cfg = CFG::build(subfn);
         let _ = ssa_destruct.run(subfn, &cfg);
     }
+    validate_mir_program_for_compile(&program)?;
 
     if let Some(hints) = normalized_type_hints.as_mut() {
         recover_optimized_mir_type_hints(&program, probe_ctx, hints);

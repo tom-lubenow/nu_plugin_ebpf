@@ -5,7 +5,8 @@ use crate::compiler::hir::{
 };
 use crate::compiler::ir_to_mir::lower_hir_to_mir_with_hints;
 use crate::compiler::mir::{
-    CtxStoreTarget, MirInst, MirProgram, MirValue, StackSlotId, StackSlotKind, UnaryOpKind,
+    CtxStoreTarget, MirFunction, MirInst, MirProgram, MirValue, StackSlotId, StackSlotKind,
+    UnaryOpKind,
 };
 use crate::compiler::{
     CompileError, EbpfProgram, compile_mir_to_ebpf,
@@ -428,6 +429,58 @@ fn test_compile_rejects_empty_lir_function() {
     match err {
         CompileError::UnsupportedInstruction(message) => {
             assert!(message.contains("at least one basic block"));
+        }
+        other => panic!("expected UnsupportedInstruction, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_compile_rejects_invalid_mir_before_passes() {
+    let mut main = MirFunction::new();
+    let entry = main.alloc_block();
+    main.entry = entry;
+    let dst = main.alloc_vreg();
+    main.block_mut(entry).terminator = MirInst::Copy {
+        dst,
+        src: MirValue::Const(0),
+    };
+
+    let program = MirProgram::new(main);
+    let err = match compile_mir_to_ebpf(&program, None) {
+        Ok(_) => panic!("invalid MIR terminator should be rejected before compile passes"),
+        Err(err) => err,
+    };
+
+    match err {
+        CompileError::UnsupportedInstruction(message) => {
+            assert!(message.contains("invalid terminator"));
+        }
+        other => panic!("expected UnsupportedInstruction, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_compile_rejects_out_of_range_mir_subfunction_reference() {
+    let mut main = MirFunction::new();
+    let entry = main.alloc_block();
+    main.entry = entry;
+    let dst = main.alloc_vreg();
+    main.block_mut(entry).instructions.push(MirInst::CallSubfn {
+        dst,
+        subfn: SubfunctionId(0),
+        args: Vec::new(),
+    });
+    main.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let program = MirProgram::new(main);
+    let err = match compile_mir_to_ebpf(&program, None) {
+        Ok(_) => panic!("invalid MIR subfunction reference should be rejected before compile"),
+        Err(err) => err,
+    };
+
+    match err {
+        CompileError::UnsupportedInstruction(message) => {
+            assert!(message.contains("subfunction reference 0 is out of range"));
         }
         other => panic!("expected UnsupportedInstruction, got {other:?}"),
     }
