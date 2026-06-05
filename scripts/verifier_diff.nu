@@ -37539,6 +37539,25 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "raw-tcp-send-ack-helper"
+        category: "helper-state"
+        tags: [helper-call tcp struct-ops tcp-congestion accept source metadata]
+        target: "struct_ops:tcp_congestion_ops"
+        program: [
+            '{'
+            '    name: "nu.demo_1"'
+            '    ssthresh: {|ctx| 2 }'
+            '    cong_avoid: {|ctx|'
+            '        helper-call "bpf_tcp_send_ack" $ctx.arg0 0'
+            '        0'
+            '    }'
+            '    undo_cwnd: {|ctx| 2 }'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "struct-ops-sleepable-callback-target-metadata"
         category: "program-model"
         tags: [struct-ops callback sleepable metadata attach reject]
