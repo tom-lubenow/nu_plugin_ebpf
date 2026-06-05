@@ -672,6 +672,7 @@ fn eval_supported_constant_call(
             &call.arguments,
             span,
         ),
+        "sort" => eval_supported_constant_list_sort_call(input, &call.arguments, span),
         "get" => eval_supported_constant_get_call(
             working_set,
             cmd_name,
@@ -858,6 +859,41 @@ fn eval_supported_constant_external_call(
             eval_supported_constant_list_compact_external_call(
                 working_set, input, arg_exprs, span,
             )
+        }
+        "sort" => {
+            let mut reverse = false;
+            if let Some(first_arg) = args.first() {
+                let ExternalArgument::Regular(first_expr) = first_arg else {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            "`sort` arguments cannot use spread syntax in compile-time global initializers",
+                            first_arg.expr().span,
+                        ));
+                };
+                let first_value = eval_supported_constant_value(working_set, first_expr)?;
+                if matches!(
+                    first_value,
+                    Value::String { ref val, .. } | Value::Glob { ref val, .. } if val == "--reverse"
+                ) {
+                    reverse = true;
+                    if args.len() > 1 {
+                        return Err(
+                            LabeledError::new("Unsupported annotated mutable global initializer")
+                                .with_label(
+                                    "`sort` does not accept arguments in compile-time global initializers",
+                                    span,
+                                ),
+                        );
+                    }
+                } else {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            "`sort` does not accept arguments in compile-time global initializers",
+                            span,
+                        ));
+                }
+            }
+            eval_supported_constant_list_sort(input, reverse, span)
         }
         "get" => {
             let [path_arg] = args else {
@@ -1413,6 +1449,151 @@ fn eval_supported_constant_compact_keeps_value(value: &Value, remove_empty: bool
         Value::List { vals, .. } => !remove_empty || !vals.is_empty(),
         Value::Record { val, .. } => !remove_empty || !val.is_empty(),
         _ => true,
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ConstantFloatSortKey(f64);
+
+impl PartialEq for ConstantFloatSortKey {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other).is_eq()
+    }
+}
+
+impl Eq for ConstantFloatSortKey {}
+
+impl PartialOrd for ConstantFloatSortKey {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for ConstantFloatSortKey {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0
+            .partial_cmp(&other.0)
+            .expect("constant sort rejects non-finite float keys")
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+enum ConstantSortKey {
+    Bool(bool),
+    Int(i64),
+    Float(ConstantFloatSortKey),
+    Binary(Vec<u8>),
+    String(String),
+}
+
+fn eval_supported_constant_list_sort_call(
+    input: Option<Value>,
+    args: &[nu_protocol::ast::Argument],
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let mut reverse = false;
+    for arg in args {
+        match arg {
+            nu_protocol::ast::Argument::Named(named) => {
+                if named.0.item != "reverse" || named.2.is_some() {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            "`sort` accepts only the --reverse flag in compile-time global initializers",
+                            arg.span(),
+                        ));
+                }
+                reverse = true;
+            }
+            nu_protocol::ast::Argument::Positional(_) | nu_protocol::ast::Argument::Unknown(_) => {
+                return Err(
+                    LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            "`sort` does not accept arguments in compile-time global initializers",
+                            arg.span(),
+                        ),
+                );
+            }
+            nu_protocol::ast::Argument::Spread(expr) => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`sort` arguments cannot use spread syntax in compile-time global initializers",
+                        expr.span,
+                    ));
+            }
+        }
+    }
+
+    eval_supported_constant_list_sort(input, reverse, span)
+}
+
+fn eval_supported_constant_list_sort(
+    input: Option<Value>,
+    reverse: bool,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let value = input.ok_or_else(|| {
+        LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+            "`sort` in a compile-time global initializer must receive pipeline input",
+            span,
+        )
+    })?;
+    let value_span = value.span();
+    let Value::List { vals, .. } = value else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`sort` in a compile-time global initializer requires list input",
+                span,
+            ),
+        );
+    };
+
+    let keys = vals
+        .iter()
+        .map(eval_supported_constant_sort_key)
+        .collect::<Option<Vec<_>>>()
+        .ok_or_else(|| {
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`sort` supports compile-time lists with boolean, integer, finite float, binary, or string elements",
+                span,
+            )
+        })?;
+    if let Some((first, rest)) = keys.split_first()
+        && rest
+            .iter()
+            .any(|key| std::mem::discriminant(key) != std::mem::discriminant(first))
+    {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`sort` requires compile-time list elements with one comparable type",
+                span,
+            ),
+        );
+    }
+
+    let mut indexed = keys.into_iter().zip(vals).collect::<Vec<_>>();
+    indexed.sort_by(|(left_key, _), (right_key, _)| {
+        let ord = left_key.cmp(right_key);
+        if reverse { ord.reverse() } else { ord }
+    });
+    let vals = indexed
+        .into_iter()
+        .map(|(_, value)| value)
+        .collect::<Vec<_>>();
+    Ok(Value::list(vals, value_span))
+}
+
+fn eval_supported_constant_sort_key(value: &Value) -> Option<ConstantSortKey> {
+    match value {
+        Value::Bool { val, .. } => Some(ConstantSortKey::Bool(*val)),
+        Value::Int { val, .. } => Some(ConstantSortKey::Int(*val)),
+        Value::Float { val, .. } if val.is_finite() => {
+            Some(ConstantSortKey::Float(ConstantFloatSortKey(*val)))
+        }
+        Value::Binary { val, .. } => Some(ConstantSortKey::Binary(val.clone())),
+        Value::String { val, .. } | Value::Glob { val, .. } => {
+            Some(ConstantSortKey::String(val.clone()))
+        }
+        _ => None,
     }
 }
 
