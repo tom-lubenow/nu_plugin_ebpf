@@ -16110,6 +16110,24 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "raw-ima-hash-helpers"
+        category: "helper-state"
+        tags: [helper ima hash accept source metadata]
+        requires: [kernel-btf]
+        target: "lsm.s:file_open"
+        program: [
+            '{|ctx|'
+            '  let file_hash = "0123456789012345"'
+            '  let inode_hash = "0123456789012345"'
+            '  helper-call "bpf_ima_file_hash" $ctx.arg.file $file_hash 16'
+            '  helper-call "bpf_ima_inode_hash" $ctx.arg.file.f_inode $inode_hash 16'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "raw-cgrp-storage-get-helper"
         category: "maps"
         tags: [maps local-storage cgrp-storage helper-call accept source metadata]
