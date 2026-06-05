@@ -14,6 +14,7 @@ use nu_protocol::{
     Record, Signature, Span, Spanned, Type, Value, levenshtein_distance,
 };
 use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
 
 use super::closure_params::recover_closure_param_sources;
 use super::struct_ops::{
@@ -721,6 +722,10 @@ fn eval_supported_constant_call(
                 eval_supported_constant_str_join_call_separator(working_set, &call.arguments, env)?;
             eval_supported_constant_str_join(input, separator, span)
         }
+        "str stats" => {
+            eval_supported_constant_no_argument_call(cmd_name, &call.arguments)?;
+            eval_supported_constant_str_stats(input, span)
+        }
         "split chars" => {
             let use_grapheme_clusters =
                 eval_supported_constant_split_chars_mode_call(&call.arguments)?;
@@ -1028,6 +1033,10 @@ fn eval_supported_constant_external_call(
             let separator =
                 eval_supported_constant_str_join_external_separator(working_set, args, env, span)?;
             eval_supported_constant_str_join(input, separator, span)
+        }
+        "str stats" => {
+            eval_supported_constant_no_external_args(cmd_name, args, span)?;
+            eval_supported_constant_str_stats(input, span)
         }
         "split" => eval_supported_constant_split_external_call(working_set, input, args, env, span),
         "split chars" => {
@@ -2515,6 +2524,97 @@ fn eval_supported_constant_str_join_item_value(
     }
 }
 
+fn eval_supported_constant_str_stats(
+    input: Option<Value>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let value = eval_supported_constant_required_pipeline_input("str stats", input, span)?;
+    let value_span = value.span();
+    let input = eval_supported_constant_exact_string_value(value, "str stats", span)?;
+    let counts = [
+        (
+            "lines",
+            eval_supported_constant_str_stats_line_count(&input) as i64,
+        ),
+        ("words", input.unicode_words().count() as i64),
+        ("bytes", input.len() as i64),
+        ("chars", input.chars().count() as i64),
+        (
+            "graphemes",
+            UnicodeSegmentation::graphemes(input.as_str(), true).count() as i64,
+        ),
+        (
+            "unicode-width",
+            eval_supported_constant_str_stats_unicode_width(&input) as i64,
+        ),
+    ];
+
+    let mut record = Record::new();
+    for (name, count) in counts {
+        record.push(name, Value::int(count, value_span));
+    }
+    Ok(Value::record(record, value_span))
+}
+
+fn eval_supported_constant_str_stats_line_count(input: &str) -> usize {
+    if input.is_empty() {
+        return 0;
+    }
+
+    const LINE_ENDINGS: [&str; 7] = [
+        "\r\n", "\n", "\r", "\u{0085}", "\u{000C}", "\u{2028}", "\u{2029}",
+    ];
+
+    let mut count = 0;
+    let mut index = 0;
+    while index < input.len() {
+        let rest = &input[index..];
+        if rest.starts_with("\r\n") {
+            count += 1;
+            index += "\r\n".len();
+            continue;
+        }
+
+        let Some(ch) = rest.chars().next() else {
+            break;
+        };
+        if matches!(
+            ch,
+            '\n' | '\r' | '\u{0085}' | '\u{000C}' | '\u{2028}' | '\u{2029}'
+        ) {
+            count += 1;
+        }
+        index += ch.len_utf8();
+    }
+
+    if LINE_ENDINGS.iter().any(|ending| input.ends_with(ending)) {
+        count
+    } else {
+        count + 1
+    }
+}
+
+fn eval_supported_constant_str_stats_unicode_width(input: &str) -> usize {
+    UnicodeSegmentation::graphemes(input, true)
+        .map(|grapheme| {
+            let width = UnicodeWidthStr::width(grapheme);
+            if width == 0
+                && grapheme
+                    .chars()
+                    .any(eval_supported_constant_str_stats_counts_width_one)
+            {
+                1
+            } else {
+                width
+            }
+        })
+        .sum()
+}
+
+fn eval_supported_constant_str_stats_counts_width_one(ch: char) -> bool {
+    ch.is_control() || matches!(ch, '\u{2028}' | '\u{2029}')
+}
+
 fn eval_supported_constant_split_chars_mode_call(
     args: &[nu_protocol::ast::Argument],
 ) -> Result<bool, LabeledError> {
@@ -3854,6 +3954,10 @@ fn eval_supported_constant_str_external_call(
                 span,
             )?;
             eval_supported_constant_str_join(input, separator, span)
+        }
+        "stats" => {
+            eval_supported_constant_no_external_args("str stats", remaining_args, span)?;
+            eval_supported_constant_str_stats(input, span)
         }
         _ => Err(
             LabeledError::new("Unsupported annotated mutable global initializer").with_label(
