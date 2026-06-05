@@ -5,8 +5,7 @@ use crate::compiler::hir::{
 };
 use crate::compiler::ir_to_mir::lower_hir_to_mir_with_hints;
 use crate::compiler::mir::{
-    CtxStoreTarget, MirFunction, MirInst, MirProgram, MirValue, StackSlotId, StackSlotKind,
-    UnaryOpKind,
+    CtxStoreTarget, MirInst, MirProgram, MirValue, StackSlotId, StackSlotKind, UnaryOpKind,
 };
 use crate::compiler::{
     CompileError, EbpfProgram, compile_mir_to_ebpf,
@@ -858,26 +857,28 @@ fn test_store_large_constant_materializes_full_64_bits() {
 
 #[test]
 fn test_stack_layout_rejects_unrepresentable_slot_size() {
-    let mut func = MirFunction::new();
+    let mut func = LirFunction::new();
     let entry = func.alloc_block();
     func.entry = entry;
 
     let slot = func.alloc_stack_slot(usize::MAX, 8, StackSlotKind::Local);
     let ptr = func.alloc_vreg();
-    func.block_mut(entry).instructions.push(MirInst::Copy {
+    func.block_mut(entry).instructions.push(LirInst::Copy {
         dst: ptr,
         src: MirValue::StackSlot(slot),
     });
-    func.block_mut(entry).terminator = MirInst::Return {
+    func.block_mut(entry).terminator = LirInst::Return {
         val: Some(MirValue::Const(0)),
     };
 
-    let program = MirProgram {
-        main: func,
-        subfunctions: vec![],
-    };
+    let program = LirProgram::new(func);
+    let mut compiler = MirToEbpfCompiler::new(&program, None);
 
-    let result = compile_mir_to_ebpf(&program, None);
+    let result = compiler.prepare_function_state(
+        &program.main,
+        compiler.available_regs.clone(),
+        program.main.precolored.clone(),
+    );
     match result {
         Err(CompileError::StackOverflow) => {}
         Err(err) => panic!("expected stack overflow for unrepresentable stack slot, got {err:?}"),

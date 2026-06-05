@@ -4912,6 +4912,29 @@ fn test_verify_mir_rejects_oversized_param_count_before_vreg_setup() {
 }
 
 #[test]
+fn test_verify_mir_rejects_unrepresentable_stack_slot_size_before_bounds_setup() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    let slot = func.alloc_stack_slot(i64::MAX as usize + 1, 8, StackSlotKind::Local);
+    let ptr = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: ptr,
+        src: MirValue::StackSlot(slot),
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let err = verify_mir(&func, &HashMap::new())
+        .expect_err("oversized stack slot should be rejected before bounds setup");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("representable MIR stack bounds")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_accepts_helper_context_argument_from_ctx_pointer_load() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

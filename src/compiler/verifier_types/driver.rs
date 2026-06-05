@@ -113,7 +113,17 @@ fn verify_mir_with_subfunction_summaries_impl(
 
     let mut slot_sizes: HashMap<StackSlotId, i64> = HashMap::new();
     for slot in &func.stack_slots {
-        let limit = slot.size.saturating_sub(1) as i64;
+        if i64::try_from(slot.size).is_err() {
+            return Err(vec![VerifierTypeError::new(format!(
+                "stack slot {} size {} exceeds representable MIR stack bounds",
+                slot.id.0, slot.size
+            ))]);
+        }
+        let limit = if slot.size == 0 {
+            0
+        } else {
+            (slot.size - 1) as i64
+        };
         slot_sizes.insert(slot.id, limit);
     }
     let mut in_states: HashMap<BlockId, VerifierState> = HashMap::new();

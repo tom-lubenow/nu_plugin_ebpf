@@ -463,6 +463,15 @@ impl<'a> TypeInference<'a> {
     ///
     /// Returns the type map on success, or a list of type errors.
     pub fn infer(&mut self, func: &MirFunction) -> Result<HashMap<VReg, MirType>, Vec<TypeError>> {
+        for slot in &func.stack_slots {
+            if i64::try_from(slot.size).is_err() {
+                return Err(vec![TypeError::new(format!(
+                    "stack slot {} size {} exceeds representable MIR stack bounds",
+                    slot.id.0, slot.size
+                ))]);
+            }
+        }
+
         if func.param_count > 5 {
             return Err(vec![TypeError::new(format!(
                 "BPF subfunctions support at most 5 arguments, got {}",
