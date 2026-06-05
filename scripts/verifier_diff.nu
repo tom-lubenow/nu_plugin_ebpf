@@ -28349,7 +28349,7 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "kfunc-call 'bpf_wq_init' requires arg0 to be a bpf_wq field projected from a concrete map value"
+        error_contains: "requires arg0 to be a bpf_wq field projected from a concrete map value"
     }
     {
         name: "bpf-wq-start-requires-null-checked-map-lookup"
@@ -28474,7 +28474,7 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "kfunc-call 'bpf_wq_set_callback_impl' requires arg0 to be a bpf_wq field projected from a concrete map value"
+        error_contains: "requires arg0 to be a bpf_wq field projected from a concrete map value"
     }
     {
         name: "bpf-wq-kfunc-set-callback"
@@ -36179,7 +36179,7 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "helper-call 'bpf_timer_init' requires arg0 to be a bpf_timer field projected from a concrete map value"
+        error_contains: "requires arg0 to be a bpf_timer field projected from a concrete map value"
     }
     {
         name: "spin-lock-map-define-lock-unlock"
@@ -36396,7 +36396,7 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "helper-call 'bpf_timer_set_callback' requires arg0 to be a bpf_timer field projected from a concrete map value"
+        error_contains: "requires arg0 to be a bpf_timer field projected from a concrete map value"
     }
     {
         name: "timer-start-rejects-non-map-timer"
@@ -36431,7 +36431,7 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "helper-call 'bpf_timer_start' requires arg0 to be a bpf_timer field projected from a concrete map value"
+        error_contains: "requires arg0 to be a bpf_timer field projected from a concrete map value"
     }
     {
         name: "timer-cancel-rejects-non-map-timer"
@@ -36467,7 +36467,7 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "helper-call 'bpf_timer_cancel' requires arg0 to be a bpf_timer field projected from a concrete map value"
+        error_contains: "requires arg0 to be a bpf_timer field projected from a concrete map value"
     }
     {
         name: "ringbuf-query-rejects-invalid-flags"
