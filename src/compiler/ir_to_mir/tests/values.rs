@@ -15067,11 +15067,159 @@ fn test_lower_fill_width_three_center_right_on_runtime_unsigned_int_materializes
         .expect("runtime integer center-right fill --width 3 result should compile");
 }
 
+fn assert_runtime_integer_fill_padding_shape(
+    result: &MirLoweringResult,
+    thresholds: &[i64],
+    fill: &[u8],
+    fill_count: usize,
+    context: &str,
+) {
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .any(|block| matches!(block.terminator, MirInst::Branch { .. })),
+        "expected {context} to branch on runtime padding conditions"
+    );
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+    for threshold in thresholds {
+        assert!(
+            instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op: BinOpKind::Lt,
+                    rhs: MirValue::Const(value),
+                    ..
+                } if *value == *threshold
+            )),
+            "expected {context} to test value < {threshold}"
+        );
+    }
+    assert_eq!(
+        instructions
+            .iter()
+            .filter(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.as_slice() == fill
+            ))
+            .count(),
+        fill_count,
+        "expected {context} to append {fill_count} possible fill characters"
+    );
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::StringAppend {
+                val_type: StringAppendType::Integer,
+                ..
+            }
+        )),
+        "expected {context} to format through StringAppend::Integer"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .unwrap_or_else(|err| panic!("{context} result should compile: {err}"));
+}
+
 #[test]
-fn test_lower_fill_width_four_rejects_runtime_unsigned_int() {
+fn test_lower_fill_width_four_left_on_runtime_unsigned_int_materializes_dynamic_padding() {
+    let result = lower_ctx_pid_fill_then_starts_with_program_with_options(
+        DeclId::new(2525),
+        DeclId::new(2526),
+        Some(4),
+        None,
+        None,
+        "0",
+        "fill --width 4 should lower for runtime unsigned integer input",
+    );
+
+    assert_runtime_integer_fill_padding_shape(
+        &result,
+        &[2, 3, 4],
+        b" ",
+        3,
+        "runtime integer left fill --width 4",
+    );
+}
+
+#[test]
+fn test_lower_fill_width_four_right_on_runtime_unsigned_int_materializes_dynamic_padding() {
+    let result = lower_ctx_pid_fill_then_starts_with_program_with_options(
+        DeclId::new(2527),
+        DeclId::new(2528),
+        Some(4),
+        Some("right"),
+        Some("0"),
+        "0",
+        "fill --width 4 --alignment right should lower for runtime unsigned integer input",
+    );
+
+    assert_runtime_integer_fill_padding_shape(
+        &result,
+        &[10, 100, 1000],
+        b"0",
+        3,
+        "runtime integer right fill --width 4",
+    );
+}
+
+#[test]
+fn test_lower_fill_width_four_center_on_runtime_unsigned_int_materializes_dynamic_padding() {
+    let result = lower_ctx_pid_fill_then_starts_with_program_with_options(
+        DeclId::new(2529),
+        DeclId::new(2530),
+        Some(4),
+        Some("center"),
+        Some("0"),
+        "0",
+        "fill --width 4 --alignment center should lower for runtime unsigned integer input",
+    );
+
+    assert_runtime_integer_fill_padding_shape(
+        &result,
+        &[100, 3, 4],
+        b"0",
+        3,
+        "runtime integer center fill --width 4",
+    );
+}
+
+#[test]
+fn test_lower_fill_width_four_center_right_on_runtime_unsigned_int_materializes_dynamic_padding() {
+    let result = lower_ctx_pid_fill_then_starts_with_program_with_options(
+        DeclId::new(2531),
+        DeclId::new(2532),
+        Some(4),
+        Some("cr"),
+        Some("0"),
+        "0",
+        "fill --width 4 --alignment cr should lower for runtime unsigned integer input",
+    );
+
+    assert_runtime_integer_fill_padding_shape(
+        &result,
+        &[10, 1000, 4],
+        b"0",
+        3,
+        "runtime integer center-right fill --width 4",
+    );
+}
+
+#[test]
+fn test_lower_fill_width_five_rejects_runtime_unsigned_int() {
     let fill_decl = DeclId::new(2509);
     let starts_with_decl = DeclId::new(2510);
-    let hir = make_ctx_pid_fill_then_starts_with_program(fill_decl, starts_with_decl, Some(4));
+    let hir = make_ctx_pid_fill_then_starts_with_program(fill_decl, starts_with_decl, Some(5));
     let decl_names = HashMap::from([
         (fill_decl, "fill".to_string()),
         (starts_with_decl, "str starts-with".to_string()),
@@ -15086,7 +15234,7 @@ fn test_lower_fill_width_four_rejects_runtime_unsigned_int() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("fill --width 4 should reject runtime integer input because padding is dynamic");
+    .expect_err("fill --width 5 should reject runtime integer input because padding is dynamic");
 
     assert!(
         err.to_string()
