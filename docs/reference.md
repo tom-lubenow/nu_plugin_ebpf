@@ -257,7 +257,9 @@ flows, task/cgroup reference release requirements, the
 stable `init`/`dispatch`/`enqueue` DSQ kfunc flows, plus stack/map-backed
 SCX bstr/events buffer and positive-size rules. DSQ iterator source checks
 also enforce `bpf_iter_scx_dsq_new` / `next` / `destroy` lifecycle matching for
-dispatch move helpers.
+dispatch move helpers. Linux 6.19 sched_ext v2 kfunc spelling fixtures are
+host-gated with `kernel-btf-kfunc:<symbol>` so they run only when local kernel
+BTF exposes those symbols.
 Individual context-field, context-projection, and context-write records also
 carry nullable `compatibility_minimum_kernel` and
 `compatibility_minimum_kernel_source` fields that aggregate the known direct

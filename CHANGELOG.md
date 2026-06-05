@@ -6,6 +6,9 @@ documentation changes that matter to external alpha consumers.
 
 ## Unreleased
 
+- Added host-gated source verifier fixtures for Linux 6.19 sched_ext v2 kfunc
+  spellings, with `kernel-btf-kfunc:<symbol>` fixture requirements for kernels
+  whose BTF exposes those names.
 - Added source verifier coverage for sched_ext DSQ iterator and move kfunc
   flows, including iterator lifecycle matching and move helper rejects.
 - Added source verifier coverage for sched_ext bstr/events kfunc flows,

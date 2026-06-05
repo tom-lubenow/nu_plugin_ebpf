@@ -12,6 +12,7 @@ const VALID_HOST_FEATURES = [
     "netns-self"
     "tracefs"
 ]
+const HOST_FEATURE_PREFIX_KERNEL_BTF_KFUNC = "kernel-btf-kfunc:"
 
 def test-lane-description [lane: string] {
     if $lane == "host-safe" {
@@ -37099,6 +37100,42 @@ const FIXTURES = [
         error_contains: "kfunc 'scx_bpf_dsq_move_set_slice' requires a matching bpf_iter_scx_dsq_new"
     }
     {
+        name: "source-kfunc-sched-ext-dsq-insert-v2"
+        category: "kfunc"
+        tags: [kfunc sched-ext dsq source accept compat-window]
+        requires: [kernel-btf-kfunc:scx_bpf_dsq_insert___v2]
+        target: "struct_ops:sched_ext_ops"
+        program: [
+            '{'
+            '    name: "nu.demo_1"'
+            '    enqueue: {|ctx|'
+            '        let inserted = (kfunc-call "scx_bpf_dsq_insert___v2" $ctx.arg.p 0 0 0)'
+            '        if $inserted { 0 } else { 0 }'
+            '    }'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-kfunc-sched-ext-reenqueue-local-v2"
+        category: "kfunc"
+        tags: [kfunc sched-ext dsq source accept compat-window]
+        requires: [kernel-btf-kfunc:scx_bpf_reenqueue_local___v2]
+        target: "struct_ops:sched_ext_ops"
+        program: [
+            '{'
+            '    name: "nu.demo_1"'
+            '    dispatch: {|ctx|'
+            '        kfunc-call "scx_bpf_reenqueue_local___v2"'
+            '        0'
+            '    }'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "struct-ops-callback-target-rejects-attach"
         category: "program-model"
         tags: [struct-ops callback attach reject]
@@ -54682,7 +54719,7 @@ def fixture-tier [fixture] {
         | append (optional $fixture kernel_requires [])
     )
 
-    if ($requirements | any {|feature| $feature in ["kernel-btf" "tracefs"] }) {
+    if ($requirements | any {|feature| ($feature in ["kernel-btf" "tracefs"]) or ($feature | str starts-with $HOST_FEATURE_PREFIX_KERNEL_BTF_KFUNC) }) {
         "btf"
     } else {
         "fast"
@@ -54998,8 +55035,15 @@ def validate-host-features [fixture field: string] {
         if ($feature | str starts-with "tracepoint:") {
             continue
         }
+        if ($feature | str starts-with $HOST_FEATURE_PREFIX_KERNEL_BTF_KFUNC) {
+            let kfunc = ($feature | str substring ($HOST_FEATURE_PREFIX_KERNEL_BTF_KFUNC | str length)..)
+            if $kfunc == "" {
+                fail $"fixture ($fixture.name) declares empty ($HOST_FEATURE_PREFIX_KERNEL_BTF_KFUNC) host feature in ($field)"
+            }
+            continue
+        }
         if $feature not-in $VALID_HOST_FEATURES {
-            fail $"fixture ($fixture.name) declares unknown ($field) feature '($feature)'; expected one of ($VALID_HOST_FEATURES | str join ', ') or tracepoint:<system>/<event>"
+            fail $"fixture ($fixture.name) declares unknown ($field) feature '($feature)'; expected one of ($VALID_HOST_FEATURES | str join ', '), tracepoint:<system>/<event>, or ($HOST_FEATURE_PREFIX_KERNEL_BTF_KFUNC)<symbol>"
         }
     }
 }
@@ -55561,6 +55605,16 @@ def host-feature-available [feature: string] {
         "/sys/class/net/lo" | path exists
     } else if $feature == "kernel-btf" {
         "/sys/kernel/btf/vmlinux" | path exists
+    } else if ($feature | str starts-with $HOST_FEATURE_PREFIX_KERNEL_BTF_KFUNC) {
+        let kfunc = ($feature | str substring ($HOST_FEATURE_PREFIX_KERNEL_BTF_KFUNC | str length)..)
+        if $kfunc == "" or not ("/sys/kernel/btf/vmlinux" | path exists) or not (command-exists bpftool) {
+            return false
+        }
+        let dump = (^bpftool btf dump file /sys/kernel/btf/vmlinux format raw | complete)
+        if $dump.exit_code != 0 {
+            return false
+        }
+        $dump.stdout | lines | any {|line| $line | str contains $"FUNC '($kfunc)'" }
     } else if $feature == "tracefs" {
         "/sys/kernel/tracing/events" | path exists
     } else if $feature == "cgroup-v2" {
