@@ -468,6 +468,118 @@ fn test_map_leading_annotated_mut_globals_supports_let_bound_record_merge_initia
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_record_columns_initializer() {
+    let source = "{|| mut fields: list<string> = ({pid: 7, cpu: 2, mem: 4} | columns); $fields }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant record columns initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            assert_eq!(vals.len(), 3);
+            assert_eq!(vals[0].as_str().ok(), Some("pid"));
+            assert_eq!(vals[1].as_str().ok(), Some("cpu"));
+            assert_eq!(vals[2].as_str().ok(), Some("mem"));
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_record_values_initializer() {
+    let source = "{|| mut vals: list<int> = ({pid: 7, cpu: 2, mem: 4} | values); $vals }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant record values initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            assert_eq!(vals.len(), 3);
+            assert_eq!(vals[0].as_int().ok(), Some(7));
+            assert_eq!(vals[1].as_int().ok(), Some(2));
+            assert_eq!(vals[2].as_int().ok(), Some(4));
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_rejects_record_columns_initializer_arguments() {
+    let source =
+        "{|| mut fields: list<string> = ({pid: 7, cpu: 2, mem: 4} | columns pid); $fields }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let err = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect_err("columns arguments should be rejected");
+
+    assert!(
+        err.labels
+            .iter()
+            .any(|label| label.text.contains("columns") && label.text.contains("arguments")),
+        "unexpected labels: {:?}",
+        err.labels
+    );
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_constant_record_select_initializer() {
     let source = "{|| mut state: record<mem: int pid: int> = ({pid: 7, cpu: 2, mem: 4} | select mem pid); $state }";
     let ir_block = IrBlock {

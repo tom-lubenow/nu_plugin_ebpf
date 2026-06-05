@@ -674,6 +674,18 @@ fn eval_supported_constant_call(
             call,
             span,
         ),
+        "columns" | "values" => {
+            if !call.arguments.is_empty() {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        format!(
+                            "`{cmd_name}` does not accept arguments in compile-time global initializers"
+                        ),
+                        span,
+                    ));
+            }
+            eval_supported_constant_record_columns_or_values(cmd_name, input, span)
+        }
         "insert" | "update" | "upsert" => eval_supported_constant_path_mutation_call(
             working_set,
             cmd_name,
@@ -875,6 +887,18 @@ fn eval_supported_constant_external_call(
                 .collect::<Result<Vec<_>, _>>()?;
 
             eval_supported_constant_record_rename_positional(input, fields, span)
+        }
+        "columns" | "values" => {
+            if !args.is_empty() {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        format!(
+                            "`{cmd_name}` does not accept arguments in compile-time global initializers"
+                        ),
+                        span,
+                    ));
+            }
+            eval_supported_constant_record_columns_or_values(cmd_name, input, span)
         }
         "insert" | "update" | "upsert" => {
             let [path_arg, new_value_arg] = args else {
@@ -1403,6 +1427,42 @@ fn eval_supported_constant_record_rename_column(
         out.push(target, value.clone());
     }
     Ok(Value::record(out, value_span))
+}
+
+fn eval_supported_constant_record_columns_or_values(
+    cmd_name: &str,
+    input: Option<Value>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let value = input.ok_or_else(|| {
+        LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+            format!(
+                "`{cmd_name}` in a compile-time global initializer must receive pipeline input"
+            ),
+            span,
+        )
+    })?;
+    let value_span = value.span();
+    let Value::Record { val, .. } = value else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!("`{cmd_name}` in a compile-time global initializer requires record input"),
+                span,
+            ),
+        );
+    };
+
+    let vals = if cmd_name == "columns" {
+        val.iter()
+            .map(|(key, _)| Value::string(key, value_span))
+            .collect::<Vec<_>>()
+    } else {
+        val.iter()
+            .map(|(_, value)| value.clone())
+            .collect::<Vec<_>>()
+    };
+
+    Ok(Value::list(vals, value_span))
 }
 
 fn eval_supported_constant_path_mutation_call(
