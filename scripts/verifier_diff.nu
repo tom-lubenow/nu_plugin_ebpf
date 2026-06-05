@@ -36806,6 +36806,23 @@ const FIXTURES = [
         error_contains: "helper 166 arg2 must be > 0"
     }
     {
+        name: "syscall-helper-rejects-dynamic-zero-attr-size"
+        category: "helper-state"
+        tags: [syscall scalar-policy dynamic branch reject]
+        target: "syscall:demo"
+        program: [
+            '{||'
+            '  let attr = "01234567"'
+            '  let selector = (helper-call "bpf_sys_bpf" 0 $attr 8)'
+            '  let size = (if $selector == 0 { 0 } else { 8 })'
+            '  helper-call "bpf_sys_bpf" 0 $attr $size'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 166 arg2 must be > 0"
+    }
+    {
         name: "syscall-helper-rejects-kallsyms-flags"
         category: "helper-state"
         tags: [syscall flags reject]
