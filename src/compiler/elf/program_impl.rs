@@ -42,6 +42,18 @@ fn require_program_spec_for_program(
         .map_err(|err| CompileError::InvalidProgram(err.to_string()))
 }
 
+fn checked_elf_u64(value: usize, what: &str) -> Result<u64, CompileError> {
+    u64::try_from(value).map_err(|_| {
+        CompileError::InvalidProgram(format!("{what} {value} exceeds ELF u64 encoding limit"))
+    })
+}
+
+fn checked_elf_offset(base: u64, add: usize, what: &str) -> Result<u64, CompileError> {
+    let add = checked_elf_u64(add, what)?;
+    base.checked_add(add)
+        .ok_or_else(|| CompileError::InvalidProgram(format!("{what} overflows ELF offset range")))
+}
+
 fn map_compatibility_requirements_for_maps(maps: &[EbpfMap]) -> Vec<MapCompatibilityRequirement> {
     let mut seen = HashSet::new();
     let mut requirements = Vec::new();
@@ -971,6 +983,45 @@ impl EbpfProgram {
         let mut events_map = None;
         let mut bytes_counter_map = None;
 
+        if self.main_size > self.bytecode.len() {
+            return Err(invalid(format!(
+                "program '{}' main size {} exceeds bytecode length {}",
+                self.name,
+                self.main_size,
+                self.bytecode.len()
+            )));
+        }
+
+        for reloc in &self.relocations {
+            if reloc.insn_offset >= self.bytecode.len() {
+                return Err(invalid(format!(
+                    "program '{}' relocation offset {} is outside bytecode length {}",
+                    self.name,
+                    reloc.insn_offset,
+                    self.bytecode.len()
+                )));
+            }
+        }
+
+        for subfn in &self.subfunctions {
+            let Some(end) = subfn.offset.checked_add(subfn.size) else {
+                return Err(invalid(format!(
+                    "program '{}' subfunction '{}' range overflows",
+                    self.name, subfn.name
+                )));
+            };
+            if end > self.bytecode.len() {
+                return Err(invalid(format!(
+                    "program '{}' subfunction '{}' range {}..{} exceeds bytecode length {}",
+                    self.name,
+                    subfn.name,
+                    subfn.offset,
+                    end,
+                    self.bytecode.len()
+                )));
+            }
+        }
+
         for global in &self.readonly_globals {
             if global.data.is_empty() {
                 return Err(invalid(format!(
@@ -1645,6 +1696,16 @@ impl EbpfObject {
                     data_symbol.name
                 )));
             }
+            for reloc in &data_symbol.relocations {
+                if reloc.offset >= data_symbol.data.len() {
+                    return Err(CompileError::InvalidProgram(format!(
+                        "data symbol '{}' relocation offset {} is outside data length {}",
+                        data_symbol.name,
+                        reloc.offset,
+                        data_symbol.data.len()
+                    )));
+                }
+            }
         }
 
         if let Some(data_symbol) = self.extra_data_symbols.first() {
@@ -1907,7 +1968,7 @@ impl EbpfObject {
             let prog_sym_id = obj.add_symbol(Symbol {
                 name: program.name.as_bytes().to_vec(),
                 value: offset,
-                size: program.main_size as u64,
+                size: checked_elf_u64(program.main_size, "program main size")?,
                 kind: SymbolKind::Text,
                 scope: SymbolScope::Linkage,
                 weak: false,
@@ -1921,10 +1982,12 @@ impl EbpfObject {
 
             let mut program_symbol_ids = symbol_ids.clone();
             for subfn in &program.subfunctions {
+                let value = checked_elf_offset(offset, subfn.offset, "subfunction symbol offset")?;
+                let size = checked_elf_u64(subfn.size, "subfunction symbol size")?;
                 let subfn_sym_id = obj.add_symbol(Symbol {
                     name: subfn.name.as_bytes().to_vec(),
-                    value: offset + subfn.offset as u64,
-                    size: subfn.size as u64,
+                    value,
+                    size,
                     kind: SymbolKind::Text,
                     scope: SymbolScope::Compilation,
                     weak: false,
@@ -1955,7 +2018,11 @@ impl EbpfObject {
                 obj.add_relocation(
                     section_id,
                     Relocation {
-                        offset: offset + reloc.insn_offset as u64,
+                        offset: checked_elf_offset(
+                            offset,
+                            reloc.insn_offset,
+                            "program relocation offset",
+                        )?,
                         symbol: sym_id,
                         addend: 0,
                         flags: RelocationFlags::Elf { r_type: 1 },
@@ -1976,7 +2043,11 @@ impl EbpfObject {
                 obj.add_relocation(
                     section_id,
                     Relocation {
-                        offset: symbol_offset + reloc.offset as u64,
+                        offset: checked_elf_offset(
+                            symbol_offset,
+                            reloc.offset,
+                            "data relocation offset",
+                        )?,
                         symbol: sym_id,
                         addend: 0,
                         flags: RelocationFlags::Elf { r_type: 1 },

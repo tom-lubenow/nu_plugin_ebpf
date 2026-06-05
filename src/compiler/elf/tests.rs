@@ -7104,7 +7104,7 @@ fn test_struct_ops_object_rejects_multiple_value_symbols() {
 }
 
 #[test]
-fn test_struct_ops_btf_rejects_unencodable_callback_offset() {
+fn test_struct_ops_object_rejects_data_relocation_outside_value() {
     let mut object = EbpfObject::struct_ops("demo", "sched_ext_ops", vec![0; 8]).build();
     object.extra_data_symbols[0]
         .relocations
@@ -7115,11 +7115,12 @@ fn test_struct_ops_btf_rejects_unencodable_callback_offset() {
         });
 
     let err = object
-        .to_elf()
-        .expect_err("unencodable struct_ops BTF callback offset should be rejected");
+        .validate_runtime_artifacts()
+        .expect_err("out-of-bounds struct_ops data relocation should be rejected");
     assert!(
-        err.to_string().contains("invalid BTF metadata")
-            && err.to_string().contains("struct_ops relocation offset"),
+        err.to_string()
+            .contains("data symbol 'demo' relocation offset")
+            && err.to_string().contains("outside data length"),
         "unexpected error: {err}"
     );
 }
@@ -7470,6 +7471,115 @@ fn test_to_elf_rejects_missing_relocation_symbol() {
 
     assert!(
         err.to_string().contains("references missing ELF symbol"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_program_runtime_artifacts_reject_main_size_exceeding_bytecode() {
+    use crate::compiler::instruction::{EbpfBuilder, EbpfInsn, EbpfReg};
+
+    let mut builder = EbpfBuilder::new();
+    builder.push(EbpfInsn::mov64_imm(EbpfReg::R0, 0));
+    builder.push(EbpfInsn::exit());
+    let bytecode = builder.build();
+
+    let program = EbpfProgram::with_maps(
+        EbpfProgramType::Kprobe,
+        "sys_clone",
+        "bad_main_size",
+        bytecode.clone(),
+        bytecode.len() + 8,
+        vec![],
+        vec![],
+        vec![],
+        None,
+        None,
+        HashMap::new(),
+        HashMap::new(),
+    );
+
+    let err = program
+        .validate_runtime_artifacts()
+        .expect_err("main size beyond bytecode should be rejected");
+    assert!(
+        err.to_string().contains("main size")
+            && err.to_string().contains("exceeds bytecode length"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_program_runtime_artifacts_reject_relocation_outside_bytecode() {
+    use crate::compiler::instruction::{EbpfBuilder, EbpfInsn, EbpfReg};
+
+    let mut builder = EbpfBuilder::new();
+    builder.push(EbpfInsn::mov64_imm(EbpfReg::R0, 0));
+    builder.push(EbpfInsn::exit());
+    let bytecode = builder.build();
+
+    let program = EbpfProgram::with_maps(
+        EbpfProgramType::Kprobe,
+        "sys_clone",
+        "bad_reloc_offset",
+        bytecode.clone(),
+        bytecode.len(),
+        vec![],
+        vec![SymbolRelocation {
+            insn_offset: bytecode.len(),
+            symbol_name: "target".to_string(),
+        }],
+        vec![],
+        None,
+        None,
+        HashMap::new(),
+        HashMap::new(),
+    );
+
+    let err = program
+        .validate_runtime_artifacts()
+        .expect_err("out-of-bounds program relocation should be rejected");
+    assert!(
+        err.to_string().contains("relocation offset")
+            && err.to_string().contains("outside bytecode length"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_program_runtime_artifacts_reject_subfunction_outside_bytecode() {
+    use crate::compiler::instruction::{EbpfBuilder, EbpfInsn, EbpfReg};
+
+    let mut builder = EbpfBuilder::new();
+    builder.push(EbpfInsn::mov64_imm(EbpfReg::R0, 0));
+    builder.push(EbpfInsn::exit());
+    let bytecode = builder.build();
+
+    let program = EbpfProgram::with_maps(
+        EbpfProgramType::Kprobe,
+        "sys_clone",
+        "bad_subfn_range",
+        bytecode.clone(),
+        bytecode.len(),
+        vec![],
+        vec![],
+        vec![SubfunctionSymbol {
+            name: "too_far".to_string(),
+            offset: bytecode.len(),
+            size: 8,
+        }],
+        None,
+        None,
+        HashMap::new(),
+        HashMap::new(),
+    );
+
+    let err = program
+        .validate_runtime_artifacts()
+        .expect_err("out-of-bounds subfunction symbol should be rejected");
+    assert!(
+        err.to_string().contains("subfunction 'too_far' range")
+            && err.to_string().contains("exceeds bytecode length"),
         "unexpected error: {err}"
     );
 }
