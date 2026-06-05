@@ -5556,6 +5556,10 @@ fn eval_supported_constant_math_int_reduce(
         );
     }
 
+    if matches!(cmd_name, "math max" | "math min") {
+        return eval_supported_constant_math_min_max(cmd_name, vals, value_span, span);
+    }
+
     let ints = vals
         .into_iter()
         .enumerate()
@@ -5604,6 +5608,70 @@ fn eval_supported_constant_math_int_reduce(
     };
 
     Ok(Value::int(result, value_span))
+}
+
+fn eval_supported_constant_math_min_max(
+    cmd_name: &str,
+    vals: Vec<Value>,
+    value_span: Span,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let mut selected = None::<Value>;
+    for (index, value) in vals.into_iter().enumerate() {
+        match &value {
+            Value::Int { .. } => {}
+            Value::Float { val, .. } if val.is_finite() => {}
+            Value::Float { val, .. } => {
+                return Err(
+                    LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            format!(
+                                "`{cmd_name}` requires finite float list items in compile-time global initializers; item {index} is {val}"
+                            ),
+                            span,
+                        ),
+                );
+            }
+            other => {
+                return Err(
+                    LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            format!(
+                                "`{cmd_name}` requires integer or finite float list items in compile-time global initializers; item {index} has type {}",
+                                other.get_type()
+                            ),
+                            span,
+                        ),
+                );
+            }
+        }
+
+        let should_update = selected.as_ref().is_none_or(|current| {
+            let ordering = value
+                .partial_cmp(current)
+                .expect("min/max float values are validated as finite");
+            matches!(
+                (cmd_name, ordering),
+                ("math min", std::cmp::Ordering::Less) | ("math max", std::cmp::Ordering::Greater)
+            )
+        });
+        if should_update {
+            selected = Some(value);
+        }
+    }
+
+    match selected.expect("math min/max validates non-empty input") {
+        Value::Int { val, .. } => Ok(Value::int(val, value_span)),
+        Value::Float { .. } => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`{cmd_name}` compile-time list result has type float; mutable global initializers support only materializable eBPF values"
+                ),
+                span,
+            ),
+        ),
+        _ => unreachable!("min/max values were validated as integer or finite float"),
+    }
 }
 
 fn eval_supported_constant_math_median(

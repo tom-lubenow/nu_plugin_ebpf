@@ -4424,6 +4424,64 @@ fn test_map_leading_annotated_mut_globals_supports_constant_math_int_reduce_init
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_math_min_max_mixed_numeric_integer_result()
+ {
+    let cases = [
+        (
+            "{|| mut out: int = ([1, 2.5, 3.5] | math min); $out }",
+            1,
+            "math min should fold mixed numeric input when the selected value is an integer",
+        ),
+        (
+            "{|| mut out: int = ([1.5, 2.5, 3] | math max); $out }",
+            3,
+            "math max should fold mixed numeric input when the selected value is an integer",
+        ),
+        (
+            "{|| mut out: int = ([1, 2, 2.0] | math max); $out }",
+            2,
+            "math max should preserve the existing integer selection on equal numeric values",
+        ),
+    ];
+
+    for (source, expected, message) in cases {
+        let ir_block = IrBlock {
+            instructions: vec![
+                Instruction::StoreVariable {
+                    var_id: VarId::new(11),
+                    src: RegId::new(0),
+                },
+                Instruction::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: VarId::new(11),
+                },
+                Instruction::Return { src: RegId::new(0) },
+            ],
+            spans: vec![Span::test_data(); 3],
+            data: Vec::<u8>::new().into(),
+            ast: vec![None; 3],
+            comments: vec!["let".into(), "".into(), "".into()],
+            register_count: 1,
+            file_count: 0,
+        };
+
+        let globals =
+            super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+                .unwrap_or_else(|err| panic!("{message}: {err:?}"));
+
+        assert_eq!(globals.len(), 1);
+        assert_eq!(
+            globals[0]
+                .initial_value
+                .as_int()
+                .expect("math min/max should produce an integer"),
+            expected,
+            "{message}"
+        );
+    }
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_root_external_constant_math_int_reduce() {
     let source = "{|| mut out: int = ([4, 5, 6] | ^math sum); $out }";
     let ir_block = IrBlock {
@@ -4493,7 +4551,7 @@ fn test_map_leading_annotated_mut_globals_rejects_constant_math_int_reduce_empty
 
 #[test]
 fn test_map_leading_annotated_mut_globals_rejects_constant_math_int_reduce_non_integer_item() {
-    let source = "{|| mut out: int = ([1, 2.5] | math max); $out }";
+    let source = "{|| mut out: int = ([1, true] | math max); $out }";
     let ir_block = IrBlock {
         instructions: vec![
             Instruction::StoreVariable {
@@ -4518,7 +4576,39 @@ fn test_map_leading_annotated_mut_globals_rejects_constant_math_int_reduce_non_i
         .expect_err("math integer reduction should reject non-integer items");
 
     assert!(
-        format!("{err:?}").contains("integer list items"),
+        format!("{err:?}").contains("integer or finite float list items"),
+        "unexpected error: {err:?}"
+    );
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_rejects_constant_math_min_max_float_result() {
+    let source = "{|| mut out: int = ([1.5, 2, 3] | math min); $out }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let err = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect_err("math min/max should reject selected float materialization");
+
+    assert!(
+        format!("{err:?}").contains("result has type float"),
         "unexpected error: {err:?}"
     );
 }
