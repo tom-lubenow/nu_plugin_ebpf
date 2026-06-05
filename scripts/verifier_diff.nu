@@ -36423,6 +36423,22 @@ const FIXTURES = [
         error_contains: "perf event read helpers require arg1 flags to fit BPF_F_INDEX_MASK/BPF_F_CURRENT_CPU"
     }
     {
+        name: "perf-event-read-rejects-dynamic-out-of-range-flags"
+        category: "helper-state"
+        tags: [perf-event flags dynamic reject]
+        target: "perf_event:software:cpu-clock:period=100000"
+        program: [
+            '{|ctx|'
+            '  let flags = ((helper-call "bpf_get_prandom_u32") + 4294967296)'
+            '  helper-call "bpf_perf_event_read" perf_events $flags'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "perf event read helpers require arg1 flags to fit BPF_F_INDEX_MASK/BPF_F_CURRENT_CPU"
+    }
+    {
         name: "perf-event-read-value-rejects-size"
         category: "helper-state"
         tags: [perf-event scalar-policy reject]
