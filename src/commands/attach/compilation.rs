@@ -673,6 +673,13 @@ fn eval_supported_constant_call(
             span,
         ),
         "sort" => eval_supported_constant_list_sort_call(input, &call.arguments, span),
+        "find" => eval_supported_constant_list_find_call(
+            working_set,
+            input,
+            &call.arguments,
+            env,
+            span,
+        ),
         "get" => eval_supported_constant_get_call(
             working_set,
             cmd_name,
@@ -894,6 +901,29 @@ fn eval_supported_constant_external_call(
                 }
             }
             eval_supported_constant_list_sort(input, reverse, span)
+        }
+        "find" => {
+            let [needle_arg] = args else {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`find` requires exactly one search argument in compile-time global initializers",
+                        span,
+                    ));
+            };
+            let ExternalArgument::Regular(needle_expr) = needle_arg else {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`find` search argument cannot use spread syntax in compile-time global initializers",
+                        needle_arg.expr().span,
+                    ));
+            };
+            eval_supported_constant_list_find(
+                working_set,
+                input,
+                needle_expr,
+                env,
+                span,
+            )
         }
         "get" => {
             let [path_arg] = args else {
@@ -1595,6 +1625,89 @@ fn eval_supported_constant_sort_key(value: &Value) -> Option<ConstantSortKey> {
         }
         _ => None,
     }
+}
+
+fn eval_supported_constant_list_find_call(
+    working_set: &StateWorkingSet,
+    input: Option<Value>,
+    args: &[nu_protocol::ast::Argument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let mut needle_expr = None;
+    for arg in args {
+        match arg {
+            nu_protocol::ast::Argument::Positional(expr)
+            | nu_protocol::ast::Argument::Unknown(expr) => {
+                if needle_expr.replace(expr).is_some() {
+                    return Err(
+                        LabeledError::new("Unsupported annotated mutable global initializer")
+                            .with_label(
+                                "`find` requires exactly one search argument in compile-time global initializers",
+                                arg.span(),
+                            ),
+                    );
+                }
+            }
+            nu_protocol::ast::Argument::Named(named) => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        format!(
+                            "`find` does not accept named argument --{} in compile-time global initializers",
+                            named.0.item
+                        ),
+                        arg.span(),
+                    ));
+            }
+            nu_protocol::ast::Argument::Spread(expr) => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`find` search argument cannot use spread syntax in compile-time global initializers",
+                        expr.span,
+                    ));
+            }
+        }
+    }
+    let Some(needle_expr) = needle_expr else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`find` requires exactly one search argument in compile-time global initializers",
+                span,
+            ),
+        );
+    };
+
+    eval_supported_constant_list_find(working_set, input, needle_expr, env, span)
+}
+
+fn eval_supported_constant_list_find(
+    working_set: &StateWorkingSet,
+    input: Option<Value>,
+    needle_expr: &nu_protocol::ast::Expression,
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let value = input.ok_or_else(|| {
+        LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+            "`find` in a compile-time global initializer must receive pipeline input",
+            span,
+        )
+    })?;
+    let value_span = value.span();
+    let Value::List { vals, .. } = value else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`find` in a compile-time global initializer requires list input",
+                span,
+            ),
+        );
+    };
+    let needle = eval_supported_constant_value_with_env(working_set, needle_expr, env)?;
+    let vals = vals
+        .into_iter()
+        .filter(|value| value == &needle)
+        .collect::<Vec<_>>();
+    Ok(Value::list(vals, value_span))
 }
 
 fn eval_supported_constant_list_take_skip_or_drop_call(

@@ -1686,6 +1686,123 @@ fn test_map_leading_annotated_mut_globals_rejects_constant_list_sort_mixed_types
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_list_find_initializer() {
+    let source = "{|| mut vals: list<int> = ([7, 2, 7, 4] | find 7); $vals }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant list find initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let ints = vals
+                .iter()
+                .map(|value| value.as_int().expect("find should keep integers"))
+                .collect::<Vec<_>>();
+            assert_eq!(ints, vec![7, 7]);
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_let_bound_constant_list_find_initializer() {
+    let source = "{|| let needle = \"a\"; mut vals: list<string> = ([\"a\", \"b\", \"a\"] | find $needle); $vals }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(10),
+                src: RegId::new(0),
+            },
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(1),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 4],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 4],
+        comments: vec!["let".into(), "let".into(), "".into(), "".into()],
+        register_count: 2,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("let-bound constant list find initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let strings = vals
+                .iter()
+                .map(|value| value.as_str().expect("find should keep strings"))
+                .collect::<Vec<_>>();
+            assert_eq!(strings, vec!["a", "a"]);
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_rejects_constant_list_find_missing_needle() {
+    let source = "{|| mut vals: list<int> = ([7, 2, 4] | find); $vals }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let err = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect_err("find without a needle should be rejected");
+
+    assert!(
+        err.labels
+            .iter()
+            .any(|label| label.text.contains("requires exactly one search argument")),
+        "unexpected labels: {:?}",
+        err.labels
+    );
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_constant_list_spread_initializer() {
     let source = "{|| mut vals: list<int> = [1, ...[2, 3]]; $vals }";
     let ir_block = IrBlock {
