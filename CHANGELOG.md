@@ -28,6 +28,8 @@ documentation changes that matter to external alpha consumers.
   rejects derived from helper return ranges.
 - Added source verifier coverage for dynamic redirect helper flag rejects
   derived from helper return ranges.
+- Added source verifier coverage for dynamic socket redirect helper flag rejects
+  derived from helper return ranges.
 - Added actionable BTF target diagnostics for invalid `fentry`, `fexit`,
   `fmod_ret`, `tp_btf`, and LSM targets so compile-time errors include the
   modeled target-family rewrite guidance.

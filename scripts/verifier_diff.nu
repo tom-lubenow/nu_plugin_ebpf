@@ -45664,6 +45664,36 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "msg-redirect-map-rejects-dynamic-flags"
+        category: "helper-state"
+        tags: [redirect-socket sk-msg sockmap flags reject source metadata]
+        target: "sk_msg:/sys/fs/bpf/demo_sockmap"
+        program: [
+            '{|ctx|'
+            '  let flags = (helper-call "bpf_get_prandom_u32")'
+            '  helper-call "bpf_msg_redirect_map" $ctx peers 0 $flags'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "skb/message redirect helpers require flags to contain only BPF_F_INGRESS"
+    }
+    {
+        name: "msg-redirect-hash-rejects-dynamic-flags"
+        category: "helper-state"
+        tags: [redirect-socket sk-msg sockhash flags reject source metadata]
+        target: "sk_msg:/sys/fs/bpf/demo_sockhash"
+        program: [
+            '{|ctx|'
+            '  let flags = (helper-call "bpf_get_prandom_u32")'
+            '  helper-call "bpf_msg_redirect_hash" $ctx hash_peers "peer-a" $flags'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "skb/message redirect helpers require flags to contain only BPF_F_INGRESS"
+    }
+    {
         name: "map-put-sock-ops-sockmap"
         category: "language-surface"
         tags: [maps map-put sock-ops sockmap]
@@ -45762,6 +45792,36 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
+    }
+    {
+        name: "sk-redirect-map-rejects-dynamic-flags"
+        category: "helper-state"
+        tags: [redirect-socket sk-skb sockmap flags reject source metadata]
+        target: "sk_skb:/sys/fs/bpf/demo_sockmap"
+        program: [
+            '{|ctx|'
+            '  let flags = (helper-call "bpf_get_prandom_u32")'
+            '  helper-call "bpf_sk_redirect_map" $ctx peers 0 $flags'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "skb/message redirect helpers require flags to contain only BPF_F_INGRESS"
+    }
+    {
+        name: "sk-redirect-hash-rejects-dynamic-flags"
+        category: "helper-state"
+        tags: [redirect-socket sk-skb sockhash flags reject source metadata]
+        target: "sk_skb:/sys/fs/bpf/demo_sockhash"
+        program: [
+            '{|ctx|'
+            '  let flags = (helper-call "bpf_get_prandom_u32")'
+            '  helper-call "bpf_sk_redirect_hash" $ctx hash_peers "peer-a" $flags'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "skb/message redirect helpers require flags to contain only BPF_F_INGRESS"
     }
     {
         name: "redirect-socket-sk-reuseport-sockarray"
