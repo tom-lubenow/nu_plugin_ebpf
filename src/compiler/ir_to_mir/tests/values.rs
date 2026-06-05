@@ -74,6 +74,61 @@ fn make_numeric_list_pipeline_call_program(decl_id: DeclId, count: Option<i64>) 
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_numeric_list_in_place_pipeline_call_then_get_program(
+    command_decl: DeclId,
+    get_decl: DeclId,
+) -> HirProgram {
+    let stmts = vec![
+        HirStmt::LoadValue {
+            dst: RegId::new(0),
+            val: Box::new(Value::list(
+                vec![
+                    Value::int(10, Span::test_data()),
+                    Value::int(20, Span::test_data()),
+                    Value::int(30, Span::test_data()),
+                ],
+                Span::test_data(),
+            )),
+        },
+        HirStmt::Call {
+            decl_id: command_decl,
+            src_dst: RegId::new(0),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(0)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: HirLiteral::Int(0),
+        },
+        HirStmt::Call {
+            decl_id: get_decl,
+            src_dst: RegId::new(2),
+            args: HirCallArgs {
+                positional: vec![RegId::new(1)],
+                pipeline_input: Some(RegId::new(0)),
+                ..HirCallArgs::default()
+            },
+        },
+    ];
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(2) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_numeric_list_in_place_scalar_call_program(decl_id: DeclId) -> HirProgram {
     let mut stmts = vec![HirStmt::LoadLiteral {
         dst: RegId::new(0),
@@ -7784,6 +7839,63 @@ fn test_lower_reverse_on_numeric_list_rebuilds_with_descending_constant_indexes(
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("reverse followed by get should compile through codegen");
+}
+
+#[test]
+fn test_lower_reverse_on_in_place_numeric_list_writes_fresh_list_result() {
+    let reverse_decl = DeclId::new(10012);
+    let get_decl = DeclId::new(10013);
+    let hir = make_numeric_list_in_place_pipeline_call_then_get_program(reverse_decl, get_decl);
+    let decl_names = HashMap::from([
+        (reverse_decl, "reverse".to_string()),
+        (get_decl, "get".to_string()),
+    ]);
+    let hir_types = crate::compiler::hir_type_infer::infer_hir_types(&hir, &decl_names)
+        .expect("source-like reverse HIR should type-check");
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        Some(&hir_types),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("reverse should lower when the source IR reuses the list register as src_dst");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+    let reverse_list_new_index = instructions
+        .iter()
+        .rposition(|inst| matches!(inst, MirInst::ListNew { max_len: 3, .. }))
+        .expect("expected reverse to allocate an output list");
+    let MirInst::ListNew {
+        dst: reverse_result_vreg,
+        ..
+    } = instructions[reverse_list_new_index]
+    else {
+        unreachable!("rposition only matched ListNew");
+    };
+    let first_reverse_input_read = instructions
+        .iter()
+        .skip(reverse_list_new_index + 1)
+        .find_map(|inst| match inst {
+            MirInst::ListLen { list, .. } | MirInst::ListGet { list, .. } => Some(*list),
+            _ => None,
+        })
+        .expect("expected reverse to read from the original list after allocating output");
+
+    assert_ne!(
+        *reverse_result_vreg, first_reverse_input_read,
+        "expected in-place reverse to read from the original list, not the freshly allocated output"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+        .expect("in-place reverse should compile through codegen");
 }
 
 #[test]
