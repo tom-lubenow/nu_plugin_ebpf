@@ -1,5 +1,30 @@
 use super::*;
 
+fn relative_instruction_offset(
+    source_idx: usize,
+    target_offset: usize,
+) -> Result<i64, CompileError> {
+    let source = i64::try_from(source_idx).map_err(|_| {
+        CompileError::UnsupportedInstruction(format!(
+            "instruction index {source_idx} exceeds the supported offset range"
+        ))
+    })?;
+    let target = i64::try_from(target_offset).map_err(|_| {
+        CompileError::UnsupportedInstruction(format!(
+            "instruction target offset {target_offset} exceeds the supported offset range"
+        ))
+    })?;
+
+    target
+        .checked_sub(source)
+        .and_then(|offset| offset.checked_sub(1))
+        .ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "relative instruction offset from {source_idx} to {target_offset} overflowed"
+            ))
+        })
+}
+
 impl<'a> MirToEbpfCompiler<'a> {
     /// Compile a LIR function
     pub(super) fn compile_function(&mut self, func: &LirFunction) -> Result<(), CompileError> {
@@ -88,11 +113,21 @@ impl<'a> MirToEbpfCompiler<'a> {
                     ))
                 })?;
 
-            // Calculate relative offset (target - source - 1)
-            let rel_offset = (target_offset as i64 - *insn_idx as i64 - 1) as i16;
+            // Calculate relative offset (target - source - 1).
+            let rel_offset = relative_instruction_offset(*insn_idx, target_offset)?;
+            let rel_offset = i16::try_from(rel_offset).map_err(|_| {
+                CompileError::UnsupportedInstruction(format!(
+                    "jump from instruction {insn_idx} to block {target_block:?} requires offset {rel_offset}, outside the eBPF jump range"
+                ))
+            })?;
 
             // Update the jump instruction's offset field
-            self.instructions[*insn_idx].offset = rel_offset;
+            let insn = self.instructions.get_mut(*insn_idx).ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "jump fixup instruction {insn_idx} is outside the emitted instruction stream"
+                ))
+            })?;
+            insn.offset = rel_offset;
         }
         Ok(())
     }
@@ -187,12 +222,22 @@ impl<'a> MirToEbpfCompiler<'a> {
                 ))
             })?;
 
-            // Calculate relative offset (target - source - 1)
-            // For BPF calls, the offset is relative to the instruction after the call
-            let rel_offset = (subfn_offset as i64 - *call_idx as i64 - 1) as i32;
+            // Calculate relative offset (target - source - 1).
+            // For BPF calls, the offset is relative to the instruction after the call.
+            let rel_offset = relative_instruction_offset(*call_idx, subfn_offset)?;
+            let rel_offset = i32::try_from(rel_offset).map_err(|_| {
+                CompileError::UnsupportedInstruction(format!(
+                    "subfunction call from instruction {call_idx} to {subfn_id:?} requires offset {rel_offset}, outside the eBPF call range"
+                ))
+            })?;
 
             // Update the call instruction's imm field
-            self.instructions[*call_idx].imm = rel_offset;
+            let insn = self.instructions.get_mut(*call_idx).ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "subfunction call fixup instruction {call_idx} is outside the emitted instruction stream"
+                ))
+            })?;
+            insn.imm = rel_offset;
         }
         Ok(())
     }

@@ -5,7 +5,9 @@ use crate::compiler::hir::{
 };
 use crate::compiler::ir_to_mir::lower_hir_to_mir_with_hints;
 use crate::compiler::mir::{CtxStoreTarget, MirInst, UnaryOpKind};
-use crate::compiler::{EbpfProgram, compile_mir_to_ebpf_with_hints_and_readonly_globals};
+use crate::compiler::{
+    CompileError, EbpfProgram, compile_mir_to_ebpf_with_hints_and_readonly_globals,
+};
 use crate::compiler::{EbpfProgramType, ProbeContext};
 use crate::kernel_btf::{KernelBtf, TrampolineValueKind};
 use nu_protocol::ast::{CellPath, PathMember};
@@ -179,6 +181,16 @@ fn make_ctx_upsert_program(path: CellPath, lit: HirLiteral) -> HirProgram {
         file_count: 0,
     };
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
+fn assert_unsupported_contains(err: CompileError, expected: &str) {
+    match err {
+        CompileError::UnsupportedInstruction(message) => assert!(
+            message.contains(expected),
+            "expected unsupported-instruction message to contain {expected:?}, got {message:?}"
+        ),
+        other => panic!("expected UnsupportedInstruction, got {other:?}"),
+    }
 }
 
 #[test]
@@ -400,6 +412,75 @@ fn test_parallel_move_r0_cycle() {
     let program = LirProgram::new(func);
     let result = MirToEbpfCompiler::new(&program, None).compile();
     assert!(result.is_ok(), "ParallelMove with R0 should compile");
+}
+
+#[test]
+fn test_fixup_jumps_rejects_forward_offset_out_of_range() {
+    let program = LirProgram::new(LirFunction::new());
+    let mut compiler = MirToEbpfCompiler::new(&program, None);
+    let target = BlockId(1);
+    let target_offset = i16::MAX as usize + 2;
+
+    compiler.instructions = std::iter::repeat_with(|| EbpfInsn::jump(0))
+        .take(target_offset + 1)
+        .collect();
+    compiler.pending_jumps.push((0, target));
+    compiler.block_offsets.insert(target, target_offset);
+
+    let err = compiler
+        .fixup_jumps()
+        .expect_err("out-of-range forward jump offset should be rejected");
+    assert_unsupported_contains(err, "outside the eBPF jump range");
+}
+
+#[test]
+fn test_fixup_jumps_rejects_backward_offset_out_of_range() {
+    let program = LirProgram::new(LirFunction::new());
+    let mut compiler = MirToEbpfCompiler::new(&program, None);
+    let target = BlockId(0);
+    let jump_idx = i16::MAX as usize + 1;
+
+    compiler.instructions = std::iter::repeat_with(|| EbpfInsn::jump(0))
+        .take(jump_idx + 1)
+        .collect();
+    compiler.pending_jumps.push((jump_idx, target));
+    compiler.block_offsets.insert(target, 0);
+
+    let err = compiler
+        .fixup_jumps()
+        .expect_err("out-of-range backward jump offset should be rejected");
+    assert_unsupported_contains(err, "outside the eBPF jump range");
+}
+
+#[test]
+fn test_fixup_jumps_rejects_invalid_instruction_index() {
+    let program = LirProgram::new(LirFunction::new());
+    let mut compiler = MirToEbpfCompiler::new(&program, None);
+    let target = BlockId(0);
+
+    compiler.pending_jumps.push((0, target));
+    compiler.block_offsets.insert(target, 0);
+
+    let err = compiler
+        .fixup_jumps()
+        .expect_err("invalid jump fixup index should be rejected");
+    assert_unsupported_contains(err, "outside the emitted instruction stream");
+}
+
+#[test]
+fn test_fixup_subfn_calls_rejects_offset_out_of_range() {
+    let program = LirProgram::new(LirFunction::new());
+    let mut compiler = MirToEbpfCompiler::new(&program, None);
+    let subfn = SubfunctionId(0);
+
+    compiler.instructions.push(EbpfInsn::call_local(0));
+    compiler.subfn_calls.push((0, subfn));
+    compiler.subfn_offsets.insert(subfn, i32::MAX as usize + 2);
+
+    let err = compiler
+        .fixup_subfn_calls()
+        .expect_err("out-of-range subfunction call offset should be rejected");
+    assert_unsupported_contains(err, "outside the eBPF call range");
 }
 
 #[test]
