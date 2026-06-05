@@ -51,6 +51,7 @@ struct RuntimeStringDynamicEnd {
 }
 
 const MAX_STRING_EXPAND_RESULTS: usize = 60;
+const MAX_RUNTIME_UNSIGNED_FILL_WIDTH: usize = 10;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FillAlignment {
@@ -2811,34 +2812,7 @@ impl<'a> HirToMirLowering<'a> {
             self.fill_runtime_unsigned_integer_type(input_reg, input_vreg);
         let runtime_unsigned_fill_supported =
             runtime_unsigned_input_ty.as_ref().is_some_and(|input_ty| {
-                width <= 1
-                    || (width == 2
-                        && matches!(alignment, FillAlignment::Left | FillAlignment::Center)
-                        && fill.len() <= 1)
-                    || (width == 3 && alignment == FillAlignment::Left && fill.len() <= 1)
-                    || (width == 2
-                        && matches!(alignment, FillAlignment::Right | FillAlignment::CenterRight)
-                        && fill.len() <= 1
-                        && matches!(input_ty, MirType::U8 | MirType::U16 | MirType::U32))
-                    || (width == 3
-                        && matches!(
-                            alignment,
-                            FillAlignment::Right
-                                | FillAlignment::Center
-                                | FillAlignment::CenterRight
-                        )
-                        && fill.len() <= 1
-                        && matches!(input_ty, MirType::U8 | MirType::U16 | MirType::U32))
-                    || (width == 4 && alignment == FillAlignment::Left && fill.len() <= 1)
-                    || (width == 4
-                        && matches!(
-                            alignment,
-                            FillAlignment::Right
-                                | FillAlignment::Center
-                                | FillAlignment::CenterRight
-                        )
-                        && fill.len() <= 1
-                        && matches!(input_ty, MirType::U8 | MirType::U16 | MirType::U32))
+                Self::runtime_unsigned_integer_fill_supported(width, alignment, &fill, input_ty)
             });
         if runtime_unsigned_fill_supported {
             return self.lower_runtime_unsigned_integer_fill_result(
@@ -2895,6 +2869,28 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
+    fn runtime_unsigned_integer_fill_supported(
+        width: usize,
+        alignment: FillAlignment,
+        fill: &str,
+        input_ty: &MirType,
+    ) -> bool {
+        if width <= 1 || fill.is_empty() {
+            return true;
+        }
+        if fill.len() > 1 || width > MAX_RUNTIME_UNSIGNED_FILL_WIDTH {
+            return false;
+        }
+
+        match alignment {
+            FillAlignment::Left => true,
+            FillAlignment::Center if width <= 2 => true,
+            FillAlignment::Right | FillAlignment::Center | FillAlignment::CenterRight => {
+                matches!(input_ty, MirType::U8 | MirType::U16 | MirType::U32)
+            }
+        }
+    }
+
     fn lower_runtime_unsigned_integer_fill_result(
         &mut self,
         src_dst: RegId,
@@ -2904,7 +2900,7 @@ impl<'a> HirToMirLowering<'a> {
         alignment: FillAlignment,
         fill: &str,
     ) -> Result<(), CompileError> {
-        let pad_len = if (2..=4).contains(&width) {
+        let pad_len = if !fill.is_empty() && width <= MAX_RUNTIME_UNSIGNED_FILL_WIDTH {
             fill.len() * (width - 1)
         } else {
             0
@@ -2929,89 +2925,12 @@ impl<'a> HirToMirLowering<'a> {
         });
         self.vreg_type_hints.insert(len_vreg, MirType::I64);
         if !fill.is_empty() {
-            if width == 2 && matches!(alignment, FillAlignment::Right | FillAlignment::CenterRight)
-            {
+            for threshold in Self::runtime_fill_left_digit_thresholds(width, alignment) {
                 self.emit_runtime_fill_padding_if_lt(
                     slot,
                     len_vreg,
                     MirValue::VReg(input_vreg),
-                    10,
-                    fill,
-                );
-            } else if width == 3 && alignment == FillAlignment::Right {
-                self.emit_runtime_fill_padding_if_lt(
-                    slot,
-                    len_vreg,
-                    MirValue::VReg(input_vreg),
-                    10,
-                    fill,
-                );
-                self.emit_runtime_fill_padding_if_lt(
-                    slot,
-                    len_vreg,
-                    MirValue::VReg(input_vreg),
-                    100,
-                    fill,
-                );
-            } else if width == 3 && alignment == FillAlignment::Center {
-                self.emit_runtime_fill_padding_if_lt(
-                    slot,
-                    len_vreg,
-                    MirValue::VReg(input_vreg),
-                    10,
-                    fill,
-                );
-            } else if width == 3 && alignment == FillAlignment::CenterRight {
-                self.emit_runtime_fill_padding_if_lt(
-                    slot,
-                    len_vreg,
-                    MirValue::VReg(input_vreg),
-                    100,
-                    fill,
-                );
-            } else if width == 4 && alignment == FillAlignment::Right {
-                self.emit_runtime_fill_padding_if_lt(
-                    slot,
-                    len_vreg,
-                    MirValue::VReg(input_vreg),
-                    10,
-                    fill,
-                );
-                self.emit_runtime_fill_padding_if_lt(
-                    slot,
-                    len_vreg,
-                    MirValue::VReg(input_vreg),
-                    100,
-                    fill,
-                );
-                self.emit_runtime_fill_padding_if_lt(
-                    slot,
-                    len_vreg,
-                    MirValue::VReg(input_vreg),
-                    1000,
-                    fill,
-                );
-            } else if width == 4 && alignment == FillAlignment::Center {
-                self.emit_runtime_fill_padding_if_lt(
-                    slot,
-                    len_vreg,
-                    MirValue::VReg(input_vreg),
-                    100,
-                    fill,
-                );
-            } else if width == 4 && alignment == FillAlignment::CenterRight {
-                self.emit_runtime_fill_padding_if_lt(
-                    slot,
-                    len_vreg,
-                    MirValue::VReg(input_vreg),
-                    10,
-                    fill,
-                );
-                self.emit_runtime_fill_padding_if_lt(
-                    slot,
-                    len_vreg,
-                    MirValue::VReg(input_vreg),
-                    1000,
+                    threshold,
                     fill,
                 );
             }
@@ -3023,85 +2942,12 @@ impl<'a> HirToMirLowering<'a> {
             val_type: StringAppendType::Integer,
         });
         if !fill.is_empty() {
-            if width == 2 && matches!(alignment, FillAlignment::Left | FillAlignment::Center) {
+            for threshold in Self::runtime_fill_right_len_thresholds(width, alignment) {
                 self.emit_runtime_fill_padding_if_lt(
                     slot,
                     len_vreg,
                     MirValue::VReg(len_vreg),
-                    2,
-                    fill,
-                );
-            } else if width == 3 && alignment == FillAlignment::Left {
-                self.emit_runtime_fill_padding_if_lt(
-                    slot,
-                    len_vreg,
-                    MirValue::VReg(len_vreg),
-                    2,
-                    fill,
-                );
-                self.emit_runtime_fill_padding_if_lt(
-                    slot,
-                    len_vreg,
-                    MirValue::VReg(len_vreg),
-                    3,
-                    fill,
-                );
-            } else if width == 3
-                && matches!(
-                    alignment,
-                    FillAlignment::Center | FillAlignment::CenterRight
-                )
-            {
-                self.emit_runtime_fill_padding_if_lt(
-                    slot,
-                    len_vreg,
-                    MirValue::VReg(len_vreg),
-                    3,
-                    fill,
-                );
-            } else if width == 4 && alignment == FillAlignment::Left {
-                self.emit_runtime_fill_padding_if_lt(
-                    slot,
-                    len_vreg,
-                    MirValue::VReg(len_vreg),
-                    2,
-                    fill,
-                );
-                self.emit_runtime_fill_padding_if_lt(
-                    slot,
-                    len_vreg,
-                    MirValue::VReg(len_vreg),
-                    3,
-                    fill,
-                );
-                self.emit_runtime_fill_padding_if_lt(
-                    slot,
-                    len_vreg,
-                    MirValue::VReg(len_vreg),
-                    4,
-                    fill,
-                );
-            } else if width == 4 && alignment == FillAlignment::Center {
-                self.emit_runtime_fill_padding_if_lt(
-                    slot,
-                    len_vreg,
-                    MirValue::VReg(len_vreg),
-                    3,
-                    fill,
-                );
-                self.emit_runtime_fill_padding_if_lt(
-                    slot,
-                    len_vreg,
-                    MirValue::VReg(len_vreg),
-                    4,
-                    fill,
-                );
-            } else if width == 4 && alignment == FillAlignment::CenterRight {
-                self.emit_runtime_fill_padding_if_lt(
-                    slot,
-                    len_vreg,
-                    MirValue::VReg(len_vreg),
-                    4,
+                    threshold,
                     fill,
                 );
             }
@@ -3125,6 +2971,60 @@ impl<'a> HirToMirLowering<'a> {
         meta.string_len_bound = Some(string_len_bound);
         meta.field_type = Some(array_ty);
         Ok(())
+    }
+
+    fn runtime_fill_left_digit_thresholds(width: usize, alignment: FillAlignment) -> Vec<i64> {
+        let max_left_pad = (1..width)
+            .map(|digits| Self::runtime_fill_pad_counts(width, alignment, digits).0)
+            .max()
+            .unwrap_or(0);
+
+        let mut thresholds = Vec::with_capacity(max_left_pad);
+        for pad_index in 1..=max_left_pad {
+            let Some(max_digits) = (1..width)
+                .filter(|digits| {
+                    Self::runtime_fill_pad_counts(width, alignment, *digits).0 >= pad_index
+                })
+                .max()
+            else {
+                continue;
+            };
+            thresholds.push(Self::runtime_fill_digit_threshold(max_digits));
+        }
+        thresholds
+    }
+
+    fn runtime_fill_right_len_thresholds(width: usize, alignment: FillAlignment) -> Vec<i64> {
+        let max_right_pad = (1..width)
+            .map(|digits| Self::runtime_fill_pad_counts(width, alignment, digits).1)
+            .max()
+            .unwrap_or(0);
+        if max_right_pad == 0 {
+            return Vec::new();
+        }
+
+        ((width - max_right_pad + 1)..=width)
+            .map(|threshold| threshold as i64)
+            .collect()
+    }
+
+    fn runtime_fill_pad_counts(
+        width: usize,
+        alignment: FillAlignment,
+        digits: usize,
+    ) -> (usize, usize) {
+        let pad_width = width.saturating_sub(digits);
+        match alignment {
+            FillAlignment::Left => (0, pad_width),
+            FillAlignment::Right => (pad_width, 0),
+            FillAlignment::Center => (pad_width / 2, pad_width - (pad_width / 2)),
+            FillAlignment::CenterRight => (pad_width.div_ceil(2), pad_width / 2),
+        }
+    }
+
+    fn runtime_fill_digit_threshold(digits: usize) -> i64 {
+        debug_assert!(digits < MAX_RUNTIME_UNSIGNED_FILL_WIDTH);
+        10_i64.pow(digits as u32)
     }
 
     fn emit_runtime_fill_padding_if_lt(

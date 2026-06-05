@@ -15216,10 +15216,41 @@ fn test_lower_fill_width_four_center_right_on_runtime_unsigned_int_materializes_
 }
 
 #[test]
-fn test_lower_fill_width_five_rejects_runtime_unsigned_int() {
+fn test_lower_fill_width_ten_right_on_runtime_unsigned_int_materializes_dynamic_padding() {
+    let result = lower_ctx_pid_fill_then_starts_with_program_with_options(
+        DeclId::new(2533),
+        DeclId::new(2534),
+        Some(10),
+        Some("right"),
+        Some("0"),
+        "0",
+        "fill --width 10 --alignment right should lower for runtime unsigned integer input",
+    );
+
+    assert_runtime_integer_fill_padding_shape(
+        &result,
+        &[
+            10,
+            100,
+            1000,
+            10_000,
+            100_000,
+            1_000_000,
+            10_000_000,
+            100_000_000,
+            1_000_000_000,
+        ],
+        b"0",
+        9,
+        "runtime integer right fill --width 10",
+    );
+}
+
+#[test]
+fn test_lower_fill_width_eleven_rejects_runtime_unsigned_int() {
     let fill_decl = DeclId::new(2509);
     let starts_with_decl = DeclId::new(2510);
-    let hir = make_ctx_pid_fill_then_starts_with_program(fill_decl, starts_with_decl, Some(5));
+    let hir = make_ctx_pid_fill_then_starts_with_program(fill_decl, starts_with_decl, Some(11));
     let decl_names = HashMap::from([
         (fill_decl, "fill".to_string()),
         (starts_with_decl, "str starts-with".to_string()),
@@ -15234,7 +15265,7 @@ fn test_lower_fill_width_five_rejects_runtime_unsigned_int() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("fill --width 5 should reject runtime integer input because padding is dynamic");
+    .expect_err("fill --width 11 should reject runtime integer input because padding is dynamic");
 
     assert!(
         err.to_string()
