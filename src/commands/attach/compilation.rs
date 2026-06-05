@@ -694,6 +694,13 @@ fn eval_supported_constant_call(
             }
             eval_supported_constant_record_columns_or_values(cmd_name, input, span)
         }
+        "default" => eval_supported_constant_default_call(
+            working_set,
+            input,
+            &call.arguments,
+            env,
+            span,
+        ),
         "insert" | "update" | "upsert" => eval_supported_constant_path_mutation_call(
             working_set,
             cmd_name,
@@ -937,6 +944,13 @@ fn eval_supported_constant_external_call(
             }
             eval_supported_constant_record_columns_or_values(cmd_name, input, span)
         }
+        "default" => eval_supported_constant_default_external_call(
+            working_set,
+            input,
+            args,
+            env,
+            span,
+        ),
         "insert" | "update" | "upsert" => {
             let [path_arg, new_value_arg] = args else {
                 return Err(LabeledError::new("Unsupported annotated mutable global initializer")
@@ -1628,6 +1642,166 @@ fn eval_supported_constant_record_columns_or_values(
     };
 
     Ok(Value::list(vals, value_span))
+}
+
+fn eval_supported_constant_default_call(
+    working_set: &StateWorkingSet,
+    input: Option<Value>,
+    args: &[nu_protocol::ast::Argument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let mut replace_empty = false;
+    let mut positional = Vec::new();
+    for arg in args {
+        match arg {
+            nu_protocol::ast::Argument::Positional(expr)
+            | nu_protocol::ast::Argument::Unknown(expr) => positional.push(expr),
+            nu_protocol::ast::Argument::Named(named) => {
+                if named.0.item != "empty" || named.2.is_some() {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            "`default` accepts only the --empty flag in compile-time global initializers",
+                            arg.span(),
+                        ));
+                }
+                replace_empty = true;
+            }
+            nu_protocol::ast::Argument::Spread(expr) => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`default` arguments cannot use spread syntax in compile-time global initializers",
+                        expr.span,
+                    ));
+            }
+        }
+    }
+
+    eval_supported_constant_default(
+        working_set,
+        input,
+        replace_empty,
+        positional.as_slice(),
+        env,
+        span,
+    )
+}
+
+fn eval_supported_constant_default_external_call(
+    working_set: &StateWorkingSet,
+    input: Option<Value>,
+    args: &[ExternalArgument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let mut positional = Vec::new();
+    for arg in args {
+        let ExternalArgument::Regular(expr) = arg else {
+            return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                .with_label(
+                    "`default` arguments cannot use spread syntax in compile-time global initializers",
+                    arg.expr().span,
+                ));
+        };
+        positional.push(expr);
+    }
+
+    let mut replace_empty = false;
+    if let Some(first) = positional.first() {
+        let first_value = eval_supported_constant_value(working_set, first)?;
+        if matches!(
+            first_value,
+            Value::String { ref val, .. } | Value::Glob { ref val, .. } if val == "--empty"
+        ) {
+            replace_empty = true;
+            positional.remove(0);
+        }
+    }
+
+    eval_supported_constant_default(
+        working_set,
+        input,
+        replace_empty,
+        positional.as_slice(),
+        env,
+        span,
+    )
+}
+
+fn eval_supported_constant_default(
+    working_set: &StateWorkingSet,
+    input: Option<Value>,
+    replace_empty: bool,
+    positional: &[&nu_protocol::ast::Expression],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let value = input.ok_or_else(|| {
+        LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+            "`default` in a compile-time global initializer must receive pipeline input",
+            span,
+        )
+    })?;
+    let Some((default_expr, column_exprs)) = positional.split_first() else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`default` requires a default value in compile-time global initializers",
+                span,
+            ),
+        );
+    };
+
+    let default_value = eval_supported_constant_value_with_env(working_set, default_expr, env)?;
+    if column_exprs.is_empty() {
+        return if eval_supported_constant_default_should_replace_value(&value, replace_empty) {
+            Ok(default_value)
+        } else {
+            Ok(value)
+        };
+    }
+
+    let value_span = value.span();
+    let Value::Record { val, .. } = value else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`default` column fill in a compile-time global initializer requires record input",
+                span,
+            ),
+        );
+    };
+    let mut record = val.into_owned();
+    let mut column_names = Vec::new();
+    for expr in column_exprs {
+        let name = eval_supported_constant_record_field_name(working_set, expr)?;
+        if !column_names.contains(&name) {
+            column_names.push(name);
+        }
+    }
+    for name in column_names {
+        let should_replace = record
+            .get(&name)
+            .map(|value| eval_supported_constant_default_should_replace_value(value, replace_empty))
+            .unwrap_or(true);
+        if should_replace {
+            record.insert(name, default_value.clone());
+        }
+    }
+
+    Ok(Value::record(record, value_span))
+}
+
+fn eval_supported_constant_default_should_replace_value(
+    value: &Value,
+    replace_empty: bool,
+) -> bool {
+    match value {
+        Value::Nothing { .. } => true,
+        Value::String { val, .. } => replace_empty && val.is_empty(),
+        Value::Binary { val, .. } => replace_empty && val.is_empty(),
+        Value::List { vals, .. } => replace_empty && vals.is_empty(),
+        Value::Record { val, .. } => replace_empty && val.is_empty(),
+        _ => false,
+    }
 }
 
 fn eval_supported_constant_path_mutation_call(

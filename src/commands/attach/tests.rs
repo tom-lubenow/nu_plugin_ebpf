@@ -580,6 +580,173 @@ fn test_map_leading_annotated_mut_globals_rejects_record_columns_initializer_arg
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_default_null_initializer() {
+    let source = "{|| mut val: int = (null | default 9); $val }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant default null initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(globals[0].initial_value.as_int().ok(), Some(9));
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_default_empty_initializer() {
+    let source = "{|| mut val: string = (\"\" | default --empty \"fallback\"); $val }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant default --empty initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(globals[0].initial_value.as_str().ok(), Some("fallback"));
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_default_missing_record_field() {
+    let source = "{|| mut state: record<pid: int cpu: int> = ({pid: 7} | default 2 cpu); $state }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant default missing record field initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::Record { val, .. } => {
+            assert_eq!(val.get("pid").and_then(|v| v.as_int().ok()), Some(7));
+            assert_eq!(val.get("cpu").and_then(|v| v.as_int().ok()), Some(2));
+        }
+        other => panic!("expected record initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_default_null_record_field() {
+    let source = "{|| mut state: record<pid: int cpu: int> = ({pid: null, cpu: 2} | default 7 pid); $state }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant default null record field initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::Record { val, .. } => {
+            assert_eq!(val.get("pid").and_then(|v| v.as_int().ok()), Some(7));
+            assert_eq!(val.get("cpu").and_then(|v| v.as_int().ok()), Some(2));
+        }
+        other => panic!("expected record initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_rejects_default_missing_value() {
+    let source = "{|| mut val: int = (null | default); $val }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let err = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect_err("default without a value should be rejected");
+
+    assert!(
+        err.labels
+            .iter()
+            .any(|label| label.text.contains("requires a default value")),
+        "unexpected labels: {:?}",
+        err.labels
+    );
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_constant_record_select_initializer() {
     let source = "{|| mut state: record<mem: int pid: int> = ({pid: 7, cpu: 2, mem: 4} | select mem pid); $state }";
     let ir_block = IrBlock {
