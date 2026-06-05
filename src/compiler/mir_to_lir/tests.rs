@@ -1,4 +1,5 @@
 use super::*;
+use crate::compiler::lir_integrity::validate_lir_program;
 use crate::compiler::mir::{
     BlockId, MirFunction, MirInst, MirProgram, MirValue, SubfunctionId, VReg,
 };
@@ -302,6 +303,7 @@ fn test_lower_kfunc_call() {
     };
 
     let lir = lower_mir_to_lir_checked(&program).expect("kfunc lowering should succeed");
+    validate_lir_program(&lir).expect("lowered program should satisfy LIR integrity");
     let block = lir.main.block(lir.main.entry);
     let has_kfunc = block.instructions.iter().any(|inst| {
         matches!(
