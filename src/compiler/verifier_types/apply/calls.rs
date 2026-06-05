@@ -8,6 +8,26 @@ use crate::compiler::subfn_summaries::{
 };
 use crate::compiler::{ProbeContext, ProgramTypeInfo};
 
+fn scalar_value_range_for_type(types: &HashMap<VReg, MirType>, dst: VReg) -> ValueRange {
+    types
+        .get(&dst)
+        .and_then(MirType::scalar_value_range)
+        .map(|(min, max)| ValueRange::Known { min, max })
+        .unwrap_or(ValueRange::Unknown)
+}
+
+fn helper_return_range_for_type(
+    ty: VerifierType,
+    types: &HashMap<VReg, MirType>,
+    dst: VReg,
+) -> ValueRange {
+    if matches!(ty, VerifierType::Scalar | VerifierType::Bool) {
+        scalar_value_range_for_type(types, dst)
+    } else {
+        ValueRange::Unknown
+    }
+}
+
 fn reject_call_if_kernel_lock_held(
     state: &VerifierState,
     call: String,
@@ -77,7 +97,8 @@ pub(super) fn apply_call_helper_inst(
             .get(&dst)
             .map(verifier_type_from_mir)
             .unwrap_or(VerifierType::Scalar);
-        state.set_with_range(dst, ty, ValueRange::Unknown);
+        let range = helper_return_range_for_type(ty, types, dst);
+        state.set_with_range(dst, ty, range);
         return;
     }
 
@@ -211,7 +232,8 @@ pub(super) fn apply_call_helper_inst(
                 }
             },
         };
-        state.set_with_range(dst, ty, ValueRange::Unknown);
+        let range = helper_return_range_for_type(ty, types, dst);
+        state.set_with_range(dst, ty, range);
         return;
     }
 

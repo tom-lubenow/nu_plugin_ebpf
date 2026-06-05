@@ -6,6 +6,8 @@ documentation changes that matter to external alpha consumers.
 
 ## Unreleased
 
+- Rejected dynamic `bpf_dynptr_from_mem` flags derived from bounded helper
+  return ranges, with source, verifier-types, and VCC coverage.
 - Added actionable BTF target diagnostics for invalid `fentry`, `fexit`,
   `fmod_ret`, `tp_btf`, and LSM targets so compile-time errors include the
   modeled target-family rewrite guidance.

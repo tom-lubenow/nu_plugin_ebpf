@@ -17005,6 +17005,27 @@ const FIXTURES = [
         error_contains: "helper 'bpf_dynptr_from_mem' requires arg2 flags to be 0"
     }
     {
+        name: "dynptr-from-mem-rejects-dynamic-flags"
+        category: "helper-state"
+        tags: [dynptr flags reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  "abcdefgh" | map-put dynptr_dynamic_flag_buffers 0 --kind array'
+            '  let flags = (helper-call "bpf_get_prandom_u32")'
+            '  let entry = (0 | map-get dynptr_dynamic_flag_buffers --kind array)'
+            '  if $entry {'
+            '    let d = "0123456789abcdef"'
+            '    helper-call "bpf_dynptr_from_mem" $entry 8 $flags $d'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_dynptr_from_mem' requires arg2 flags to be 0"
+    }
+    {
         name: "dynptr-from-mem-accepts-both-branch-initialization"
         category: "helper-state"
         tags: [dynptr phi accept]

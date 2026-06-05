@@ -2215,6 +2215,51 @@ fn test_verify_mir_dynptr_helpers_reject_negative_sizes() {
 }
 
 #[test]
+fn test_verify_mir_dynptr_from_mem_rejects_dynamic_flags_from_helper_return() {
+    let mut flags = VReg(0);
+    let mut from_ret = VReg(0);
+    let (func, data, len) = dynptr_guarded_function(1, |func, block, data, _| {
+        let dynptr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);
+        flags = func.alloc_vreg();
+        from_ret = func.alloc_vreg();
+        func.block_mut(block)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: flags,
+                helper: BpfHelper::GetPrandomU32 as u32,
+                args: vec![],
+            });
+        func.block_mut(block)
+            .instructions
+            .push(MirInst::CallHelper {
+                dst: from_ret,
+                helper: BpfHelper::DynptrFromMem as u32,
+                args: vec![
+                    MirValue::VReg(data),
+                    MirValue::Const(8),
+                    MirValue::VReg(flags),
+                    MirValue::StackSlot(dynptr_slot),
+                ],
+            });
+        func.block_mut(block).terminator = MirInst::Return { val: None };
+    });
+    let types = dynptr_helper_types(
+        data,
+        len,
+        &[(flags, MirType::U32), (from_ret, MirType::I64)],
+    );
+    let err = verify_mir(&func, &types)
+        .expect_err("expected dynptr_from_mem dynamic flags to be rejected");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_dynptr_from_mem' requires arg2 flags to be 0")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_dynptr_helper_rejects_use_before_init() {
     let (mut func, entry) = new_mir_function();
     let dynptr_slot = func.alloc_stack_slot(16, 8, StackSlotKind::StringBuffer);

@@ -1,5 +1,15 @@
 use super::*;
 
+fn vcc_type_from_mir_with_scalar_range(ty: &MirType) -> VccValueType {
+    if let Some((min, max)) = ty.scalar_value_range() {
+        VccValueType::Scalar {
+            range: Some(VccRange { min, max }),
+        }
+    } else {
+        vcc_type_from_mir(ty)
+    }
+}
+
 impl<'a> VccLowerer<'a> {
     pub(super) fn lower_value(&mut self, value: &MirValue, out: &mut Vec<VccInst>) -> VccValue {
         match value {
@@ -90,13 +100,7 @@ impl<'a> VccLowerer<'a> {
     }
 
     pub(super) fn maybe_assume_type(&mut self, dst: VReg, ty: &MirType, out: &mut Vec<VccInst>) {
-        let vcc_ty = if let Some((min, max)) = ty.scalar_value_range() {
-            VccValueType::Scalar {
-                range: Some(VccRange { min, max }),
-            }
-        } else {
-            vcc_type_from_mir(ty)
-        };
+        let vcc_ty = vcc_type_from_mir_with_scalar_range(ty);
         if matches!(
             vcc_ty,
             VccValueType::Ptr(_) | VccValueType::Bool | VccValueType::Scalar { range: Some(_) }
@@ -113,7 +117,7 @@ impl<'a> VccLowerer<'a> {
     }
 
     pub(super) fn helper_return_type(&self, helper_id: u32, dst: VReg) -> VccValueType {
-        let inferred = self.types.get(&dst).map(vcc_type_from_mir);
+        let inferred = self.types.get(&dst).map(vcc_type_from_mir_with_scalar_range);
         let helper = BpfHelper::from_u32(helper_id);
         let Some(sig) = HelperSignature::for_id(helper_id) else {
             return inferred.unwrap_or(VccValueType::Unknown);
