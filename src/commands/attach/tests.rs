@@ -2062,6 +2062,155 @@ fn test_map_leading_annotated_mut_globals_supports_constant_str_length_list_init
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_str_starts_with_initializer() {
+    let source = "{|| mut ok: bool = (\"abcdef\" | str starts-with \"abc\"); $ok }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant str starts-with initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert!(
+        globals[0]
+            .initial_value
+            .as_bool()
+            .expect("str starts-with should produce a boolean")
+    );
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_str_ends_with_ignore_case_initializer()
+{
+    let source = "{|| mut ok: bool = (\"abCDEF\" | str ends-with \"def\" --ignore-case); $ok }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant str ends-with --ignore-case initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert!(
+        globals[0]
+            .initial_value
+            .as_bool()
+            .expect("str ends-with should produce a boolean")
+    );
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_str_contains_list_initializer() {
+    let source = "{|| mut oks: list<bool> = ([\"alpha\", \"beta\", \"alphabet\"] | str contains \"alpha\"); $oks }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant str contains list initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let values = vals
+                .iter()
+                .map(|value| value.as_bool().expect("str contains should produce bools"))
+                .collect::<Vec<_>>();
+            assert_eq!(values, vec![true, false, true]);
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_let_bound_constant_str_contains_initializer() {
+    let source = "{|| let needle = \"bc\"; mut ok: bool = (\"abcd\" | str contains $needle); $ok }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(10),
+                src: RegId::new(0),
+            },
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(1),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 4],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 4],
+        comments: vec!["let".into(), "let".into(), "".into(), "".into()],
+        register_count: 2,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("let-bound constant str contains initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert!(
+        globals[0]
+            .initial_value
+            .as_bool()
+            .expect("str contains should produce a boolean")
+    );
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_constant_empty_predicate_initializer() {
     let source = "{|| mut empty: bool = (\"\" | is-empty); $empty }";
     let ir_block = IrBlock {
@@ -2128,6 +2277,41 @@ fn test_map_leading_annotated_mut_globals_supports_constant_non_empty_predicate_
             .initial_value
             .as_bool()
             .expect("is-not-empty should produce a boolean")
+    );
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_rejects_constant_str_contains_mixed_list_initializer() {
+    let source = "{|| mut oks: list<bool> = ([\"alpha\", 1] | str contains \"alpha\"); $oks }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let err = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect_err("str contains on a mixed list should be rejected");
+
+    assert!(
+        err.labels
+            .iter()
+            .any(|label| label.text.contains("requires string list items")),
+        "unexpected labels: {:?}",
+        err.labels
     );
 }
 

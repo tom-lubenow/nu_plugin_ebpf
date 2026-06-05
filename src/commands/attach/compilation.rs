@@ -697,6 +697,15 @@ fn eval_supported_constant_call(
             let mode = eval_supported_constant_str_length_mode_call(&call.arguments)?;
             eval_supported_constant_str_length(input, mode, span)
         }
+        "str starts-with" | "str ends-with" | "str contains" => {
+            let args = eval_supported_constant_str_predicate_call_args(
+                working_set,
+                cmd_name,
+                &call.arguments,
+                env,
+            )?;
+            eval_supported_constant_str_predicate(cmd_name, input, args, span)
+        }
         "get" => eval_supported_constant_get_call(
             working_set,
             cmd_name,
@@ -955,7 +964,7 @@ fn eval_supported_constant_external_call(
             eval_supported_constant_no_external_args(cmd_name, args, span)?;
             eval_supported_constant_bytes_length(input, span)
         }
-        "str" => eval_supported_constant_str_external_call(working_set, input, args, span),
+        "str" => eval_supported_constant_str_external_call(working_set, input, args, env, span),
         "str length" => {
             let mode = eval_supported_constant_str_length_mode_external_args(
                 working_set,
@@ -964,6 +973,16 @@ fn eval_supported_constant_external_call(
                 span,
             )?;
             eval_supported_constant_str_length(input, mode, span)
+        }
+        "str starts-with" | "str ends-with" | "str contains" => {
+            let args = eval_supported_constant_str_predicate_external_args(
+                working_set,
+                cmd_name,
+                args,
+                env,
+                span,
+            )?;
+            eval_supported_constant_str_predicate(cmd_name, input, args, span)
         }
         "get" => {
             let [path_arg] = args else {
@@ -1941,10 +1960,264 @@ fn eval_supported_constant_known_string_length(input: &str, mode: ConstantString
     }
 }
 
+struct ConstantStringPredicateArgs {
+    needle: String,
+    ignore_case: bool,
+}
+
+fn eval_supported_constant_str_predicate_call_args(
+    working_set: &StateWorkingSet,
+    cmd_name: &str,
+    args: &[nu_protocol::ast::Argument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+) -> Result<ConstantStringPredicateArgs, LabeledError> {
+    let mut needle_expr = None;
+    let mut ignore_case = false;
+    for arg in args {
+        match arg {
+            nu_protocol::ast::Argument::Positional(expr)
+            | nu_protocol::ast::Argument::Unknown(expr) => {
+                if needle_expr.replace(expr).is_some() {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            format!(
+                                "`{cmd_name}` accepts exactly one string argument in compile-time global initializers"
+                            ),
+                            arg.span(),
+                        ));
+                }
+            }
+            nu_protocol::ast::Argument::Named(named) => {
+                if named.0.item != "ignore-case" || named.2.is_some() {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            format!(
+                                "`{cmd_name}` accepts only the --ignore-case flag in compile-time global initializers"
+                            ),
+                            arg.span(),
+                        ));
+                }
+                ignore_case = true;
+            }
+            nu_protocol::ast::Argument::Spread(expr) => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        format!(
+                            "`{cmd_name}` arguments cannot use spread syntax in compile-time global initializers"
+                        ),
+                        expr.span,
+                    ));
+            }
+        }
+    }
+
+    let Some(needle_expr) = needle_expr else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`{cmd_name}` requires exactly one string argument in compile-time global initializers"
+                ),
+                Span::unknown(),
+            ),
+        );
+    };
+    let needle = eval_supported_constant_string_argument(working_set, needle_expr, env, cmd_name)?;
+    eval_supported_constant_reject_nul_string_argument(cmd_name, &needle, needle_expr.span)?;
+
+    Ok(ConstantStringPredicateArgs {
+        needle,
+        ignore_case,
+    })
+}
+
+fn eval_supported_constant_str_predicate_external_args(
+    working_set: &StateWorkingSet,
+    cmd_name: &str,
+    args: &[ExternalArgument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<ConstantStringPredicateArgs, LabeledError> {
+    let mut needle_expr = None;
+    let mut ignore_case = false;
+    for arg in args {
+        let ExternalArgument::Regular(expr) = arg else {
+            return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                .with_label(
+                    format!(
+                        "`{cmd_name}` arguments cannot use spread syntax in compile-time global initializers"
+                    ),
+                    arg.expr().span,
+                ));
+        };
+        let value = eval_supported_constant_value_with_env(working_set, expr, env)?;
+        match value {
+            Value::String { val, .. } | Value::Glob { val, .. } if val == "--ignore-case" => {
+                ignore_case = true;
+            }
+            Value::String { val, .. } | Value::Glob { val, .. } => {
+                if needle_expr.replace((expr, val)).is_some() {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            format!(
+                                "`{cmd_name}` accepts exactly one string argument in compile-time global initializers"
+                            ),
+                            span,
+                        ));
+                }
+            }
+            _ => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        format!(
+                            "`{cmd_name}` argument must be a compile-time string in global initializers"
+                        ),
+                        expr.span,
+                    ));
+            }
+        }
+    }
+
+    let Some((needle_expr, needle)) = needle_expr else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`{cmd_name}` requires exactly one string argument in compile-time global initializers"
+                ),
+                span,
+            ),
+        );
+    };
+    eval_supported_constant_reject_nul_string_argument(cmd_name, &needle, needle_expr.span)?;
+
+    Ok(ConstantStringPredicateArgs {
+        needle,
+        ignore_case,
+    })
+}
+
+fn eval_supported_constant_string_argument(
+    working_set: &StateWorkingSet,
+    expr: &nu_protocol::ast::Expression,
+    env: &HashMap<nu_protocol::VarId, Value>,
+    cmd_name: &str,
+) -> Result<String, LabeledError> {
+    match eval_supported_constant_value_with_env(working_set, expr, env)? {
+        Value::String { val, .. } | Value::Glob { val, .. } => Ok(val),
+        _ => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`{cmd_name}` argument must be a compile-time string in global initializers"
+                ),
+                expr.span,
+            ),
+        ),
+    }
+}
+
+fn eval_supported_constant_reject_nul_string_argument(
+    cmd_name: &str,
+    value: &str,
+    span: Span,
+) -> Result<(), LabeledError> {
+    if value.as_bytes().contains(&0) {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`{cmd_name}` does not support NUL bytes in compile-time global initializers"
+                ),
+                span,
+            ),
+        );
+    }
+    Ok(())
+}
+
+fn eval_supported_constant_str_predicate(
+    cmd_name: &str,
+    input: Option<Value>,
+    args: ConstantStringPredicateArgs,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let value = eval_supported_constant_required_pipeline_input(cmd_name, input, span)?;
+    let value_span = value.span();
+    match value {
+        Value::String { val, .. } | Value::Glob { val, .. } => Ok(Value::bool(
+            eval_supported_constant_string_predicate_matches(cmd_name, &val, &args),
+            span,
+        )),
+        Value::List { vals, .. } => {
+            let values = vals
+                .into_iter()
+                .enumerate()
+                .map(|(index, value)| {
+                    let val = match value {
+                        Value::String { val, .. } | Value::Glob { val, .. } => val,
+                        other => {
+                            return Err(LabeledError::new(
+                                "Unsupported annotated mutable global initializer",
+                            )
+                            .with_label(
+                                format!(
+                                    "`{cmd_name}` requires string list items in compile-time global initializers; item {index} has type {}",
+                                    other.get_type()
+                                ),
+                                span,
+                            ));
+                        }
+                    };
+                    Ok(Value::bool(
+                        eval_supported_constant_string_predicate_matches(cmd_name, &val, &args),
+                        value_span,
+                    ))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(Value::list(values, value_span))
+        }
+        _ => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`{cmd_name}` in a compile-time global initializer requires string or list<string> input"
+                ),
+                span,
+            ),
+        ),
+    }
+}
+
+fn eval_supported_constant_string_predicate_matches(
+    cmd_name: &str,
+    input: &str,
+    args: &ConstantStringPredicateArgs,
+) -> bool {
+    if args.ignore_case {
+        let input = input.to_lowercase();
+        let needle = args.needle.to_lowercase();
+        return eval_supported_constant_string_predicate_matches_case_sensitive(
+            cmd_name, &input, &needle,
+        );
+    }
+
+    eval_supported_constant_string_predicate_matches_case_sensitive(cmd_name, input, &args.needle)
+}
+
+fn eval_supported_constant_string_predicate_matches_case_sensitive(
+    cmd_name: &str,
+    input: &str,
+    needle: &str,
+) -> bool {
+    match cmd_name {
+        "str starts-with" => input.starts_with(needle),
+        "str ends-with" => input.ends_with(needle),
+        "str contains" => input.contains(needle),
+        _ => unreachable!("unsupported constant string predicate command: {cmd_name}"),
+    }
+}
+
 fn eval_supported_constant_str_external_call(
     working_set: &StateWorkingSet,
     input: Option<Value>,
     args: &[ExternalArgument],
+    env: &HashMap<nu_protocol::VarId, Value>,
     span: Span,
 ) -> Result<Value, LabeledError> {
     let [subcommand_arg, remaining_args @ ..] = args else {
@@ -1975,6 +2248,17 @@ fn eval_supported_constant_str_external_call(
                 span,
             )?;
             eval_supported_constant_str_length(input, mode, span)
+        }
+        "starts-with" | "ends-with" | "contains" => {
+            let cmd_name = format!("str {subcommand}");
+            let args = eval_supported_constant_str_predicate_external_args(
+                working_set,
+                &cmd_name,
+                remaining_args,
+                env,
+                span,
+            )?;
+            eval_supported_constant_str_predicate(&cmd_name, input, args, span)
         }
         _ => Err(
             LabeledError::new("Unsupported annotated mutable global initializer").with_label(
