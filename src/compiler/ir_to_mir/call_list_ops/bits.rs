@@ -2371,11 +2371,6 @@ impl<'a> HirToMirLowering<'a> {
         if let Some(input_meta) = input_meta.as_ref()
             && let Some((_input_slot, max_len)) = input_meta.list_buffer
         {
-            if mode == BitsNotMode::Auto {
-                return Err(CompileError::UnsupportedInstruction(format!(
-                    "{cmd_name} default auto-width integer mode requires compile-time known input in eBPF; use --number-bytes 1, 2, 4, or 8 for runtime input"
-                )));
-            }
             let (out_slot, out_ty) = self.create_stack_numeric_list_result(result_vreg, max_len);
 
             if max_len > 0 {
@@ -2419,7 +2414,11 @@ impl<'a> HirToMirLowering<'a> {
                     self.vreg_type_hints.insert(item_vreg, MirType::I64);
 
                     let output_vreg = self.func.alloc_vreg();
-                    self.emit_bits_not_value(output_vreg, MirValue::VReg(item_vreg), mode);
+                    if mode == BitsNotMode::Auto {
+                        self.emit_bits_not_auto_value(output_vreg, MirValue::VReg(item_vreg));
+                    } else {
+                        self.emit_bits_not_value(output_vreg, MirValue::VReg(item_vreg), mode);
+                    }
                     self.vreg_type_hints.insert(output_vreg, MirType::I64);
                     self.emit(MirInst::ListPush {
                         list: result_vreg,
@@ -2463,16 +2462,105 @@ impl<'a> HirToMirLowering<'a> {
             out_meta.literal_int = Some(output);
         } else {
             if mode == BitsNotMode::Auto {
-                return Err(CompileError::UnsupportedInstruction(format!(
-                    "{cmd_name} default auto-width integer mode requires compile-time known input in eBPF; use --number-bytes 1, 2, 4, or 8 for runtime input"
-                )));
+                self.emit_bits_not_auto_value(result_vreg, MirValue::VReg(input_vreg));
+            } else {
+                self.emit_bits_not_value(result_vreg, MirValue::VReg(input_vreg), mode);
             }
-            self.emit_bits_not_value(result_vreg, MirValue::VReg(input_vreg), mode);
             self.reset_call_result_metadata(src_dst);
             self.get_or_create_metadata(src_dst).field_type = Some(MirType::I64);
         }
         self.vreg_type_hints.insert(result_vreg, MirType::I64);
         Ok(())
+    }
+
+    fn emit_bits_not_auto_value(&mut self, dst: VReg, src: MirValue) {
+        let src = match src {
+            MirValue::VReg(src_vreg) if src_vreg == dst => {
+                let original_vreg = self.func.alloc_vreg();
+                self.emit(MirInst::Copy {
+                    dst: original_vreg,
+                    src: MirValue::VReg(src_vreg),
+                });
+                self.vreg_type_hints.insert(original_vreg, MirType::I64);
+                MirValue::VReg(original_vreg)
+            }
+            other => other,
+        };
+
+        self.emit(MirInst::UnaryOp {
+            dst,
+            op: UnaryOpKind::BitNot,
+            src: src.clone(),
+        });
+        self.vreg_type_hints.insert(dst, MirType::I64);
+
+        let continuation_block = self.func.alloc_block();
+        let check_u8_block = self.func.alloc_block();
+
+        let is_negative_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::BinOp {
+            dst: is_negative_vreg,
+            op: BinOpKind::Lt,
+            lhs: src.clone(),
+            rhs: MirValue::Const(0),
+        });
+        self.vreg_type_hints.insert(is_negative_vreg, MirType::Bool);
+        self.terminate(MirInst::Branch {
+            cond: is_negative_vreg,
+            if_true: continuation_block,
+            if_false: check_u8_block,
+        });
+
+        self.current_block = check_u8_block;
+        let check_u16_block =
+            self.emit_bits_not_auto_mask_case(dst, src.clone(), 0xff, continuation_block);
+        self.current_block = check_u16_block;
+        let check_u32_block =
+            self.emit_bits_not_auto_mask_case(dst, src.clone(), 0xffff, continuation_block);
+        self.current_block = check_u32_block;
+        let final_mask_block =
+            self.emit_bits_not_auto_mask_case(dst, src, 0xffff_ffff, continuation_block);
+        self.current_block = final_mask_block;
+        self.emit_mask_i64(dst, MirValue::VReg(dst), BITS_NOT_UNSIGNED_I64_MASK);
+        self.terminate(MirInst::Jump {
+            target: continuation_block,
+        });
+
+        self.current_block = continuation_block;
+    }
+
+    fn emit_bits_not_auto_mask_case(
+        &mut self,
+        dst: VReg,
+        src: MirValue,
+        max_value: i64,
+        continuation_block: BlockId,
+    ) -> BlockId {
+        let mask_block = self.func.alloc_block();
+        let next_block = self.func.alloc_block();
+
+        let cmp_vreg = self.func.alloc_vreg();
+        let max_operand = self.large_const_operand(&MirType::I64, max_value);
+        self.emit(MirInst::BinOp {
+            dst: cmp_vreg,
+            op: BinOpKind::Le,
+            lhs: src,
+            rhs: max_operand,
+        });
+        self.vreg_type_hints.insert(cmp_vreg, MirType::Bool);
+        self.terminate(MirInst::Branch {
+            cond: cmp_vreg,
+            if_true: mask_block,
+            if_false: next_block,
+        });
+
+        self.current_block = mask_block;
+        self.emit_mask_i64(dst, MirValue::VReg(dst), max_value);
+        self.terminate(MirInst::Jump {
+            target: continuation_block,
+        });
+
+        next_block
     }
 
     fn emit_bits_not_value(&mut self, dst: VReg, src: MirValue, mode: BitsNotMode) {

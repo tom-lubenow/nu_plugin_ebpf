@@ -23185,7 +23185,7 @@ fn test_lower_bits_not_default_accepts_positive_i64_auto_width() {
 }
 
 #[test]
-fn test_lower_bits_not_default_rejects_runtime_scalar_integer_input() {
+fn test_lower_bits_not_default_on_runtime_scalar_integer_input() {
     let bits_decl = DeclId::new(31702);
     let random_decl = DeclId::new(31703);
     let hir = make_runtime_scalar_bits_not_program(bits_decl, random_decl, false, None);
@@ -23194,7 +23194,7 @@ fn test_lower_bits_not_default_rejects_runtime_scalar_integer_input() {
         (random_decl, "random int".to_string()),
     ]);
 
-    let err = lower_hir_to_mir_with_hints(
+    let result = lower_hir_to_mir_with_hints(
         &hir,
         None,
         &decl_names,
@@ -23202,13 +23202,56 @@ fn test_lower_bits_not_default_rejects_runtime_scalar_integer_input() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("default bits not should reject runtime integer scalar input");
+    .expect("default bits not should lower runtime integer scalar input");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
 
     assert!(
-        err.to_string()
-            .contains("bits not default auto-width integer mode requires compile-time known input"),
-        "unexpected error: {err}"
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::UnaryOp {
+                op: UnaryOpKind::BitNot,
+                ..
+            }
+        )),
+        "expected runtime scalar default bits not to emit BitNot"
     );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .any(|block| matches!(block.terminator, MirInst::Branch { .. })),
+        "expected runtime scalar default bits not to branch on auto-width ranges"
+    );
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::Le,
+                ..
+            }
+        )),
+        "expected runtime scalar default bits not to compare auto-width bounds"
+    );
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::And,
+                ..
+            }
+        )),
+        "expected runtime scalar default bits not to apply auto-width masks"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("default bits not runtime scalar input should compile through codegen");
 }
 
 #[test]
@@ -26006,7 +26049,7 @@ fn test_lower_bits_not_number_bytes_on_runtime_stack_numeric_lists() {
 }
 
 #[test]
-fn test_lower_bits_not_default_rejects_runtime_stack_numeric_lists() {
+fn test_lower_bits_not_default_on_runtime_stack_numeric_lists() {
     let bits_decl = DeclId::new(3234);
     let length_decl = DeclId::new(3235);
     let random_decl = DeclId::new(3236);
@@ -26017,7 +26060,7 @@ fn test_lower_bits_not_default_rejects_runtime_stack_numeric_lists() {
         (random_decl, "random int".to_string()),
     ]);
 
-    let err = lower_hir_to_mir_with_hints(
+    let result = lower_hir_to_mir_with_hints(
         &hir,
         None,
         &decl_names,
@@ -26025,13 +26068,62 @@ fn test_lower_bits_not_default_rejects_runtime_stack_numeric_lists() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("default bits not should reject runtime stack-backed numeric lists");
+    .expect("default bits not should lower on runtime stack-backed numeric lists");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
 
     assert!(
-        err.to_string()
-            .contains("bits not default auto-width integer mode requires compile-time known input"),
-        "unexpected error: {err}"
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::UnaryOp {
+                op: UnaryOpKind::BitNot,
+                ..
+            }
+        )),
+        "expected runtime default bits not to emit BitNot"
     );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .any(|block| matches!(block.terminator, MirInst::Branch { .. })),
+        "expected runtime default bits not to branch on item auto-width ranges"
+    );
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::Le,
+                ..
+            }
+        )),
+        "expected runtime default bits not to compare auto-width bounds"
+    );
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::And,
+                ..
+            }
+        )),
+        "expected runtime default bits not to apply auto-width masks"
+    );
+    assert!(
+        instructions
+            .iter()
+            .any(|inst| matches!(inst, MirInst::ListPush { .. })),
+        "expected runtime default bits not to materialize an output list"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("runtime default bits not output consumed by length should compile");
 }
 
 #[test]
