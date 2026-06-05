@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::ops::Bound;
 
-use fancy_regex::Regex as FancyRegex;
+use fancy_regex::{NoExpand, Regex as FancyRegex};
 use heck::{
     ToKebabCase, ToLowerCamelCase, ToShoutySnakeCase, ToSnakeCase, ToTitleCase, ToUpperCamelCase,
 };
@@ -757,6 +757,15 @@ fn eval_supported_constant_call(
             )?;
             eval_supported_constant_str_substring(input, args, span)
         }
+        "str replace" => {
+            let args = eval_supported_constant_str_replace_call_args(
+                working_set,
+                &call.arguments,
+                env,
+                span,
+            )?;
+            eval_supported_constant_str_replace(input, args, span)
+        }
         "str downcase"
         | "str upcase"
         | "str reverse"
@@ -1100,6 +1109,11 @@ fn eval_supported_constant_external_call(
             let args =
                 eval_supported_constant_str_substring_external_args(working_set, args, env, span)?;
             eval_supported_constant_str_substring(input, args, span)
+        }
+        "str replace" => {
+            let args =
+                eval_supported_constant_str_replace_external_args(working_set, args, env, span)?;
+            eval_supported_constant_str_replace(input, args, span)
         }
         "str downcase"
         | "str upcase"
@@ -4371,6 +4385,282 @@ fn eval_supported_constant_substring_known_string(
     })
 }
 
+#[derive(Clone)]
+struct ConstantStrReplaceArgs {
+    find: String,
+    replacement: String,
+    replace_all: bool,
+    use_regex: bool,
+    no_expand: bool,
+    multiline: bool,
+}
+
+fn eval_supported_constant_str_replace_call_args(
+    working_set: &StateWorkingSet,
+    args: &[nu_protocol::ast::Argument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<ConstantStrReplaceArgs, LabeledError> {
+    let mut positional = Vec::new();
+    let mut replace_all = false;
+    let mut regex = false;
+    let mut no_expand = false;
+    let mut multiline = false;
+
+    for arg in args {
+        match arg {
+            nu_protocol::ast::Argument::Positional(expr)
+            | nu_protocol::ast::Argument::Unknown(expr) => {
+                if positional.len() == 2 {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            "`str replace` requires exactly two string arguments in compile-time global initializers",
+                            arg.span(),
+                        ));
+                }
+                positional.push(expr);
+            }
+            nu_protocol::ast::Argument::Named(named) => match named.0.item.as_str() {
+                "all" | "regex" | "no-expand" | "multiline" => {
+                    if named.2.is_some() {
+                        return Err(LabeledError::new(
+                                "Unsupported annotated mutable global initializer",
+                            )
+                            .with_label(
+                                "`str replace` flags cannot receive values in compile-time global initializers",
+                                arg.span(),
+                            ));
+                    }
+                    match named.0.item.as_str() {
+                        "all" => replace_all = true,
+                        "regex" => regex = true,
+                        "no-expand" => no_expand = true,
+                        "multiline" => multiline = true,
+                        _ => unreachable!("validated str replace flag"),
+                    }
+                }
+                _ => {
+                    return Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
+                        .with_label(
+                            "`str replace` supports only --all, --regex, --multiline, and --no-expand in compile-time global initializers",
+                            arg.span(),
+                        ));
+                }
+            },
+            nu_protocol::ast::Argument::Spread(expr) => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`str replace` arguments cannot use spread syntax in compile-time global initializers",
+                        expr.span,
+                    ));
+            }
+        }
+    }
+
+    let [find_expr, replacement_expr] = positional.as_slice() else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`str replace` requires exactly two string arguments in compile-time global initializers",
+                span,
+            ),
+        );
+    };
+    let find = eval_supported_constant_string_argument(working_set, find_expr, env, "str replace")?;
+    let replacement =
+        eval_supported_constant_string_argument(working_set, replacement_expr, env, "str replace")?;
+
+    Ok(ConstantStrReplaceArgs {
+        find,
+        replacement,
+        replace_all,
+        use_regex: regex || multiline,
+        no_expand,
+        multiline,
+    })
+}
+
+fn eval_supported_constant_str_replace_external_args(
+    working_set: &StateWorkingSet,
+    args: &[ExternalArgument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<ConstantStrReplaceArgs, LabeledError> {
+    let mut positional = Vec::new();
+    let mut replace_all = false;
+    let mut regex = false;
+    let mut no_expand = false;
+    let mut multiline = false;
+
+    for arg in args {
+        let ExternalArgument::Regular(expr) = arg else {
+            return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                .with_label(
+                    "`str replace` arguments cannot use spread syntax in compile-time global initializers",
+                    arg.expr().span,
+                ));
+        };
+        let value = eval_supported_constant_value_with_env(working_set, expr, env)?;
+        let raw = match value {
+            Value::String { val, .. } | Value::Glob { val, .. } => val,
+            _ => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`str replace` arguments must be compile-time strings in global initializers",
+                        expr.span,
+                    ));
+            }
+        };
+        match raw.as_str() {
+            "--all" => replace_all = true,
+            "--regex" => regex = true,
+            "--no-expand" => no_expand = true,
+            "--multiline" => multiline = true,
+            _ if raw.starts_with("--") => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`str replace` supports only --all, --regex, --multiline, and --no-expand in compile-time global initializers",
+                        expr.span,
+                    ));
+            }
+            _ => {
+                if positional.len() == 2 {
+                    return Err(LabeledError::new(
+                        "Unsupported annotated mutable global initializer",
+                    )
+                    .with_label(
+                        "`str replace` requires exactly two string arguments in compile-time global initializers",
+                        expr.span,
+                    ));
+                }
+                positional.push(raw);
+            }
+        }
+    }
+
+    if positional.len() != 2 {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`str replace` requires exactly two string arguments in compile-time global initializers",
+                span,
+            ),
+        );
+    }
+    let mut positional = positional.into_iter();
+    let find = positional
+        .next()
+        .expect("str replace positional count checked");
+    let replacement = positional
+        .next()
+        .expect("str replace positional count checked");
+
+    Ok(ConstantStrReplaceArgs {
+        find,
+        replacement,
+        replace_all,
+        use_regex: regex || multiline,
+        no_expand,
+        multiline,
+    })
+}
+
+fn eval_supported_constant_str_replace(
+    input: Option<Value>,
+    args: ConstantStrReplaceArgs,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let value = eval_supported_constant_required_pipeline_input("str replace", input, span)?;
+    let value_span = value.span();
+    match value {
+        Value::List { vals, .. } => {
+            let values = vals
+                .into_iter()
+                .enumerate()
+                .map(|(index, value)| {
+                    let input = match value {
+                        Value::String { val, .. } | Value::Glob { val, .. } => val,
+                        other => {
+                            return Err(LabeledError::new(
+                                "Unsupported annotated mutable global initializer",
+                            )
+                            .with_label(
+                                format!(
+                                    "`str replace` requires string list items in compile-time global initializers; item {index} has type {}",
+                                    other.get_type()
+                                ),
+                                span,
+                            ));
+                        }
+                    };
+                    Ok(Value::string(
+                        eval_supported_constant_replace_known_string(&input, &args, span)?,
+                        value_span,
+                    ))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(Value::list(values, value_span))
+        }
+        Value::String { val, .. } | Value::Glob { val, .. } => Ok(Value::string(
+            eval_supported_constant_replace_known_string(&val, &args, span)?,
+            value_span,
+        )),
+        _ => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`str replace` in a compile-time global initializer requires string or list<string> input",
+                span,
+            ),
+        ),
+    }
+}
+
+fn eval_supported_constant_replace_known_string(
+    input: &str,
+    args: &ConstantStrReplaceArgs,
+    span: Span,
+) -> Result<String, LabeledError> {
+    if args.use_regex {
+        eval_supported_constant_string_replace_regex(input, args, span)
+    } else if args.replace_all {
+        Ok(input.replace(&args.find, &args.replacement))
+    } else {
+        Ok(input.replacen(&args.find, &args.replacement, 1))
+    }
+}
+
+fn eval_supported_constant_string_replace_regex(
+    input: &str,
+    args: &ConstantStrReplaceArgs,
+    span: Span,
+) -> Result<String, LabeledError> {
+    let pattern = if args.multiline {
+        format!("(?m){}", args.find)
+    } else {
+        args.find.clone()
+    };
+    let regex = FancyRegex::new(&pattern).map_err(|err| {
+        LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+            format!(
+                "`str replace --regex` pattern is invalid in compile-time global initializers: {err}"
+            ),
+            span,
+        )
+    })?;
+    let limit = if args.replace_all { 0 } else { 1 };
+    let output = if args.no_expand {
+        regex.try_replacen(input, limit, NoExpand(args.replacement.as_str()))
+    } else {
+        regex.try_replacen(input, limit, args.replacement.as_str())
+    }
+    .map_err(|err| {
+        LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+            format!("`str replace --regex` failed at compile time in global initializers: {err}"),
+            span,
+        )
+    })?;
+    Ok(output.into_owned())
+}
+
 fn eval_supported_constant_string_range_bounds(
     range: ConstantMaybeOpenRange,
     len: usize,
@@ -5871,6 +6161,15 @@ fn eval_supported_constant_str_external_call(
                 span,
             )?;
             eval_supported_constant_str_substring(input, args, span)
+        }
+        "replace" => {
+            let args = eval_supported_constant_str_replace_external_args(
+                working_set,
+                remaining_args,
+                env,
+                span,
+            )?;
+            eval_supported_constant_str_replace(input, args, span)
         }
         "downcase"
         | "upcase"

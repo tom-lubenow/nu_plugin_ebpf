@@ -2432,6 +2432,117 @@ fn test_map_leading_annotated_mut_globals_supports_constant_str_index_of_list_in
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_str_replace_initializers() {
+    let cases = [
+        (
+            "{|| mut replaced: string = (\"abcabc\" | str replace \"ab\" \"XY\"); $replaced }",
+            "XYcabc",
+            "default str replace should replace first match",
+        ),
+        (
+            "{|| mut replaced: string = (\"abcabc\" | str replace \"ab\" \"XY\" --all); $replaced }",
+            "XYcXYc",
+            "str replace --all should replace every match",
+        ),
+        (
+            "{|| mut replaced: string = (\"abc\" | str replace \"zz\" \"XY\"); $replaced }",
+            "abc",
+            "str replace should preserve input when pattern is missing",
+        ),
+        (
+            "{|| mut replaced: string = (\"abc123\" | str replace '([a-z]+)([0-9]+)' '${2}-${1}' --regex); $replaced }",
+            "123-abc",
+            "str replace --regex should expand capture groups",
+        ),
+        (
+            "{|| mut replaced: string = (\"abc123\" | str replace '([a-z]+)([0-9]+)' '${2}-${1}' --regex --no-expand); $replaced }",
+            "${2}-${1}",
+            "str replace --regex --no-expand should keep replacement literal",
+        ),
+        (
+            "{|| mut replaced: string = (\"a\\nb\\nb\" | str replace '^b' 'X' --multiline --all); $replaced }",
+            "a\nX\nX",
+            "str replace --multiline --all should replace line-anchored matches",
+        ),
+    ];
+
+    for (source, expected, message) in cases {
+        let ir_block = IrBlock {
+            instructions: vec![
+                Instruction::StoreVariable {
+                    var_id: VarId::new(11),
+                    src: RegId::new(0),
+                },
+                Instruction::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: VarId::new(11),
+                },
+                Instruction::Return { src: RegId::new(0) },
+            ],
+            spans: vec![Span::test_data(); 3],
+            data: Vec::<u8>::new().into(),
+            ast: vec![None; 3],
+            comments: vec!["let".into(), "".into(), "".into()],
+            register_count: 1,
+            file_count: 0,
+        };
+
+        let globals =
+            super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+                .unwrap_or_else(|err| panic!("{message}: {err:?}"));
+
+        assert_eq!(globals.len(), 1);
+        assert_eq!(
+            globals[0]
+                .initial_value
+                .as_str()
+                .expect("str replace should produce a string"),
+            expected,
+            "{message}"
+        );
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_str_replace_list_initializer() {
+    let source = "{|| mut replaced: list<string> = ([\"abc\", \"aba\"] | str replace \"a\" \"z\"); $replaced }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant str replace list initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let replaced = vals
+                .iter()
+                .map(|value| value.as_str().expect("str replace should produce strings"))
+                .collect::<Vec<_>>();
+            assert_eq!(replaced, vec!["zbc", "zba"]);
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_constant_str_distance_initializer() {
     let source = "{|| mut distance: int = (\"nushell\" | str distance \"nutshell\"); $distance }";
     let ir_block = IrBlock {
