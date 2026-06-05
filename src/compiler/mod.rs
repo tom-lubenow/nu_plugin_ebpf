@@ -29,6 +29,7 @@ pub mod instruction;
 pub mod ir_to_mir;
 pub mod lir;
 pub mod mir;
+pub(crate) mod mir_integrity;
 pub mod mir_to_ebpf;
 pub mod mir_to_lir;
 pub(crate) mod packet_layout;

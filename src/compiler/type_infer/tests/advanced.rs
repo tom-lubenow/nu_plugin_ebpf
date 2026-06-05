@@ -92,6 +92,29 @@ fn test_type_inference_rejects_unrepresentable_stack_slot_size_before_bounds_set
 }
 
 #[test]
+fn test_type_inference_rejects_undeclared_stack_slot_value() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    let ptr = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: ptr,
+        src: MirValue::StackSlot(StackSlotId(99)),
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut infer = TypeInference::new(None);
+    let errs = infer
+        .infer(&func)
+        .expect_err("undeclared stack slot should be rejected before type solving");
+    assert!(
+        errs.iter()
+            .any(|err| err.message.contains("undeclared stack slot 99")),
+        "unexpected errors: {errs:?}"
+    );
+}
+
+#[test]
 fn test_infer_subfunction_schemes_orders_callees_before_callers() {
     let mut callee = MirFunction::with_name("id");
     callee.param_count = 1;

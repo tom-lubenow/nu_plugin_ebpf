@@ -4935,6 +4935,30 @@ fn test_verify_mir_rejects_unrepresentable_stack_slot_size_before_bounds_setup()
 }
 
 #[test]
+fn test_verify_mir_rejects_undeclared_load_slot_reference() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::LoadSlot {
+        dst,
+        slot: StackSlotId(99),
+        offset: 0,
+        ty: MirType::I64,
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let err = verify_mir(&func, &HashMap::new())
+        .expect_err("undeclared stack slot should be rejected before verifier propagation");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("undeclared stack slot 99")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_accepts_helper_context_argument_from_ctx_pointer_load() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

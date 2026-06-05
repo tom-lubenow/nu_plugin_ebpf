@@ -1,5 +1,6 @@
 use super::*;
 use crate::compiler::mir::SubfunctionId;
+use crate::compiler::mir_integrity::validate_stack_slot_references;
 use crate::compiler::subfn_summaries::SubfunctionSummary;
 use crate::compiler::type_infer::validate_program_capabilities_for_info;
 use crate::compiler::{ProbeContext, ProgramTypeInfo};
@@ -125,6 +126,12 @@ fn verify_mir_with_subfunction_summaries_impl(
             (slot.size - 1) as i64
         };
         slot_sizes.insert(slot.id, limit);
+    }
+    if let Err(errors) = validate_stack_slot_references(func) {
+        return Err(errors
+            .into_iter()
+            .map(|err| VerifierTypeError::new(err.message))
+            .collect());
     }
     let mut in_states: HashMap<BlockId, VerifierState> = HashMap::new();
     let mut worklist: VecDeque<BlockId> = VecDeque::new();
