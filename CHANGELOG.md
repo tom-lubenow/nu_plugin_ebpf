@@ -20,6 +20,8 @@ documentation changes that matter to external alpha consumers.
   ringbuf query/drain helpers derived from helper return ranges.
 - Added source verifier coverage for dynamic ringbuf wakeup flag rejects on
   submit/discard helpers and their dynptr variants.
+- Added source verifier coverage for dynamic XDP/TC network helper flag rejects
+  derived from helper return ranges.
 - Added actionable BTF target diagnostics for invalid `fentry`, `fexit`,
   `fmod_ret`, `tp_btf`, and LSM targets so compile-time errors include the
   modeled target-family rewrite guidance.

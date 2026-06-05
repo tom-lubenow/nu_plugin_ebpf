@@ -21784,6 +21784,25 @@ const FIXTURES = [
         error_contains: "helper 'bpf_fib_lookup' requires arg3 flags"
     }
     {
+        name: "xdp-fib-lookup-rejects-dynamic-flags"
+        category: "helper-state"
+        tags: [xdp helper fib flags reject source metadata]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  map-define fib_params --kind array --value-type bytes:64 --max-entries 1'
+            '  let flags = (helper-call "bpf_get_prandom_u32")'
+            '  let params = (0 | map-get fib_params --kind array)'
+            '  if $params { helper-call "bpf_fib_lookup" $ctx $params 64 $flags }'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_fib_lookup' requires arg3 flags"
+    }
+    {
         name: "xdp-fib-lookup-rejects-small-params-buffer"
         category: "helper-state"
         tags: [xdp helper fib bounds reject source metadata]
@@ -21854,6 +21873,25 @@ const FIXTURES = [
         error_contains: "helper 'bpf_check_mtu' requires arg4 = 0 in xdp programs"
     }
     {
+        name: "xdp-check-mtu-rejects-dynamic-flags"
+        category: "helper-state"
+        tags: [xdp helper mtu flags reject source metadata]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  map-define mtu_len --kind array --value-type bytes:4 --max-entries 1'
+            '  let flags = (helper-call "bpf_get_prandom_u32")'
+            '  let len = (0 | map-get mtu_len --kind array)'
+            '  if $len { helper-call "bpf_check_mtu" $ctx 0 $len 0 $flags }'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_check_mtu' requires arg4 = 0 in xdp programs"
+    }
+    {
         name: "tc-check-mtu-helper"
         category: "helper-state"
         tags: [tc helper mtu accept source metadata]
@@ -21913,9 +21951,9 @@ const FIXTURES = [
         target: "tc:lo:ingress"
         program: [
             '{|ctx|'
-            '  map-define tunnel_key --kind array --value-type bytes:16 --max-entries 1'
+            '  map-define tunnel_key --kind array --value-type bytes:44 --max-entries 1'
             '  let key = (0 | map-get tunnel_key --kind array)'
-            '  if $key { helper-call "bpf_skb_get_tunnel_key" $ctx $key 16 0 }'
+            '  if $key { helper-call "bpf_skb_get_tunnel_key" $ctx $key 44 0 }'
             '  0'
             '}'
         ]
@@ -21930,9 +21968,28 @@ const FIXTURES = [
         target: "tc:lo:ingress"
         program: [
             '{|ctx|'
-            '  map-define tunnel_key --kind array --value-type bytes:16 --max-entries 1'
+            '  map-define tunnel_key --kind array --value-type bytes:44 --max-entries 1'
             '  let key = (0 | map-get tunnel_key --kind array)'
-            '  if $key { helper-call "bpf_skb_get_tunnel_key" $ctx $key 16 2 }'
+            '  if $key { helper-call "bpf_skb_get_tunnel_key" $ctx $key 44 2 }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_skb_get_tunnel_key' requires arg3 flags"
+    }
+    {
+        name: "tc-skb-get-tunnel-key-rejects-dynamic-flags"
+        category: "helper-state"
+        tags: [tc helper tunnel flags reject source metadata]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  map-define tunnel_key --kind array --value-type bytes:44 --max-entries 1'
+            '  let flags = (helper-call "bpf_get_prandom_u32")'
+            '  let key = (0 | map-get tunnel_key --kind array)'
+            '  if $key { helper-call "bpf_skb_get_tunnel_key" $ctx $key 44 $flags }'
             '  0'
             '}'
         ]
@@ -21965,9 +22022,9 @@ const FIXTURES = [
         target: "tc:lo:ingress"
         program: [
             '{|ctx|'
-            '  map-define tunnel_key --kind array --value-type bytes:16 --max-entries 1'
+            '  map-define tunnel_key --kind array --value-type bytes:44 --max-entries 1'
             '  let key = (0 | map-get tunnel_key --kind array)'
-            '  if $key { helper-call "bpf_skb_set_tunnel_key" $ctx $key 16 0 }'
+            '  if $key { helper-call "bpf_skb_set_tunnel_key" $ctx $key 44 0 }'
             '  0'
             '}'
         ]
@@ -21982,9 +22039,28 @@ const FIXTURES = [
         target: "tc:lo:ingress"
         program: [
             '{|ctx|'
-            '  map-define tunnel_key --kind array --value-type bytes:16 --max-entries 1'
+            '  map-define tunnel_key --kind array --value-type bytes:44 --max-entries 1'
             '  let key = (0 | map-get tunnel_key --kind array)'
-            '  if $key { helper-call "bpf_skb_set_tunnel_key" $ctx $key 16 32 }'
+            '  if $key { helper-call "bpf_skb_set_tunnel_key" $ctx $key 44 32 }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_skb_set_tunnel_key' requires arg3 flags"
+    }
+    {
+        name: "tc-skb-set-tunnel-key-rejects-dynamic-flags"
+        category: "helper-state"
+        tags: [tc helper tunnel flags reject source metadata]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  map-define tunnel_key --kind array --value-type bytes:44 --max-entries 1'
+            '  let flags = (helper-call "bpf_get_prandom_u32")'
+            '  let key = (0 | map-get tunnel_key --kind array)'
+            '  if $key { helper-call "bpf_skb_set_tunnel_key" $ctx $key 44 $flags }'
             '  0'
             '}'
         ]
