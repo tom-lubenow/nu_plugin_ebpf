@@ -36487,6 +36487,24 @@ const FIXTURES = [
         error_contains: "helper 'bpf_kallsyms_lookup_name' requires arg2 = 0"
     }
     {
+        name: "syscall-helper-rejects-dynamic-kallsyms-flags"
+        category: "helper-state"
+        tags: [syscall flags dynamic reject]
+        target: "syscall:demo"
+        program: [
+            '{||'
+            '  let attr = "01234567"'
+            '  let name = "init_task\u{0}"'
+            '  let out = "00000000"'
+            '  let flags = (helper-call "bpf_sys_bpf" 0 $attr 8)'
+            '  helper-call "bpf_kallsyms_lookup_name" $name 10 $flags $out'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_kallsyms_lookup_name' requires arg2 = 0"
+    }
+    {
         name: "lsm-bprm-opts-set"
         category: "helper-state"
         tags: [lsm helper-call]
