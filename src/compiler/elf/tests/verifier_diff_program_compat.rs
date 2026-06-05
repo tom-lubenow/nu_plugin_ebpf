@@ -465,10 +465,8 @@ fn test_verifier_diff_source_fixtures_cover_modeled_helper_names() {
     let fixture_calls = verifier_diff_helper_call_names(verifier_diff);
     let pending = BTreeSet::from([
         "bpf_btf_find_by_name_kind".to_string(),
-        "bpf_cgrp_storage_delete".to_string(),
         "bpf_ima_file_hash".to_string(),
         "bpf_ima_inode_hash".to_string(),
-        "bpf_inode_storage_delete".to_string(),
         "bpf_per_cpu_ptr".to_string(),
         "bpf_perf_prog_read_value".to_string(),
         "bpf_rc_keydown".to_string(),
@@ -480,12 +478,10 @@ fn test_verifier_diff_source_fixtures_cover_modeled_helper_names() {
         "bpf_sk_ancestor_cgroup_id".to_string(),
         "bpf_sk_cgroup_id".to_string(),
         "bpf_sk_select_reuseport".to_string(),
-        "bpf_sk_storage_delete".to_string(),
         "bpf_skc_lookup_tcp".to_string(),
         "bpf_snprintf".to_string(),
         "bpf_sock_from_file".to_string(),
         "bpf_task_pt_regs".to_string(),
-        "bpf_task_storage_delete".to_string(),
         "bpf_tcp_check_syncookie".to_string(),
         "bpf_tcp_gen_syncookie".to_string(),
         "bpf_tcp_raw_check_syncookie_ipv4".to_string(),
