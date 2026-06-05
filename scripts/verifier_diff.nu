@@ -25563,6 +25563,61 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "sock-ops-load-hdr-opt-rejects-dynamic-flags"
+        category: "helper-state"
+        tags: [sock-ops helper-call hdr-opt flags reject source metadata]
+        requires: [cgroup-v2]
+        target: "sock_ops:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  let opt = "0123456789abcdef"'
+            '  let flags = (helper-call "bpf_get_prandom_u32")'
+            '  helper-call "bpf_load_hdr_opt" $ctx $opt 16 $flags'
+            '  1'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_load_hdr_opt' requires arg3 flags"
+    }
+    {
+        name: "sock-ops-store-hdr-opt-rejects-dynamic-flags"
+        category: "helper-state"
+        tags: [sock-ops helper-call hdr-opt flags reject source metadata]
+        requires: [cgroup-v2]
+        target: "sock_ops:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  if ($ctx.op == 15) {'
+            '    let opt = "0123456789abcdef"'
+            '    let flags = (helper-call "bpf_get_prandom_u32")'
+            '    helper-call "bpf_store_hdr_opt" $ctx $opt 16 $flags'
+            '  }'
+            '  1'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_store_hdr_opt' requires arg3 = 0"
+    }
+    {
+        name: "sock-ops-reserve-hdr-opt-rejects-dynamic-flags"
+        category: "helper-state"
+        tags: [sock-ops helper-call hdr-opt flags reject source metadata]
+        requires: [cgroup-v2]
+        target: "sock_ops:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  let flags = (helper-call "bpf_get_prandom_u32")'
+            '  helper-call "bpf_reserve_hdr_opt" $ctx 16 $flags'
+            '  1'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_reserve_hdr_opt' requires arg2 = 0"
+    }
+    {
         name: "sock-ops-sock-map-update-helper"
         category: "helper-state"
         tags: [sock-ops helper-call sockmap accept source metadata]
@@ -25604,6 +25659,42 @@ const FIXTURES = [
             '{|ctx|'
             '  let key = "abcd"'
             '  helper-call "bpf_sock_map_update" $ctx peers $key 4'
+            '  1'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "socket map update helpers require arg3 flags"
+    }
+    {
+        name: "sock-ops-sock-map-update-rejects-dynamic-flags"
+        category: "helper-state"
+        tags: [sock-ops helper-call sockmap flags reject source metadata]
+        requires: [cgroup-v2]
+        target: "sock_ops:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  let key = "abcd"'
+            '  let flags = (helper-call "bpf_get_prandom_u32")'
+            '  helper-call "bpf_sock_map_update" $ctx peers $key $flags'
+            '  1'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "socket map update helpers require arg3 flags"
+    }
+    {
+        name: "sock-ops-sock-hash-update-rejects-dynamic-flags"
+        category: "helper-state"
+        tags: [sock-ops helper-call sockhash flags reject source metadata]
+        requires: [cgroup-v2]
+        target: "sock_ops:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  let key = "abcd"'
+            '  let flags = (helper-call "bpf_get_prandom_u32")'
+            '  helper-call "bpf_sock_hash_update" $ctx hash_peers $key $flags'
             '  1'
             '}'
         ]
