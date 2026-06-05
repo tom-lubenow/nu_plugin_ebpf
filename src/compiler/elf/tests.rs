@@ -7104,6 +7104,27 @@ fn test_struct_ops_object_rejects_multiple_value_symbols() {
 }
 
 #[test]
+fn test_struct_ops_btf_rejects_unencodable_callback_offset() {
+    let mut object = EbpfObject::struct_ops("demo", "sched_ext_ops", vec![0; 8]).build();
+    object.extra_data_symbols[0]
+        .relocations
+        .push(ObjectDataRelocation {
+            offset: usize::MAX,
+            field_name: Some("demo_select_cpu".to_string()),
+            symbol_name: "missing_callback".to_string(),
+        });
+
+    let err = object
+        .to_elf()
+        .expect_err("unencodable struct_ops BTF callback offset should be rejected");
+    assert!(
+        err.to_string().contains("invalid BTF metadata")
+            && err.to_string().contains("struct_ops relocation offset"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn test_into_struct_ops_callback_normalizes_section_metadata() {
     let section = EbpfProgram::hello_world("sys_clone").into_struct_ops_callback(
         "file",

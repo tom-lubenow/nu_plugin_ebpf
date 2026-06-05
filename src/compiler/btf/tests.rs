@@ -60,3 +60,33 @@ fn test_btf_decl_tag() {
             .any(|w| w == b"contains:node_data:node\0")
     );
 }
+
+#[test]
+fn test_btf_builder_rejects_struct_member_count_overflow() {
+    let mut btf = BtfBuilder::new();
+    let int_ty = btf.add_int("int", 4, true);
+    let members = vec![("field", int_ty); usize::from(u16::MAX) + 1];
+
+    btf.add_btf_map_struct(&members);
+
+    let err = btf
+        .try_build()
+        .expect_err("BTF vlen overflow should be rejected");
+    assert!(err.contains("vlen"), "expected vlen error, got {err:?}");
+}
+
+#[test]
+fn test_btf_builder_rejects_struct_size_overflow() {
+    let mut btf = BtfBuilder::new();
+    let int_ty = btf.add_int("int", 4, true);
+
+    btf.add_struct(
+        "too_large",
+        &[("first", int_ty, u32::MAX), ("second", int_ty, 1)],
+    );
+
+    let err = btf
+        .try_build()
+        .expect_err("BTF struct size overflow should be rejected");
+    assert!(err.contains("size"), "expected size error, got {err:?}");
+}

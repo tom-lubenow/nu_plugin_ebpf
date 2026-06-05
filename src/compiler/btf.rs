@@ -58,6 +58,8 @@ pub struct BtfBuilder {
     types: Vec<u8>,
     /// Next type ID (starts at 1, 0 is void)
     next_type_id: u32,
+    /// First encoding error observed while building BTF.
+    error: Option<String>,
 }
 
 impl BtfBuilder {
@@ -66,15 +68,82 @@ impl BtfBuilder {
             strings: Vec::new(),
             types: Vec::new(),
             next_type_id: 1,
+            error: None,
         };
         // First byte of string section must be null (for empty strings)
         builder.strings.push(0);
         builder
     }
 
+    fn record_error(&mut self, message: impl Into<String>) {
+        if self.error.is_none() {
+            self.error = Some(message.into());
+        }
+    }
+
+    fn alloc_type_id(&mut self, what: &str) -> u32 {
+        let type_id = self.next_type_id;
+        match self.next_type_id.checked_add(1) {
+            Some(next_type_id) => self.next_type_id = next_type_id,
+            None => self.record_error(format!("BTF type id overflow while adding {what}")),
+        }
+        type_id
+    }
+
+    fn checked_u32_from_usize(&mut self, value: usize, what: &str) -> u32 {
+        match u32::try_from(value) {
+            Ok(value) => value,
+            Err(_) => {
+                self.record_error(format!("{what} {value} exceeds BTF u32 encoding limit"));
+                0
+            }
+        }
+    }
+
+    fn encode_info_for_len(
+        &mut self,
+        kind: BtfKind,
+        vlen: usize,
+        kind_flag: bool,
+        what: &str,
+    ) -> u32 {
+        let vlen = match u16::try_from(vlen) {
+            Ok(vlen) => vlen,
+            Err(_) => {
+                self.record_error(format!(
+                    "{what} count {vlen} exceeds BTF vlen encoding limit"
+                ));
+                0
+            }
+        };
+        Self::encode_info(kind, vlen, kind_flag)
+    }
+
+    fn byte_offset_to_bits(&mut self, offset_bytes: u32, what: &str) -> u32 {
+        match offset_bytes.checked_mul(8) {
+            Some(offset_bits) => offset_bits,
+            None => {
+                self.record_error(format!(
+                    "{what} byte offset {offset_bytes} exceeds BTF bit-offset encoding limit"
+                ));
+                0
+            }
+        }
+    }
+
+    fn pointer_member_offset_bits(&mut self, index: usize, what: &str) -> u32 {
+        match index.checked_mul(64) {
+            Some(offset_bits) => self.checked_u32_from_usize(offset_bits, what),
+            None => {
+                self.record_error(format!("{what} index {index} exceeds BTF bit-offset range"));
+                0
+            }
+        }
+    }
+
     /// Add a string to the string section, return its offset
     fn add_string(&mut self, s: &str) -> u32 {
-        let offset = self.strings.len() as u32;
+        let offset = self.checked_u32_from_usize(self.strings.len(), "BTF string offset");
         self.strings.extend_from_slice(s.as_bytes());
         self.strings.push(0); // null terminator
         offset
@@ -93,8 +162,7 @@ impl BtfBuilder {
     /// Add an integer type, return its type ID
     pub fn add_int(&mut self, name: &str, size: u32, is_signed: bool) -> u32 {
         let name_off = self.add_string(name);
-        let type_id = self.next_type_id;
-        self.next_type_id += 1;
+        let type_id = self.alloc_type_id("integer type");
 
         // btf_type header
         self.types.extend_from_slice(&name_off.to_le_bytes());
@@ -104,7 +172,15 @@ impl BtfBuilder {
 
         // BTF_INT encoding: bits 0-7 = nr_bits, bits 16-23 = offset, bits 24-27 = encoding
         // See: https://docs.kernel.org/bpf/btf.html
-        let nr_bits = size * 8;
+        let nr_bits = match size.checked_mul(8).filter(|bits| *bits <= u8::MAX as u32) {
+            Some(bits) => bits,
+            None => {
+                self.record_error(format!(
+                    "integer type {name:?} size {size} exceeds BTF int bit-width encoding limit"
+                ));
+                0
+            }
+        };
         let encoding = if is_signed { 1u32 } else { 0u32 };
         let int_data = nr_bits | (encoding << 24);
         self.types.extend_from_slice(&int_data.to_le_bytes());
@@ -114,8 +190,7 @@ impl BtfBuilder {
 
     /// Add a pointer type, return its type ID
     pub fn add_ptr(&mut self, target_type_id: u32) -> u32 {
-        let type_id = self.next_type_id;
-        self.next_type_id += 1;
+        let type_id = self.alloc_type_id("pointer type");
 
         // btf_type header (name_off = 0 for pointers)
         self.types.extend_from_slice(&0u32.to_le_bytes()); // name_off
@@ -129,8 +204,7 @@ impl BtfBuilder {
     /// Add a forward declaration type, return its type ID.
     pub fn add_fwd(&mut self, name: &str, is_union: bool) -> u32 {
         let name_off = self.add_string(name);
-        let type_id = self.next_type_id;
-        self.next_type_id += 1;
+        let type_id = self.alloc_type_id("forward declaration");
 
         self.types.extend_from_slice(&name_off.to_le_bytes());
         self.types
@@ -143,8 +217,7 @@ impl BtfBuilder {
     /// Add a type tag, return its type ID.
     pub fn add_type_tag(&mut self, tag: &str, target_type_id: u32) -> u32 {
         let name_off = self.add_string(tag);
-        let type_id = self.next_type_id;
-        self.next_type_id += 1;
+        let type_id = self.alloc_type_id("type tag");
 
         self.types.extend_from_slice(&name_off.to_le_bytes());
         self.types
@@ -161,8 +234,7 @@ impl BtfBuilder {
     #[allow(dead_code)]
     pub fn add_decl_tag(&mut self, tag: &str, target_type_id: u32, component_idx: i32) -> u32 {
         let name_off = self.add_string(tag);
-        let type_id = self.next_type_id;
-        self.next_type_id += 1;
+        let type_id = self.alloc_type_id("declaration tag");
 
         self.types.extend_from_slice(&name_off.to_le_bytes());
         self.types
@@ -177,8 +249,7 @@ impl BtfBuilder {
     ///
     /// Arrays in BTF have an element type, index type (usually u32), and number of elements.
     pub fn add_array(&mut self, elem_type: u32, index_type: u32, nelems: u32) -> u32 {
-        let type_id = self.next_type_id;
-        self.next_type_id += 1;
+        let type_id = self.alloc_type_id("array type");
 
         // btf_type header (name_off = 0 for arrays, size = 0)
         self.types.extend_from_slice(&0u32.to_le_bytes()); // name_off
@@ -211,17 +282,26 @@ impl BtfBuilder {
     #[allow(dead_code)]
     pub fn add_struct(&mut self, name: &str, members: &[(&str, u32, u32)]) -> u32 {
         let name_off = self.add_string(name);
-        let type_id = self.next_type_id;
-        self.next_type_id += 1;
+        let type_id = self.alloc_type_id("struct type");
 
         // Calculate total size from members
-        let size: u32 = members.iter().map(|(_, _, sz)| sz).sum();
+        let mut size = 0u32;
+        for (_, _, member_size) in members {
+            match size.checked_add(*member_size) {
+                Some(next_size) => size = next_size,
+                None => {
+                    self.record_error(format!(
+                        "struct {name:?} size exceeds BTF u32 encoding limit"
+                    ));
+                    break;
+                }
+            }
+        }
 
         // btf_type header
         self.types.extend_from_slice(&name_off.to_le_bytes());
-        self.types.extend_from_slice(
-            &Self::encode_info(BtfKind::Struct, members.len() as u16, false).to_le_bytes(),
-        );
+        let info = self.encode_info_for_len(BtfKind::Struct, members.len(), false, "struct member");
+        self.types.extend_from_slice(&info.to_le_bytes());
         self.types.extend_from_slice(&size.to_le_bytes());
 
         // Member entries
@@ -230,8 +310,14 @@ impl BtfBuilder {
             let member_name_off = self.add_string(member_name);
             self.types.extend_from_slice(&member_name_off.to_le_bytes());
             self.types.extend_from_slice(&member_type.to_le_bytes());
-            self.types.extend_from_slice(&(offset * 8).to_le_bytes()); // offset in bits
-            offset += member_size;
+            let offset_bits = self.byte_offset_to_bits(offset, "struct member");
+            self.types.extend_from_slice(&offset_bits.to_le_bytes());
+            match offset.checked_add(*member_size) {
+                Some(next_offset) => offset = next_offset,
+                None => self.record_error(format!(
+                    "struct {name:?} member offsets exceed BTF u32 encoding limit"
+                )),
+            }
         }
 
         type_id
@@ -245,21 +331,19 @@ impl BtfBuilder {
         members: &[(&str, u32, u32)],
     ) -> u32 {
         let name_off = self.add_string(name);
-        let type_id = self.next_type_id;
-        self.next_type_id += 1;
+        let type_id = self.alloc_type_id("struct type");
 
         self.types.extend_from_slice(&name_off.to_le_bytes());
-        self.types.extend_from_slice(
-            &Self::encode_info(BtfKind::Struct, members.len() as u16, false).to_le_bytes(),
-        );
+        let info = self.encode_info_for_len(BtfKind::Struct, members.len(), false, "struct member");
+        self.types.extend_from_slice(&info.to_le_bytes());
         self.types.extend_from_slice(&size.to_le_bytes());
 
         for (member_name, member_type, member_offset_bytes) in members {
             let member_name_off = self.add_string(member_name);
             self.types.extend_from_slice(&member_name_off.to_le_bytes());
             self.types.extend_from_slice(&member_type.to_le_bytes());
-            self.types
-                .extend_from_slice(&(member_offset_bytes * 8).to_le_bytes());
+            let offset_bits = self.byte_offset_to_bits(*member_offset_bytes, "struct member");
+            self.types.extend_from_slice(&offset_bits.to_le_bytes());
         }
 
         type_id
@@ -270,17 +354,24 @@ impl BtfBuilder {
     /// This is used for BTF-defined maps where all fields are pointers.
     /// Members are: (name, type_id) - all members are pointer-sized (8 bytes)
     pub fn add_btf_map_struct(&mut self, members: &[(&str, u32)]) -> u32 {
-        let type_id = self.next_type_id;
-        self.next_type_id += 1;
+        let type_id = self.alloc_type_id("BTF map struct");
 
         // Size = number of members * 8 (pointer size)
-        let size = (members.len() * 8) as u32;
+        let size = match members.len().checked_mul(8) {
+            Some(size) => self.checked_u32_from_usize(size, "BTF map struct size"),
+            None => {
+                self.record_error(format!(
+                    "BTF map struct member count {} exceeds size encoding limit",
+                    members.len()
+                ));
+                0
+            }
+        };
 
         // btf_type header (name_off = 0 for anonymous struct)
         self.types.extend_from_slice(&0u32.to_le_bytes()); // name_off = 0 (anonymous)
-        self.types.extend_from_slice(
-            &Self::encode_info(BtfKind::Struct, members.len() as u16, false).to_le_bytes(),
-        );
+        let info = self.encode_info_for_len(BtfKind::Struct, members.len(), false, "map member");
+        self.types.extend_from_slice(&info.to_le_bytes());
         self.types.extend_from_slice(&size.to_le_bytes());
 
         // Member entries (each pointer is 8 bytes)
@@ -288,7 +379,7 @@ impl BtfBuilder {
             let member_name_off = self.add_string(member_name);
             self.types.extend_from_slice(&member_name_off.to_le_bytes());
             self.types.extend_from_slice(&member_type.to_le_bytes());
-            let offset_bits = (idx * 8 * 8) as u32; // offset in bits
+            let offset_bits = self.pointer_member_offset_bits(idx, "map member");
             self.types.extend_from_slice(&offset_bits.to_le_bytes());
         }
 
@@ -301,20 +392,18 @@ impl BtfBuilder {
     /// member is a zero-sized flexible array. The member is present in BTF at
     /// the end of the fixed fields, but it does not contribute to struct size.
     pub fn add_btf_map_struct_with_size(&mut self, members: &[(&str, u32)], size: u32) -> u32 {
-        let type_id = self.next_type_id;
-        self.next_type_id += 1;
+        let type_id = self.alloc_type_id("BTF map struct");
 
         self.types.extend_from_slice(&0u32.to_le_bytes());
-        self.types.extend_from_slice(
-            &Self::encode_info(BtfKind::Struct, members.len() as u16, false).to_le_bytes(),
-        );
+        let info = self.encode_info_for_len(BtfKind::Struct, members.len(), false, "map member");
+        self.types.extend_from_slice(&info.to_le_bytes());
         self.types.extend_from_slice(&size.to_le_bytes());
 
         for (idx, (member_name, member_type)) in members.iter().enumerate() {
             let member_name_off = self.add_string(member_name);
             self.types.extend_from_slice(&member_name_off.to_le_bytes());
             self.types.extend_from_slice(&member_type.to_le_bytes());
-            let offset_bits = (idx * 8 * 8) as u32;
+            let offset_bits = self.pointer_member_offset_bits(idx, "map member");
             self.types.extend_from_slice(&offset_bits.to_le_bytes());
         }
 
@@ -324,8 +413,7 @@ impl BtfBuilder {
     /// Add a variable, return its type ID
     pub fn add_var(&mut self, name: &str, type_id: u32, linkage: BtfVarLinkage) -> u32 {
         let name_off = self.add_string(name);
-        let var_type_id = self.next_type_id;
-        self.next_type_id += 1;
+        let var_type_id = self.alloc_type_id("variable");
 
         // btf_type header
         self.types.extend_from_slice(&name_off.to_le_bytes());
@@ -344,13 +432,16 @@ impl BtfBuilder {
     ///
     /// Params are `(name, type_id)` pairs.
     pub fn add_func_proto(&mut self, return_type: u32, params: &[(&str, u32)]) -> u32 {
-        let type_id = self.next_type_id;
-        self.next_type_id += 1;
+        let type_id = self.alloc_type_id("function prototype");
 
         self.types.extend_from_slice(&0u32.to_le_bytes()); // name_off = 0
-        self.types.extend_from_slice(
-            &Self::encode_info(BtfKind::FuncProto, params.len() as u16, false).to_le_bytes(),
+        let info = self.encode_info_for_len(
+            BtfKind::FuncProto,
+            params.len(),
+            false,
+            "function parameter",
         );
+        self.types.extend_from_slice(&info.to_le_bytes());
         self.types.extend_from_slice(&return_type.to_le_bytes());
 
         for (param_name, param_type) in params {
@@ -365,17 +456,26 @@ impl BtfBuilder {
     /// Add a datasec (describes a section like .maps), return its type ID
     pub fn add_datasec(&mut self, name: &str, vars: &[(u32, u32, u32)]) -> u32 {
         let name_off = self.add_string(name);
-        let type_id = self.next_type_id;
-        self.next_type_id += 1;
+        let type_id = self.alloc_type_id("data section");
 
         // Calculate total size
-        let size: u32 = vars.iter().map(|(_, _, sz)| sz).sum();
+        let mut size = 0u32;
+        for (_, _, var_size) in vars {
+            match size.checked_add(*var_size) {
+                Some(next_size) => size = next_size,
+                None => {
+                    self.record_error(format!(
+                        "data section {name:?} size exceeds BTF u32 encoding limit"
+                    ));
+                    break;
+                }
+            }
+        }
 
         // btf_type header
         self.types.extend_from_slice(&name_off.to_le_bytes());
-        self.types.extend_from_slice(
-            &Self::encode_info(BtfKind::DataSec, vars.len() as u16, false).to_le_bytes(),
-        );
+        let info = self.encode_info_for_len(BtfKind::DataSec, vars.len(), false, "data section");
+        self.types.extend_from_slice(&info.to_le_bytes());
         self.types.extend_from_slice(&size.to_le_bytes());
 
         // btf_var_secinfo entries
@@ -389,12 +489,16 @@ impl BtfBuilder {
     }
 
     /// Build the complete BTF blob
-    pub fn build(self) -> Vec<u8> {
+    pub fn try_build(mut self) -> Result<Vec<u8>, String> {
         let hdr_len = 24u32; // Size of btf_header
         let type_off = 0u32;
-        let type_len = self.types.len() as u32;
+        let type_len = self.checked_u32_from_usize(self.types.len(), "BTF type section length");
         let str_off = type_len;
-        let str_len = self.strings.len() as u32;
+        let str_len = self.checked_u32_from_usize(self.strings.len(), "BTF string section length");
+
+        if let Some(error) = self.error {
+            return Err(error);
+        }
 
         let mut btf = Vec::with_capacity(hdr_len as usize + type_len as usize + str_len as usize);
 
@@ -414,7 +518,12 @@ impl BtfBuilder {
         // String section
         btf.extend_from_slice(&self.strings);
 
-        btf
+        Ok(btf)
+    }
+
+    /// Build the complete BTF blob, panicking if it contains unencodable metadata.
+    pub fn build(self) -> Vec<u8> {
+        self.try_build().expect("invalid BTF metadata")
     }
 }
 

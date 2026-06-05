@@ -1887,7 +1887,7 @@ impl EbpfObject {
             pending_data_relocations.push((section_id, symbol_offset, data_symbol));
         }
 
-        if let Some(btf_data) = self.generate_btf() {
+        if let Some(btf_data) = self.generate_btf()? {
             let btf_section_id = obj.add_section(vec![], b".BTF".to_vec(), SectionKind::Metadata);
             obj.append_section_data(btf_section_id, &btf_data, 1);
         }
@@ -2721,8 +2721,17 @@ impl EbpfObject {
     /// Today this covers:
     /// - BTF-defined maps in `.maps`
     /// - `struct_ops` value sections in `.struct_ops`
-    fn generate_btf(&self) -> Option<Vec<u8>> {
+    fn generate_btf(&self) -> Result<Option<Vec<u8>>, CompileError> {
         use crate::compiler::btf::BtfVarLinkage;
+
+        fn invalid_btf(message: impl Into<String>) -> CompileError {
+            CompileError::InvalidProgram(format!("invalid BTF metadata: {}", message.into()))
+        }
+
+        fn checked_btf_u32(value: usize, what: &str) -> Result<u32, CompileError> {
+            u32::try_from(value)
+                .map_err(|_| invalid_btf(format!("{what} {value} exceeds BTF u32 encoding limit")))
+        }
 
         let mut btf = BtfBuilder::new();
         let mut emitted_anything = false;
@@ -2757,7 +2766,9 @@ impl EbpfObject {
                 // Size of BTF-defined map struct (6 pointers * 8 bytes = 48 bytes)
                 let map_size = 48u32;
                 vars.push((var_type, offset, map_size));
-                offset += map_size;
+                offset = offset
+                    .checked_add(map_size)
+                    .ok_or_else(|| invalid_btf(".maps data section offset overflow"))?;
             }
 
             // Add datasec for .maps section
@@ -2778,19 +2789,17 @@ impl EbpfObject {
 
                 emitted_anything = true;
 
-                let mut callback_members_with_offsets: Vec<(String, u32, u32)> = data_symbol
-                    .relocations
-                    .iter()
-                    .filter_map(|reloc| {
-                        reloc.field_name.as_deref().map(|field_name| {
-                            (
-                                field_name.to_string(),
-                                callback_ptr_type,
-                                reloc.offset as u32,
-                            )
-                        })
-                    })
-                    .collect();
+                let mut callback_members_with_offsets: Vec<(String, u32, u32)> = Vec::new();
+                for reloc in &data_symbol.relocations {
+                    let Some(field_name) = reloc.field_name.as_deref() else {
+                        continue;
+                    };
+                    callback_members_with_offsets.push((
+                        field_name.to_string(),
+                        callback_ptr_type,
+                        checked_btf_u32(reloc.offset, "struct_ops relocation offset")?,
+                    ));
+                }
                 callback_members_with_offsets.sort_by_key(|(_, _, offset)| *offset);
                 let callback_members: HashMap<String, u32> = callback_members_with_offsets
                     .iter()
@@ -2808,12 +2817,20 @@ impl EbpfObject {
                     btf.add_var(&data_symbol.name, value_type, BtfVarLinkage::GlobalAlloc);
                 btf.add_datasec(
                     &data_symbol.section_name,
-                    &[(var_type, 0, data_symbol.data.len() as u32)],
+                    &[(
+                        var_type,
+                        0,
+                        checked_btf_u32(data_symbol.data.len(), "struct_ops data size")?,
+                    )],
                 );
             }
         }
 
-        emitted_anything.then(|| btf.build())
+        if !emitted_anything {
+            return Ok(None);
+        }
+
+        btf.try_build().map(Some).map_err(invalid_btf)
     }
 
     /// Generate map section data for BTF-defined maps
