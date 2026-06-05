@@ -794,6 +794,10 @@ fn eval_supported_constant_call(
             eval_supported_constant_no_argument_call(cmd_name, &call.arguments)?;
             eval_supported_constant_math_abs(input, span)
         }
+        "math max" | "math min" | "math product" | "math sum" => {
+            eval_supported_constant_no_argument_call(cmd_name, &call.arguments)?;
+            eval_supported_constant_math_int_reduce(cmd_name, input, span)
+        }
         "math ceil" | "math floor" | "math round" => {
             eval_supported_constant_no_argument_call(cmd_name, &call.arguments)?;
             eval_supported_constant_math_rounding(cmd_name, input, span)
@@ -1234,6 +1238,10 @@ fn eval_supported_constant_external_call(
         "math abs" => {
             eval_supported_constant_no_external_args(cmd_name, args, span)?;
             eval_supported_constant_math_abs(input, span)
+        }
+        "math max" | "math min" | "math product" | "math sum" => {
+            eval_supported_constant_no_external_args(cmd_name, args, span)?;
+            eval_supported_constant_math_int_reduce(cmd_name, input, span)
         }
         "math ceil" | "math floor" | "math round" => {
             eval_supported_constant_no_external_args(cmd_name, args, span)?;
@@ -5503,6 +5511,85 @@ fn eval_supported_constant_math_abs(
     }
 }
 
+fn eval_supported_constant_math_int_reduce(
+    cmd_name: &str,
+    input: Option<Value>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let value = eval_supported_constant_required_pipeline_input(cmd_name, input, span)?;
+    let value_span = value.span();
+    let Value::List { vals, .. } = value else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`{cmd_name}` in a compile-time global initializer requires non-empty list<int> input"
+                ),
+                span,
+            ),
+        );
+    };
+
+    if vals.is_empty() {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`{cmd_name}` requires a non-empty list<int> input in compile-time global initializers"
+                ),
+                span,
+            ),
+        );
+    }
+
+    let ints = vals
+        .into_iter()
+        .enumerate()
+        .map(|(index, value)| {
+            let Value::Int { val, .. } = value else {
+                return Err(
+                    LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            format!(
+                                "`{cmd_name}` requires integer list items in compile-time global initializers; item {index} has type {}",
+                                value.get_type()
+                            ),
+                            span,
+                        ),
+                );
+            };
+            Ok(val)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let result = match cmd_name {
+        "math max" => ints
+            .into_iter()
+            .max()
+            .expect("math max validates non-empty input"),
+        "math min" => ints
+            .into_iter()
+            .min()
+            .expect("math min validates non-empty input"),
+        "math product" => ints
+            .into_iter()
+            .fold(1_i64, |acc, value| acc.wrapping_mul(value)),
+        "math sum" => ints
+            .into_iter()
+            .fold(0_i64, |acc, value| acc.wrapping_add(value)),
+        _ => {
+            return Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    format!(
+                        "`{cmd_name}` is not a supported integer reduction command in compile-time global initializers"
+                    ),
+                    span,
+                ),
+            );
+        }
+    };
+
+    Ok(Value::int(result, value_span))
+}
+
 fn eval_supported_constant_math_rounding(
     cmd_name: &str,
     input: Option<Value>,
@@ -5658,6 +5745,10 @@ fn eval_supported_constant_math_external_call(
         "math abs" => {
             eval_supported_constant_no_external_args(&cmd_name, remaining_args, span)?;
             eval_supported_constant_math_abs(input, span)
+        }
+        "math max" | "math min" | "math product" | "math sum" => {
+            eval_supported_constant_no_external_args(&cmd_name, remaining_args, span)?;
+            eval_supported_constant_math_int_reduce(&cmd_name, input, span)
         }
         "math ceil" | "math floor" | "math round" => {
             eval_supported_constant_no_external_args(&cmd_name, remaining_args, span)?;
