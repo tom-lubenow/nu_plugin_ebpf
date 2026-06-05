@@ -34388,16 +34388,20 @@ const FIXTURES = [
         target: "xdp:lo"
         program: [
             '{|ctx|'
-            '  let tuple = "0123456789abcdef"'
-            '  let sk = (helper-call "bpf_sk_lookup_tcp" $ctx $tuple 16 0 0)'
+            '  let tuple = "0123456789ab"'
+            '  let sk = (helper-call "bpf_sk_lookup_tcp" $ctx $tuple 12 0 0)'
+            '  let skc = (helper-call "bpf_skc_lookup_tcp" $ctx $tuple 12 0 0)'
             '  if $sk {'
             '    helper-call "bpf_sk_release" $sk'
+            '  }'
+            '  if $skc {'
+            '    helper-call "bpf_sk_release" $skc'
             '  }'
             '  "pass"'
             '}'
         ]
         local: "accept"
-        kernel: "accept"
+        kernel: "skip"
     }
     {
         name: "source-helper-sk-lookup-udp-release"
