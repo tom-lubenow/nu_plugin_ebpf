@@ -10,6 +10,12 @@ mod rewrite;
 #[cfg(test)]
 mod tests;
 
+const LIST_HEADER_SIZE: usize = 8;
+const LIST_ITEM_SIZE: usize = 8;
+const MAX_STACK_LIST_CAPACITY: usize = 60;
+const MAX_LIST_LEN_FOR_I32_OFFSETS: usize =
+    ((i32::MAX as usize - LIST_HEADER_SIZE) / LIST_ITEM_SIZE) + 1;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct ListInfo {
     slot: StackSlotId,
@@ -47,11 +53,24 @@ impl ListLowering {
             .and_then(|s| {
                 if matches!(s.kind, StackSlotKind::ListBuffer) {
                     let elems = s.size / 8;
-                    Some(elems.saturating_sub(1))
+                    Some(
+                        elems
+                            .saturating_sub(1)
+                            .min(MAX_STACK_LIST_CAPACITY)
+                            .min(MAX_LIST_LEN_FOR_I32_OFFSETS),
+                    )
                 } else {
                     None
                 }
             })
+    }
+
+    fn list_item_offset(index: usize) -> i32 {
+        let offset = index
+            .checked_mul(LIST_ITEM_SIZE)
+            .and_then(|offset| offset.checked_add(LIST_HEADER_SIZE))
+            .expect("list item offset overflowed");
+        i32::try_from(offset).expect("list item offset exceeded MIR i32 offset range")
     }
 
     fn compute_list_info(func: &MirFunction) -> HashMap<VReg, ListInfo> {
@@ -79,7 +98,9 @@ impl ListLowering {
                         } => {
                             let cap = Self::list_cap_for_slot(func, *buffer)
                                 .map(|slot_cap| (*max_len).min(slot_cap))
-                                .unwrap_or(*max_len);
+                                .unwrap_or(*max_len)
+                                .min(MAX_STACK_LIST_CAPACITY)
+                                .min(MAX_LIST_LEN_FOR_I32_OFFSETS);
                             let new_info = ListInfo {
                                 slot: *buffer,
                                 max_len: cap,

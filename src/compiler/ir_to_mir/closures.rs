@@ -159,7 +159,7 @@ impl<'a> HirToMirLowering<'a> {
                 "inlined list return requires a tracked list buffer".into(),
             )
         })?;
-        let src_buffer_size = 8 + (src_max_len * 8);
+        let src_buffer_size = i64_list_buffer_size(src_max_len);
 
         let shared = if let Some(shared) = shared_return {
             if src_max_len > shared.max_len {

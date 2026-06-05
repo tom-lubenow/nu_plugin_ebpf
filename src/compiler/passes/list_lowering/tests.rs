@@ -14,6 +14,22 @@ fn collect_insts(func: &MirFunction) -> Vec<&MirInst> {
 }
 
 #[test]
+fn test_list_cap_for_slot_caps_unencodable_offsets() {
+    let mut func = MirFunction::new();
+    let slot = func.alloc_stack_slot(usize::MAX, 8, StackSlotKind::ListBuffer);
+
+    assert_eq!(
+        ListLowering::list_cap_for_slot(&func, slot),
+        Some(MAX_STACK_LIST_CAPACITY)
+    );
+    assert_eq!(ListLowering::list_item_offset(0), 8);
+    assert_eq!(
+        ListLowering::list_item_offset(MAX_LIST_LEN_FOR_I32_OFFSETS - 1),
+        2_147_483_640
+    );
+}
+
+#[test]
 fn test_list_push_is_lowered() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

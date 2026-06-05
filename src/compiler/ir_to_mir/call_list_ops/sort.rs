@@ -304,7 +304,11 @@ impl<'a> HirToMirLowering<'a> {
     }
 
     pub(super) fn list_item_offset(index: usize) -> i32 {
-        (8 + index * 8) as i32
+        let offset = index
+            .checked_mul(std::mem::size_of::<i64>())
+            .and_then(|offset| offset.checked_add(std::mem::size_of::<i64>()))
+            .expect("list item offset overflowed");
+        i32::try_from(offset).expect("list item offset exceeded MIR i32 offset range")
     }
 
     fn literal_int_value(value: &nu_protocol::Value) -> Option<i64> {

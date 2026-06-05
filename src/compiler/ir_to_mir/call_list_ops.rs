@@ -100,7 +100,7 @@ impl<'a> HirToMirLowering<'a> {
             len: max_len.saturating_add(1),
         };
         let out_slot = self.func.alloc_stack_slot(
-            align_to_eight(8 + max_len * 8),
+            align_to_eight(i64_list_buffer_size(max_len)),
             8,
             StackSlotKind::ListBuffer,
         );

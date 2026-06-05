@@ -844,7 +844,7 @@ fn record_field_size(ty: &MirType) -> usize {
             let len = ty
                 .byte_array_len()
                 .expect("byte-array length must exist after guard");
-            (len + 7) & !7
+            len.checked_add(7).map(|len| len & !7).unwrap_or(usize::MAX)
         }
         _ => 8,
     }

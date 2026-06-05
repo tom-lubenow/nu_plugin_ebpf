@@ -2,6 +2,16 @@ use super::*;
 use crate::compiler::mir::RecordFieldDef;
 
 #[test]
+fn test_record_field_size_saturates_byte_array_overflow() {
+    let ty = MirType::Array {
+        elem: Box::new(MirType::U8),
+        len: usize::MAX,
+    };
+
+    assert_eq!(record_field_size(&ty), usize::MAX);
+}
+
+#[test]
 fn test_verify_mir_emit_record_rejects_scalar_for_array_field() {
     let (mut func, entry) = new_mir_function();
     let value = func.alloc_vreg();

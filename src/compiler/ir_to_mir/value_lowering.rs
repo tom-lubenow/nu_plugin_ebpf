@@ -881,7 +881,9 @@ impl<'a> HirToMirLowering<'a> {
             );
         }
         let content_len = bytes.len().min(max_content_len);
-        let aligned_len = align_to_eight(content_len + 1).min(MAX_STRING_SIZE).max(16);
+        let aligned_len = align_to_eight(content_len.saturating_add(1))
+            .min(MAX_STRING_SIZE)
+            .max(16);
 
         // Allocate stack slot for string buffer (aligned for emit)
         let slot = self
@@ -1182,7 +1184,7 @@ impl<'a> HirToMirLowering<'a> {
                 // (8 bytes per elem + 8 bytes for length = 488 bytes max)
                 const MAX_LIST_CAPACITY: usize = 60;
                 let max_len = (*capacity as usize).min(MAX_LIST_CAPACITY);
-                let buffer_size = 8 + (max_len * 8); // length + elements
+                let buffer_size = i64_list_buffer_size(max_len); // length + elements
                 let list_ty = MirType::Array {
                     elem: Box::new(MirType::I64),
                     len: max_len.saturating_add(1),

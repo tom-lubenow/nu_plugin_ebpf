@@ -114,7 +114,7 @@ impl ListLowering {
                                 let block = func.block_mut(store_block_id);
                                 block.instructions.push(MirInst::StoreSlot {
                                     slot: meta.slot,
-                                    offset: (8 + (idx * 8)) as i32,
+                                    offset: Self::list_item_offset(idx),
                                     val: MirValue::VReg(item),
                                     ty: MirType::I64,
                                 });

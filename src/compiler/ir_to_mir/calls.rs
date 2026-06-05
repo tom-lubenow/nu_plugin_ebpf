@@ -398,7 +398,7 @@ impl<'a> HirToMirLowering<'a> {
         } else {
             dst_vreg
         };
-        let buffer_size = align_to_eight(8 + out_max_len * 8);
+        let buffer_size = align_to_eight(i64_list_buffer_size(out_max_len));
         let out_ty = MirType::Array {
             elem: Box::new(MirType::I64),
             len: out_max_len.saturating_add(1),

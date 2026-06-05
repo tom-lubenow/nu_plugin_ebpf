@@ -538,9 +538,15 @@ impl<'a> HirToMirLowering<'a> {
                 path_desc
             ))
         })?;
+        let list_len = new_max_len.checked_add(1).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "cell path update '.{} = ...' numeric list layout length overflowed",
+                path_desc
+            ))
+        })?;
         let list_ty = MirType::Array {
             elem: Box::new(MirType::I64),
-            len: new_max_len + 1,
+            len: list_len,
         };
         let slot = self
             .func

@@ -2595,7 +2595,9 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         let max_len = outputs.iter().map(String::len).max().unwrap_or(0);
-        let aligned_len = align_to_eight(max_len + 1).min(MAX_STRING_SIZE).max(16);
+        let aligned_len = align_to_eight(max_len.saturating_add(1))
+            .min(MAX_STRING_SIZE)
+            .max(16);
         let elem_ty = MirType::Array {
             elem: Box::new(MirType::U8),
             len: 8 + aligned_len,
@@ -2918,7 +2920,7 @@ impl<'a> HirToMirLowering<'a> {
                 .unwrap_or(input_max_digits)
                 .min(MAX_RUNTIME_UNSIGNED_LEFT_FILL_WIDTH);
         let stack_len_bound = string_len_bound.max(MAX_INT_STRING_LEN);
-        let aligned_len = align_to_eight(stack_len_bound + 1)
+        let aligned_len = align_to_eight(stack_len_bound.saturating_add(1))
             .min(MAX_STRING_SIZE)
             .max(16);
         let slot = self

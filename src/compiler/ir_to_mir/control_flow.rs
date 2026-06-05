@@ -341,10 +341,17 @@ impl<'a> HirToMirLowering<'a> {
                     )));
                 }
 
-                let source_size = 8 + (source_max_len * 8);
+                let source_size = i64_list_buffer_size(source_max_len);
                 self.emit_ptr_copy_with_offsets(*ptr_vreg, 0, source_ptr, 0, source_size)?;
                 if source_max_len < *max_len {
-                    self.emit_ptr_zero(*ptr_vreg, source_size, (*max_len - source_max_len) * 8)?;
+                    let zero_size = (*max_len - source_max_len)
+                        .checked_mul(std::mem::size_of::<i64>())
+                        .ok_or_else(|| {
+                            CompileError::UnsupportedInstruction(
+                                "list aggregate return zero-fill size overflowed".into(),
+                            )
+                        })?;
+                    self.emit_ptr_zero(*ptr_vreg, source_size, zero_size)?;
                 }
                 Ok(MirValue::Const(0))
             }

@@ -1196,9 +1196,11 @@ impl<'a> HirToMirLowering<'a> {
                 }
             }
             SubfunctionAggregateReturnAbi::List { max_len } => {
-                let slot =
-                    self.func
-                        .alloc_stack_slot(8 + (max_len * 8), 8, StackSlotKind::ListBuffer);
+                let slot = self.func.alloc_stack_slot(
+                    i64_list_buffer_size(*max_len),
+                    8,
+                    StackSlotKind::ListBuffer,
+                );
                 self.record_list_buffer_slot_type(slot, *max_len);
                 let ptr_vreg = self.func.alloc_vreg();
                 self.emit(MirInst::Copy {

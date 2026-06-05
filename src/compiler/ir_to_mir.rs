@@ -117,7 +117,14 @@ fn mir_hints_from_hir(type_info: &HirTypeInfo) -> HirMirTypeHints {
 }
 
 fn align_to_eight(len: usize) -> usize {
-    (len + 7) & !7
+    len.checked_add(7).map(|len| len & !7).unwrap_or(usize::MAX)
+}
+
+fn i64_list_buffer_size(max_len: usize) -> usize {
+    max_len
+        .checked_mul(std::mem::size_of::<i64>())
+        .and_then(|bytes| bytes.checked_add(std::mem::size_of::<i64>()))
+        .unwrap_or(usize::MAX)
 }
 
 /// Maximum entries per eBPF map before data loss may occur

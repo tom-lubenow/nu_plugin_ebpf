@@ -810,7 +810,9 @@ impl<'a> HirToMirLowering<'a> {
             )));
         }
 
-        let aligned_len = align_to_eight(bytes.len() + 1).min(MAX_STRING_SIZE).max(16);
+        let aligned_len = align_to_eight(bytes.len().saturating_add(1))
+            .min(MAX_STRING_SIZE)
+            .max(16);
         let slot = self
             .func
             .alloc_stack_slot(aligned_len, 8, StackSlotKind::StringBuffer);

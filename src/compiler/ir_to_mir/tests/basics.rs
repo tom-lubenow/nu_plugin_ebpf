@@ -20,6 +20,14 @@ use nu_protocol::{
 use std::collections::HashMap;
 
 #[test]
+fn test_align_to_eight_saturates_on_overflow() {
+    assert_eq!(align_to_eight(0), 0);
+    assert_eq!(align_to_eight(1), 8);
+    assert_eq!(align_to_eight(8), 8);
+    assert_eq!(align_to_eight(usize::MAX), usize::MAX);
+}
+
+#[test]
 fn test_checked_mir_offset_rejects_out_of_range_offset() {
     let err = HirToMirLowering::checked_mir_offset(i32::MAX as usize + 1, "test offset")
         .expect_err("offset above i32::MAX should fail");

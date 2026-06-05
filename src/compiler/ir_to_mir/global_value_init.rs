@@ -38,7 +38,9 @@ impl<'a> HirToMirLowering<'a> {
         }?;
 
         let content_len = bytes.len().min(MAX_STRING_SIZE.saturating_sub(1));
-        let aligned_len = align_to_eight(content_len + 1).min(MAX_STRING_SIZE).max(16);
+        let aligned_len = align_to_eight(content_len.saturating_add(1))
+            .min(MAX_STRING_SIZE)
+            .max(16);
         let mut data = vec![0u8; 8 + aligned_len];
         data[..8].copy_from_slice(&(content_len as u64).to_le_bytes());
         data[8..8 + content_len].copy_from_slice(&bytes[..content_len]);
