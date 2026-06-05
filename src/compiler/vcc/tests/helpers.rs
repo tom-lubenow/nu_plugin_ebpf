@@ -21453,6 +21453,27 @@ fn test_verify_mir_rejects_more_than_five_params() {
 }
 
 #[test]
+fn test_verify_mir_rejects_out_of_range_type_map_key() {
+    let (mut func, entry) = new_mir_function();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let types = HashMap::from([(VReg(99), MirType::I64)]);
+    let err = verify_mir(&func, &types).expect_err("out-of-range type-map key should be rejected");
+    assert!(
+        err.iter()
+            .any(|e| e.kind == VccErrorKind::UnsupportedInstruction
+                && e.message.contains("out-of-range virtual register 99")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_rejects_subfn_calls_with_more_than_five_args() {
     let (mut func, entry) = new_mir_function();
     let dst = func.alloc_vreg();

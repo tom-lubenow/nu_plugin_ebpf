@@ -795,6 +795,10 @@ fn verify_mir_with_subfunction_summaries_impl(
             ),
         )]);
     }
+    let total_vregs = (func.vreg_count as usize).max(func.param_count);
+    if let Err(errors) = validate_type_map_vregs(types, total_vregs) {
+        return Err(errors);
+    }
     let empty_map_value_types = HashMap::new();
     let mut early_errors = check_generic_map_layout_constraints(
         func,
@@ -830,6 +834,34 @@ fn verify_mir_with_subfunction_summaries_impl(
         ..Default::default()
     }
     .verify_function_with_seed(&vcc_func, seed)
+}
+
+fn validate_type_map_vregs(
+    types: &HashMap<VReg, MirType>,
+    total_vregs: usize,
+) -> Result<(), Vec<VccError>> {
+    let mut invalid_vregs: Vec<u32> = types
+        .keys()
+        .filter_map(|vreg| ((vreg.0 as usize) >= total_vregs).then_some(vreg.0))
+        .collect();
+    invalid_vregs.sort_unstable();
+
+    if invalid_vregs.is_empty() {
+        Ok(())
+    } else {
+        Err(invalid_vregs
+            .into_iter()
+            .map(|vreg| {
+                VccError::new(
+                    VccErrorKind::UnsupportedInstruction,
+                    format!(
+                        "type map references out-of-range virtual register {} (valid range 0..{})",
+                        vreg, total_vregs
+                    ),
+                )
+            })
+            .collect())
+    }
 }
 
 include!("vcc/lower.rs");
