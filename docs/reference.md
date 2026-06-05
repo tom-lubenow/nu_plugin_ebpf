@@ -251,6 +251,9 @@ is constrained by the parsed program or callback, such as XDP metadata kfuncs
 or sched_ext callback kfuncs, including modeled arity, argument kinds, return
 kind, pointer-space/size rules, and source-checked kfunc compatibility metadata
 when available.
+Sched_ext source checks also model `select_cpu` cpumask acquisition/release
+flows, task/cgroup reference release requirements, and the
+`SCX_OPS_BUILTIN_IDLE_PER_NODE` gate for per-node idle-pick helpers.
 Individual context-field, context-projection, and context-write records also
 carry nullable `compatibility_minimum_kernel` and
 `compatibility_minimum_kernel_source` fields that aggregate the known direct
