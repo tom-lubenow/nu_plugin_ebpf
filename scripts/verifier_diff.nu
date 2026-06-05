@@ -23084,6 +23084,194 @@ const FIXTURES = [
         error_contains: "helper xdp_bytes buf requires 8 bytes"
     }
     {
+        name: "source-helper-xdp-adjust-and-buffer-len"
+        category: "helper-state"
+        tags: [xdp helper adjust-packet accept source metadata]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_xdp_adjust_head" $ctx 0'
+            '  helper-call "bpf_xdp_adjust_meta" $ctx 0'
+            '  helper-call "bpf_xdp_adjust_tail" $ctx 0'
+            '  let len = (helper-call "bpf_xdp_get_buff_len" $ctx)'
+            '  $len | count'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "source-helper-xdp-adjust-rejects-non-xdp-context"
+        category: "helper-state"
+        tags: [xdp helper adjust-packet program-policy reject source metadata]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_xdp_adjust_head" $ctx 0'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_xdp_adjust_head' is only valid in xdp programs"
+    }
+    {
+        name: "source-helper-tc-skb-hash-csum-and-cgroup"
+        category: "helper-state"
+        tags: [tc helper skb cgroup accept source metadata]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_get_hash_recalc" $ctx'
+            '  helper-call "bpf_csum_level" $ctx 0'
+            '  helper-call "bpf_set_hash" $ctx 0'
+            '  helper-call "bpf_skb_under_cgroup" $ctx tracked_cgroups 0'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "source-helper-current-task-under-cgroup"
+        category: "helper-state"
+        tags: [helper current cgroup accept source metadata]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_current_task_under_cgroup" tracked_cgroups 0'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "source-helper-sk-msg-byte-count"
+        category: "helper-state"
+        tags: [sk-msg helper bytes accept source metadata]
+        target: "sk_msg:/sys/fs/bpf/demo_sockmap"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_msg_apply_bytes" $ctx 8'
+            '  helper-call "bpf_msg_cork_bytes" $ctx 8'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-helper-sock-ops-cb-flags-set"
+        category: "helper-state"
+        tags: [sock-ops helper accept source metadata]
+        target: "sock_ops:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_sock_ops_cb_flags_set" $ctx 1'
+            '  1'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-helper-trace-printk"
+        category: "helper-state"
+        tags: [helper trace-printk accept source metadata]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_trace_printk" "hello" 5'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "source-helper-socket-conversions"
+        category: "helper-state"
+        tags: [tc cgroup-skb cgroup-sockopt helper socket accept source metadata]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let sk = $ctx.sk'
+            '  if $sk {'
+            '    let full = (helper-call "bpf_sk_fullsock" $sk)'
+            '    if $full { $full.family | count }'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-helper-tcp-sock-conversion"
+        category: "helper-state"
+        tags: [cgroup-sockopt helper socket accept source metadata]
+        target: "cgroup_sockopt:/sys/fs/cgroup:get"
+        program: [
+            '{|ctx|'
+            '  let sk = $ctx.sk'
+            '  if $sk {'
+            '    let tcp = (helper-call "bpf_tcp_sock" $sk)'
+            '    if $tcp { $tcp.snd_cwnd | count }'
+            '  }'
+            '  "allow"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-helper-listener-sock-conversion"
+        category: "helper-state"
+        tags: [cgroup-skb helper socket accept source metadata]
+        target: "cgroup_skb:/sys/fs/cgroup:egress"
+        program: [
+            '{|ctx|'
+            '  let sk = $ctx.sk'
+            '  if $sk {'
+            '    let listener = (helper-call "bpf_get_listener_sock" $sk)'
+            '    if $listener { $listener.family | count }'
+            '  }'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-helper-skc-socket-conversions"
+        category: "helper-state"
+        tags: [sk-lookup helper socket accept source metadata]
+        target: "sk_lookup:/proc/self/ns/net"
+        program: [
+            '{|ctx|'
+            '  let sk = $ctx.sk'
+            '  if $sk {'
+            '    helper-call "bpf_skc_to_tcp_sock" $sk'
+            '    helper-call "bpf_skc_to_tcp6_sock" $sk'
+            '    helper-call "bpf_skc_to_tcp_timewait_sock" $sk'
+            '    helper-call "bpf_skc_to_tcp_request_sock" $sk'
+            '    helper-call "bpf_skc_to_udp6_sock" $sk'
+            '    helper-call "bpf_skc_to_mptcp_sock" $sk'
+            '    helper-call "bpf_skc_to_unix_sock" $sk'
+            '  }'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "tc-skb-get-xfrm-state-helper-rejects-non-tc"
         category: "helper-state"
         tags: [helper xfrm reject]

@@ -6,6 +6,10 @@ documentation changes that matter to external alpha consumers.
 
 ## Unreleased
 
+- Added source verifier coverage for direct helper-call escape hatches across
+  XDP adjust/length, TC skb/cgroup metadata, SK_MSG byte-count, SOCK_OPS
+  callback flags, trace printing, and socket conversion helpers, with a Rust
+  guard for modeled helper-call source fixture coverage.
 - Added host-gated source verifier fixtures for Linux 6.19 sched_ext v2 kfunc
   spellings, with `kernel-btf-kfunc:<symbol>` fixture requirements for kernels
   whose BTF exposes those names.
