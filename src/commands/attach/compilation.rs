@@ -688,6 +688,10 @@ fn eval_supported_constant_call(
             eval_supported_constant_no_argument_call(cmd_name, &call.arguments)?;
             eval_supported_constant_empty_predicate(cmd_name, input, span)
         }
+        "bytes length" => {
+            eval_supported_constant_no_argument_call(cmd_name, &call.arguments)?;
+            eval_supported_constant_bytes_length(input, span)
+        }
         "get" => eval_supported_constant_get_call(
             working_set,
             cmd_name,
@@ -940,6 +944,11 @@ fn eval_supported_constant_external_call(
         "is-empty" | "is-not-empty" => {
             eval_supported_constant_no_external_args(cmd_name, args, span)?;
             eval_supported_constant_empty_predicate(cmd_name, input, span)
+        }
+        "bytes" => eval_supported_constant_bytes_external_call(working_set, input, args, span),
+        "bytes length" => {
+            eval_supported_constant_no_external_args(cmd_name, args, span)?;
+            eval_supported_constant_bytes_length(input, span)
         }
         "get" => {
             let [path_arg] = args else {
@@ -1638,6 +1647,86 @@ fn eval_supported_constant_empty_predicate(
     };
 
     Ok(Value::bool(result, span))
+}
+
+fn eval_supported_constant_bytes_length(
+    input: Option<Value>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let value = eval_supported_constant_required_pipeline_input("bytes length", input, span)?;
+    let value_span = value.span();
+    match value {
+        Value::Binary { val, .. } => Ok(Value::int(val.len() as i64, span)),
+        Value::List { vals, .. } => {
+            let lengths = vals
+                .into_iter()
+                .enumerate()
+                .map(|(index, value)| {
+                    let Value::Binary { val, .. } = value else {
+                        return Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
+                        .with_label(
+                            format!(
+                                "`bytes length` requires binary list items in compile-time global initializers; item {index} has type {}",
+                                value.get_type()
+                            ),
+                            span,
+                        ));
+                    };
+                    Ok(Value::int(val.len() as i64, value_span))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(Value::list(lengths, value_span))
+        }
+        _ => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`bytes length` in a compile-time global initializer requires binary or list<binary> input",
+                span,
+            ),
+        ),
+    }
+}
+
+fn eval_supported_constant_bytes_external_call(
+    working_set: &StateWorkingSet,
+    input: Option<Value>,
+    args: &[ExternalArgument],
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let [subcommand_arg, remaining_args @ ..] = args else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`bytes` requires a supported subcommand in compile-time global initializers",
+                span,
+            ),
+        );
+    };
+
+    let ExternalArgument::Regular(subcommand_expr) = subcommand_arg else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`bytes` subcommand cannot use spread syntax in compile-time global initializers",
+                subcommand_arg.expr().span,
+            ),
+        );
+    };
+    let subcommand = eval_supported_constant_record_field_name(working_set, subcommand_expr)?;
+
+    match subcommand.as_str() {
+        "length" => {
+            eval_supported_constant_no_external_args("bytes length", remaining_args, span)?;
+            eval_supported_constant_bytes_length(input, span)
+        }
+        _ => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`bytes {subcommand}` is not supported in compile-time global initializers"
+                ),
+                subcommand_expr.span,
+            ),
+        ),
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
