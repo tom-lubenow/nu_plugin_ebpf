@@ -2538,6 +2538,84 @@ fn test_map_leading_annotated_mut_globals_supports_constant_str_stats_unicode_wi
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_str_expand_initializer() {
+    let source = "{|| mut expanded: list<string> = (\"A{b,c}D{e,f}G\" | str expand); $expanded }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant str expand initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let expanded = vals
+                .iter()
+                .map(|value| value.as_str().expect("str expand should produce strings"))
+                .collect::<Vec<_>>();
+            assert_eq!(expanded, vec!["AbDeG", "AbDfG", "AcDeG", "AcDfG"]);
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_str_expand_range_initializer() {
+    let source = "{|| mut expanded: list<string> = (\"A{02..04}B\" | str expand); $expanded }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant str expand range initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let expanded = vals
+                .iter()
+                .map(|value| value.as_str().expect("str expand should produce strings"))
+                .collect::<Vec<_>>();
+            assert_eq!(expanded, vec!["A02B", "A03B", "A04B"]);
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_constant_split_chars_initializer() {
     let source = "{|| mut chars: list<string> = (\"abc\" | split chars); $chars }";
     let ir_block = IrBlock {
@@ -3278,6 +3356,41 @@ fn test_map_leading_annotated_mut_globals_rejects_constant_str_stats_arguments()
         err.labels
             .iter()
             .any(|label| label.text.contains("does not accept arguments")),
+        "unexpected labels: {:?}",
+        err.labels
+    );
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_rejects_constant_str_expand_without_braces() {
+    let source = "{|| mut expanded: list<string> = (\"abc\" | str expand); $expanded }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let err = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect_err("str expand without braces should be rejected");
+
+    assert!(
+        err.labels
+            .iter()
+            .any(|label| label.text.contains("requires at least one brace")),
         "unexpected labels: {:?}",
         err.labels
     );

@@ -28,7 +28,8 @@ use crate::compiler::{
     StructOpsObjectSpec, UserFunctionSig, UserParam, UserParamKind,
     compile_mir_to_ebpf_with_hints_and_globals, hir::AnnotatedMutGlobal, hir::HirFunction,
     hir::HirProgram, hir::HirStmt, hir::infer_ctx_param_excluding, hir::supports_constant_value,
-    hir_type_infer, lower_hir_to_mir_with_hints_key_value_maps_and_semantics, lower_ir_to_hir,
+    hir_type_infer, ir_to_mir::MAX_STRING_SIZE,
+    lower_hir_to_mir_with_hints_key_value_maps_and_semantics, lower_ir_to_hir,
     passes::optimize_with_ssa_hints,
 };
 use crate::kernel_btf::TrampolineFieldSelector;
@@ -726,6 +727,10 @@ fn eval_supported_constant_call(
             eval_supported_constant_no_argument_call(cmd_name, &call.arguments)?;
             eval_supported_constant_str_stats(input, span)
         }
+        "str expand" => {
+            let use_path = eval_supported_constant_str_expand_args(&call.arguments)?;
+            eval_supported_constant_str_expand(input, use_path, span)
+        }
         "split chars" => {
             let use_grapheme_clusters =
                 eval_supported_constant_split_chars_mode_call(&call.arguments)?;
@@ -1037,6 +1042,11 @@ fn eval_supported_constant_external_call(
         "str stats" => {
             eval_supported_constant_no_external_args(cmd_name, args, span)?;
             eval_supported_constant_str_stats(input, span)
+        }
+        "str expand" => {
+            let use_path =
+                eval_supported_constant_str_expand_external_args(working_set, args, env, span)?;
+            eval_supported_constant_str_expand(input, use_path, span)
         }
         "split" => eval_supported_constant_split_external_call(working_set, input, args, env, span),
         "split chars" => {
@@ -2615,6 +2625,434 @@ fn eval_supported_constant_str_stats_counts_width_one(ch: char) -> bool {
     ch.is_control() || matches!(ch, '\u{2028}' | '\u{2029}')
 }
 
+const MAX_CONSTANT_STRING_EXPAND_RESULTS: usize = 60;
+
+fn eval_supported_constant_str_expand_args(
+    args: &[nu_protocol::ast::Argument],
+) -> Result<bool, LabeledError> {
+    let mut use_path = false;
+    for arg in args {
+        match arg {
+            nu_protocol::ast::Argument::Named(named) => {
+                if named.2.is_some() {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            "`str expand --path` cannot receive a value in compile-time global initializers",
+                            arg.span(),
+                        ));
+                }
+                if named.0.item == "path" {
+                    use_path = true;
+                } else {
+                    return Err(LabeledError::new(
+                        "Unsupported annotated mutable global initializer",
+                    )
+                    .with_label(
+                        "`str expand` supports only --path in compile-time global initializers",
+                        arg.span(),
+                    ));
+                }
+            }
+            nu_protocol::ast::Argument::Spread(expr) => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`str expand` arguments cannot use spread syntax in compile-time global initializers",
+                        expr.span,
+                    ));
+            }
+            nu_protocol::ast::Argument::Positional(_) | nu_protocol::ast::Argument::Unknown(_) => {
+                return Err(
+                    LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            "`str expand` does not accept positional arguments in compile-time global initializers",
+                            arg.span(),
+                        ),
+                );
+            }
+        }
+    }
+    Ok(use_path)
+}
+
+fn eval_supported_constant_str_expand_external_args(
+    working_set: &StateWorkingSet,
+    args: &[ExternalArgument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<bool, LabeledError> {
+    let mut use_path = false;
+    for arg in args {
+        let ExternalArgument::Regular(expr) = arg else {
+            return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                .with_label(
+                    "`str expand` arguments cannot use spread syntax in compile-time global initializers",
+                    arg.expr().span,
+                ));
+        };
+        let value = eval_supported_constant_value_with_env(working_set, expr, env)?;
+        let flag = match value {
+            Value::String { val, .. } | Value::Glob { val, .. } => val,
+            _ => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`str expand` accepts only string flags in compile-time global initializers",
+                        expr.span,
+                    ));
+            }
+        };
+        match flag.as_str() {
+            "--path" => use_path = true,
+            _ if flag.starts_with("--") => {
+                return Err(
+                    LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            "`str expand` supports only --path in compile-time global initializers",
+                            expr.span,
+                        ),
+                );
+            }
+            _ => {
+                return Err(
+                    LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            "`str expand` does not accept positional arguments in compile-time global initializers",
+                            span,
+                        ),
+                );
+            }
+        }
+    }
+    Ok(use_path)
+}
+
+fn eval_supported_constant_str_expand(
+    input: Option<Value>,
+    use_path: bool,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let value = eval_supported_constant_required_pipeline_input("str expand", input, span)?;
+    let value_span = value.span();
+    let input = eval_supported_constant_exact_string_value(value, "str expand", span)?;
+    let expansion_input = if use_path {
+        input.replace('\\', "\\\\")
+    } else {
+        input
+    };
+    let outputs = eval_supported_constant_str_expand_pattern(&expansion_input, span)?;
+    Ok(Value::list(
+        outputs
+            .into_iter()
+            .map(|output| Value::string(output, value_span))
+            .collect(),
+        value_span,
+    ))
+}
+
+fn eval_supported_constant_str_expand_pattern(
+    input: &str,
+    span: Span,
+) -> Result<Vec<String>, LabeledError> {
+    let mut saw_braces = false;
+    let outputs = eval_supported_constant_str_expand_segment(input, &mut saw_braces, span)?;
+    if !saw_braces {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`str expand` requires at least one brace expression in compile-time global initializers",
+                span,
+            ),
+        );
+    }
+    if outputs.len() > MAX_CONSTANT_STRING_EXPAND_RESULTS {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`str expand` produced {} strings; compile-time global initializers support at most {}",
+                    outputs.len(),
+                    MAX_CONSTANT_STRING_EXPAND_RESULTS
+                ),
+                span,
+            ),
+        );
+    }
+    for output in &outputs {
+        if output.len().saturating_add(1) > MAX_STRING_SIZE {
+            return Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    format!(
+                        "`str expand` output requires {} bytes (limit {}) in compile-time global initializers",
+                        output.len() + 1,
+                        MAX_STRING_SIZE
+                    ),
+                    span,
+                ),
+            );
+        }
+    }
+    Ok(outputs)
+}
+
+fn eval_supported_constant_str_expand_segment(
+    input: &str,
+    saw_braces: &mut bool,
+    span: Span,
+) -> Result<Vec<String>, LabeledError> {
+    let Some(open) = eval_supported_constant_str_expand_find_open_brace(input, span)? else {
+        return Ok(vec![eval_supported_constant_str_expand_unescape(input)]);
+    };
+    *saw_braces = true;
+    let close = eval_supported_constant_str_expand_find_matching_brace(input, open, span)?;
+    let prefix = eval_supported_constant_str_expand_unescape(&input[..open]);
+    let inner = &input[open + '{'.len_utf8()..close];
+    let suffix = &input[close + '}'.len_utf8()..];
+    let alternatives = eval_supported_constant_str_expand_alternatives(inner, saw_braces, span)?;
+    let suffixes = eval_supported_constant_str_expand_segment(suffix, saw_braces, span)?;
+
+    let mut outputs = Vec::new();
+    for alternative in alternatives {
+        for suffix in &suffixes {
+            outputs.push(format!("{prefix}{alternative}{suffix}"));
+            if outputs.len() > MAX_CONSTANT_STRING_EXPAND_RESULTS {
+                return Ok(outputs);
+            }
+        }
+    }
+    Ok(outputs)
+}
+
+fn eval_supported_constant_str_expand_alternatives(
+    input: &str,
+    saw_braces: &mut bool,
+    span: Span,
+) -> Result<Vec<String>, LabeledError> {
+    if let Some(parts) = eval_supported_constant_str_expand_split_commas(input, span)? {
+        let mut outputs = Vec::new();
+        for part in parts {
+            outputs.extend(eval_supported_constant_str_expand_segment(
+                part, saw_braces, span,
+            )?);
+            if outputs.len() > MAX_CONSTANT_STRING_EXPAND_RESULTS {
+                return Ok(outputs);
+            }
+        }
+        return Ok(outputs);
+    }
+
+    if let Some(range) = eval_supported_constant_str_expand_numeric_range(input, span)? {
+        return Ok(range);
+    }
+
+    eval_supported_constant_str_expand_segment(input, saw_braces, span)
+}
+
+fn eval_supported_constant_str_expand_find_open_brace(
+    input: &str,
+    span: Span,
+) -> Result<Option<usize>, LabeledError> {
+    let mut escaped = false;
+    for (index, ch) in input.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' => escaped = true,
+            '{' => return Ok(Some(index)),
+            '}' => {
+                return Err(eval_supported_constant_str_expand_balanced_error(span));
+            }
+            _ => {}
+        }
+    }
+    Ok(None)
+}
+
+fn eval_supported_constant_str_expand_find_matching_brace(
+    input: &str,
+    open: usize,
+    span: Span,
+) -> Result<usize, LabeledError> {
+    let mut escaped = false;
+    let mut depth = 1usize;
+    for (offset, ch) in input[open + '{'.len_utf8()..].char_indices() {
+        let index = open + '{'.len_utf8() + offset;
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' => escaped = true,
+            '{' => depth = depth.saturating_add(1),
+            '}' => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    return Ok(index);
+                }
+            }
+            _ => {}
+        }
+    }
+    Err(eval_supported_constant_str_expand_balanced_error(span))
+}
+
+fn eval_supported_constant_str_expand_split_commas<'a>(
+    input: &'a str,
+    span: Span,
+) -> Result<Option<Vec<&'a str>>, LabeledError> {
+    let mut escaped = false;
+    let mut depth = 0usize;
+    let mut start = 0usize;
+    let mut parts = Vec::new();
+    for (index, ch) in input.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' => escaped = true,
+            '{' => depth = depth.saturating_add(1),
+            '}' if depth == 0 => {
+                return Err(eval_supported_constant_str_expand_balanced_error(span));
+            }
+            '}' => depth = depth.saturating_sub(1),
+            ',' if depth == 0 => {
+                parts.push(&input[start..index]);
+                start = index + ','.len_utf8();
+            }
+            _ => {}
+        }
+    }
+    if depth != 0 {
+        return Err(eval_supported_constant_str_expand_balanced_error(span));
+    }
+    if parts.is_empty() {
+        Ok(None)
+    } else {
+        parts.push(&input[start..]);
+        Ok(Some(parts))
+    }
+}
+
+fn eval_supported_constant_str_expand_numeric_range(
+    input: &str,
+    span: Span,
+) -> Result<Option<Vec<String>>, LabeledError> {
+    let mut escaped = false;
+    let mut ranges = Vec::new();
+    let mut iter = input.char_indices().peekable();
+    while let Some((index, ch)) = iter.next() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' {
+            escaped = true;
+            continue;
+        }
+        if ch == '.'
+            && let Some((_, '.')) = iter.peek().copied()
+        {
+            ranges.push(index);
+            iter.next();
+        }
+    }
+
+    match ranges.as_slice() {
+        [] => Ok(None),
+        [_first, _second, ..] => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`str expand` numeric ranges must use exactly one '..' operator in compile-time global initializers",
+                span,
+            ),
+        ),
+        [range_index] => {
+            let start_text = eval_supported_constant_str_expand_unescape(&input[..*range_index]);
+            let end_text =
+                eval_supported_constant_str_expand_unescape(&input[*range_index + 2..]);
+            if start_text.is_empty()
+                || end_text.is_empty()
+                || !start_text.chars().all(|ch| ch.is_ascii_digit())
+                || !end_text.chars().all(|ch| ch.is_ascii_digit())
+            {
+                return Err(
+                    LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            "`str expand` numeric ranges must use unsigned integer bounds in compile-time global initializers",
+                            span,
+                        ),
+                );
+            }
+
+            let start = start_text.parse::<u64>().map_err(|err| {
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    format!("`str expand` range start is too large in global initializers: {err}"),
+                    span,
+                )
+            })?;
+            let end = end_text.parse::<u64>().map_err(|err| {
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    format!("`str expand` range end is too large in global initializers: {err}"),
+                    span,
+                )
+            })?;
+            if start > end {
+                return Ok(Some(Vec::new()));
+            }
+            let count = end.saturating_sub(start).saturating_add(1);
+            if count > MAX_CONSTANT_STRING_EXPAND_RESULTS as u64 {
+                return Err(
+                    LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            format!(
+                                "`str expand` range produces {count} strings; compile-time global initializers support at most {MAX_CONSTANT_STRING_EXPAND_RESULTS}"
+                            ),
+                            span,
+                        ),
+                );
+            }
+
+            let padded = start_text.starts_with('0') || end_text.starts_with('0');
+            let width = if padded {
+                start_text.len().max(end_text.len())
+            } else {
+                0
+            };
+            Ok(Some(
+                (start..=end)
+                    .map(|value| {
+                        if padded {
+                            format!("{value:0width$}")
+                        } else {
+                            value.to_string()
+                        }
+                    })
+                    .collect(),
+            ))
+        }
+    }
+}
+
+fn eval_supported_constant_str_expand_unescape(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut chars = input.chars();
+    while let Some(ch) = chars.next() {
+        if ch == '\\'
+            && let Some(next) = chars.next()
+        {
+            out.push(next);
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
+fn eval_supported_constant_str_expand_balanced_error(span: Span) -> LabeledError {
+    LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+        "`str expand` requires balanced brace expressions in compile-time global initializers",
+        span,
+    )
+}
+
 fn eval_supported_constant_split_chars_mode_call(
     args: &[nu_protocol::ast::Argument],
 ) -> Result<bool, LabeledError> {
@@ -3958,6 +4396,15 @@ fn eval_supported_constant_str_external_call(
         "stats" => {
             eval_supported_constant_no_external_args("str stats", remaining_args, span)?;
             eval_supported_constant_str_stats(input, span)
+        }
+        "expand" => {
+            let use_path = eval_supported_constant_str_expand_external_args(
+                working_set,
+                remaining_args,
+                env,
+                span,
+            )?;
+            eval_supported_constant_str_expand(input, use_path, span)
         }
         _ => Err(
             LabeledError::new("Unsupported annotated mutable global initializer").with_label(
