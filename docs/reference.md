@@ -1090,6 +1090,11 @@ Cpumask query and mutation kfuncs such as `bpf_cpumask_and`,
 `bpf_cpumask_any_and_distribute`, `bpf_cpumask_or`, `bpf_cpumask_xor`,
 `bpf_cpumask_set_cpu`, and `bpf_cpumask_first` require cpumask pointer
 provenance for their pointer arguments.
+Crypto context kfuncs are modeled as acquired-reference flows:
+`bpf_crypto_ctx_create` and `bpf_crypto_ctx_acquire` return nullable crypto
+context references released by `bpf_crypto_ctx_release`; encrypt/decrypt kfuncs
+require a live crypto context reference and stack/map-backed source,
+destination, and optional IV/SIV buffers.
 `bpf_task_under_cgroup` is modeled as a task/cgroup query that requires a task
 pointer for arg0 and a cgroup pointer for arg1; passing a task reference as the
 cgroup argument is rejected before load.

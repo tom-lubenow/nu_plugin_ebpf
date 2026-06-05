@@ -6,6 +6,8 @@ documentation changes that matter to external alpha consumers.
 
 ## Unreleased
 
+- Added source verifier coverage for `bpf_crypto_ctx_acquire` acquired-reference
+  lifecycle flows, including owned-reference leak rejects.
 - Added source verifier coverage for cpumask set-operation and distribution
   kfuncs, including `bpf_cpumask_or`, `bpf_cpumask_xor`, and any-cpu queries.
 - Extended source verifier coverage for single-mask cpumask query/mutation
