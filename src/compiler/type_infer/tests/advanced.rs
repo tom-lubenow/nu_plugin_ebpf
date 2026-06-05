@@ -1400,6 +1400,29 @@ fn test_required_program_capability_classifies_helper_calls() {
 }
 
 #[test]
+fn test_type_infer_rejects_unencodable_helper_id() {
+    let mut func = make_test_function();
+    let dst = func.alloc_vreg();
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::CallHelper {
+        dst,
+        helper: i32::MAX as u32 + 1,
+        args: vec![],
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let errors = TypeInference::new(None)
+        .infer(&func)
+        .expect_err("unencodable helper ID should fail type inference");
+    assert!(
+        errors.iter().any(|err| err
+            .message
+            .contains("outside the eBPF call immediate range")),
+        "unexpected errors: {errors:?}"
+    );
+}
+
+#[test]
 fn test_validate_program_capability_rejects_helpers_when_capability_missing() {
     const LIMITED_CAPABILITIES: &[ProgramCapability] = &[ProgramCapability::Emit];
 

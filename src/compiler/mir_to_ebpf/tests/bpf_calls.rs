@@ -1,6 +1,29 @@
 use super::*;
 
 #[test]
+fn test_helper_call_rejects_unencodable_helper_id() {
+    let program = LirProgram::new(LirFunction::new());
+    let mut compiler = MirToEbpfCompiler::new(&program, None);
+    let helper = i32::MAX as u32 + 1;
+
+    let err = compiler
+        .compile_instruction(&LirInst::CallHelper {
+            helper,
+            args: vec![],
+            ret: VReg(0),
+        })
+        .expect_err("unencodable helper ID should be rejected");
+
+    match err {
+        CompileError::UnsupportedInstruction(message) => assert!(
+            message.contains("outside the eBPF call immediate range"),
+            "unexpected error: {message}"
+        ),
+        other => panic!("expected UnsupportedInstruction, got {other:?}"),
+    }
+}
+
+#[test]
 fn test_subfunction_call_rejects_more_than_five_args() {
     use crate::compiler::mir::*;
 

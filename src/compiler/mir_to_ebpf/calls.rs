@@ -77,6 +77,12 @@ impl<'a> MirToEbpfCompiler<'a> {
         helper: u32,
         args: &[VReg],
     ) -> Result<(), CompileError> {
+        let helper_imm = i32::try_from(helper).map_err(|_| {
+            CompileError::UnsupportedInstruction(format!(
+                "helper id {helper} is outside the eBPF call immediate range"
+            ))
+        })?;
+
         if let Some(sig) = HelperSignature::for_id(helper) {
             if args.len() < sig.min_args || args.len() > sig.max_args {
                 return Err(CompileError::UnsupportedInstruction(format!(
@@ -94,7 +100,7 @@ impl<'a> MirToEbpfCompiler<'a> {
         }
 
         self.instructions
-            .push(EbpfInsn::new(opcode::CALL, 0, 0, 0, helper as i32));
+            .push(EbpfInsn::new(opcode::CALL, 0, 0, 0, helper_imm));
         Ok(())
     }
 }

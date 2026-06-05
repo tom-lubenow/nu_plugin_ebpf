@@ -981,6 +981,12 @@ impl<'a> TypeInference<'a> {
             }
 
             MirInst::CallHelper { helper, args, .. } => {
+                if *helper > i32::MAX as u32 {
+                    errors.push(TypeError::new(format!(
+                        "helper id {} is outside the eBPF call immediate range",
+                        helper
+                    )));
+                }
                 self.validate_helper_program_context(*helper, block_ctx_field_ranges, errors);
                 if let Some(sig) = HelperSignature::for_id(*helper) {
                     let helper_kind = BpfHelper::from_u32(*helper);

@@ -1,6 +1,33 @@
 use super::*;
 
 #[test]
+fn test_verify_mir_helper_call_rejects_unencodable_helper_id() {
+    let (mut func, entry) = new_mir_function();
+    let dst = func.alloc_vreg();
+
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst,
+            helper: i32::MAX as u32 + 1,
+            args: vec![],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let err = verify_mir(&func, &HashMap::new())
+        .expect_err("unencodable helper ID should fail VCC verification");
+    assert!(
+        err.iter().any(|err| {
+            err.kind == VccErrorKind::UnsupportedInstruction
+                && err
+                    .message
+                    .contains("outside the eBPF call immediate range")
+        }),
+        "unexpected errors: {err:?}"
+    );
+}
+
+#[test]
 fn test_verify_mir_helper_map_lookup_requires_null_check_before_load() {
     let (mut func, entry) = new_mir_function();
     let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);

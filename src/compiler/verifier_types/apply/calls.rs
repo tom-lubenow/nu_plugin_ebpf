@@ -52,6 +52,12 @@ pub(super) fn apply_call_helper_inst(
     state: &mut VerifierState,
     errors: &mut Vec<VerifierTypeError>,
 ) {
+    if helper > i32::MAX as u32 {
+        errors.push(VerifierTypeError::new(format!(
+            "helper id {} is outside the eBPF call immediate range",
+            helper
+        )));
+    }
     let helper_kind = BpfHelper::from_u32(helper);
     if !matches!(helper_kind, Some(BpfHelper::SpinUnlock)) {
         match helper_kind {

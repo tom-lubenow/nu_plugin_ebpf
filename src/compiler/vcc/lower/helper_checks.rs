@@ -24,6 +24,13 @@ impl<'a> VccLowerer<'a> {
         args: &[MirValue],
         out: &mut Vec<VccInst>,
     ) -> Result<(), VccError> {
+        if helper_id > i32::MAX as u32 {
+            return Err(VccError::new(
+                VccErrorKind::UnsupportedInstruction,
+                format!("helper id {helper_id} is outside the eBPF call immediate range"),
+            ));
+        }
+
         if let Some(helper) = BpfHelper::from_u32(helper_id) {
             if helper.requires_callback_subprogram() && !helper.supports_modeled_callback_subprogram()
             {
