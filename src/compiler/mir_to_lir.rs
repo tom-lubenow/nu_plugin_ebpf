@@ -10,7 +10,9 @@ use crate::compiler::CompileError;
 use super::instruction::{EbpfReg, KfuncSignature, unknown_kfunc_signature_message};
 use super::lir::{LirBlock, LirFunction, LirInst, LirProgram};
 use super::mir::{MirFunction, MirInst, MirProgram, MirValue, VReg};
-use super::mir_integrity::validate_mir_structural_references;
+use super::mir_integrity::{
+    validate_mir_program_structural_references, validate_mir_structural_references,
+};
 
 const ABI_REGS: [EbpfReg; 6] = [
     EbpfReg::R0,
@@ -51,6 +53,15 @@ pub fn lower_mir_to_lir(program: &MirProgram) -> LirProgram {
 }
 
 pub fn lower_mir_to_lir_checked(program: &MirProgram) -> Result<LirProgram, CompileError> {
+    if let Err(errors) = validate_mir_program_structural_references(program) {
+        let messages = errors
+            .into_iter()
+            .map(|err| err.message)
+            .collect::<Vec<_>>()
+            .join("; ");
+        return Err(CompileError::UnsupportedInstruction(messages));
+    }
+
     let main = lower_function(&program.main)?;
     let mut lir = LirProgram::new(main);
     for subfn in &program.subfunctions {

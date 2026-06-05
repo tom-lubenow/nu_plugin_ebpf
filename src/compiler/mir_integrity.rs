@@ -1,6 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
-use super::mir::{BlockId, MapKind, MapRef, MirFunction, MirInst, MirValue, StackSlotId, VReg};
+use super::mir::{
+    BlockId, MapKind, MapRef, MirFunction, MirInst, MirProgram, MirValue, StackSlotId,
+    SubfunctionId, VReg,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct MirIntegrityError {
@@ -20,6 +23,7 @@ pub(crate) fn validate_mir_references(func: &MirFunction) -> Result<(), Vec<MirI
         func,
         MirIntegrityOptions {
             validate_param_indices: true,
+            subfn_count: None,
         },
     )
 }
@@ -31,13 +35,36 @@ pub(crate) fn validate_mir_structural_references(
         func,
         MirIntegrityOptions {
             validate_param_indices: false,
+            subfn_count: None,
         },
     )
+}
+
+pub(crate) fn validate_mir_program_structural_references(
+    program: &MirProgram,
+) -> Result<(), Vec<MirIntegrityError>> {
+    let mut errors = Vec::new();
+    let options = MirIntegrityOptions {
+        validate_param_indices: false,
+        subfn_count: Some(program.subfunctions.len()),
+    };
+
+    collect_mir_reference_errors(&program.main, options, &mut errors);
+    for subfn in &program.subfunctions {
+        collect_mir_reference_errors(subfn, options, &mut errors);
+    }
+
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
+    }
 }
 
 #[derive(Clone, Copy)]
 struct MirIntegrityOptions {
     validate_param_indices: bool,
+    subfn_count: Option<usize>,
 }
 
 fn validate_mir_references_with_options(
@@ -45,6 +72,19 @@ fn validate_mir_references_with_options(
     options: MirIntegrityOptions,
 ) -> Result<(), Vec<MirIntegrityError>> {
     let mut errors = Vec::new();
+    collect_mir_reference_errors(func, options, &mut errors);
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
+    }
+}
+
+fn collect_mir_reference_errors(
+    func: &MirFunction,
+    options: MirIntegrityOptions,
+    errors: &mut Vec<MirIntegrityError>,
+) {
     let mut declared = HashSet::with_capacity(func.stack_slots.len());
     let mut block_ids = HashSet::with_capacity(func.blocks.len());
     let mut map_kinds = HashMap::new();
@@ -63,7 +103,7 @@ fn validate_mir_references_with_options(
             "MIR function must contain at least one basic block",
         ));
     } else {
-        check_block(func.entry, "function entry", &block_ids, &mut errors);
+        check_block(func.entry, "function entry", &block_ids, errors);
     }
 
     for slot in &func.stack_slots {
@@ -77,13 +117,13 @@ fn validate_mir_references_with_options(
 
     for (idx, slot) in &func.param_stack_slots {
         if options.validate_param_indices {
-            check_param_index(*idx, "param stack slot", func.param_count, &mut errors);
+            check_param_index(*idx, "param stack slot", func.param_count, errors);
         }
         check_slot(
             *slot,
             &format!("param stack slot arg{idx}"),
             &declared,
-            &mut errors,
+            errors,
         );
     }
     if options.validate_param_indices {
@@ -92,7 +132,7 @@ fn validate_mir_references_with_options(
                 *idx,
                 "non-null parameter metadata",
                 func.param_count,
-                &mut errors,
+                errors,
             );
         }
         for idx in &func.param_trusted_btf {
@@ -100,7 +140,7 @@ fn validate_mir_references_with_options(
                 *idx,
                 "trusted BTF parameter metadata",
                 func.param_count,
-                &mut errors,
+                errors,
             );
         }
         for (symbol, idx) in &func.global_param_aliases {
@@ -108,20 +148,15 @@ fn validate_mir_references_with_options(
                 *idx,
                 &format!("global parameter alias '{symbol}'"),
                 func.param_count,
-                &mut errors,
+                errors,
             );
         }
     }
     for slot in &func.entry_initialized_dynptr_slots {
-        check_slot(
-            *slot,
-            "entry initialized dynptr slot",
-            &declared,
-            &mut errors,
-        );
+        check_slot(*slot, "entry initialized dynptr slot", &declared, errors);
     }
     for map in &func.maps_used {
-        check_map_ref(map, "maps_used", &mut map_kinds, &mut errors);
+        check_map_ref(map, "maps_used", &mut map_kinds, errors);
     }
 
     for block in &func.blocks {
@@ -138,7 +173,8 @@ fn validate_mir_references_with_options(
                 &block_ids,
                 &mut map_kinds,
                 total_vregs,
-                &mut errors,
+                options.subfn_count,
+                errors,
             );
         }
         if !is_block_terminator(&block.terminator) {
@@ -153,14 +189,9 @@ fn validate_mir_references_with_options(
             &block_ids,
             &mut map_kinds,
             total_vregs,
-            &mut errors,
+            options.subfn_count,
+            errors,
         );
-    }
-
-    if errors.is_empty() {
-        Ok(())
-    } else {
-        Err(errors)
     }
 }
 
@@ -170,6 +201,7 @@ fn check_inst(
     block_ids: &HashSet<BlockId>,
     map_kinds: &mut HashMap<String, MapKind>,
     total_vregs: usize,
+    subfn_count: Option<usize>,
     errors: &mut Vec<MirIntegrityError>,
 ) {
     if let Some(dst) = inst.def() {
@@ -208,12 +240,14 @@ fn check_inst(
         }
         MirInst::CallKfunc { .. }
         | MirInst::LoadGlobal { .. }
-        | MirInst::LoadSubprogram { .. }
         | MirInst::Histogram { .. }
         | MirInst::StartTimer
         | MirInst::StopTimer { .. }
         | MirInst::EmitEvent { .. }
         | MirInst::EmitRecord { .. } => {}
+        MirInst::LoadSubprogram { subfn, .. } => {
+            check_subfunction(*subfn, subfn_count, errors);
+        }
         MirInst::LoadMapFd { map, .. }
         | MirInst::MapLookup { map, .. }
         | MirInst::MapUpdate { map, .. }
@@ -276,7 +310,10 @@ fn check_inst(
                 check_block(*pred, "phi predecessor", block_ids, errors);
             }
         }
-        MirInst::CallSubfn { .. } | MirInst::Placeholder => {}
+        MirInst::CallSubfn { subfn, .. } => {
+            check_subfunction(*subfn, subfn_count, errors);
+        }
+        MirInst::Placeholder => {}
         MirInst::Jump { target } => {
             check_block(*target, "jump target", block_ids, errors);
         }
@@ -373,6 +410,22 @@ fn check_param_index(
         errors.push(MirIntegrityError::new(format!(
             "{context} references out-of-range parameter {} (valid range 0..{})",
             idx, param_count
+        )));
+    }
+}
+
+fn check_subfunction(
+    subfn: SubfunctionId,
+    subfn_count: Option<usize>,
+    errors: &mut Vec<MirIntegrityError>,
+) {
+    let Some(subfn_count) = subfn_count else {
+        return;
+    };
+    if (subfn.0 as usize) >= subfn_count {
+        errors.push(MirIntegrityError::new(format!(
+            "subfunction reference {} is out of range (valid range 0..{})",
+            subfn.0, subfn_count
         )));
     }
 }

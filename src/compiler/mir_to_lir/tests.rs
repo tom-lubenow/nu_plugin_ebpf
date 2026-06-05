@@ -177,6 +177,63 @@ fn test_lower_rejects_missing_subfunction_block_target() {
 }
 
 #[test]
+fn test_lower_rejects_out_of_range_call_subfunction_reference() {
+    let mut main = MirFunction::new();
+    let entry = main.alloc_block();
+    main.entry = entry;
+    let dst = main.alloc_vreg();
+    main.block_mut(entry).instructions.push(MirInst::CallSubfn {
+        dst,
+        subfn: SubfunctionId(0),
+        args: Vec::new(),
+    });
+    main.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let program = MirProgram {
+        main,
+        subfunctions: vec![],
+    };
+
+    let err = lower_mir_to_lir_checked(&program)
+        .expect_err("expected out-of-range subfunction reference lowering rejection");
+    match err {
+        CompileError::UnsupportedInstruction(msg) => {
+            assert!(msg.contains("subfunction reference 0 is out of range"));
+        }
+        other => panic!("expected unsupported-instruction error, got {other}"),
+    }
+}
+
+#[test]
+fn test_lower_rejects_out_of_range_load_subprogram_reference() {
+    let mut main = MirFunction::new();
+    let entry = main.alloc_block();
+    main.entry = entry;
+    let dst = main.alloc_vreg();
+    main.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadSubprogram {
+            dst,
+            subfn: SubfunctionId(0),
+        });
+    main.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let program = MirProgram {
+        main,
+        subfunctions: vec![],
+    };
+
+    let err = lower_mir_to_lir_checked(&program)
+        .expect_err("expected out-of-range subprogram reference lowering rejection");
+    match err {
+        CompileError::UnsupportedInstruction(msg) => {
+            assert!(msg.contains("subfunction reference 0 is out of range"));
+        }
+        other => panic!("expected unsupported-instruction error, got {other}"),
+    }
+}
+
+#[test]
 fn test_lower_rejects_unknown_kfunc() {
     let mut main = MirFunction::new();
     let entry = main.alloc_block();
