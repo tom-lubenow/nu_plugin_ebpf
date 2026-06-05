@@ -5000,36 +5000,76 @@ impl<'a> HirToMirLowering<'a> {
                         .unwrap_or(MirValue::VReg(idx_vreg));
                     let mut handled_list_get = false;
                     if let Some(meta) = input_meta {
-                        if let Some(values) = input_reg.and_then(|reg| {
+                        if let Some((builder_reg, values)) = input_reg.and_then(|reg| {
                             self.compile_time_only_list_builder_values(reg, input_vreg)
+                                .map(|values| (reg, values.to_vec()))
                         }) {
-                            let MirValue::Const(raw_idx) = idx else {
-                                return Err(CompileError::UnsupportedInstruction(
-                                    "get index must be compile-time constant for compile-time known fixed lists in eBPF"
-                                        .into(),
-                                ));
-                            };
-                            if raw_idx < 0 {
-                                return Err(CompileError::UnsupportedInstruction(
-                                    "get index must be non-negative for compile-time known fixed lists in eBPF"
-                                        .into(),
-                                ));
-                            }
-                            let idx_usize = usize::try_from(raw_idx).map_err(|_| {
-                                CompileError::UnsupportedInstruction(
-                                    "get index is too large for compile-time known fixed-list lowering"
-                                        .into(),
-                                )
-                            })?;
-                            let projected = values.get(idx_usize).cloned().ok_or_else(|| {
-                                CompileError::UnsupportedInstruction(format!(
-                                    "get index {raw_idx} is out of bounds for compile-time known fixed list with length {} in eBPF",
-                                    values.len()
-                                ))
-                            })?;
+                            if let MirValue::Const(raw_idx) = idx {
+                                if raw_idx < 0 {
+                                    return Err(CompileError::UnsupportedInstruction(
+                                        "get index must be non-negative for compile-time known fixed lists in eBPF"
+                                            .into(),
+                                    ));
+                                }
+                                let idx_usize = usize::try_from(raw_idx).map_err(|_| {
+                                    CompileError::UnsupportedInstruction(
+                                        "get index is too large for compile-time known fixed-list lowering"
+                                            .into(),
+                                    )
+                                })?;
+                                let projected = values.get(idx_usize).cloned().ok_or_else(|| {
+                                    CompileError::UnsupportedInstruction(format!(
+                                        "get index {raw_idx} is out of bounds for compile-time known fixed list with length {} in eBPF",
+                                        values.len()
+                                    ))
+                                })?;
 
-                            self.lower_compile_time_list_transform_result(src_dst, &projected)?;
-                            handled_list_get = true;
+                                self.lower_compile_time_list_transform_result(src_dst, &projected)?;
+                                handled_list_get = true;
+                            } else {
+                                let materialized =
+                                    nu_protocol::Value::list(values.clone(), Span::unknown());
+                                if !crate::compiler::hir::supports_numeric_constant_list(
+                                    &materialized,
+                                ) {
+                                    return Err(CompileError::UnsupportedInstruction(
+                                        "get index must be compile-time constant for compile-time known fixed lists in eBPF"
+                                            .into(),
+                                    ));
+                                }
+
+                                self.assign_fresh_vreg(builder_reg);
+                                self.lower_constant_value(builder_reg, &materialized)?;
+                                input_vreg = self.get_vreg(builder_reg);
+                                if builder_reg == src_dst {
+                                    self.reg_map.insert(src_dst.get(), result_vreg);
+                                }
+                                let meta = self.get_metadata(builder_reg).cloned().ok_or_else(|| {
+                                    CompileError::UnsupportedInstruction(
+                                        "get could not materialize compile-time known numeric list in eBPF"
+                                            .into(),
+                                    )
+                                })?;
+                                if meta.list_buffer.is_none() {
+                                    return Err(CompileError::UnsupportedInstruction(
+                                        "get could not materialize compile-time known numeric list in eBPF"
+                                            .into(),
+                                    ));
+                                }
+
+                                self.emit(MirInst::ListGet {
+                                    dst: result_vreg,
+                                    list: input_vreg,
+                                    idx: idx.clone(),
+                                });
+                                self.vreg_type_hints.insert(result_vreg, MirType::I64);
+
+                                self.reset_call_result_metadata(src_dst);
+                                let out_meta = self.get_or_create_metadata(src_dst);
+                                out_meta.field_type = Some(MirType::I64);
+                                out_meta.constant_value = None;
+                                handled_list_get = true;
+                            }
                         } else if let Some((_slot, max_len)) = meta.list_buffer {
                             if let MirValue::Const(raw_idx) = &idx {
                                 let raw_idx = *raw_idx;

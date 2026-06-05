@@ -393,6 +393,84 @@ fn make_numeric_list_call_then_get_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_int_list_builder_transform_runtime_get_program(
+    transform_decl: DeclId,
+    random_decl: DeclId,
+    get_decl: DeclId,
+    values: &[i64],
+    in_place_get: bool,
+) -> HirProgram {
+    let mut stmts = vec![HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List {
+            capacity: values.len(),
+        },
+    }];
+
+    let mut next_reg = 2;
+    for value in values {
+        let item_reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadLiteral {
+            dst: item_reg,
+            lit: HirLiteral::Int(*value),
+        });
+        stmts.push(HirStmt::ListPush {
+            src_dst: RegId::new(0),
+            item: item_reg,
+        });
+    }
+
+    stmts.push(HirStmt::Call {
+        decl_id: transform_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let index_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::Call {
+        decl_id: random_decl,
+        src_dst: index_reg,
+        args: HirCallArgs::default(),
+    });
+
+    let result_reg = if in_place_get {
+        RegId::new(1)
+    } else {
+        let reg = RegId::new(next_reg);
+        next_reg += 1;
+        reg
+    };
+    stmts.push(HirStmt::Call {
+        decl_id: get_decl,
+        src_dst: result_reg,
+        args: HirCallArgs {
+            positional: vec![index_reg],
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: result_reg },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: next_reg,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_numeric_list_call_then_length_program(
     command_decl: DeclId,
     length_decl: DeclId,
@@ -8537,6 +8615,107 @@ fn test_lower_get_find_compact_on_float_literal_list_builder_feed_metadata_consu
         compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
             .unwrap_or_else(|err| panic!("{command_name} float-list output should compile: {err}"));
     }
+}
+
+#[test]
+fn test_lower_runtime_get_on_metadata_only_integer_list_builder_materializes_list() {
+    let reverse_decl = DeclId::new(10001);
+    let random_decl = DeclId::new(10002);
+    let get_decl = DeclId::new(10003);
+    let hir = make_int_list_builder_transform_runtime_get_program(
+        reverse_decl,
+        random_decl,
+        get_decl,
+        &[10, 20, 30],
+        false,
+    );
+    let decl_names = HashMap::from([
+        (reverse_decl, "reverse".to_string()),
+        (random_decl, "random int".to_string()),
+        (get_decl, "get".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("runtime get should materialize metadata-only integer list builders");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::ListGet {
+                idx: MirValue::VReg(_),
+                ..
+            }
+        )),
+        "expected runtime get to read from a materialized list with a runtime index"
+    );
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::StoreSlot {
+                offset: 0,
+                val: MirValue::Const(3),
+                ty: MirType::U64,
+                ..
+            }
+        )),
+        "expected metadata-only integer list to be materialized with the known length"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("runtime get on materialized integer list should compile through codegen");
+
+    let in_place_hir = make_int_list_builder_transform_runtime_get_program(
+        reverse_decl,
+        random_decl,
+        get_decl,
+        &[10, 20, 30],
+        true,
+    );
+    let in_place_result = lower_hir_to_mir_with_hints(
+        &in_place_hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("in-place runtime get should preserve the scalar result register mapping");
+    let return_vreg = in_place_result
+        .program
+        .main
+        .blocks
+        .iter()
+        .find_map(|block| match block.terminator {
+            MirInst::Return {
+                val: Some(MirValue::VReg(vreg)),
+            } => Some(vreg),
+            _ => None,
+        })
+        .expect("expected in-place get to return a vreg");
+    assert_eq!(
+        in_place_result.type_hints.main.get(&return_vreg),
+        Some(&MirType::I64),
+        "expected in-place runtime get to return the scalar result vreg, not the materialized list"
+    );
+    compile_mir_to_ebpf_with_hints(
+        &in_place_result.program,
+        None,
+        Some(&in_place_result.type_hints),
+    )
+    .expect("in-place runtime get on materialized integer list should compile through codegen");
 }
 
 #[test]
