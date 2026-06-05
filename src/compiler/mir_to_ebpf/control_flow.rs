@@ -44,8 +44,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                 }
             }
             Some(MirValue::Const(c)) => {
-                self.instructions
-                    .push(EbpfInsn::mov64_imm(EbpfReg::R0, *c as i32));
+                self.emit_load_const(EbpfReg::R0, *c);
             }
             Some(MirValue::StackSlot(_)) => {
                 return Err(CompileError::UnsupportedInstruction(

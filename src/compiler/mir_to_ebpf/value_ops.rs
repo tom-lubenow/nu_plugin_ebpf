@@ -5,7 +5,7 @@ fn record_store_requires_pointer(ty: &MirType) -> bool {
 }
 
 impl<'a> MirToEbpfCompiler<'a> {
-    fn emit_load_const(&mut self, dst: EbpfReg, value: i64) {
+    pub(super) fn emit_load_const(&mut self, dst: EbpfReg, value: i64) {
         if let Ok(imm) = i32::try_from(value) {
             self.instructions.push(EbpfInsn::mov64_imm(dst, imm));
         } else {
@@ -360,8 +360,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                 }
             }
             MirValue::Const(c) => {
-                self.instructions
-                    .push(EbpfInsn::mov64_imm(dst_reg, *c as i32));
+                self.emit_load_const(dst_reg, *c);
             }
             MirValue::StackSlot(_) => {
                 return Err(CompileError::UnsupportedInstruction(

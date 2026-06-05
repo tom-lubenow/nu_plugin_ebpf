@@ -299,15 +299,7 @@ impl<'a> MirToEbpfCompiler<'a> {
         match value {
             MirValue::VReg(v) => self.ensure_reg(*v),
             MirValue::Const(c) => {
-                if *c >= i32::MIN as i64 && *c <= i32::MAX as i64 {
-                    self.instructions
-                        .push(EbpfInsn::mov64_imm(EbpfReg::R0, *c as i32));
-                } else {
-                    return Err(CompileError::UnsupportedInstruction(format!(
-                        "constant {} too large for store",
-                        c
-                    )));
-                }
+                self.emit_load_const(EbpfReg::R0, *c);
                 Ok(EbpfReg::R0)
             }
             MirValue::StackSlot(slot) => {

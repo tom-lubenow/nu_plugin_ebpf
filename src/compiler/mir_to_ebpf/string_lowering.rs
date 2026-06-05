@@ -109,9 +109,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                 let val_reg = match val {
                     MirValue::VReg(v) => self.ensure_reg(*v)?,
                     MirValue::Const(c) => {
-                        // Load constant into R0
-                        self.instructions
-                            .push(EbpfInsn::mov64_imm(EbpfReg::R0, *c as i32));
+                        self.emit_load_const(EbpfReg::R0, *c);
                         EbpfReg::R0
                     }
                     MirValue::StackSlot(_) => {

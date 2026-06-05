@@ -620,6 +620,182 @@ fn test_binop_large_rhs_constant_materializes_register_operand() {
 }
 
 #[test]
+fn test_return_large_constant_materializes_full_64_bits() {
+    let mut func = LirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    func.block_mut(entry).terminator = LirInst::Return {
+        val: Some(MirValue::Const(0x1_0000_0000)),
+    };
+
+    let program = LirProgram::new(func);
+    let mut compiler = MirToEbpfCompiler::new(&program, None);
+    compiler
+        .prepare_function_state(
+            &program.main,
+            compiler.available_regs.clone(),
+            program.main.precolored.clone(),
+        )
+        .expect("large-constant return program should prepare");
+    compiler
+        .compile_function(&program.main)
+        .expect("large-constant return program should compile");
+
+    assert!(
+        compiler.instructions.windows(2).any(|pair| {
+            pair[0].opcode == opcode::LD_DW_IMM
+                && pair[0].dst_reg == EbpfReg::R0.as_u8()
+                && pair[0].imm == 0
+                && pair[1].opcode == 0
+                && pair[1].imm == 1
+        }),
+        "large return constants should be materialized as full 64-bit immediates"
+    );
+}
+
+#[test]
+fn test_unary_large_constant_materializes_full_64_bits() {
+    let mut func = LirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let dst = func.alloc_vreg();
+    func.precolored.insert(dst, EbpfReg::R2);
+
+    func.block_mut(entry).instructions.push(LirInst::UnaryOp {
+        dst,
+        op: UnaryOpKind::BitNot,
+        src: MirValue::Const(0x1_0000_0000),
+    });
+    func.block_mut(entry).terminator = LirInst::Return {
+        val: Some(MirValue::VReg(dst)),
+    };
+
+    let program = LirProgram::new(func);
+    let mut compiler = MirToEbpfCompiler::new(&program, None);
+    compiler
+        .prepare_function_state(
+            &program.main,
+            compiler.available_regs.clone(),
+            program.main.precolored.clone(),
+        )
+        .expect("large-constant unary program should prepare");
+    compiler
+        .compile_function(&program.main)
+        .expect("large-constant unary program should compile");
+
+    assert!(
+        compiler.instructions.windows(2).any(|pair| {
+            pair[0].opcode == opcode::LD_DW_IMM
+                && pair[0].dst_reg == EbpfReg::R2.as_u8()
+                && pair[0].imm == 0
+                && pair[1].opcode == 0
+                && pair[1].imm == 1
+        }),
+        "large unary constants should be materialized as full 64-bit immediates"
+    );
+}
+
+#[test]
+fn test_store_large_constant_materializes_full_64_bits() {
+    let mut func = LirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let ptr = func.alloc_vreg();
+    func.precolored.insert(ptr, EbpfReg::R1);
+
+    func.block_mut(entry).instructions.push(LirInst::Store {
+        ptr,
+        offset: 0,
+        val: MirValue::Const(0x1_0000_0000),
+        ty: MirType::U64,
+    });
+    func.block_mut(entry).terminator = LirInst::Return { val: None };
+
+    let program = LirProgram::new(func);
+    let mut compiler = MirToEbpfCompiler::new(&program, None);
+    compiler
+        .prepare_function_state(
+            &program.main,
+            compiler.available_regs.clone(),
+            program.main.precolored.clone(),
+        )
+        .expect("large-constant store program should prepare");
+    compiler
+        .compile_function(&program.main)
+        .expect("large-constant store program should compile");
+
+    assert!(
+        compiler.instructions.windows(2).any(|pair| {
+            pair[0].opcode == opcode::LD_DW_IMM
+                && pair[0].dst_reg == EbpfReg::R0.as_u8()
+                && pair[0].imm == 0
+                && pair[1].opcode == 0
+                && pair[1].imm == 1
+        }),
+        "large store constants should be materialized as full 64-bit immediates"
+    );
+    assert!(
+        compiler.instructions.iter().any(|insn| {
+            insn.opcode == opcode::BPF_STX | opcode::BPF_DW | opcode::BPF_MEM
+                && insn.dst_reg == EbpfReg::R1.as_u8()
+                && insn.src_reg == EbpfReg::R0.as_u8()
+        }),
+        "large store constants should be stored from the materialized register"
+    );
+}
+
+#[test]
+fn test_string_append_integer_large_constant_materializes_full_64_bits() {
+    let mut func = LirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let slot = func.alloc_stack_slot(64, 8, StackSlotKind::StringBuffer);
+    let len = func.alloc_vreg();
+    func.precolored.insert(len, EbpfReg::R6);
+
+    func.block_mut(entry).instructions.push(LirInst::Copy {
+        dst: len,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry)
+        .instructions
+        .push(LirInst::StringAppend {
+            dst_buffer: slot,
+            dst_len: len,
+            val: MirValue::Const(0x1_0000_0000),
+            val_type: StringAppendType::Integer,
+        });
+    func.block_mut(entry).terminator = LirInst::Return { val: None };
+
+    let program = LirProgram::new(func);
+    let mut compiler = MirToEbpfCompiler::new(&program, None);
+    compiler
+        .prepare_function_state(
+            &program.main,
+            compiler.available_regs.clone(),
+            program.main.precolored.clone(),
+        )
+        .expect("large-constant string append program should prepare");
+    compiler
+        .compile_function(&program.main)
+        .expect("large-constant string append program should compile");
+
+    assert!(
+        compiler.instructions.windows(2).any(|pair| {
+            pair[0].opcode == opcode::LD_DW_IMM
+                && pair[0].dst_reg == EbpfReg::R0.as_u8()
+                && pair[0].imm == 0
+                && pair[1].opcode == 0
+                && pair[1].imm == 1
+        }),
+        "large string append integer constants should be materialized as full 64-bit immediates"
+    );
+}
+
+#[test]
 fn test_binop_codegen_does_not_spill_r0_as_temp() {
     let mut func = LirFunction::new();
     let entry = func.alloc_block();
