@@ -3767,6 +3767,369 @@ fn test_map_leading_annotated_mut_globals_rejects_constant_bits_not_invalid_widt
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_bits_shift_int_initializers() {
+    let cases = [
+        (
+            "{|| mut out: int = (4 | bits shl 1); $out }",
+            8,
+            "bits shl should fold auto-width integer input",
+        ),
+        (
+            "{|| mut out: int = (-8 | bits shr 1 --signed); $out }",
+            -4,
+            "bits shr --signed should fold signed integer input",
+        ),
+        (
+            "{|| mut out: int = (255 | bits shr 1 --number-bytes 1); $out }",
+            127,
+            "bits shr --number-bytes should fold fixed-width integer input",
+        ),
+        (
+            "{|| mut out: int = (127 | bits shl 1 --number-bytes 1 --signed); $out }",
+            -2,
+            "bits shl --signed --number-bytes should sign-extend fixed-width output",
+        ),
+    ];
+
+    for (source, expected, message) in cases {
+        let ir_block = IrBlock {
+            instructions: vec![
+                Instruction::StoreVariable {
+                    var_id: VarId::new(11),
+                    src: RegId::new(0),
+                },
+                Instruction::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: VarId::new(11),
+                },
+                Instruction::Return { src: RegId::new(0) },
+            ],
+            spans: vec![Span::test_data(); 3],
+            data: Vec::<u8>::new().into(),
+            ast: vec![None; 3],
+            comments: vec!["let".into(), "".into(), "".into()],
+            register_count: 1,
+            file_count: 0,
+        };
+
+        let globals =
+            super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+                .unwrap_or_else(|err| panic!("{message}: {err:?}"));
+
+        assert_eq!(globals.len(), 1);
+        assert_eq!(
+            globals[0]
+                .initial_value
+                .as_int()
+                .expect("bits shift should produce an integer"),
+            expected,
+            "{message}"
+        );
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_bits_rotate_int_initializers() {
+    let cases = [
+        (
+            "{|| mut out: int = (1 | bits rol 1 --signed); $out }",
+            2,
+            "bits rol --signed should fold signed integer input",
+        ),
+        (
+            "{|| mut out: int = (1 | bits ror 1 --signed); $out }",
+            i64::MIN,
+            "bits ror --signed should rotate across the signed 64-bit width",
+        ),
+        (
+            "{|| mut out: int = (1 | bits ror 64 --signed); $out }",
+            1,
+            "bits ror --signed should accept a full-width rotate",
+        ),
+        (
+            "{|| mut out: int = (1 | bits ror 1 --number-bytes 1 --signed); $out }",
+            -128,
+            "bits ror --signed --number-bytes should sign-extend fixed-width output",
+        ),
+    ];
+
+    for (source, expected, message) in cases {
+        let ir_block = IrBlock {
+            instructions: vec![
+                Instruction::StoreVariable {
+                    var_id: VarId::new(11),
+                    src: RegId::new(0),
+                },
+                Instruction::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: VarId::new(11),
+                },
+                Instruction::Return { src: RegId::new(0) },
+            ],
+            spans: vec![Span::test_data(); 3],
+            data: Vec::<u8>::new().into(),
+            ast: vec![None; 3],
+            comments: vec!["let".into(), "".into(), "".into()],
+            register_count: 1,
+            file_count: 0,
+        };
+
+        let globals =
+            super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+                .unwrap_or_else(|err| panic!("{message}: {err:?}"));
+
+        assert_eq!(globals.len(), 1);
+        assert_eq!(
+            globals[0]
+                .initial_value
+                .as_int()
+                .expect("bits rotate should produce an integer"),
+            expected,
+            "{message}"
+        );
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_bits_shift_rotate_binary_initializers()
+{
+    let cases = [
+        (
+            "{|| mut out: binary = (0x[4F F4] | bits shl 4); $out }",
+            vec![0xFF, 0x40],
+            "bits shl should fold binary input",
+        ),
+        (
+            "{|| mut out: binary = (0x[4F F4] | bits shr 4); $out }",
+            vec![0x04, 0xFF],
+            "bits shr should fold binary input",
+        ),
+        (
+            "{|| mut out: binary = (0x[FF BB 03] | bits ror 10); $out }",
+            vec![0xC0, 0xFF, 0xEE],
+            "bits ror should fold binary input",
+        ),
+    ];
+
+    for (source, expected, message) in cases {
+        let ir_block = IrBlock {
+            instructions: vec![
+                Instruction::StoreVariable {
+                    var_id: VarId::new(11),
+                    src: RegId::new(0),
+                },
+                Instruction::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: VarId::new(11),
+                },
+                Instruction::Return { src: RegId::new(0) },
+            ],
+            spans: vec![Span::test_data(); 3],
+            data: Vec::<u8>::new().into(),
+            ast: vec![None; 3],
+            comments: vec!["let".into(), "".into(), "".into()],
+            register_count: 1,
+            file_count: 0,
+        };
+
+        let globals =
+            super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+                .unwrap_or_else(|err| panic!("{message}: {err:?}"));
+
+        assert_eq!(globals.len(), 1);
+        assert_eq!(
+            globals[0]
+                .initial_value
+                .as_binary()
+                .expect("bits shift/rotate should produce binary"),
+            expected.as_slice(),
+            "{message}"
+        );
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_bits_shift_rotate_list_initializers() {
+    let cases = [
+        (
+            "{|| mut out: list<int> = ([4, 3, 2] | bits shl 1); $out }",
+            vec![
+                Value::int(8, Span::test_data()),
+                Value::int(6, Span::test_data()),
+                Value::int(4, Span::test_data()),
+            ],
+            "bits shl should fold integer list input",
+        ),
+        (
+            "{|| mut out: list<int> = ([1, 2] | bits ror 1 --signed); $out }",
+            vec![
+                Value::int(i64::MIN, Span::test_data()),
+                Value::int(1, Span::test_data()),
+            ],
+            "bits ror --signed should fold integer list input",
+        ),
+        (
+            "{|| mut out: list<binary> = ([0x[4F F4], 0x[12]] | bits rol 4); $out }",
+            vec![
+                Value::binary(vec![0xFF, 0x44], Span::test_data()),
+                Value::binary(vec![0x21], Span::test_data()),
+            ],
+            "bits rol should fold binary list input",
+        ),
+    ];
+
+    for (source, expected, message) in cases {
+        let ir_block = IrBlock {
+            instructions: vec![
+                Instruction::StoreVariable {
+                    var_id: VarId::new(11),
+                    src: RegId::new(0),
+                },
+                Instruction::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: VarId::new(11),
+                },
+                Instruction::Return { src: RegId::new(0) },
+            ],
+            spans: vec![Span::test_data(); 3],
+            data: Vec::<u8>::new().into(),
+            ast: vec![None; 3],
+            comments: vec!["let".into(), "".into(), "".into()],
+            register_count: 1,
+            file_count: 0,
+        };
+
+        let globals =
+            super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+                .unwrap_or_else(|err| panic!("{message}: {err:?}"));
+
+        assert_eq!(globals.len(), 1);
+        match &globals[0].initial_value {
+            Value::List { vals, .. } => assert_eq!(vals, &expected, "{message}"),
+            other => panic!("expected list initializer, got {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_let_bound_constant_bits_shift_rotate_args() {
+    let source = "{|| let count = 1; let width = 1; mut out: int = (127 | bits shl $count --number-bytes $width --signed); $out }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(10),
+                src: RegId::new(0),
+            },
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(1),
+            },
+            Instruction::StoreVariable {
+                var_id: VarId::new(12),
+                src: RegId::new(2),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(12),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 5],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 5],
+        comments: vec![
+            "let".into(),
+            "let".into(),
+            "let".into(),
+            "".into(),
+            "".into(),
+        ],
+        register_count: 3,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("let-bound constant bits shift/rotate args should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(
+        globals[0]
+            .initial_value
+            .as_int()
+            .expect("bits shl should produce an integer"),
+        -2
+    );
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_root_external_constant_bits_shift_rotate() {
+    let source = "{|| mut out: int = (4 | ^bits shl 1); $out }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("root external constant bits shift/rotate should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(
+        globals[0]
+            .initial_value
+            .as_int()
+            .expect("bits shl should produce an integer"),
+        8
+    );
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_rejects_constant_bits_shift_rotate_invalid_count() {
+    let source = "{|| mut out: int = (1 | bits ror 65 --signed); $out }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let err = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect_err("invalid bits rotate count should be rejected");
+
+    assert!(
+        format!("{err:?}").contains("rotate count from 0 through 64"),
+        "unexpected error: {err:?}"
+    );
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_constant_char_initializers() {
     let cases = [
         (

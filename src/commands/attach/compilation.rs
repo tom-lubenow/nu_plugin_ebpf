@@ -780,6 +780,16 @@ fn eval_supported_constant_call(
                 eval_supported_constant_bits_not_call_mode(working_set, &call.arguments, env, span)?;
             eval_supported_constant_bits_not(cmd_name, input, mode, span)
         }
+        "bits shl" | "bits shr" | "bits rol" | "bits ror" => {
+            let args = eval_supported_constant_bits_shift_rotate_call_args(
+                working_set,
+                cmd_name,
+                &call.arguments,
+                env,
+                span,
+            )?;
+            eval_supported_constant_bits_shift_rotate(cmd_name, input, args, span)
+        }
         "char" => {
             let output =
                 eval_supported_constant_char_call_args(working_set, &call.arguments, env, span)?;
@@ -1201,6 +1211,16 @@ fn eval_supported_constant_external_call(
             let mode =
                 eval_supported_constant_bits_not_external_mode(working_set, args, env, span)?;
             eval_supported_constant_bits_not(cmd_name, input, mode, span)
+        }
+        "bits shl" | "bits shr" | "bits rol" | "bits ror" => {
+            let args = eval_supported_constant_bits_shift_rotate_external_args(
+                working_set,
+                cmd_name,
+                args,
+                env,
+                span,
+            )?;
+            eval_supported_constant_bits_shift_rotate(cmd_name, input, args, span)
         }
         "char" => {
             let output = eval_supported_constant_char_external_args(working_set, args, env, span)?;
@@ -4464,6 +4484,871 @@ fn eval_supported_constant_bits_not_binary_output(input: &[u8]) -> Vec<u8> {
     input.iter().map(|byte| !byte).collect()
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ConstantBitsShiftMode {
+    SignedI64,
+    UnsignedI64,
+    FixedWidth { bits: i64, mask: i64, sign_bit: i64 },
+    SignedFixedWidth { bits: i64, mask: i64, sign_bit: i64 },
+}
+
+#[derive(Clone, Copy)]
+struct ConstantBitsShiftRotateArgs {
+    count: i64,
+    signed: bool,
+    number_bytes: Option<(i64, Span)>,
+}
+
+#[derive(Clone, Copy)]
+struct ConstantBitsShiftSpec {
+    count: i64,
+    mode: ConstantBitsShiftMode,
+}
+
+#[derive(Clone, Copy)]
+struct ConstantBitsRotateSpec {
+    count: i64,
+    mode: ConstantBitsShiftMode,
+}
+
+fn eval_supported_constant_bits_shift_rotate_call_args(
+    working_set: &StateWorkingSet,
+    cmd_name: &str,
+    args: &[nu_protocol::ast::Argument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<ConstantBitsShiftRotateArgs, LabeledError> {
+    let mut count_expr = None;
+    let mut signed = false;
+    let mut number_bytes = None;
+    for arg in args {
+        match arg {
+            nu_protocol::ast::Argument::Positional(expr)
+            | nu_protocol::ast::Argument::Unknown(expr) => {
+                if count_expr.replace(expr).is_some() {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            format!(
+                                "`{cmd_name}` requires exactly one count argument in compile-time global initializers"
+                            ),
+                            arg.span(),
+                        ));
+                }
+            }
+            nu_protocol::ast::Argument::Named(named) => match named.0.item.as_str() {
+                "signed" | "s" => {
+                    if named.2.is_some() {
+                        return Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
+                        .with_label(
+                            format!(
+                                "`{cmd_name} --signed` cannot receive a value in compile-time global initializers"
+                            ),
+                            arg.span(),
+                        ));
+                    }
+                    signed = true;
+                }
+                "number-bytes" | "n" => {
+                    let Some(expr) = named.2.as_ref() else {
+                        return Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
+                        .with_label(
+                            format!(
+                                "`{cmd_name} --number-bytes` requires a value in compile-time global initializers"
+                            ),
+                            arg.span(),
+                        ));
+                    };
+                    let next = eval_supported_constant_bits_shift_rotate_number_bytes_arg(
+                        working_set,
+                        cmd_name,
+                        expr,
+                        env,
+                    )?;
+                    if number_bytes.replace((next, expr.span)).is_some() {
+                        return Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
+                        .with_label(
+                            format!(
+                                "`{cmd_name}` accepts only one --number-bytes value in compile-time global initializers"
+                            ),
+                            arg.span(),
+                        ));
+                    }
+                }
+                _ => {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            format!(
+                                "`{cmd_name}` supports only --signed and --number-bytes in compile-time global initializers"
+                            ),
+                            arg.span(),
+                        ));
+                }
+            },
+            nu_protocol::ast::Argument::Spread(expr) => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        format!(
+                            "`{cmd_name}` arguments cannot use spread syntax in compile-time global initializers"
+                        ),
+                        expr.span,
+                    ));
+            }
+        }
+    }
+
+    let Some(count_expr) = count_expr else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`{cmd_name}` requires exactly one count argument in compile-time global initializers"
+                ),
+                span,
+            ),
+        );
+    };
+    let count = eval_supported_constant_bits_shift_rotate_count_arg(
+        working_set,
+        cmd_name,
+        count_expr,
+        env,
+    )?;
+
+    Ok(ConstantBitsShiftRotateArgs {
+        count,
+        signed,
+        number_bytes,
+    })
+}
+
+fn eval_supported_constant_bits_shift_rotate_external_args(
+    working_set: &StateWorkingSet,
+    cmd_name: &str,
+    args: &[ExternalArgument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<ConstantBitsShiftRotateArgs, LabeledError> {
+    let mut count_expr = None;
+    let mut signed = false;
+    let mut number_bytes = None;
+    let mut index = 0;
+    while index < args.len() {
+        let arg = &args[index];
+        let ExternalArgument::Regular(expr) = arg else {
+            return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                .with_label(
+                    format!(
+                        "`{cmd_name}` arguments cannot use spread syntax in compile-time global initializers"
+                    ),
+                    arg.expr().span,
+                ));
+        };
+
+        let value = eval_supported_constant_value_with_env(working_set, expr, env)?;
+        match value {
+            Value::String { val, .. } | Value::Glob { val, .. }
+                if val == "--signed" || val == "-s" =>
+            {
+                signed = true;
+            }
+            Value::String { val, .. } | Value::Glob { val, .. }
+                if val == "--number-bytes" || val == "-n" =>
+            {
+                index += 1;
+                let Some(next_arg) = args.get(index) else {
+                    return Err(
+                        LabeledError::new("Unsupported annotated mutable global initializer")
+                            .with_label(
+                                format!(
+                                    "`{cmd_name} --number-bytes` requires a value in compile-time global initializers"
+                                ),
+                                expr.span,
+                            ),
+                    );
+                };
+                let ExternalArgument::Regular(next_expr) = next_arg else {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            format!(
+                                "`{cmd_name} --number-bytes` value cannot use spread syntax in compile-time global initializers"
+                            ),
+                            next_arg.expr().span,
+                        ));
+                };
+                let next = eval_supported_constant_bits_shift_rotate_number_bytes_arg(
+                    working_set,
+                    cmd_name,
+                    next_expr,
+                    env,
+                )?;
+                if number_bytes.replace((next, next_expr.span)).is_some() {
+                    return Err(LabeledError::new(
+                        "Unsupported annotated mutable global initializer",
+                    )
+                    .with_label(
+                        format!(
+                            "`{cmd_name}` accepts only one --number-bytes value in compile-time global initializers"
+                        ),
+                        next_expr.span,
+                    ));
+                }
+            }
+            Value::String { val, .. } | Value::Glob { val, .. }
+                if val.starts_with("--number-bytes=") =>
+            {
+                let raw = val
+                    .split_once('=')
+                    .map(|(_, value)| value)
+                    .expect("starts_with --number-bytes= prechecked");
+                let next = raw.parse::<i64>().map_err(|_| {
+                    LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            format!(
+                                "`{cmd_name} --number-bytes` requires a compile-time integer value in global initializers"
+                            ),
+                            expr.span,
+                        )
+                })?;
+                if number_bytes.replace((next, expr.span)).is_some() {
+                    return Err(LabeledError::new(
+                        "Unsupported annotated mutable global initializer",
+                    )
+                    .with_label(
+                        format!(
+                            "`{cmd_name}` accepts only one --number-bytes value in compile-time global initializers"
+                        ),
+                        expr.span,
+                    ));
+                }
+            }
+            Value::String { val, .. } | Value::Glob { val, .. } if val.starts_with('-') => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        format!(
+                            "`{cmd_name}` supports only --signed and --number-bytes in compile-time global initializers"
+                        ),
+                        expr.span,
+                    ));
+            }
+            _ => {
+                if count_expr.replace(expr).is_some() {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            format!(
+                                "`{cmd_name}` requires exactly one count argument in compile-time global initializers"
+                            ),
+                            expr.span,
+                        ));
+                }
+            }
+        }
+        index += 1;
+    }
+
+    let Some(count_expr) = count_expr else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`{cmd_name}` requires exactly one count argument in compile-time global initializers"
+                ),
+                span,
+            ),
+        );
+    };
+    let count = eval_supported_constant_bits_shift_rotate_count_arg(
+        working_set,
+        cmd_name,
+        count_expr,
+        env,
+    )?;
+
+    Ok(ConstantBitsShiftRotateArgs {
+        count,
+        signed,
+        number_bytes,
+    })
+}
+
+fn eval_supported_constant_bits_shift_rotate_count_arg(
+    working_set: &StateWorkingSet,
+    cmd_name: &str,
+    expr: &nu_protocol::ast::Expression,
+    env: &HashMap<nu_protocol::VarId, Value>,
+) -> Result<i64, LabeledError> {
+    match eval_supported_constant_value_with_env(working_set, expr, env)? {
+        Value::Int { val, .. } => Ok(val),
+        other => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`{cmd_name}` count argument must be a compile-time integer in global initializers; got {}",
+                    other.get_type()
+                ),
+                expr.span,
+            ),
+        ),
+    }
+}
+
+fn eval_supported_constant_bits_shift_rotate_number_bytes_arg(
+    working_set: &StateWorkingSet,
+    cmd_name: &str,
+    expr: &nu_protocol::ast::Expression,
+    env: &HashMap<nu_protocol::VarId, Value>,
+) -> Result<i64, LabeledError> {
+    match eval_supported_constant_value_with_env(working_set, expr, env)? {
+        Value::Int { val, .. } => Ok(val),
+        other => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`{cmd_name} --number-bytes` requires a compile-time integer value in global initializers; got {}",
+                    other.get_type()
+                ),
+                expr.span,
+            ),
+        ),
+    }
+}
+
+fn eval_supported_constant_bits_fixed_width_mode(
+    cmd_name: &str,
+    number_bytes: i64,
+    signed: bool,
+    span: Span,
+) -> Result<ConstantBitsShiftMode, LabeledError> {
+    match (number_bytes, signed) {
+        (1, false) => Ok(ConstantBitsShiftMode::FixedWidth {
+            bits: 8,
+            mask: 0xff,
+            sign_bit: 0x80,
+        }),
+        (2, false) => Ok(ConstantBitsShiftMode::FixedWidth {
+            bits: 16,
+            mask: 0xffff,
+            sign_bit: 0x8000,
+        }),
+        (4, false) => Ok(ConstantBitsShiftMode::FixedWidth {
+            bits: 32,
+            mask: 0xffff_ffff,
+            sign_bit: 0x8000_0000,
+        }),
+        (8, false) => Ok(ConstantBitsShiftMode::UnsignedI64),
+        (1, true) => Ok(ConstantBitsShiftMode::SignedFixedWidth {
+            bits: 8,
+            mask: 0xff,
+            sign_bit: 0x80,
+        }),
+        (2, true) => Ok(ConstantBitsShiftMode::SignedFixedWidth {
+            bits: 16,
+            mask: 0xffff,
+            sign_bit: 0x8000,
+        }),
+        (4, true) => Ok(ConstantBitsShiftMode::SignedFixedWidth {
+            bits: 32,
+            mask: 0xffff_ffff,
+            sign_bit: 0x8000_0000,
+        }),
+        (8, true) => Ok(ConstantBitsShiftMode::SignedI64),
+        _ => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`{cmd_name}` integer mode supports --number-bytes 1, 2, 4, or 8 in compile-time global initializers; got {number_bytes}"
+                ),
+                span,
+            ),
+        ),
+    }
+}
+
+fn eval_supported_constant_bits_auto_width_mode(input: i64) -> ConstantBitsShiftMode {
+    if input < 0 {
+        if input >= i8::MIN as i64 {
+            ConstantBitsShiftMode::FixedWidth {
+                bits: 8,
+                mask: 0xff,
+                sign_bit: 0x80,
+            }
+        } else if input >= i16::MIN as i64 {
+            ConstantBitsShiftMode::FixedWidth {
+                bits: 16,
+                mask: 0xffff,
+                sign_bit: 0x8000,
+            }
+        } else if input >= i32::MIN as i64 {
+            ConstantBitsShiftMode::FixedWidth {
+                bits: 32,
+                mask: 0xffff_ffff,
+                sign_bit: 0x8000_0000,
+            }
+        } else {
+            ConstantBitsShiftMode::SignedI64
+        }
+    } else if input <= u8::MAX as i64 {
+        ConstantBitsShiftMode::FixedWidth {
+            bits: 8,
+            mask: 0xff,
+            sign_bit: 0x80,
+        }
+    } else if input <= u16::MAX as i64 {
+        ConstantBitsShiftMode::FixedWidth {
+            bits: 16,
+            mask: 0xffff,
+            sign_bit: 0x8000,
+        }
+    } else if input <= u32::MAX as i64 {
+        ConstantBitsShiftMode::FixedWidth {
+            bits: 32,
+            mask: 0xffff_ffff,
+            sign_bit: 0x8000_0000,
+        }
+    } else {
+        ConstantBitsShiftMode::UnsignedI64
+    }
+}
+
+fn eval_supported_constant_bits_shift_spec(
+    cmd_name: &str,
+    input: i64,
+    args: ConstantBitsShiftRotateArgs,
+    span: Span,
+) -> Result<ConstantBitsShiftSpec, LabeledError> {
+    let mode = eval_supported_constant_bits_shift_rotate_mode(cmd_name, input, args, span)?;
+    let max_count = match mode {
+        ConstantBitsShiftMode::SignedI64 | ConstantBitsShiftMode::UnsignedI64 => 63,
+        ConstantBitsShiftMode::FixedWidth { bits, .. }
+        | ConstantBitsShiftMode::SignedFixedWidth { bits, .. } => bits - 1,
+    };
+    if !(0..=max_count).contains(&args.count) {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`{cmd_name}` requires a shift count from 0 through {max_count} in compile-time global initializers; got {}",
+                    args.count
+                ),
+                span,
+            ),
+        );
+    }
+
+    Ok(ConstantBitsShiftSpec {
+        count: args.count,
+        mode,
+    })
+}
+
+fn eval_supported_constant_bits_rotate_spec(
+    cmd_name: &str,
+    input: i64,
+    args: ConstantBitsShiftRotateArgs,
+    span: Span,
+) -> Result<ConstantBitsRotateSpec, LabeledError> {
+    let mode = eval_supported_constant_bits_shift_rotate_mode(cmd_name, input, args, span)?;
+    let max_count = match mode {
+        ConstantBitsShiftMode::SignedI64 | ConstantBitsShiftMode::UnsignedI64 => 64,
+        ConstantBitsShiftMode::FixedWidth { bits, .. }
+        | ConstantBitsShiftMode::SignedFixedWidth { bits, .. } => bits,
+    };
+    if !(0..=max_count).contains(&args.count) {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`{cmd_name}` requires a rotate count from 0 through {max_count} in compile-time global initializers; got {}",
+                    args.count
+                ),
+                span,
+            ),
+        );
+    }
+
+    Ok(ConstantBitsRotateSpec {
+        count: args.count,
+        mode,
+    })
+}
+
+fn eval_supported_constant_bits_shift_rotate_mode(
+    cmd_name: &str,
+    input: i64,
+    args: ConstantBitsShiftRotateArgs,
+    _span: Span,
+) -> Result<ConstantBitsShiftMode, LabeledError> {
+    if let Some((number_bytes, number_bytes_span)) = args.number_bytes {
+        eval_supported_constant_bits_fixed_width_mode(
+            cmd_name,
+            number_bytes,
+            args.signed,
+            number_bytes_span,
+        )
+    } else if args.signed {
+        Ok(ConstantBitsShiftMode::SignedI64)
+    } else {
+        Ok(eval_supported_constant_bits_auto_width_mode(input))
+    }
+}
+
+fn eval_supported_constant_bits_shift_rotate(
+    cmd_name: &str,
+    input: Option<Value>,
+    args: ConstantBitsShiftRotateArgs,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let value = eval_supported_constant_required_pipeline_input(cmd_name, input, span)?;
+    let value_span = value.span();
+    match value {
+        Value::Int { val, .. } => {
+            let output = if matches!(cmd_name, "bits shl" | "bits shr") {
+                let spec = eval_supported_constant_bits_shift_spec(cmd_name, val, args, span)?;
+                eval_supported_constant_bits_shift_int_output(cmd_name, val, spec, span)?
+            } else {
+                let spec = eval_supported_constant_bits_rotate_spec(cmd_name, val, args, span)?;
+                eval_supported_constant_bits_rotate_int_output(cmd_name, val, spec, span)?
+            };
+            Ok(Value::int(output, value_span))
+        }
+        Value::Binary { val, .. } => Ok(Value::binary(
+            eval_supported_constant_bits_binary_shift_rotate_output(
+                cmd_name,
+                &val,
+                args.count,
+                span,
+            )?,
+            value_span,
+        )),
+        Value::List { vals, .. } => {
+            eval_supported_constant_bits_shift_rotate_list(cmd_name, vals, args, value_span, span)
+        }
+        other => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`{cmd_name}` in a compile-time global initializer requires integer, binary, list<int>, or list<binary> input; got {}",
+                    other.get_type()
+                ),
+                span,
+            ),
+        ),
+    }
+}
+
+fn eval_supported_constant_bits_shift_rotate_list(
+    cmd_name: &str,
+    vals: Vec<Value>,
+    args: ConstantBitsShiftRotateArgs,
+    value_span: Span,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    if !vals.is_empty()
+        && vals
+            .iter()
+            .all(|value| matches!(value, Value::Binary { .. }))
+    {
+        let output = vals
+            .into_iter()
+            .enumerate()
+            .map(|(index, value)| {
+                let Value::Binary { val, .. } = value else {
+                    return Err(LabeledError::new(
+                        "Unsupported annotated mutable global initializer",
+                    )
+                    .with_label(
+                        format!(
+                            "`{cmd_name}` requires binary list items in compile-time global initializers; item {index} has type {}",
+                            value.get_type()
+                        ),
+                        span,
+                    ));
+                };
+                Ok(Value::binary(
+                    eval_supported_constant_bits_binary_shift_rotate_output(
+                        cmd_name, &val, args.count, span,
+                    )?,
+                    value_span,
+                ))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        return Ok(Value::list(output, value_span));
+    }
+
+    let output = vals
+        .into_iter()
+        .enumerate()
+        .map(|(index, value)| {
+            let Value::Int { val, .. } = value else {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        format!(
+                            "`{cmd_name}` requires integer list items in compile-time global initializers; item {index} has type {}",
+                            value.get_type()
+                        ),
+                        span,
+                    ));
+            };
+            let output = if matches!(cmd_name, "bits shl" | "bits shr") {
+                let spec = eval_supported_constant_bits_shift_spec(cmd_name, val, args, span)?;
+                eval_supported_constant_bits_shift_int_output(cmd_name, val, spec, span)?
+            } else {
+                let spec = eval_supported_constant_bits_rotate_spec(cmd_name, val, args, span)?;
+                eval_supported_constant_bits_rotate_int_output(cmd_name, val, spec, span)?
+            };
+            Ok(Value::int(output, value_span))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Value::list(output, value_span))
+}
+
+fn eval_supported_constant_bits_shift_int_output(
+    cmd_name: &str,
+    lhs: i64,
+    spec: ConstantBitsShiftSpec,
+    span: Span,
+) -> Result<i64, LabeledError> {
+    debug_assert!(spec.count >= 0);
+    let shift = spec.count as u32;
+    match spec.mode {
+        ConstantBitsShiftMode::SignedI64 => {
+            debug_assert!(spec.count < 64);
+            Ok(match cmd_name {
+                "bits shl" => lhs.wrapping_shl(shift),
+                "bits shr" => lhs >> shift,
+                _ => unreachable!("validated bits shift command"),
+            })
+        }
+        ConstantBitsShiftMode::UnsignedI64 => {
+            debug_assert!(spec.count < 64);
+            if lhs < 0 {
+                return Ok(match cmd_name {
+                    "bits shl" => lhs.wrapping_shl(shift),
+                    "bits shr" => lhs >> shift,
+                    _ => unreachable!("validated bits shift command"),
+                });
+            }
+
+            let output = match cmd_name {
+                "bits shl" => (lhs as u64) << shift,
+                "bits shr" => (lhs as u64) >> shift,
+                _ => unreachable!("validated bits shift command"),
+            };
+            i64::try_from(output).map_err(|_| {
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    format!(
+                        "`{cmd_name}` unsigned 8-byte output exceeds Nushell's integer range in compile-time global initializers; use --signed --number-bytes 8 for signed two's-complement output"
+                    ),
+                    span,
+                )
+            })
+        }
+        ConstantBitsShiftMode::FixedWidth { mask, sign_bit, .. } => {
+            let truncated = lhs & mask;
+            Ok(if lhs < 0 {
+                match cmd_name {
+                    "bits shl" => {
+                        let shifted = (truncated << shift) & mask;
+                        eval_supported_constant_sign_extend_width(shifted, sign_bit)
+                    }
+                    "bits shr" => {
+                        let signed = eval_supported_constant_sign_extend_width(truncated, sign_bit);
+                        signed >> shift
+                    }
+                    _ => unreachable!("validated bits shift command"),
+                }
+            } else {
+                match cmd_name {
+                    "bits shl" => (truncated << shift) & mask,
+                    "bits shr" => truncated >> shift,
+                    _ => unreachable!("validated bits shift command"),
+                }
+            })
+        }
+        ConstantBitsShiftMode::SignedFixedWidth { mask, sign_bit, .. } => {
+            let truncated = lhs & mask;
+            let signed = eval_supported_constant_sign_extend_width(truncated, sign_bit);
+            Ok(match cmd_name {
+                "bits shl" => {
+                    let shifted = (signed << shift) & mask;
+                    eval_supported_constant_sign_extend_width(shifted, sign_bit)
+                }
+                "bits shr" => signed >> shift,
+                _ => unreachable!("validated bits shift command"),
+            })
+        }
+    }
+}
+
+fn eval_supported_constant_bits_rotate_int_output(
+    cmd_name: &str,
+    lhs: i64,
+    spec: ConstantBitsRotateSpec,
+    span: Span,
+) -> Result<i64, LabeledError> {
+    debug_assert!(spec.count >= 0);
+    match spec.mode {
+        ConstantBitsShiftMode::SignedI64 => {
+            debug_assert!(spec.count <= 64);
+            let rotate = spec.count as u32;
+            Ok(match cmd_name {
+                "bits rol" => lhs.rotate_left(rotate),
+                "bits ror" => lhs.rotate_right(rotate),
+                _ => unreachable!("validated bits rotate command"),
+            })
+        }
+        ConstantBitsShiftMode::UnsignedI64 => {
+            debug_assert!(spec.count <= 64);
+            if lhs < 0 {
+                let rotate = spec.count as u32;
+                return Ok(match cmd_name {
+                    "bits rol" => lhs.rotate_left(rotate),
+                    "bits ror" => lhs.rotate_right(rotate),
+                    _ => unreachable!("validated bits rotate command"),
+                });
+            }
+
+            let rotate = (spec.count % 64) as u32;
+            let output = match cmd_name {
+                "bits rol" => (lhs as u64).rotate_left(rotate),
+                "bits ror" => (lhs as u64).rotate_right(rotate),
+                _ => unreachable!("validated bits rotate command"),
+            };
+            i64::try_from(output).map_err(|_| {
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    format!(
+                        "`{cmd_name}` unsigned 8-byte output exceeds Nushell's integer range in compile-time global initializers; use --signed --number-bytes 8 for signed two's-complement output"
+                    ),
+                    span,
+                )
+            })
+        }
+        ConstantBitsShiftMode::FixedWidth {
+            bits,
+            mask,
+            sign_bit,
+        } => {
+            let truncated = lhs & mask;
+            let rotate = (spec.count % bits) as u32;
+            let width = bits as u32;
+            let rotated = if rotate == 0 {
+                truncated
+            } else {
+                match cmd_name {
+                    "bits rol" => ((truncated << rotate) | (truncated >> (width - rotate))) & mask,
+                    "bits ror" => ((truncated >> rotate) | (truncated << (width - rotate))) & mask,
+                    _ => unreachable!("validated bits rotate command"),
+                }
+            };
+            if lhs < 0 {
+                Ok(eval_supported_constant_sign_extend_width(rotated, sign_bit))
+            } else {
+                Ok(rotated)
+            }
+        }
+        ConstantBitsShiftMode::SignedFixedWidth {
+            bits,
+            mask,
+            sign_bit,
+        } => {
+            let truncated = lhs & mask;
+            let rotate = (spec.count % bits) as u32;
+            let width = bits as u32;
+            let rotated = if rotate == 0 {
+                truncated
+            } else {
+                match cmd_name {
+                    "bits rol" => ((truncated << rotate) | (truncated >> (width - rotate))) & mask,
+                    "bits ror" => ((truncated >> rotate) | (truncated << (width - rotate))) & mask,
+                    _ => unreachable!("validated bits rotate command"),
+                }
+            };
+            Ok(eval_supported_constant_sign_extend_width(rotated, sign_bit))
+        }
+    }
+}
+
+fn eval_supported_constant_sign_extend_width(value: i64, sign_bit: i64) -> i64 {
+    (value ^ sign_bit) - sign_bit
+}
+
+fn eval_supported_constant_bits_binary_shift_rotate_output(
+    cmd_name: &str,
+    input: &[u8],
+    count: i64,
+    span: Span,
+) -> Result<Vec<u8>, LabeledError> {
+    let count_name = if matches!(cmd_name, "bits shl" | "bits shr") {
+        "shift"
+    } else {
+        "rotate"
+    };
+    if count < 0 {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`{cmd_name}` requires a non-negative {count_name} count in compile-time global initializers; got {count}"
+                ),
+                span,
+            ),
+        );
+    }
+    let count = usize::try_from(count).map_err(|_| {
+        LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+            format!(
+                "`{cmd_name}` {count_name} count is too large for binary input in compile-time global initializers"
+            ),
+            span,
+        )
+    })?;
+    let bit_len = input.len().checked_mul(8).ok_or_else(|| {
+        LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+            format!("`{cmd_name}` binary input is too large to transform in compile-time global initializers"),
+            span,
+        )
+    })?;
+    if count > bit_len {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`{cmd_name}` requires a {count_name} count from 0 through {bit_len} for binary input in compile-time global initializers; got {count}"
+                ),
+                span,
+            ),
+        );
+    }
+
+    if bit_len == 0 {
+        return Ok(Vec::new());
+    }
+
+    let mut output = vec![0u8; input.len()];
+    let rotate = count % bit_len;
+    for out_bit in 0..bit_len {
+        let src_bit = match cmd_name {
+            "bits shl" => (out_bit + count < bit_len).then_some(out_bit + count),
+            "bits shr" => out_bit.checked_sub(count),
+            "bits rol" => Some((out_bit + rotate) % bit_len),
+            "bits ror" => Some((out_bit + bit_len - rotate) % bit_len),
+            _ => unreachable!("validated bits shift/rotate command"),
+        };
+        if let Some(src_bit) = src_bit
+            && eval_supported_constant_bits_binary_get_bit(input, src_bit)
+        {
+            eval_supported_constant_bits_binary_set_bit(&mut output, out_bit);
+        }
+    }
+    Ok(output)
+}
+
+fn eval_supported_constant_bits_binary_get_bit(input: &[u8], bit_index: usize) -> bool {
+    let byte = input[bit_index / 8];
+    let mask = 1u8 << (7 - (bit_index % 8));
+    byte & mask != 0
+}
+
+fn eval_supported_constant_bits_binary_set_bit(output: &mut [u8], bit_index: usize) {
+    let mask = 1u8 << (7 - (bit_index % 8));
+    output[bit_index / 8] |= mask;
+}
+
 fn eval_supported_constant_bits_external_call(
     working_set: &StateWorkingSet,
     input: Option<Value>,
@@ -4525,6 +5410,16 @@ fn eval_supported_constant_bits_external_call(
                 span,
             )?;
             eval_supported_constant_bits_not(&cmd_name, input, mode, span)
+        }
+        "bits shl" | "bits shr" | "bits rol" | "bits ror" => {
+            let args = eval_supported_constant_bits_shift_rotate_external_args(
+                working_set,
+                &cmd_name,
+                remaining_args,
+                env,
+                span,
+            )?;
+            eval_supported_constant_bits_shift_rotate(&cmd_name, input, args, span)
         }
         _ => Err(
             LabeledError::new("Unsupported annotated mutable global initializer").with_label(
