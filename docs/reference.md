@@ -1085,9 +1085,11 @@ Cpumask query and mutation kfuncs such as `bpf_cpumask_and`,
 `bpf_cpumask_test_cpu`, `bpf_cpumask_test_and_set_cpu`,
 `bpf_cpumask_test_and_clear_cpu`, `bpf_cpumask_clear`,
 `bpf_cpumask_clear_cpu`, `bpf_cpumask_empty`, `bpf_cpumask_full`,
-`bpf_cpumask_first_zero`, `bpf_cpumask_weight`, `bpf_cpumask_set_cpu`, and
-`bpf_cpumask_first` require cpumask pointer provenance for their pointer
-arguments.
+`bpf_cpumask_first_zero`, `bpf_cpumask_weight`, `bpf_cpumask_first_and`,
+`bpf_cpumask_subset`, `bpf_cpumask_any_distribute`,
+`bpf_cpumask_any_and_distribute`, `bpf_cpumask_or`, `bpf_cpumask_xor`,
+`bpf_cpumask_set_cpu`, and `bpf_cpumask_first` require cpumask pointer
+provenance for their pointer arguments.
 `bpf_task_under_cgroup` is modeled as a task/cgroup query that requires a task
 pointer for arg0 and a cgroup pointer for arg1; passing a task reference as the
 cgroup argument is rejected before load.

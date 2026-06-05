@@ -6,6 +6,8 @@ documentation changes that matter to external alpha consumers.
 
 ## Unreleased
 
+- Added source verifier coverage for cpumask set-operation and distribution
+  kfuncs, including `bpf_cpumask_or`, `bpf_cpumask_xor`, and any-cpu queries.
 - Extended source verifier coverage for single-mask cpumask query/mutation
   kfuncs, including test-and-set/clear and first-zero paths.
 - Added source verifier coverage for cpumask query/mutation kfunc pointer

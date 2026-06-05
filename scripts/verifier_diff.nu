@@ -35716,6 +35716,37 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "source-kfunc-cpumask-setops-release"
+        category: "helper-state"
+        tags: [kfunc cpumask source accept]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let dst = (kfunc-call "bpf_cpumask_create")'
+            '  if $dst {'
+            '    let src = (kfunc-call "bpf_cpumask_create")'
+            '    if $src {'
+            '      kfunc-call "bpf_cpumask_set_cpu" 0 $dst'
+            '      kfunc-call "bpf_cpumask_setall" $src'
+            '      let first_and = (kfunc-call "bpf_cpumask_first_and" $dst $src)'
+            '      let subset = (kfunc-call "bpf_cpumask_subset" $dst $src)'
+            '      let any = (kfunc-call "bpf_cpumask_any_distribute" $src)'
+            '      let any_and = (kfunc-call "bpf_cpumask_any_and_distribute" $dst $src)'
+            '      kfunc-call "bpf_cpumask_or" $dst $dst $src'
+            '      kfunc-call "bpf_cpumask_xor" $dst $dst $src'
+            '      ($first_and + $subset + $any + $any_and) | count'
+            '      $src | kfunc-call "bpf_cpumask_release"'
+            '    }'
+            '    $dst | kfunc-call "bpf_cpumask_release"'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "source-kptr-xchg-task-ref-transfer"
         category: "helper-state"
         tags: [kfunc helper-call kptr ref-lifetime source accept]
