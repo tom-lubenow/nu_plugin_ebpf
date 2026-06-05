@@ -10,7 +10,7 @@ use nu_protocol::eval_const::{eval_constant, eval_constant_with_input};
 use nu_protocol::ir::{Instruction, IrBlock};
 use nu_protocol::{
     BlockId, DeclId, FromValue, IntoSpanned, LabeledError, ParseError, PipelineData, Record,
-    Signature, Span, Spanned, Type, Value,
+    Signature, Span, Spanned, Type, Value, levenshtein_distance,
 };
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -706,6 +706,15 @@ fn eval_supported_constant_call(
             )?;
             eval_supported_constant_str_predicate(cmd_name, input, args, span)
         }
+        "str distance" => {
+            let compare = eval_supported_constant_str_distance_call_arg(
+                working_set,
+                &call.arguments,
+                env,
+                span,
+            )?;
+            eval_supported_constant_str_distance(input, compare, span)
+        }
         "get" => eval_supported_constant_get_call(
             working_set,
             cmd_name,
@@ -983,6 +992,11 @@ fn eval_supported_constant_external_call(
                 span,
             )?;
             eval_supported_constant_str_predicate(cmd_name, input, args, span)
+        }
+        "str distance" => {
+            let compare =
+                eval_supported_constant_str_distance_external_arg(working_set, args, env, span)?;
+            eval_supported_constant_str_distance(input, compare, span)
         }
         "get" => {
             let [path_arg] = args else {
@@ -2213,6 +2227,117 @@ fn eval_supported_constant_string_predicate_matches_case_sensitive(
     }
 }
 
+fn eval_supported_constant_str_distance_call_arg(
+    working_set: &StateWorkingSet,
+    args: &[nu_protocol::ast::Argument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<String, LabeledError> {
+    let mut compare_expr = None;
+    for arg in args {
+        match arg {
+            nu_protocol::ast::Argument::Positional(expr)
+            | nu_protocol::ast::Argument::Unknown(expr) => {
+                if compare_expr.replace(expr).is_some() {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            "`str distance` requires exactly one compare-string argument in compile-time global initializers",
+                            arg.span(),
+                        ));
+                }
+            }
+            nu_protocol::ast::Argument::Named(named) => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        format!(
+                            "`str distance` does not accept named argument --{} in compile-time global initializers",
+                            named.0.item
+                        ),
+                        arg.span(),
+                    ));
+            }
+            nu_protocol::ast::Argument::Spread(expr) => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`str distance` compare argument cannot use spread syntax in compile-time global initializers",
+                        expr.span,
+                    ));
+            }
+        }
+    }
+
+    let Some(compare_expr) = compare_expr else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`str distance` requires exactly one compare-string argument in compile-time global initializers",
+                span,
+            ),
+        );
+    };
+    eval_supported_constant_string_argument(working_set, compare_expr, env, "str distance")
+}
+
+fn eval_supported_constant_str_distance_external_arg(
+    working_set: &StateWorkingSet,
+    args: &[ExternalArgument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<String, LabeledError> {
+    let [compare_arg] = args else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`str distance` requires exactly one compare-string argument in compile-time global initializers",
+                span,
+            ),
+        );
+    };
+    let ExternalArgument::Regular(compare_expr) = compare_arg else {
+        return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+            .with_label(
+                "`str distance` compare argument cannot use spread syntax in compile-time global initializers",
+                compare_arg.expr().span,
+            ));
+    };
+    eval_supported_constant_string_argument(working_set, compare_expr, env, "str distance")
+}
+
+fn eval_supported_constant_str_distance(
+    input: Option<Value>,
+    compare: String,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let value = eval_supported_constant_required_pipeline_input("str distance", input, span)?;
+    let input = eval_supported_constant_exact_string_value(value, "str distance", span)?;
+    Ok(Value::int(
+        levenshtein_distance(&input, &compare) as i64,
+        span,
+    ))
+}
+
+fn eval_supported_constant_exact_string_value(
+    value: Value,
+    cmd_name: &str,
+    span: Span,
+) -> Result<String, LabeledError> {
+    match value {
+        Value::String { val, .. } | Value::Glob { val, .. } => Ok(val),
+        Value::Binary { val, .. } => String::from_utf8(val).map_err(|_| {
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`{cmd_name}` requires valid UTF-8 binary input in compile-time global initializers"
+                ),
+                span,
+            )
+        }),
+        _ => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!("`{cmd_name}` in a compile-time global initializer requires string input"),
+                span,
+            ),
+        ),
+    }
+}
+
 fn eval_supported_constant_str_external_call(
     working_set: &StateWorkingSet,
     input: Option<Value>,
@@ -2259,6 +2384,15 @@ fn eval_supported_constant_str_external_call(
                 span,
             )?;
             eval_supported_constant_str_predicate(&cmd_name, input, args, span)
+        }
+        "distance" => {
+            let compare = eval_supported_constant_str_distance_external_arg(
+                working_set,
+                remaining_args,
+                env,
+                span,
+            )?;
+            eval_supported_constant_str_distance(input, compare, span)
         }
         _ => Err(
             LabeledError::new("Unsupported annotated mutable global initializer").with_label(
