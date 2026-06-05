@@ -5,7 +5,8 @@ use crate::compiler::hir::{
 };
 use crate::compiler::ir_to_mir::lower_hir_to_mir_with_hints;
 use crate::compiler::mir::{
-    CtxStoreTarget, MirFunction, MirInst, MirProgram, MirValue, StackSlotKind, UnaryOpKind,
+    CtxStoreTarget, MirFunction, MirInst, MirProgram, MirValue, StackSlotId, StackSlotKind,
+    UnaryOpKind,
 };
 use crate::compiler::{
     CompileError, EbpfProgram, compile_mir_to_ebpf,
@@ -484,6 +485,31 @@ fn test_fixup_subfn_calls_rejects_offset_out_of_range() {
         .fixup_subfn_calls()
         .expect_err("out-of-range subfunction call offset should be rejected");
     assert_unsupported_contains(err, "outside the eBPF call range");
+}
+
+#[test]
+fn test_slot_offset_i16_rejects_i32_add_overflow() {
+    let program = LirProgram::new(LirFunction::new());
+    let mut compiler = MirToEbpfCompiler::new(&program, None);
+    let slot = StackSlotId(0);
+
+    compiler.slot_offsets.insert(slot, 1);
+
+    let err = compiler
+        .slot_offset_i16(slot, i32::MAX)
+        .expect_err("overflowing stack slot offset should be rejected");
+    assert_unsupported_contains(err, "out of range");
+}
+
+#[test]
+fn test_add_i16_offset_rejects_i32_add_overflow() {
+    let program = LirProgram::new(LirFunction::new());
+    let compiler = MirToEbpfCompiler::new(&program, None);
+
+    let err = compiler
+        .add_i16_offset(1, i32::MAX as usize)
+        .expect_err("overflowing offset addition should be rejected");
+    assert_unsupported_contains(err, "out of range");
 }
 
 #[test]

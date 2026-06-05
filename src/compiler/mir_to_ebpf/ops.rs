@@ -275,8 +275,13 @@ impl<'a> MirToEbpfCompiler<'a> {
         slot: StackSlotId,
         offset: i32,
     ) -> Result<i16, CompileError> {
-        let base = self.slot_offsets.get(&slot).copied().unwrap_or(0) as i32;
-        let total = base + offset;
+        let base = i32::from(self.slot_offsets.get(&slot).copied().unwrap_or(0));
+        let total = base.checked_add(offset).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "stack slot offset {} + {} out of range",
+                base, offset
+            ))
+        })?;
         i16::try_from(total).map_err(|_| {
             CompileError::UnsupportedInstruction(format!(
                 "stack slot offset {} out of range",
@@ -286,10 +291,12 @@ impl<'a> MirToEbpfCompiler<'a> {
     }
 
     pub(super) fn add_i16_offset(&self, base: i16, add: usize) -> Result<i16, CompileError> {
-        let total = i32::from(base)
-            + i32::try_from(add).map_err(|_| {
-                CompileError::UnsupportedInstruction(format!("offset {} out of range", add))
-            })?;
+        let add = i32::try_from(add).map_err(|_| {
+            CompileError::UnsupportedInstruction(format!("offset {} out of range", add))
+        })?;
+        let total = i32::from(base).checked_add(add).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!("offset {} + {} out of range", base, add))
+        })?;
         i16::try_from(total).map_err(|_| {
             CompileError::UnsupportedInstruction(format!("offset {} out of range", total))
         })
