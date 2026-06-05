@@ -23257,6 +23257,21 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "source-helper-send-signal"
+        category: "helper-state"
+        tags: [helper signal accept source metadata]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_send_signal" 0'
+            '  helper-call "bpf_send_signal_thread" 0'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "source-helper-socket-conversions"
         category: "helper-state"
         tags: [tc cgroup-skb cgroup-sockopt helper socket accept source metadata]

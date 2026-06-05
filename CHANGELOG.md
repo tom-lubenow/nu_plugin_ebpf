@@ -6,6 +6,7 @@ documentation changes that matter to external alpha consumers.
 
 ## Unreleased
 
+- Added source verifier coverage for raw signal helper calls.
 - Added source verifier coverage for raw `bpf_snprintf` and
   `bpf_seq_printf_btf` helper calls.
 - Fixed source helper-call lowering to report oversized helper arity instead of

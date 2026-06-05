@@ -471,8 +471,6 @@ fn test_verifier_diff_source_fixtures_cover_modeled_helper_names() {
         "bpf_rc_keydown".to_string(),
         "bpf_rc_pointer_rel".to_string(),
         "bpf_rc_repeat".to_string(),
-        "bpf_send_signal".to_string(),
-        "bpf_send_signal_thread".to_string(),
         "bpf_sk_select_reuseport".to_string(),
         "bpf_skc_lookup_tcp".to_string(),
         "bpf_tcp_check_syncookie".to_string(),
