@@ -13,10 +13,16 @@ impl<'a> MirToEbpfCompiler<'a> {
                 "BPF subfunctions support at most 5 arguments".into(),
             ));
         }
+        let subfn_imm = i32::try_from(subfn.0).map_err(|_| {
+            CompileError::UnsupportedInstruction(format!(
+                "subfunction id {} is outside the eBPF call immediate range",
+                subfn.0
+            ))
+        })?;
 
         // Emit call instruction with placeholder offset
         let call_idx = self.instructions.len();
-        self.instructions.push(EbpfInsn::call_local(subfn.0 as i32));
+        self.instructions.push(EbpfInsn::call_local(subfn_imm));
 
         // Track this call for relocation
         self.subfn_calls.push((call_idx, subfn));
