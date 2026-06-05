@@ -38359,9 +38359,11 @@ const FIXTURES = [
             '{||'
             '  let attr = "01234567"'
             '  let name = "init_task\u{0}"'
+            '  let btf_name = "task_struct"'
             '  let out = "00000000"'
             '  helper-call "bpf_sys_bpf" 0 $attr 8'
             '  helper-call "bpf_kallsyms_lookup_name" $name 10 0 $out'
+            '  helper-call "bpf_btf_find_by_name_kind" $btf_name 11 4 0'
             '}'
         ]
         local: "accept"

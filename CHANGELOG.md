@@ -6,6 +6,7 @@ documentation changes that matter to external alpha consumers.
 
 ## Unreleased
 
+- Added source verifier coverage for raw BTF name/kind lookup helper calls.
 - Added source verifier coverage for raw TCP syncookie helper calls.
 - Added source verifier coverage for raw `bpf_skc_lookup_tcp` helper calls.
 - Added source verifier coverage for raw signal helper calls.
