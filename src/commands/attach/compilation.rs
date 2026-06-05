@@ -756,6 +756,15 @@ fn eval_supported_constant_call(
             )?;
             eval_supported_constant_bytes_replace(input, args, span)
         }
+        "bytes split" => {
+            let separator = eval_supported_constant_bytes_split_call_separator(
+                working_set,
+                &call.arguments,
+                env,
+                span,
+            )?;
+            eval_supported_constant_bytes_split(input, separator, span)
+        }
         "char" => {
             let output =
                 eval_supported_constant_char_call_args(working_set, &call.arguments, env, span)?;
@@ -1161,6 +1170,11 @@ fn eval_supported_constant_external_call(
             let args =
                 eval_supported_constant_bytes_replace_external_args(working_set, args, env, span)?;
             eval_supported_constant_bytes_replace(input, args, span)
+        }
+        "bytes split" => {
+            let separator =
+                eval_supported_constant_bytes_split_external_separator(working_set, args, env, span)?;
+            eval_supported_constant_bytes_split(input, separator, span)
         }
         "char" => {
             let output = eval_supported_constant_char_external_args(working_set, args, env, span)?;
@@ -3357,6 +3371,159 @@ fn eval_supported_constant_replace_bytes_at(
     output
 }
 
+fn eval_supported_constant_bytes_split_call_separator(
+    working_set: &StateWorkingSet,
+    args: &[nu_protocol::ast::Argument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<Vec<u8>, LabeledError> {
+    let mut separator_expr = None;
+    for arg in args {
+        match arg {
+            nu_protocol::ast::Argument::Positional(expr)
+            | nu_protocol::ast::Argument::Unknown(expr) => {
+                if separator_expr.replace(expr).is_some() {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            "`bytes split` accepts exactly one separator argument in compile-time global initializers",
+                            arg.span(),
+                        ));
+                }
+            }
+            nu_protocol::ast::Argument::Named(named) => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        format!(
+                            "`bytes split` does not accept named argument --{} in compile-time global initializers",
+                            named.0.item
+                        ),
+                        arg.span(),
+                    ));
+            }
+            nu_protocol::ast::Argument::Spread(expr) => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`bytes split` arguments cannot use spread syntax in compile-time global initializers",
+                        expr.span,
+                    ));
+            }
+        }
+    }
+
+    let Some(separator_expr) = separator_expr else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`bytes split` requires exactly one separator argument in compile-time global initializers",
+                span,
+            ),
+        );
+    };
+    eval_supported_constant_bytes_split_separator(working_set, separator_expr, env)
+}
+
+fn eval_supported_constant_bytes_split_external_separator(
+    working_set: &StateWorkingSet,
+    args: &[ExternalArgument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<Vec<u8>, LabeledError> {
+    let [separator_arg] = args else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`bytes split` requires exactly one separator argument in compile-time global initializers",
+                span,
+            ),
+        );
+    };
+    let ExternalArgument::Regular(separator_expr) = separator_arg else {
+        return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+            .with_label(
+                "`bytes split` separator cannot use spread syntax in compile-time global initializers",
+                separator_arg.expr().span,
+            ));
+    };
+    eval_supported_constant_bytes_split_separator(working_set, separator_expr, env)
+}
+
+fn eval_supported_constant_bytes_split_separator(
+    working_set: &StateWorkingSet,
+    expr: &nu_protocol::ast::Expression,
+    env: &HashMap<nu_protocol::VarId, Value>,
+) -> Result<Vec<u8>, LabeledError> {
+    if let Expr::GlobPattern(token, _) = &expr.expr
+        && let Some(bytes) = eval_supported_constant_binary_token(token)
+    {
+        let bytes = bytes.map_err(|err| {
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!("`bytes split` requires a valid binary separator literal: {err}"),
+                expr.span,
+            )
+        })?;
+        eval_supported_constant_validate_bytes_pattern("bytes split", &bytes, expr.span)?;
+        return Ok(bytes);
+    }
+
+    let separator = match eval_supported_constant_value_with_env(working_set, expr, env)? {
+        Value::Binary { val, .. } => val,
+        Value::String { val, .. } | Value::Glob { val, .. } => val.into_bytes(),
+        other => {
+            return Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    format!(
+                        "`bytes split` separator must be a compile-time binary or string value in global initializers; got {}",
+                        other.get_type()
+                    ),
+                    expr.span,
+                ),
+            );
+        }
+    };
+    eval_supported_constant_validate_bytes_pattern("bytes split", &separator, expr.span)?;
+    Ok(separator)
+}
+
+fn eval_supported_constant_bytes_split(
+    input: Option<Value>,
+    separator: Vec<u8>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let value = eval_supported_constant_required_pipeline_input("bytes split", input, span)?;
+    let value_span = value.span();
+    let Value::Binary { val, .. } = value else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`bytes split` in a compile-time global initializer requires binary input; got {}",
+                    value.get_type()
+                ),
+                span,
+            ),
+        );
+    };
+    let chunks = eval_supported_constant_split_bytes(val, &separator)
+        .into_iter()
+        .map(|chunk| Value::binary(chunk, value_span))
+        .collect();
+    Ok(Value::list(chunks, value_span))
+}
+
+fn eval_supported_constant_split_bytes(input: Vec<u8>, separator: &[u8]) -> Vec<Vec<u8>> {
+    let mut chunks = Vec::new();
+    let mut start = 0;
+    let mut offset = 0;
+    while offset + separator.len() <= input.len() {
+        if input[offset..offset + separator.len()] == *separator {
+            chunks.push(input[start..offset].to_vec());
+            offset += separator.len();
+            start = offset;
+        } else {
+            offset += 1;
+        }
+    }
+    chunks.push(input[start..].to_vec());
+    chunks
+}
+
 fn eval_supported_constant_bytes_external_call(
     working_set: &StateWorkingSet,
     input: Option<Value>,
@@ -3455,6 +3622,15 @@ fn eval_supported_constant_bytes_external_call(
                 span,
             )?;
             eval_supported_constant_bytes_replace(input, args, span)
+        }
+        "split" => {
+            let separator = eval_supported_constant_bytes_split_external_separator(
+                working_set,
+                remaining_args,
+                env,
+                span,
+            )?;
+            eval_supported_constant_bytes_split(input, separator, span)
         }
         _ => Err(
             LabeledError::new("Unsupported annotated mutable global initializer").with_label(

@@ -3120,6 +3120,166 @@ fn test_map_leading_annotated_mut_globals_rejects_constant_bytes_transform_empty
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_bytes_split_initializers() {
+    let cases = [
+        (
+            "{|| mut chunks: list<binary> = (0x[66 6F 6F 20 62 61 72 20 62 61 7A 20] | bytes split 0x[20]); $chunks }",
+            vec![
+                vec![0x66, 0x6F, 0x6F],
+                vec![0x62, 0x61, 0x72],
+                vec![0x62, 0x61, 0x7A],
+                vec![],
+            ],
+            "bytes split should preserve a trailing empty binary chunk",
+        ),
+        (
+            "{|| mut chunks: list<binary> = (0x[61 2D 2D 62 2D 2D 63] | bytes split \"--\"); $chunks }",
+            vec![vec![0x61], vec![0x62], vec![0x63]],
+            "bytes split should accept a string separator",
+        ),
+        (
+            "{|| mut chunks: list<binary> = (0x[01 02 03] | bytes split 0x[FF]); $chunks }",
+            vec![vec![1, 2, 3]],
+            "bytes split should return the original bytes when the separator is missing",
+        ),
+        (
+            "{|| mut chunks: list<binary> = (0x[01 02 02 03] | bytes split 0x[02]); $chunks }",
+            vec![vec![1], vec![], vec![3]],
+            "bytes split should preserve adjacent empty binary chunks",
+        ),
+    ];
+
+    for (source, expected, message) in cases {
+        let ir_block = IrBlock {
+            instructions: vec![
+                Instruction::StoreVariable {
+                    var_id: VarId::new(11),
+                    src: RegId::new(0),
+                },
+                Instruction::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: VarId::new(11),
+                },
+                Instruction::Return { src: RegId::new(0) },
+            ],
+            spans: vec![Span::test_data(); 3],
+            data: Vec::<u8>::new().into(),
+            ast: vec![None; 3],
+            comments: vec!["let".into(), "".into(), "".into()],
+            register_count: 1,
+            file_count: 0,
+        };
+
+        let globals =
+            super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+                .unwrap_or_else(|err| panic!("{message}: {err:?}"));
+
+        assert_eq!(globals.len(), 1);
+        match &globals[0].initial_value {
+            Value::List { vals, .. } => {
+                let chunks = vals
+                    .iter()
+                    .map(|value| {
+                        value
+                            .as_binary()
+                            .expect("bytes split should produce binary chunks")
+                            .to_vec()
+                    })
+                    .collect::<Vec<_>>();
+                assert_eq!(chunks, expected, "{message}");
+            }
+            other => panic!("expected list initializer, got {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_let_bound_constant_bytes_split_separator() {
+    let source = "{|| let sep = 0x[2D 2D]; mut chunks: list<binary> = (0x[61 2D 2D 62] | bytes split $sep); $chunks }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(10),
+                src: RegId::new(0),
+            },
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(1),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 4],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 4],
+        comments: vec!["let".into(), "let".into(), "".into(), "".into()],
+        register_count: 2,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("let-bound constant bytes split separator should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let chunks = vals
+                .iter()
+                .map(|value| {
+                    value
+                        .as_binary()
+                        .expect("bytes split should produce binary chunks")
+                        .to_vec()
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(chunks, vec![vec![0x61], vec![0x62]]);
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_rejects_constant_bytes_split_empty_separator() {
+    let cases = [
+        "{|| mut chunks: list<binary> = (0x[01 02] | bytes split 0x[]); $chunks }",
+        "{|| mut chunks: list<binary> = (0x[01 02] | bytes split \"\"); $chunks }",
+    ];
+
+    for source in cases {
+        let ir_block = IrBlock {
+            instructions: vec![
+                Instruction::StoreVariable {
+                    var_id: VarId::new(11),
+                    src: RegId::new(0),
+                },
+                Instruction::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: VarId::new(11),
+                },
+                Instruction::Return { src: RegId::new(0) },
+            ],
+            spans: vec![Span::test_data(); 3],
+            data: Vec::<u8>::new().into(),
+            ast: vec![None; 3],
+            comments: vec!["let".into(), "".into(), "".into()],
+            register_count: 1,
+            file_count: 0,
+        };
+
+        let err = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+            .expect_err("empty bytes split separator should be rejected");
+
+        assert!(
+            format!("{err:?}").contains("non-empty binary pattern"),
+            "unexpected error: {err:?}"
+        );
+    }
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_constant_char_initializers() {
     let cases = [
         (
