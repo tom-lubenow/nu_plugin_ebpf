@@ -488,6 +488,9 @@ impl<'a> TypeInference<'a> {
         }
 
         let total_vregs = func.vreg_count.max(func.param_count as u32);
+        if let Err(errors) = self.validate_hints(func, total_vregs) {
+            return Err(errors);
+        }
 
         // Phase 1: Assign fresh type variables to all vregs
         for i in 0..total_vregs {
@@ -571,6 +574,43 @@ impl<'a> TypeInference<'a> {
         }
 
         Ok(result)
+    }
+
+    fn validate_hints(&self, func: &MirFunction, total_vregs: u32) -> Result<(), Vec<TypeError>> {
+        let mut errors = Vec::new();
+
+        if let Some(hints) = self.type_hints {
+            for vreg in hints.keys() {
+                if vreg.0 >= total_vregs {
+                    errors.push(TypeError::new(format!(
+                        "type hint references out-of-range virtual register {} (valid range 0..{})",
+                        vreg.0, total_vregs
+                    )));
+                }
+            }
+        }
+
+        if let Some(hints) = self.stack_slot_hints {
+            let declared_slots = func
+                .stack_slots
+                .iter()
+                .map(|slot| slot.id)
+                .collect::<HashSet<_>>();
+            for slot in hints.keys() {
+                if !declared_slots.contains(slot) {
+                    errors.push(TypeError::new(format!(
+                        "stack slot type hint references undeclared stack slot {}",
+                        slot.0
+                    )));
+                }
+            }
+        }
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
+        }
     }
 
     fn can_restore_layout_hint(hint: &MirType, inferred: &MirType) -> bool {

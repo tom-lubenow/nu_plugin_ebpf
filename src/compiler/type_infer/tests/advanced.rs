@@ -165,6 +165,49 @@ fn test_type_inference_rejects_missing_branch_target() {
 }
 
 #[test]
+fn test_type_inference_rejects_out_of_range_type_hint() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst,
+        src: MirValue::Const(1),
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+    let hints = HashMap::from([(VReg(99), MirType::I64)]);
+
+    let mut infer = TypeInference::new_with_env(None, None, None, Some(&hints), None);
+    let errs = infer
+        .infer(&func)
+        .expect_err("out-of-range type hint should be rejected");
+    assert!(
+        errs.iter()
+            .any(|err| err.message.contains("out-of-range virtual register 99")),
+        "unexpected errors: {errs:?}"
+    );
+}
+
+#[test]
+fn test_type_inference_rejects_undeclared_stack_slot_hint() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+    let stack_hints = HashMap::from([(StackSlotId(99), MirType::U64)]);
+
+    let mut infer = TypeInference::new_with_env(None, None, None, None, Some(&stack_hints));
+    let errs = infer
+        .infer(&func)
+        .expect_err("undeclared stack slot hint should be rejected");
+    assert!(
+        errs.iter()
+            .any(|err| err.message.contains("undeclared stack slot 99")),
+        "unexpected errors: {errs:?}"
+    );
+}
+
+#[test]
 fn test_infer_subfunction_schemes_orders_callees_before_callers() {
     let mut callee = MirFunction::with_name("id");
     callee.param_count = 1;
