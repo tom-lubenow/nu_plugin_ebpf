@@ -37009,6 +37009,48 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "source-kfunc-sched-ext-bstr-events"
+        category: "kfunc"
+        tags: [kfunc sched-ext bstr events source accept]
+        target: "struct_ops:sched_ext_ops"
+        program: [
+            '{'
+            '    name: "nu.demo_1"'
+            '    init: {|ctx|'
+            '        let events = "00000000"'
+            '        let fmt = "0"'
+            '        let data = "00000000"'
+            '        kfunc-call "scx_bpf_events" $events 4'
+            '        kfunc-call "scx_bpf_dump_bstr" $fmt $data 4'
+            '        kfunc-call "scx_bpf_error_bstr" $fmt $data 4'
+            '        kfunc-call "scx_bpf_exit_bstr" 0 $fmt $data 4'
+            '        0'
+            '    }'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-kfunc-sched-ext-events-rejects-zero-size"
+        category: "kfunc"
+        tags: [kfunc sched-ext events source reject]
+        target: "struct_ops:sched_ext_ops"
+        program: [
+            '{'
+            '    name: "nu.demo_1"'
+            '    init: {|ctx|'
+            '        let events = "00000000"'
+            '        kfunc-call "scx_bpf_events" $events 0'
+            '        0'
+            '    }'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'scx_bpf_events' arg1 must be > 0"
+    }
+    {
         name: "struct-ops-callback-target-rejects-attach"
         category: "program-model"
         tags: [struct-ops callback attach reject]

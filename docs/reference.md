@@ -254,7 +254,8 @@ when available.
 Sched_ext source checks also model `select_cpu` cpumask acquisition/release
 flows, task/cgroup reference release requirements, the
 `SCX_OPS_BUILTIN_IDLE_PER_NODE` gate for per-node idle-pick helpers, and
-stable `init`/`dispatch`/`enqueue` DSQ kfunc flows.
+stable `init`/`dispatch`/`enqueue` DSQ kfunc flows, plus stack/map-backed
+SCX bstr/events buffer and positive-size rules.
 Individual context-field, context-projection, and context-write records also
 carry nullable `compatibility_minimum_kernel` and
 `compatibility_minimum_kernel_source` fields that aggregate the known direct
