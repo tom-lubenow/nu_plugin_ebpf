@@ -725,6 +725,11 @@ fn eval_supported_constant_call(
                 eval_supported_constant_split_chars_mode_call(&call.arguments)?;
             eval_supported_constant_split_chars(input, use_grapheme_clusters, span)
         }
+        "split words" => {
+            let args =
+                eval_supported_constant_split_words_call_args(working_set, &call.arguments, env)?;
+            eval_supported_constant_split_words(input, args, span)
+        }
         "get" => eval_supported_constant_get_call(
             working_set,
             cmd_name,
@@ -1018,6 +1023,11 @@ fn eval_supported_constant_external_call(
             let use_grapheme_clusters =
                 eval_supported_constant_split_chars_mode_external_args(working_set, args, env, span)?;
             eval_supported_constant_split_chars(input, use_grapheme_clusters, span)
+        }
+        "split words" => {
+            let args =
+                eval_supported_constant_split_words_external_args(working_set, args, env, span)?;
+            eval_supported_constant_split_words(input, args, span)
         }
         "get" => {
             let [path_arg] = args else {
@@ -2680,6 +2690,344 @@ fn eval_supported_constant_split_chars_known_string(
     }
 }
 
+struct ConstantSplitWordsArgs {
+    min_word_len: Option<usize>,
+    use_grapheme_clusters: bool,
+}
+
+fn eval_supported_constant_split_words_call_args(
+    working_set: &StateWorkingSet,
+    args: &[nu_protocol::ast::Argument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+) -> Result<ConstantSplitWordsArgs, LabeledError> {
+    let mut use_utf8_bytes = false;
+    let mut use_grapheme_clusters = false;
+    let mut min_word_len = None;
+    for arg in args {
+        match arg {
+            nu_protocol::ast::Argument::Named(named) => match named.0.item.as_str() {
+                "utf-8-bytes" => {
+                    if named.2.is_some() {
+                        return Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
+                        .with_label(
+                            "`split words --utf-8-bytes` cannot receive a value in compile-time global initializers",
+                            arg.span(),
+                        ));
+                    }
+                    use_utf8_bytes = true;
+                }
+                "grapheme-clusters" => {
+                    if named.2.is_some() {
+                        return Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
+                        .with_label(
+                            "`split words --grapheme-clusters` cannot receive a value in compile-time global initializers",
+                            arg.span(),
+                        ));
+                    }
+                    use_grapheme_clusters = true;
+                }
+                "min-word-length" => {
+                    let Some(expr) = named.2.as_ref() else {
+                        return Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
+                        .with_label(
+                            "`split words --min-word-length` requires a value in compile-time global initializers",
+                            arg.span(),
+                        ));
+                    };
+                    if min_word_len
+                        .replace(eval_supported_constant_non_negative_usize_argument(
+                            working_set,
+                            expr,
+                            env,
+                            "split words --min-word-length",
+                        )?)
+                        .is_some()
+                    {
+                        return Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
+                        .with_label(
+                            "`split words` accepts only one --min-word-length value in compile-time global initializers",
+                            arg.span(),
+                        ));
+                    }
+                }
+                _ => {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            format!(
+                                "`split words` does not support named argument --{} in compile-time global initializers",
+                                named.0.item
+                            ),
+                            arg.span(),
+                        ));
+                }
+            },
+            nu_protocol::ast::Argument::Spread(expr) => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`split words` arguments cannot use spread syntax in compile-time global initializers",
+                        expr.span,
+                    ));
+            }
+            nu_protocol::ast::Argument::Positional(_) | nu_protocol::ast::Argument::Unknown(_) => {
+                return Err(
+                    LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            "`split words` does not accept positional arguments in compile-time global initializers",
+                            arg.span(),
+                        ),
+                );
+            }
+        }
+    }
+
+    eval_supported_constant_split_words_validate_args(
+        min_word_len,
+        use_utf8_bytes,
+        use_grapheme_clusters,
+        Span::unknown(),
+    )
+}
+
+fn eval_supported_constant_split_words_external_args(
+    working_set: &StateWorkingSet,
+    args: &[ExternalArgument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<ConstantSplitWordsArgs, LabeledError> {
+    let mut use_utf8_bytes = false;
+    let mut use_grapheme_clusters = false;
+    let mut min_word_len = None;
+    let mut iter = args.iter().peekable();
+    while let Some(arg) = iter.next() {
+        let ExternalArgument::Regular(expr) = arg else {
+            return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                .with_label(
+                    "`split words` arguments cannot use spread syntax in compile-time global initializers",
+                    arg.expr().span,
+                ));
+        };
+        let value = eval_supported_constant_value_with_env(working_set, expr, env)?;
+        let flag = match value {
+            Value::String { val, .. } | Value::Glob { val, .. } => val,
+            _ => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`split words` accepts only string flags in compile-time global initializers",
+                        expr.span,
+                    ));
+            }
+        };
+        let Some(flag) = flag.strip_prefix("--") else {
+            return Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    "`split words` does not accept positional arguments in compile-time global initializers",
+                    span,
+                ),
+            );
+        };
+        match flag {
+            "utf-8-bytes" => use_utf8_bytes = true,
+            "grapheme-clusters" => use_grapheme_clusters = true,
+            "min-word-length" => {
+                let Some(next_arg) = iter.next() else {
+                    return Err(LabeledError::new(
+                        "Unsupported annotated mutable global initializer",
+                    )
+                    .with_label(
+                        "`split words --min-word-length` requires a value in compile-time global initializers",
+                        expr.span,
+                    ));
+                };
+                let ExternalArgument::Regular(next_expr) = next_arg else {
+                    return Err(LabeledError::new(
+                        "Unsupported annotated mutable global initializer",
+                    )
+                    .with_label(
+                        "`split words --min-word-length` value cannot use spread syntax in compile-time global initializers",
+                        next_arg.expr().span,
+                    ));
+                };
+                if min_word_len
+                    .replace(eval_supported_constant_non_negative_usize_argument(
+                        working_set,
+                        next_expr,
+                        env,
+                        "split words --min-word-length",
+                    )?)
+                    .is_some()
+                {
+                    return Err(LabeledError::new(
+                        "Unsupported annotated mutable global initializer",
+                    )
+                    .with_label(
+                        "`split words` accepts only one --min-word-length value in compile-time global initializers",
+                        next_expr.span,
+                    ));
+                }
+            }
+            _ => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`split words` supports only --min-word-length, --utf-8-bytes, and --grapheme-clusters in compile-time global initializers",
+                        expr.span,
+                    ));
+            }
+        }
+    }
+
+    eval_supported_constant_split_words_validate_args(
+        min_word_len,
+        use_utf8_bytes,
+        use_grapheme_clusters,
+        span,
+    )
+}
+
+fn eval_supported_constant_non_negative_usize_argument(
+    working_set: &StateWorkingSet,
+    expr: &nu_protocol::ast::Expression,
+    env: &HashMap<nu_protocol::VarId, Value>,
+    context: &str,
+) -> Result<usize, LabeledError> {
+    let raw = eval_supported_constant_value_with_env(working_set, expr, env)?
+        .as_int()
+        .map_err(|_| {
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!("`{context}` requires a compile-time integer in global initializers"),
+                expr.span,
+            )
+        })?;
+    if raw < 0 {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!("`{context}` requires a non-negative integer in global initializers"),
+                expr.span,
+            ),
+        );
+    }
+    usize::try_from(raw).map_err(|_| {
+        LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+            format!("`{context}` is too large for compile-time global initializers"),
+            expr.span,
+        )
+    })
+}
+
+fn eval_supported_constant_split_words_validate_args(
+    min_word_len: Option<usize>,
+    use_utf8_bytes: bool,
+    use_grapheme_clusters: bool,
+    span: Span,
+) -> Result<ConstantSplitWordsArgs, LabeledError> {
+    if use_utf8_bytes && use_grapheme_clusters {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`split words` accepts either --utf-8-bytes or --grapheme-clusters, not both, in compile-time global initializers",
+                span,
+            ),
+        );
+    }
+    if min_word_len.is_none() && (use_utf8_bytes || use_grapheme_clusters) {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`split words --utf-8-bytes` and `--grapheme-clusters` require `--min-word-length` in compile-time global initializers",
+                span,
+            ),
+        );
+    }
+
+    Ok(ConstantSplitWordsArgs {
+        min_word_len,
+        use_grapheme_clusters,
+    })
+}
+
+fn eval_supported_constant_split_words(
+    input: Option<Value>,
+    args: ConstantSplitWordsArgs,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let value = eval_supported_constant_required_pipeline_input("split words", input, span)?;
+    let value_span = value.span();
+    match value {
+        Value::List { vals, .. } => {
+            let items = vals
+                .into_iter()
+                .enumerate()
+                .map(|(index, value)| {
+                    let input = match value {
+                        Value::String { val, .. } | Value::Glob { val, .. } => val,
+                        other => {
+                            return Err(LabeledError::new(
+                                "Unsupported annotated mutable global initializer",
+                            )
+                            .with_label(
+                                format!(
+                                    "`split words` requires string list items in compile-time global initializers; item {index} has type {}",
+                                    other.get_type()
+                                ),
+                                span,
+                            ));
+                        }
+                    };
+                    Ok(Value::list(
+                        eval_supported_constant_split_words_known_string(
+                            &input,
+                            args.min_word_len,
+                            args.use_grapheme_clusters,
+                            value_span,
+                        ),
+                        value_span,
+                    ))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(Value::list(items, value_span))
+        }
+        value => {
+            let input = eval_supported_constant_exact_string_value(value, "split words", span)?;
+            Ok(Value::list(
+                eval_supported_constant_split_words_known_string(
+                    &input,
+                    args.min_word_len,
+                    args.use_grapheme_clusters,
+                    value_span,
+                ),
+                value_span,
+            ))
+        }
+    }
+}
+
+fn eval_supported_constant_split_words_known_string(
+    input: &str,
+    min_word_len: Option<usize>,
+    use_grapheme_clusters: bool,
+    span: Span,
+) -> Vec<Value> {
+    input
+        .unicode_words()
+        .filter(|word| {
+            min_word_len.is_none_or(|min_word_len| {
+                let len = if use_grapheme_clusters {
+                    UnicodeSegmentation::graphemes(*word, true).count()
+                } else {
+                    word.len()
+                };
+                len >= min_word_len
+            })
+        })
+        .map(|word| Value::string(word.to_string(), span))
+        .collect()
+}
+
 fn eval_supported_constant_split_external_call(
     working_set: &StateWorkingSet,
     input: Option<Value>,
@@ -2715,6 +3063,15 @@ fn eval_supported_constant_split_external_call(
                 span,
             )?;
             eval_supported_constant_split_chars(input, use_grapheme_clusters, span)
+        }
+        "words" => {
+            let args = eval_supported_constant_split_words_external_args(
+                working_set,
+                remaining_args,
+                env,
+                span,
+            )?;
+            eval_supported_constant_split_words(input, args, span)
         }
         _ => Err(
             LabeledError::new("Unsupported annotated mutable global initializer").with_label(
