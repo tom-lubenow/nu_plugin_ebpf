@@ -18324,6 +18324,23 @@ const FIXTURES = [
         error_contains: "helper 'bpf_get_branch_snapshot' requires arg2 = 0"
     }
     {
+        name: "source-helper-get-branch-snapshot-rejects-dynamic-flags"
+        category: "helper-state"
+        tags: [helper branch-stack flags reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let entries = "0123456789abcdefghijklmn"'
+            '  let flags = (helper-call "bpf_get_prandom_u32")'
+            '  helper-call "bpf_get_branch_snapshot" $entries 24 $flags'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_get_branch_snapshot' requires arg2 = 0"
+    }
+    {
         name: "source-helper-read-branch-records-accepts-buffer"
         category: "helper-state"
         tags: [helper branch-stack accept]
@@ -18376,6 +18393,23 @@ const FIXTURES = [
             '{|ctx|'
             '  let entries = "0123456789abcdefghijklmn"'
             '  helper-call "bpf_read_branch_records" $ctx $entries 24 2'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_read_branch_records' requires arg3 flags"
+    }
+    {
+        name: "source-helper-read-branch-records-rejects-dynamic-reserved-flags"
+        category: "helper-state"
+        tags: [helper branch-stack flags reject]
+        target: "perf_event:software:cpu-clock:period=100000"
+        program: [
+            '{|ctx|'
+            '  let entries = "0123456789abcdefghijklmn"'
+            '  let flags = (helper-call "bpf_get_prandom_u32")'
+            '  helper-call "bpf_read_branch_records" $ctx $entries 24 $flags'
             '  0'
             '}'
         ]
@@ -35479,6 +35513,22 @@ const FIXTURES = [
         error_contains: "helper 'bpf_ringbuf_query' requires arg1 flags"
     }
     {
+        name: "ringbuf-query-rejects-dynamic-flags"
+        category: "helper-state"
+        tags: [ringbuf flags reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let flags = (helper-call "bpf_get_prandom_u32")'
+            '  helper-call "bpf_ringbuf_query" events $flags'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_ringbuf_query' requires arg1 flags"
+    }
+    {
         name: "bpf-loop-rejects-invalid-flags"
         category: "helper-state"
         tags: [bpf-loop flags reject]
@@ -35532,6 +35582,22 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  helper-call "bpf_user_ringbuf_drain" user_events {|dyn cb| 0 } "ctx" 99'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_user_ringbuf_drain' requires arg3 flags"
+    }
+    {
+        name: "user-ringbuf-drain-rejects-dynamic-flags"
+        category: "helper-state"
+        tags: [user-ringbuf flags reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let flags = (helper-call "bpf_get_prandom_u32")'
+            '  helper-call "bpf_user_ringbuf_drain" user_events {|dyn cb| 0 } "ctx" $flags'
             '  0'
             '}'
         ]
