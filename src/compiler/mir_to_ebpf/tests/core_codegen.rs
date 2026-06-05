@@ -1073,6 +1073,30 @@ fn test_ensure_reg_rematerializes_large_spilled_const() {
 }
 
 #[test]
+fn test_compute_rematerializable_spill_large_const() {
+    let mut func = LirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let value = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(LirInst::Copy {
+        dst: value,
+        src: MirValue::Const(0x1_0000_0000),
+    });
+    func.block_mut(entry).terminator = LirInst::Return {
+        val: Some(MirValue::VReg(value)),
+    };
+
+    let program = LirProgram::new(func.clone());
+    let compiler = MirToEbpfCompiler::new(&program, None);
+    let mut spills = HashMap::new();
+    spills.insert(value, StackSlotId(0));
+
+    let remat = compiler.compute_rematerializable_spills(&func, &spills);
+    assert_eq!(remat.get(&value), Some(&RematExpr::Const(0x1_0000_0000)));
+}
+
+#[test]
 fn test_compile_instruction_stores_non_remat_spilled_def() {
     let program = LirProgram::new(LirFunction::new());
     let mut compiler = MirToEbpfCompiler::new(&program, None);

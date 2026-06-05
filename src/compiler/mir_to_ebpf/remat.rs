@@ -117,7 +117,6 @@ impl<'a> MirToEbpfCompiler<'a> {
     }
 
     fn remat_const(value: i64) -> Option<RematExpr> {
-        i32::try_from(value).ok()?;
         Some(RematExpr::Const(value))
     }
 
