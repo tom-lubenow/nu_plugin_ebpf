@@ -14420,10 +14420,71 @@ fn test_lower_fill_width_one_on_runtime_unsigned_int_materializes_tracked_string
 }
 
 #[test]
-fn test_lower_fill_width_two_rejects_runtime_unsigned_int() {
+fn test_lower_fill_width_two_on_runtime_unsigned_int_materializes_dynamic_padding() {
     let fill_decl = DeclId::new(2507);
     let starts_with_decl = DeclId::new(2508);
     let hir = make_ctx_pid_fill_then_starts_with_program(fill_decl, starts_with_decl, Some(2));
+    let decl_names = HashMap::from([
+        (fill_decl, "fill".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("fill --width 2 should lower for runtime unsigned integer input");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .any(|block| matches!(block.terminator, MirInst::Branch { .. })),
+        "expected runtime integer fill --width 2 to branch on formatted length"
+    );
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::StringAppend {
+                val_type: StringAppendType::Integer,
+                ..
+            }
+        )),
+        "expected runtime integer fill --width 2 to format through StringAppend::Integer"
+    );
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::StringAppend {
+                val_type: StringAppendType::Literal { bytes },
+                ..
+            } if bytes.as_slice() == b" "
+        )),
+        "expected runtime integer fill --width 2 to append one fill character"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("runtime integer fill --width 2 result should compile");
+}
+
+#[test]
+fn test_lower_fill_width_three_rejects_runtime_unsigned_int() {
+    let fill_decl = DeclId::new(2509);
+    let starts_with_decl = DeclId::new(2510);
+    let hir = make_ctx_pid_fill_then_starts_with_program(fill_decl, starts_with_decl, Some(3));
     let decl_names = HashMap::from([
         (fill_decl, "fill".to_string()),
         (starts_with_decl, "str starts-with".to_string()),
@@ -14438,7 +14499,7 @@ fn test_lower_fill_width_two_rejects_runtime_unsigned_int() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("fill --width 2 should reject runtime integer input because padding is dynamic");
+    .expect_err("fill --width 3 should reject runtime integer input because padding is dynamic");
 
     assert!(
         err.to_string()

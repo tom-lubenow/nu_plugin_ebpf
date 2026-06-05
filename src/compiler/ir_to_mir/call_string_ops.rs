@@ -2807,11 +2807,18 @@ impl<'a> HirToMirLowering<'a> {
         let alignment = self.fill_alignment()?;
         let fill = self.fill_character()?;
 
-        if width <= 1 && self.fill_input_is_runtime_unsigned_integer(input_reg, input_vreg) {
+        let runtime_unsigned_fill_supported =
+            width <= 1 || (width == 2 && alignment == FillAlignment::Left && fill.len() <= 1);
+        if runtime_unsigned_fill_supported
+            && self.fill_input_is_runtime_unsigned_integer(input_reg, input_vreg)
+        {
             return self.lower_runtime_unsigned_integer_fill_result(
                 src_dst,
                 result_vreg,
                 input_vreg,
+                width,
+                alignment,
+                &fill,
             );
         }
 
@@ -2862,8 +2869,17 @@ impl<'a> HirToMirLowering<'a> {
         src_dst: RegId,
         result_vreg: VReg,
         input_vreg: VReg,
+        width: usize,
+        alignment: FillAlignment,
+        fill: &str,
     ) -> Result<(), CompileError> {
-        let aligned_len = align_to_eight(MAX_INT_STRING_LEN + 1)
+        let pad_len = if width == 2 && alignment == FillAlignment::Left {
+            fill.len()
+        } else {
+            0
+        };
+        let string_len_bound = MAX_INT_STRING_LEN + pad_len;
+        let aligned_len = align_to_eight(string_len_bound + 1)
             .min(MAX_STRING_SIZE)
             .max(16);
         let slot = self
@@ -2887,6 +2903,39 @@ impl<'a> HirToMirLowering<'a> {
             val: MirValue::VReg(input_vreg),
             val_type: StringAppendType::Integer,
         });
+        if width == 2 && alignment == FillAlignment::Left && !fill.is_empty() {
+            let needs_padding = self.func.alloc_vreg();
+            self.emit(MirInst::BinOp {
+                dst: needs_padding,
+                op: BinOpKind::Lt,
+                lhs: MirValue::VReg(len_vreg),
+                rhs: MirValue::Const(2),
+            });
+            self.vreg_type_hints.insert(needs_padding, MirType::Bool);
+
+            let pad_block = self.func.alloc_block();
+            let continuation_block = self.func.alloc_block();
+            self.terminate(MirInst::Branch {
+                cond: needs_padding,
+                if_true: pad_block,
+                if_false: continuation_block,
+            });
+
+            self.current_block = pad_block;
+            self.emit(MirInst::StringAppend {
+                dst_buffer: slot,
+                dst_len: len_vreg,
+                val: MirValue::Const(0),
+                val_type: StringAppendType::Literal {
+                    bytes: fill.as_bytes().to_vec(),
+                },
+            });
+            self.terminate(MirInst::Jump {
+                target: continuation_block,
+            });
+
+            self.current_block = continuation_block;
+        }
         self.emit(MirInst::Copy {
             dst: result_vreg,
             src: MirValue::StackSlot(slot),
@@ -2903,7 +2952,7 @@ impl<'a> HirToMirLowering<'a> {
         let meta = self.get_or_create_metadata(src_dst);
         meta.string_slot = Some(slot);
         meta.string_len_vreg = Some(len_vreg);
-        meta.string_len_bound = Some(MAX_INT_STRING_LEN);
+        meta.string_len_bound = Some(string_len_bound);
         meta.field_type = Some(array_ty);
         Ok(())
     }
