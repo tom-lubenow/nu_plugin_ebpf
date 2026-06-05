@@ -477,8 +477,6 @@ fn test_verifier_diff_source_fixtures_cover_modeled_helper_names() {
         "bpf_sk_select_reuseport".to_string(),
         "bpf_skc_lookup_tcp".to_string(),
         "bpf_snprintf".to_string(),
-        "bpf_sock_from_file".to_string(),
-        "bpf_task_pt_regs".to_string(),
         "bpf_tcp_check_syncookie".to_string(),
         "bpf_tcp_gen_syncookie".to_string(),
         "bpf_tcp_raw_check_syncookie_ipv4".to_string(),

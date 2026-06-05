@@ -6,6 +6,8 @@ documentation changes that matter to external alpha consumers.
 
 ## Unreleased
 
+- Added source verifier coverage for raw task pt_regs and file-to-socket helper
+  calls on BTF-backed tracing contexts.
 - Added source verifier coverage for raw `bpf_perf_prog_read_value` helper
   calls in perf-event programs.
 - Added source verifier coverage for raw socket cgroup ID helper calls.

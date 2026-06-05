@@ -23330,6 +23330,22 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "source-helper-task-and-file-pointer-helpers"
+        category: "helper-state"
+        tags: [fentry helper task file socket accept source metadata]
+        requires: [kernel-btf]
+        target: "fentry:security_file_open"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_task_pt_regs" $ctx.task'
+            '  helper-call "bpf_sock_from_file" $ctx.arg.file'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "source-helper-skc-socket-conversions"
         category: "helper-state"
         tags: [sk-lookup helper socket accept source metadata]
