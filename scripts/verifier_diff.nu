@@ -34271,6 +34271,25 @@ const FIXTURES = [
         error_contains: "kfunc 'bpf_path_d_path' arg2 must be > 0"
     }
     {
+        name: "source-kfunc-path-d-path-rejects-dynamic-zero-size"
+        category: "helper-state"
+        tags: [kfunc file path source dynamic branch reject]
+        requires: [kernel-btf]
+        target: "lsm:file_open"
+        program: [
+            '{|ctx|'
+            '  let buf = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"'
+            '  let selector = (helper-call "bpf_get_prandom_u32")'
+            '  let size = (if $selector == 0 { 0 } else { 64 })'
+            '  kfunc-call "bpf_path_d_path" $ctx.arg0.f_path $buf $size'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'bpf_path_d_path' arg2 must be > 0"
+    }
+    {
         name: "source-kfunc-crypto-ctx-release-rejects-task-ref"
         category: "helper-state"
         tags: [kfunc crypto ref-lifetime source reject]

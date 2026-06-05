@@ -58,6 +58,8 @@ documentation changes that matter to external alpha consumers.
   helper paths.
 - Added source verifier coverage for dynamic exact-size and iteration-bound
   rejects on namespace, snprintf_btf, perf-event read-value, and bpf_loop paths.
+- Added source verifier coverage for dynamic `bpf_path_d_path` zero-size
+  rejects from branch-selected helper return ranges.
 - Added actionable BTF target diagnostics for invalid `fentry`, `fexit`,
   `fmod_ret`, `tp_btf`, and LSM targets so compile-time errors include the
   modeled target-family rewrite guidance.
