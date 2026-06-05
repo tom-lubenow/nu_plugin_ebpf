@@ -1951,6 +1951,223 @@ fn test_map_leading_annotated_mut_globals_supports_constant_bytes_length_list_in
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_bytes_build_initializers() {
+    let cases = [
+        (
+            "{|| mut built: binary = (bytes build); $built }",
+            Vec::<u8>::new(),
+            "bytes build without arguments should produce empty binary",
+        ),
+        (
+            "{|| mut built: binary = (bytes build 1 0x[02 03] 255); $built }",
+            vec![1, 2, 3, 255],
+            "bytes build should concatenate byte integers and binary chunks",
+        ),
+    ];
+
+    for (source, expected, message) in cases {
+        let ir_block = IrBlock {
+            instructions: vec![
+                Instruction::StoreVariable {
+                    var_id: VarId::new(11),
+                    src: RegId::new(0),
+                },
+                Instruction::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: VarId::new(11),
+                },
+                Instruction::Return { src: RegId::new(0) },
+            ],
+            spans: vec![Span::test_data(); 3],
+            data: Vec::<u8>::new().into(),
+            ast: vec![None; 3],
+            comments: vec!["let".into(), "".into(), "".into()],
+            register_count: 1,
+            file_count: 0,
+        };
+
+        let globals =
+            super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+                .unwrap_or_else(|err| panic!("{message}: {err:?}"));
+
+        assert_eq!(globals.len(), 1);
+        assert_eq!(
+            globals[0]
+                .initial_value
+                .as_binary()
+                .expect("bytes build should produce binary"),
+            expected.as_slice(),
+            "{message}"
+        );
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_let_bound_constant_bytes_build_chunk() {
+    let source =
+        "{|| let chunk = 0x[03 04]; mut built: binary = (bytes build 1 $chunk 255); $built }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(10),
+                src: RegId::new(0),
+            },
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(1),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 4],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 4],
+        comments: vec!["let".into(), "let".into(), "".into(), "".into()],
+        register_count: 2,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("let-bound constant bytes build chunk should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(
+        globals[0]
+            .initial_value
+            .as_binary()
+            .expect("bytes build should produce binary"),
+        &[1, 3, 4, 255]
+    );
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_rejects_constant_bytes_build_out_of_range_byte() {
+    let source = "{|| mut built: binary = (bytes build 256); $built }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let err = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect_err("out-of-range bytes build byte should be rejected");
+
+    assert!(
+        format!("{err:?}").contains("out of range"),
+        "unexpected error: {err:?}"
+    );
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_bytes_collect_initializers() {
+    let cases = [
+        (
+            "{|| mut collected: binary = ([0x[11], 0x[13 15]] | bytes collect); $collected }",
+            vec![0x11, 0x13, 0x15],
+            "bytes collect should concatenate binary list items",
+        ),
+        (
+            "{|| mut collected: binary = ([0x[11], 0x[33], 0x[44]] | bytes collect 0x[01]); $collected }",
+            vec![0x11, 0x01, 0x33, 0x01, 0x44],
+            "bytes collect should insert a binary separator",
+        ),
+    ];
+
+    for (source, expected, message) in cases {
+        let ir_block = IrBlock {
+            instructions: vec![
+                Instruction::StoreVariable {
+                    var_id: VarId::new(11),
+                    src: RegId::new(0),
+                },
+                Instruction::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: VarId::new(11),
+                },
+                Instruction::Return { src: RegId::new(0) },
+            ],
+            spans: vec![Span::test_data(); 3],
+            data: Vec::<u8>::new().into(),
+            ast: vec![None; 3],
+            comments: vec!["let".into(), "".into(), "".into()],
+            register_count: 1,
+            file_count: 0,
+        };
+
+        let globals =
+            super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+                .unwrap_or_else(|err| panic!("{message}: {err:?}"));
+
+        assert_eq!(globals.len(), 1);
+        assert_eq!(
+            globals[0]
+                .initial_value
+                .as_binary()
+                .expect("bytes collect should produce binary"),
+            expected.as_slice(),
+            "{message}"
+        );
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_let_bound_constant_bytes_collect_separator() {
+    let source = "{|| let sep = 0x[00 FF]; mut collected: binary = ([0x[11], 0x[22]] | bytes collect $sep); $collected }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(10),
+                src: RegId::new(0),
+            },
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(1),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 4],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 4],
+        comments: vec!["let".into(), "let".into(), "".into(), "".into()],
+        register_count: 2,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("let-bound constant bytes collect separator should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(
+        globals[0]
+            .initial_value
+            .as_binary()
+            .expect("bytes collect should produce binary"),
+        &[0x11, 0x00, 0xFF, 0x22]
+    );
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_constant_bytes_reverse_initializer() {
     let source = "{|| mut reversed: binary = (0x[01 02 03] | bytes reverse); $reversed }";
     let ir_block = IrBlock {

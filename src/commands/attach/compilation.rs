@@ -700,6 +700,16 @@ fn eval_supported_constant_call(
             eval_supported_constant_no_argument_call(cmd_name, &call.arguments)?;
             eval_supported_constant_bytes_length(input, span)
         }
+        "bytes build" => {
+            let bytes =
+                eval_supported_constant_bytes_build_call_args(working_set, &call.arguments, env)?;
+            eval_supported_constant_bytes_build(input, bytes, span)
+        }
+        "bytes collect" => {
+            let separator =
+                eval_supported_constant_bytes_collect_call_separator(working_set, &call.arguments, env)?;
+            eval_supported_constant_bytes_collect(input, separator, span)
+        }
         "bytes reverse" => {
             eval_supported_constant_no_argument_call(cmd_name, &call.arguments)?;
             eval_supported_constant_bytes_reverse(input, span)
@@ -1086,6 +1096,15 @@ fn eval_supported_constant_external_call(
         "bytes length" => {
             eval_supported_constant_no_external_args(cmd_name, args, span)?;
             eval_supported_constant_bytes_length(input, span)
+        }
+        "bytes build" => {
+            let bytes = eval_supported_constant_bytes_build_external_args(working_set, args, env)?;
+            eval_supported_constant_bytes_build(input, bytes, span)
+        }
+        "bytes collect" => {
+            let separator =
+                eval_supported_constant_bytes_collect_external_separator(working_set, args, env, span)?;
+            eval_supported_constant_bytes_collect(input, separator, span)
         }
         "bytes reverse" => {
             eval_supported_constant_no_external_args(cmd_name, args, span)?;
@@ -1938,6 +1957,240 @@ fn eval_supported_constant_bytes_length(
     }
 }
 
+fn eval_supported_constant_bytes_build_call_args(
+    working_set: &StateWorkingSet,
+    args: &[nu_protocol::ast::Argument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+) -> Result<Vec<u8>, LabeledError> {
+    let mut bytes = Vec::new();
+    for arg in args {
+        match arg {
+            nu_protocol::ast::Argument::Positional(expr)
+            | nu_protocol::ast::Argument::Unknown(expr) => {
+                eval_supported_constant_bytes_build_extend_arg(working_set, expr, env, &mut bytes)?;
+            }
+            nu_protocol::ast::Argument::Named(named) => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        format!(
+                            "`bytes build` does not accept named argument --{} in compile-time global initializers",
+                            named.0.item
+                        ),
+                        arg.span(),
+                    ));
+            }
+            nu_protocol::ast::Argument::Spread(expr) => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`bytes build` arguments cannot use spread syntax in compile-time global initializers",
+                        expr.span,
+                    ));
+            }
+        }
+    }
+    Ok(bytes)
+}
+
+fn eval_supported_constant_bytes_build_external_args(
+    working_set: &StateWorkingSet,
+    args: &[ExternalArgument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+) -> Result<Vec<u8>, LabeledError> {
+    let mut bytes = Vec::new();
+    for arg in args {
+        let ExternalArgument::Regular(expr) = arg else {
+            return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                .with_label(
+                    "`bytes build` arguments cannot use spread syntax in compile-time global initializers",
+                    arg.expr().span,
+                ));
+        };
+        eval_supported_constant_bytes_build_extend_arg(working_set, expr, env, &mut bytes)?;
+    }
+    Ok(bytes)
+}
+
+fn eval_supported_constant_bytes_build_extend_arg(
+    working_set: &StateWorkingSet,
+    expr: &nu_protocol::ast::Expression,
+    env: &HashMap<nu_protocol::VarId, Value>,
+    bytes: &mut Vec<u8>,
+) -> Result<(), LabeledError> {
+    match eval_supported_constant_value_with_env(working_set, expr, env)? {
+        Value::Binary { val, .. } => bytes.extend(val),
+        Value::String { val, .. } | Value::Glob { val, .. }
+            if eval_supported_constant_binary_token(&val).is_some() =>
+        {
+            bytes.extend(
+                eval_supported_constant_binary_token(&val)
+                    .expect("binary token parser prechecked")
+                    .map_err(|err| {
+                        LabeledError::new("Unsupported annotated mutable global initializer")
+                            .with_label(
+                                format!("`bytes build` requires a valid binary literal: {err}"),
+                                expr.span,
+                            )
+                    })?,
+            );
+        }
+        Value::Int { val, .. } => {
+            let byte = u8::try_from(val).map_err(|_| {
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    format!("`bytes build` byte integer {val} is out of range 0..255"),
+                    expr.span,
+                )
+            })?;
+            bytes.push(byte);
+        }
+        other => {
+            return Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    format!(
+                        "`bytes build` arguments must be compile-time binary values or byte integers in global initializers; got {}",
+                        other.get_type()
+                    ),
+                    expr.span,
+                ),
+            );
+        }
+    }
+    Ok(())
+}
+
+fn eval_supported_constant_bytes_build(
+    input: Option<Value>,
+    bytes: Vec<u8>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    if input.is_some() {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`bytes build` does not accept pipeline input in compile-time global initializers",
+                span,
+            ),
+        );
+    }
+    Ok(Value::binary(bytes, span))
+}
+
+fn eval_supported_constant_bytes_collect_call_separator(
+    working_set: &StateWorkingSet,
+    args: &[nu_protocol::ast::Argument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+) -> Result<Option<Vec<u8>>, LabeledError> {
+    let mut separator_expr = None;
+    for arg in args {
+        match arg {
+            nu_protocol::ast::Argument::Positional(expr)
+            | nu_protocol::ast::Argument::Unknown(expr) => {
+                if separator_expr.replace(expr).is_some() {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            "`bytes collect` accepts at most one binary separator argument in compile-time global initializers",
+                            arg.span(),
+                        ));
+                }
+            }
+            nu_protocol::ast::Argument::Named(named) => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        format!(
+                            "`bytes collect` does not accept named argument --{} in compile-time global initializers",
+                            named.0.item
+                        ),
+                        arg.span(),
+                    ));
+            }
+            nu_protocol::ast::Argument::Spread(expr) => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`bytes collect` arguments cannot use spread syntax in compile-time global initializers",
+                        expr.span,
+                    ));
+            }
+        }
+    }
+
+    separator_expr
+        .map(|expr| {
+            eval_supported_constant_binary_argument(working_set, expr, env, "bytes collect")
+        })
+        .transpose()
+}
+
+fn eval_supported_constant_bytes_collect_external_separator(
+    working_set: &StateWorkingSet,
+    args: &[ExternalArgument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<Option<Vec<u8>>, LabeledError> {
+    let separator_expr = match args {
+        [] => return Ok(None),
+        [arg] => {
+            let ExternalArgument::Regular(expr) = arg else {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`bytes collect` separator cannot use spread syntax in compile-time global initializers",
+                        arg.expr().span,
+                    ));
+            };
+            expr
+        }
+        _ => {
+            return Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    "`bytes collect` accepts at most one binary separator argument in compile-time global initializers",
+                    span,
+                ),
+            );
+        }
+    };
+    eval_supported_constant_binary_argument(working_set, separator_expr, env, "bytes collect")
+        .map(Some)
+}
+
+fn eval_supported_constant_bytes_collect(
+    input: Option<Value>,
+    separator: Option<Vec<u8>>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let value = eval_supported_constant_required_pipeline_input("bytes collect", input, span)?;
+    let value_span = value.span();
+    let Value::List { vals, .. } = value else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`bytes collect` in a compile-time global initializer requires list<binary> input; got {}",
+                    value.get_type()
+                ),
+                span,
+            ),
+        );
+    };
+
+    let mut output = Vec::new();
+    for (index, value) in vals.into_iter().enumerate() {
+        let Value::Binary { val, .. } = value else {
+            return Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    format!(
+                        "`bytes collect` requires binary list items in compile-time global initializers; item {index} has type {}",
+                        value.get_type()
+                    ),
+                    span,
+                ),
+            );
+        };
+        if index > 0 {
+            if let Some(separator) = &separator {
+                output.extend(separator);
+            }
+        }
+        output.extend(val);
+    }
+    Ok(Value::binary(output, value_span))
+}
+
 fn eval_supported_constant_bytes_reverse(
     input: Option<Value>,
     span: Span,
@@ -2522,6 +2775,23 @@ fn eval_supported_constant_bytes_external_call(
         "length" => {
             eval_supported_constant_no_external_args("bytes length", remaining_args, span)?;
             eval_supported_constant_bytes_length(input, span)
+        }
+        "build" => {
+            let bytes = eval_supported_constant_bytes_build_external_args(
+                working_set,
+                remaining_args,
+                env,
+            )?;
+            eval_supported_constant_bytes_build(input, bytes, span)
+        }
+        "collect" => {
+            let separator = eval_supported_constant_bytes_collect_external_separator(
+                working_set,
+                remaining_args,
+                env,
+                span,
+            )?;
+            eval_supported_constant_bytes_collect(input, separator, span)
         }
         "reverse" => {
             eval_supported_constant_no_external_args("bytes reverse", remaining_args, span)?;
