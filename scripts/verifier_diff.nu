@@ -16528,6 +16528,22 @@ const FIXTURES = [
         error_contains: "helper 'bpf_ringbuf_reserve' requires arg2 flags to be 0"
     }
     {
+        name: "ringbuf-reserve-rejects-dynamic-flags"
+        category: "helper-state"
+        tags: [ringbuf flags reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let flags = (helper-call "bpf_get_prandom_u32")'
+            '  helper-call "bpf_ringbuf_reserve" events 8 $flags'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_ringbuf_reserve' requires arg2 flags to be 0"
+    }
+    {
         name: "ringbuf-submit-accepts-wakeup-flags"
         category: "helper-state"
         tags: [ringbuf flags ref-lifetime]
@@ -16870,6 +16886,23 @@ const FIXTURES = [
             '{|ctx|'
             '  let d = "0123456789abcdef"'
             '  helper-call "bpf_ringbuf_reserve_dynptr" events 8 1 $d'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_ringbuf_reserve_dynptr' requires arg2 flags to be 0"
+    }
+    {
+        name: "ringbuf-dynptr-reserve-rejects-dynamic-flags"
+        category: "helper-state"
+        tags: [ringbuf dynptr flags reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let d = "0123456789abcdef"'
+            '  let flags = (helper-call "bpf_get_prandom_u32")'
+            '  helper-call "bpf_ringbuf_reserve_dynptr" events 8 $flags $d'
             '  0'
             '}'
         ]

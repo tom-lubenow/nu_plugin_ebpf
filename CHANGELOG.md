@@ -10,6 +10,8 @@ documentation changes that matter to external alpha consumers.
   return ranges, with source, verifier-types, and VCC coverage.
 - Added source verifier coverage for dynamic `bpf_dynptr_read` and
   `bpf_dynptr_write` flags derived from helper return ranges.
+- Added source verifier coverage for dynamic `bpf_ringbuf_reserve` and
+  `bpf_ringbuf_reserve_dynptr` flags derived from helper return ranges.
 - Added actionable BTF target diagnostics for invalid `fentry`, `fexit`,
   `fmod_ret`, `tp_btf`, and LSM targets so compile-time errors include the
   modeled target-family rewrite guidance.
