@@ -71,6 +71,11 @@ impl<'a> MirToEbpfCompiler<'a> {
         // Bounded loop header for eBPF verifier compliance
         // counter < limit ? jump to body : jump to exit for ascending loops
         // counter > limit ? jump to body : jump to exit for descending loops
+        let limit_imm = i32::try_from(limit).map_err(|_| {
+            CompileError::UnsupportedInstruction(format!(
+                "loop limit {limit} is outside the eBPF immediate range"
+            ))
+        })?;
         let counter_reg = self.ensure_reg(counter)?;
         let opcode = if step >= 0 {
             opcode::BPF_JMP | opcode::BPF_JSLT | opcode::BPF_K
@@ -85,7 +90,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             counter_reg.as_u8(),
             0,
             0, // Placeholder - will be fixed up
-            limit as i32,
+            limit_imm,
         ));
         self.pending_jumps.push((jlt_idx, body));
 
@@ -104,11 +109,16 @@ impl<'a> MirToEbpfCompiler<'a> {
         header: BlockId,
     ) -> Result<(), CompileError> {
         // Increment counter and jump back to header
+        let step_imm = i32::try_from(step).map_err(|_| {
+            CompileError::UnsupportedInstruction(format!(
+                "loop step {step} is outside the eBPF immediate range"
+            ))
+        })?;
         let counter_reg = self.ensure_reg(counter)?;
 
         // Add step to counter
         self.instructions
-            .push(EbpfInsn::add64_imm(counter_reg, step as i32));
+            .push(EbpfInsn::add64_imm(counter_reg, step_imm));
 
         // Jump back to loop header
         let jmp_idx = self.instructions.len();
