@@ -765,6 +765,16 @@ fn eval_supported_constant_call(
             )?;
             eval_supported_constant_bytes_split(input, separator, span)
         }
+        "bits and" | "bits or" | "bits xor" => {
+            let args = eval_supported_constant_bits_binary_call_args(
+                working_set,
+                cmd_name,
+                &call.arguments,
+                env,
+                span,
+            )?;
+            eval_supported_constant_bits_binary(cmd_name, input, args, span)
+        }
         "char" => {
             let output =
                 eval_supported_constant_char_call_args(working_set, &call.arguments, env, span)?;
@@ -1175,6 +1185,12 @@ fn eval_supported_constant_external_call(
             let separator =
                 eval_supported_constant_bytes_split_external_separator(working_set, args, env, span)?;
             eval_supported_constant_bytes_split(input, separator, span)
+        }
+        "bits" => eval_supported_constant_bits_external_call(working_set, input, args, env, span),
+        "bits and" | "bits or" | "bits xor" => {
+            let args =
+                eval_supported_constant_bits_binary_external_args(working_set, cmd_name, args, env, span)?;
+            eval_supported_constant_bits_binary(cmd_name, input, args, span)
         }
         "char" => {
             let output = eval_supported_constant_char_external_args(working_set, args, env, span)?;
@@ -3522,6 +3538,609 @@ fn eval_supported_constant_split_bytes(input: Vec<u8>, separator: &[u8]) -> Vec<
     }
     chunks.push(input[start..].to_vec());
     chunks
+}
+
+#[derive(Clone, Copy)]
+enum ConstantBitsBinaryEndian {
+    Little,
+    Big,
+}
+
+#[derive(Clone)]
+enum ConstantBitsBinaryTarget {
+    Int(i64),
+    Binary(Vec<u8>),
+}
+
+#[derive(Clone)]
+struct ConstantBitsBinaryArgs {
+    target: ConstantBitsBinaryTarget,
+    endian: ConstantBitsBinaryEndian,
+}
+
+fn eval_supported_constant_bits_binary_call_args(
+    working_set: &StateWorkingSet,
+    cmd_name: &str,
+    args: &[nu_protocol::ast::Argument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<ConstantBitsBinaryArgs, LabeledError> {
+    let mut target_expr = None;
+    let mut endian = None;
+    for arg in args {
+        match arg {
+            nu_protocol::ast::Argument::Positional(expr)
+            | nu_protocol::ast::Argument::Unknown(expr) => {
+                if target_expr.replace(expr).is_some() {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            format!(
+                                "`{cmd_name}` accepts exactly one integer or binary target argument in compile-time global initializers"
+                            ),
+                            arg.span(),
+                        ));
+                }
+            }
+            nu_protocol::ast::Argument::Named(named) => match named.0.item.as_str() {
+                "endian" | "e" => {
+                    let Some(expr) = named.2.as_ref() else {
+                        return Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
+                        .with_label(
+                            format!(
+                                "`{cmd_name} --endian` requires a value in compile-time global initializers"
+                            ),
+                            arg.span(),
+                        ));
+                    };
+                    let next = eval_supported_constant_bits_binary_endian_arg(
+                        working_set,
+                        cmd_name,
+                        expr,
+                        env,
+                    )?;
+                    if endian.replace(next).is_some() {
+                        return Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
+                        .with_label(
+                            format!(
+                                "`{cmd_name}` accepts only one --endian value in compile-time global initializers"
+                            ),
+                            arg.span(),
+                        ));
+                    }
+                }
+                _ => {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            format!(
+                                "`{cmd_name}` supports only --endian in compile-time global initializers"
+                            ),
+                            arg.span(),
+                        ));
+                }
+            },
+            nu_protocol::ast::Argument::Spread(expr) => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        format!(
+                            "`{cmd_name}` arguments cannot use spread syntax in compile-time global initializers"
+                        ),
+                        expr.span,
+                    ));
+            }
+        }
+    }
+
+    let Some(target_expr) = target_expr else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`{cmd_name}` requires exactly one integer or binary target argument in compile-time global initializers"
+                ),
+                span,
+            ),
+        );
+    };
+
+    Ok(ConstantBitsBinaryArgs {
+        target: eval_supported_constant_bits_binary_target(
+            working_set,
+            cmd_name,
+            target_expr,
+            env,
+        )?,
+        endian: endian.unwrap_or_else(eval_supported_constant_native_bits_binary_endian),
+    })
+}
+
+fn eval_supported_constant_bits_binary_external_args(
+    working_set: &StateWorkingSet,
+    cmd_name: &str,
+    args: &[ExternalArgument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<ConstantBitsBinaryArgs, LabeledError> {
+    let mut target_expr = None;
+    let mut endian = None;
+    let mut index = 0;
+    while index < args.len() {
+        let arg = &args[index];
+        let ExternalArgument::Regular(expr) = arg else {
+            return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                .with_label(
+                    format!(
+                        "`{cmd_name}` arguments cannot use spread syntax in compile-time global initializers"
+                    ),
+                    arg.expr().span,
+                ));
+        };
+
+        let value = eval_supported_constant_value_with_env(working_set, expr, env)?;
+        match value {
+            Value::String { val, .. } | Value::Glob { val, .. }
+                if val == "--endian" || val == "-e" =>
+            {
+                index += 1;
+                let Some(next_arg) = args.get(index) else {
+                    return Err(
+                        LabeledError::new("Unsupported annotated mutable global initializer")
+                            .with_label(
+                                format!(
+                                    "`{cmd_name} --endian` requires a value in compile-time global initializers"
+                                ),
+                                expr.span,
+                            ),
+                    );
+                };
+                let ExternalArgument::Regular(next_expr) = next_arg else {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            format!(
+                                "`{cmd_name} --endian` value cannot use spread syntax in compile-time global initializers"
+                            ),
+                            next_arg.expr().span,
+                        ));
+                };
+                let next = eval_supported_constant_bits_binary_endian_arg(
+                    working_set,
+                    cmd_name,
+                    next_expr,
+                    env,
+                )?;
+                if endian.replace(next).is_some() {
+                    return Err(LabeledError::new(
+                        "Unsupported annotated mutable global initializer",
+                    )
+                    .with_label(
+                        format!(
+                            "`{cmd_name}` accepts only one --endian value in compile-time global initializers"
+                        ),
+                        next_expr.span,
+                    ));
+                }
+            }
+            Value::String { val, .. } | Value::Glob { val, .. } if val.starts_with("--endian=") => {
+                let raw = val
+                    .split_once('=')
+                    .map(|(_, value)| value)
+                    .expect("starts_with --endian= prechecked");
+                let next =
+                    eval_supported_constant_bits_binary_endian_value(cmd_name, raw, expr.span)?;
+                if endian.replace(next).is_some() {
+                    return Err(LabeledError::new(
+                        "Unsupported annotated mutable global initializer",
+                    )
+                    .with_label(
+                        format!(
+                            "`{cmd_name}` accepts only one --endian value in compile-time global initializers"
+                        ),
+                        expr.span,
+                    ));
+                }
+            }
+            Value::String { val, .. } | Value::Glob { val, .. } if val.starts_with('-') => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        format!(
+                            "`{cmd_name}` supports only --endian in compile-time global initializers"
+                        ),
+                        expr.span,
+                    ));
+            }
+            _ => {
+                if target_expr.replace(expr).is_some() {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            format!(
+                                "`{cmd_name}` accepts exactly one integer or binary target argument in compile-time global initializers"
+                            ),
+                            expr.span,
+                        ));
+                }
+            }
+        }
+        index += 1;
+    }
+
+    let Some(target_expr) = target_expr else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`{cmd_name}` requires exactly one integer or binary target argument in compile-time global initializers"
+                ),
+                span,
+            ),
+        );
+    };
+
+    Ok(ConstantBitsBinaryArgs {
+        target: eval_supported_constant_bits_binary_target(
+            working_set,
+            cmd_name,
+            target_expr,
+            env,
+        )?,
+        endian: endian.unwrap_or_else(eval_supported_constant_native_bits_binary_endian),
+    })
+}
+
+fn eval_supported_constant_bits_binary_endian_arg(
+    working_set: &StateWorkingSet,
+    cmd_name: &str,
+    expr: &nu_protocol::ast::Expression,
+    env: &HashMap<nu_protocol::VarId, Value>,
+) -> Result<ConstantBitsBinaryEndian, LabeledError> {
+    let value = eval_supported_constant_value_with_env(working_set, expr, env)?;
+    let raw = match value {
+        Value::String { val, .. } | Value::Glob { val, .. } => val,
+        other => {
+            return Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    format!(
+                        "`{cmd_name} --endian` requires a compile-time string value in global initializers; got {}",
+                        other.get_type()
+                    ),
+                    expr.span,
+                ),
+            );
+        }
+    };
+    eval_supported_constant_bits_binary_endian_value(cmd_name, &raw, expr.span)
+}
+
+fn eval_supported_constant_bits_binary_endian_value(
+    cmd_name: &str,
+    raw: &str,
+    span: Span,
+) -> Result<ConstantBitsBinaryEndian, LabeledError> {
+    match raw {
+        "native" => Ok(eval_supported_constant_native_bits_binary_endian()),
+        "little" => Ok(ConstantBitsBinaryEndian::Little),
+        "big" => Ok(ConstantBitsBinaryEndian::Big),
+        _ => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`{cmd_name} --endian` supports only native, little, or big in compile-time global initializers; got {raw:?}"
+                ),
+                span,
+            ),
+        ),
+    }
+}
+
+fn eval_supported_constant_native_bits_binary_endian() -> ConstantBitsBinaryEndian {
+    if cfg!(target_endian = "big") {
+        ConstantBitsBinaryEndian::Big
+    } else {
+        ConstantBitsBinaryEndian::Little
+    }
+}
+
+fn eval_supported_constant_bits_binary_target(
+    working_set: &StateWorkingSet,
+    cmd_name: &str,
+    expr: &nu_protocol::ast::Expression,
+    env: &HashMap<nu_protocol::VarId, Value>,
+) -> Result<ConstantBitsBinaryTarget, LabeledError> {
+    match eval_supported_constant_value_with_env(working_set, expr, env)? {
+        Value::Int { val, .. } => Ok(ConstantBitsBinaryTarget::Int(val)),
+        Value::Binary { val, .. } => Ok(ConstantBitsBinaryTarget::Binary(val)),
+        Value::String { val, .. } | Value::Glob { val, .. }
+            if eval_supported_constant_binary_token(&val).is_some() =>
+        {
+            Ok(ConstantBitsBinaryTarget::Binary(
+                eval_supported_constant_binary_token(&val)
+                    .expect("binary token parser prechecked")
+                    .map_err(|err| {
+                        LabeledError::new("Unsupported annotated mutable global initializer")
+                            .with_label(
+                                format!("`{cmd_name}` requires a valid binary literal: {err}"),
+                                expr.span,
+                            )
+                    })?,
+            ))
+        }
+        other => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`{cmd_name}` target argument must be a compile-time integer or binary value in global initializers; got {}",
+                    other.get_type()
+                ),
+                expr.span,
+            ),
+        ),
+    }
+}
+
+fn eval_supported_constant_bits_binary(
+    cmd_name: &str,
+    input: Option<Value>,
+    args: ConstantBitsBinaryArgs,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let value = eval_supported_constant_required_pipeline_input(cmd_name, input, span)?;
+    let value_span = value.span();
+    match value {
+        Value::Int { val, .. } => match args.target {
+            ConstantBitsBinaryTarget::Int(rhs) => Ok(Value::int(
+                eval_supported_constant_bits_binary_int_output(cmd_name, val, rhs),
+                value_span,
+            )),
+            ConstantBitsBinaryTarget::Binary(_) => Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    format!(
+                        "`{cmd_name}` requires input and target argument to both be integers or both be binaries in compile-time global initializers"
+                    ),
+                    span,
+                ),
+            ),
+        },
+        Value::Binary { val, .. } => match args.target {
+            ConstantBitsBinaryTarget::Binary(rhs) => Ok(Value::binary(
+                eval_supported_constant_bits_binary_bytes_output(
+                    cmd_name,
+                    &val,
+                    &rhs,
+                    args.endian,
+                ),
+                value_span,
+            )),
+            ConstantBitsBinaryTarget::Int(_) => Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    format!(
+                        "`{cmd_name}` requires input and target argument to both be integers or both be binaries in compile-time global initializers"
+                    ),
+                    span,
+                ),
+            ),
+        },
+        Value::List { vals, .. } => eval_supported_constant_bits_binary_list(
+            cmd_name,
+            vals,
+            args,
+            value_span,
+            span,
+        ),
+        other => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`{cmd_name}` in a compile-time global initializer requires integer, binary, list<int>, or list<binary> input; got {}",
+                    other.get_type()
+                ),
+                span,
+            ),
+        ),
+    }
+}
+
+fn eval_supported_constant_bits_binary_list(
+    cmd_name: &str,
+    vals: Vec<Value>,
+    args: ConstantBitsBinaryArgs,
+    value_span: Span,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let binary_list = vals
+        .iter()
+        .all(|value| matches!(value, Value::Binary { .. }))
+        && (!vals.is_empty() || matches!(args.target, ConstantBitsBinaryTarget::Binary(_)));
+
+    if binary_list {
+        let ConstantBitsBinaryTarget::Binary(rhs) = args.target else {
+            return Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    format!(
+                        "`{cmd_name}` requires a binary target argument for list<binary> input in compile-time global initializers"
+                    ),
+                    span,
+                ),
+            );
+        };
+        let output = vals
+            .into_iter()
+            .enumerate()
+            .map(|(index, value)| {
+                let Value::Binary { val, .. } = value else {
+                    return Err(LabeledError::new(
+                        "Unsupported annotated mutable global initializer",
+                    )
+                    .with_label(
+                        format!(
+                            "`{cmd_name}` requires binary list items in compile-time global initializers; item {index} has type {}",
+                            value.get_type()
+                        ),
+                        span,
+                    ));
+                };
+                Ok(Value::binary(
+                    eval_supported_constant_bits_binary_bytes_output(
+                        cmd_name,
+                        &val,
+                        &rhs,
+                        args.endian,
+                    ),
+                    value_span,
+                ))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        return Ok(Value::list(output, value_span));
+    }
+
+    let ConstantBitsBinaryTarget::Int(rhs) = args.target else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`{cmd_name}` requires an integer target argument for list<int> input in compile-time global initializers"
+                ),
+                span,
+            ),
+        );
+    };
+    let output = vals
+        .into_iter()
+        .enumerate()
+        .map(|(index, value)| {
+            let Value::Int { val, .. } = value else {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        format!(
+                            "`{cmd_name}` requires integer list items in compile-time global initializers; item {index} has type {}",
+                            value.get_type()
+                        ),
+                        span,
+                    ));
+            };
+            Ok(Value::int(
+                eval_supported_constant_bits_binary_int_output(cmd_name, val, rhs),
+                value_span,
+            ))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Value::list(output, value_span))
+}
+
+fn eval_supported_constant_bits_binary_int_output(cmd_name: &str, lhs: i64, rhs: i64) -> i64 {
+    match cmd_name {
+        "bits and" => lhs & rhs,
+        "bits or" => lhs | rhs,
+        "bits xor" => lhs ^ rhs,
+        _ => unreachable!("validated bits binary command"),
+    }
+}
+
+fn eval_supported_constant_bits_binary_byte_output(cmd_name: &str, lhs: u8, rhs: u8) -> u8 {
+    match cmd_name {
+        "bits and" => lhs & rhs,
+        "bits or" => lhs | rhs,
+        "bits xor" => lhs ^ rhs,
+        _ => unreachable!("validated bits binary command"),
+    }
+}
+
+fn eval_supported_constant_bits_binary_bytes_output(
+    cmd_name: &str,
+    lhs: &[u8],
+    rhs: &[u8],
+    endian: ConstantBitsBinaryEndian,
+) -> Vec<u8> {
+    let len = lhs.len().max(rhs.len());
+    let mut output = Vec::with_capacity(len);
+    match endian {
+        ConstantBitsBinaryEndian::Little => {
+            for index in 0..len {
+                let lhs_byte = lhs.get(index).copied().unwrap_or(0);
+                let rhs_byte = rhs.get(index).copied().unwrap_or(0);
+                output.push(eval_supported_constant_bits_binary_byte_output(
+                    cmd_name, lhs_byte, rhs_byte,
+                ));
+            }
+        }
+        ConstantBitsBinaryEndian::Big => {
+            let lhs_padding = len.saturating_sub(lhs.len());
+            let rhs_padding = len.saturating_sub(rhs.len());
+            for index in 0..len {
+                let lhs_byte = index
+                    .checked_sub(lhs_padding)
+                    .and_then(|lhs_index| lhs.get(lhs_index))
+                    .copied()
+                    .unwrap_or(0);
+                let rhs_byte = index
+                    .checked_sub(rhs_padding)
+                    .and_then(|rhs_index| rhs.get(rhs_index))
+                    .copied()
+                    .unwrap_or(0);
+                output.push(eval_supported_constant_bits_binary_byte_output(
+                    cmd_name, lhs_byte, rhs_byte,
+                ));
+            }
+        }
+    }
+    output
+}
+
+fn eval_supported_constant_bits_external_call(
+    working_set: &StateWorkingSet,
+    input: Option<Value>,
+    args: &[ExternalArgument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let Some((subcommand_arg, remaining_args)) = args.split_first() else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`bits` requires a subcommand in compile-time global initializers",
+                span,
+            ),
+        );
+    };
+    let ExternalArgument::Regular(subcommand_expr) = subcommand_arg else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`bits` subcommand cannot use spread syntax in compile-time global initializers",
+                subcommand_arg.expr().span,
+            ),
+        );
+    };
+    let subcommand = match eval_supported_constant_value_with_env(
+        working_set,
+        subcommand_expr,
+        env,
+    )? {
+        Value::String { val, .. } | Value::Glob { val, .. } => val,
+        other => {
+            return Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    format!(
+                        "`bits` subcommand must be a compile-time string in global initializers; got {}",
+                        other.get_type()
+                    ),
+                    subcommand_expr.span,
+                ),
+            );
+        }
+    };
+    let cmd_name = format!("bits {subcommand}");
+    match cmd_name.as_str() {
+        "bits and" | "bits or" | "bits xor" => {
+            let args = eval_supported_constant_bits_binary_external_args(
+                working_set,
+                &cmd_name,
+                remaining_args,
+                env,
+                span,
+            )?;
+            eval_supported_constant_bits_binary(&cmd_name, input, args, span)
+        }
+        _ => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!("`bits {subcommand}` is not supported in compile-time global initializers"),
+                subcommand_expr.span,
+            ),
+        ),
+    }
 }
 
 fn eval_supported_constant_bytes_external_call(

@@ -3280,6 +3280,267 @@ fn test_map_leading_annotated_mut_globals_rejects_constant_bytes_split_empty_sep
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_bits_binary_int_initializers() {
+    let cases = [
+        (
+            "{|| mut out: int = (6 | bits and 3); $out }",
+            2,
+            "bits and should fold integer inputs",
+        ),
+        (
+            "{|| mut out: int = (5 | bits or 2); $out }",
+            7,
+            "bits or should fold integer inputs",
+        ),
+        (
+            "{|| mut out: int = (5 | bits xor 3); $out }",
+            6,
+            "bits xor should fold integer inputs",
+        ),
+    ];
+
+    for (source, expected, message) in cases {
+        let ir_block = IrBlock {
+            instructions: vec![
+                Instruction::StoreVariable {
+                    var_id: VarId::new(11),
+                    src: RegId::new(0),
+                },
+                Instruction::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: VarId::new(11),
+                },
+                Instruction::Return { src: RegId::new(0) },
+            ],
+            spans: vec![Span::test_data(); 3],
+            data: Vec::<u8>::new().into(),
+            ast: vec![None; 3],
+            comments: vec!["let".into(), "".into(), "".into()],
+            register_count: 1,
+            file_count: 0,
+        };
+
+        let globals =
+            super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+                .unwrap_or_else(|err| panic!("{message}: {err:?}"));
+
+        assert_eq!(globals.len(), 1);
+        assert_eq!(
+            globals[0]
+                .initial_value
+                .as_int()
+                .expect("bits binary command should produce an integer"),
+            expected,
+            "{message}"
+        );
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_bits_binary_bytes_initializers() {
+    let cases = [
+        (
+            "{|| mut out: binary = (0x[CA FE] | bits and 0x[BA BE]); $out }",
+            vec![0x8A, 0xBE],
+            "bits and should fold binary inputs",
+        ),
+        (
+            "{|| mut out: binary = (0x[CA FE] | bits or 0x[BA BE]); $out }",
+            vec![0xFA, 0xFE],
+            "bits or should fold binary inputs",
+        ),
+        (
+            "{|| mut out: binary = (0x[CA FE] | bits xor 0x[BA BE]); $out }",
+            vec![0x70, 0x40],
+            "bits xor should fold binary inputs",
+        ),
+        (
+            "{|| mut out: binary = (0x[CA FE] | bits xor 0x[AA] --endian big); $out }",
+            vec![0xCA, 0x54],
+            "bits xor should left-pad unequal binary inputs for big endian",
+        ),
+        (
+            "{|| mut out: binary = (0x[CA FE] | bits xor 0x[AA] --endian little); $out }",
+            vec![0x60, 0xFE],
+            "bits xor should right-pad unequal binary inputs for little endian",
+        ),
+    ];
+
+    for (source, expected, message) in cases {
+        let ir_block = IrBlock {
+            instructions: vec![
+                Instruction::StoreVariable {
+                    var_id: VarId::new(11),
+                    src: RegId::new(0),
+                },
+                Instruction::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: VarId::new(11),
+                },
+                Instruction::Return { src: RegId::new(0) },
+            ],
+            spans: vec![Span::test_data(); 3],
+            data: Vec::<u8>::new().into(),
+            ast: vec![None; 3],
+            comments: vec!["let".into(), "".into(), "".into()],
+            register_count: 1,
+            file_count: 0,
+        };
+
+        let globals =
+            super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+                .unwrap_or_else(|err| panic!("{message}: {err:?}"));
+
+        assert_eq!(globals.len(), 1);
+        assert_eq!(
+            globals[0]
+                .initial_value
+                .as_binary()
+                .expect("bits binary command should produce binary"),
+            expected.as_slice(),
+            "{message}"
+        );
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_bits_binary_list_initializers() {
+    let cases = [
+        (
+            "{|| mut out: list<int> = ([8, 3, 2] | bits and 2); $out }",
+            vec![
+                Value::int(0, Span::test_data()),
+                Value::int(2, Span::test_data()),
+                Value::int(2, Span::test_data()),
+            ],
+            "bits and should fold integer list inputs",
+        ),
+        (
+            "{|| mut out: list<binary> = ([0x[0F F0], 0x[AA]] | bits xor 0x[FF 00]); $out }",
+            vec![
+                Value::binary(vec![0xF0, 0xF0], Span::test_data()),
+                Value::binary(vec![0x55, 0x00], Span::test_data()),
+            ],
+            "bits xor should fold binary list inputs",
+        ),
+    ];
+
+    for (source, expected, message) in cases {
+        let ir_block = IrBlock {
+            instructions: vec![
+                Instruction::StoreVariable {
+                    var_id: VarId::new(11),
+                    src: RegId::new(0),
+                },
+                Instruction::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: VarId::new(11),
+                },
+                Instruction::Return { src: RegId::new(0) },
+            ],
+            spans: vec![Span::test_data(); 3],
+            data: Vec::<u8>::new().into(),
+            ast: vec![None; 3],
+            comments: vec!["let".into(), "".into(), "".into()],
+            register_count: 1,
+            file_count: 0,
+        };
+
+        let globals =
+            super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+                .unwrap_or_else(|err| panic!("{message}: {err:?}"));
+
+        assert_eq!(globals.len(), 1);
+        match &globals[0].initial_value {
+            Value::List { vals, .. } => assert_eq!(vals, &expected, "{message}"),
+            other => panic!("expected list initializer, got {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_let_bound_constant_bits_binary_args() {
+    let source = "{|| let target = 0x[AA]; let endian = \"big\"; mut out: binary = (0x[CA FE] | bits xor $target --endian $endian); $out }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(10),
+                src: RegId::new(0),
+            },
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(1),
+            },
+            Instruction::StoreVariable {
+                var_id: VarId::new(12),
+                src: RegId::new(2),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(12),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 5],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 5],
+        comments: vec![
+            "let".into(),
+            "let".into(),
+            "let".into(),
+            "".into(),
+            "".into(),
+        ],
+        register_count: 3,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("let-bound constant bits binary args should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(
+        globals[0]
+            .initial_value
+            .as_binary()
+            .expect("bits binary command should produce binary"),
+        &[0xCA, 0x54]
+    );
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_rejects_constant_bits_binary_mixed_types() {
+    let source = "{|| mut out: binary = (0x[01] | bits and 1); $out }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let err = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect_err("mixed bits binary input and target types should be rejected");
+
+    assert!(
+        format!("{err:?}").contains("both be integers or both be binaries"),
+        "unexpected error: {err:?}"
+    );
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_constant_char_initializers() {
     let cases = [
         (
