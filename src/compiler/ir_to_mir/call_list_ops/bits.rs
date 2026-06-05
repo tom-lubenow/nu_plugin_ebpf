@@ -1116,6 +1116,39 @@ impl<'a> HirToMirLowering<'a> {
         })
     }
 
+    fn bits_rotate_runtime_auto_zero_count(&self, cmd_name: &str) -> Result<bool, CompileError> {
+        if !matches!(cmd_name, "bits rol" | "bits ror")
+            || !self.named_flags.is_empty()
+            || !self.named_args.is_empty()
+        {
+            return Ok(false);
+        }
+        if !self.parser_info_args.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} does not support parser-info arguments in eBPF"
+            )));
+        }
+        if self.positional_args.len() != 1 {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires exactly one compile-time rotate-count argument in eBPF"
+            )));
+        }
+
+        let (_rotate_vreg, rotate_reg) = self.positional_args[0];
+        let rotate_meta = self.get_metadata(rotate_reg).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires a compile-time integer rotate count in eBPF"
+            ))
+        })?;
+        let Some(rotate_count) = Self::bits_integer_value_from_metadata(rotate_meta) else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires a compile-time integer rotate count in eBPF"
+            )));
+        };
+
+        Ok(rotate_count == 0)
+    }
+
     pub(in crate::compiler::ir_to_mir) fn lower_bits_binary(
         &mut self,
         cmd_name: &str,
@@ -2184,6 +2217,19 @@ impl<'a> HirToMirLowering<'a> {
         if let Some(input_meta) = input_meta.as_ref()
             && input_meta.list_buffer.is_some()
         {
+            if self.bits_rotate_runtime_auto_zero_count(cmd_name)? {
+                self.emit(MirInst::Copy {
+                    dst: result_vreg,
+                    src: MirValue::VReg(input_vreg),
+                });
+                self.propagate_passthrough_reg_metadata(
+                    src_dst,
+                    result_vreg,
+                    input_reg,
+                    input_vreg,
+                );
+                return Ok(());
+            }
             let spec = self.bits_rotate_spec(cmd_name, None)?;
             if spec.mode == BitsShiftMode::UnsignedI64 {
                 return Err(CompileError::UnsupportedInstruction(format!(
@@ -2227,22 +2273,33 @@ impl<'a> HirToMirLowering<'a> {
             ));
             out_meta.literal_int = Some(output);
         } else {
-            let spec = self.bits_rotate_spec(cmd_name, None)?;
-            if spec.mode == BitsShiftMode::UnsignedI64 {
-                if cmd_name != "bits rol" {
-                    return Err(CompileError::UnsupportedInstruction(format!(
-                        "{cmd_name} unsigned --number-bytes 8 requires compile-time known integer input in eBPF; use --signed --number-bytes 8 for runtime 64-bit rotates"
-                    )));
-                }
-                self.validate_bits_unsigned_i64_left_rotate_runtime_scalar(
-                    cmd_name,
-                    input_meta.as_ref(),
-                    input_vreg,
-                    spec.count,
-                )?;
-                self.emit_bits_rotate_unsigned_i64_left_value(result_vreg, lhs_value, spec.count);
+            if self.bits_rotate_runtime_auto_zero_count(cmd_name)? {
+                self.emit(MirInst::Copy {
+                    dst: result_vreg,
+                    src: lhs_value,
+                });
             } else {
-                self.emit_bits_rotate_value(cmd_name, result_vreg, lhs_value, spec);
+                let spec = self.bits_rotate_spec(cmd_name, None)?;
+                if spec.mode == BitsShiftMode::UnsignedI64 {
+                    if cmd_name != "bits rol" {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "{cmd_name} unsigned --number-bytes 8 requires compile-time known integer input in eBPF; use --signed --number-bytes 8 for runtime 64-bit rotates"
+                        )));
+                    }
+                    self.validate_bits_unsigned_i64_left_rotate_runtime_scalar(
+                        cmd_name,
+                        input_meta.as_ref(),
+                        input_vreg,
+                        spec.count,
+                    )?;
+                    self.emit_bits_rotate_unsigned_i64_left_value(
+                        result_vreg,
+                        lhs_value,
+                        spec.count,
+                    );
+                } else {
+                    self.emit_bits_rotate_value(cmd_name, result_vreg, lhs_value, spec);
+                }
             }
             self.reset_call_result_metadata(src_dst);
             self.get_or_create_metadata(src_dst).field_type = Some(MirType::I64);

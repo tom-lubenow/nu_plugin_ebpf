@@ -24947,7 +24947,52 @@ fn test_lower_bits_rotate_signed_fixed_width_on_runtime_scalar_integer_inputs() 
 }
 
 #[test]
-fn test_lower_bits_rotate_default_rejects_runtime_scalar_integer_input() {
+fn test_lower_bits_rotate_default_zero_count_on_runtime_scalar_integer_inputs() {
+    for (offset, command_name) in [(0, "bits rol"), (1, "bits ror")] {
+        let bits_decl = DeclId::new(70846 + offset);
+        let random_decl = DeclId::new(70848 + offset);
+        let hir = make_runtime_scalar_bits_shift_program(bits_decl, random_decl, 0, false, None);
+        let decl_names = HashMap::from([
+            (bits_decl, command_name.to_string()),
+            (random_decl, "random int".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("{command_name} default rotate count 0 should lower runtime scalar input: {err}")
+        });
+        let instructions = result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .collect::<Vec<_>>();
+
+        assert!(
+            instructions
+                .iter()
+                .any(|inst| matches!(inst, MirInst::Copy { .. })),
+            "expected runtime scalar {command_name} default rotate count 0 to copy input"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!(
+                    "{command_name} default rotate count 0 runtime scalar input should compile: {err}"
+                )
+            });
+    }
+}
+
+#[test]
+fn test_lower_bits_rotate_default_nonzero_rejects_runtime_scalar_integer_input() {
     let bits_decl = DeclId::new(70840);
     let random_decl = DeclId::new(70841);
     let hir = make_runtime_scalar_bits_shift_program(bits_decl, random_decl, 1, false, None);
@@ -26651,6 +26696,64 @@ fn test_lower_bits_shift_unsigned_i64_left_rejects_runtime_stack_numeric_lists()
 }
 
 #[test]
+fn test_lower_bits_rotate_default_zero_count_on_runtime_stack_numeric_lists() {
+    for (offset, command_name) in [(0, "bits rol"), (1, "bits ror")] {
+        let bits_decl = DeclId::new(71953 + offset);
+        let length_decl = DeclId::new(71955 + offset);
+        let random_decl = DeclId::new(71957 + offset);
+        let hir = make_runtime_bits_shift_list_length_program(
+            bits_decl,
+            length_decl,
+            random_decl,
+            0,
+            false,
+            None,
+        );
+        let decl_names = HashMap::from([
+            (bits_decl, command_name.to_string()),
+            (length_decl, "length".to_string()),
+            (random_decl, "random int".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!(
+                "{command_name} default rotate count 0 should lower on runtime stack-backed numeric lists: {err}"
+            )
+        });
+        let instructions = result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            instructions
+                .iter()
+                .filter(|inst| matches!(inst, MirInst::ListPush { .. }))
+                .count(),
+            1,
+            "expected runtime {command_name} default rotate count 0 to pass through the input list without an extra output ListPush"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!(
+                    "{command_name} default rotate count 0 runtime list output consumed by length should compile: {err}"
+                )
+            });
+    }
+}
+
+#[test]
 fn test_lower_bits_rotate_signed_i64_on_runtime_stack_numeric_lists() {
     for (offset, command_name) in [(0, "bits rol"), (1, "bits ror")] {
         let bits_decl = DeclId::new(7110 + offset);
@@ -26882,7 +26985,7 @@ fn test_lower_bits_rotate_signed_fixed_width_on_runtime_stack_numeric_lists() {
 }
 
 #[test]
-fn test_lower_bits_rotate_default_rejects_runtime_stack_numeric_lists() {
+fn test_lower_bits_rotate_default_nonzero_rejects_runtime_stack_numeric_lists() {
     let bits_decl = DeclId::new(719100);
     let length_decl = DeclId::new(719101);
     let random_decl = DeclId::new(719102);
