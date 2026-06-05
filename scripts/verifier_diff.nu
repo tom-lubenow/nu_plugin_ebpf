@@ -18501,6 +18501,26 @@ const FIXTURES = [
         error_contains: "helper 36 arg2 must be > 0"
     }
     {
+        name: "source-helper-probe-write-user-rejects-dynamic-size"
+        category: "helper-state"
+        tags: [helper probe-write-user hazardous dynamic reject]
+        target: "uprobe:/bin/true:main"
+        program: [
+            '{|ctx|'
+            '  let dst = $ctx.arg0'
+            '  if $dst {'
+            '    let src = "wxyz"'
+            '    let size = (helper-call "bpf_get_prandom_u32")'
+            '    helper-call "bpf_probe_write_user" $dst $src $size'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 36 arg2 must be > 0"
+    }
+    {
         name: "source-helper-get-branch-snapshot-accepts-buffer"
         category: "helper-state"
         tags: [helper branch-stack accept]
@@ -22656,7 +22676,25 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "helper 67 arg2 must be >= 0"
+        error_contains: "stack-copy helpers require arg2 size to be between 0 and u32::MAX"
+    }
+    {
+        name: "source-helper-get-stack-rejects-dynamic-negative-size"
+        category: "helper-state"
+        tags: [helper stack-copy size dynamic reject source metadata]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define get_stack_dynamic_negative_buf --kind array --value-type bytes:24 --max-entries 1'
+            '  let buf = (0 | map-get get_stack_dynamic_negative_buf)'
+            '  let size = (0 - (helper-call "bpf_get_prandom_u32"))'
+            '  if $buf { helper-call "bpf_get_stack" $ctx $buf $size 0 }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "stack-copy helpers require arg2 size to be between 0 and u32::MAX"
     }
     {
         name: "source-helper-get-stack-rejects-invalid-flags"
@@ -34027,7 +34065,25 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "helper 147 arg2 must be >= 0"
+        error_contains: "helper 'bpf_d_path' requires arg2 size to be between 0 and u32::MAX"
+    }
+    {
+        name: "source-helper-d-path-rejects-dynamic-negative-size"
+        category: "helper-state"
+        tags: [helper-call file path source size dynamic reject]
+        requires: [kernel-btf]
+        target: "lsm:file_open"
+        program: [
+            '{|ctx|'
+            '  let buf = "0123456789abcdef"'
+            '  let size = (0 - (helper-call "bpf_get_prandom_u32"))'
+            '  helper-call "bpf_d_path" $ctx.arg0.f_path $buf $size'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_d_path' requires arg2 size to be between 0 and u32::MAX"
     }
     {
         name: "source-helper-d-path-pipeline-requires-explicit-path"
@@ -36373,6 +36429,24 @@ const FIXTURES = [
         error_contains: "helper 177 arg1 must be > 0"
     }
     {
+        name: "trace-vprintk-rejects-dynamic-format-size"
+        category: "helper-state"
+        tags: [helper-call trace-vprintk scalar-policy dynamic reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let fmt = "value %d\u{0}"'
+            '  let data = "0123456789abcdef"'
+            '  let size = (helper-call "bpf_get_prandom_u32")'
+            '  helper-call "bpf_trace_vprintk" $fmt $size $data 16'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 177 arg1 must be > 0"
+    }
+    {
         name: "trace-vprintk-rejects-small-data-buffer"
         category: "helper-state"
         tags: [helper-call trace-vprintk bounds reject]
@@ -36439,7 +36513,25 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "helper 149 arg1 must be >= 0"
+        error_contains: "helper 149 arg1 must be > 0"
+    }
+    {
+        name: "snprintf-btf-rejects-dynamic-negative-output-size"
+        category: "helper-state"
+        tags: [helper-call snprintf-btf scalar-policy dynamic reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let out = "00000000000000000000000000000000"'
+            '  let btf_ptr = "0123456789abcdef"'
+            '  let size = (0 - (helper-call "bpf_get_prandom_u32"))'
+            '  helper-call "bpf_snprintf_btf" $out $size $btf_ptr 16 0'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 149 arg1 must be > 0"
     }
     {
         name: "snprintf-btf-rejects-bad-btf-ptr-size"

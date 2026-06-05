@@ -52,6 +52,8 @@ documentation changes that matter to external alpha consumers.
   copy-from-user, branch-stack, and task-stack helpers.
 - Added source verifier coverage for dynamic skb timestamp, load-relative
   start-header, and csum null-side scalar policy rejects.
+- Added source verifier coverage for dynamic helper size rejects on
+  probe-write-user, stack-copy, d_path, trace-vprintk, and snprintf_btf paths.
 - Added actionable BTF target diagnostics for invalid `fentry`, `fexit`,
   `fmod_ret`, `tp_btf`, and LSM targets so compile-time errors include the
   modeled target-family rewrite guidance.
