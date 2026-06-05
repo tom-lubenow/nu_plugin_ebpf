@@ -2616,6 +2616,116 @@ fn test_map_leading_annotated_mut_globals_supports_constant_str_expand_range_ini
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_string_transform_initializers() {
+    let cases = [
+        ("str downcase", "AbC", "abc"),
+        ("str upcase", "AbC", "ABC"),
+        ("str reverse", "abc", "cba"),
+        ("str capitalize", "abc", "Abc"),
+        (
+            "str camel-case",
+            "this-is-the-first-case",
+            "thisIsTheFirstCase",
+        ),
+        (
+            "str kebab-case",
+            "THIS_IS_THE_SECOND_CASE",
+            "this-is-the-second-case",
+        ),
+        (
+            "str pascal-case",
+            "this_is_the_second_case",
+            "ThisIsTheSecondCase",
+        ),
+        ("str screaming-snake-case", "NuShell", "NU_SHELL"),
+        ("str snake-case", "NuShell", "nu_shell"),
+        ("str title-case", "nu-shell", "Nu Shell"),
+    ];
+
+    for (command, input, expected) in cases {
+        let source =
+            format!("{{|| mut transformed: string = (\"{input}\" | {command}); $transformed }}");
+        let ir_block = IrBlock {
+            instructions: vec![
+                Instruction::StoreVariable {
+                    var_id: VarId::new(11),
+                    src: RegId::new(0),
+                },
+                Instruction::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: VarId::new(11),
+                },
+                Instruction::Return { src: RegId::new(0) },
+            ],
+            spans: vec![Span::test_data(); 3],
+            data: Vec::<u8>::new().into(),
+            ast: vec![None; 3],
+            comments: vec!["let".into(), "".into(), "".into()],
+            register_count: 1,
+            file_count: 0,
+        };
+
+        let globals =
+            super::map_leading_annotated_mut_globals(&source, &ir_block, Span::test_data())
+                .unwrap_or_else(|err| panic!("{command} should map cleanly: {err:?}"));
+
+        assert_eq!(globals.len(), 1);
+        assert_eq!(
+            globals[0]
+                .initial_value
+                .as_str()
+                .expect("string transform should produce a string"),
+            expected,
+            "{command} output mismatch"
+        );
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_string_transform_list_initializer() {
+    let source =
+        "{|| mut transformed: list<string> = ([\"Ab\", \"Cd\"] | str downcase); $transformed }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant string transform list initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let transformed = vals
+                .iter()
+                .map(|value| {
+                    value
+                        .as_str()
+                        .expect("string transform should produce strings")
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(transformed, vec!["ab", "cd"]);
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_constant_split_chars_initializer() {
     let source = "{|| mut chars: list<string> = (\"abc\" | split chars); $chars }";
     let ir_block = IrBlock {
@@ -3391,6 +3501,41 @@ fn test_map_leading_annotated_mut_globals_rejects_constant_str_expand_without_br
         err.labels
             .iter()
             .any(|label| label.text.contains("requires at least one brace")),
+        "unexpected labels: {:?}",
+        err.labels
+    );
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_rejects_constant_string_transform_arguments() {
+    let source = "{|| mut transformed: string = (\"abc\" | str downcase --all); $transformed }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let err = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect_err("string transforms with arguments should be rejected");
+
+    assert!(
+        err.labels
+            .iter()
+            .any(|label| label.text.contains("does not accept arguments")),
         "unexpected labels: {:?}",
         err.labels
     );

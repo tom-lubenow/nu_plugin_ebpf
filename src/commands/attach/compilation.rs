@@ -1,6 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
 use fancy_regex::Regex as FancyRegex;
+use heck::{
+    ToKebabCase, ToLowerCamelCase, ToShoutySnakeCase, ToSnakeCase, ToTitleCase, ToUpperCamelCase,
+};
 use nu_cmd_lang::create_default_context;
 use nu_parser::parse;
 use nu_plugin::{EngineInterface, EvaluatedCall};
@@ -731,6 +734,19 @@ fn eval_supported_constant_call(
             let use_path = eval_supported_constant_str_expand_args(&call.arguments)?;
             eval_supported_constant_str_expand(input, use_path, span)
         }
+        "str downcase"
+        | "str upcase"
+        | "str reverse"
+        | "str capitalize"
+        | "str camel-case"
+        | "str kebab-case"
+        | "str pascal-case"
+        | "str screaming-snake-case"
+        | "str snake-case"
+        | "str title-case" => {
+            eval_supported_constant_no_argument_call(cmd_name, &call.arguments)?;
+            eval_supported_constant_str_transform(cmd_name, input, span)
+        }
         "split chars" => {
             let use_grapheme_clusters =
                 eval_supported_constant_split_chars_mode_call(&call.arguments)?;
@@ -1047,6 +1063,19 @@ fn eval_supported_constant_external_call(
             let use_path =
                 eval_supported_constant_str_expand_external_args(working_set, args, env, span)?;
             eval_supported_constant_str_expand(input, use_path, span)
+        }
+        "str downcase"
+        | "str upcase"
+        | "str reverse"
+        | "str capitalize"
+        | "str camel-case"
+        | "str kebab-case"
+        | "str pascal-case"
+        | "str screaming-snake-case"
+        | "str snake-case"
+        | "str title-case" => {
+            eval_supported_constant_no_external_args(cmd_name, args, span)?;
+            eval_supported_constant_str_transform(cmd_name, input, span)
         }
         "split" => eval_supported_constant_split_external_call(working_set, input, args, env, span),
         "split chars" => {
@@ -3053,6 +3082,87 @@ fn eval_supported_constant_str_expand_balanced_error(span: Span) -> LabeledError
     )
 }
 
+fn eval_supported_constant_str_transform(
+    cmd_name: &str,
+    input: Option<Value>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let value = eval_supported_constant_required_pipeline_input(cmd_name, input, span)?;
+    let value_span = value.span();
+    match value {
+        Value::List { vals, .. } => {
+            let values = vals
+                .into_iter()
+                .enumerate()
+                .map(|(index, value)| {
+                    let input = match value {
+                        Value::String { val, .. } | Value::Glob { val, .. } => val,
+                        other => {
+                            return Err(LabeledError::new(
+                                "Unsupported annotated mutable global initializer",
+                            )
+                            .with_label(
+                                format!(
+                                    "`{cmd_name}` requires string list items in compile-time global initializers; item {index} has type {}",
+                                    other.get_type()
+                                ),
+                                span,
+                            ));
+                        }
+                    };
+                    Ok(Value::string(
+                        eval_supported_constant_known_string_transform(cmd_name, input)?,
+                        value_span,
+                    ))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(Value::list(values, value_span))
+        }
+        value => {
+            let input = eval_supported_constant_exact_string_value(value, cmd_name, span)?;
+            Ok(Value::string(
+                eval_supported_constant_known_string_transform(cmd_name, input)?,
+                value_span,
+            ))
+        }
+    }
+}
+
+fn eval_supported_constant_known_string_transform(
+    cmd_name: &str,
+    input: String,
+) -> Result<String, LabeledError> {
+    match cmd_name {
+        "str downcase" => Ok(input.to_lowercase()),
+        "str upcase" => Ok(input.to_uppercase()),
+        "str reverse" => Ok(input.chars().rev().collect()),
+        "str capitalize" => Ok(eval_supported_constant_capitalize_first_char(&input)),
+        "str camel-case" => Ok(input.to_lower_camel_case()),
+        "str kebab-case" => Ok(input.to_kebab_case()),
+        "str pascal-case" => Ok(input.to_upper_camel_case()),
+        "str screaming-snake-case" => Ok(input.to_shouty_snake_case()),
+        "str snake-case" => Ok(input.to_snake_case()),
+        "str title-case" => Ok(input.to_title_case()),
+        _ => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!("unsupported string transform command `{cmd_name}`"),
+                Span::unknown(),
+            ),
+        ),
+    }
+}
+
+fn eval_supported_constant_capitalize_first_char(input: &str) -> String {
+    let mut chars = input.chars();
+    let Some(first) = chars.next() else {
+        return String::new();
+    };
+
+    let mut output = first.to_uppercase().collect::<String>();
+    output.push_str(chars.as_str());
+    output
+}
+
 fn eval_supported_constant_split_chars_mode_call(
     args: &[nu_protocol::ast::Argument],
 ) -> Result<bool, LabeledError> {
@@ -4405,6 +4515,20 @@ fn eval_supported_constant_str_external_call(
                 span,
             )?;
             eval_supported_constant_str_expand(input, use_path, span)
+        }
+        "downcase"
+        | "upcase"
+        | "reverse"
+        | "capitalize"
+        | "camel-case"
+        | "kebab-case"
+        | "pascal-case"
+        | "screaming-snake-case"
+        | "snake-case"
+        | "title-case" => {
+            let cmd_name = format!("str {subcommand}");
+            eval_supported_constant_no_external_args(&cmd_name, remaining_args, span)?;
+            eval_supported_constant_str_transform(&cmd_name, input, span)
         }
         _ => Err(
             LabeledError::new("Unsupported annotated mutable global initializer").with_label(
