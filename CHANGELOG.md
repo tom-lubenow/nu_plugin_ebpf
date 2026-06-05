@@ -36,6 +36,8 @@ documentation changes that matter to external alpha consumers.
   derived from helper return ranges.
 - Added source verifier coverage for dynamic stack-copy, stack-id, and
   `bpf_ringbuf_output` flag rejects derived from helper return ranges.
+- Added source verifier coverage for dynamic zero-flag rejects on message data
+  reshaping, redirect-neigh, skb tail, and xfrm helpers.
 - Added actionable BTF target diagnostics for invalid `fentry`, `fexit`,
   `fmod_ret`, `tp_btf`, and LSM targets so compile-time errors include the
   modeled target-family rewrite guidance.

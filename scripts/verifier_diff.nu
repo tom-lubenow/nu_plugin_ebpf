@@ -21265,6 +21265,24 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "tc-skb-get-xfrm-state-rejects-dynamic-flags"
+        category: "helper-state"
+        tags: [tc helper xfrm flags reject]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let state = "0123456789abcdef"'
+            '  let flags = (helper-call "bpf_get_prandom_u32")'
+            '  helper-call "bpf_skb_get_xfrm_state" $ctx 0 $state 16 $flags'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_skb_get_xfrm_state' requires arg4 = 0"
+    }
+    {
         name: "tc-skb-vlan-push-helper"
         category: "helper-state"
         tags: [tc helper vlan accept source metadata]
@@ -21409,6 +21427,23 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
+    }
+    {
+        name: "tc-skb-change-tail-rejects-dynamic-flags"
+        category: "helper-state"
+        tags: [tc helper skb-change flags reject source metadata]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let flags = (helper-call "bpf_get_prandom_u32")'
+            '  helper-call "bpf_skb_change_tail" $ctx 64 $flags'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_skb_change_tail' requires arg2 = 0"
     }
     {
         name: "tc-skb-change-head-rejects-nonzero-flags"
@@ -37087,6 +37122,21 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "redirect-neigh-rejects-dynamic-flags"
+        category: "helper-state"
+        tags: [redirect-neigh flags reject tc]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let flags = (helper-call "bpf_get_prandom_u32")'
+            '  helper-call "bpf_redirect_neigh" 1 0 0 $flags'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_redirect_neigh' requires arg3 = 0"
+    }
+    {
         name: "redirect-neigh-rejects-null-nonzero-plen"
         category: "helper-state"
         tags: [redirect-neigh null-pointer reject tc]
@@ -45776,6 +45826,22 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "msg-pull-data-rejects-dynamic-flags"
+        category: "helper-state"
+        tags: [adjust-message sk-msg flags reject]
+        target: "sk_msg:/sys/fs/bpf/demo_sockmap"
+        program: [
+            '{|ctx|'
+            '  let flags = (helper-call "bpf_get_prandom_u32")'
+            '  helper-call "bpf_msg_pull_data" $ctx 0 1 $flags'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "message data reshaping helpers require arg3 flags to be 0"
+    }
+    {
         name: "adjust-message-sk-msg-pull-rejects-stale-data"
         category: "language-surface"
         tags: [adjust-message sk-msg packet-bounds reject]
@@ -45822,6 +45888,22 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "msg-push-data-rejects-dynamic-flags"
+        category: "helper-state"
+        tags: [adjust-message sk-msg flags reject]
+        target: "sk_msg:/sys/fs/bpf/demo_sockmap"
+        program: [
+            '{|ctx|'
+            '  let flags = (helper-call "bpf_get_prandom_u32")'
+            '  helper-call "bpf_msg_push_data" $ctx 0 1 $flags'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "message data reshaping helpers require arg3 flags to be 0"
+    }
+    {
         name: "adjust-message-sk-msg-push-rejects-stale-data"
         category: "language-surface"
         tags: [adjust-message sk-msg packet-bounds reject]
@@ -45866,6 +45948,22 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
+    }
+    {
+        name: "msg-pop-data-rejects-dynamic-flags"
+        category: "helper-state"
+        tags: [adjust-message sk-msg flags reject]
+        target: "sk_msg:/sys/fs/bpf/demo_sockmap"
+        program: [
+            '{|ctx|'
+            '  let flags = (helper-call "bpf_get_prandom_u32")'
+            '  helper-call "bpf_msg_pop_data" $ctx 0 1 $flags'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "message data reshaping helpers require arg3 flags to be 0"
     }
     {
         name: "adjust-message-sk-msg-pop-rejects-stale-data"
