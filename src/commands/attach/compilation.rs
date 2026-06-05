@@ -700,6 +700,11 @@ fn eval_supported_constant_call(
             eval_supported_constant_no_argument_call(cmd_name, &call.arguments)?;
             eval_supported_constant_bytes_length(input, span)
         }
+        "bytes at" => {
+            let range =
+                eval_supported_constant_bytes_at_call_range(working_set, &call.arguments, env, span)?;
+            eval_supported_constant_bytes_at(input, range, span)
+        }
         "bytes build" => {
             let bytes =
                 eval_supported_constant_bytes_build_call_args(working_set, &call.arguments, env)?;
@@ -1096,6 +1101,10 @@ fn eval_supported_constant_external_call(
         "bytes length" => {
             eval_supported_constant_no_external_args(cmd_name, args, span)?;
             eval_supported_constant_bytes_length(input, span)
+        }
+        "bytes at" => {
+            let range = eval_supported_constant_bytes_at_external_range(working_set, args, env, span)?;
+            eval_supported_constant_bytes_at(input, range, span)
         }
         "bytes build" => {
             let bytes = eval_supported_constant_bytes_build_external_args(working_set, args, env)?;
@@ -1957,6 +1966,159 @@ fn eval_supported_constant_bytes_length(
     }
 }
 
+fn eval_supported_constant_bytes_at_call_range(
+    working_set: &StateWorkingSet,
+    args: &[nu_protocol::ast::Argument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<ConstantMaybeOpenRange, LabeledError> {
+    let mut range_expr = None;
+    for arg in args {
+        match arg {
+            nu_protocol::ast::Argument::Positional(expr)
+            | nu_protocol::ast::Argument::Unknown(expr) => {
+                if range_expr.replace(expr).is_some() {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            "`bytes at` accepts exactly one range argument in compile-time global initializers; cell-path rest arguments are not supported",
+                            arg.span(),
+                        ));
+                }
+            }
+            nu_protocol::ast::Argument::Named(named) => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        format!(
+                            "`bytes at` does not accept named argument --{} in compile-time global initializers",
+                            named.0.item
+                        ),
+                        arg.span(),
+                    ));
+            }
+            nu_protocol::ast::Argument::Spread(expr) => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`bytes at` arguments cannot use spread syntax in compile-time global initializers",
+                        expr.span,
+                    ));
+            }
+        }
+    }
+
+    let Some(range_expr) = range_expr else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`bytes at` requires exactly one range argument in compile-time global initializers",
+                span,
+            ),
+        );
+    };
+    eval_supported_constant_range_argument(working_set, range_expr, env, "bytes at")
+}
+
+fn eval_supported_constant_bytes_at_external_range(
+    working_set: &StateWorkingSet,
+    args: &[ExternalArgument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<ConstantMaybeOpenRange, LabeledError> {
+    let mut range = None;
+    for arg in args {
+        let ExternalArgument::Regular(expr) = arg else {
+            return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                .with_label(
+                    "`bytes at` arguments cannot use spread syntax in compile-time global initializers",
+                    arg.expr().span,
+                ));
+        };
+        if let Expr::GlobPattern(token, _) = &expr.expr
+            && let Some(parsed_range) =
+                eval_supported_constant_range_token(token, expr.span, "bytes at")?
+        {
+            if range.replace(parsed_range).is_some() {
+                return Err(LabeledError::new(
+                    "Unsupported annotated mutable global initializer",
+                )
+                .with_label(
+                    "`bytes at` accepts exactly one range argument in compile-time global initializers; cell-path rest arguments are not supported",
+                    expr.span,
+                ));
+            }
+            continue;
+        }
+        let value = eval_supported_constant_value_with_env(working_set, expr, env)?;
+        let parsed_range = eval_supported_constant_range_value(value, expr.span, "bytes at")?;
+        if range.replace(parsed_range).is_some() {
+            return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                .with_label(
+                    "`bytes at` accepts exactly one range argument in compile-time global initializers; cell-path rest arguments are not supported",
+                    expr.span,
+                ));
+        }
+    }
+
+    range.ok_or_else(|| {
+        LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+            "`bytes at` requires exactly one range argument in compile-time global initializers",
+            span,
+        )
+    })
+}
+
+fn eval_supported_constant_bytes_at(
+    input: Option<Value>,
+    range: ConstantMaybeOpenRange,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let value = eval_supported_constant_required_pipeline_input("bytes at", input, span)?;
+    let value_span = value.span();
+    match value {
+        Value::Binary { val, .. } => Ok(Value::binary(
+            eval_supported_constant_bytes_slice(val, range),
+            value_span,
+        )),
+        Value::List { vals, .. } => {
+            let sliced = vals
+                .into_iter()
+                .enumerate()
+                .map(|(index, value)| {
+                    let Value::Binary { val, .. } = value else {
+                        return Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
+                        .with_label(
+                            format!(
+                                "`bytes at` requires binary list items in compile-time global initializers; item {index} has type {}",
+                                value.get_type()
+                            ),
+                            span,
+                        ));
+                    };
+                    Ok(Value::binary(
+                        eval_supported_constant_bytes_slice(val, range),
+                        value_span,
+                    ))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(Value::list(sliced, value_span))
+        }
+        other => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`bytes at` in a compile-time global initializer requires binary or list<binary> input; got {}",
+                    other.get_type()
+                ),
+                span,
+            ),
+        ),
+    }
+}
+
+fn eval_supported_constant_bytes_slice(input: Vec<u8>, range: ConstantMaybeOpenRange) -> Vec<u8> {
+    let (start, end) = eval_supported_constant_string_range_bounds(range, input.len());
+    input[start..end].to_vec()
+}
+
 fn eval_supported_constant_bytes_build_call_args(
     working_set: &StateWorkingSet,
     args: &[nu_protocol::ast::Argument],
@@ -2775,6 +2937,15 @@ fn eval_supported_constant_bytes_external_call(
         "length" => {
             eval_supported_constant_no_external_args("bytes length", remaining_args, span)?;
             eval_supported_constant_bytes_length(input, span)
+        }
+        "at" => {
+            let range = eval_supported_constant_bytes_at_external_range(
+                working_set,
+                remaining_args,
+                env,
+                span,
+            )?;
+            eval_supported_constant_bytes_at(input, range, span)
         }
         "build" => {
             let bytes = eval_supported_constant_bytes_build_external_args(
