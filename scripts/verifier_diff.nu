@@ -17899,6 +17899,26 @@ const FIXTURES = [
         error_contains: "helper 'bpf_get_ns_current_pid_tgid' requires arg3 = 8"
     }
     {
+        name: "source-helper-get-ns-current-pid-tgid-rejects-dynamic-size"
+        category: "helper-state"
+        tags: [helper current namespace size dynamic reject source metadata]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define nsdata_dynamic --kind array --value-type bytes:8 --max-entries 1'
+            '  let ns = (0 | map-get nsdata_dynamic)'
+            '  let size = (helper-call "bpf_get_prandom_u32")'
+            '  if $ns {'
+            '    helper-call "bpf_get_ns_current_pid_tgid" 0 0 $ns $size'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_get_ns_current_pid_tgid' requires arg3 = 8"
+    }
+    {
         name: "source-helper-tracing-context-cookie-helpers"
         category: "helper-state"
         tags: [helper tracing context-cookie accept source metadata]
@@ -36382,6 +36402,22 @@ const FIXTURES = [
         error_contains: "helper 'bpf_loop' requires arg0 nr_loops"
     }
     {
+        name: "bpf-loop-rejects-dynamic-too-many-iterations"
+        category: "helper-state"
+        tags: [bpf-loop bounds dynamic reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let loops = ((helper-call "bpf_get_prandom_u32") + 8388609)'
+            '  helper-call "bpf_loop" $loops {|i cb| 0 } "ctx" 0'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_loop' requires arg0 nr_loops"
+    }
+    {
         name: "user-ringbuf-drain-rejects-invalid-flags"
         category: "helper-state"
         tags: [user-ringbuf flags reject]
@@ -36568,6 +36604,24 @@ const FIXTURES = [
         error_contains: "helper 'bpf_snprintf_btf' requires arg3 = 16"
     }
     {
+        name: "snprintf-btf-rejects-dynamic-btf-ptr-size"
+        category: "helper-state"
+        tags: [helper-call snprintf-btf scalar-policy dynamic reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let out = "00000000000000000000000000000000"'
+            '  let btf_ptr = "0123456789abcdef"'
+            '  let btf_size = (helper-call "bpf_get_prandom_u32")'
+            '  helper-call "bpf_snprintf_btf" $out 32 $btf_ptr $btf_size 0'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_snprintf_btf' requires arg3 = 16"
+    }
+    {
         name: "snprintf-btf-rejects-invalid-flags"
         category: "helper-state"
         tags: [helper-call snprintf-btf flags reject]
@@ -36676,6 +36730,23 @@ const FIXTURES = [
             '{|ctx|'
             '  let value = "01234567"'
             '  helper-call "bpf_perf_event_read_value" perf_events 0 $value 8'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_perf_event_read_value' requires arg3 = 24"
+    }
+    {
+        name: "perf-event-read-value-rejects-dynamic-size"
+        category: "helper-state"
+        tags: [perf-event scalar-policy dynamic reject]
+        target: "perf_event:software:cpu-clock:period=100000"
+        program: [
+            '{|ctx|'
+            '  let value = "012345678901234567890123"'
+            '  let size = (helper-call "bpf_get_prandom_u32")'
+            '  helper-call "bpf_perf_event_read_value" perf_events 0 $value $size'
             '  0'
             '}'
         ]

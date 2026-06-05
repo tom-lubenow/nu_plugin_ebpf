@@ -56,6 +56,8 @@ documentation changes that matter to external alpha consumers.
   probe-write-user, stack-copy, d_path, trace-vprintk, and snprintf_btf paths.
 - Extended dynamic stack-copy size coverage to task-stack negative-size
   helper paths.
+- Added source verifier coverage for dynamic exact-size and iteration-bound
+  rejects on namespace, snprintf_btf, perf-event read-value, and bpf_loop paths.
 - Added actionable BTF target diagnostics for invalid `fentry`, `fexit`,
   `fmod_ret`, `tp_btf`, and LSM targets so compile-time errors include the
   modeled target-family rewrite guidance.
