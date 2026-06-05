@@ -18153,6 +18153,23 @@ const FIXTURES = [
         error_contains: "helper 'bpf_sysctl_get_name' requires arg3 flags"
     }
     {
+        name: "source-helper-cgroup-sysctl-rejects-dynamic-name-flags"
+        category: "helper-state"
+        tags: [helper sysctl cgroup-sysctl flags reject source metadata]
+        target: "cgroup_sysctl:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  let buf = "0123456789abcdef"'
+            '  let flags = (helper-call "bpf_get_prandom_u32")'
+            '  helper-call "bpf_sysctl_get_name" $ctx $buf 16 $flags'
+            '  "allow"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_sysctl_get_name' requires arg3 flags"
+    }
+    {
         name: "source-helper-cgroup-sysctl-rejects-short-map-buffer"
         category: "helper-state"
         tags: [helper sysctl cgroup-sysctl map-bounds reject source metadata]
@@ -18223,6 +18240,44 @@ const FIXTURES = [
         local: "reject"
         kernel: "skip"
         error_contains: "helper 'bpf_strtol' requires arg2 flags to be one of 0, 8, 10, or 16"
+    }
+    {
+        name: "source-helper-strtol-rejects-dynamic-base-flags"
+        category: "helper-state"
+        tags: [helper string parse flags reject source metadata]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  let input = "12345678"'
+            '  let out = "00000000"'
+            '  let flags = (helper-call "bpf_get_prandom_u32")'
+            '  helper-call "bpf_strtol" $input 8 $flags $out'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_strtol' requires arg2 flags to be one of 0, 8, 10, or 16"
+    }
+    {
+        name: "source-helper-strtoul-rejects-dynamic-base-flags"
+        category: "helper-state"
+        tags: [helper string parse flags reject source metadata]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  let input = "12345678"'
+            '  let out = "00000000"'
+            '  let flags = (helper-call "bpf_get_prandom_u32")'
+            '  helper-call "bpf_strtoul" $input 8 $flags $out'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_strtoul' requires arg2 flags to be one of 0, 8, 10, or 16"
     }
     {
         name: "source-helper-strtox-rejects-short-map-result"
