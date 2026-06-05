@@ -475,8 +475,6 @@ fn test_verifier_diff_source_fixtures_cover_modeled_helper_names() {
         "bpf_send_signal".to_string(),
         "bpf_send_signal_thread".to_string(),
         "bpf_seq_printf_btf".to_string(),
-        "bpf_sk_ancestor_cgroup_id".to_string(),
-        "bpf_sk_cgroup_id".to_string(),
         "bpf_sk_select_reuseport".to_string(),
         "bpf_skc_lookup_tcp".to_string(),
         "bpf_snprintf".to_string(),

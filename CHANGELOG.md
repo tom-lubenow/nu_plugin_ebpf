@@ -6,6 +6,7 @@ documentation changes that matter to external alpha consumers.
 
 ## Unreleased
 
+- Added source verifier coverage for raw socket cgroup ID helper calls.
 - Added source verifier coverage for raw local-storage delete helper calls across
   sk, task, inode, and cgroup storage maps.
 - Added source verifier coverage for direct helper-call escape hatches across

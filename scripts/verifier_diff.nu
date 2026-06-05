@@ -23312,6 +23312,24 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "source-helper-sk-cgroup-ids"
+        category: "helper-state"
+        tags: [cgroup-skb helper socket cgroup accept source metadata]
+        target: "cgroup_skb:/sys/fs/cgroup:egress"
+        program: [
+            '{|ctx|'
+            '  let sk = $ctx.sk'
+            '  if $sk {'
+            '    helper-call "bpf_sk_cgroup_id" $sk'
+            '    helper-call "bpf_sk_ancestor_cgroup_id" $sk 0'
+            '  }'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "source-helper-skc-socket-conversions"
         category: "helper-state"
         tags: [sk-lookup helper socket accept source metadata]
