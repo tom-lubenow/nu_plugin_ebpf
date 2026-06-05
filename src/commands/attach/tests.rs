@@ -1302,6 +1302,119 @@ fn test_map_leading_annotated_mut_globals_rejects_constant_list_take_missing_cou
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_list_reverse_initializer() {
+    let source = "{|| mut vals: list<int> = ([7, 2, 4] | reverse); $vals }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant list reverse initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let ints = vals
+                .iter()
+                .map(|value| value.as_int().expect("reverse should keep integers"))
+                .collect::<Vec<_>>();
+            assert_eq!(ints, vec![4, 2, 7]);
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_list_uniq_initializer() {
+    let source = "{|| mut vals: list<int> = ([7, 2, 7, 4, 2] | uniq); $vals }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant list uniq initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let ints = vals
+                .iter()
+                .map(|value| value.as_int().expect("uniq should keep integers"))
+                .collect::<Vec<_>>();
+            assert_eq!(ints, vec![7, 2, 4]);
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_rejects_constant_list_reverse_arguments() {
+    let source = "{|| mut vals: list<int> = ([7, 2, 4] | reverse 1); $vals }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let err = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect_err("reverse arguments should be rejected");
+
+    assert!(
+        err.labels
+            .iter()
+            .any(|label| label.text.contains("reverse") && label.text.contains("arguments")),
+        "unexpected labels: {:?}",
+        err.labels
+    );
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_constant_list_spread_initializer() {
     let source = "{|| mut vals: list<int> = [1, ...[2, 3]]; $vals }";
     let ir_block = IrBlock {

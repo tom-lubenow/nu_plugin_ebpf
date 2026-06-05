@@ -654,6 +654,18 @@ fn eval_supported_constant_call(
             env,
             span,
         ),
+        "reverse" | "uniq" => {
+            if !call.arguments.is_empty() {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        format!(
+                            "`{cmd_name}` does not accept arguments in compile-time global initializers"
+                        ),
+                        span,
+                    ));
+            }
+            eval_supported_constant_list_reverse_or_uniq(cmd_name, input, span)
+        }
         "get" => eval_supported_constant_get_call(
             working_set,
             cmd_name,
@@ -812,6 +824,18 @@ fn eval_supported_constant_external_call(
             eval_supported_constant_list_take_skip_or_drop(
                 working_set, cmd_name, input, count_expr, env, span,
             )
+        }
+        "reverse" | "uniq" => {
+            if !args.is_empty() {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        format!(
+                            "`{cmd_name}` does not accept arguments in compile-time global initializers"
+                        ),
+                        span,
+                    ));
+            }
+            eval_supported_constant_list_reverse_or_uniq(cmd_name, input, span)
         }
         "get" => {
             let [path_arg] = args else {
@@ -1192,6 +1216,44 @@ fn eval_supported_constant_list_first_or_last(
     };
 
     Ok(Value::list(selected, value_span))
+}
+
+fn eval_supported_constant_list_reverse_or_uniq(
+    cmd_name: &str,
+    input: Option<Value>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let value = input.ok_or_else(|| {
+        LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+            format!(
+                "`{cmd_name}` in a compile-time global initializer must receive pipeline input"
+            ),
+            span,
+        )
+    })?;
+    let value_span = value.span();
+    let Value::List { vals, .. } = value else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!("`{cmd_name}` in a compile-time global initializer requires list input"),
+                span,
+            ),
+        );
+    };
+
+    let transformed = if cmd_name == "reverse" {
+        vals.into_iter().rev().collect()
+    } else {
+        let mut unique = Vec::new();
+        for value in vals {
+            if !unique.contains(&value) {
+                unique.push(value);
+            }
+        }
+        unique
+    };
+
+    Ok(Value::list(transformed, value_span))
 }
 
 fn eval_supported_constant_list_take_skip_or_drop_call(
