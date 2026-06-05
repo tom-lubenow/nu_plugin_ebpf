@@ -710,6 +710,15 @@ fn eval_supported_constant_call(
             )?;
             eval_supported_constant_bytes_predicate(cmd_name, input, pattern, span)
         }
+        "bytes index-of" => {
+            let args = eval_supported_constant_bytes_index_of_call_args(
+                working_set,
+                &call.arguments,
+                env,
+                span,
+            )?;
+            eval_supported_constant_bytes_index_of(input, args, span)
+        }
         "char" => {
             let output =
                 eval_supported_constant_char_call_args(working_set, &call.arguments, env, span)?;
@@ -1083,6 +1092,11 @@ fn eval_supported_constant_external_call(
                 span,
             )?;
             eval_supported_constant_bytes_predicate(cmd_name, input, pattern, span)
+        }
+        "bytes index-of" => {
+            let args =
+                eval_supported_constant_bytes_index_of_external_args(working_set, args, env, span)?;
+            eval_supported_constant_bytes_index_of(input, args, span)
         }
         "char" => {
             let output = eval_supported_constant_char_external_args(working_set, args, env, span)?;
@@ -2118,6 +2132,312 @@ fn eval_supported_constant_bytes_predicate(
     }
 }
 
+#[derive(Clone)]
+struct ConstantBytesIndexOfArgs {
+    pattern: Vec<u8>,
+    search_from_end: bool,
+    all_matches: bool,
+}
+
+fn eval_supported_constant_bytes_index_of_call_args(
+    working_set: &StateWorkingSet,
+    args: &[nu_protocol::ast::Argument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<ConstantBytesIndexOfArgs, LabeledError> {
+    let mut pattern_expr = None;
+    let mut search_from_end = false;
+    let mut all_matches = false;
+    for arg in args {
+        match arg {
+            nu_protocol::ast::Argument::Positional(expr)
+            | nu_protocol::ast::Argument::Unknown(expr) => {
+                if pattern_expr.replace(expr).is_some() {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            "`bytes index-of` accepts exactly one binary pattern argument in compile-time global initializers",
+                            arg.span(),
+                        ));
+                }
+            }
+            nu_protocol::ast::Argument::Named(named) => {
+                if named.2.is_some() {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            "`bytes index-of` flags cannot receive values in compile-time global initializers",
+                            arg.span(),
+                        ));
+                }
+                match named.0.item.as_str() {
+                    "all" => all_matches = true,
+                    "end" => search_from_end = true,
+                    _ => {
+                        return Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
+                        .with_label(
+                            "`bytes index-of` supports only --all and --end in compile-time global initializers",
+                            arg.span(),
+                        ));
+                    }
+                }
+            }
+            nu_protocol::ast::Argument::Spread(expr) => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`bytes index-of` arguments cannot use spread syntax in compile-time global initializers",
+                        expr.span,
+                    ));
+            }
+        }
+    }
+
+    let Some(pattern_expr) = pattern_expr else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`bytes index-of` requires exactly one binary pattern argument in compile-time global initializers",
+                span,
+            ),
+        );
+    };
+    let pattern =
+        eval_supported_constant_binary_argument(working_set, pattern_expr, env, "bytes index-of")?;
+    eval_supported_constant_validate_bytes_index_of_pattern(&pattern, pattern_expr.span)?;
+
+    Ok(ConstantBytesIndexOfArgs {
+        pattern,
+        search_from_end,
+        all_matches,
+    })
+}
+
+fn eval_supported_constant_bytes_index_of_external_args(
+    working_set: &StateWorkingSet,
+    args: &[ExternalArgument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<ConstantBytesIndexOfArgs, LabeledError> {
+    let mut pattern_expr = None;
+    let mut search_from_end = false;
+    let mut all_matches = false;
+    for arg in args {
+        let ExternalArgument::Regular(expr) = arg else {
+            return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                .with_label(
+                    "`bytes index-of` arguments cannot use spread syntax in compile-time global initializers",
+                    arg.expr().span,
+                ));
+        };
+        let value = eval_supported_constant_value_with_env(working_set, expr, env)?;
+        match value {
+            Value::String { val, .. } | Value::Glob { val, .. }
+                if val == "--all" || val == "--end" =>
+            {
+                if val == "--all" {
+                    all_matches = true;
+                } else {
+                    search_from_end = true;
+                }
+            }
+            Value::String { val, .. } | Value::Glob { val, .. } if val.starts_with("--") => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`bytes index-of` supports only --all and --end in compile-time global initializers",
+                        expr.span,
+                    ));
+            }
+            _ => {
+                if pattern_expr.replace(expr).is_some() {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            "`bytes index-of` accepts exactly one binary pattern argument in compile-time global initializers",
+                            expr.span,
+                        ));
+                }
+            }
+        }
+    }
+
+    let Some(pattern_expr) = pattern_expr else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`bytes index-of` requires exactly one binary pattern argument in compile-time global initializers",
+                span,
+            ),
+        );
+    };
+    let pattern =
+        eval_supported_constant_binary_argument(working_set, pattern_expr, env, "bytes index-of")?;
+    eval_supported_constant_validate_bytes_index_of_pattern(&pattern, pattern_expr.span)?;
+
+    Ok(ConstantBytesIndexOfArgs {
+        pattern,
+        search_from_end,
+        all_matches,
+    })
+}
+
+fn eval_supported_constant_validate_bytes_index_of_pattern(
+    pattern: &[u8],
+    span: Span,
+) -> Result<(), LabeledError> {
+    if pattern.is_empty() {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`bytes index-of` requires a non-empty binary pattern in compile-time global initializers",
+                span,
+            ),
+        );
+    }
+    Ok(())
+}
+
+fn eval_supported_constant_bytes_index_of(
+    input: Option<Value>,
+    args: ConstantBytesIndexOfArgs,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let value = eval_supported_constant_required_pipeline_input("bytes index-of", input, span)?;
+    let value_span = value.span();
+    match value {
+        Value::Binary { val, .. } => {
+            if args.all_matches {
+                Ok(Value::list(
+                    eval_supported_constant_bytes_all_match_offsets(&val, &args)
+                        .into_iter()
+                        .map(|offset| Value::int(offset, value_span))
+                        .collect(),
+                    value_span,
+                ))
+            } else {
+                Ok(Value::int(
+                    eval_supported_constant_bytes_match_offset(&val, &args),
+                    value_span,
+                ))
+            }
+        }
+        Value::List { vals, .. } => {
+            let offsets = vals
+                .into_iter()
+                .enumerate()
+                .map(|(index, value)| {
+                    let Value::Binary { val, .. } = value else {
+                        return Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
+                        .with_label(
+                            format!(
+                                "`bytes index-of` requires binary list items in compile-time global initializers; item {index} has type {}",
+                                value.get_type()
+                            ),
+                            span,
+                        ));
+                    };
+                    if args.all_matches {
+                        Ok(Value::list(
+                            eval_supported_constant_bytes_all_match_offsets(&val, &args)
+                                .into_iter()
+                                .map(|offset| Value::int(offset, value_span))
+                                .collect(),
+                            value_span,
+                        ))
+                    } else {
+                        Ok(Value::int(
+                            eval_supported_constant_bytes_match_offset(&val, &args),
+                            value_span,
+                        ))
+                    }
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(Value::list(offsets, value_span))
+        }
+        other => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`bytes index-of` in a compile-time global initializer requires binary or list<binary> input; got {}",
+                    other.get_type()
+                ),
+                span,
+            ),
+        ),
+    }
+}
+
+fn eval_supported_constant_bytes_match_offset(
+    input: &[u8],
+    args: &ConstantBytesIndexOfArgs,
+) -> i64 {
+    if args.pattern.len() > input.len() {
+        return -1;
+    }
+
+    let last_offset = input.len() - args.pattern.len();
+    let offsets: Box<dyn Iterator<Item = usize>> = if args.search_from_end {
+        Box::new((0..=last_offset).rev())
+    } else {
+        Box::new(0..=last_offset)
+    };
+    offsets
+        .filter(|offset| input[*offset..*offset + args.pattern.len()] == args.pattern)
+        .map(|offset| offset as i64)
+        .next()
+        .unwrap_or(-1)
+}
+
+fn eval_supported_constant_bytes_all_match_offsets(
+    input: &[u8],
+    args: &ConstantBytesIndexOfArgs,
+) -> Vec<i64> {
+    if args.pattern.len() > input.len() {
+        return Vec::new();
+    }
+
+    if args.search_from_end {
+        eval_supported_constant_bytes_all_match_offsets_from_end(input, &args.pattern)
+    } else {
+        eval_supported_constant_bytes_all_match_offsets_from_start(input, &args.pattern)
+    }
+}
+
+fn eval_supported_constant_bytes_all_match_offsets_from_start(
+    input: &[u8],
+    pattern: &[u8],
+) -> Vec<i64> {
+    let mut offsets = Vec::new();
+    let mut offset = 0;
+    while offset + pattern.len() <= input.len() {
+        if input[offset..offset + pattern.len()] == *pattern {
+            offsets.push(offset as i64);
+            offset += pattern.len();
+        } else {
+            offset += 1;
+        }
+    }
+    offsets
+}
+
+fn eval_supported_constant_bytes_all_match_offsets_from_end(
+    input: &[u8],
+    pattern: &[u8],
+) -> Vec<i64> {
+    let mut offsets = Vec::new();
+    let mut offset = input.len() - pattern.len();
+    loop {
+        if input[offset..offset + pattern.len()] == *pattern {
+            offsets.push(offset as i64);
+            if offset < pattern.len() {
+                break;
+            }
+            offset -= pattern.len();
+        } else if offset == 0 {
+            break;
+        } else {
+            offset -= 1;
+        }
+    }
+    offsets
+}
+
 fn eval_supported_constant_bytes_external_call(
     working_set: &StateWorkingSet,
     input: Option<Value>,
@@ -2159,6 +2479,15 @@ fn eval_supported_constant_bytes_external_call(
                 span,
             )?;
             eval_supported_constant_bytes_predicate(&cmd_name, input, pattern, span)
+        }
+        "index-of" => {
+            let args = eval_supported_constant_bytes_index_of_external_args(
+                working_set,
+                remaining_args,
+                env,
+                span,
+            )?;
+            eval_supported_constant_bytes_index_of(input, args, span)
         }
         _ => Err(
             LabeledError::new("Unsupported annotated mutable global initializer").with_label(

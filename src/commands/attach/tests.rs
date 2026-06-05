@@ -2090,6 +2090,266 @@ fn test_map_leading_annotated_mut_globals_supports_let_bound_constant_bytes_pred
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_bytes_index_of_initializers() {
+    let cases = [
+        (
+            "{|| mut offset: int = (0x[01 02 03 02] | bytes index-of 0x[02]); $offset }",
+            1,
+            "bytes index-of should return the first matching offset",
+        ),
+        (
+            "{|| mut offset: int = (0x[01 02 03 02] | bytes index-of 0x[02] --end); $offset }",
+            3,
+            "bytes index-of --end should return the last matching offset",
+        ),
+        (
+            "{|| mut offset: int = (0x[01 02 03] | bytes index-of 0x[04]); $offset }",
+            -1,
+            "bytes index-of should return -1 for missing patterns",
+        ),
+    ];
+
+    for (source, expected, message) in cases {
+        let ir_block = IrBlock {
+            instructions: vec![
+                Instruction::StoreVariable {
+                    var_id: VarId::new(11),
+                    src: RegId::new(0),
+                },
+                Instruction::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: VarId::new(11),
+                },
+                Instruction::Return { src: RegId::new(0) },
+            ],
+            spans: vec![Span::test_data(); 3],
+            data: Vec::<u8>::new().into(),
+            ast: vec![None; 3],
+            comments: vec!["let".into(), "".into(), "".into()],
+            register_count: 1,
+            file_count: 0,
+        };
+
+        let globals =
+            super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+                .unwrap_or_else(|err| panic!("{message}: {err:?}"));
+
+        assert_eq!(globals.len(), 1);
+        assert_eq!(
+            globals[0]
+                .initial_value
+                .as_int()
+                .expect("bytes index-of should produce an integer"),
+            expected,
+            "{message}"
+        );
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_bytes_index_of_all_initializer() {
+    let source = "{|| mut offsets: list<int> = (0x[01 02 03 02] | bytes index-of 0x[02] --all --end); $offsets }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant bytes index-of --all initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let offsets = vals
+                .iter()
+                .map(|value| {
+                    value
+                        .as_int()
+                        .expect("bytes index-of --all should produce integers")
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(offsets, vec![3, 1]);
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_bytes_index_of_list_initializer() {
+    let source = "{|| mut offsets: list<int> = ([0x[01 02 03], 0x[02 03 02], 0x[]] | bytes index-of 0x[02] --end); $offsets }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant bytes index-of list initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let offsets = vals
+                .iter()
+                .map(|value| value.as_int().expect("bytes index-of should produce ints"))
+                .collect::<Vec<_>>();
+            assert_eq!(offsets, vec![1, 2, -1]);
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_bytes_index_of_all_list_initializer() {
+    let source = "{|| mut offsets: list<list<int>> = ([0x[01 02 03], 0x[02 03 02], 0x[]] | bytes index-of 0x[02] --all); $offsets }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant bytes index-of --all list initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let offsets = vals
+                .iter()
+                .map(|value| match value {
+                    Value::List { vals, .. } => vals
+                        .iter()
+                        .map(|value| {
+                            value
+                                .as_int()
+                                .expect("bytes index-of --all should produce ints")
+                        })
+                        .collect::<Vec<_>>(),
+                    other => panic!("expected nested list item, got {other:?}"),
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(offsets, vec![vec![1], vec![0, 2], vec![]]);
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_let_bound_constant_bytes_index_of_pattern() {
+    let source = "{|| let pattern = 0x[02 03]; mut offset: int = (0x[01 02 03 02 03] | bytes index-of $pattern --end); $offset }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(10),
+                src: RegId::new(0),
+            },
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(1),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 4],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 4],
+        comments: vec!["let".into(), "let".into(), "".into(), "".into()],
+        register_count: 2,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("let-bound constant bytes index-of pattern should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(
+        globals[0]
+            .initial_value
+            .as_int()
+            .expect("bytes index-of should produce an integer"),
+        3
+    );
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_rejects_constant_bytes_index_of_empty_pattern() {
+    let source = "{|| mut offset: int = (0x[01 02] | bytes index-of 0x[]); $offset }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let err = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect_err("empty bytes index-of pattern should be rejected");
+
+    assert!(
+        format!("{err:?}").contains("non-empty binary pattern"),
+        "unexpected error: {err:?}"
+    );
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_constant_char_initializers() {
     let cases = [
         (
