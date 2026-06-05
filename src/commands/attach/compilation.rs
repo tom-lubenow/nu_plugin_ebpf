@@ -666,6 +666,12 @@ fn eval_supported_constant_call(
             }
             eval_supported_constant_list_reverse_or_uniq(cmd_name, input, span)
         }
+        "compact" => eval_supported_constant_list_compact_call(
+            working_set,
+            input,
+            &call.arguments,
+            span,
+        ),
         "get" => eval_supported_constant_get_call(
             working_set,
             cmd_name,
@@ -836,6 +842,22 @@ fn eval_supported_constant_external_call(
                     ));
             }
             eval_supported_constant_list_reverse_or_uniq(cmd_name, input, span)
+        }
+        "compact" => {
+            let mut arg_exprs = Vec::new();
+            for arg in args {
+                let ExternalArgument::Regular(expr) = arg else {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            "`compact` arguments cannot use spread syntax in compile-time global initializers",
+                            arg.expr().span,
+                        ));
+                };
+                arg_exprs.push(expr);
+            }
+            eval_supported_constant_list_compact_external_call(
+                working_set, input, arg_exprs, span,
+            )
         }
         "get" => {
             let [path_arg] = args else {
@@ -1254,6 +1276,144 @@ fn eval_supported_constant_list_reverse_or_uniq(
     };
 
     Ok(Value::list(transformed, value_span))
+}
+
+fn eval_supported_constant_list_compact_call(
+    working_set: &StateWorkingSet,
+    input: Option<Value>,
+    args: &[nu_protocol::ast::Argument],
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let mut remove_empty = false;
+    let mut columns = Vec::new();
+    for arg in args {
+        match arg {
+            nu_protocol::ast::Argument::Positional(expr)
+            | nu_protocol::ast::Argument::Unknown(expr) => {
+                columns.push(eval_supported_constant_record_field_name(
+                    working_set,
+                    expr,
+                )?);
+            }
+            nu_protocol::ast::Argument::Named(named) => {
+                if named.0.item != "empty" || named.2.is_some() {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            "`compact` accepts only the --empty flag in compile-time global initializers",
+                            arg.span(),
+                        ));
+                }
+                remove_empty = true;
+            }
+            nu_protocol::ast::Argument::Spread(expr) => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`compact` arguments cannot use spread syntax in compile-time global initializers",
+                        expr.span,
+                    ));
+            }
+        }
+    }
+
+    eval_supported_constant_list_compact(input, remove_empty, columns, span)
+}
+
+fn eval_supported_constant_list_compact_external_call(
+    working_set: &StateWorkingSet,
+    input: Option<Value>,
+    mut arg_exprs: Vec<&nu_protocol::ast::Expression>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let mut remove_empty = false;
+    if let Some(first) = arg_exprs.first() {
+        let first_value = eval_supported_constant_value(working_set, first)?;
+        if matches!(
+            first_value,
+            Value::String { ref val, .. } | Value::Glob { ref val, .. } if val == "--empty"
+        ) {
+            remove_empty = true;
+            arg_exprs.remove(0);
+        }
+    }
+
+    let columns = arg_exprs
+        .into_iter()
+        .map(|expr| eval_supported_constant_record_field_name(working_set, expr))
+        .collect::<Result<Vec<_>, _>>()?;
+    eval_supported_constant_list_compact(input, remove_empty, columns, span)
+}
+
+fn eval_supported_constant_list_compact(
+    input: Option<Value>,
+    remove_empty: bool,
+    columns: Vec<String>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let value = input.ok_or_else(|| {
+        LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+            "`compact` in a compile-time global initializer must receive pipeline input",
+            span,
+        )
+    })?;
+    let value_span = value.span();
+    let Value::List { vals, .. } = value else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`compact` in a compile-time global initializer requires list input",
+                span,
+            ),
+        );
+    };
+    if !columns.is_empty()
+        && !vals
+            .iter()
+            .all(|value| matches!(value, Value::Record { .. }))
+    {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`compact` does not accept column arguments for non-record lists in compile-time global initializers",
+                span,
+            ),
+        );
+    }
+
+    let vals = vals
+        .into_iter()
+        .filter(|value| {
+            eval_supported_constant_compact_keeps_value_for_columns(value, remove_empty, &columns)
+        })
+        .collect::<Vec<_>>();
+    Ok(Value::list(vals, value_span))
+}
+
+fn eval_supported_constant_compact_keeps_value_for_columns(
+    value: &Value,
+    remove_empty: bool,
+    columns: &[String],
+) -> bool {
+    if columns.is_empty() {
+        return eval_supported_constant_compact_keeps_value(value, remove_empty);
+    }
+
+    let Value::Record { val, .. } = value else {
+        return true;
+    };
+
+    columns.iter().all(|column| {
+        val.get(column)
+            .is_some_and(|value| eval_supported_constant_compact_keeps_value(value, remove_empty))
+    })
+}
+
+fn eval_supported_constant_compact_keeps_value(value: &Value, remove_empty: bool) -> bool {
+    match value {
+        Value::Nothing { .. } => false,
+        Value::String { val, .. } => !remove_empty || !val.is_empty(),
+        Value::Binary { val, .. } => !remove_empty || !val.is_empty(),
+        Value::List { vals, .. } => !remove_empty || !vals.is_empty(),
+        Value::Record { val, .. } => !remove_empty || !val.is_empty(),
+        _ => true,
+    }
 }
 
 fn eval_supported_constant_list_take_skip_or_drop_call(
