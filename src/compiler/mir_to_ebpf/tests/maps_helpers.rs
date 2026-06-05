@@ -204,6 +204,55 @@ fn test_emit_event_copies_small_stack_backed_buffer() {
 }
 
 #[test]
+fn test_emit_event_rejects_unrepresentable_stack_buffer_size() {
+    use crate::compiler::mir::*;
+
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let v0 = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: v0,
+        src: MirValue::StackSlot(slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::EmitEvent {
+        data: v0,
+        size: usize::MAX,
+    });
+    func.block_mut(entry).terminator = MirInst::Return {
+        val: Some(MirValue::Const(0)),
+    };
+
+    let program = MirProgram {
+        main: func,
+        subfunctions: vec![],
+    };
+
+    let lir = lower_mir_to_lir(&program);
+    let mut program_types = ProgramVregTypes::default();
+    program_types.main.insert(
+        v0,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Array {
+                elem: Box::new(MirType::U8),
+                len: usize::MAX,
+            }),
+            address_space: AddressSpace::Stack,
+        },
+    );
+
+    let compiler = MirToEbpfCompiler::new_with_types(&lir, None, program_types);
+    let result = compiler.compile();
+    match result {
+        Err(CompileError::StackOverflow) => {}
+        Err(err) => panic!("expected stack overflow for unrepresentable emit size, got {err:?}"),
+        Ok(_) => panic!("expected stack overflow for unrepresentable emit size, got Ok"),
+    }
+}
+
+#[test]
 fn test_emit_event_registers_bytes_schema_for_struct_payload() {
     use crate::compiler::elf::BpfFieldType;
     use crate::compiler::mir::*;

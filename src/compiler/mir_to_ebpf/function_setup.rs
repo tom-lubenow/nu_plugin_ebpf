@@ -80,11 +80,8 @@ impl<'a> MirToEbpfCompiler<'a> {
         let mut slot_offsets: HashMap<StackSlotId, i16> = HashMap::new();
 
         for slot in slots {
-            let aligned_size = slot.size.div_ceil(slot.align) * slot.align;
-            stack_offset -= aligned_size as i16;
-            if stack_offset < -512 {
-                return Err(CompileError::StackOverflow);
-            }
+            let aligned_size = Self::align_stack_size(slot.size, slot.align)?;
+            stack_offset = Self::stack_offset_after_alloc(stack_offset, aligned_size)?;
             slot_offsets.insert(slot.id, stack_offset);
         }
 

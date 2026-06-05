@@ -4,9 +4,12 @@ use crate::compiler::hir::{
     HirBlock, HirBlockId, HirCallArgs, HirFunction, HirLiteral, HirProgram, HirStmt, HirTerminator,
 };
 use crate::compiler::ir_to_mir::lower_hir_to_mir_with_hints;
-use crate::compiler::mir::{CtxStoreTarget, MirInst, UnaryOpKind};
+use crate::compiler::mir::{
+    CtxStoreTarget, MirFunction, MirInst, MirProgram, MirValue, StackSlotKind, UnaryOpKind,
+};
 use crate::compiler::{
-    CompileError, EbpfProgram, compile_mir_to_ebpf_with_hints_and_readonly_globals,
+    CompileError, EbpfProgram, compile_mir_to_ebpf,
+    compile_mir_to_ebpf_with_hints_and_readonly_globals,
 };
 use crate::compiler::{EbpfProgramType, ProbeContext};
 use crate::kernel_btf::{KernelBtf, TrampolineValueKind};
@@ -825,6 +828,35 @@ fn test_store_large_constant_materializes_full_64_bits() {
         }),
         "large store constants should be stored from the materialized register"
     );
+}
+
+#[test]
+fn test_stack_layout_rejects_unrepresentable_slot_size() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let slot = func.alloc_stack_slot(usize::MAX, 8, StackSlotKind::Local);
+    let ptr = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: ptr,
+        src: MirValue::StackSlot(slot),
+    });
+    func.block_mut(entry).terminator = MirInst::Return {
+        val: Some(MirValue::Const(0)),
+    };
+
+    let program = MirProgram {
+        main: func,
+        subfunctions: vec![],
+    };
+
+    let result = compile_mir_to_ebpf(&program, None);
+    match result {
+        Err(CompileError::StackOverflow) => {}
+        Err(err) => panic!("expected stack overflow for unrepresentable stack slot, got {err:?}"),
+        Ok(_) => panic!("expected stack overflow for unrepresentable stack slot, got Ok"),
+    }
 }
 
 #[test]

@@ -11,7 +11,7 @@ impl<'a> MirToEbpfCompiler<'a> {
     ) -> Result<(), CompileError> {
         // For count: lookup key, increment, update
         let key_size = self.counter_map_key_size(map_name, key)?;
-        let aligned_key_size = key_size.div_ceil(8) * 8;
+        let aligned_key_size = Self::align_stack_size(key_size, 8)?;
         let use_stack_key_directly = map_name != COUNTER_MAP_NAME
             && matches!(
                 self.current_types.get(&key),
@@ -26,13 +26,13 @@ impl<'a> MirToEbpfCompiler<'a> {
         let total_size = if use_stack_key_directly {
             16 // value + spilled key pointer
         } else {
-            aligned_key_size + 8 // key bytes + value
+            aligned_key_size
+                .checked_add(8)
+                .ok_or(CompileError::StackOverflow)? // key bytes + value
         };
-        self.check_stack_space(total_size as i16)?;
-        // Stack grows downward - decrement first
-        self.stack_offset -= total_size as i16;
-        let val_offset = self.stack_offset; // value at lower address
-        let key_offset = self.stack_offset + 8; // key bytes or spilled key pointer
+        // Stack grows downward - decrement first.
+        let val_offset = self.reserve_stack_space(total_size)?; // value at lower address
+        let key_offset = self.add_i16_offset(val_offset, 8)?; // key bytes or spilled key pointer
 
         if map_name == COUNTER_MAP_NAME {
             // Store key to stack
@@ -380,10 +380,8 @@ impl<'a> MirToEbpfCompiler<'a> {
     }
 
     fn allocate_stack_temp(&mut self, size: usize) -> Result<i16, CompileError> {
-        let aligned = size.div_ceil(8) * 8;
-        self.check_stack_space(aligned as i16)?;
-        self.stack_offset -= aligned as i16;
-        Ok(self.stack_offset)
+        let aligned = Self::align_stack_size(size, 8)?;
+        self.reserve_stack_space(aligned)
     }
 
     pub(super) fn spill_dynamic_map_ptr(&mut self, map_reg: EbpfReg) -> Result<i16, CompileError> {

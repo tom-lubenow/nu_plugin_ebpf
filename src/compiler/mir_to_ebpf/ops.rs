@@ -490,7 +490,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                 })?;
                 let dst_offset = self.slot_offset_i16(slot, 0)?;
                 let src_offset = Self::trampoline_slot_offset(field_name, spec.slot_index)?;
-                let aligned_size = size_bytes.div_ceil(8) * 8;
+                let aligned_size = Self::align_stack_size(size_bytes, 8)?;
                 if aligned_size > size_bytes {
                     self.emit_zero_bytes(EbpfReg::R10, dst_offset, aligned_size, EbpfReg::R0)?;
                 }
@@ -1382,9 +1382,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                         ))
                     })?
                 } else {
-                    self.check_stack_space(SYSCTL_STRING_FIELD_LEN as i16)?;
-                    self.stack_offset -= SYSCTL_STRING_FIELD_LEN as i16;
-                    self.stack_offset
+                    self.reserve_stack_space(SYSCTL_STRING_FIELD_LEN)?
                 };
 
                 self.emit_zero_bytes(
@@ -1578,7 +1576,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                         ))
                     })?;
                     let dst_offset = self.slot_offset_i16(slot, 0)?;
-                    let aligned_size = field_info.size.div_ceil(8) * 8;
+                    let aligned_size = Self::align_stack_size(field_info.size, 8)?;
                     if aligned_size > field_info.size {
                         self.emit_zero_bytes(EbpfReg::R10, dst_offset, aligned_size, EbpfReg::R0)?;
                     }

@@ -90,13 +90,40 @@ impl<'a> MirToEbpfCompiler<'a> {
         }
     }
 
-    /// Check if we have enough stack space
-    pub(super) fn check_stack_space(&self, needed: i16) -> Result<(), CompileError> {
-        if self.stack_offset - needed < -512 {
+    pub(super) fn align_stack_size(size: usize, align: usize) -> Result<usize, CompileError> {
+        if align == 0 {
+            return Err(CompileError::StackOverflow);
+        }
+        size.div_ceil(align)
+            .checked_mul(align)
+            .ok_or(CompileError::StackOverflow)
+    }
+
+    pub(super) fn stack_offset_after_alloc(
+        stack_offset: i16,
+        needed: usize,
+    ) -> Result<i16, CompileError> {
+        let needed = i16::try_from(needed).map_err(|_| CompileError::StackOverflow)?;
+        let next_offset = stack_offset
+            .checked_sub(needed)
+            .ok_or(CompileError::StackOverflow)?;
+        if next_offset < -512 {
             Err(CompileError::StackOverflow)
         } else {
-            Ok(())
+            Ok(next_offset)
         }
+    }
+
+    pub(super) fn reserve_stack_space(&mut self, needed: usize) -> Result<i16, CompileError> {
+        let next_offset = Self::stack_offset_after_alloc(self.stack_offset, needed)?;
+        self.stack_offset = next_offset;
+        Ok(next_offset)
+    }
+
+    /// Check if we have enough stack space
+    pub(super) fn check_stack_space(&self, needed: i16) -> Result<(), CompileError> {
+        let needed = usize::try_from(needed).map_err(|_| CompileError::StackOverflow)?;
+        Self::stack_offset_after_alloc(self.stack_offset, needed).map(|_| ())
     }
 
     /// Fix up pending jumps after all blocks are compiled

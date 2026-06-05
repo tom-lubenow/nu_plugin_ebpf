@@ -319,11 +319,9 @@ impl<'a> MirToEbpfCompiler<'a> {
         data_copy_size: Option<usize>,
     ) -> Result<(), CompileError> {
         let event_size = if size > 0 { size } else { 8 };
-        let aligned_event_size = event_size.div_ceil(8) * 8;
-        self.check_stack_space(aligned_event_size as i16)?;
-        // Stack grows downward - decrement first, then use offset
-        self.stack_offset -= aligned_event_size as i16;
-        let event_offset = self.stack_offset;
+        let aligned_event_size = Self::align_stack_size(event_size, 8)?;
+        // Stack grows downward - decrement first, then use offset.
+        let event_offset = self.reserve_stack_space(aligned_event_size)?;
 
         if let Some(data_copy_size) = data_copy_size {
             let copy_size = event_size.min(data_copy_size);
@@ -407,8 +405,12 @@ impl<'a> MirToEbpfCompiler<'a> {
                 offset,
                 bitfield: None,
             });
-            offset += size;
-            total_size += size;
+            offset = offset
+                .checked_add(size)
+                .ok_or(CompileError::StackOverflow)?;
+            total_size = total_size
+                .checked_add(size)
+                .ok_or(CompileError::StackOverflow)?;
         }
 
         let new_schema = EventSchema {
@@ -426,10 +428,8 @@ impl<'a> MirToEbpfCompiler<'a> {
             self.event_schema = Some(new_schema);
         }
 
-        // Allocate contiguous buffer on stack
-        self.check_stack_space(total_size as i16)?;
-        self.stack_offset -= total_size as i16;
-        let buffer_offset = self.stack_offset;
+        // Allocate contiguous buffer on stack.
+        let buffer_offset = self.reserve_stack_space(total_size)?;
 
         // Copy each field value to the buffer
         let mut dest_offset = buffer_offset;
@@ -460,7 +460,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.emit_store(EbpfReg::R10, dest_offset, field_reg, size)?;
             }
 
-            dest_offset += size as i16;
+            dest_offset = self.add_i16_offset(dest_offset, size)?;
         }
 
         // Emit the buffer via ring buffer
@@ -560,7 +560,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                     .byte_array_len()
                     .expect("byte-array length must exist after guard");
                 // Round up to 8-byte alignment
-                let aligned_len = (len + 7) & !7;
+                let aligned_len = len.div_ceil(8).saturating_mul(8);
                 (BpfFieldType::String, aligned_len)
             }
             MirType::Array { .. } | MirType::Struct { .. } => {
