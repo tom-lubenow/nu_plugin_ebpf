@@ -20052,6 +20052,52 @@ fn make_ctx_pid_bits_shift_program(bits_decl: DeclId, count: i64, number_bytes: 
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
+fn make_ctx_pid_bits_shift_default_program(bits_decl: DeclId, count: i64) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: ctx_var,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::CellPath(Box::new(CellPath {
+                        members: vec![string_member("pid")],
+                    })),
+                },
+                HirStmt::FollowCellPath {
+                    src_dst: RegId::new(0),
+                    path: RegId::new(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(2),
+                    lit: HirLiteral::Int(count),
+                },
+                HirStmt::Call {
+                    decl_id: bits_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(0)),
+                        positional: vec![RegId::new(2)],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(3) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 4,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
 fn make_integer_list_pipeline_call_program(decl_id: DeclId, values: &[i64]) -> HirProgram {
     let func = HirFunction {
         blocks: vec![HirBlock {
@@ -25083,6 +25129,71 @@ fn test_lower_bits_rotate_unsigned_i64_left_on_runtime_u32_context_input() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("bits rol --number-bytes 8 runtime u32 input should compile");
+}
+
+#[test]
+fn test_lower_bits_rotate_default_on_runtime_u32_context_input() {
+    for (offset, command_name) in [(0, "bits rol"), (1, "bits ror")] {
+        let bits_decl = DeclId::new(70850 + offset);
+        let hir = make_ctx_pid_bits_shift_default_program(bits_decl, 1);
+        let decl_names = HashMap::from([(bits_decl, command_name.to_string())]);
+        let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            Some(&probe_ctx),
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("{command_name} default auto-width should lower runtime u32 input: {err}")
+        });
+        let instructions = result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .collect::<Vec<_>>();
+
+        assert!(
+            result
+                .program
+                .main
+                .blocks
+                .iter()
+                .any(|block| matches!(block.terminator, MirInst::Branch { .. })),
+            "expected runtime u32 default {command_name} to branch on auto-width ranges"
+        );
+        for expected_op in [BinOpKind::Le, BinOpKind::Shl, BinOpKind::Shr, BinOpKind::Or] {
+            assert!(
+                instructions.iter().any(|inst| matches!(
+                    inst,
+                    MirInst::BinOp {
+                        op,
+                        ..
+                    } if *op == expected_op
+                )),
+                "expected runtime u32 default {command_name} to emit {expected_op:?}"
+            );
+        }
+        assert!(
+            instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op: BinOpKind::And,
+                    ..
+                }
+            )),
+            "expected runtime u32 default {command_name} to mask auto-width cases"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("{command_name} default auto-width runtime u32 input should compile: {err}")
+            });
+    }
 }
 
 #[test]
