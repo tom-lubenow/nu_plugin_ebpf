@@ -35275,6 +35275,50 @@ const FIXTURES = [
         error_contains: "unreleased kfunc reference at function exit"
     }
     {
+        name: "source-kfunc-task-under-cgroup-accepts-task-and-cgroup"
+        category: "helper-state"
+        tags: [kfunc task cgroup source accept]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let task = (kfunc-call "bpf_task_from_pid" 1)'
+            '  if $task {'
+            '    let cgrp = (kfunc-call "bpf_task_get_cgroup1" $task 0)'
+            '    if $cgrp {'
+            '      let under = (kfunc-call "bpf_task_under_cgroup" $task $cgrp)'
+            '      $under | count'
+            '      $cgrp | kfunc-call "bpf_cgroup_release"'
+            '    }'
+            '    $task | kfunc-call "bpf_task_release"'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-kfunc-task-under-cgroup-rejects-task-ref-cgroup-arg"
+        category: "helper-state"
+        tags: [kfunc task cgroup source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let task = (kfunc-call "bpf_task_from_pid" 1)'
+            '  if $task {'
+            '    kfunc-call "bpf_task_under_cgroup" $task $task'
+            '    $task | kfunc-call "bpf_task_release"'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "arg1 expects cgroup reference, got task reference"
+    }
+    {
         name: "source-kfunc-cgroup-release-accepts-acquire-or-null-release"
         category: "helper-state"
         tags: [kfunc cgroup ref-lifetime phi source accept]

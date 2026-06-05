@@ -1077,6 +1077,9 @@ flows: `bpf_task_from_pid` and `bpf_task_from_vpid` return nullable task
 references released by `bpf_task_release`, while `bpf_cgroup_acquire`,
 `bpf_cgroup_from_id`, `bpf_cgroup_ancestor`, and `bpf_task_get_cgroup1` return
 nullable cgroup references released by `bpf_cgroup_release`.
+`bpf_task_under_cgroup` is modeled as a task/cgroup query that requires a task
+pointer for arg0 and a cgroup pointer for arg1; passing a task reference as the
+cgroup argument is rejected before load.
 `bpf_map_sum_elem_count` is modeled for trusted kernel `bpf_map *` operands,
 including the map argument supplied to `bpf_for_each_map_elem` callbacks; stack,
 map-value, and other non-kernel pointers are rejected before load.
