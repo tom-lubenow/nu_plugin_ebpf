@@ -49,6 +49,25 @@ fn test_infer_subfunction_schemes_rejects_param_limit() {
 }
 
 #[test]
+fn test_type_inference_rejects_oversized_param_count_before_vreg_setup() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    func.param_count = (u32::MAX as usize).saturating_add(1);
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut infer = TypeInference::new(None);
+    let errs = infer
+        .infer(&func)
+        .expect_err("oversized param count should be rejected before vreg setup");
+    assert!(
+        errs.iter()
+            .any(|err| err.message.contains("at most 5 arguments")),
+        "unexpected errors: {errs:?}"
+    );
+}
+
+#[test]
 fn test_infer_subfunction_schemes_orders_callees_before_callers() {
     let mut callee = MirFunction::with_name("id");
     callee.param_count = 1;

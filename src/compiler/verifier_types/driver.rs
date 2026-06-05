@@ -111,7 +111,6 @@ fn verify_mir_with_subfunction_summaries_impl(
         }
     }
 
-    let total_vregs = func.vreg_count.max(func.param_count as u32) as usize;
     let mut slot_sizes: HashMap<StackSlotId, i64> = HashMap::new();
     for slot in &func.stack_slots {
         let limit = slot.size.saturating_sub(1) as i64;
@@ -127,6 +126,7 @@ fn verify_mir_with_subfunction_summaries_impl(
         )));
         return Err(errors);
     }
+    let total_vregs = (func.vreg_count as usize).max(func.param_count);
     let empty_map_value_types = HashMap::new();
     errors.extend(check_generic_map_layout_constraints(
         func,

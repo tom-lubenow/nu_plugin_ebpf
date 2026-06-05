@@ -463,6 +463,13 @@ impl<'a> TypeInference<'a> {
     ///
     /// Returns the type map on success, or a list of type errors.
     pub fn infer(&mut self, func: &MirFunction) -> Result<HashMap<VReg, MirType>, Vec<TypeError>> {
+        if func.param_count > 5 {
+            return Err(vec![TypeError::new(format!(
+                "BPF subfunctions support at most 5 arguments, got {}",
+                func.param_count
+            ))]);
+        }
+
         let total_vregs = func.vreg_count.max(func.param_count as u32);
 
         // Phase 1: Assign fresh type variables to all vregs

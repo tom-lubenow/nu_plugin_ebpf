@@ -4894,6 +4894,24 @@ fn test_verify_mir_rejects_more_than_five_params() {
 }
 
 #[test]
+fn test_verify_mir_rejects_oversized_param_count_before_vreg_setup() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    func.param_count = (u32::MAX as usize).saturating_add(1);
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let err = verify_mir(&func, &HashMap::new())
+        .expect_err("oversized param count should be rejected before vreg setup");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("at most 5 arguments")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_accepts_helper_context_argument_from_ctx_pointer_load() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
