@@ -47,10 +47,35 @@ pub(crate) fn validate_mir_references(func: &MirFunction) -> Result<(), Vec<MirI
     }
 
     for (idx, slot) in &func.param_stack_slots {
+        check_param_index(*idx, "param stack slot", func.param_count, &mut errors);
         check_slot(
             *slot,
             &format!("param stack slot arg{idx}"),
             &declared,
+            &mut errors,
+        );
+    }
+    for idx in &func.param_non_null {
+        check_param_index(
+            *idx,
+            "non-null parameter metadata",
+            func.param_count,
+            &mut errors,
+        );
+    }
+    for idx in &func.param_trusted_btf {
+        check_param_index(
+            *idx,
+            "trusted BTF parameter metadata",
+            func.param_count,
+            &mut errors,
+        );
+    }
+    for (symbol, idx) in &func.global_param_aliases {
+        check_param_index(
+            *idx,
+            &format!("global parameter alias '{symbol}'"),
+            func.param_count,
             &mut errors,
         );
     }
@@ -261,6 +286,20 @@ fn check_block(
         errors.push(MirIntegrityError::new(format!(
             "{context} references missing basic block {}",
             block.0
+        )));
+    }
+}
+
+fn check_param_index(
+    idx: usize,
+    context: &str,
+    param_count: usize,
+    errors: &mut Vec<MirIntegrityError>,
+) {
+    if idx >= param_count {
+        errors.push(MirIntegrityError::new(format!(
+            "{context} references out-of-range parameter {} (valid range 0..{})",
+            idx, param_count
         )));
     }
 }

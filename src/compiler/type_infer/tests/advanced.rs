@@ -208,6 +208,27 @@ fn test_type_inference_rejects_undeclared_stack_slot_hint() {
 }
 
 #[test]
+fn test_type_inference_rejects_out_of_range_param_stack_slot_metadata() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+    let slot = func.alloc_stack_slot(8, 8, StackSlotKind::Local);
+    func.param_stack_slots.insert(2, slot);
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut infer = TypeInference::new(None);
+    let errs = infer
+        .infer(&func)
+        .expect_err("out-of-range parameter metadata should be rejected");
+    assert!(
+        errs.iter()
+            .any(|err| err.message.contains("out-of-range parameter 2")),
+        "unexpected errors: {errs:?}"
+    );
+}
+
+#[test]
 fn test_infer_subfunction_schemes_orders_callees_before_callers() {
     let mut callee = MirFunction::with_name("id");
     callee.param_count = 1;

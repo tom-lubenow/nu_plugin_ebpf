@@ -5000,6 +5000,25 @@ fn test_verify_mir_rejects_invalid_block_terminator() {
 }
 
 #[test]
+fn test_verify_mir_rejects_out_of_range_param_metadata() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    func.param_count = 1;
+    func.param_non_null.insert(2);
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let err = verify_mir(&func, &HashMap::new())
+        .expect_err("out-of-range parameter metadata should be rejected");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("out-of-range parameter 2")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_accepts_helper_context_argument_from_ctx_pointer_load() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
