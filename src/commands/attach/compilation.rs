@@ -9,8 +9,8 @@ use nu_protocol::engine::{Closure, StateWorkingSet};
 use nu_protocol::eval_const::{eval_constant, eval_constant_with_input};
 use nu_protocol::ir::{Instruction, IrBlock};
 use nu_protocol::{
-    BlockId, DeclId, FromValue, IntoSpanned, LabeledError, ParseError, PipelineData, Record,
-    Signature, Span, Spanned, Type, Value, levenshtein_distance,
+    BlockId, Config, DeclId, FromValue, IntoSpanned, LabeledError, ParseError, PipelineData,
+    Record, Signature, Span, Spanned, Type, Value, levenshtein_distance,
 };
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -715,6 +715,11 @@ fn eval_supported_constant_call(
             )?;
             eval_supported_constant_str_distance(input, compare, span)
         }
+        "str join" => {
+            let separator =
+                eval_supported_constant_str_join_call_separator(working_set, &call.arguments, env)?;
+            eval_supported_constant_str_join(input, separator, span)
+        }
         "get" => eval_supported_constant_get_call(
             working_set,
             cmd_name,
@@ -997,6 +1002,11 @@ fn eval_supported_constant_external_call(
             let compare =
                 eval_supported_constant_str_distance_external_arg(working_set, args, env, span)?;
             eval_supported_constant_str_distance(input, compare, span)
+        }
+        "str join" => {
+            let separator =
+                eval_supported_constant_str_join_external_separator(working_set, args, env, span)?;
+            eval_supported_constant_str_join(input, separator, span)
         }
         "get" => {
             let [path_arg] = args else {
@@ -2338,6 +2348,133 @@ fn eval_supported_constant_exact_string_value(
     }
 }
 
+fn eval_supported_constant_str_join_call_separator(
+    working_set: &StateWorkingSet,
+    args: &[nu_protocol::ast::Argument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+) -> Result<Option<String>, LabeledError> {
+    let mut separator_expr = None;
+    for arg in args {
+        match arg {
+            nu_protocol::ast::Argument::Positional(expr)
+            | nu_protocol::ast::Argument::Unknown(expr) => {
+                if separator_expr.replace(expr).is_some() {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            "`str join` accepts at most one separator argument in compile-time global initializers",
+                            arg.span(),
+                        ));
+                }
+            }
+            nu_protocol::ast::Argument::Named(named) => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        format!(
+                            "`str join` does not accept named argument --{} in compile-time global initializers",
+                            named.0.item
+                        ),
+                        arg.span(),
+                    ));
+            }
+            nu_protocol::ast::Argument::Spread(expr) => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`str join` separator cannot use spread syntax in compile-time global initializers",
+                        expr.span,
+                    ));
+            }
+        }
+    }
+
+    separator_expr
+        .map(|expr| eval_supported_constant_string_argument(working_set, expr, env, "str join"))
+        .transpose()
+}
+
+fn eval_supported_constant_str_join_external_separator(
+    working_set: &StateWorkingSet,
+    args: &[ExternalArgument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<Option<String>, LabeledError> {
+    match args {
+        [] => Ok(None),
+        [ExternalArgument::Regular(expr)] => {
+            eval_supported_constant_string_argument(working_set, expr, env, "str join").map(Some)
+        }
+        [arg] => Err(LabeledError::new("Unsupported annotated mutable global initializer")
+            .with_label(
+                "`str join` separator cannot use spread syntax in compile-time global initializers",
+                arg.expr().span,
+            )),
+        _ => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`str join` accepts at most one separator argument in compile-time global initializers",
+                span,
+            ),
+        ),
+    }
+}
+
+fn eval_supported_constant_str_join(
+    input: Option<Value>,
+    separator: Option<String>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let value = eval_supported_constant_required_pipeline_input("str join", input, span)?;
+    let value_span = value.span();
+    match value {
+        Value::List { vals, .. } => {
+            let items = vals
+                .into_iter()
+                .enumerate()
+                .map(|(index, value)| {
+                    eval_supported_constant_str_join_item_value(value, index, span)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let joined = if let Some(separator) = separator {
+                items.join(&separator)
+            } else {
+                items.concat()
+            };
+            Ok(Value::string(joined, value_span))
+        }
+        value => {
+            let input = eval_supported_constant_exact_string_value(value, "str join", span)?;
+            Ok(Value::string(input, value_span))
+        }
+    }
+}
+
+fn eval_supported_constant_str_join_item_value(
+    value: Value,
+    index: usize,
+    span: Span,
+) -> Result<String, LabeledError> {
+    match value {
+        Value::String { val, .. } | Value::Glob { val, .. } => Ok(val),
+        Value::Int { val, .. } => Ok(val.to_string()),
+        Value::Bool { val, .. } => Ok(val.to_string()),
+        Value::Nothing { .. } => Ok(String::new()),
+        value @ (Value::Float { .. }
+        | Value::Filesize { .. }
+        | Value::Duration { .. }
+        | Value::Binary { .. }) => Ok(value.to_expanded_string("", &Config::default())),
+        value @ (Value::List { .. } | Value::Record { .. }) => {
+            Ok(value.to_expanded_string("\n", &Config::default()))
+        }
+        other => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`str join` supports only string, int, float, filesize, duration, binary, bool, null, list, and record compile-time list items; item {index} has type {}",
+                    other.get_type()
+                ),
+                span,
+            ),
+        ),
+    }
+}
+
 fn eval_supported_constant_str_external_call(
     working_set: &StateWorkingSet,
     input: Option<Value>,
@@ -2393,6 +2530,15 @@ fn eval_supported_constant_str_external_call(
                 span,
             )?;
             eval_supported_constant_str_distance(input, compare, span)
+        }
+        "join" => {
+            let separator = eval_supported_constant_str_join_external_separator(
+                working_set,
+                remaining_args,
+                env,
+                span,
+            )?;
+            eval_supported_constant_str_join(input, separator, span)
         }
         _ => Err(
             LabeledError::new("Unsupported annotated mutable global initializer").with_label(

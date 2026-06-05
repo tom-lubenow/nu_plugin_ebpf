@@ -2287,6 +2287,155 @@ fn test_map_leading_annotated_mut_globals_supports_let_bound_constant_str_distan
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_str_join_scalar_initializer() {
+    let source = "{|| mut joined: string = (\"abc\" | str join \"-\"); $joined }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant str join scalar initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(
+        globals[0]
+            .initial_value
+            .as_str()
+            .expect("str join should produce a string"),
+        "abc"
+    );
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_str_join_list_initializer() {
+    let source = "{|| mut joined: string = ([\"a\", \"b\", \"\"] | str join \"-\"); $joined }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant str join list initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(
+        globals[0]
+            .initial_value
+            .as_str()
+            .expect("str join should produce a string"),
+        "a-b-"
+    );
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_str_join_mixed_list_initializer() {
+    let source = "{|| mut joined: string = ([1, true, null] | str join \"|\"); $joined }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant str join mixed-list initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(
+        globals[0]
+            .initial_value
+            .as_str()
+            .expect("str join should produce a string"),
+        "1|true|"
+    );
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_let_bound_constant_str_join_separator() {
+    let source =
+        "{|| let sep = \":\"; mut joined: string = ([\"a\", \"b\"] | str join $sep); $joined }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(10),
+                src: RegId::new(0),
+            },
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(1),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 4],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 4],
+        comments: vec!["let".into(), "let".into(), "".into(), "".into()],
+        register_count: 2,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("let-bound constant str join separator should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(
+        globals[0]
+            .initial_value
+            .as_str()
+            .expect("str join should produce a string"),
+        "a:b"
+    );
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_constant_empty_predicate_initializer() {
     let source = "{|| mut empty: bool = (\"\" | is-empty); $empty }";
     let ir_block = IrBlock {
@@ -2353,6 +2502,41 @@ fn test_map_leading_annotated_mut_globals_supports_constant_non_empty_predicate_
             .initial_value
             .as_bool()
             .expect("is-not-empty should produce a boolean")
+    );
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_rejects_constant_str_join_extra_separator() {
+    let source = "{|| mut joined: string = ([\"a\", \"b\"] | str join \":\" \";\"); $joined }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let err = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect_err("str join with multiple separators should be rejected");
+
+    assert!(
+        err.labels
+            .iter()
+            .any(|label| label.text.contains("accepts at most one separator")),
+        "unexpected labels: {:?}",
+        err.labels
     );
 }
 
