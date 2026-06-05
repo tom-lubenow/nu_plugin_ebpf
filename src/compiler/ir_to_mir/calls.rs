@@ -3997,30 +3997,68 @@ impl<'a> HirToMirLowering<'a> {
                 }
 
                 if return_all {
-                    let nu_protocol::Value::Binary { val: input, .. } = input_value else {
-                        return Err(CompileError::UnsupportedInstruction(
-                            "bytes index-of --all requires compile-time known binary input in eBPF"
-                                .into(),
-                        ));
-                    };
                     const MAX_BYTES_INDEX_OF_ALL_MATCHES: usize = 60;
-                    let offsets =
-                        Self::bytes_index_of_all_offsets(&input, &pattern, search_from_end);
-                    if offsets.len() > MAX_BYTES_INDEX_OF_ALL_MATCHES {
-                        return Err(CompileError::UnsupportedInstruction(format!(
-                            "bytes index-of --all result exceeds eBPF numeric list capacity {MAX_BYTES_INDEX_OF_ALL_MATCHES}"
-                        )));
-                    }
-
-                    let values = offsets
-                        .into_iter()
-                        .map(|offset| nu_protocol::Value::int(offset, nu_protocol::Span::unknown()))
-                        .collect();
+                    let offsets_value = match input_value {
+                        nu_protocol::Value::Binary { val: input, .. } => {
+                            let offsets =
+                                Self::bytes_index_of_all_offsets(&input, &pattern, search_from_end);
+                            if offsets.len() > MAX_BYTES_INDEX_OF_ALL_MATCHES {
+                                return Err(CompileError::UnsupportedInstruction(format!(
+                                    "bytes index-of --all result exceeds eBPF numeric list capacity {MAX_BYTES_INDEX_OF_ALL_MATCHES}"
+                                )));
+                            }
+                            let values = offsets
+                                .into_iter()
+                                .map(|offset| {
+                                    nu_protocol::Value::int(offset, nu_protocol::Span::unknown())
+                                })
+                                .collect();
+                            nu_protocol::Value::list(values, nu_protocol::Span::unknown())
+                        }
+                        nu_protocol::Value::List { vals, .. } => {
+                            let mut per_item_offsets = Vec::with_capacity(vals.len());
+                            for (item_index, item) in vals.into_iter().enumerate() {
+                                let nu_protocol::Value::Binary { val, .. } = item else {
+                                    return Err(CompileError::UnsupportedInstruction(format!(
+                                        "bytes index-of --all requires binary list items in eBPF; item {item_index} has type {}",
+                                        item.get_type()
+                                    )));
+                                };
+                                let offsets = Self::bytes_index_of_all_offsets(
+                                    &val,
+                                    &pattern,
+                                    search_from_end,
+                                );
+                                if offsets.len() > MAX_BYTES_INDEX_OF_ALL_MATCHES {
+                                    return Err(CompileError::UnsupportedInstruction(format!(
+                                        "bytes index-of --all result for binary-list item {item_index} exceeds eBPF numeric list capacity {MAX_BYTES_INDEX_OF_ALL_MATCHES}"
+                                    )));
+                                }
+                                let offsets = offsets
+                                    .into_iter()
+                                    .map(|offset| {
+                                        nu_protocol::Value::int(
+                                            offset,
+                                            nu_protocol::Span::unknown(),
+                                        )
+                                    })
+                                    .collect();
+                                per_item_offsets.push(nu_protocol::Value::list(
+                                    offsets,
+                                    nu_protocol::Span::unknown(),
+                                ));
+                            }
+                            nu_protocol::Value::list(per_item_offsets, nu_protocol::Span::unknown())
+                        }
+                        other => {
+                            return Err(CompileError::UnsupportedInstruction(format!(
+                                "bytes index-of --all requires binary or list<binary> input in eBPF, got {}",
+                                other.get_type()
+                            )));
+                        }
+                    };
                     self.reset_call_result_metadata(src_dst);
-                    self.lower_constant_value(
-                        src_dst,
-                        &nu_protocol::Value::list(values, nu_protocol::Span::unknown()),
-                    )?;
+                    self.lower_constant_value(src_dst, &offsets_value)?;
                 } else {
                     match input_value {
                         nu_protocol::Value::Binary { val: input, .. } => {

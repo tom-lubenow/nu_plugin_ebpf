@@ -28754,6 +28754,95 @@ fn make_bytes_index_of_all_join_starts_with_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_bytes_index_of_all_list_get_join_starts_with_program(
+    index_of_decl: DeclId,
+    get_decl: DeclId,
+    join_decl: DeclId,
+    starts_with_decl: DeclId,
+    input: Vec<Vec<u8>>,
+    pattern: Vec<u8>,
+    flags: Vec<Vec<u8>>,
+    get_index: i64,
+    expected_prefix: &str,
+) -> HirProgram {
+    let input_values = input
+        .into_iter()
+        .map(|item| Value::binary(item, Span::test_data()))
+        .collect::<Vec<_>>();
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::list(input_values, Span::test_data())),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Binary(pattern),
+                },
+                HirStmt::Call {
+                    decl_id: index_of_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        pipeline_input: Some(RegId::new(0)),
+                        flags,
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(3),
+                    lit: HirLiteral::Int(get_index),
+                },
+                HirStmt::Call {
+                    decl_id: get_decl,
+                    src_dst: RegId::new(4),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(3)],
+                        pipeline_input: Some(RegId::new(2)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadValue {
+                    dst: RegId::new(5),
+                    val: Box::new(Value::string("-", Span::test_data())),
+                },
+                HirStmt::Call {
+                    decl_id: join_decl,
+                    src_dst: RegId::new(6),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(5)],
+                        pipeline_input: Some(RegId::new(4)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadValue {
+                    dst: RegId::new(7),
+                    val: Box::new(Value::string(expected_prefix, Span::test_data())),
+                },
+                HirStmt::Call {
+                    decl_id: starts_with_decl,
+                    src_dst: RegId::new(8),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(7)],
+                        pipeline_input: Some(RegId::new(6)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(8) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 9,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_bytes_index_of_all_length_program(
     index_of_decl: DeclId,
     length_decl: DeclId,
@@ -29170,21 +29259,71 @@ fn test_lower_bytes_index_of_all_on_binary_returns_offsets() {
 }
 
 #[test]
-fn test_lower_bytes_index_of_all_rejects_binary_list_input() {
+fn test_lower_bytes_index_of_all_on_binary_list_feeds_get_and_join() {
     let bytes_index_of_decl = DeclId::new(80624);
     let get_decl = DeclId::new(80625);
-    let hir = make_bytes_list_arg_get_program_with_flags(
+    let join_decl = DeclId::new(80626);
+    let starts_with_decl = DeclId::new(80627);
+    let hir = make_bytes_index_of_all_list_get_join_starts_with_program(
         bytes_index_of_decl,
         get_decl,
+        join_decl,
+        starts_with_decl,
         vec![vec![1, 2], vec![3, 2]],
         vec![2],
         vec![b"all".to_vec()],
         0,
+        "1",
     );
     let decl_names = HashMap::from([
         (bytes_index_of_decl, "bytes index-of".to_string()),
         (get_decl, "get".to_string()),
+        (join_decl, "str join".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
     ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bytes index-of --all should lower representable binary-list outputs");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.starts_with(b"1\0")
+            )),
+        "expected bytes index-of --all binary-list output to feed get 0 and str join with 1"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("bytes index-of --all binary-list output should compile through codegen");
+}
+
+#[test]
+fn test_lower_bytes_index_of_all_rejects_nonhomogeneous_binary_list_offsets() {
+    let bytes_index_of_decl = DeclId::new(80628);
+    let hir = make_bytes_list_arg_get_program_with_flags(
+        bytes_index_of_decl,
+        DeclId::new(80629),
+        vec![vec![1, 2, 2], vec![3, 2]],
+        vec![2],
+        vec![b"all".to_vec()],
+        0,
+    );
+    let decl_names = HashMap::from([(bytes_index_of_decl, "bytes index-of".to_string())]);
 
     let err = lower_hir_to_mir_with_hints(
         &hir,
@@ -29194,11 +29333,11 @@ fn test_lower_bytes_index_of_all_rejects_binary_list_input() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("bytes index-of --all should reject binary-list input");
+    .expect_err("bytes index-of --all should reject nonhomogeneous list-of-list output layouts");
 
     assert!(
         err.to_string()
-            .contains("bytes index-of --all requires compile-time known binary input"),
+            .contains("constant fixed arrays require homogeneous element layouts"),
         "unexpected error: {err}"
     );
 }
