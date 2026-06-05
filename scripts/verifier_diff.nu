@@ -16456,6 +16456,23 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "ringbuf-output-rejects-dynamic-flags"
+        category: "helper-state"
+        tags: [ringbuf flags reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let data = "abcd"'
+            '  let flags = (helper-call "bpf_get_prandom_u32")'
+            '  helper-call "bpf_ringbuf_output" events $data 4 $flags'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_ringbuf_output' requires arg3 flags"
+    }
+    {
         name: "ringbuf-reserve-user-function-submit-balanced"
         category: "helper-state"
         tags: [ringbuf ref-lifetime user-function]
@@ -18674,6 +18691,23 @@ const FIXTURES = [
         error_contains: "stack-copy helpers require flags"
     }
     {
+        name: "source-helper-get-task-stack-rejects-dynamic-flags"
+        category: "helper-state"
+        tags: [helper task stack-copy flags reject]
+        target: "kprobe:do_exit"
+        program: [
+            '{|ctx|'
+            '  let buf = "0123456789abcdefghijklmn"'
+            '  let flags = (helper-call "bpf_get_prandom_u32")'
+            '  helper-call "bpf_get_task_stack" $ctx.current_task $buf 24 $flags'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "stack-copy helpers require flags"
+    }
+    {
         name: "dynptr-kfunc-copy-from-user-initializes-dynptr"
         category: "helper-state"
         tags: [kfunc dynptr accept]
@@ -20077,6 +20111,22 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
+    }
+    {
+        name: "stackid-built-in-kstacks-rejects-dynamic-flags"
+        category: "maps"
+        tags: [helper-call stack-trace reserved-name flags reject]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let flags = (helper-call "bpf_get_prandom_u32")'
+            '  helper-call "bpf_get_stackid" $ctx kstacks $flags | count'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_get_stackid' requires arg2 flags"
     }
     {
         name: "stackid-context-fields"
@@ -22426,6 +22476,24 @@ const FIXTURES = [
             '  map-define get_stack_flag_buf --kind array --value-type bytes:24 --max-entries 1'
             '  let buf = (0 | map-get get_stack_flag_buf)'
             '  if $buf { helper-call "bpf_get_stack" $ctx $buf 24 512 }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "stack-copy helpers require flags"
+    }
+    {
+        name: "source-helper-get-stack-rejects-dynamic-flags"
+        category: "helper-state"
+        tags: [helper stack-copy flags reject source metadata]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define get_stack_dynamic_flag_buf --kind array --value-type bytes:24 --max-entries 1'
+            '  let flags = (helper-call "bpf_get_prandom_u32")'
+            '  let buf = (0 | map-get get_stack_dynamic_flag_buf)'
+            '  if $buf { helper-call "bpf_get_stack" $ctx $buf 24 $flags }'
             '  0'
             '}'
         ]
