@@ -13448,6 +13448,24 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "xdp-packet-bitfield-writes"
+        category: "packet"
+        tags: [xdp packet header bitfield write source metadata]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  mut ctx = $ctx'
+            '  $ctx.data.eth.ipv4.version = 4'
+            '  $ctx.data.eth.ipv4.flags = 2'
+            '  $ctx.data.eth.ipv4.tcp.syn = 1'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "xdp-packet-arp-header-fields"
         category: "packet"
         tags: [xdp packet header arp source metadata]

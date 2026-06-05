@@ -10848,21 +10848,21 @@ fn test_lower_xdp_ctx_eth_ipv6_udp_dst_assignment_uses_dynamic_header_steps() {
 }
 
 #[test]
-fn test_lower_xdp_ctx_packet_bitfield_assignment_is_rejected() {
+fn test_lower_xdp_ctx_packet_bitfield_assignment_merges_storage_bits() {
     let hir = make_ctx_upsert_program(
         CellPath {
             members: vec![
                 string_member("data"),
                 string_member("eth"),
                 string_member("ipv4"),
-                string_member("ihl"),
+                string_member("version"),
             ],
         },
-        HirLiteral::Int(5),
+        HirLiteral::Int(4),
     );
     let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
 
-    let err = lower_hir_to_mir_with_hints(
+    let result = lower_hir_to_mir_with_hints(
         &hir,
         Some(&probe_ctx),
         &HashMap::new(),
@@ -10870,12 +10870,124 @@ fn test_lower_xdp_ctx_packet_bitfield_assignment_is_rejected() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("xdp ctx.data.eth.ipv4.ihl assignment should reject bitfield stores");
+    .expect("xdp ctx.data.eth.ipv4.version assignment should lower");
 
-    assert!(
-        matches!(err, CompileError::UnsupportedInstruction(ref msg) if msg.contains("does not support packet bitfield stores")),
-        "unexpected error: {err:?}"
+    let instructions: Vec<_> = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect();
+    assert!(instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::Load {
+            ty: MirType::U8,
+            ..
+        }
+    )));
+    assert!(instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::Store {
+            ty: MirType::U8,
+            ..
+        }
+    )));
+    assert!(instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::BinOp {
+            op: BinOpKind::And,
+            rhs: MirValue::Const(0x0f),
+            ..
+        }
+    )));
+    assert!(instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::BinOp {
+            op: BinOpKind::Shl,
+            rhs: MirValue::Const(4),
+            ..
+        }
+    )));
+    assert!(instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::BinOp {
+            op: BinOpKind::Or,
+            ..
+        }
+    )));
+}
+
+#[test]
+fn test_lower_xdp_ctx_big_endian_packet_bitfield_assignment_normalizes_merge() {
+    let hir = make_ctx_upsert_program(
+        CellPath {
+            members: vec![
+                string_member("data"),
+                string_member("eth"),
+                string_member("ipv4"),
+                string_member("flags"),
+            ],
+        },
+        HirLiteral::Int(2),
     );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Xdp, "lo");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("xdp ctx.data.eth.ipv4.flags assignment should lower");
+
+    let instructions: Vec<_> = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect();
+    assert!(instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::Load {
+            ty: MirType::U16,
+            ..
+        }
+    )));
+    assert!(instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::Store {
+            ty: MirType::U16,
+            ..
+        }
+    )));
+    assert!(instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::BinOp {
+            op: BinOpKind::And,
+            rhs: MirValue::Const(0x07),
+            ..
+        }
+    )));
+    assert!(instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::BinOp {
+            op: BinOpKind::Shl,
+            rhs: MirValue::Const(13),
+            ..
+        }
+    )));
+    assert!(instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::BinOp {
+            op: BinOpKind::And,
+            rhs: MirValue::Const(0x1fff),
+            ..
+        }
+    )));
 }
 
 #[test]
