@@ -48390,6 +48390,21 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "raw-sk-select-reuseport-helper"
+        category: "helper-state"
+        tags: [helper-call sk-reuseport reuseport-sockarray accept source metadata]
+        target: "sk_reuseport:select"
+        program: [
+            '{|ctx|'
+            '  let key = "0000"'
+            '  helper-call "bpf_sk_select_reuseport" $ctx sockets $key 0'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "adjust-packet-sk-skb-parser-pull"
         category: "language-surface"
         tags: [adjust-packet sk-skb-parser]
