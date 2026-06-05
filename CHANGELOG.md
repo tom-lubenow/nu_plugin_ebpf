@@ -40,6 +40,8 @@ documentation changes that matter to external alpha consumers.
   reshaping, redirect-neigh, skb tail, and xfrm helpers.
 - Added source verifier coverage for dynamic `bpf_copy_from_user_task` and
   `bpf_snprintf_btf` flag rejects derived from helper return ranges.
+- Added source verifier coverage for dynamic task-storage, BPRM opts, and
+  `bpf_sk_assign` flag rejects derived from helper return ranges.
 - Added actionable BTF target diagnostics for invalid `fentry`, `fexit`,
   `fmod_ret`, `tp_btf`, and LSM targets so compile-time errors include the
   modeled target-family rewrite guidance.

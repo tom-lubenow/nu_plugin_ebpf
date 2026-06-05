@@ -16156,6 +16156,23 @@ const FIXTURES = [
         error_contains: "storage get helpers require arg3 flags"
     }
     {
+        name: "raw-task-storage-get-rejects-dynamic-flags"
+        category: "maps"
+        tags: [maps local-storage task-storage helper-call flags dynamic reject source metadata]
+        requires: [kernel-btf]
+        target: "fentry:security_file_open"
+        program: [
+            '{|ctx|'
+            '  let flags = (helper-call "bpf_get_prandom_u32")'
+            '  helper-call "bpf_task_storage_get" task_state $ctx.task 0 $flags'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "storage get helpers require arg3 flags"
+    }
+    {
         name: "raw-get-local-storage-rejects-deprecated-map"
         category: "maps"
         tags: [maps local-storage deprecated helper-call reject source metadata]
@@ -36501,6 +36518,23 @@ const FIXTURES = [
         error_contains: "helper 'bpf_bprm_opts_set' requires arg1 flags to contain only BPF_F_BPRM_* bits"
     }
     {
+        name: "lsm-bprm-opts-set-rejects-dynamic-flags"
+        category: "helper-state"
+        tags: [lsm flags dynamic reject]
+        requires: [kernel-btf]
+        target: "lsm:bprm_check_security"
+        program: [
+            '{|ctx|'
+            '  let flags = (helper-call "bpf_get_prandom_u32")'
+            '  helper-call "bpf_bprm_opts_set" $ctx.arg.bprm $flags'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_bprm_opts_set' requires arg1 flags to contain only BPF_F_BPRM_* bits"
+    }
+    {
         name: "kprobe-override-return"
         category: "helper-state"
         tags: [kprobe helper-call]
@@ -45799,6 +45833,22 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  assign-socket 0 --replace'
+            '  "ok"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_sk_assign' requires arg2 = 0 in tc_action programs"
+    }
+    {
+        name: "sk-assign-tc-action-rejects-dynamic-flags"
+        category: "helper-state"
+        tags: [sk-assign tc-action reject flags dynamic]
+        target: "tc_action:diff-action"
+        program: [
+            '{|ctx|'
+            '  let flags = (helper-call "bpf_get_prandom_u32")'
+            '  helper-call "bpf_sk_assign" $ctx 0 $flags'
             '  "ok"'
             '}'
         ]
