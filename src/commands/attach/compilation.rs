@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::ops::Bound;
 
 use fancy_regex::Regex as FancyRegex;
 use heck::{
@@ -7,13 +8,13 @@ use heck::{
 use nu_cmd_lang::create_default_context;
 use nu_parser::parse;
 use nu_plugin::{EngineInterface, EvaluatedCall};
-use nu_protocol::ast::{CellPath, Expr, ExternalArgument, ListItem, RecordItem};
+use nu_protocol::ast::{CellPath, Expr, ExternalArgument, ListItem, RangeInclusion, RecordItem};
 use nu_protocol::casing::Casing;
 use nu_protocol::engine::{Closure, StateWorkingSet};
 use nu_protocol::eval_const::{eval_constant, eval_constant_with_input};
 use nu_protocol::ir::{Instruction, IrBlock};
 use nu_protocol::{
-    BlockId, Config, DeclId, FromValue, IntoSpanned, LabeledError, ParseError, PipelineData,
+    BlockId, Config, DeclId, FromValue, IntoSpanned, LabeledError, ParseError, PipelineData, Range,
     Record, Signature, Span, Spanned, Type, Value, levenshtein_distance,
 };
 use unicode_segmentation::UnicodeSegmentation;
@@ -738,6 +739,15 @@ fn eval_supported_constant_call(
             let args = eval_supported_constant_str_trim_args(working_set, &call.arguments, env)?;
             eval_supported_constant_str_trim(input, args, span)
         }
+        "str substring" => {
+            let args = eval_supported_constant_str_substring_call_args(
+                working_set,
+                &call.arguments,
+                env,
+                span,
+            )?;
+            eval_supported_constant_str_substring(input, args, span)
+        }
         "str downcase"
         | "str upcase"
         | "str reverse"
@@ -1071,6 +1081,11 @@ fn eval_supported_constant_external_call(
         "str trim" => {
             let args = eval_supported_constant_str_trim_external_args(working_set, args, env, span)?;
             eval_supported_constant_str_trim(input, args, span)
+        }
+        "str substring" => {
+            let args =
+                eval_supported_constant_str_substring_external_args(working_set, args, env, span)?;
+            eval_supported_constant_str_substring(input, args, span)
         }
         "str downcase"
         | "str upcase"
@@ -3377,6 +3392,554 @@ fn eval_supported_constant_trim_known_string(input: String, args: ConstantStrTri
     }
 }
 
+#[derive(Clone, Copy)]
+struct ConstantMaybeOpenRange {
+    start: Option<i64>,
+    end: Option<i64>,
+    inclusive: bool,
+}
+
+#[derive(Clone, Copy)]
+struct ConstantStrSubstringArgs {
+    range: ConstantMaybeOpenRange,
+    use_grapheme_clusters: bool,
+}
+
+fn eval_supported_constant_str_substring_call_args(
+    working_set: &StateWorkingSet,
+    args: &[nu_protocol::ast::Argument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<ConstantStrSubstringArgs, LabeledError> {
+    let mut range_expr = None;
+    let mut use_utf8_bytes = false;
+    let mut use_grapheme_clusters = false;
+    for arg in args {
+        match arg {
+            nu_protocol::ast::Argument::Positional(expr)
+            | nu_protocol::ast::Argument::Unknown(expr) => {
+                if range_expr.replace(expr).is_some() {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            "`str substring` requires exactly one explicit range argument in compile-time global initializers",
+                            arg.span(),
+                        ));
+                }
+            }
+            nu_protocol::ast::Argument::Named(named) => {
+                if named.2.is_some() {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            "`str substring` mode flags cannot receive values in compile-time global initializers",
+                            arg.span(),
+                        ));
+                }
+                match named.0.item.as_str() {
+                    "utf-8-bytes" => use_utf8_bytes = true,
+                    "grapheme-clusters" => use_grapheme_clusters = true,
+                    _ => {
+                        return Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
+                        .with_label(
+                            "`str substring` supports only --utf-8-bytes and --grapheme-clusters flags in compile-time global initializers",
+                            arg.span(),
+                        ));
+                    }
+                }
+            }
+            nu_protocol::ast::Argument::Spread(expr) => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`str substring` arguments cannot use spread syntax in compile-time global initializers",
+                        expr.span,
+                    ));
+            }
+        }
+    }
+
+    let Some(range_expr) = range_expr else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`str substring` requires exactly one explicit range argument in compile-time global initializers",
+                span,
+            ),
+        );
+    };
+    let range =
+        eval_supported_constant_range_argument(working_set, range_expr, env, "str substring")?;
+    let use_grapheme_clusters = eval_supported_constant_str_substring_validate_modes(
+        use_utf8_bytes,
+        use_grapheme_clusters,
+        span,
+    )?;
+
+    Ok(ConstantStrSubstringArgs {
+        range,
+        use_grapheme_clusters,
+    })
+}
+
+fn eval_supported_constant_str_substring_external_args(
+    working_set: &StateWorkingSet,
+    args: &[ExternalArgument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<ConstantStrSubstringArgs, LabeledError> {
+    let mut range = None;
+    let mut use_utf8_bytes = false;
+    let mut use_grapheme_clusters = false;
+    for arg in args {
+        let ExternalArgument::Regular(expr) = arg else {
+            return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                .with_label(
+                    "`str substring` arguments cannot use spread syntax in compile-time global initializers",
+                    arg.expr().span,
+                ));
+        };
+        if let Expr::GlobPattern(token, _) = &expr.expr
+            && !token.starts_with("--")
+            && let Some(parsed_range) =
+                eval_supported_constant_range_token(token, expr.span, "str substring")?
+        {
+            if range.replace(parsed_range).is_some() {
+                return Err(LabeledError::new(
+                    "Unsupported annotated mutable global initializer",
+                )
+                .with_label(
+                    "`str substring` requires exactly one explicit range argument in compile-time global initializers",
+                    expr.span,
+                ));
+            }
+            continue;
+        }
+        let value = eval_supported_constant_value_with_env(working_set, expr, env)?;
+        match value {
+            Value::String { val, .. } | Value::Glob { val, .. } => {
+                let Some(flag) = val.strip_prefix("--") else {
+                    return Err(LabeledError::new(
+                        "Unsupported annotated mutable global initializer",
+                    )
+                    .with_label(
+                        "`str substring` requires a compile-time range argument in global initializers",
+                        expr.span,
+                    ));
+                };
+                match flag {
+                    "utf-8-bytes" => use_utf8_bytes = true,
+                    "grapheme-clusters" => use_grapheme_clusters = true,
+                    _ => {
+                        return Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
+                        .with_label(
+                            "`str substring` supports only --utf-8-bytes and --grapheme-clusters flags in compile-time global initializers",
+                            expr.span,
+                        ));
+                    }
+                }
+            }
+            value @ Value::Range { .. } => {
+                if range
+                    .replace(eval_supported_constant_range_value(
+                        value,
+                        expr.span,
+                        "str substring",
+                    )?)
+                    .is_some()
+                {
+                    return Err(LabeledError::new(
+                        "Unsupported annotated mutable global initializer",
+                    )
+                    .with_label(
+                        "`str substring` requires exactly one explicit range argument in compile-time global initializers",
+                        expr.span,
+                    ));
+                }
+            }
+            _ => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`str substring` requires a compile-time range argument in global initializers",
+                        expr.span,
+                    ));
+            }
+        }
+    }
+
+    let Some(range) = range else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`str substring` requires exactly one explicit range argument in compile-time global initializers",
+                span,
+            ),
+        );
+    };
+    let use_grapheme_clusters = eval_supported_constant_str_substring_validate_modes(
+        use_utf8_bytes,
+        use_grapheme_clusters,
+        span,
+    )?;
+
+    Ok(ConstantStrSubstringArgs {
+        range,
+        use_grapheme_clusters,
+    })
+}
+
+fn eval_supported_constant_range_argument(
+    working_set: &StateWorkingSet,
+    expr: &nu_protocol::ast::Expression,
+    env: &HashMap<nu_protocol::VarId, Value>,
+    cmd_name: &str,
+) -> Result<ConstantMaybeOpenRange, LabeledError> {
+    if let Expr::Range(range) = &expr.expr {
+        return eval_supported_constant_ast_range(working_set, range, env, cmd_name);
+    }
+    if let Expr::GlobPattern(token, _) = &expr.expr
+        && let Some(range) = eval_supported_constant_range_token(token, expr.span, cmd_name)?
+    {
+        return Ok(range);
+    }
+
+    let value = eval_supported_constant_value_with_env(working_set, expr, env)?;
+    eval_supported_constant_range_value(value, expr.span, cmd_name)
+}
+
+fn eval_supported_constant_ast_range(
+    working_set: &StateWorkingSet,
+    range: &nu_protocol::ast::Range,
+    env: &HashMap<nu_protocol::VarId, Value>,
+    cmd_name: &str,
+) -> Result<ConstantMaybeOpenRange, LabeledError> {
+    let start = range
+        .from
+        .as_ref()
+        .map(|expr| eval_supported_constant_int_range_endpoint(working_set, expr, env, cmd_name))
+        .transpose()?;
+    let end = range
+        .to
+        .as_ref()
+        .map(|expr| eval_supported_constant_int_range_endpoint(working_set, expr, env, cmd_name))
+        .transpose()?;
+    if let Some(next_expr) = range.next.as_ref() {
+        let next =
+            eval_supported_constant_int_range_endpoint(working_set, next_expr, env, cmd_name)?;
+        if next == start.unwrap_or(0) {
+            return Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    format!("`{cmd_name}` range step cannot be zero in global initializers"),
+                    next_expr.span,
+                ),
+            );
+        }
+    }
+    Ok(ConstantMaybeOpenRange {
+        start,
+        end,
+        inclusive: range.operator.inclusion == RangeInclusion::Inclusive,
+    })
+}
+
+fn eval_supported_constant_range_token(
+    token: &str,
+    span: Span,
+    cmd_name: &str,
+) -> Result<Option<ConstantMaybeOpenRange>, LabeledError> {
+    if token.starts_with("...") || !token.contains("..") {
+        return Ok(None);
+    }
+
+    let dotdot_pos = token
+        .match_indices("..")
+        .map(|(pos, _)| pos)
+        .collect::<Vec<_>>();
+    let (next_op_pos, range_op_pos) = match dotdot_pos.as_slice() {
+        [range_op_pos] => (None, *range_op_pos),
+        [next_op_pos, range_op_pos] => (Some(*next_op_pos), *range_op_pos),
+        _ => {
+            return Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    format!("`{cmd_name}` requires an integer range with one range operator in global initializers"),
+                    span,
+                ),
+            );
+        }
+    };
+
+    let (range_op, inclusive) = if token[range_op_pos..].starts_with("..<") {
+        ("..<", false)
+    } else if token[range_op_pos..].starts_with("..=") {
+        ("..=", true)
+    } else {
+        ("..", true)
+    };
+    let range_op_end = range_op_pos + range_op.len();
+    if next_op_pos.is_some_and(|pos| pos + 2 > range_op_pos) {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!("`{cmd_name}` requires a valid integer range in global initializers"),
+                span,
+            ),
+        );
+    }
+
+    let start_text = if token.starts_with("..") {
+        None
+    } else {
+        Some(&token[..dotdot_pos[0]])
+    };
+    let next_text = next_op_pos.map(|pos| &token[pos + 2..range_op_pos]);
+    let end_text = if token.len() == range_op_end {
+        None
+    } else {
+        Some(&token[range_op_end..])
+    };
+
+    if start_text.is_none() && end_text.is_none() {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`{cmd_name}` requires at least one integer range bound in global initializers"
+                ),
+                span,
+            ),
+        );
+    }
+
+    let start = start_text
+        .map(|text| eval_supported_constant_parse_int_range_bound(text, span, cmd_name))
+        .transpose()?;
+    let next = next_text
+        .map(|text| eval_supported_constant_parse_int_range_bound(text, span, cmd_name))
+        .transpose()?;
+    if let (Some(start), Some(next)) = (start, next)
+        && start == next
+    {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!("`{cmd_name}` range step cannot be zero in global initializers"),
+                span,
+            ),
+        );
+    }
+    let end = end_text
+        .map(|text| eval_supported_constant_parse_int_range_bound(text, span, cmd_name))
+        .transpose()?;
+
+    Ok(Some(ConstantMaybeOpenRange {
+        start,
+        end,
+        inclusive,
+    }))
+}
+
+fn eval_supported_constant_parse_int_range_bound(
+    text: &str,
+    span: Span,
+    cmd_name: &str,
+) -> Result<i64, LabeledError> {
+    text.parse::<i64>().map_err(|_| {
+        LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+            format!("`{cmd_name}` requires integer range bounds in global initializers"),
+            span,
+        )
+    })
+}
+
+fn eval_supported_constant_int_range_endpoint(
+    working_set: &StateWorkingSet,
+    expr: &nu_protocol::ast::Expression,
+    env: &HashMap<nu_protocol::VarId, Value>,
+    cmd_name: &str,
+) -> Result<i64, LabeledError> {
+    eval_supported_constant_value_with_env(working_set, expr, env)?
+        .as_int()
+        .map_err(|_| {
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!("`{cmd_name}` requires integer range bounds in global initializers"),
+                expr.span,
+            )
+        })
+}
+
+fn eval_supported_constant_range_value(
+    value: Value,
+    span: Span,
+    cmd_name: &str,
+) -> Result<ConstantMaybeOpenRange, LabeledError> {
+    let Value::Range { val, .. } = value else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`{cmd_name}` requires a compile-time range argument in global initializers"
+                ),
+                span,
+            ),
+        );
+    };
+    let Range::IntRange(range) = *val else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!("`{cmd_name}` requires an integer range in global initializers"),
+                span,
+            ),
+        );
+    };
+    let (end, inclusive) = match range.end() {
+        Bound::Included(end) => (Some(end), true),
+        Bound::Excluded(end) => (Some(end), false),
+        Bound::Unbounded => (None, false),
+    };
+    Ok(ConstantMaybeOpenRange {
+        start: Some(range.start()),
+        end,
+        inclusive,
+    })
+}
+
+fn eval_supported_constant_str_substring_validate_modes(
+    use_utf8_bytes: bool,
+    use_grapheme_clusters: bool,
+    span: Span,
+) -> Result<bool, LabeledError> {
+    if use_utf8_bytes && use_grapheme_clusters {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`str substring` accepts either --utf-8-bytes or --grapheme-clusters, not both, in compile-time global initializers",
+                span,
+            ),
+        );
+    }
+    Ok(use_grapheme_clusters)
+}
+
+fn eval_supported_constant_str_substring(
+    input: Option<Value>,
+    args: ConstantStrSubstringArgs,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let value = eval_supported_constant_required_pipeline_input("str substring", input, span)?;
+    let value_span = value.span();
+    match value {
+        Value::List { vals, .. } => {
+            let values = vals
+                .into_iter()
+                .enumerate()
+                .map(|(index, value)| {
+                    let input = match value {
+                        Value::String { val, .. } | Value::Glob { val, .. } => val,
+                        other => {
+                            return Err(LabeledError::new(
+                                "Unsupported annotated mutable global initializer",
+                            )
+                            .with_label(
+                                format!(
+                                    "`str substring` requires string list items in compile-time global initializers; item {index} has type {}",
+                                    other.get_type()
+                                ),
+                                span,
+                            ));
+                        }
+                    };
+                    Ok(Value::string(
+                        eval_supported_constant_substring_known_string(
+                            input,
+                            args.range,
+                            args.use_grapheme_clusters,
+                            span,
+                        )?,
+                        value_span,
+                    ))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(Value::list(values, value_span))
+        }
+        Value::String { val, .. } | Value::Glob { val, .. } => Ok(Value::string(
+            eval_supported_constant_substring_known_string(
+                val,
+                args.range,
+                args.use_grapheme_clusters,
+                span,
+            )?,
+            value_span,
+        )),
+        _ => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`str substring` in a compile-time global initializer requires string or list<string> input",
+                span,
+            ),
+        ),
+    }
+}
+
+fn eval_supported_constant_substring_known_string(
+    input: String,
+    range: ConstantMaybeOpenRange,
+    use_grapheme_clusters: bool,
+    span: Span,
+) -> Result<String, LabeledError> {
+    if use_grapheme_clusters {
+        let graphemes = UnicodeSegmentation::graphemes(input.as_str(), true).collect::<Vec<_>>();
+        let (start, end) = eval_supported_constant_string_range_bounds(range, graphemes.len());
+        return Ok(graphemes[start..end].concat());
+    }
+
+    let (start, end) = eval_supported_constant_string_range_bounds(range, input.len());
+    let bytes = input.as_bytes().get(start..end).ok_or_else(|| {
+        LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+            "`str substring` produced invalid byte bounds in compile-time global initializers",
+            span,
+        )
+    })?;
+    String::from_utf8(bytes.to_vec()).map_err(|_| {
+        LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+            "`str substring` byte bounds must preserve valid UTF-8 in compile-time global initializers",
+            span,
+        )
+    })
+}
+
+fn eval_supported_constant_string_range_bounds(
+    range: ConstantMaybeOpenRange,
+    len: usize,
+) -> (usize, usize) {
+    let len = len as i64;
+    let start = range
+        .start
+        .map(|start| eval_supported_constant_substring_start_bound(start, len))
+        .unwrap_or(0);
+    let end = range
+        .end
+        .map(|end| eval_supported_constant_substring_end_bound(end, range.inclusive, len))
+        .unwrap_or(len)
+        .max(start);
+    (start as usize, end as usize)
+}
+
+fn eval_supported_constant_substring_start_bound(index: i64, len: i64) -> i64 {
+    let raw = if index < 0 {
+        len.saturating_add(index)
+    } else {
+        index
+    };
+    raw.clamp(0, len)
+}
+
+fn eval_supported_constant_substring_end_bound(index: i64, inclusive: bool, len: i64) -> i64 {
+    let raw = if index < 0 {
+        len.saturating_add(index)
+    } else {
+        index
+    };
+    let exclusive = if inclusive {
+        raw.saturating_add(1)
+    } else {
+        raw
+    };
+    exclusive.clamp(0, len)
+}
+
 fn eval_supported_constant_str_transform(
     cmd_name: &str,
     input: Option<Value>,
@@ -4819,6 +5382,15 @@ fn eval_supported_constant_str_external_call(
                 span,
             )?;
             eval_supported_constant_str_trim(input, args, span)
+        }
+        "substring" => {
+            let args = eval_supported_constant_str_substring_external_args(
+                working_set,
+                remaining_args,
+                env,
+                span,
+            )?;
+            eval_supported_constant_str_substring(input, args, span)
         }
         "downcase"
         | "upcase"

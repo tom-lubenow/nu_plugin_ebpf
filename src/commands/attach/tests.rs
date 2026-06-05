@@ -2726,6 +2726,196 @@ fn test_map_leading_annotated_mut_globals_supports_constant_string_transform_lis
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_str_substring_initializer() {
+    let source = "{|| mut sliced: string = (\"abcdef\" | str substring 1..3); $sliced }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant str substring initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(
+        globals[0]
+            .initial_value
+            .as_str()
+            .expect("str substring should produce a string"),
+        "bcd"
+    );
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_str_substring_negative_end_initializer()
+{
+    let source = "{|| mut sliced: string = (\"abcdef\" | str substring 1..-2); $sliced }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant str substring negative-end initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(
+        globals[0]
+            .initial_value
+            .as_str()
+            .expect("str substring should produce a string"),
+        "bcde"
+    );
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_str_substring_grapheme_initializer() {
+    let source = "{|| mut sliced: string = (\"🇯🇵ほげ ふが ぴよ\" | str substring 4..5 --grapheme-clusters); $sliced }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant str substring --grapheme-clusters initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(
+        globals[0]
+            .initial_value
+            .as_str()
+            .expect("str substring should produce a string"),
+        "ふが"
+    );
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_str_substring_list_initializer() {
+    let source =
+        "{|| mut sliced: list<string> = ([\"abcd\", \"wxyz\"] | str substring 1..2); $sliced }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant str substring list initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let sliced = vals
+                .iter()
+                .map(|value| {
+                    value
+                        .as_str()
+                        .expect("str substring should produce strings")
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(sliced, vec!["bc", "xy"]);
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_str_substring_external_initializer() {
+    let source =
+        "{|| mut sliced: string = (\"abcdef\" | str substring 1..3 --utf-8-bytes); $sliced }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant external str substring initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(
+        globals[0]
+            .initial_value
+            .as_str()
+            .expect("str substring should produce a string"),
+        "bcd"
+    );
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_constant_str_trim_initializer() {
     let source = "{|| mut trimmed: string = (\"  abc  \" | str trim); $trimmed }";
     let ir_block = IrBlock {
