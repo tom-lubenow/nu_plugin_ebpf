@@ -668,6 +668,12 @@ fn eval_supported_constant_call(
             &call.arguments,
             span,
         ),
+        "rename" => eval_supported_constant_record_rename_call(
+            working_set,
+            input,
+            call,
+            span,
+        ),
         "insert" | "update" | "upsert" => eval_supported_constant_path_mutation_call(
             working_set,
             cmd_name,
@@ -805,6 +811,70 @@ fn eval_supported_constant_external_call(
                 fields,
                 span,
             )
+        }
+        "rename" => {
+            if let Some(first_arg) = args.first() {
+                let ExternalArgument::Regular(first_expr) = first_arg else {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            "`rename` field arguments cannot use spread syntax in compile-time global initializers",
+                            first_arg.expr().span,
+                        ));
+                };
+                let first_value = eval_supported_constant_value(working_set, first_expr)?;
+                if matches!(
+                    first_value,
+                    Value::String { ref val, .. } | Value::Glob { ref val, .. } if val == "--block" || val == "-b"
+                ) {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            "`rename --block` is not supported in compile-time global initializers",
+                            span,
+                        ));
+                }
+                if matches!(
+                    first_value,
+                    Value::String { ref val, .. } | Value::Glob { ref val, .. } if val == "--column" || val == "-c"
+                ) {
+                    let [_, column_arg] = args else {
+                        return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                            .with_label(
+                                "`rename --column` requires exactly one record mapping in compile-time global initializers",
+                                span,
+                            ));
+                    };
+                    let ExternalArgument::Regular(column_expr) = column_arg else {
+                        return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                            .with_label(
+                                "`rename --column` record mapping cannot use spread syntax in compile-time global initializers",
+                                column_arg.expr().span,
+                            ));
+                    };
+                    let pairs = eval_supported_constant_record_rename_column_pairs(
+                        working_set,
+                        column_expr,
+                    )?;
+                    return eval_supported_constant_record_rename_column(input, pairs, span);
+                }
+            }
+
+            let fields = args
+                .iter()
+                .map(|arg| {
+                    let ExternalArgument::Regular(field_expr) = arg else {
+                        return Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
+                        .with_label(
+                            "`rename` field arguments cannot use spread syntax in compile-time global initializers",
+                            arg.expr().span,
+                        ));
+                    };
+                    eval_supported_constant_record_field_name(working_set, field_expr)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+
+            eval_supported_constant_record_rename_positional(input, fields, span)
         }
         "insert" | "update" | "upsert" => {
             let [path_arg, new_value_arg] = args else {
@@ -1096,22 +1166,243 @@ fn eval_supported_constant_record_field_name(
     working_set: &StateWorkingSet,
     expr: &nu_protocol::ast::Expression,
 ) -> Result<String, LabeledError> {
-    eval_supported_constant_value(working_set, expr)
-        .and_then(|value| {
-            value.coerce_into_string().map_err(|e| {
-                LabeledError::new("Unsupported annotated mutable global initializer")
-                    .with_label(e.to_string(), expr.span)
-            })
-        })
-        .map_err(|err| {
-            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
-                format!(
-                    "record field arguments must be compile-time string values: {}",
-                    err.msg
+    match eval_supported_constant_value(working_set, expr)? {
+        Value::String { val, .. } | Value::Glob { val, .. } => Ok(val),
+        Value::CellPath { val, .. } => match val.members.as_slice() {
+            [nu_protocol::ast::PathMember::String { val, .. }] => Ok(val.clone()),
+            _ => Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    "record field arguments must be top-level field names",
+                    expr.span,
                 ),
+            ),
+        },
+        _ => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "record field arguments must be compile-time string or cell-path field names",
                 expr.span,
+            ),
+        ),
+    }
+}
+
+fn eval_supported_constant_record_rename_call(
+    working_set: &StateWorkingSet,
+    input: Option<Value>,
+    call: &nu_protocol::ast::Call,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    for (name, _, _) in call.named_iter() {
+        if !matches!(name.item.as_str(), "column" | "c" | "block" | "b") {
+            return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                .with_label(
+                    format!(
+                        "`rename` does not accept named argument --{} in compile-time global initializers",
+                        name.item
+                    ),
+                    name.span,
+                ));
+        }
+    }
+
+    if call.get_named_arg("block").is_some() || call.get_named_arg("b").is_some() {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`rename --block` is not supported in compile-time global initializers",
+                span,
+            ),
+        );
+    }
+
+    let column_arg = call
+        .get_flag_expr("column")
+        .or_else(|| call.get_flag_expr("c"));
+    let has_column = call.get_named_arg("column").is_some() || call.get_named_arg("c").is_some();
+    if has_column {
+        let column_expr = column_arg.ok_or_else(|| {
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`rename --column` requires a record mapping in compile-time global initializers",
+                span,
             )
+        })?;
+        if call.positional_len() != 0 {
+            return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                .with_label(
+                    "`rename --column` cannot be combined with positional field names in compile-time global initializers",
+                    span,
+                ));
+        }
+        let pairs = eval_supported_constant_record_rename_column_pairs(working_set, column_expr)?;
+        return eval_supported_constant_record_rename_column(input, pairs, span);
+    }
+
+    let positional = call.positional_iter().collect::<Vec<_>>();
+    if let Some(first) = positional.first() {
+        let first_value = eval_supported_constant_value(working_set, first)?;
+        if matches!(
+            first_value,
+            Value::String { ref val, .. } | Value::Glob { ref val, .. } if val == "--column" || val == "-c"
+        ) {
+            let [_, column_expr] = positional.as_slice() else {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`rename --column` requires exactly one record mapping in compile-time global initializers",
+                        span,
+                    ));
+            };
+            let pairs =
+                eval_supported_constant_record_rename_column_pairs(working_set, column_expr)?;
+            return eval_supported_constant_record_rename_column(input, pairs, span);
+        }
+    }
+    if positional.len() == 1 {
+        let value = eval_supported_constant_value(working_set, positional[0])?;
+        if matches!(value, Value::Record { .. }) {
+            let pairs = eval_supported_constant_record_rename_column_pairs_from_value(
+                value,
+                positional[0].span,
+            )?;
+            return eval_supported_constant_record_rename_column(input, pairs, span);
+        }
+    }
+
+    let fields = call
+        .positional_iter()
+        .map(|expr| eval_supported_constant_record_field_name(working_set, expr))
+        .collect::<Result<Vec<_>, _>>()?;
+    eval_supported_constant_record_rename_positional(input, fields, span)
+}
+
+fn eval_supported_constant_record_rename_column_pairs(
+    working_set: &StateWorkingSet,
+    expr: &nu_protocol::ast::Expression,
+) -> Result<Vec<(String, String)>, LabeledError> {
+    let value = eval_supported_constant_value(working_set, expr)?;
+    eval_supported_constant_record_rename_column_pairs_from_value(value, expr.span)
+}
+
+fn eval_supported_constant_record_rename_column_pairs_from_value(
+    value: Value,
+    span: Span,
+) -> Result<Vec<(String, String)>, LabeledError> {
+    let Value::Record { val, .. } = value else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`rename --column` requires a compile-time record mapping",
+                span,
+            ),
+        );
+    };
+    if val.is_empty() {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`rename --column` requires a non-empty record mapping",
+                span,
+            ),
+        );
+    }
+
+    val.iter()
+        .map(|(source, target)| {
+            eval_supported_constant_record_rename_column_target(target)
+                .map(|target| (source.to_string(), target))
         })
+        .collect()
+}
+
+fn eval_supported_constant_record_rename_column_target(
+    value: &Value,
+) -> Result<String, LabeledError> {
+    match value {
+        Value::String { val, .. } => Ok(val.clone()),
+        Value::CellPath { val, .. } => match val.members.as_slice() {
+            [nu_protocol::ast::PathMember::String { val, .. }] => Ok(val.clone()),
+            _ => Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    "`rename --column` supports only top-level replacement field names",
+                    value.span(),
+                ),
+            ),
+        },
+        _ => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`rename --column` requires compile-time string replacement field names",
+                value.span(),
+            ),
+        ),
+    }
+}
+
+fn eval_supported_constant_record_rename_positional(
+    input: Option<Value>,
+    fields: Vec<String>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let value = input.ok_or_else(|| {
+        LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+            "`rename` in a compile-time global initializer must receive pipeline input",
+            span,
+        )
+    })?;
+    let value_span = value.span();
+    let Value::Record { val, .. } = value else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`rename` in a compile-time global initializer requires record input",
+                span,
+            ),
+        );
+    };
+
+    let mut out = Record::new();
+    for (idx, (source, value)) in val.iter().enumerate() {
+        let target = fields.get(idx).unwrap_or(source).clone();
+        out.push(target, value.clone());
+    }
+    Ok(Value::record(out, value_span))
+}
+
+fn eval_supported_constant_record_rename_column(
+    input: Option<Value>,
+    pairs: Vec<(String, String)>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let value = input.ok_or_else(|| {
+        LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+            "`rename --column` in a compile-time global initializer must receive pipeline input",
+            span,
+        )
+    })?;
+    let value_span = value.span();
+    let Value::Record { val, .. } = value else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`rename --column` in a compile-time global initializer requires record input",
+                span,
+            ),
+        );
+    };
+
+    for (source, _) in &pairs {
+        if val.get(source).is_none() {
+            return Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    format!("`rename --column` cannot find record field '{source}'"),
+                    span,
+                ),
+            );
+        }
+    }
+
+    let mut out = Record::new();
+    for (source, value) in val.iter() {
+        let target = pairs
+            .iter()
+            .find_map(|(from, to)| (from == source).then_some(to.clone()))
+            .unwrap_or_else(|| source.to_string());
+        out.push(target, value.clone());
+    }
+    Ok(Value::record(out, value_span))
 }
 
 fn eval_supported_constant_path_mutation_call(
