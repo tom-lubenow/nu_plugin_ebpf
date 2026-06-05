@@ -1882,16 +1882,17 @@ impl<'a> HirToMirLowering<'a> {
         for index in 0..4 {
             let word_vreg = self.func.alloc_vreg();
             self.vreg_type_hints.insert(word_vreg, element_ty.clone());
+            let word_offset = Self::checked_mir_offset(index * 4, "packet word")?;
             self.emit(MirInst::Load {
                 dst: word_vreg,
                 ptr: base_ptr_vreg,
-                offset: (index * 4) as i32,
+                offset: word_offset,
                 ty: element_ty.clone(),
             });
             self.emit_packet_big_endian_scalar_normalize(word_vreg, &element_ty)?;
             self.emit(MirInst::Store {
                 ptr: base_ptr_vreg,
-                offset: (index * 4) as i32,
+                offset: word_offset,
                 val: MirValue::VReg(word_vreg),
                 ty: element_ty.clone(),
             });

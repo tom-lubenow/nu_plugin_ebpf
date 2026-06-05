@@ -1936,10 +1936,13 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         let value_vreg = self.func.alloc_vreg();
+        let field_offset =
+            Self::checked_byte_offset(element_offset, layout_field.offset, "fixed-array field")?;
+        let field_offset = Self::checked_mir_offset(field_offset, "fixed-array field")?;
         self.emit(MirInst::Load {
             dst: value_vreg,
             ptr: array_vreg,
-            offset: (element_offset + layout_field.offset) as i32,
+            offset: field_offset,
             ty: layout_field.ty.clone(),
         });
         self.vreg_type_hints
@@ -2965,9 +2968,11 @@ impl<'a> HirToMirLowering<'a> {
                         )));
                     }
 
+                    let len_offset =
+                        Self::checked_mir_offset(projection.offset, "record string length field")?;
                     self.emit(MirInst::Store {
                         ptr: base_vreg,
-                        offset: projection.offset as i32,
+                        offset: len_offset,
                         val: MirValue::VReg(len_vreg),
                         ty: MirType::U64,
                     });
@@ -3101,9 +3106,10 @@ impl<'a> HirToMirLowering<'a> {
                         )));
                     };
 
+                    let field_offset = Self::checked_mir_offset(projection.offset, "record field")?;
                     self.emit(MirInst::Store {
                         ptr: base_vreg,
-                        offset: projection.offset as i32,
+                        offset: field_offset,
                         val: MirValue::VReg(stored_vreg),
                         ty: projection.ty.clone(),
                     });

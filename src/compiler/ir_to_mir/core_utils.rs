@@ -3,6 +3,24 @@ use crate::compiler::instruction::BpfHelper;
 use crate::compiler::mir::AddressSpace;
 
 impl<'a> HirToMirLowering<'a> {
+    pub(super) fn checked_byte_offset(
+        base: usize,
+        add: usize,
+        what: &str,
+    ) -> Result<usize, CompileError> {
+        base.checked_add(add).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!("{what} byte offset overflowed"))
+        })
+    }
+
+    pub(super) fn checked_mir_offset(offset: usize, what: &str) -> Result<i32, CompileError> {
+        i32::try_from(offset).map_err(|_| {
+            CompileError::UnsupportedInstruction(format!(
+                "{what} byte offset {offset} exceeds the MIR i32 offset range"
+            ))
+        })
+    }
+
     pub(super) fn fixed_copy_chunk(remaining: usize, offsets: &[usize]) -> (MirType, usize) {
         for (size, ty) in [
             (8usize, MirType::U64),
@@ -36,19 +54,24 @@ impl<'a> HirToMirLowering<'a> {
     ) -> Result<(), CompileError> {
         let mut offset = 0usize;
         while offset < size {
+            let dst_chunk_offset =
+                Self::checked_byte_offset(dst_offset, offset, "destination copy")?;
+            let src_chunk_offset = Self::checked_byte_offset(src_offset, offset, "source copy")?;
             let (chunk_ty, chunk_size) =
-                Self::fixed_copy_chunk(size - offset, &[dst_offset + offset, src_offset + offset]);
+                Self::fixed_copy_chunk(size - offset, &[dst_chunk_offset, src_chunk_offset]);
+            let src_mir_offset = Self::checked_mir_offset(src_chunk_offset, "source copy")?;
+            let dst_mir_offset = Self::checked_mir_offset(dst_chunk_offset, "destination copy")?;
             let tmp = self.func.alloc_vreg();
             self.emit(MirInst::Load {
                 dst: tmp,
                 ptr: src_ptr,
-                offset: (src_offset + offset) as i32,
+                offset: src_mir_offset,
                 ty: chunk_ty.clone(),
             });
             self.vreg_type_hints.insert(tmp, chunk_ty.clone());
             self.emit(MirInst::Store {
                 ptr: dst_ptr,
-                offset: (dst_offset + offset) as i32,
+                offset: dst_mir_offset,
                 val: MirValue::VReg(tmp),
                 ty: chunk_ty,
             });
@@ -67,19 +90,25 @@ impl<'a> HirToMirLowering<'a> {
     ) -> Result<(), CompileError> {
         let mut offset = 0usize;
         while offset < size {
+            let dst_chunk_offset =
+                Self::checked_byte_offset(dst_offset, offset, "destination slot copy")?;
+            let src_chunk_offset = Self::checked_byte_offset(src_offset, offset, "source copy")?;
             let (chunk_ty, chunk_size) =
-                Self::fixed_copy_chunk(size - offset, &[dst_offset + offset, src_offset + offset]);
+                Self::fixed_copy_chunk(size - offset, &[dst_chunk_offset, src_chunk_offset]);
+            let src_mir_offset = Self::checked_mir_offset(src_chunk_offset, "source copy")?;
+            let dst_mir_offset =
+                Self::checked_mir_offset(dst_chunk_offset, "destination slot copy")?;
             let tmp = self.func.alloc_vreg();
             self.emit(MirInst::Load {
                 dst: tmp,
                 ptr: src_ptr,
-                offset: (src_offset + offset) as i32,
+                offset: src_mir_offset,
                 ty: chunk_ty.clone(),
             });
             self.vreg_type_hints.insert(tmp, chunk_ty.clone());
             self.emit(MirInst::StoreSlot {
                 slot: dst_slot,
-                offset: (dst_offset + offset) as i32,
+                offset: dst_mir_offset,
                 val: MirValue::VReg(tmp),
                 ty: chunk_ty,
             });
@@ -96,11 +125,14 @@ impl<'a> HirToMirLowering<'a> {
     ) -> Result<(), CompileError> {
         let mut offset = 0usize;
         while offset < size {
-            let (chunk_ty, chunk_size) =
-                Self::fixed_copy_chunk(size - offset, &[dst_offset + offset]);
+            let dst_chunk_offset =
+                Self::checked_byte_offset(dst_offset, offset, "zero-fill destination")?;
+            let (chunk_ty, chunk_size) = Self::fixed_copy_chunk(size - offset, &[dst_chunk_offset]);
+            let dst_mir_offset =
+                Self::checked_mir_offset(dst_chunk_offset, "zero-fill destination")?;
             self.emit(MirInst::Store {
                 ptr: dst_ptr,
-                offset: (dst_offset + offset) as i32,
+                offset: dst_mir_offset,
                 val: MirValue::Const(0),
                 ty: chunk_ty,
             });
@@ -792,9 +824,11 @@ impl<'a> HirToMirLowering<'a> {
                     )?;
                 }
                 _ => {
+                    let field_offset =
+                        Self::checked_mir_offset(layout_field.offset, "record field")?;
                     self.emit(MirInst::StoreSlot {
                         slot,
-                        offset: layout_field.offset as i32,
+                        offset: field_offset,
                         val: MirValue::VReg(record_field.value_vreg),
                         ty: record_field.ty.clone(),
                     });
@@ -1683,9 +1717,11 @@ impl<'a> HirToMirLowering<'a> {
 
             let mut offset = old_size;
             while offset < needed {
+                let store_offset =
+                    Self::checked_mir_offset(offset, "expanded string slot zero-fill")?;
                 self.emit(MirInst::StoreSlot {
                     slot,
-                    offset: offset as i32,
+                    offset: store_offset,
                     val: MirValue::Const(0),
                     ty: MirType::U64,
                 });

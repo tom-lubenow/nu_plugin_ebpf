@@ -337,15 +337,30 @@ impl<'a> HirToMirLowering<'a> {
 
             for index in 0..truncated_values.len() {
                 let item_vreg = self.func.alloc_vreg();
+                let src_offset =
+                    index
+                        .checked_mul(std::mem::size_of::<i64>())
+                        .ok_or_else(|| {
+                            CompileError::UnsupportedInstruction(
+                                "constant list source offset overflowed".into(),
+                            )
+                        })?;
+                let dst_offset = 8usize.checked_add(src_offset).ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(
+                        "constant list destination offset overflowed".into(),
+                    )
+                })?;
+                let src_offset = Self::checked_mir_offset(src_offset, "constant list source")?;
+                let dst_offset = Self::checked_mir_offset(dst_offset, "constant list destination")?;
                 self.emit(MirInst::Load {
                     dst: item_vreg,
                     ptr: rodata_vreg,
-                    offset: (index * std::mem::size_of::<i64>()) as i32,
+                    offset: src_offset,
                     ty: MirType::I64,
                 });
                 self.emit(MirInst::StoreSlot {
                     slot,
-                    offset: (8 + index * std::mem::size_of::<i64>()) as i32,
+                    offset: dst_offset,
                     val: MirValue::VReg(item_vreg),
                     ty: MirType::I64,
                 });

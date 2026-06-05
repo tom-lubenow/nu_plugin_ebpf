@@ -19,6 +19,57 @@ use nu_protocol::{
 };
 use std::collections::HashMap;
 
+#[test]
+fn test_checked_mir_offset_rejects_out_of_range_offset() {
+    let err = HirToMirLowering::checked_mir_offset(i32::MAX as usize + 1, "test offset")
+        .expect_err("offset above i32::MAX should fail");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("test offset byte offset") && msg.contains("MIR i32 offset range"),
+        "unexpected error: {msg}"
+    );
+}
+
+#[test]
+fn test_emit_ptr_copy_rejects_out_of_range_offsets() {
+    let decl_names = HashMap::new();
+    let closure_irs = HashMap::new();
+    let closure_param_sources = HashMap::new();
+    let captures = Vec::new();
+    let user_functions = HashMap::new();
+    let decl_signatures = HashMap::new();
+    let mut lowering = HirToMirLowering::new(
+        None,
+        &decl_names,
+        &closure_irs,
+        &closure_param_sources,
+        &captures,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        &user_functions,
+        &decl_signatures,
+    );
+    let entry = lowering.func.alloc_block();
+    lowering.func.entry = entry;
+    lowering.current_block = entry;
+    let dst_ptr = lowering.func.alloc_vreg();
+    let src_ptr = lowering.func.alloc_vreg();
+
+    let err = lowering
+        .emit_ptr_copy_with_offsets(dst_ptr, i32::MAX as usize + 1, src_ptr, 0, 1)
+        .expect_err("out-of-range destination offset should fail");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("destination copy byte offset") && msg.contains("MIR i32 offset range"),
+        "unexpected error: {msg}"
+    );
+}
+
 fn find_tracepoint_pointer_field_candidate() -> Option<(String, String)> {
     for (target, field_name) in [
         ("syscalls/sys_enter_openat", "filename"),
