@@ -5864,6 +5864,75 @@ fn test_lower_generic_field_projection_after_runtime_get_stack_backed_bitfield_s
 }
 
 #[test]
+fn test_lower_stack_backed_bitfield_assignment_merges_storage_bits() {
+    let hir = make_bound_ctx_upsert_program(
+        CellPath {
+            members: vec![string_member("arg0"), string_member("uclamp_req")],
+        },
+        CellPath {
+            members: vec![int_member(1), string_member("bucket_id")],
+        },
+        HirLiteral::Int(7),
+    );
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "wake_up_new_task");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("stack-backed aggregate bitfield assignment should lower");
+
+    let instructions: Vec<_> = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect();
+    assert!(instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::Load {
+            ty: MirType::U32,
+            ..
+        }
+    )));
+    assert!(instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::Store {
+            ty: MirType::U32,
+            ..
+        }
+    )));
+    assert!(instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::BinOp {
+            op: BinOpKind::And,
+            rhs: MirValue::Const(0x07),
+            ..
+        }
+    )));
+    assert!(instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::BinOp {
+            op: BinOpKind::Shl,
+            rhs: MirValue::Const(11),
+            ..
+        }
+    )));
+    assert!(instructions.iter().any(|inst| matches!(
+        inst,
+        MirInst::BinOp {
+            op: BinOpKind::Or,
+            ..
+        }
+    )));
+}
+
+#[test]
 fn test_lower_generic_field_projection_after_binding_root_trampoline_aggregate() {
     let hir = make_bound_ctx_path_program(
         CellPath {

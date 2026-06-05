@@ -366,16 +366,10 @@ impl<'a> HirToMirLowering<'a> {
         )))
     }
 
-    fn emit_packet_bitfield_store_value(
-        &mut self,
-        packet_store_vreg: VReg,
-        new_value_vreg: VReg,
+    fn bitfield_store_masks(
         store_ty: &MirType,
         bitfield: TrampolineBitfieldInfo,
-        packet_big_endian: bool,
-        end_field: CtxField,
-        path_desc: &str,
-    ) -> Result<VReg, CompileError> {
+    ) -> Result<(u128, u128), CompileError> {
         let storage_bits = u32::try_from(store_ty.size().checked_mul(8).ok_or_else(|| {
             CompileError::UnsupportedInstruction("bitfield store size overflowed".to_string())
         })?)
@@ -417,20 +411,17 @@ impl<'a> HirToMirLowering<'a> {
                 CompileError::UnsupportedInstruction("bitfield store mask overflowed".to_string())
             })?;
         let clear_mask = storage_mask ^ shifted_field_mask;
+        Ok((field_mask, clear_mask))
+    }
 
-        let current_vreg = self.func.alloc_vreg();
-        self.vreg_type_hints.insert(current_vreg, store_ty.clone());
-        self.emit_packet_guarded_load(
-            current_vreg,
-            packet_store_vreg,
-            store_ty,
-            end_field,
-            path_desc,
-        )?;
-        if packet_big_endian {
-            self.emit_packet_big_endian_scalar_normalize(current_vreg, store_ty)?;
-        }
-
+    fn emit_bitfield_merge_value(
+        &mut self,
+        current_vreg: VReg,
+        new_value_vreg: VReg,
+        store_ty: &MirType,
+        bitfield: TrampolineBitfieldInfo,
+    ) -> Result<VReg, CompileError> {
+        let (field_mask, clear_mask) = Self::bitfield_store_masks(store_ty, bitfield)?;
         let masked_value_vreg = self.func.alloc_vreg();
         self.vreg_type_hints
             .insert(masked_value_vreg, store_ty.clone());
@@ -476,11 +467,72 @@ impl<'a> HirToMirLowering<'a> {
             lhs: MirValue::VReg(cleared_current_vreg),
             rhs: MirValue::VReg(shifted_value_vreg),
         });
+
+        Ok(merged_vreg)
+    }
+
+    fn emit_packet_bitfield_store_value(
+        &mut self,
+        packet_store_vreg: VReg,
+        new_value_vreg: VReg,
+        store_ty: &MirType,
+        bitfield: TrampolineBitfieldInfo,
+        packet_big_endian: bool,
+        end_field: CtxField,
+        path_desc: &str,
+    ) -> Result<VReg, CompileError> {
+        let current_vreg = self.func.alloc_vreg();
+        self.vreg_type_hints.insert(current_vreg, store_ty.clone());
+        self.emit_packet_guarded_load(
+            current_vreg,
+            packet_store_vreg,
+            store_ty,
+            end_field,
+            path_desc,
+        )?;
+        if packet_big_endian {
+            self.emit_packet_big_endian_scalar_normalize(current_vreg, store_ty)?;
+        }
+
+        let merged_vreg =
+            self.emit_bitfield_merge_value(current_vreg, new_value_vreg, store_ty, bitfield)?;
         if packet_big_endian {
             self.emit_packet_big_endian_scalar_normalize(merged_vreg, store_ty)?;
         }
 
         Ok(merged_vreg)
+    }
+
+    pub(super) fn emit_scalar_bitfield_store(
+        &mut self,
+        base_vreg: VReg,
+        offset: usize,
+        store_ty: &MirType,
+        bitfield: TrampolineBitfieldInfo,
+        new_value_vreg: VReg,
+        path_desc: &str,
+    ) -> Result<(), CompileError> {
+        let offset = Self::trampoline_projection_offset_i32(offset, path_desc)?;
+
+        let current_vreg = self.func.alloc_vreg();
+        self.vreg_type_hints.insert(current_vreg, store_ty.clone());
+        self.emit(MirInst::Load {
+            dst: current_vreg,
+            ptr: base_vreg,
+            offset,
+            ty: store_ty.clone(),
+        });
+
+        let merged_vreg =
+            self.emit_bitfield_merge_value(current_vreg, new_value_vreg, store_ty, bitfield)?;
+        self.emit(MirInst::Store {
+            ptr: base_vreg,
+            offset,
+            val: MirValue::VReg(merged_vreg),
+            ty: store_ty.clone(),
+        });
+
+        Ok(())
     }
 
     pub(super) fn lower_context_pointer_scalar_update(
@@ -500,12 +552,6 @@ impl<'a> HirToMirLowering<'a> {
 
         let projection =
             Self::resolve_typed_value_projection_path(pointee_ty, path_members, path_desc)?;
-        if projection.bitfield.is_some() {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "context cell path update '.{} = ...' does not support bitfield stores",
-                path_desc
-            )));
-        }
         if matches!(
             projection.ty,
             MirType::Array { .. } | MirType::Struct { .. }
@@ -518,6 +564,16 @@ impl<'a> HirToMirLowering<'a> {
 
         let stored_vreg =
             self.materialize_scalar_assignment_value(new_value, &projection.ty, path_desc)?;
+        if let Some(bitfield) = projection.bitfield {
+            return self.emit_scalar_bitfield_store(
+                base_vreg,
+                projection.offset,
+                &projection.ty,
+                bitfield,
+                stored_vreg,
+                path_desc,
+            );
+        }
         self.emit(MirInst::Store {
             ptr: base_vreg,
             offset: Self::trampoline_projection_offset_i32(projection.offset, path_desc)?,

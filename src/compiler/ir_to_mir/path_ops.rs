@@ -2915,12 +2915,6 @@ impl<'a> HirToMirLowering<'a> {
             .and_then(|semantics| {
                 Self::project_annotated_value_semantics(&semantics, &path.members)
             });
-        if projection.bitfield.is_some() {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "cell path update '.{} = ...' does not support bitfield fields",
-                path_desc
-            )));
-        }
 
         let new_value_vreg = self.get_vreg(new_value);
         let new_value_runtime_ty = self.typed_value_runtime_type(new_value, new_value_vreg);
@@ -3061,23 +3055,59 @@ impl<'a> HirToMirLowering<'a> {
                         path_desc
                     ))
                 })?;
-                let Some(stored_vreg) = self.coerce_scalar_assignment_value(
-                    new_value_vreg,
-                    &new_value_runtime_ty,
-                    &projection.ty,
-                ) else {
-                    return Err(CompileError::UnsupportedInstruction(format!(
-                        "cell path update '.{} = ...' cannot store type {:?} into field of type {:?}",
-                        path_desc, new_value_runtime_ty, projection.ty
-                    )));
-                };
+                if let Some(bitfield) = projection.bitfield {
+                    if !matches!(
+                        new_value_runtime_ty,
+                        MirType::Bool
+                            | MirType::I8
+                            | MirType::U8
+                            | MirType::I16
+                            | MirType::U16
+                            | MirType::I32
+                            | MirType::U32
+                            | MirType::I64
+                            | MirType::U64
+                    ) {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "cell path update '.{} = ...' requires an integer-compatible scalar value for bitfield {:?}",
+                            path_desc, projection.ty
+                        )));
+                    }
 
-                self.emit(MirInst::Store {
-                    ptr: base_vreg,
-                    offset: projection.offset as i32,
-                    val: MirValue::VReg(stored_vreg),
-                    ty: projection.ty.clone(),
-                });
+                    let stored_vreg = self.func.alloc_vreg();
+                    self.vreg_type_hints
+                        .insert(stored_vreg, projection.ty.clone());
+                    self.emit(MirInst::Copy {
+                        dst: stored_vreg,
+                        src: MirValue::VReg(new_value_vreg),
+                    });
+                    self.emit_scalar_bitfield_store(
+                        base_vreg,
+                        projection.offset,
+                        &projection.ty,
+                        bitfield,
+                        stored_vreg,
+                        &path_desc,
+                    )?;
+                } else {
+                    let Some(stored_vreg) = self.coerce_scalar_assignment_value(
+                        new_value_vreg,
+                        &new_value_runtime_ty,
+                        &projection.ty,
+                    ) else {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "cell path update '.{} = ...' cannot store type {:?} into field of type {:?}",
+                            path_desc, new_value_runtime_ty, projection.ty
+                        )));
+                    };
+
+                    self.emit(MirInst::Store {
+                        ptr: base_vreg,
+                        offset: projection.offset as i32,
+                        val: MirValue::VReg(stored_vreg),
+                        ty: projection.ty.clone(),
+                    });
+                }
             }
         }
 
