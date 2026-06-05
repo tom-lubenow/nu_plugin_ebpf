@@ -713,6 +713,15 @@ fn eval_supported_constant_call(
             )?;
             eval_supported_constant_str_predicate(cmd_name, input, args, span)
         }
+        "str index-of" => {
+            let args = eval_supported_constant_str_index_of_call_args(
+                working_set,
+                &call.arguments,
+                env,
+                span,
+            )?;
+            eval_supported_constant_str_index_of(input, args, span)
+        }
         "str distance" => {
             let compare = eval_supported_constant_str_distance_call_arg(
                 working_set,
@@ -1058,6 +1067,11 @@ fn eval_supported_constant_external_call(
                 span,
             )?;
             eval_supported_constant_str_predicate(cmd_name, input, args, span)
+        }
+        "str index-of" => {
+            let args =
+                eval_supported_constant_str_index_of_external_args(working_set, args, env, span)?;
+            eval_supported_constant_str_index_of(input, args, span)
         }
         "str distance" => {
             let compare =
@@ -2346,6 +2360,463 @@ fn eval_supported_constant_string_predicate_matches_case_sensitive(
         "str contains" => input.contains(needle),
         _ => unreachable!("unsupported constant string predicate command: {cmd_name}"),
     }
+}
+
+#[derive(Clone)]
+struct ConstantStrIndexOfArgs {
+    needle: String,
+    search_from_end: bool,
+    range: Option<ConstantMaybeOpenRange>,
+    use_grapheme_clusters: bool,
+}
+
+fn eval_supported_constant_str_index_of_call_args(
+    working_set: &StateWorkingSet,
+    args: &[nu_protocol::ast::Argument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<ConstantStrIndexOfArgs, LabeledError> {
+    let mut needle_expr = None;
+    let mut search_from_end = false;
+    let mut range = None;
+    let mut use_utf8_bytes = false;
+    let mut use_grapheme_clusters = false;
+    for arg in args {
+        match arg {
+            nu_protocol::ast::Argument::Positional(expr)
+            | nu_protocol::ast::Argument::Unknown(expr) => {
+                if needle_expr.replace(expr).is_some() {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            "`str index-of` accepts exactly one substring argument in compile-time global initializers",
+                            arg.span(),
+                        ));
+                }
+            }
+            nu_protocol::ast::Argument::Named(named) => match named.0.item.as_str() {
+                "end" | "utf-8-bytes" | "grapheme-clusters" => {
+                    if named.2.is_some() {
+                        return Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
+                        .with_label(
+                            "`str index-of` mode flags cannot receive values in compile-time global initializers",
+                            arg.span(),
+                        ));
+                    }
+                    match named.0.item.as_str() {
+                        "end" => search_from_end = true,
+                        "utf-8-bytes" => use_utf8_bytes = true,
+                        "grapheme-clusters" => use_grapheme_clusters = true,
+                        _ => unreachable!("validated str index-of mode flag"),
+                    }
+                }
+                "range" => {
+                    let Some(expr) = named.2.as_ref() else {
+                        return Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
+                        .with_label(
+                            "`str index-of --range` requires a value in compile-time global initializers",
+                            arg.span(),
+                        ));
+                    };
+                    if range
+                        .replace(eval_supported_constant_range_argument(
+                            working_set,
+                            expr,
+                            env,
+                            "str index-of --range",
+                        )?)
+                        .is_some()
+                    {
+                        return Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
+                        .with_label(
+                            "`str index-of` accepts only one --range value in compile-time global initializers",
+                            arg.span(),
+                        ));
+                    }
+                }
+                _ => {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            "`str index-of` supports only --end, --range, --utf-8-bytes, and --grapheme-clusters in compile-time global initializers",
+                            arg.span(),
+                        ));
+                }
+            },
+            nu_protocol::ast::Argument::Spread(expr) => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`str index-of` arguments cannot use spread syntax in compile-time global initializers",
+                        expr.span,
+                    ));
+            }
+        }
+    }
+
+    let Some(needle_expr) = needle_expr else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`str index-of` requires a string substring argument in compile-time global initializers",
+                span,
+            ),
+        );
+    };
+    let needle =
+        eval_supported_constant_string_argument(working_set, needle_expr, env, "str index-of")?;
+    eval_supported_constant_reject_nul_string_argument("str index-of", &needle, needle_expr.span)?;
+    let use_grapheme_clusters = eval_supported_constant_str_indexing_validate_modes(
+        "str index-of",
+        use_utf8_bytes,
+        use_grapheme_clusters,
+        span,
+    )?;
+
+    Ok(ConstantStrIndexOfArgs {
+        needle,
+        search_from_end,
+        range,
+        use_grapheme_clusters,
+    })
+}
+
+fn eval_supported_constant_str_index_of_external_args(
+    working_set: &StateWorkingSet,
+    args: &[ExternalArgument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<ConstantStrIndexOfArgs, LabeledError> {
+    let mut needle_expr = None;
+    let mut needle = None;
+    let mut search_from_end = false;
+    let mut range = None;
+    let mut use_utf8_bytes = false;
+    let mut use_grapheme_clusters = false;
+    let mut iter = args.iter().peekable();
+    while let Some(arg) = iter.next() {
+        let ExternalArgument::Regular(expr) = arg else {
+            return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                .with_label(
+                    "`str index-of` arguments cannot use spread syntax in compile-time global initializers",
+                    arg.expr().span,
+                ));
+        };
+        let value = eval_supported_constant_value_with_env(working_set, expr, env)?;
+        match value {
+            Value::String { val, .. } | Value::Glob { val, .. } => {
+                let Some(flag) = val.strip_prefix("--") else {
+                    if needle.replace(val).is_some() {
+                        return Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
+                        .with_label(
+                            "`str index-of` accepts exactly one substring argument in compile-time global initializers",
+                            expr.span,
+                        ));
+                    }
+                    needle_expr = Some(expr);
+                    continue;
+                };
+                match flag {
+                    "end" => search_from_end = true,
+                    "utf-8-bytes" => use_utf8_bytes = true,
+                    "grapheme-clusters" => use_grapheme_clusters = true,
+                    "range" => {
+                        let Some(next_arg) = iter.next() else {
+                            return Err(LabeledError::new(
+                                "Unsupported annotated mutable global initializer",
+                            )
+                            .with_label(
+                                "`str index-of --range` requires a value in compile-time global initializers",
+                                expr.span,
+                            ));
+                        };
+                        let ExternalArgument::Regular(next_expr) = next_arg else {
+                            return Err(LabeledError::new(
+                                "Unsupported annotated mutable global initializer",
+                            )
+                            .with_label(
+                                "`str index-of --range` value cannot use spread syntax in compile-time global initializers",
+                                next_arg.expr().span,
+                            ));
+                        };
+                        if range
+                            .replace(eval_supported_constant_range_argument(
+                                working_set,
+                                next_expr,
+                                env,
+                                "str index-of --range",
+                            )?)
+                            .is_some()
+                        {
+                            return Err(LabeledError::new(
+                                "Unsupported annotated mutable global initializer",
+                            )
+                            .with_label(
+                                "`str index-of` accepts only one --range value in compile-time global initializers",
+                                next_expr.span,
+                            ));
+                        }
+                    }
+                    _ => {
+                        return Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
+                        .with_label(
+                            "`str index-of` supports only --end, --range, --utf-8-bytes, and --grapheme-clusters in compile-time global initializers",
+                            expr.span,
+                        ));
+                    }
+                }
+            }
+            _ => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`str index-of` substring argument must be a compile-time string in global initializers",
+                        expr.span,
+                    ));
+            }
+        }
+    }
+
+    let Some(needle) = needle else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`str index-of` requires a string substring argument in compile-time global initializers",
+                span,
+            ),
+        );
+    };
+    eval_supported_constant_reject_nul_string_argument(
+        "str index-of",
+        &needle,
+        needle_expr.map(|expr| expr.span).unwrap_or(span),
+    )?;
+    let use_grapheme_clusters = eval_supported_constant_str_indexing_validate_modes(
+        "str index-of",
+        use_utf8_bytes,
+        use_grapheme_clusters,
+        span,
+    )?;
+
+    Ok(ConstantStrIndexOfArgs {
+        needle,
+        search_from_end,
+        range,
+        use_grapheme_clusters,
+    })
+}
+
+fn eval_supported_constant_str_indexing_validate_modes(
+    cmd_name: &str,
+    use_utf8_bytes: bool,
+    use_grapheme_clusters: bool,
+    span: Span,
+) -> Result<bool, LabeledError> {
+    if use_utf8_bytes && use_grapheme_clusters {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`{cmd_name}` accepts either --utf-8-bytes or --grapheme-clusters, not both, in compile-time global initializers"
+                ),
+                span,
+            ),
+        );
+    }
+    Ok(use_grapheme_clusters)
+}
+
+fn eval_supported_constant_str_index_of(
+    input: Option<Value>,
+    args: ConstantStrIndexOfArgs,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let value = eval_supported_constant_required_pipeline_input("str index-of", input, span)?;
+    let value_span = value.span();
+    match value {
+        Value::List { vals, .. } => {
+            let values = vals
+                .into_iter()
+                .enumerate()
+                .map(|(index, value)| {
+                    let input = match value {
+                        Value::String { val, .. } | Value::Glob { val, .. } => val,
+                        other => {
+                            return Err(LabeledError::new(
+                                "Unsupported annotated mutable global initializer",
+                            )
+                            .with_label(
+                                format!(
+                                    "`str index-of` requires string list items in compile-time global initializers; item {index} has type {}",
+                                    other.get_type()
+                                ),
+                                span,
+                            ));
+                        }
+                    };
+                    Ok(Value::int(
+                        eval_supported_constant_index_of_known_string(&input, &args, span)?,
+                        value_span,
+                    ))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(Value::list(values, value_span))
+        }
+        Value::String { val, .. } | Value::Glob { val, .. } => Ok(Value::int(
+            eval_supported_constant_index_of_known_string(&val, &args, span)?,
+            value_span,
+        )),
+        _ => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`str index-of` in a compile-time global initializer requires string or list<string> input",
+                span,
+            ),
+        ),
+    }
+}
+
+fn eval_supported_constant_index_of_known_string(
+    input: &str,
+    args: &ConstantStrIndexOfArgs,
+    span: Span,
+) -> Result<i64, LabeledError> {
+    let (search_start, search_end) =
+        eval_supported_constant_index_of_search_bounds(args.range, input.len());
+    if args.use_grapheme_clusters {
+        eval_supported_constant_grapheme_index_of_in_byte_range(
+            input,
+            &args.needle,
+            args.search_from_end,
+            search_start,
+            search_end,
+            span,
+        )
+    } else {
+        Ok(eval_supported_constant_byte_index_of_in_range(
+            input,
+            &args.needle,
+            args.search_from_end,
+            search_start,
+            search_end,
+        ))
+    }
+}
+
+fn eval_supported_constant_index_of_search_bounds(
+    range: Option<ConstantMaybeOpenRange>,
+    input_len: usize,
+) -> (usize, usize) {
+    range
+        .map(|range| eval_supported_constant_string_range_bounds(range, input_len))
+        .unwrap_or((0, input_len))
+}
+
+fn eval_supported_constant_byte_index_of_in_range(
+    input: &str,
+    needle: &str,
+    search_from_end: bool,
+    search_start: usize,
+    search_end: usize,
+) -> i64 {
+    if needle.is_empty() {
+        return if search_from_end {
+            search_end as i64
+        } else {
+            search_start as i64
+        };
+    }
+
+    if needle.len() > input.len() || search_start.saturating_add(needle.len()) > search_end {
+        return -1;
+    }
+
+    let last_offset = search_end - needle.len();
+    let input = input.as_bytes();
+    let needle = needle.as_bytes();
+    let mut offsets: Box<dyn Iterator<Item = usize>> = if search_from_end {
+        Box::new((search_start..=last_offset).rev())
+    } else {
+        Box::new(search_start..=last_offset)
+    };
+
+    offsets
+        .find(|offset| &input[*offset..*offset + needle.len()] == needle)
+        .map(|offset| offset as i64)
+        .unwrap_or(-1)
+}
+
+fn eval_supported_constant_grapheme_index_of_in_byte_range(
+    input: &str,
+    needle: &str,
+    search_from_end: bool,
+    search_start: usize,
+    search_end: usize,
+    span: Span,
+) -> Result<i64, LabeledError> {
+    let Some(search_input) = input.get(search_start..search_end) else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`str index-of --grapheme-clusters --range` bounds must align to UTF-8 character boundaries in compile-time global initializers",
+                span,
+            ),
+        );
+    };
+    let Some(prefix) = input.get(..search_start) else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`str index-of --grapheme-clusters --range` start must align to a UTF-8 character boundary in compile-time global initializers",
+                span,
+            ),
+        );
+    };
+
+    let local_index =
+        eval_supported_constant_grapheme_index_of(search_input, needle, search_from_end);
+    if local_index < 0 {
+        return Ok(-1);
+    }
+
+    let prefix_graphemes = UnicodeSegmentation::graphemes(prefix, true).count() as i64;
+    Ok(prefix_graphemes + local_index)
+}
+
+fn eval_supported_constant_grapheme_index_of(
+    input: &str,
+    needle: &str,
+    search_from_end: bool,
+) -> i64 {
+    let input_graphemes = UnicodeSegmentation::graphemes(input, true).collect::<Vec<_>>();
+    let needle_graphemes = UnicodeSegmentation::graphemes(needle, true).collect::<Vec<_>>();
+
+    if needle_graphemes.is_empty() {
+        return if search_from_end {
+            input_graphemes.len() as i64
+        } else {
+            0
+        };
+    }
+
+    if needle_graphemes.len() > input_graphemes.len() {
+        return -1;
+    }
+
+    let last_offset = input_graphemes.len() - needle_graphemes.len();
+    let offsets: Box<dyn Iterator<Item = usize>> = if search_from_end {
+        Box::new((0..=last_offset).rev())
+    } else {
+        Box::new(0..=last_offset)
+    };
+
+    offsets
+        .filter(|offset| {
+            input_graphemes[*offset..*offset + needle_graphemes.len()] == needle_graphemes
+        })
+        .map(|offset| offset as i64)
+        .next()
+        .unwrap_or(-1)
 }
 
 fn eval_supported_constant_str_distance_call_arg(
@@ -5342,6 +5813,15 @@ fn eval_supported_constant_str_external_call(
                 span,
             )?;
             eval_supported_constant_str_predicate(&cmd_name, input, args, span)
+        }
+        "index-of" => {
+            let args = eval_supported_constant_str_index_of_external_args(
+                working_set,
+                remaining_args,
+                env,
+                span,
+            )?;
+            eval_supported_constant_str_index_of(input, args, span)
         }
         "distance" => {
             let compare = eval_supported_constant_str_distance_external_arg(
