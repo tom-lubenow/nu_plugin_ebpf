@@ -37257,6 +37257,21 @@ const FIXTURES = [
         error_contains: "helper 'bpf_redirect_neigh' requires arg2 = 0 when arg1 is null"
     }
     {
+        name: "redirect-neigh-rejects-null-dynamic-plen"
+        category: "helper-state"
+        tags: [redirect-neigh null-pointer dynamic reject tc]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let plen = (helper-call "bpf_get_prandom_u32")'
+            '  helper-call "bpf_redirect_neigh" 1 0 $plen 0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_redirect_neigh' requires arg2 = 0 when arg1 is null"
+    }
+    {
         name: "redirect-peer-helper"
         category: "helper-state"
         tags: [redirect-peer tc-action accept source metadata]
