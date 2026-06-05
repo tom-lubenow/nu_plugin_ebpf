@@ -6,6 +6,7 @@ impl VerifierState {
         self.regs == other.regs
             && self.ranges == other.ranges
             && self.scalar_multiple_facts == other.scalar_multiple_facts
+            && self.scalar_expr_facts == other.scalar_expr_facts
             && self.scalar_alias_roots == other.scalar_alias_roots
             && self.non_zero == other.non_zero
             && self.not_equal == other.not_equal
@@ -99,6 +100,20 @@ impl VerifierState {
                 self.scalar_multiple_facts[i],
                 other.scalar_multiple_facts[i],
             ));
+        }
+        let mut scalar_expr_facts = Vec::with_capacity(self.scalar_expr_facts.len());
+        for i in 0..self.scalar_expr_facts.len() {
+            let merged = match (&self.scalar_expr_facts[i], &other.scalar_expr_facts[i]) {
+                (Some(left), Some(right)) if left == right => Some(left.clone()),
+                (Some(left), None) if matches!(other.regs[i], VerifierType::Uninit) => {
+                    Some(left.clone())
+                }
+                (None, Some(right)) if matches!(self.regs[i], VerifierType::Uninit) => {
+                    Some(right.clone())
+                }
+                _ => None,
+            };
+            scalar_expr_facts.push(merged);
         }
         let mut scalar_alias_roots = Vec::with_capacity(self.scalar_alias_roots.len());
         for i in 0..self.scalar_alias_roots.len() {
@@ -310,6 +325,7 @@ impl VerifierState {
             regs,
             ranges,
             scalar_multiple_facts,
+            scalar_expr_facts,
             scalar_alias_roots,
             non_zero,
             not_equal,
@@ -492,10 +508,27 @@ impl VerifierState {
             || other.map_lookup_keys_may_alias(lhs, rhs)
             || self.scalar_alias_root(lhs) == other.scalar_alias_root(rhs)
             || other.scalar_alias_root(lhs) == self.scalar_alias_root(rhs)
+            || Self::same_scalar_expr_fact_across(self, lhs, other, rhs)
+            || Self::same_scalar_expr_fact_across(other, lhs, self, rhs)
             || Self::same_known_const_range(self.get_range(lhs), other.get_range(rhs))
             || Self::same_known_const_range(other.get_range(lhs), self.get_range(rhs))
             || Self::ctx_field_values_may_alias_across(self, lhs, other, rhs)
             || Self::ctx_field_values_may_alias_across(other, lhs, self, rhs)
+    }
+
+    fn same_scalar_expr_fact_across(
+        lhs_state: &VerifierState,
+        lhs: VReg,
+        rhs_state: &VerifierState,
+        rhs: VReg,
+    ) -> bool {
+        let (Some(lhs), Some(rhs)) = (
+            lhs_state.scalar_expr_fact(lhs),
+            rhs_state.scalar_expr_fact(rhs),
+        ) else {
+            return false;
+        };
+        lhs == rhs
     }
 
     fn same_known_const_range(lhs: ValueRange, rhs: ValueRange) -> bool {

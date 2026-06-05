@@ -31,6 +31,18 @@ struct VccMapLookupSource {
     key: VccReg,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum VccScalarExprFact {
+    Reg(VccReg),
+    Const(i64),
+    CtxField(CtxField),
+    BinOp {
+        op: VccBinOp,
+        lhs: Box<VccScalarExprFact>,
+        rhs: Box<VccScalarExprFact>,
+    },
+}
+
 fn unknown_stack_object_type_key(
     type_name: &str,
     type_id: Option<u32>,
@@ -42,6 +54,7 @@ fn unknown_stack_object_type_key(
 struct VccState {
     reg_types: HashMap<VccReg, VccValueType>,
     scalar_multiple_facts: HashMap<VccReg, i64>,
+    scalar_expr_facts: HashMap<VccReg, VccScalarExprFact>,
     scalar_alias_roots: HashMap<VccReg, VccReg>,
     ctx_field_sources: HashMap<VccReg, CtxField>,
     map_lookup_sources: HashMap<VccReg, VccMapLookupSource>,
@@ -141,6 +154,7 @@ impl VccState {
         Self {
             reg_types: seed,
             scalar_multiple_facts: HashMap::new(),
+            scalar_expr_facts: HashMap::new(),
             scalar_alias_roots: HashMap::new(),
             ctx_field_sources: HashMap::new(),
             map_lookup_sources: HashMap::new(),
@@ -217,6 +231,7 @@ impl VccState {
     fn set_reg(&mut self, reg: VccReg, ty: VccValueType) {
         self.reg_types.insert(reg, ty);
         self.scalar_multiple_facts.remove(&reg);
+        self.scalar_expr_facts.remove(&reg);
         self.scalar_alias_roots.remove(&reg);
         self.ctx_field_sources.remove(&reg);
         self.map_lookup_sources.remove(&reg);
@@ -237,6 +252,18 @@ impl VccState {
             self.scalar_multiple_facts.insert(reg, fact);
         } else {
             self.scalar_multiple_facts.remove(&reg);
+        }
+    }
+
+    fn scalar_expr_fact_for_reg(&self, reg: VccReg) -> Option<&VccScalarExprFact> {
+        self.scalar_expr_facts.get(&reg)
+    }
+
+    fn set_scalar_expr_fact(&mut self, reg: VccReg, fact: Option<VccScalarExprFact>) {
+        if let Some(fact) = fact {
+            self.scalar_expr_facts.insert(reg, fact);
+        } else {
+            self.scalar_expr_facts.remove(&reg);
         }
     }
 
@@ -314,6 +341,9 @@ impl VccState {
         if lhs == rhs || self.scalar_alias_root(lhs) == self.scalar_alias_root(rhs) {
             return true;
         }
+        if self.scalar_expr_values_match(lhs, rhs) {
+            return true;
+        }
         if self.ctx_field_values_may_alias(lhs, rhs) {
             return true;
         }
@@ -334,6 +364,31 @@ impl VccState {
                 }),
             ) if lhs_min == lhs_max && rhs_min == rhs_max && lhs_min == rhs_min
         )
+    }
+
+    fn scalar_expr_values_match(&self, lhs: VccReg, rhs: VccReg) -> bool {
+        let (Some(lhs), Some(rhs)) = (
+            self.scalar_expr_fact_for_reg(lhs),
+            self.scalar_expr_fact_for_reg(rhs),
+        ) else {
+            return false;
+        };
+        lhs == rhs
+    }
+
+    fn scalar_expr_values_match_across(
+        lhs_state: &VccState,
+        lhs: VccReg,
+        rhs_state: &VccState,
+        rhs: VccReg,
+    ) -> bool {
+        let (Some(lhs), Some(rhs)) = (
+            lhs_state.scalar_expr_fact_for_reg(lhs),
+            rhs_state.scalar_expr_fact_for_reg(rhs),
+        ) else {
+            return false;
+        };
+        lhs == rhs
     }
 
     fn ctx_field_values_may_alias(&self, lhs: VccReg, rhs: VccReg) -> bool {
@@ -1466,6 +1521,34 @@ impl VccState {
                 scalar_multiple_facts.insert(reg, fact);
             }
         }
+        let mut scalar_expr_fact_regs: HashSet<VccReg> =
+            self.scalar_expr_facts.keys().copied().collect();
+        scalar_expr_fact_regs.extend(other.scalar_expr_facts.keys().copied());
+        let mut scalar_expr_facts = HashMap::new();
+        for reg in scalar_expr_fact_regs {
+            let merged = match (
+                self.scalar_expr_facts.get(&reg),
+                other.scalar_expr_facts.get(&reg),
+            ) {
+                (Some(left), Some(right)) if left == right => Some(left.clone()),
+                (Some(left), None)
+                    if !other.reg_types.contains_key(&reg)
+                        || matches!(other.reg_types.get(&reg), Some(VccValueType::Uninit)) =>
+                {
+                    Some(left.clone())
+                }
+                (None, Some(right))
+                    if !self.reg_types.contains_key(&reg)
+                        || matches!(self.reg_types.get(&reg), Some(VccValueType::Uninit)) =>
+                {
+                    Some(right.clone())
+                }
+                _ => None,
+            };
+            if let Some(fact) = merged {
+                scalar_expr_facts.insert(reg, fact);
+            }
+        }
         let mut scalar_alias_regs: HashSet<VccReg> =
             self.scalar_alias_roots.keys().copied().collect();
         scalar_alias_regs.extend(other.scalar_alias_roots.keys().copied());
@@ -1547,7 +1630,13 @@ impl VccState {
             let same_lookup = |left: &VccMapLookupSource, right: &VccMapLookupSource| {
                 left.map == right.map
                     && (self.map_lookup_keys_may_alias(left.key, right.key)
-                        || other.map_lookup_keys_may_alias(left.key, right.key))
+                        || other.map_lookup_keys_may_alias(left.key, right.key)
+                        || Self::scalar_expr_values_match_across(
+                            self, left.key, other, right.key,
+                        )
+                        || Self::scalar_expr_values_match_across(
+                            other, left.key, self, right.key,
+                        ))
             };
             let left_map = if left_ambiguous {
                 self.ambiguous_map_lookup_maps.get(&reg).cloned()
@@ -1713,6 +1802,7 @@ impl VccState {
         VccState {
             reg_types: merged,
             scalar_multiple_facts,
+            scalar_expr_facts,
             scalar_alias_roots,
             ctx_field_sources,
             map_lookup_sources,
@@ -1881,6 +1971,7 @@ impl VccState {
         VccState {
             reg_types: widened,
             scalar_multiple_facts: HashMap::new(),
+            scalar_expr_facts: HashMap::new(),
             scalar_alias_roots: self.scalar_alias_roots.clone(),
             ctx_field_sources: self.ctx_field_sources.clone(),
             map_lookup_sources: self.map_lookup_sources.clone(),

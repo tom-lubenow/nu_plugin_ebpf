@@ -2,6 +2,8 @@ use super::*;
 use crate::compiler::instruction::{scalar_multiple_of_known_value, scalar_multiple_of_merge};
 use crate::compiler::mir::UnaryOpKind;
 
+const MAX_SCALAR_EXPR_FACT_DEPTH: usize = 4;
+
 pub(super) fn apply_copy_inst(
     dst: VReg,
     src: &MirValue,
@@ -47,6 +49,7 @@ pub(super) fn apply_copy_inst(
         _ => false,
     };
     let src_multiple_fact = multiple_fact_for_value(src, state);
+    let src_scalar_expr = scalar_expr_fact_for_value(src, state);
     let src_not_equal = match src {
         MirValue::VReg(vreg) => state.not_equal_consts(*vreg).to_vec(),
         MirValue::Const(value) if *value != 0 => vec![0],
@@ -62,6 +65,9 @@ pub(super) fn apply_copy_inst(
     };
     state.set_with_range(dst, ty, range);
     state.set_scalar_multiple_fact(dst, src_multiple_fact);
+    if matches!(ty, VerifierType::Scalar | VerifierType::Bool) {
+        state.set_scalar_expr_fact(dst, src_scalar_expr);
+    }
     if let Some(src_vreg) = src_scalar_alias {
         state.set_scalar_alias(dst, src_vreg);
     }
@@ -112,11 +118,18 @@ pub(super) fn apply_phi_edge_inst(
     let src_non_zero = state.is_non_zero(src);
     let src_not_equal = state.not_equal_consts(src).to_vec();
     let src_multiple_fact = state.scalar_multiple_fact(src);
+    let src_scalar_expr = state
+        .scalar_expr_fact(src)
+        .cloned()
+        .or_else(|| Some(ScalarExprFact::Reg(state.scalar_alias_root(src))));
     let src_released_kfunc_ref = state.is_released_kfunc_ref(src);
     let src_scalar_alias = matches!(ty, VerifierType::Scalar | VerifierType::Bool).then_some(src);
 
     state.set_with_range(dst, ty, range);
     state.set_scalar_multiple_fact(dst, src_multiple_fact);
+    if matches!(ty, VerifierType::Scalar | VerifierType::Bool) {
+        state.set_scalar_expr_fact(dst, src_scalar_expr);
+    }
     if let Some(src_vreg) = src_scalar_alias {
         state.set_scalar_alias(dst, src_vreg);
     }
@@ -275,8 +288,10 @@ pub(super) fn apply_binop_inst(
         multiple_fact_for_value(lhs, state),
         multiple_fact_for_value(rhs, state),
     );
+    let scalar_expr = scalar_expr_fact_for_binop(op, lhs, rhs, state);
     state.set_with_range(dst, VerifierType::Scalar, range);
     state.set_scalar_multiple_fact(dst, multiple_fact);
+    state.set_scalar_expr_fact(dst, scalar_expr);
     if let Some(src) = scalar_identity_source(op, lhs, rhs, state, slot_sizes) {
         state.set_scalar_alias(dst, src);
     }
@@ -481,6 +496,7 @@ pub(super) fn apply_phi_inst(
         .unwrap_or(VerifierType::Scalar);
     let range = range_for_phi(args, state);
     let multiple_fact = multiple_fact_for_phi(args, state);
+    let scalar_expr = scalar_expr_fact_for_phi(args, state);
     let mut ty = ptr_type_for_phi_with_hint(args, state, ty).unwrap_or(ty);
     if let Some(Some(source)) = &merged_ctx_field {
         ty = ctx_field_phi_type(dst, ty, source);
@@ -504,6 +520,9 @@ pub(super) fn apply_phi_inst(
     }
     state.set_with_range(dst, ty, range);
     state.set_scalar_multiple_fact(dst, multiple_fact);
+    if matches!(ty, VerifierType::Scalar | VerifierType::Bool) {
+        state.set_scalar_expr_fact(dst, scalar_expr);
+    }
     if let Some(root) = scalar_alias_root
         && root != dst
     {
@@ -541,6 +560,61 @@ fn multiple_fact_for_value(value: &MirValue, state: &VerifierState) -> Option<i6
         MirValue::Const(value) => Some(scalar_multiple_of_known_value(*value)),
         MirValue::VReg(vreg) => state.scalar_multiple_fact(*vreg),
         MirValue::StackSlot(_) => None,
+    }
+}
+
+fn scalar_expr_fact_for_value(value: &MirValue, state: &VerifierState) -> Option<ScalarExprFact> {
+    match value {
+        MirValue::Const(value) => Some(ScalarExprFact::Const(*value)),
+        MirValue::VReg(vreg) => state
+            .scalar_expr_fact(*vreg)
+            .cloned()
+            .or_else(|| Some(ScalarExprFact::Reg(state.scalar_alias_root(*vreg)))),
+        MirValue::StackSlot(_) => None,
+    }
+}
+
+fn scalar_expr_fact_for_binop(
+    op: BinOpKind,
+    lhs: &MirValue,
+    rhs: &MirValue,
+    state: &VerifierState,
+) -> Option<ScalarExprFact> {
+    let lhs = scalar_expr_fact_for_value(lhs, state)?;
+    let rhs = scalar_expr_fact_for_value(rhs, state)?;
+    let fact = ScalarExprFact::BinOp {
+        op,
+        lhs: Box::new(lhs),
+        rhs: Box::new(rhs),
+    };
+    (scalar_expr_fact_depth(&fact) <= MAX_SCALAR_EXPR_FACT_DEPTH).then_some(fact)
+}
+
+fn scalar_expr_fact_for_phi(
+    args: &[(BlockId, VReg)],
+    state: &VerifierState,
+) -> Option<ScalarExprFact> {
+    let mut fact: Option<ScalarExprFact> = None;
+    for (_, reg) in args {
+        let next = state
+            .scalar_expr_fact(*reg)
+            .cloned()
+            .unwrap_or_else(|| ScalarExprFact::Reg(state.scalar_alias_root(*reg)));
+        fact = Some(match fact {
+            None => next,
+            Some(existing) if existing == next => existing,
+            _ => return None,
+        });
+    }
+    fact
+}
+
+fn scalar_expr_fact_depth(fact: &ScalarExprFact) -> usize {
+    match fact {
+        ScalarExprFact::Reg(_) | ScalarExprFact::Const(_) | ScalarExprFact::CtxField(_) => 1,
+        ScalarExprFact::BinOp { lhs, rhs, .. } => {
+            1 + scalar_expr_fact_depth(lhs).max(scalar_expr_fact_depth(rhs))
+        }
     }
 }
 

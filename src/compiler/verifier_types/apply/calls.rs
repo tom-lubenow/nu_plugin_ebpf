@@ -570,6 +570,9 @@ pub(super) fn apply_call_subfn_inst(
         }
         state.set_with_range(dst, ty, ValueRange::Unknown);
         state.set_ctx_field_source(dst, Some(field.clone()));
+        if matches!(ty, VerifierType::Scalar | VerifierType::Bool) {
+            state.set_scalar_expr_fact(dst, Some(ScalarExprFact::CtxField(field.clone())));
+        }
         return;
     }
 

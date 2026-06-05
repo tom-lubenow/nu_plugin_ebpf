@@ -35,6 +35,18 @@ pub(super) struct MapLookupSource {
     pub key: VReg,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum ScalarExprFact {
+    Reg(VReg),
+    Const(i64),
+    CtxField(CtxField),
+    BinOp {
+        op: BinOpKind,
+        lhs: Box<ScalarExprFact>,
+        rhs: Box<ScalarExprFact>,
+    },
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Nullability {
     NonNull,
@@ -169,6 +181,7 @@ pub(super) struct VerifierState {
     regs: Vec<VerifierType>,
     ranges: Vec<ValueRange>,
     scalar_multiple_facts: Vec<Option<i64>>,
+    scalar_expr_facts: Vec<Option<ScalarExprFact>>,
     scalar_alias_roots: Vec<Option<VReg>>,
     non_zero: Vec<bool>,
     not_equal: Vec<Vec<i64>>,
@@ -244,6 +257,7 @@ impl VerifierState {
             regs: vec![VerifierType::Uninit; total_vregs],
             ranges: vec![ValueRange::Unknown; total_vregs],
             scalar_multiple_facts: vec![None; total_vregs],
+            scalar_expr_facts: vec![None; total_vregs],
             scalar_alias_roots: vec![None; total_vregs],
             non_zero: vec![false; total_vregs],
             not_equal: vec![Vec::new(); total_vregs],
@@ -333,6 +347,18 @@ impl VerifierState {
             .flatten()
     }
 
+    pub(super) fn scalar_expr_fact(&self, vreg: VReg) -> Option<&ScalarExprFact> {
+        self.scalar_expr_facts
+            .get(vreg.0 as usize)
+            .and_then(|fact| fact.as_ref())
+    }
+
+    pub(super) fn set_scalar_expr_fact(&mut self, vreg: VReg, fact: Option<ScalarExprFact>) {
+        if let Some(slot) = self.scalar_expr_facts.get_mut(vreg.0 as usize) {
+            *slot = fact;
+        }
+    }
+
     pub(super) fn scalar_alias_root(&self, vreg: VReg) -> VReg {
         self.scalar_alias_roots
             .get(vreg.0 as usize)
@@ -391,6 +417,7 @@ impl VerifierState {
             *slot = range;
         }
         self.clear_scalar_multiple_fact(vreg);
+        self.clear_scalar_expr_fact(vreg);
         if let Some(slot) = self.scalar_alias_roots.get_mut(vreg.0 as usize) {
             *slot = None;
         }
@@ -438,6 +465,12 @@ impl VerifierState {
 
     fn clear_scalar_multiple_fact(&mut self, vreg: VReg) {
         if let Some(slot) = self.scalar_multiple_facts.get_mut(vreg.0 as usize) {
+            *slot = None;
+        }
+    }
+
+    fn clear_scalar_expr_fact(&mut self, vreg: VReg) {
+        if let Some(slot) = self.scalar_expr_facts.get_mut(vreg.0 as usize) {
             *slot = None;
         }
     }
@@ -527,6 +560,7 @@ impl VerifierState {
     pub(super) fn map_lookup_keys_may_alias(&self, lhs: VReg, rhs: VReg) -> bool {
         lhs == rhs
             || self.scalar_alias_root(lhs) == self.scalar_alias_root(rhs)
+            || self.scalar_expr_values_match(lhs, rhs)
             || self.ctx_field_values_may_alias(lhs, rhs)
             || matches!(
                 (self.get_range(lhs), self.get_range(rhs)),
@@ -535,6 +569,14 @@ impl VerifierState {
                     ValueRange::Known { min: rhs_min, max: rhs_max },
                 ) if lhs_min == lhs_max && rhs_min == rhs_max && lhs_min == rhs_min
             )
+    }
+
+    fn scalar_expr_values_match(&self, lhs: VReg, rhs: VReg) -> bool {
+        let (Some(lhs), Some(rhs)) = (self.scalar_expr_fact(lhs), self.scalar_expr_fact(rhs))
+        else {
+            return false;
+        };
+        lhs == rhs
     }
 
     fn ctx_field_values_may_alias(&self, lhs: VReg, rhs: VReg) -> bool {

@@ -380,6 +380,9 @@ pub(super) fn apply_load_ctx_field_inst(
     }
     state.set_with_range(dst, ty, scalar_value_range_for_type(types, dst));
     state.set_ctx_field_source(dst, Some(field.clone()));
+    if matches!(ty, VerifierType::Scalar | VerifierType::Bool) {
+        state.set_scalar_expr_fact(dst, Some(ScalarExprFact::CtxField(field.clone())));
+    }
 }
 
 pub(super) fn apply_store_ctx_field_inst(

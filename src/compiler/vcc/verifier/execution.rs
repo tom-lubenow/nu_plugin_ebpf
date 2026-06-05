@@ -12,6 +12,8 @@ enum IterLifecycleFailure {
     MissingMatchingConstructor,
 }
 
+const MAX_SCALAR_EXPR_FACT_DEPTH: usize = 4;
+
 fn iter_lifecycle_result(
     valid: bool,
     failure: IterLifecycleFailure,
@@ -23,6 +25,62 @@ fn scalar_multiple_fact_for_value(value: VccValue, state: &VccState) -> Option<i
     match value {
         VccValue::Imm(value) => Some(scalar_multiple_of_known_value(value)),
         VccValue::Reg(reg) => state.scalar_multiple_fact_for_reg(reg),
+    }
+}
+
+fn scalar_expr_fact_for_value(value: VccValue, state: &VccState) -> Option<VccScalarExprFact> {
+    match value {
+        VccValue::Imm(value) => Some(VccScalarExprFact::Const(value)),
+        VccValue::Reg(reg) => state
+            .scalar_expr_fact_for_reg(reg)
+            .cloned()
+            .or_else(|| Some(VccScalarExprFact::Reg(state.scalar_alias_root(reg)))),
+    }
+}
+
+fn scalar_expr_fact_for_binop(
+    op: VccBinOp,
+    lhs: VccValue,
+    rhs: VccValue,
+    state: &VccState,
+) -> Option<VccScalarExprFact> {
+    let lhs = scalar_expr_fact_for_value(lhs, state)?;
+    let rhs = scalar_expr_fact_for_value(rhs, state)?;
+    let fact = VccScalarExprFact::BinOp {
+        op,
+        lhs: Box::new(lhs),
+        rhs: Box::new(rhs),
+    };
+    (scalar_expr_fact_depth(&fact) <= MAX_SCALAR_EXPR_FACT_DEPTH).then_some(fact)
+}
+
+fn scalar_expr_fact_for_phi(
+    args: &[(VccBlockId, VccReg)],
+    state: &VccState,
+) -> Option<VccScalarExprFact> {
+    let mut fact: Option<VccScalarExprFact> = None;
+    for (_, reg) in args {
+        let next = state
+            .scalar_expr_fact_for_reg(*reg)
+            .cloned()
+            .unwrap_or_else(|| VccScalarExprFact::Reg(state.scalar_alias_root(*reg)));
+        fact = Some(match fact {
+            None => next,
+            Some(existing) if existing == next => existing,
+            _ => return None,
+        });
+    }
+    fact
+}
+
+fn scalar_expr_fact_depth(fact: &VccScalarExprFact) -> usize {
+    match fact {
+        VccScalarExprFact::Reg(_)
+        | VccScalarExprFact::Const(_)
+        | VccScalarExprFact::CtxField(_) => 1,
+        VccScalarExprFact::BinOp { lhs, rhs, .. } => {
+            1 + scalar_expr_fact_depth(lhs).max(scalar_expr_fact_depth(rhs))
+        }
     }
 }
 
@@ -238,6 +296,7 @@ impl VccVerifier {
                     *dst,
                     Some(scalar_multiple_of_known_value(*value)),
                 );
+                state.set_scalar_expr_fact(*dst, Some(VccScalarExprFact::Const(*value)));
                 if *value != 0 {
                     state.set_not_equal_const(*dst, 0);
                 }
@@ -310,8 +369,12 @@ impl VccVerifier {
                         _ => None,
                     };
                     let src_multiple_fact = scalar_multiple_fact_for_value(*src, state);
+                    let src_scalar_expr = scalar_expr_fact_for_value(*src, state);
                     state.set_reg(*dst, ty);
                     state.set_scalar_multiple_fact(*dst, src_multiple_fact);
+                    if matches!(ty, VccValueType::Scalar { .. } | VccValueType::Bool) {
+                        state.set_scalar_expr_fact(*dst, src_scalar_expr);
+                    }
                     if let Some(src_reg) = src_scalar_alias {
                         state.set_scalar_alias(*dst, src_reg);
                     }
@@ -348,10 +411,24 @@ impl VccVerifier {
             } => {
                 state.set_reg(*dst, *ty);
                 state.set_ctx_field_source(*dst, ctx_field_source.clone());
+                if let Some(field) = ctx_field_source
+                    && matches!(ty, VccValueType::Scalar { .. } | VccValueType::Bool)
+                {
+                    state.set_scalar_expr_fact(
+                        *dst,
+                        Some(VccScalarExprFact::CtxField(field.clone())),
+                    );
+                }
             }
             VccInst::CtxFieldSource { reg, field } => {
                 if let Ok(ty) = state.reg_type(*reg) {
                     state.set_reg(*reg, Self::ctx_field_phi_type(*reg, ty, field));
+                    if matches!(ty, VccValueType::Scalar { .. } | VccValueType::Bool) {
+                        state.set_scalar_expr_fact(
+                            *reg,
+                            Some(VccScalarExprFact::CtxField(field.clone())),
+                        );
+                    }
                 }
                 state.set_ctx_field_source(*reg, Some(field.clone()));
             }
@@ -1386,8 +1463,10 @@ impl VccVerifier {
                             scalar_multiple_fact_for_value(*lhs, state),
                             scalar_multiple_fact_for_value(*rhs, state),
                         );
+                        let scalar_expr = scalar_expr_fact_for_binop(*op, *lhs, *rhs, state);
                         state.set_reg(*dst, VccValueType::Scalar { range });
                         state.set_scalar_multiple_fact(*dst, multiple_fact);
+                        state.set_scalar_expr_fact(*dst, scalar_expr);
                     }
                 }
             }
@@ -1725,6 +1804,7 @@ impl VccVerifier {
                 }
                 let scalar_alias_root = Self::scalar_alias_root_for_phi(args, state, ty);
                 let scalar_multiple_fact = scalar_multiple_fact_for_phi(args, state);
+                let scalar_expr = scalar_expr_fact_for_phi(args, state);
                 let merged_map_value_source = Self::map_value_source_for_phi(args, state);
                 let mut merged_map_fd: Option<Option<MapRef>> = None;
                 for (_, reg) in args {
@@ -1740,6 +1820,9 @@ impl VccVerifier {
                 }
                 state.set_reg(*dst, ty);
                 state.set_scalar_multiple_fact(*dst, scalar_multiple_fact);
+                if matches!(ty, VccValueType::Scalar { .. } | VccValueType::Bool) {
+                    state.set_scalar_expr_fact(*dst, scalar_expr);
+                }
                 if let Some(root) = scalar_alias_root
                     && root != *dst
                 {

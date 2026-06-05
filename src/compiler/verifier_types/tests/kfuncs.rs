@@ -415,6 +415,26 @@ fn graph_lock_root_repeated_lookup_offset_key_function() -> (MirFunction, HashMa
     )
 }
 
+fn graph_lock_root_repeated_lookup_equivalent_expr_key_function()
+-> (MirFunction, HashMap<VReg, MirType>) {
+    graph_lock_root_repeated_lookup_for_kfunc(
+        RepeatedLookupKeyMode::EquivalentExprDynamic,
+        "bpf_list_front",
+        MirType::bpf_list_head_root_struct("node_data", "node"),
+        MirType::bpf_list_node_struct(),
+    )
+}
+
+fn graph_lock_root_repeated_lookup_different_expr_key_function()
+-> (MirFunction, HashMap<VReg, MirType>) {
+    graph_lock_root_repeated_lookup_for_kfunc(
+        RepeatedLookupKeyMode::DifferentExprDynamic,
+        "bpf_list_front",
+        MirType::bpf_list_head_root_struct("node_data", "node"),
+        MirType::bpf_list_node_struct(),
+    )
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum RepeatedLookupKeyMode {
     SameConst,
@@ -422,6 +442,8 @@ enum RepeatedLookupKeyMode {
     PhiCopiedDynamic,
     NoopDynamic,
     OffsetDynamic,
+    EquivalentExprDynamic,
+    DifferentExprDynamic,
     SameCtxFieldReload,
     DifferentConst,
 }
@@ -449,6 +471,14 @@ fn graph_lock_root_repeated_lookup_for_kfunc(
         key
     } else {
         func.alloc_vreg()
+    };
+    let lock_key = if matches!(
+        key_mode,
+        RepeatedLookupKeyMode::EquivalentExprDynamic | RepeatedLookupKeyMode::DifferentExprDynamic
+    ) {
+        func.alloc_vreg()
+    } else {
+        key
     };
     let lock_value = func.alloc_vreg();
     let lock_value_non_null = func.alloc_vreg();
@@ -513,6 +543,29 @@ fn graph_lock_root_repeated_lookup_for_kfunc(
             rhs: MirValue::Const(1),
         });
         entry
+    } else if matches!(
+        key_mode,
+        RepeatedLookupKeyMode::EquivalentExprDynamic | RepeatedLookupKeyMode::DifferentExprDynamic
+    ) {
+        func.param_count = 1;
+        let root_offset = if key_mode == RepeatedLookupKeyMode::EquivalentExprDynamic {
+            1
+        } else {
+            2
+        };
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: lock_key,
+            op: BinOpKind::Add,
+            lhs: MirValue::VReg(key),
+            rhs: MirValue::Const(1),
+        });
+        func.block_mut(entry).instructions.push(MirInst::BinOp {
+            dst: root_key,
+            op: BinOpKind::Add,
+            lhs: MirValue::VReg(key),
+            rhs: MirValue::Const(root_offset),
+        });
+        entry
     } else if key_mode == RepeatedLookupKeyMode::SameCtxFieldReload {
         func.block_mut(entry)
             .instructions
@@ -547,7 +600,7 @@ fn graph_lock_root_repeated_lookup_for_kfunc(
         .push(MirInst::MapLookup {
             dst: lock_value,
             map: graph_items.clone(),
-            key,
+            key: lock_key,
         });
     func.block_mut(lookup_entry)
         .instructions
@@ -1355,6 +1408,27 @@ fn test_kfunc_list_front_rejects_offset_dynamic_key_repeated_map_lookup_bpf_spin
     let (func, types) = graph_lock_root_repeated_lookup_offset_key_function();
 
     let err = verify_mir(&func, &types).expect_err("expected offset-key graph lock/root error");
+    assert!(
+        err.iter().any(|e| e
+            .message
+            .contains("requires bpf_spin_lock from the same map value")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_kfunc_list_front_accepts_equivalent_expr_key_repeated_map_lookup_bpf_spin_lock() {
+    let (func, types) = graph_lock_root_repeated_lookup_equivalent_expr_key_function();
+
+    verify_mir(&func, &types).expect("equivalent expression map key graph lock/root should verify");
+}
+
+#[test]
+fn test_kfunc_list_front_rejects_different_expr_key_repeated_map_lookup_bpf_spin_lock() {
+    let (func, types) = graph_lock_root_repeated_lookup_different_expr_key_function();
+
+    let err = verify_mir(&func, &types).expect_err("expected different expression-key error");
     assert!(
         err.iter().any(|e| e
             .message
