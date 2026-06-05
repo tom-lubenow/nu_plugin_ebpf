@@ -67,9 +67,9 @@ documentation changes that matter to external alpha consumers.
 - Preserved branch-selected scalar multiple facts so aligned dynamic helper
   sizes, such as tunnel option lengths, can pass without accepting unaligned
   alternatives.
-- Preserved simple scalar expression identities across verifier-types and VCC
-  so repeated graph-root map lookups using equivalent dynamic key expressions
-  satisfy same-map-value `bpf_spin_lock` checks.
+- Preserved simple scalar expression identities across source lowering,
+  verifier-types, and VCC so repeated graph-root map lookups using equivalent
+  dynamic key expressions satisfy same-map-value `bpf_spin_lock` checks.
 - Added dynamic branch coverage for timer and workqueue map-origin rejects,
   including phi-joined concrete-map source metadata.
 - Added dynamic branch coverage for workqueue callback map-origin rejects.

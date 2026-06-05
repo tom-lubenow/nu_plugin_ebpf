@@ -5331,31 +5331,8 @@ impl<'a> HirToMirLowering<'a> {
                     map_ref.name, scalar_ty
                 ))),
                 _ => {
-                    let slot = self.func.alloc_stack_slot(
-                        align_to_eight(scalar_ty.size().max(1)),
-                        8,
-                        StackSlotKind::Local,
-                    );
-                    self.record_stack_slot_type(slot, scalar_ty.clone());
-                    self.emit(MirInst::StoreSlot {
-                        slot,
-                        offset: 0,
-                        val: MirValue::VReg(key_vreg),
-                        ty: scalar_ty.clone(),
-                    });
-                    let key_ptr_vreg = self.func.alloc_vreg();
-                    self.emit(MirInst::Copy {
-                        dst: key_ptr_vreg,
-                        src: MirValue::StackSlot(slot),
-                    });
-                    self.vreg_type_hints.insert(
-                        key_ptr_vreg,
-                        MirType::Ptr {
-                            pointee: Box::new(scalar_ty),
-                            address_space: AddressSpace::Stack,
-                        },
-                    );
-                    Ok(key_ptr_vreg)
+                    self.vreg_type_hints.insert(key_vreg, scalar_ty);
+                    Ok(key_vreg)
                 }
             },
         }
