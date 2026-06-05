@@ -638,6 +638,14 @@ fn eval_supported_constant_call(
     let cmd_name = working_set.get_decl(call.decl_id).name();
 
     match cmd_name {
+        "first" | "last" => eval_supported_constant_list_first_or_last_call(
+            working_set,
+            cmd_name,
+            input,
+            &call.arguments,
+            env,
+            span,
+        ),
         "get" => eval_supported_constant_get_call(
             working_set,
             cmd_name,
@@ -732,6 +740,35 @@ fn eval_supported_constant_external_call(
     };
 
     match cmd_name {
+        "first" | "last" => {
+            for arg in args {
+                if let ExternalArgument::Spread(expr) = arg {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            format!(
+                                "`{cmd_name}` count argument cannot use spread syntax in compile-time global initializers"
+                            ),
+                            expr.span,
+                        ));
+                }
+            }
+            let count_expr = match args {
+                [] => None,
+                [ExternalArgument::Regular(expr)] => Some(expr),
+                _ => {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            format!(
+                                "`{cmd_name}` accepts at most one count argument in compile-time global initializers"
+                            ),
+                            span,
+                        ));
+                }
+            };
+            eval_supported_constant_list_first_or_last(
+                working_set, cmd_name, input, count_expr, env, span,
+            )
+        }
         "get" => {
             let [path_arg] = args else {
                 return Err(LabeledError::new("Unsupported annotated mutable global initializer")
@@ -976,6 +1013,134 @@ fn eval_supported_constant_get_call(
             LabeledError::new("Unsupported annotated mutable global initializer")
                 .with_label(e.to_string(), span)
         })
+}
+
+fn eval_supported_constant_list_first_or_last_call(
+    working_set: &StateWorkingSet,
+    cmd_name: &str,
+    input: Option<Value>,
+    args: &[nu_protocol::ast::Argument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let mut count_expr = None;
+    for arg in args {
+        match arg {
+            nu_protocol::ast::Argument::Positional(expr)
+            | nu_protocol::ast::Argument::Unknown(expr) => {
+                if count_expr.replace(expr).is_some() {
+                    return Err(
+                        LabeledError::new("Unsupported annotated mutable global initializer")
+                            .with_label(
+                                format!(
+                                    "`{cmd_name}` accepts at most one count argument in compile-time global initializers"
+                                ),
+                                arg.span(),
+                            ),
+                    );
+                }
+            }
+            nu_protocol::ast::Argument::Named(named) => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        format!(
+                            "`{cmd_name}` does not accept named argument --{} in compile-time global initializers",
+                            named.0.item
+                        ),
+                        arg.span(),
+                    ));
+            }
+            nu_protocol::ast::Argument::Spread(expr) => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        format!(
+                            "`{cmd_name}` count argument cannot use spread syntax in compile-time global initializers"
+                        ),
+                        expr.span,
+                    ));
+            }
+        }
+    }
+
+    eval_supported_constant_list_first_or_last(working_set, cmd_name, input, count_expr, env, span)
+}
+
+fn eval_supported_constant_list_first_or_last(
+    working_set: &StateWorkingSet,
+    cmd_name: &str,
+    input: Option<Value>,
+    count_expr: Option<&nu_protocol::ast::Expression>,
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let value = input.ok_or_else(|| {
+        LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+            format!(
+                "`{cmd_name}` in a compile-time global initializer must receive pipeline input"
+            ),
+            span,
+        )
+    })?;
+    let value_span = value.span();
+    let Value::List { vals, .. } = value else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!("`{cmd_name}` in a compile-time global initializer requires list input"),
+                span,
+            ),
+        );
+    };
+
+    let Some(count_expr) = count_expr else {
+        if vals.is_empty() {
+            return Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    format!(
+                        "`{cmd_name}` requires a non-empty compile-time list in global initializers"
+                    ),
+                    span,
+                ),
+            );
+        }
+        return if cmd_name == "first" {
+            Ok(vals.into_iter().next().expect("non-empty list checked"))
+        } else {
+            Ok(vals.into_iter().last().expect("non-empty list checked"))
+        };
+    };
+
+    let count_value = eval_supported_constant_value_with_env(working_set, count_expr, env)?;
+    let Value::Int { val: raw_count, .. } = count_value else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!("`{cmd_name}` count must be a compile-time integer in global initializers"),
+                count_expr.span,
+            ),
+        );
+    };
+    if raw_count < 0 {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!("`{cmd_name}` count must be non-negative in global initializers"),
+                count_expr.span,
+            ),
+        );
+    }
+    let count = usize::try_from(raw_count).map_err(|_| {
+        LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+            format!("`{cmd_name}` count is too large for compile-time global initializers"),
+            count_expr.span,
+        )
+    })?;
+
+    let selected = if cmd_name == "first" {
+        vals.into_iter().take(count).collect()
+    } else {
+        let start = vals.len().saturating_sub(count);
+        vals.into_iter().skip(start).collect()
+    };
+
+    Ok(Value::list(selected, value_span))
 }
 
 fn eval_supported_constant_list_mutation_call(
