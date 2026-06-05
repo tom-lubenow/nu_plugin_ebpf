@@ -188,6 +188,8 @@ impl<'a> MirToEbpfCompiler<'a> {
         available_regs: Vec<EbpfReg>,
         precolored: HashMap<VReg, EbpfReg>,
     ) -> Result<ColoringResult, CompileError> {
+        validate_lir_function_for_codegen(func)?;
+
         let alloc = self.allocate_registers_for_function(func, available_regs, precolored);
         let (
             slot_offsets,

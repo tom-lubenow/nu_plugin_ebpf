@@ -418,6 +418,101 @@ fn test_parallel_move_r0_cycle() {
 }
 
 #[test]
+fn test_compile_rejects_empty_lir_function() {
+    let program = LirProgram::new(LirFunction::new());
+    let err = match MirToEbpfCompiler::new(&program, None).compile() {
+        Ok(_) => panic!("empty LIR function should be rejected before codegen"),
+        Err(err) => err,
+    };
+
+    match err {
+        CompileError::UnsupportedInstruction(message) => {
+            assert!(message.contains("at least one basic block"));
+        }
+        other => panic!("expected UnsupportedInstruction, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_compile_rejects_out_of_range_lir_vreg() {
+    let mut func = LirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    func.block_mut(entry).instructions.push(LirInst::Copy {
+        dst: VReg(99),
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = LirInst::Return { val: None };
+
+    let program = LirProgram::new(func);
+    let err = match MirToEbpfCompiler::new(&program, None).compile() {
+        Ok(_) => panic!("out-of-range LIR vreg should be rejected before codegen"),
+        Err(err) => err,
+    };
+
+    match err {
+        CompileError::UnsupportedInstruction(message) => {
+            assert!(message.contains("out-of-range virtual register 99"));
+        }
+        other => panic!("expected UnsupportedInstruction, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_prepare_function_state_rejects_missing_lir_jump_target() {
+    let mut func = LirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    func.block_mut(entry).terminator = LirInst::Jump {
+        target: BlockId(99),
+    };
+
+    let program = LirProgram::new(func);
+    let mut compiler = MirToEbpfCompiler::new(&program, None);
+    let err = compiler
+        .prepare_function_state(
+            &program.main,
+            compiler.available_regs.clone(),
+            program.main.precolored.clone(),
+        )
+        .expect_err("missing LIR jump target should be rejected before allocation");
+
+    match err {
+        CompileError::UnsupportedInstruction(message) => {
+            assert!(message.contains("missing basic block 99"));
+        }
+        other => panic!("expected UnsupportedInstruction, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_compile_rejects_out_of_range_lir_subfunction_reference() {
+    let mut func = LirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    let ret = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(LirInst::CallSubfn {
+        subfn: SubfunctionId(99),
+        args: Vec::new(),
+        ret,
+    });
+    func.block_mut(entry).terminator = LirInst::Return { val: None };
+
+    let program = LirProgram::new(func);
+    let err = match MirToEbpfCompiler::new(&program, None).compile() {
+        Ok(_) => panic!("out-of-range LIR subfunction reference should be rejected before codegen"),
+        Err(err) => err,
+    };
+
+    match err {
+        CompileError::UnsupportedInstruction(message) => {
+            assert!(message.contains("subfunction reference 99 is out of range"));
+        }
+        other => panic!("expected UnsupportedInstruction, got {other:?}"),
+    }
+}
+
+#[test]
 fn test_fixup_jumps_rejects_forward_offset_out_of_range() {
     let program = LirProgram::new(LirFunction::new());
     let mut compiler = MirToEbpfCompiler::new(&program, None);

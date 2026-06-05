@@ -28,6 +28,8 @@ fn relative_instruction_offset(
 impl<'a> MirToEbpfCompiler<'a> {
     /// Compile a LIR function
     pub(super) fn compile_function(&mut self, func: &LirFunction) -> Result<(), CompileError> {
+        validate_lir_function_for_codegen(func)?;
+
         // Register allocation uses Chaitin-Briggs graph coloring for optimal results.
 
         // Use block order as listed; LIR is already low-level.

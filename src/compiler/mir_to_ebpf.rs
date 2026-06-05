@@ -35,6 +35,7 @@ use crate::compiler::instruction::{
     BpfHelper, EbpfInsn, EbpfReg, HelperSignature, KfuncSignature, opcode,
 };
 use crate::compiler::lir::{LirBlock, LirFunction, LirInst, LirProgram};
+use crate::compiler::lir_integrity::{validate_lir_function, validate_lir_program};
 use crate::compiler::mir::{
     BYTES_COUNTER_MAP_NAME, BinOpKind, BlockId, COUNTER_MAP_NAME, CtxField, HISTOGRAM_MAP_NAME,
     KSTACK_MAP_NAME, MapKind, MapOpKind, MapRef, MirProgram, MirType, MirTypeHints, MirValue,
@@ -442,6 +443,8 @@ impl<'a> MirToEbpfCompiler<'a> {
 
     /// Compile the MIR program to eBPF
     pub fn compile(mut self) -> Result<MirCompileResult, CompileError> {
+        validate_lir_program_for_codegen(self.lir)?;
+
         // Compile the main function
         self.current_types = self.program_types.main.clone();
         self.prepare_function_state(
@@ -592,6 +595,32 @@ impl<'a> MirToEbpfCompiler<'a> {
             generic_map_inner_templates: self.generic_map_inner_templates,
         })
     }
+}
+
+fn validate_lir_program_for_codegen(lir: &LirProgram) -> Result<(), CompileError> {
+    if let Err(errors) = validate_lir_program(lir) {
+        return Err(CompileError::UnsupportedInstruction(
+            errors
+                .into_iter()
+                .map(|err| err.message)
+                .collect::<Vec<_>>()
+                .join("; "),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_lir_function_for_codegen(func: &LirFunction) -> Result<(), CompileError> {
+    if let Err(errors) = validate_lir_function(func) {
+        return Err(CompileError::UnsupportedInstruction(
+            errors
+                .into_iter()
+                .map(|err| err.message)
+                .collect::<Vec<_>>()
+                .join("; "),
+        ));
+    }
+    Ok(())
 }
 
 /// Compile a MIR program to eBPF

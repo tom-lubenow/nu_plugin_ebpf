@@ -28,6 +28,7 @@ pub mod hir_type_infer;
 pub mod instruction;
 pub mod ir_to_mir;
 pub mod lir;
+pub(crate) mod lir_integrity;
 pub mod mir;
 pub(crate) mod mir_integrity;
 pub mod mir_to_ebpf;
