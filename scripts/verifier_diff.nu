@@ -38188,6 +38188,7 @@ const FIXTURES = [
             '  let value = "012345678901234567890123"'
             '  helper-call "bpf_perf_event_read" perf_events 0'
             '  helper-call "bpf_perf_event_read_value" perf_events 0 $value 24'
+            '  helper-call "bpf_perf_prog_read_value" $ctx $value 24'
             '  0'
             '}'
         ]

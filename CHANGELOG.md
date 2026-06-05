@@ -6,6 +6,8 @@ documentation changes that matter to external alpha consumers.
 
 ## Unreleased
 
+- Added source verifier coverage for raw `bpf_perf_prog_read_value` helper
+  calls in perf-event programs.
 - Added source verifier coverage for raw socket cgroup ID helper calls.
 - Added source verifier coverage for raw local-storage delete helper calls across
   sk, task, inode, and cgroup storage maps.

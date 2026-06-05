@@ -468,7 +468,6 @@ fn test_verifier_diff_source_fixtures_cover_modeled_helper_names() {
         "bpf_ima_file_hash".to_string(),
         "bpf_ima_inode_hash".to_string(),
         "bpf_per_cpu_ptr".to_string(),
-        "bpf_perf_prog_read_value".to_string(),
         "bpf_rc_keydown".to_string(),
         "bpf_rc_pointer_rel".to_string(),
         "bpf_rc_repeat".to_string(),
