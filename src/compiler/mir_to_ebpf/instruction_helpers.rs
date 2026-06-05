@@ -248,15 +248,7 @@ impl<'a> MirToEbpfCompiler<'a> {
             self.validate_counter_key_operand(&map.name, key)?;
             self.compile_counter_map_update(&map.name, key, key_reg)?;
         } else if map.name == BYTES_COUNTER_MAP_NAME {
-            let key_size = match self.current_types.get(&key) {
-                Some(MirType::Ptr { pointee, .. }) => pointee.size().max(1) as u32,
-                Some(ty) => ty.size().max(1) as u32,
-                None => {
-                    return Err(CompileError::UnsupportedInstruction(
-                        "bytes_counters key size could not be inferred".into(),
-                    ));
-                }
-            };
+            let key_size = self.bytes_counter_key_size_u32(key)?;
             self.register_counter_map_kind(BYTES_COUNTER_MAP_NAME, map.kind, Some(key_size))?;
             self.register_bytes_counter_key_schema(key)?;
             self.validate_counter_key_operand(&map.name, key)?;

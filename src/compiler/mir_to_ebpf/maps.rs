@@ -230,6 +230,24 @@ impl<'a> MirToEbpfCompiler<'a> {
         Ok(())
     }
 
+    pub(super) fn bytes_counter_key_size_u32(&self, key: VReg) -> Result<u32, CompileError> {
+        let key_size = match self.current_types.get(&key) {
+            Some(MirType::Ptr { pointee, .. }) => pointee.size().max(1),
+            Some(ty) => ty.size().max(1),
+            None => {
+                return Err(CompileError::UnsupportedInstruction(
+                    "bytes_counters key size could not be inferred".into(),
+                ));
+            }
+        };
+
+        u32::try_from(key_size).map_err(|_| {
+            CompileError::UnsupportedInstruction(format!(
+                "bytes_counters key size {key_size} exceeds the eBPF map key size range"
+            ))
+        })
+    }
+
     fn counter_map_key_size(&self, map_name: &str, key: VReg) -> Result<usize, CompileError> {
         match map_name {
             COUNTER_MAP_NAME => Ok(8),

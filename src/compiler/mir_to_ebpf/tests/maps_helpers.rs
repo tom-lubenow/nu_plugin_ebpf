@@ -953,6 +953,63 @@ fn test_bytes_counter_map_emits_struct_key_size() {
 }
 
 #[test]
+fn test_bytes_counter_map_rejects_oversized_key_size() {
+    use crate::compiler::mir::*;
+
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let slot = func.alloc_stack_slot(8, 8, StackSlotKind::Local);
+    let key = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: key,
+        src: MirValue::StackSlot(slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::MapUpdate {
+        map: MapRef {
+            name: BYTES_COUNTER_MAP_NAME.to_string(),
+            kind: MapKind::Hash,
+        },
+        key,
+        val: key,
+        flags: 0,
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let program = MirProgram {
+        main: func,
+        subfunctions: vec![],
+    };
+
+    let lir = lower_mir_to_lir(&program);
+    let mut program_types = ProgramVregTypes::default();
+    program_types.main.insert(
+        key,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Array {
+                elem: Box::new(MirType::U8),
+                len: u32::MAX as usize + 1,
+            }),
+            address_space: AddressSpace::Stack,
+        },
+    );
+
+    let compiler = MirToEbpfCompiler::new_with_types(&lir, None, program_types);
+    match compiler.compile() {
+        Ok(_) => panic!("expected oversized bytes_counters key size to be rejected"),
+        Err(err) => {
+            let msg = err.to_string();
+            assert!(
+                msg.contains("exceeds the eBPF map key size range"),
+                "unexpected error message: {msg}"
+            );
+        }
+    }
+}
+
+#[test]
 fn test_bytes_counter_map_rejects_mixed_key_schemas() {
     use crate::compiler::mir::*;
 
