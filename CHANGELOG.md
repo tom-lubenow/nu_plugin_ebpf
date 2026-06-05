@@ -6,6 +6,7 @@ documentation changes that matter to external alpha consumers.
 
 ## Unreleased
 
+- Added source verifier coverage for raw LIRC remote-control helper calls.
 - Added source verifier coverage for raw IMA file and inode hash helper calls.
 - Added source verifier coverage for raw per-CPU pointer helper calls.
 - Added source verifier coverage for raw BTF name/kind lookup helper calls.

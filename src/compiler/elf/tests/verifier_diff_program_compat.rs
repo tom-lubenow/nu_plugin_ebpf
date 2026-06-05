@@ -464,9 +464,6 @@ fn test_verifier_diff_source_fixtures_cover_modeled_helper_names() {
     let modeled = modeled_helper_names(instruction_source);
     let fixture_calls = verifier_diff_helper_call_names(verifier_diff);
     let pending = BTreeSet::from([
-        "bpf_rc_keydown".to_string(),
-        "bpf_rc_pointer_rel".to_string(),
-        "bpf_rc_repeat".to_string(),
         "bpf_sk_select_reuseport".to_string(),
         "bpf_tcp_check_syncookie".to_string(),
         "bpf_tcp_gen_syncookie".to_string(),
