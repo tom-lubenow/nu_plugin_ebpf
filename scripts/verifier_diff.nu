@@ -16153,6 +16153,23 @@ const FIXTURES = [
         error_contains: "helper 'bpf_get_local_storage' requires arg1 flags to be 0"
     }
     {
+        name: "raw-get-local-storage-rejects-dynamic-flags"
+        category: "maps"
+        tags: [maps local-storage deprecated helper-call flags reject source metadata]
+        requires: [cgroup-v2]
+        target: "cgroup_skb:/sys/fs/cgroup:egress"
+        program: [
+            '{|ctx|'
+            '  let flags = (helper-call "bpf_get_prandom_u32")'
+            '  helper-call "bpf_get_local_storage" legacy_storage $flags'
+            '  "allow"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_get_local_storage' requires arg1 flags to be 0"
+    }
+    {
         name: "task-storage-rejects-socket-owner"
         category: "maps"
         tags: [maps local-storage task-storage map-get source reject]
@@ -35469,6 +35486,22 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  helper-call "bpf_loop" 4 {|i cb| 0 } "ctx" 99'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_loop' requires arg3 flags to be 0"
+    }
+    {
+        name: "bpf-loop-rejects-dynamic-flags"
+        category: "helper-state"
+        tags: [bpf-loop flags reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let flags = (helper-call "bpf_get_prandom_u32")'
+            '  helper-call "bpf_loop" 4 {|i cb| 0 } "ctx" $flags'
             '  0'
             '}'
         ]
