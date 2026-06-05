@@ -4980,6 +4980,28 @@ fn test_verify_mir_rejects_out_of_range_vreg_def() {
 }
 
 #[test]
+fn test_verify_mir_rejects_out_of_range_type_map_key() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst,
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let types = HashMap::from([(VReg(99), MirType::I64)]);
+    let err = verify_mir(&func, &types).expect_err("out-of-range type-map key should be rejected");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("out-of-range virtual register 99")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_rejects_invalid_block_terminator() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();
