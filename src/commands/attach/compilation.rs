@@ -794,6 +794,10 @@ fn eval_supported_constant_call(
             eval_supported_constant_no_argument_call(cmd_name, &call.arguments)?;
             eval_supported_constant_math_abs(input, span)
         }
+        "math ceil" | "math floor" | "math round" => {
+            eval_supported_constant_no_argument_call(cmd_name, &call.arguments)?;
+            eval_supported_constant_math_rounding(cmd_name, input, span)
+        }
         "char" => {
             let output =
                 eval_supported_constant_char_call_args(working_set, &call.arguments, env, span)?;
@@ -1230,6 +1234,10 @@ fn eval_supported_constant_external_call(
         "math abs" => {
             eval_supported_constant_no_external_args(cmd_name, args, span)?;
             eval_supported_constant_math_abs(input, span)
+        }
+        "math ceil" | "math floor" | "math round" => {
+            eval_supported_constant_no_external_args(cmd_name, args, span)?;
+            eval_supported_constant_math_rounding(cmd_name, input, span)
         }
         "char" => {
             let output = eval_supported_constant_char_external_args(working_set, args, env, span)?;
@@ -5495,6 +5503,115 @@ fn eval_supported_constant_math_abs(
     }
 }
 
+fn eval_supported_constant_math_rounding(
+    cmd_name: &str,
+    input: Option<Value>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let value = eval_supported_constant_required_pipeline_input(cmd_name, input, span)?;
+    let value_span = value.span();
+    match value {
+        Value::Int { .. } | Value::Float { .. } => {
+            eval_supported_constant_math_rounding_value(cmd_name, value, None, span)
+        }
+        Value::List { vals, .. } => {
+            let output = vals
+                .into_iter()
+                .enumerate()
+                .map(|(index, value)| {
+                    eval_supported_constant_math_rounding_value(cmd_name, value, Some(index), span)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(Value::list(output, value_span))
+        }
+        other => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`{cmd_name}` in a compile-time global initializer requires integer, finite float, list<int>, or list<float> input; got {}",
+                    other.get_type()
+                ),
+                span,
+            ),
+        ),
+    }
+}
+
+fn eval_supported_constant_math_rounding_value(
+    cmd_name: &str,
+    value: Value,
+    list_index: Option<usize>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let value_span = value.span();
+    match value {
+        Value::Int { .. } => Ok(value),
+        Value::Float { val, .. } => {
+            let rounded = match cmd_name {
+                "math ceil" => val.ceil(),
+                "math floor" => val.floor(),
+                "math round" => val.round(),
+                _ => {
+                    return Err(
+                        LabeledError::new("Unsupported annotated mutable global initializer")
+                            .with_label(
+                                format!(
+                                    "`{cmd_name}` is not a supported integer rounding command in compile-time global initializers"
+                                ),
+                                span,
+                            ),
+                    );
+                }
+            };
+            let val =
+                eval_supported_constant_math_rounding_i64(cmd_name, rounded, list_index, span)?;
+            Ok(Value::int(val, value_span))
+        }
+        other => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                match list_index {
+                    Some(index) => format!(
+                        "`{cmd_name}` requires integer or finite float list items in compile-time global initializers; item {index} has type {}",
+                        other.get_type()
+                    ),
+                    None => format!(
+                        "`{cmd_name}` in a compile-time global initializer requires integer or finite float input; got {}",
+                        other.get_type()
+                    ),
+                },
+                span,
+            ),
+        ),
+    }
+}
+
+fn eval_supported_constant_math_rounding_i64(
+    cmd_name: &str,
+    value: f64,
+    list_index: Option<usize>,
+    span: Span,
+) -> Result<i64, LabeledError> {
+    const I64_MIN_F64: f64 = -9_223_372_036_854_775_808.0;
+    const I64_MAX_PLUS_ONE_F64: f64 = 9_223_372_036_854_775_808.0;
+
+    if !value.is_finite() || !(I64_MIN_F64..I64_MAX_PLUS_ONE_F64).contains(&value) {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                match list_index {
+                    Some(index) => format!(
+                        "`{cmd_name}` compile-time float list item {index} result {value} cannot be represented as an i64"
+                    ),
+                    None => format!(
+                        "`{cmd_name}` compile-time float result {value} cannot be represented as an i64"
+                    ),
+                },
+                span,
+            ),
+        );
+    }
+
+    Ok(value as i64)
+}
+
 fn eval_supported_constant_math_external_call(
     working_set: &StateWorkingSet,
     input: Option<Value>,
@@ -5541,6 +5658,10 @@ fn eval_supported_constant_math_external_call(
         "math abs" => {
             eval_supported_constant_no_external_args(&cmd_name, remaining_args, span)?;
             eval_supported_constant_math_abs(input, span)
+        }
+        "math ceil" | "math floor" | "math round" => {
+            eval_supported_constant_no_external_args(&cmd_name, remaining_args, span)?;
+            eval_supported_constant_math_rounding(&cmd_name, input, span)
         }
         _ => Err(
             LabeledError::new("Unsupported annotated mutable global initializer").with_label(

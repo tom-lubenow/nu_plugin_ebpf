@@ -4362,6 +4362,261 @@ fn test_map_leading_annotated_mut_globals_rejects_constant_math_abs_non_integer_
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_math_rounding_int_initializers() {
+    let cases = [
+        (
+            "{|| mut out: int = (-42 | math ceil); $out }",
+            -42,
+            "math ceil should preserve integer input",
+        ),
+        (
+            "{|| mut out: int = (42 | math floor); $out }",
+            42,
+            "math floor should preserve integer input",
+        ),
+        (
+            "{|| mut out: int = (-42 | math round); $out }",
+            -42,
+            "math round should preserve integer input",
+        ),
+    ];
+
+    for (source, expected, message) in cases {
+        let ir_block = IrBlock {
+            instructions: vec![
+                Instruction::StoreVariable {
+                    var_id: VarId::new(11),
+                    src: RegId::new(0),
+                },
+                Instruction::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: VarId::new(11),
+                },
+                Instruction::Return { src: RegId::new(0) },
+            ],
+            spans: vec![Span::test_data(); 3],
+            data: Vec::<u8>::new().into(),
+            ast: vec![None; 3],
+            comments: vec!["let".into(), "".into(), "".into()],
+            register_count: 1,
+            file_count: 0,
+        };
+
+        let globals =
+            super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+                .unwrap_or_else(|err| panic!("{message}: {err:?}"));
+
+        assert_eq!(globals.len(), 1);
+        assert_eq!(
+            globals[0]
+                .initial_value
+                .as_int()
+                .expect("math rounding should produce an integer"),
+            expected,
+            "{message}"
+        );
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_math_rounding_float_initializers() {
+    let cases = [
+        (
+            "{|| mut out: int = (1.25 | math ceil); $out }",
+            2,
+            "math ceil should round positive float input upward",
+        ),
+        (
+            "{|| mut out: int = (-1.25 | math floor); $out }",
+            -2,
+            "math floor should round negative float input downward",
+        ),
+        (
+            "{|| mut out: int = (-2.5 | math round); $out }",
+            -3,
+            "math round should round half away from zero",
+        ),
+    ];
+
+    for (source, expected, message) in cases {
+        let ir_block = IrBlock {
+            instructions: vec![
+                Instruction::StoreVariable {
+                    var_id: VarId::new(11),
+                    src: RegId::new(0),
+                },
+                Instruction::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: VarId::new(11),
+                },
+                Instruction::Return { src: RegId::new(0) },
+            ],
+            spans: vec![Span::test_data(); 3],
+            data: Vec::<u8>::new().into(),
+            ast: vec![None; 3],
+            comments: vec!["let".into(), "".into(), "".into()],
+            register_count: 1,
+            file_count: 0,
+        };
+
+        let globals =
+            super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+                .unwrap_or_else(|err| panic!("{message}: {err:?}"));
+
+        assert_eq!(globals.len(), 1);
+        assert_eq!(
+            globals[0]
+                .initial_value
+                .as_int()
+                .expect("math rounding should produce an integer"),
+            expected,
+            "{message}"
+        );
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_math_rounding_list_initializer() {
+    let source = "{|| mut out: list<int> = ([1.25, -1.25, -2.5, 4] | math round); $out }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant math rounding list initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => assert_eq!(
+            vals,
+            &vec![
+                Value::int(1, Span::test_data()),
+                Value::int(-1, Span::test_data()),
+                Value::int(-3, Span::test_data()),
+                Value::int(4, Span::test_data()),
+            ]
+        ),
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_root_external_constant_math_rounding() {
+    let source = "{|| mut out: int = (1.25 | ^math ceil); $out }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("root external constant math rounding should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(
+        globals[0]
+            .initial_value
+            .as_int()
+            .expect("math rounding should produce an integer"),
+        2
+    );
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_rejects_constant_math_rounding_non_numeric_list_item() {
+    let source = "{|| mut out: list<int> = ([1, \"bad\"] | math ceil); $out }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let err = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect_err("math rounding should reject non-numeric list items");
+
+    assert!(
+        format!("{err:?}").contains("integer or finite float list items"),
+        "unexpected error: {err:?}"
+    );
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_rejects_constant_math_rounding_precision() {
+    let source = "{|| mut out: int = (1.25 | math round --precision 1); $out }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let err = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect_err("math round precision should be rejected for mutable global materialization");
+
+    assert!(
+        format!("{err:?}").contains("does not accept arguments"),
+        "unexpected error: {err:?}"
+    );
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_constant_char_initializers() {
     let cases = [
         (
