@@ -720,6 +720,11 @@ fn eval_supported_constant_call(
                 eval_supported_constant_str_join_call_separator(working_set, &call.arguments, env)?;
             eval_supported_constant_str_join(input, separator, span)
         }
+        "split chars" => {
+            let use_grapheme_clusters =
+                eval_supported_constant_split_chars_mode_call(&call.arguments)?;
+            eval_supported_constant_split_chars(input, use_grapheme_clusters, span)
+        }
         "get" => eval_supported_constant_get_call(
             working_set,
             cmd_name,
@@ -1007,6 +1012,12 @@ fn eval_supported_constant_external_call(
             let separator =
                 eval_supported_constant_str_join_external_separator(working_set, args, env, span)?;
             eval_supported_constant_str_join(input, separator, span)
+        }
+        "split" => eval_supported_constant_split_external_call(working_set, input, args, env, span),
+        "split chars" => {
+            let use_grapheme_clusters =
+                eval_supported_constant_split_chars_mode_external_args(working_set, args, env, span)?;
+            eval_supported_constant_split_chars(input, use_grapheme_clusters, span)
         }
         "get" => {
             let [path_arg] = args else {
@@ -2470,6 +2481,247 @@ fn eval_supported_constant_str_join_item_value(
                     other.get_type()
                 ),
                 span,
+            ),
+        ),
+    }
+}
+
+fn eval_supported_constant_split_chars_mode_call(
+    args: &[nu_protocol::ast::Argument],
+) -> Result<bool, LabeledError> {
+    let mut use_code_points = false;
+    let mut use_grapheme_clusters = false;
+    for arg in args {
+        match arg {
+            nu_protocol::ast::Argument::Named(named) => {
+                if named.2.is_some() {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            "`split chars` flags cannot receive values in compile-time global initializers",
+                            arg.span(),
+                        ));
+                }
+                match named.0.item.as_str() {
+                    "code-points" => use_code_points = true,
+                    "grapheme-clusters" => use_grapheme_clusters = true,
+                    _ => {
+                        return Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
+                        .with_label(
+                            "`split chars` supports only --code-points and --grapheme-clusters in compile-time global initializers",
+                            arg.span(),
+                        ));
+                    }
+                }
+            }
+            nu_protocol::ast::Argument::Spread(expr) => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`split chars` arguments cannot use spread syntax in compile-time global initializers",
+                        expr.span,
+                    ));
+            }
+            nu_protocol::ast::Argument::Positional(_) | nu_protocol::ast::Argument::Unknown(_) => {
+                return Err(
+                    LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            "`split chars` does not accept arguments in compile-time global initializers",
+                            arg.span(),
+                        ),
+                );
+            }
+        }
+    }
+
+    eval_supported_constant_split_chars_validate_modes(
+        use_code_points,
+        use_grapheme_clusters,
+        Span::unknown(),
+    )
+}
+
+fn eval_supported_constant_split_chars_mode_external_args(
+    working_set: &StateWorkingSet,
+    args: &[ExternalArgument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<bool, LabeledError> {
+    let mut use_code_points = false;
+    let mut use_grapheme_clusters = false;
+    for arg in args {
+        let ExternalArgument::Regular(expr) = arg else {
+            return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                .with_label(
+                    "`split chars` arguments cannot use spread syntax in compile-time global initializers",
+                    arg.expr().span,
+                ));
+        };
+        let value = eval_supported_constant_value_with_env(working_set, expr, env)?;
+        let flag = match value {
+            Value::String { val, .. } | Value::Glob { val, .. } => val,
+            _ => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`split chars` accepts only string flags in compile-time global initializers",
+                        expr.span,
+                    ));
+            }
+        };
+        let Some(flag) = flag.strip_prefix("--") else {
+            return Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    "`split chars` does not accept arguments in compile-time global initializers",
+                    span,
+                ),
+            );
+        };
+        match flag {
+            "code-points" => use_code_points = true,
+            "grapheme-clusters" => use_grapheme_clusters = true,
+            _ => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`split chars` supports only --code-points and --grapheme-clusters in compile-time global initializers",
+                        expr.span,
+                    ));
+            }
+        }
+    }
+
+    eval_supported_constant_split_chars_validate_modes(use_code_points, use_grapheme_clusters, span)
+}
+
+fn eval_supported_constant_split_chars_validate_modes(
+    use_code_points: bool,
+    use_grapheme_clusters: bool,
+    span: Span,
+) -> Result<bool, LabeledError> {
+    if use_code_points && use_grapheme_clusters {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`split chars` accepts either --code-points or --grapheme-clusters, not both, in compile-time global initializers",
+                span,
+            ),
+        );
+    }
+
+    Ok(use_grapheme_clusters)
+}
+
+fn eval_supported_constant_split_chars(
+    input: Option<Value>,
+    use_grapheme_clusters: bool,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let value = eval_supported_constant_required_pipeline_input("split chars", input, span)?;
+    let value_span = value.span();
+    match value {
+        Value::List { vals, .. } => {
+            let items = vals
+                .into_iter()
+                .enumerate()
+                .map(|(index, value)| {
+                    let input = match value {
+                        Value::String { val, .. } | Value::Glob { val, .. } => val,
+                        other => {
+                            return Err(LabeledError::new(
+                                "Unsupported annotated mutable global initializer",
+                            )
+                            .with_label(
+                                format!(
+                                    "`split chars` requires string list items in compile-time global initializers; item {index} has type {}",
+                                    other.get_type()
+                                ),
+                                span,
+                            ));
+                        }
+                    };
+                    Ok(Value::list(
+                        eval_supported_constant_split_chars_known_string(
+                            &input,
+                            use_grapheme_clusters,
+                            value_span,
+                        ),
+                        value_span,
+                    ))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(Value::list(items, value_span))
+        }
+        value => {
+            let input = eval_supported_constant_exact_string_value(value, "split chars", span)?;
+            Ok(Value::list(
+                eval_supported_constant_split_chars_known_string(
+                    &input,
+                    use_grapheme_clusters,
+                    value_span,
+                ),
+                value_span,
+            ))
+        }
+    }
+}
+
+fn eval_supported_constant_split_chars_known_string(
+    input: &str,
+    use_grapheme_clusters: bool,
+    span: Span,
+) -> Vec<Value> {
+    if use_grapheme_clusters {
+        UnicodeSegmentation::graphemes(input, true)
+            .map(|part| Value::string(part, span))
+            .collect()
+    } else {
+        input
+            .chars()
+            .map(|ch| Value::string(ch.to_string(), span))
+            .collect()
+    }
+}
+
+fn eval_supported_constant_split_external_call(
+    working_set: &StateWorkingSet,
+    input: Option<Value>,
+    args: &[ExternalArgument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let [subcommand_arg, remaining_args @ ..] = args else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`split` requires a supported subcommand in compile-time global initializers",
+                span,
+            ),
+        );
+    };
+
+    let ExternalArgument::Regular(subcommand_expr) = subcommand_arg else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`split` subcommand cannot use spread syntax in compile-time global initializers",
+                subcommand_arg.expr().span,
+            ),
+        );
+    };
+    let subcommand = eval_supported_constant_record_field_name(working_set, subcommand_expr)?;
+
+    match subcommand.as_str() {
+        "chars" => {
+            let use_grapheme_clusters = eval_supported_constant_split_chars_mode_external_args(
+                working_set,
+                remaining_args,
+                env,
+                span,
+            )?;
+            eval_supported_constant_split_chars(input, use_grapheme_clusters, span)
+        }
+        _ => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`split {subcommand}` is not supported in compile-time global initializers"
+                ),
+                subcommand_expr.span,
             ),
         ),
     }
