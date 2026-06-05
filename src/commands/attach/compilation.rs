@@ -734,6 +734,10 @@ fn eval_supported_constant_call(
             let use_path = eval_supported_constant_str_expand_args(&call.arguments)?;
             eval_supported_constant_str_expand(input, use_path, span)
         }
+        "str trim" => {
+            let args = eval_supported_constant_str_trim_args(working_set, &call.arguments, env)?;
+            eval_supported_constant_str_trim(input, args, span)
+        }
         "str downcase"
         | "str upcase"
         | "str reverse"
@@ -1063,6 +1067,10 @@ fn eval_supported_constant_external_call(
             let use_path =
                 eval_supported_constant_str_expand_external_args(working_set, args, env, span)?;
             eval_supported_constant_str_expand(input, use_path, span)
+        }
+        "str trim" => {
+            let args = eval_supported_constant_str_trim_external_args(working_set, args, env, span)?;
+            eval_supported_constant_str_trim(input, args, span)
         }
         "str downcase"
         | "str upcase"
@@ -3082,6 +3090,293 @@ fn eval_supported_constant_str_expand_balanced_error(span: Span) -> LabeledError
     )
 }
 
+#[derive(Clone, Copy)]
+struct ConstantStrTrimArgs {
+    trim_char: Option<char>,
+    trim_left: bool,
+    trim_right: bool,
+}
+
+fn eval_supported_constant_str_trim_args(
+    working_set: &StateWorkingSet,
+    args: &[nu_protocol::ast::Argument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+) -> Result<ConstantStrTrimArgs, LabeledError> {
+    let mut trim_char = None;
+    let mut trim_left = false;
+    let mut trim_right = false;
+    for arg in args {
+        match arg {
+            nu_protocol::ast::Argument::Named(named) => match named.0.item.as_str() {
+                "left" => {
+                    if named.2.is_some() {
+                        return Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
+                        .with_label(
+                            "`str trim --left` cannot receive a value in compile-time global initializers",
+                            arg.span(),
+                        ));
+                    }
+                    trim_left = true;
+                }
+                "right" => {
+                    if named.2.is_some() {
+                        return Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
+                        .with_label(
+                            "`str trim --right` cannot receive a value in compile-time global initializers",
+                            arg.span(),
+                        ));
+                    }
+                    trim_right = true;
+                }
+                "char" => {
+                    let Some(expr) = named.2.as_ref() else {
+                        return Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
+                        .with_label(
+                            "`str trim --char` requires a value in compile-time global initializers",
+                            arg.span(),
+                        ));
+                    };
+                    let raw = eval_supported_constant_string_argument(
+                        working_set,
+                        expr,
+                        env,
+                        "str trim",
+                    )?;
+                    if trim_char
+                        .replace(eval_supported_constant_str_trim_char_value(
+                            &raw, expr.span,
+                        )?)
+                        .is_some()
+                    {
+                        return Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
+                        .with_label(
+                            "`str trim` accepts only one --char value in compile-time global initializers",
+                            arg.span(),
+                        ));
+                    }
+                }
+                _ => {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            format!(
+                                "`str trim` does not support named argument --{} in compile-time global initializers",
+                                named.0.item
+                            ),
+                            arg.span(),
+                        ));
+                }
+            },
+            nu_protocol::ast::Argument::Spread(expr) => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`str trim` arguments cannot use spread syntax in compile-time global initializers",
+                        expr.span,
+                    ));
+            }
+            nu_protocol::ast::Argument::Positional(_) | nu_protocol::ast::Argument::Unknown(_) => {
+                return Err(
+                    LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            "`str trim` does not support positional arguments in compile-time global initializers",
+                            arg.span(),
+                        ),
+                );
+            }
+        }
+    }
+    Ok(ConstantStrTrimArgs {
+        trim_char,
+        trim_left,
+        trim_right,
+    })
+}
+
+fn eval_supported_constant_str_trim_external_args(
+    working_set: &StateWorkingSet,
+    args: &[ExternalArgument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<ConstantStrTrimArgs, LabeledError> {
+    let mut trim_char = None;
+    let mut trim_left = false;
+    let mut trim_right = false;
+    let mut iter = args.iter().peekable();
+    while let Some(arg) = iter.next() {
+        let ExternalArgument::Regular(expr) = arg else {
+            return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                .with_label(
+                    "`str trim` arguments cannot use spread syntax in compile-time global initializers",
+                    arg.expr().span,
+                ));
+        };
+        let value = eval_supported_constant_value_with_env(working_set, expr, env)?;
+        let flag = match value {
+            Value::String { val, .. } | Value::Glob { val, .. } => val,
+            _ => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`str trim` accepts only string flags in compile-time global initializers",
+                        expr.span,
+                    ));
+            }
+        };
+        let Some(flag) = flag.strip_prefix("--") else {
+            return Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    "`str trim` does not support positional arguments in compile-time global initializers",
+                    span,
+                ),
+            );
+        };
+        match flag {
+            "left" => trim_left = true,
+            "right" => trim_right = true,
+            "char" => {
+                let Some(next_arg) = iter.next() else {
+                    return Err(LabeledError::new(
+                        "Unsupported annotated mutable global initializer",
+                    )
+                    .with_label(
+                        "`str trim --char` requires a value in compile-time global initializers",
+                        expr.span,
+                    ));
+                };
+                let ExternalArgument::Regular(next_expr) = next_arg else {
+                    return Err(LabeledError::new(
+                        "Unsupported annotated mutable global initializer",
+                    )
+                    .with_label(
+                        "`str trim --char` value cannot use spread syntax in compile-time global initializers",
+                        next_arg.expr().span,
+                    ));
+                };
+                let raw = eval_supported_constant_string_argument(
+                    working_set,
+                    next_expr,
+                    env,
+                    "str trim",
+                )?;
+                if trim_char
+                    .replace(eval_supported_constant_str_trim_char_value(
+                        &raw,
+                        next_expr.span,
+                    )?)
+                    .is_some()
+                {
+                    return Err(LabeledError::new(
+                        "Unsupported annotated mutable global initializer",
+                    )
+                    .with_label(
+                        "`str trim` accepts only one --char value in compile-time global initializers",
+                        next_expr.span,
+                    ));
+                }
+            }
+            _ => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`str trim` supports only --left, --right, and --char in compile-time global initializers",
+                        expr.span,
+                    ));
+            }
+        }
+    }
+    Ok(ConstantStrTrimArgs {
+        trim_char,
+        trim_left,
+        trim_right,
+    })
+}
+
+fn eval_supported_constant_str_trim_char_value(
+    raw: &str,
+    span: Span,
+) -> Result<char, LabeledError> {
+    let mut chars = raw.chars();
+    let Some(ch) = chars.next() else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`str trim --char` requires exactly one character in compile-time global initializers",
+                span,
+            ),
+        );
+    };
+    if chars.next().is_some() {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`str trim --char` requires exactly one character in compile-time global initializers",
+                span,
+            ),
+        );
+    }
+    Ok(ch)
+}
+
+fn eval_supported_constant_str_trim(
+    input: Option<Value>,
+    args: ConstantStrTrimArgs,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let value = eval_supported_constant_required_pipeline_input("str trim", input, span)?;
+    let value_span = value.span();
+    match value {
+        Value::List { vals, .. } => {
+            let values = vals
+                .into_iter()
+                .enumerate()
+                .map(|(index, value)| {
+                    let input = match value {
+                        Value::String { val, .. } | Value::Glob { val, .. } => val,
+                        other => {
+                            return Err(LabeledError::new(
+                                "Unsupported annotated mutable global initializer",
+                            )
+                            .with_label(
+                                format!(
+                                    "`str trim` requires string list items in compile-time global initializers; item {index} has type {}",
+                                    other.get_type()
+                                ),
+                                span,
+                            ));
+                        }
+                    };
+                    Ok(Value::string(
+                        eval_supported_constant_trim_known_string(input, args),
+                        value_span,
+                    ))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(Value::list(values, value_span))
+        }
+        value => {
+            let input = eval_supported_constant_exact_string_value(value, "str trim", span)?;
+            Ok(Value::string(
+                eval_supported_constant_trim_known_string(input, args),
+                value_span,
+            ))
+        }
+    }
+}
+
+fn eval_supported_constant_trim_known_string(input: String, args: ConstantStrTrimArgs) -> String {
+    match (args.trim_char, args.trim_left, args.trim_right) {
+        (Some(ch), true, false) => input.trim_start_matches(ch).to_string(),
+        (Some(ch), false, true) => input.trim_end_matches(ch).to_string(),
+        (Some(ch), _, _) => input.trim_matches(ch).to_string(),
+        (None, true, false) => input.trim_start().to_string(),
+        (None, false, true) => input.trim_end().to_string(),
+        (None, _, _) => input.trim().to_string(),
+    }
+}
+
 fn eval_supported_constant_str_transform(
     cmd_name: &str,
     input: Option<Value>,
@@ -4515,6 +4810,15 @@ fn eval_supported_constant_str_external_call(
                 span,
             )?;
             eval_supported_constant_str_expand(input, use_path, span)
+        }
+        "trim" => {
+            let args = eval_supported_constant_str_trim_external_args(
+                working_set,
+                remaining_args,
+                env,
+                span,
+            )?;
+            eval_supported_constant_str_trim(input, args, span)
         }
         "downcase"
         | "upcase"

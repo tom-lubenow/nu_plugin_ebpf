@@ -2726,6 +2726,154 @@ fn test_map_leading_annotated_mut_globals_supports_constant_string_transform_lis
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_str_trim_initializer() {
+    let source = "{|| mut trimmed: string = (\"  abc  \" | str trim); $trimmed }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant str trim initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(
+        globals[0]
+            .initial_value
+            .as_str()
+            .expect("str trim should produce a string"),
+        "abc"
+    );
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_str_trim_left_initializer() {
+    let source = "{|| mut trimmed: string = (\"  abc  \" | str trim --left); $trimmed }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant str trim --left initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(
+        globals[0]
+            .initial_value
+            .as_str()
+            .expect("str trim should produce a string"),
+        "abc  "
+    );
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_str_trim_right_char_initializer() {
+    let source =
+        "{|| mut trimmed: string = (\"xxabcxx\" | str trim --right --char \"x\"); $trimmed }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant str trim --right --char initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(
+        globals[0]
+            .initial_value
+            .as_str()
+            .expect("str trim should produce a string"),
+        "xxabc"
+    );
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_str_trim_list_initializer() {
+    let source = "{|| mut trimmed: list<string> = ([\" ab \", \" cd \"] | str trim); $trimmed }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant str trim list initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let trimmed = vals
+                .iter()
+                .map(|value| value.as_str().expect("str trim should produce strings"))
+                .collect::<Vec<_>>();
+            assert_eq!(trimmed, vec!["ab", "cd"]);
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_constant_split_chars_initializer() {
     let source = "{|| mut chars: list<string> = (\"abc\" | split chars); $chars }";
     let ir_block = IrBlock {
@@ -3536,6 +3684,41 @@ fn test_map_leading_annotated_mut_globals_rejects_constant_string_transform_argu
         err.labels
             .iter()
             .any(|label| label.text.contains("does not accept arguments")),
+        "unexpected labels: {:?}",
+        err.labels
+    );
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_rejects_constant_str_trim_multi_char_argument() {
+    let source = "{|| mut trimmed: string = (\"xxabcxx\" | str trim --char \"xx\"); $trimmed }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let err = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect_err("str trim with multi-character --char should be rejected");
+
+    assert!(
+        err.labels
+            .iter()
+            .any(|label| label.text.contains("exactly one character")),
         "unexpected labels: {:?}",
         err.labels
     );
