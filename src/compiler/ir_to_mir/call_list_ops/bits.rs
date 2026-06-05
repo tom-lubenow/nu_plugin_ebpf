@@ -36,6 +36,12 @@ struct BitsRotateSpec {
     mode: BitsShiftMode,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BitsShiftRuntimeTransform {
+    Spec(BitsShiftSpec),
+    AutoRight { count: i64 },
+}
+
 impl<'a> HirToMirLowering<'a> {
     fn bits_binary_op(cmd_name: &str) -> BinOpKind {
         match cmd_name {
@@ -971,6 +977,44 @@ impl<'a> HirToMirLowering<'a> {
         })
     }
 
+    fn bits_shift_runtime_auto_right_count(
+        &self,
+        cmd_name: &str,
+    ) -> Result<Option<i64>, CompileError> {
+        if cmd_name != "bits shr" || !self.named_flags.is_empty() || !self.named_args.is_empty() {
+            return Ok(None);
+        }
+        if !self.parser_info_args.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} does not support parser-info arguments in eBPF"
+            )));
+        }
+        if self.positional_args.len() != 1 {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires exactly one compile-time shift-count argument in eBPF"
+            )));
+        }
+
+        let (_shift_vreg, shift_reg) = self.positional_args[0];
+        let shift_meta = self.get_metadata(shift_reg).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires a compile-time integer shift count in eBPF"
+            ))
+        })?;
+        let Some(shift_count) = Self::bits_integer_value_from_metadata(shift_meta) else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires a compile-time integer shift count in eBPF"
+            )));
+        };
+        if !(0..=7).contains(&shift_count) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} default auto-width runtime shifts support shift counts from 0 through 7 in eBPF; got {shift_count}"
+            )));
+        }
+
+        Ok(Some(shift_count))
+    }
+
     fn bits_rotate_spec(
         &self,
         cmd_name: &str,
@@ -1408,6 +1452,16 @@ impl<'a> HirToMirLowering<'a> {
         if let Some(input_meta) = input_meta.as_ref()
             && input_meta.list_buffer.is_some()
         {
+            if let Some(count) = self.bits_shift_runtime_auto_right_count(cmd_name)? {
+                return self.lower_bits_shift_runtime_list(
+                    cmd_name,
+                    src_dst,
+                    input_vreg,
+                    result_vreg,
+                    input_meta,
+                    BitsShiftRuntimeTransform::AutoRight { count },
+                );
+            }
             let spec = self.bits_shift_spec(cmd_name, None)?;
             if spec.mode == BitsShiftMode::UnsignedI64 && cmd_name == "bits shl" {
                 return Err(CompileError::UnsupportedInstruction(format!(
@@ -1433,7 +1487,7 @@ impl<'a> HirToMirLowering<'a> {
                 input_vreg,
                 result_vreg,
                 input_meta,
-                spec,
+                BitsShiftRuntimeTransform::Spec(spec),
             );
         }
 
@@ -1464,17 +1518,25 @@ impl<'a> HirToMirLowering<'a> {
             ));
             out_meta.literal_int = Some(output);
         } else {
-            let spec = self.bits_shift_spec(cmd_name, None)?;
-            if spec.mode == BitsShiftMode::UnsignedI64 && cmd_name == "bits shl" {
-                self.validate_bits_unsigned_i64_left_shift_runtime_scalar(
-                    cmd_name,
-                    input_meta.as_ref(),
-                    input_vreg,
-                    spec.count,
-                )?;
-                self.emit_bits_shift_unsigned_i64_left_value(result_vreg, lhs_value, spec.count);
+            if let Some(count) = self.bits_shift_runtime_auto_right_count(cmd_name)? {
+                self.emit_bits_shift_auto_right_value(result_vreg, lhs_value, count);
             } else {
-                self.emit_bits_shift_value(cmd_name, result_vreg, lhs_value, spec);
+                let spec = self.bits_shift_spec(cmd_name, None)?;
+                if spec.mode == BitsShiftMode::UnsignedI64 && cmd_name == "bits shl" {
+                    self.validate_bits_unsigned_i64_left_shift_runtime_scalar(
+                        cmd_name,
+                        input_meta.as_ref(),
+                        input_vreg,
+                        spec.count,
+                    )?;
+                    self.emit_bits_shift_unsigned_i64_left_value(
+                        result_vreg,
+                        lhs_value,
+                        spec.count,
+                    );
+                } else {
+                    self.emit_bits_shift_value(cmd_name, result_vreg, lhs_value, spec);
+                }
             }
             self.reset_call_result_metadata(src_dst);
             self.get_or_create_metadata(src_dst).field_type = Some(MirType::I64);
@@ -1549,6 +1611,204 @@ impl<'a> HirToMirLowering<'a> {
             }
         }
         self.vreg_type_hints.insert(dst, MirType::I64);
+    }
+
+    fn emit_bits_shift_auto_right_value(&mut self, dst: VReg, src: MirValue, shift_count: i64) {
+        let src = match src {
+            MirValue::VReg(src_vreg) if src_vreg == dst => {
+                let original_vreg = self.func.alloc_vreg();
+                self.emit(MirInst::Copy {
+                    dst: original_vreg,
+                    src: MirValue::VReg(src_vreg),
+                });
+                self.vreg_type_hints.insert(original_vreg, MirType::I64);
+                MirValue::VReg(original_vreg)
+            }
+            other => other,
+        };
+
+        if shift_count == 0 {
+            self.emit(MirInst::Copy { dst, src });
+            self.vreg_type_hints.insert(dst, MirType::I64);
+            return;
+        }
+
+        let negative_block = self.func.alloc_block();
+        let non_negative_block = self.func.alloc_block();
+        let continuation_block = self.func.alloc_block();
+
+        let is_negative_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::BinOp {
+            dst: is_negative_vreg,
+            op: BinOpKind::Lt,
+            lhs: src.clone(),
+            rhs: MirValue::Const(0),
+        });
+        self.vreg_type_hints.insert(is_negative_vreg, MirType::Bool);
+        self.terminate(MirInst::Branch {
+            cond: is_negative_vreg,
+            if_true: negative_block,
+            if_false: non_negative_block,
+        });
+
+        self.current_block = negative_block;
+        let check_i16_block = self.emit_bits_shift_auto_right_negative_case(
+            dst,
+            src.clone(),
+            shift_count,
+            i8::MIN as i64,
+            0xff,
+            0x80,
+            continuation_block,
+        );
+        self.current_block = check_i16_block;
+        let check_i32_block = self.emit_bits_shift_auto_right_negative_case(
+            dst,
+            src.clone(),
+            shift_count,
+            i16::MIN as i64,
+            0xffff,
+            0x8000,
+            continuation_block,
+        );
+        self.current_block = check_i32_block;
+        let signed_i64_block = self.emit_bits_shift_auto_right_negative_case(
+            dst,
+            src.clone(),
+            shift_count,
+            i32::MIN as i64,
+            0xffff_ffff,
+            0x8000_0000,
+            continuation_block,
+        );
+        self.current_block = signed_i64_block;
+        self.emit(MirInst::BinOp {
+            dst,
+            op: BinOpKind::ArShr,
+            lhs: src.clone(),
+            rhs: MirValue::Const(shift_count),
+        });
+        self.vreg_type_hints.insert(dst, MirType::I64);
+        self.terminate(MirInst::Jump {
+            target: continuation_block,
+        });
+
+        self.current_block = non_negative_block;
+        let check_u16_block = self.emit_bits_shift_auto_right_non_negative_case(
+            dst,
+            src.clone(),
+            shift_count,
+            0xff,
+            continuation_block,
+        );
+        self.current_block = check_u16_block;
+        let check_u32_block = self.emit_bits_shift_auto_right_non_negative_case(
+            dst,
+            src.clone(),
+            shift_count,
+            0xffff,
+            continuation_block,
+        );
+        self.current_block = check_u32_block;
+        let unsigned_i64_block = self.emit_bits_shift_auto_right_non_negative_case(
+            dst,
+            src.clone(),
+            shift_count,
+            0xffff_ffff,
+            continuation_block,
+        );
+        self.current_block = unsigned_i64_block;
+        self.emit(MirInst::BinOp {
+            dst,
+            op: BinOpKind::Shr,
+            lhs: src,
+            rhs: MirValue::Const(shift_count),
+        });
+        self.vreg_type_hints.insert(dst, MirType::I64);
+        self.terminate(MirInst::Jump {
+            target: continuation_block,
+        });
+
+        self.current_block = continuation_block;
+    }
+
+    fn emit_bits_shift_auto_right_negative_case(
+        &mut self,
+        dst: VReg,
+        src: MirValue,
+        shift_count: i64,
+        min_value: i64,
+        mask: i64,
+        sign_bit: i64,
+        continuation_block: BlockId,
+    ) -> BlockId {
+        let shift_block = self.func.alloc_block();
+        let next_block = self.func.alloc_block();
+
+        let cmp_vreg = self.func.alloc_vreg();
+        let min_operand = self.large_const_operand(&MirType::I64, min_value);
+        self.emit(MirInst::BinOp {
+            dst: cmp_vreg,
+            op: BinOpKind::Ge,
+            lhs: src.clone(),
+            rhs: min_operand,
+        });
+        self.vreg_type_hints.insert(cmp_vreg, MirType::Bool);
+        self.terminate(MirInst::Branch {
+            cond: cmp_vreg,
+            if_true: shift_block,
+            if_false: next_block,
+        });
+
+        self.current_block = shift_block;
+        self.emit_bits_shift_fixed_negative_value(
+            "bits shr",
+            dst,
+            src,
+            shift_count,
+            mask,
+            sign_bit,
+        );
+        self.terminate(MirInst::Jump {
+            target: continuation_block,
+        });
+
+        next_block
+    }
+
+    fn emit_bits_shift_auto_right_non_negative_case(
+        &mut self,
+        dst: VReg,
+        src: MirValue,
+        shift_count: i64,
+        max_value: i64,
+        continuation_block: BlockId,
+    ) -> BlockId {
+        let shift_block = self.func.alloc_block();
+        let next_block = self.func.alloc_block();
+
+        let cmp_vreg = self.func.alloc_vreg();
+        let max_operand = self.large_const_operand(&MirType::I64, max_value);
+        self.emit(MirInst::BinOp {
+            dst: cmp_vreg,
+            op: BinOpKind::Le,
+            lhs: src.clone(),
+            rhs: max_operand,
+        });
+        self.vreg_type_hints.insert(cmp_vreg, MirType::Bool);
+        self.terminate(MirInst::Branch {
+            cond: cmp_vreg,
+            if_true: shift_block,
+            if_false: next_block,
+        });
+
+        self.current_block = shift_block;
+        self.emit_bits_shift_fixed_unsigned_value("bits shr", dst, src, shift_count, max_value);
+        self.terminate(MirInst::Jump {
+            target: continuation_block,
+        });
+
+        next_block
     }
 
     fn emit_bits_shift_unsigned_i64_left_value(&mut self, dst: VReg, src: MirValue, count: i64) {
@@ -2687,7 +2947,7 @@ impl<'a> HirToMirLowering<'a> {
         input_vreg: VReg,
         result_vreg: VReg,
         input_meta: &RegMetadata,
-        spec: BitsShiftSpec,
+        transform: BitsShiftRuntimeTransform,
     ) -> Result<(), CompileError> {
         let Some((_input_slot, max_len)) = input_meta.list_buffer else {
             return Err(CompileError::UnsupportedInstruction(format!(
@@ -2737,7 +2997,20 @@ impl<'a> HirToMirLowering<'a> {
                 self.vreg_type_hints.insert(item_vreg, MirType::I64);
 
                 let output_vreg = self.func.alloc_vreg();
-                self.emit_bits_shift_value(cmd_name, output_vreg, MirValue::VReg(item_vreg), spec);
+                match transform {
+                    BitsShiftRuntimeTransform::Spec(spec) => self.emit_bits_shift_value(
+                        cmd_name,
+                        output_vreg,
+                        MirValue::VReg(item_vreg),
+                        spec,
+                    ),
+                    BitsShiftRuntimeTransform::AutoRight { count } => self
+                        .emit_bits_shift_auto_right_value(
+                            output_vreg,
+                            MirValue::VReg(item_vreg),
+                            count,
+                        ),
+                }
                 self.vreg_type_hints.insert(output_vreg, MirType::I64);
                 self.emit(MirInst::ListPush {
                     list: result_vreg,

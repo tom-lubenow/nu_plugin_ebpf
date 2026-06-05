@@ -23905,7 +23905,7 @@ fn test_lower_bits_shift_signed_fixed_width_on_runtime_scalar_integer_inputs() {
 }
 
 #[test]
-fn test_lower_bits_shift_default_rejects_runtime_scalar_integer_input() {
+fn test_lower_bits_shift_default_left_rejects_runtime_scalar_integer_input() {
     let bits_decl = DeclId::new(70140);
     let random_decl = DeclId::new(70141);
     let hir = make_runtime_scalar_bits_shift_program(bits_decl, random_decl, 1, false, None);
@@ -23930,6 +23930,73 @@ fn test_lower_bits_shift_default_rejects_runtime_scalar_integer_input() {
         ),
         "unexpected error: {err}"
     );
+}
+
+#[test]
+fn test_lower_bits_shift_default_right_on_runtime_scalar_integer_input() {
+    let bits_decl = DeclId::new(70148);
+    let random_decl = DeclId::new(70149);
+    let hir = make_runtime_scalar_bits_shift_program(bits_decl, random_decl, 1, false, None);
+    let decl_names = HashMap::from([
+        (bits_decl, "bits shr".to_string()),
+        (random_decl, "random int".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("default bits shr should lower runtime scalar input");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .any(|block| matches!(block.terminator, MirInst::Branch { .. })),
+        "expected runtime scalar default bits shr to branch on auto-width ranges"
+    );
+    for expected_op in [
+        BinOpKind::Ge,
+        BinOpKind::Le,
+        BinOpKind::ArShr,
+        BinOpKind::Shr,
+    ] {
+        assert!(
+            instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op,
+                    ..
+                } if *op == expected_op
+            )),
+            "expected runtime scalar default bits shr to emit {expected_op:?}"
+        );
+    }
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::And,
+                ..
+            }
+        )),
+        "expected runtime scalar default bits shr to mask fixed-width cases"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("default bits shr runtime scalar input should compile through codegen");
 }
 
 #[test]
@@ -26361,7 +26428,7 @@ fn test_lower_bits_shift_signed_fixed_width_on_runtime_stack_numeric_lists() {
 }
 
 #[test]
-fn test_lower_bits_shift_default_rejects_runtime_stack_numeric_lists() {
+fn test_lower_bits_shift_default_left_rejects_runtime_stack_numeric_lists() {
     let bits_decl = DeclId::new(71950);
     let length_decl = DeclId::new(71951);
     let random_decl = DeclId::new(71952);
@@ -26395,6 +26462,88 @@ fn test_lower_bits_shift_default_rejects_runtime_stack_numeric_lists() {
         ),
         "unexpected error: {err}"
     );
+}
+
+#[test]
+fn test_lower_bits_shift_default_right_on_runtime_stack_numeric_lists() {
+    let bits_decl = DeclId::new(71966);
+    let length_decl = DeclId::new(71967);
+    let random_decl = DeclId::new(71968);
+    let hir = make_runtime_bits_shift_list_length_program(
+        bits_decl,
+        length_decl,
+        random_decl,
+        1,
+        false,
+        None,
+    );
+    let decl_names = HashMap::from([
+        (bits_decl, "bits shr".to_string()),
+        (length_decl, "length".to_string()),
+        (random_decl, "random int".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("default bits shr should lower on runtime stack-backed numeric lists");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .any(|block| matches!(block.terminator, MirInst::Branch { .. })),
+        "expected runtime default bits shr list lowering to branch on auto-width ranges"
+    );
+    for expected_op in [
+        BinOpKind::Ge,
+        BinOpKind::Le,
+        BinOpKind::ArShr,
+        BinOpKind::Shr,
+    ] {
+        assert!(
+            instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op,
+                    ..
+                } if *op == expected_op
+            )),
+            "expected runtime default bits shr list lowering to emit {expected_op:?}"
+        );
+    }
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::And,
+                ..
+            }
+        )),
+        "expected runtime default bits shr list lowering to mask fixed-width cases"
+    );
+    assert!(
+        instructions
+            .iter()
+            .any(|inst| matches!(inst, MirInst::ListPush { .. })),
+        "expected runtime default bits shr to materialize an output list"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("default bits shr runtime list output consumed by length should compile");
 }
 
 #[test]
