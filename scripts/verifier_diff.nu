@@ -17514,6 +17514,26 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "source-helper-copy-from-user-task-rejects-dynamic-flags"
+        category: "helper-state"
+        tags: [helper copy-user flags reject]
+        target: "uprobe:/bin/true:main"
+        program: [
+            '{|ctx|'
+            '  let ptr = $ctx.arg0'
+            '  if $ptr {'
+            '    let dst = "0123456789abcdef"'
+            '    let flags = (helper-call "bpf_get_prandom_u32")'
+            '    helper-call "bpf_copy_from_user_task" $dst 8 $ptr $ctx.current_task $flags'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_copy_from_user_task' requires arg4 = 0"
+    }
+    {
         name: "source-helper-copy-from-user-accepts-zero-size-null-dst"
         category: "helper-state"
         tags: [helper copy-user zero-size accept]
@@ -36311,6 +36331,24 @@ const FIXTURES = [
             '  let out = "00000000000000000000000000000000"'
             '  let btf_ptr = "0123456789abcdef"'
             '  helper-call "bpf_snprintf_btf" $out 32 $btf_ptr 16 16'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_snprintf_btf' requires arg4 to contain only BTF_F_* bits"
+    }
+    {
+        name: "snprintf-btf-rejects-dynamic-flags"
+        category: "helper-state"
+        tags: [helper-call snprintf-btf flags reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let out = "00000000000000000000000000000000"'
+            '  let btf_ptr = "0123456789abcdef"'
+            '  let flags = (helper-call "bpf_get_prandom_u32")'
+            '  helper-call "bpf_snprintf_btf" $out 32 $btf_ptr 16 $flags'
             '  0'
             '}'
         ]
