@@ -1,6 +1,6 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
-use super::mir::{BlockId, MirFunction, MirInst, MirValue, StackSlotId, VReg};
+use super::mir::{BlockId, MapKind, MapRef, MirFunction, MirInst, MirValue, StackSlotId, VReg};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct MirIntegrityError {
@@ -19,6 +19,7 @@ pub(crate) fn validate_mir_references(func: &MirFunction) -> Result<(), Vec<MirI
     let mut errors = Vec::new();
     let mut declared = HashSet::with_capacity(func.stack_slots.len());
     let mut block_ids = HashSet::with_capacity(func.blocks.len());
+    let mut map_kinds = HashMap::new();
     let total_vregs = (func.vreg_count as usize).max(func.param_count);
 
     for block in &func.blocks {
@@ -87,6 +88,9 @@ pub(crate) fn validate_mir_references(func: &MirFunction) -> Result<(), Vec<MirI
             &mut errors,
         );
     }
+    for map in &func.maps_used {
+        check_map_ref(map, "maps_used", &mut map_kinds, &mut errors);
+    }
 
     for block in &func.blocks {
         for inst in &block.instructions {
@@ -96,7 +100,14 @@ pub(crate) fn validate_mir_references(func: &MirFunction) -> Result<(), Vec<MirI
                     block.id.0, inst
                 )));
             }
-            check_inst(inst, &declared, &block_ids, total_vregs, &mut errors);
+            check_inst(
+                inst,
+                &declared,
+                &block_ids,
+                &mut map_kinds,
+                total_vregs,
+                &mut errors,
+            );
         }
         if !is_block_terminator(&block.terminator) {
             errors.push(MirIntegrityError::new(format!(
@@ -108,6 +119,7 @@ pub(crate) fn validate_mir_references(func: &MirFunction) -> Result<(), Vec<MirI
             &block.terminator,
             &declared,
             &block_ids,
+            &mut map_kinds,
             total_vregs,
             &mut errors,
         );
@@ -124,6 +136,7 @@ fn check_inst(
     inst: &MirInst,
     declared: &HashSet<StackSlotId>,
     block_ids: &HashSet<BlockId>,
+    map_kinds: &mut HashMap<String, MapKind>,
     total_vregs: usize,
     errors: &mut Vec<MirIntegrityError>,
 ) {
@@ -162,21 +175,25 @@ fn check_inst(
             }
         }
         MirInst::CallKfunc { .. }
-        | MirInst::LoadMapFd { .. }
-        | MirInst::MapLookup { .. }
-        | MirInst::MapLookupDynamic { .. }
         | MirInst::LoadGlobal { .. }
         | MirInst::LoadSubprogram { .. }
-        | MirInst::MapUpdate { .. }
-        | MirInst::MapUpdateDynamic { .. }
-        | MirInst::MapDelete { .. }
-        | MirInst::MapDeleteDynamic { .. }
-        | MirInst::MapPush { .. }
         | MirInst::Histogram { .. }
         | MirInst::StartTimer
         | MirInst::StopTimer { .. }
         | MirInst::EmitEvent { .. }
         | MirInst::EmitRecord { .. } => {}
+        MirInst::LoadMapFd { map, .. }
+        | MirInst::MapLookup { map, .. }
+        | MirInst::MapUpdate { map, .. }
+        | MirInst::MapDelete { map, .. }
+        | MirInst::MapPush { map, .. } => {
+            check_map_ref(map, "map operand", map_kinds, errors);
+        }
+        MirInst::MapLookupDynamic { inner_map, .. }
+        | MirInst::MapUpdateDynamic { inner_map, .. }
+        | MirInst::MapDeleteDynamic { inner_map, .. } => {
+            check_map_ref(inner_map, "dynamic map inner operand", map_kinds, errors);
+        }
         MirInst::LoadCtxField { slot, .. } => {
             if let Some(slot) = slot {
                 check_slot(*slot, "context field backing slot", declared, errors);
@@ -242,7 +259,8 @@ fn check_inst(
                 check_value(val, "return value", declared, errors);
             }
         }
-        MirInst::TailCall { index, .. } => {
+        MirInst::TailCall { prog_map, index } => {
+            check_map_ref(prog_map, "tail call program map", map_kinds, errors);
             check_value(index, "tail call index", declared, errors);
         }
         MirInst::LoopHeader { body, exit, .. } => {
@@ -252,6 +270,29 @@ fn check_inst(
         MirInst::LoopBack { header, .. } => {
             check_block(*header, "loop back target", block_ids, errors);
         }
+    }
+}
+
+fn check_map_ref(
+    map: &MapRef,
+    context: &str,
+    map_kinds: &mut HashMap<String, MapKind>,
+    errors: &mut Vec<MirIntegrityError>,
+) {
+    if map.name.is_empty() {
+        errors.push(MirIntegrityError::new(format!(
+            "{context} references map with empty name"
+        )));
+        return;
+    }
+
+    if let Some(previous) = map_kinds.insert(map.name.clone(), map.kind)
+        && previous != map.kind
+    {
+        errors.push(MirIntegrityError::new(format!(
+            "map '{}' is referenced with conflicting kinds {} and {}",
+            map.name, previous, map.kind
+        )));
     }
 }
 

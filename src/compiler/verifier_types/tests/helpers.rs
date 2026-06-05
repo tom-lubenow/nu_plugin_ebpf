@@ -5019,6 +5019,29 @@ fn test_verify_mir_rejects_out_of_range_param_metadata() {
 }
 
 #[test]
+fn test_verify_mir_rejects_empty_map_ref_name() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::LoadMapFd {
+        dst,
+        map: MapRef {
+            name: String::new(),
+            kind: MapKind::Hash,
+        },
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let err = verify_mir(&func, &HashMap::new()).expect_err("empty map name should be rejected");
+    assert!(
+        err.iter().any(|e| e.message.contains("empty name")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_accepts_helper_context_argument_from_ctx_pointer_load() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

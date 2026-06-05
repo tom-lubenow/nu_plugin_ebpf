@@ -1309,8 +1309,7 @@ fn test_map_ops_reject_conflicting_map_kinds() {
 
     let err = verify_mir(&func, &types).expect_err("expected map kind conflict");
     assert!(
-        err.iter()
-            .any(|e| e.message.contains("used with conflicting kinds")),
+        err.iter().any(|e| e.message.contains("conflicting kinds")),
         "unexpected errors: {:?}",
         err
     );
@@ -1400,8 +1399,7 @@ fn test_counter_map_rejects_conflicting_kinds() {
 
     let err = verify_mir(&func, &HashMap::new()).expect_err("expected counter map kind conflict");
     assert!(
-        err.iter()
-            .any(|e| e.message.contains("used with conflicting kinds")),
+        err.iter().any(|e| e.message.contains("conflicting kinds")),
         "unexpected errors: {:?}",
         err
     );

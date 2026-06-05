@@ -229,6 +229,32 @@ fn test_type_inference_rejects_out_of_range_param_stack_slot_metadata() {
 }
 
 #[test]
+fn test_type_inference_rejects_conflicting_map_ref_kinds() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    func.maps_used.push(MapRef {
+        name: "shared".to_string(),
+        kind: MapKind::Hash,
+    });
+    func.maps_used.push(MapRef {
+        name: "shared".to_string(),
+        kind: MapKind::Array,
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut infer = TypeInference::new(None);
+    let errs = infer
+        .infer(&func)
+        .expect_err("conflicting map refs should be rejected");
+    assert!(
+        errs.iter()
+            .any(|err| err.message.contains("conflicting kinds")),
+        "unexpected errors: {errs:?}"
+    );
+}
+
+#[test]
 fn test_infer_subfunction_schemes_orders_callees_before_callers() {
     let mut callee = MirFunction::with_name("id");
     callee.param_count = 1;
