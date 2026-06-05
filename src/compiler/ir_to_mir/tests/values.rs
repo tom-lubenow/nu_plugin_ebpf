@@ -25561,10 +25561,10 @@ fn test_lower_bits_rotate_default_nonzero_on_runtime_prandom_u32_input() {
 }
 
 #[test]
-fn test_lower_bits_rotate_unsigned_i64_rejects_runtime_scalar_integer_input() {
+fn test_lower_bits_rotate_unsigned_i64_right_rejects_unsafe_runtime_u32_count() {
     let bits_decl = DeclId::new(70842);
     let random_decl = DeclId::new(70843);
-    let hir = make_runtime_scalar_bits_shift_program(bits_decl, random_decl, 1, false, Some(8));
+    let hir = make_runtime_scalar_bits_shift_program(bits_decl, random_decl, 32, false, Some(8));
     let decl_names = HashMap::from([
         (bits_decl, "bits ror".to_string()),
         (random_decl, "random int".to_string()),
@@ -25578,14 +25578,63 @@ fn test_lower_bits_rotate_unsigned_i64_rejects_runtime_scalar_integer_input() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("bits ror --number-bytes 8 should reject runtime scalar input");
+    .expect_err("bits ror --number-bytes 8 should reject unsafe runtime u32 rotate count");
 
     assert!(
-        err.to_string().contains(
-            "bits ror unsigned --number-bytes 8 requires compile-time known integer input"
-        ),
+        err.to_string()
+            .contains("runtime u32 input supports rotate counts 0, or from 33 through 64"),
         "unexpected error: {err}"
     );
+}
+
+#[test]
+fn test_lower_bits_rotate_unsigned_i64_right_on_runtime_prandom_u32_input() {
+    let bits_decl = DeclId::new(70860);
+    let random_decl = DeclId::new(70861);
+    let hir = make_runtime_scalar_bits_shift_program(bits_decl, random_decl, 33, false, Some(8));
+    let decl_names = HashMap::from([
+        (bits_decl, "bits ror".to_string()),
+        (random_decl, "random int".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bits ror --number-bytes 8 should lower safe runtime u32 input");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::Shl,
+                ..
+            }
+        )),
+        "expected safe runtime u32 bits ror --number-bytes 8 to emit a left shift"
+    );
+    assert!(
+        !result
+            .program
+            .main
+            .blocks
+            .iter()
+            .any(|block| matches!(block.terminator, MirInst::Branch { .. })),
+        "safe runtime u32 bits ror --number-bytes 8 should not need sign branching"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("bits ror --number-bytes 8 runtime u32 input should compile");
 }
 
 #[test]
@@ -25624,6 +25673,101 @@ fn test_lower_bits_rotate_unsigned_i64_left_on_runtime_u32_context_input() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("bits rol --number-bytes 8 runtime u32 input should compile");
+}
+
+#[test]
+fn test_lower_bits_rotate_unsigned_i64_right_on_runtime_bounded_random_u16_input() {
+    let bits_decl = DeclId::new(70862);
+    let random_decl = DeclId::new(70863);
+    let hir = make_runtime_scalar_bits_shift_with_random_range_program(
+        bits_decl,
+        random_decl,
+        17,
+        false,
+        Some(8),
+        0,
+        65_535,
+    );
+    let decl_names = HashMap::from([
+        (bits_decl, "bits ror".to_string()),
+        (random_decl, "random int".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bits ror --number-bytes 8 should lower bounded random u16 input");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+
+    for expected_op in [BinOpKind::Mod, BinOpKind::Shl] {
+        assert!(
+            instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op,
+                    ..
+                } if *op == expected_op
+            )),
+            "expected bounded random u16 bits ror --number-bytes 8 to emit {expected_op:?}"
+        );
+    }
+    assert!(
+        !result
+            .program
+            .main
+            .blocks
+            .iter()
+            .any(|block| matches!(block.terminator, MirInst::Branch { .. })),
+        "bounded random u16 bits ror --number-bytes 8 should not need sign branching"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("bits ror --number-bytes 8 bounded random u16 input should compile");
+}
+
+#[test]
+fn test_lower_bits_rotate_unsigned_i64_right_rejects_bounded_random_u16_unsafe_count() {
+    let bits_decl = DeclId::new(70864);
+    let random_decl = DeclId::new(70865);
+    let hir = make_runtime_scalar_bits_shift_with_random_range_program(
+        bits_decl,
+        random_decl,
+        16,
+        false,
+        Some(8),
+        0,
+        65_535,
+    );
+    let decl_names = HashMap::from([
+        (bits_decl, "bits ror".to_string()),
+        (random_decl, "random int".to_string()),
+    ]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("bits ror --number-bytes 8 should reject unsafe bounded random u16 count");
+
+    assert!(
+        err.to_string()
+            .contains("runtime u16 input supports rotate counts 0, or from 17 through 64"),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]
