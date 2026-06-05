@@ -35644,6 +35644,50 @@ const FIXTURES = [
         error_contains: "arg1 expects pointer"
     }
     {
+        name: "source-kfunc-cpumask-copy-query-release"
+        category: "helper-state"
+        tags: [kfunc cpumask source accept]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let dst = (kfunc-call "bpf_cpumask_create")'
+            '  if $dst {'
+            '    let src = (kfunc-call "bpf_cpumask_create")'
+            '    if $src {'
+            '      kfunc-call "bpf_cpumask_setall" $src'
+            '      kfunc-call "bpf_cpumask_copy" $dst $src'
+            '      let equal = (kfunc-call "bpf_cpumask_equal" $dst $src)'
+            '      let intersects = (kfunc-call "bpf_cpumask_intersects" $dst $src)'
+            '      let test = (kfunc-call "bpf_cpumask_test_cpu" 0 $dst)'
+            '      ($equal + $intersects + $test) | count'
+            '      $src | kfunc-call "bpf_cpumask_release"'
+            '    }'
+            '    $dst | kfunc-call "bpf_cpumask_release"'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-kfunc-cpumask-test-cpu-rejects-scalar-mask"
+        category: "helper-state"
+        tags: [kfunc cpumask source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  kfunc-call "bpf_cpumask_test_cpu" 0 7'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "arg1 expects pointer"
+    }
+    {
         name: "source-kptr-xchg-task-ref-transfer"
         category: "helper-state"
         tags: [kfunc helper-call kptr ref-lifetime source accept]

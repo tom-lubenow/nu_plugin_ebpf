@@ -1081,8 +1081,9 @@ Cpumask kfuncs are modeled as acquired-reference flows too:
 `bpf_cpumask_create` and `bpf_cpumask_acquire` return nullable cpumask
 references released by `bpf_cpumask_release` or `bpf_cpumask_release_dtor`.
 Cpumask query and mutation kfuncs such as `bpf_cpumask_and`,
-`bpf_cpumask_set_cpu`, and `bpf_cpumask_first` require cpumask pointer
-provenance for their pointer arguments.
+`bpf_cpumask_copy`, `bpf_cpumask_equal`, `bpf_cpumask_intersects`,
+`bpf_cpumask_test_cpu`, `bpf_cpumask_set_cpu`, and `bpf_cpumask_first` require
+cpumask pointer provenance for their pointer arguments.
 `bpf_task_under_cgroup` is modeled as a task/cgroup query that requires a task
 pointer for arg0 and a cgroup pointer for arg1; passing a task reference as the
 cgroup argument is rejected before load.

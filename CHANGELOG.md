@@ -6,7 +6,7 @@ documentation changes that matter to external alpha consumers.
 
 ## Unreleased
 
-- Added source verifier coverage for `bpf_cpumask_and` cpumask pointer
+- Added source verifier coverage for cpumask query/mutation kfunc pointer
   provenance, including scalar-argument rejects.
 - Added source verifier coverage for `bpf_throw`, including void-return misuse
   and lock-held kfunc rejects.
