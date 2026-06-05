@@ -37723,6 +37723,43 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "source-kfunc-map-sum-elem-count-for-each-map-callback"
+        category: "callbacks"
+        tags: [kfunc helper-call callback map btf kernel-btf accept]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define elems --kind array --value-type "record{seen:u64}"'
+            '  helper-call "bpf_for_each_map_elem" elems {|m k v cb|'
+            '    let total = (kfunc-call "bpf_map_sum_elem_count" $m)'
+            '    $total | count'
+            '    0'
+            '  } "ctx" 0 --kind array'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "source-kfunc-map-sum-elem-count-rejects-stack-pointer"
+        category: "callbacks"
+        tags: [kfunc callback map pointer reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let stack_map = "abcdefgh"'
+            '  kfunc-call "bpf_map_sum_elem_count" $stack_map'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'bpf_map_sum_elem_count' arg0 expects kernel pointer, got Stack"
+    }
+    {
         name: "callback-for-each-map-elem-rejects-nonzero-flags"
         category: "callbacks"
         tags: [helper-call callback map array flags reject]
