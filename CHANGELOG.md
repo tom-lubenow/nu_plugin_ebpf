@@ -6,6 +6,8 @@ documentation changes that matter to external alpha consumers.
 
 ## Unreleased
 
+- Added source verifier coverage for raw TCP syncookie helper calls using
+  looked-up socket pointers.
 - Added source verifier coverage for raw TCP send-ack helper calls in
   tcp_congestion_ops callbacks.
 - Added source verifier coverage for raw reuseport socket-selection helper calls.

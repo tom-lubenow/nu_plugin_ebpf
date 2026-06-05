@@ -34492,6 +34492,27 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "source-helper-tcp-syncookie"
+        category: "helper-state"
+        tags: [helper-call tcp syncookie socket ref-lifetime source accept]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  let tuple = "0123456789ab"'
+            '  let sk = (helper-call "bpf_sk_lookup_tcp" $ctx $tuple 12 0 0)'
+            '  if $sk {'
+            '    helper-call "bpf_tcp_check_syncookie" $sk $sk 20 $sk 20'
+            '    helper-call "bpf_tcp_gen_syncookie" $sk $sk 20 $sk 20'
+            '    helper-call "bpf_sk_release" $sk'
+            '  }'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "source-helper-sk-lookup-rejects-leak"
         category: "helper-state"
         tags: [helper-call socket ref-lifetime source reject]
