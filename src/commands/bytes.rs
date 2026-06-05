@@ -86,10 +86,11 @@ fn binary_search_signature(name: &str) -> Signature {
             (Type::Binary, Type::Int),
             (Type::Binary, Type::list(Type::Int)),
             (Type::list(Type::Binary), Type::list(Type::Int)),
+            (Type::list(Type::Binary), Type::list(Type::list(Type::Int))),
         ])
         .switch(
             "all",
-            "Return all matching offsets for scalar binary input",
+            "Return all matching offsets for each binary input",
             None,
         )
         .switch("end", "Search from the end of the binary input", None)
@@ -316,6 +317,20 @@ fn all_binary_indexes(input: &[u8], pattern: &[u8], search_from_end: bool) -> Ve
         .collect()
 }
 
+fn binary_index_value(
+    input: &[u8],
+    pattern: &[u8],
+    return_all: bool,
+    search_from_end: bool,
+    span: nu_protocol::Span,
+) -> Value {
+    if return_all {
+        Value::list(all_binary_indexes(input, pattern, search_from_end), span)
+    } else {
+        Value::int(first_binary_index(input, pattern, search_from_end), span)
+    }
+}
+
 impl PluginCommand for BytesReverse {
     type Plugin = EbpfPlugin;
 
@@ -529,19 +544,10 @@ impl PluginCommand for BytesIndexOf {
         let span = input.span();
 
         let output = match input {
-            Value::Binary { val, .. } if return_all => {
-                Value::list(all_binary_indexes(&val, &pattern, search_from_end), span)
-            }
             Value::Binary { val, .. } => {
-                Value::int(first_binary_index(&val, &pattern, search_from_end), span)
+                binary_index_value(&val, &pattern, return_all, search_from_end, span)
             }
             Value::List { vals, .. } => {
-                if return_all {
-                    return Err(LabeledError::new("Invalid byte search input").with_label(
-                        "bytes index-of --all does not support list<binary> input",
-                        span,
-                    ));
-                }
                 let mut out = Vec::with_capacity(vals.len());
                 for (idx, item) in vals.into_iter().enumerate() {
                     let item_span = item.span();
@@ -551,8 +557,11 @@ impl PluginCommand for BytesIndexOf {
                             item_span,
                         ));
                     };
-                    out.push(Value::int(
-                        first_binary_index(&val, &pattern, search_from_end),
+                    out.push(binary_index_value(
+                        &val,
+                        &pattern,
+                        return_all,
+                        search_from_end,
                         item_span,
                     ));
                 }
@@ -567,6 +576,49 @@ impl PluginCommand for BytesIndexOf {
         };
 
         Ok(PipelineData::Value(output, None))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn list_ints(value: &Value) -> Vec<i64> {
+        let Value::List { vals, .. } = value else {
+            panic!("expected list value");
+        };
+        vals.iter()
+            .map(|value| {
+                let Value::Int { val, .. } = value else {
+                    panic!("expected int list item");
+                };
+                *val
+            })
+            .collect()
+    }
+
+    #[test]
+    fn bytes_index_of_all_materializes_nested_list_offsets() {
+        let span = nu_protocol::Span::unknown();
+        let values = vec![
+            binary_index_value(&[1, 2, 1, 2], &[1, 2], true, false, span),
+            binary_index_value(&[2, 1, 2], &[1, 2], true, false, span),
+        ];
+        let output = Value::list(values, span);
+
+        let Value::List { vals, .. } = output else {
+            panic!("expected outer list");
+        };
+        assert_eq!(list_ints(&vals[0]), vec![0, 2]);
+        assert_eq!(list_ints(&vals[1]), vec![1]);
+    }
+
+    #[test]
+    fn bytes_index_of_all_end_materializes_reverse_offsets() {
+        let span = nu_protocol::Span::unknown();
+        let output = binary_index_value(&[1, 2, 1, 2], &[1, 2], true, true, span);
+
+        assert_eq!(list_ints(&output), vec![2, 0]);
     }
 }
 

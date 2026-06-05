@@ -148,6 +148,13 @@ mod tests {
             )),
             "bytes index-of should accept list<binary> input"
         );
+        assert!(
+            index_of.input_output_types.contains(&(
+                nu_protocol::Type::list(nu_protocol::Type::Binary),
+                nu_protocol::Type::list(nu_protocol::Type::list(nu_protocol::Type::Int))
+            )),
+            "bytes index-of --all should advertise nested offset lists for list<binary> input"
+        );
 
         let reverse = BytesReverse.signature();
         assert!(
