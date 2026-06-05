@@ -37051,6 +37051,54 @@ const FIXTURES = [
         error_contains: "kfunc 'scx_bpf_events' arg1 must be > 0"
     }
     {
+        name: "source-kfunc-sched-ext-dsq-iter-move"
+        category: "kfunc"
+        tags: [kfunc sched-ext dsq iter ref-lifetime source accept]
+        target: "struct_ops:sched_ext_ops"
+        program: [
+            '{'
+            '    name: "nu.demo_1"'
+            '    dispatch: {|ctx|'
+            '        let iter = "0123456789abcdef0123456789abcdef"'
+            '        kfunc-call "bpf_iter_scx_dsq_new" $iter 0 0'
+            '        let next = (kfunc-call "bpf_iter_scx_dsq_next" $iter)'
+            '        kfunc-call "scx_bpf_dsq_move_set_slice" $iter 1'
+            '        kfunc-call "scx_bpf_dsq_move_set_vtime" $iter 1'
+            '        let task = (kfunc-call "bpf_task_from_pid" 1)'
+            '        let moved = (if $task {'
+            '            let plain = (kfunc-call "scx_bpf_dsq_move" $iter $task 0 0)'
+            '            let vtime = (kfunc-call "scx_bpf_dsq_move_vtime" $iter $task 0 0)'
+            '            kfunc-call "bpf_task_release" $task'
+            '            ($plain + $vtime)'
+            '        } else { 0 })'
+            '        kfunc-call "bpf_iter_scx_dsq_destroy" $iter'
+            '        if $next { $moved } else { $moved }'
+            '    }'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-kfunc-sched-ext-dsq-move-rejects-missing-iter"
+        category: "kfunc"
+        tags: [kfunc sched-ext dsq iter source reject]
+        target: "struct_ops:sched_ext_ops"
+        program: [
+            '{'
+            '    name: "nu.demo_1"'
+            '    dispatch: {|ctx|'
+            '        let iter = "0123456789abcdef0123456789abcdef"'
+            '        kfunc-call "scx_bpf_dsq_move_set_slice" $iter 1'
+            '        0'
+            '    }'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'scx_bpf_dsq_move_set_slice' requires a matching bpf_iter_scx_dsq_new"
+    }
+    {
         name: "struct-ops-callback-target-rejects-attach"
         category: "program-model"
         tags: [struct-ops callback attach reject]

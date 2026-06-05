@@ -6,6 +6,8 @@ documentation changes that matter to external alpha consumers.
 
 ## Unreleased
 
+- Added source verifier coverage for sched_ext DSQ iterator and move kfunc
+  flows, including iterator lifecycle matching and move helper rejects.
 - Added source verifier coverage for sched_ext bstr/events kfunc flows,
   including stack-backed event data, fmt/data buffers, and zero-size rejects.
 - Added source verifier coverage for sched_ext DSQ `init`, `dispatch`, and
