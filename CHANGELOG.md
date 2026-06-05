@@ -6,6 +6,8 @@ documentation changes that matter to external alpha consumers.
 
 ## Unreleased
 
+- Extended source verifier coverage for single-mask cpumask query/mutation
+  kfuncs, including test-and-set/clear and first-zero paths.
 - Added source verifier coverage for cpumask query/mutation kfunc pointer
   provenance, including scalar-argument rejects.
 - Added source verifier coverage for `bpf_throw`, including void-return misuse

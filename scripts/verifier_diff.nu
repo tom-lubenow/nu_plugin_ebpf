@@ -35688,6 +35688,34 @@ const FIXTURES = [
         error_contains: "arg1 expects pointer"
     }
     {
+        name: "source-kfunc-cpumask-single-mask-query-release"
+        category: "helper-state"
+        tags: [kfunc cpumask source accept]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let mask = (kfunc-call "bpf_cpumask_create")'
+            '  if $mask {'
+            '    kfunc-call "bpf_cpumask_clear" $mask'
+            '    let empty = (kfunc-call "bpf_cpumask_empty" $mask)'
+            '    kfunc-call "bpf_cpumask_setall" $mask'
+            '    let full = (kfunc-call "bpf_cpumask_full" $mask)'
+            '    kfunc-call "bpf_cpumask_clear_cpu" 0 $mask'
+            '    let was_set = (kfunc-call "bpf_cpumask_test_and_set_cpu" 0 $mask)'
+            '    let cleared = (kfunc-call "bpf_cpumask_test_and_clear_cpu" 0 $mask)'
+            '    let first_zero = (kfunc-call "bpf_cpumask_first_zero" $mask)'
+            '    let weight = (kfunc-call "bpf_cpumask_weight" $mask)'
+            '    ($empty + $full + $was_set + $cleared + $first_zero + $weight) | count'
+            '    $mask | kfunc-call "bpf_cpumask_release"'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "source-kptr-xchg-task-ref-transfer"
         category: "helper-state"
         tags: [kfunc helper-call kptr ref-lifetime source accept]
