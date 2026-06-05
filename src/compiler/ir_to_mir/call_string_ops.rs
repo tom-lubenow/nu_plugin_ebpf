@@ -2812,9 +2812,11 @@ impl<'a> HirToMirLowering<'a> {
         let runtime_unsigned_fill_supported =
             runtime_unsigned_input_ty.as_ref().is_some_and(|input_ty| {
                 width <= 1
-                    || (width == 2 && alignment == FillAlignment::Left && fill.len() <= 1)
                     || (width == 2
-                        && alignment == FillAlignment::Right
+                        && matches!(alignment, FillAlignment::Left | FillAlignment::Center)
+                        && fill.len() <= 1)
+                    || (width == 2
+                        && matches!(alignment, FillAlignment::Right | FillAlignment::CenterRight)
                         && fill.len() <= 1
                         && matches!(input_ty, MirType::U8 | MirType::U16 | MirType::U32))
             });
@@ -2882,12 +2884,7 @@ impl<'a> HirToMirLowering<'a> {
         alignment: FillAlignment,
         fill: &str,
     ) -> Result<(), CompileError> {
-        let pad_len =
-            if width == 2 && matches!(alignment, FillAlignment::Left | FillAlignment::Right) {
-                fill.len()
-            } else {
-                0
-            };
+        let pad_len = if width == 2 { fill.len() } else { 0 };
         let string_len_bound = MAX_INT_STRING_LEN + pad_len;
         let aligned_len = align_to_eight(string_len_bound + 1)
             .min(MAX_STRING_SIZE)
@@ -2907,7 +2904,10 @@ impl<'a> HirToMirLowering<'a> {
             src: MirValue::Const(0),
         });
         self.vreg_type_hints.insert(len_vreg, MirType::I64);
-        if width == 2 && alignment == FillAlignment::Right && !fill.is_empty() {
+        if width == 2
+            && matches!(alignment, FillAlignment::Right | FillAlignment::CenterRight)
+            && !fill.is_empty()
+        {
             let needs_padding = self.func.alloc_vreg();
             self.emit(MirInst::BinOp {
                 dst: needs_padding,
@@ -2946,7 +2946,10 @@ impl<'a> HirToMirLowering<'a> {
             val: MirValue::VReg(input_vreg),
             val_type: StringAppendType::Integer,
         });
-        if width == 2 && alignment == FillAlignment::Left && !fill.is_empty() {
+        if width == 2
+            && matches!(alignment, FillAlignment::Left | FillAlignment::Center)
+            && !fill.is_empty()
+        {
             let needs_padding = self.func.alloc_vreg();
             self.emit(MirInst::BinOp {
                 dst: needs_padding,
