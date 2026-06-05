@@ -468,6 +468,123 @@ fn test_map_leading_annotated_mut_globals_supports_let_bound_record_merge_initia
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_record_select_initializer() {
+    let source = "{|| mut state: record<mem: int pid: int> = ({pid: 7, cpu: 2, mem: 4} | select mem pid); $state }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant record select initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::Record { val, .. } => {
+            assert_eq!(val.len(), 2);
+            assert_eq!(val.get_index(0).map(|(name, _)| name.as_str()), Some("mem"));
+            assert_eq!(val.get("mem").and_then(|v| v.as_int().ok()), Some(4));
+            assert_eq!(val.get_index(1).map(|(name, _)| name.as_str()), Some("pid"));
+            assert_eq!(val.get("pid").and_then(|v| v.as_int().ok()), Some(7));
+        }
+        other => panic!("expected record initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_record_reject_initializer() {
+    let source = "{|| mut state: record<pid: int mem: int> = ({pid: 7, cpu: 2, mem: 4} | reject cpu); $state }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant record reject initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::Record { val, .. } => {
+            assert_eq!(val.len(), 2);
+            assert_eq!(val.get("pid").and_then(|v| v.as_int().ok()), Some(7));
+            assert_eq!(val.get("mem").and_then(|v| v.as_int().ok()), Some(4));
+            assert!(val.get("cpu").is_none());
+        }
+        other => panic!("expected record initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_rejects_missing_record_select_field() {
+    let source = "{|| mut state: record<pid: int> = ({pid: 7} | select missing); $state }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let err = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect_err("missing record select field should be rejected");
+
+    assert!(
+        err.to_string()
+            .contains("Unsupported annotated mutable global initializer"),
+        "unexpected error: {err}"
+    );
+    assert!(
+        err.labels
+            .iter()
+            .any(|label| label.text.contains("cannot find record field 'missing'")),
+        "unexpected labels: {:?}",
+        err.labels
+    );
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_constant_list_spread_initializer() {
     let source = "{|| mut vals: list<int> = [1, ...[2, 3]]; $vals }";
     let ir_block = IrBlock {

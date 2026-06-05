@@ -661,6 +661,13 @@ fn eval_supported_constant_call(
             env,
             span,
         ),
+        "select" | "reject" => eval_supported_constant_record_select_or_reject_call(
+            working_set,
+            cmd_name,
+            input,
+            &call.arguments,
+            span,
+        ),
         "insert" | "update" | "upsert" => eval_supported_constant_path_mutation_call(
             working_set,
             cmd_name,
@@ -770,6 +777,32 @@ fn eval_supported_constant_external_call(
                 input,
                 Some(record_expr),
                 env,
+                span,
+            )
+        }
+        "select" | "reject" => {
+            let fields = args
+                .iter()
+                .map(|arg| {
+                    let ExternalArgument::Regular(field_expr) = arg else {
+                        return Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
+                        .with_label(
+                            format!(
+                                "`{cmd_name}` field arguments cannot use spread syntax in compile-time global initializers"
+                            ),
+                            arg.expr().span,
+                        ));
+                    };
+                    eval_supported_constant_record_field_name(working_set, field_expr)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+
+            eval_supported_constant_record_select_or_reject(
+                cmd_name,
+                input,
+                fields,
                 span,
             )
         }
@@ -948,6 +981,137 @@ fn eval_supported_constant_record_merge_call(
     }
 
     Ok(Value::record(record, value_span))
+}
+
+fn eval_supported_constant_record_select_or_reject_call(
+    working_set: &StateWorkingSet,
+    cmd_name: &str,
+    input: Option<Value>,
+    args: &[nu_protocol::ast::Argument],
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let fields = args
+        .iter()
+        .map(|arg| match arg {
+            nu_protocol::ast::Argument::Positional(expr)
+            | nu_protocol::ast::Argument::Unknown(expr) => {
+                eval_supported_constant_record_field_name(working_set, expr)
+            }
+            nu_protocol::ast::Argument::Named(named) => Err(LabeledError::new(
+                "Unsupported annotated mutable global initializer",
+            )
+            .with_label(
+                format!(
+                    "`{cmd_name}` does not accept named argument --{} in compile-time global initializers",
+                    named.0.item
+                ),
+                arg.span(),
+            )),
+            nu_protocol::ast::Argument::Spread(expr) => Err(LabeledError::new(
+                "Unsupported annotated mutable global initializer",
+            )
+            .with_label(
+                format!(
+                    "`{cmd_name}` field arguments cannot use spread syntax in compile-time global initializers"
+                ),
+                expr.span,
+            )),
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    eval_supported_constant_record_select_or_reject(cmd_name, input, fields, span)
+}
+
+fn eval_supported_constant_record_select_or_reject(
+    cmd_name: &str,
+    input: Option<Value>,
+    fields: Vec<String>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let value = input.ok_or_else(|| {
+        LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+            format!(
+                "`{cmd_name}` in a compile-time global initializer must receive pipeline input"
+            ),
+            span,
+        )
+    })?;
+    if fields.is_empty() {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`{cmd_name}` requires at least one record field name in compile-time global initializers"
+                ),
+                span,
+            ),
+        );
+    }
+
+    let value_span = value.span();
+    let Value::Record { val, .. } = value else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!("`{cmd_name}` in a compile-time global initializer requires record input"),
+                span,
+            ),
+        );
+    };
+    let input = val.into_owned();
+
+    let mut names = Vec::new();
+    for field in fields {
+        if !names.contains(&field) {
+            names.push(field);
+        }
+    }
+    for field in &names {
+        if input.get(field).is_none() {
+            return Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    format!("`{cmd_name}` cannot find record field '{field}'"),
+                    span,
+                ),
+            );
+        }
+    }
+
+    let mut out = Record::new();
+    if cmd_name == "select" {
+        for field in names {
+            let value = input.get(&field).expect("field existence checked");
+            out.push(field, value.clone());
+        }
+    } else {
+        for (field, value) in input.iter() {
+            if !names.iter().any(|name| name == field) {
+                out.push(field, value.clone());
+            }
+        }
+    }
+
+    Ok(Value::record(out, value_span))
+}
+
+fn eval_supported_constant_record_field_name(
+    working_set: &StateWorkingSet,
+    expr: &nu_protocol::ast::Expression,
+) -> Result<String, LabeledError> {
+    eval_supported_constant_value(working_set, expr)
+        .and_then(|value| {
+            value.coerce_into_string().map_err(|e| {
+                LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(e.to_string(), expr.span)
+            })
+        })
+        .map_err(|err| {
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "record field arguments must be compile-time string values: {}",
+                    err.msg
+                ),
+                expr.span,
+            )
+        })
 }
 
 fn eval_supported_constant_path_mutation_call(
