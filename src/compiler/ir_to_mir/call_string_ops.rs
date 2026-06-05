@@ -2816,10 +2816,14 @@ impl<'a> HirToMirLowering<'a> {
                 Self::runtime_unsigned_integer_fill_supported(width, alignment, &fill, input_ty)
             });
         if runtime_unsigned_fill_supported {
+            let input_ty = runtime_unsigned_input_ty
+                .as_ref()
+                .expect("supported runtime unsigned fill should have input type");
             return self.lower_runtime_unsigned_integer_fill_result(
                 src_dst,
                 result_vreg,
                 input_vreg,
+                input_ty,
                 width,
                 alignment,
                 &fill,
@@ -2882,13 +2886,15 @@ impl<'a> HirToMirLowering<'a> {
         if fill.len() > 1 {
             return false;
         }
+        if width > MAX_RUNTIME_UNSIGNED_LEFT_FILL_WIDTH {
+            return false;
+        }
 
         match alignment {
-            FillAlignment::Left => width <= MAX_RUNTIME_UNSIGNED_LEFT_FILL_WIDTH,
+            FillAlignment::Left => true,
             FillAlignment::Center if width <= 2 => true,
             FillAlignment::Right | FillAlignment::Center | FillAlignment::CenterRight => {
-                width <= MAX_RUNTIME_UNSIGNED_FILL_WIDTH
-                    && matches!(input_ty, MirType::U8 | MirType::U16 | MirType::U32)
+                matches!(input_ty, MirType::U8 | MirType::U16 | MirType::U32)
             }
         }
     }
@@ -2898,6 +2904,7 @@ impl<'a> HirToMirLowering<'a> {
         src_dst: RegId,
         result_vreg: VReg,
         input_vreg: VReg,
+        input_ty: &MirType,
         width: usize,
         alignment: FillAlignment,
         fill: &str,
@@ -2926,7 +2933,13 @@ impl<'a> HirToMirLowering<'a> {
         });
         self.vreg_type_hints.insert(len_vreg, MirType::I64);
         if !fill.is_empty() {
-            for threshold in Self::runtime_fill_left_digit_thresholds(width, alignment) {
+            let input_max_digits = Self::runtime_unsigned_integer_decimal_digits(input_ty);
+            let (guaranteed_left_pad, conditional_left_thresholds) =
+                Self::runtime_fill_left_padding(width, alignment, input_max_digits);
+            for _ in 0..guaranteed_left_pad {
+                self.emit_runtime_fill_padding_literal(slot, len_vreg, fill);
+            }
+            for threshold in conditional_left_thresholds {
                 self.emit_runtime_fill_padding_if_lt(
                     slot,
                     len_vreg,
@@ -2943,7 +2956,10 @@ impl<'a> HirToMirLowering<'a> {
             val_type: StringAppendType::Integer,
         });
         if !fill.is_empty() {
-            for threshold in Self::runtime_fill_right_len_thresholds(width, alignment) {
+            let input_max_digits = Self::runtime_unsigned_integer_decimal_digits(input_ty);
+            for threshold in
+                Self::runtime_fill_right_len_thresholds(width, alignment, input_max_digits)
+            {
                 self.emit_runtime_fill_padding_if_lt(
                     slot,
                     len_vreg,
@@ -2974,15 +2990,33 @@ impl<'a> HirToMirLowering<'a> {
         Ok(())
     }
 
-    fn runtime_fill_left_digit_thresholds(width: usize, alignment: FillAlignment) -> Vec<i64> {
-        let max_left_pad = (1..width)
+    fn runtime_unsigned_integer_decimal_digits(input_ty: &MirType) -> usize {
+        match input_ty {
+            MirType::U8 => 3,
+            MirType::U16 => 5,
+            MirType::U32 => 10,
+            MirType::U64 => 20,
+            _ => MAX_INT_STRING_LEN,
+        }
+    }
+
+    fn runtime_fill_left_padding(
+        width: usize,
+        alignment: FillAlignment,
+        input_max_digits: usize,
+    ) -> (usize, Vec<i64>) {
+        let max_left_pad = (1..=input_max_digits)
             .map(|digits| Self::runtime_fill_pad_counts(width, alignment, digits).0)
             .max()
             .unwrap_or(0);
+        let guaranteed_left_pad = (1..=input_max_digits)
+            .map(|digits| Self::runtime_fill_pad_counts(width, alignment, digits).0)
+            .min()
+            .unwrap_or(0);
 
-        let mut thresholds = Vec::with_capacity(max_left_pad);
-        for pad_index in 1..=max_left_pad {
-            let Some(max_digits) = (1..width)
+        let mut thresholds = Vec::with_capacity(max_left_pad.saturating_sub(guaranteed_left_pad));
+        for pad_index in (guaranteed_left_pad + 1)..=max_left_pad {
+            let Some(max_digits) = (1..=input_max_digits)
                 .filter(|digits| {
                     Self::runtime_fill_pad_counts(width, alignment, *digits).0 >= pad_index
                 })
@@ -2992,11 +3026,15 @@ impl<'a> HirToMirLowering<'a> {
             };
             thresholds.push(Self::runtime_fill_digit_threshold(max_digits));
         }
-        thresholds
+        (guaranteed_left_pad, thresholds)
     }
 
-    fn runtime_fill_right_len_thresholds(width: usize, alignment: FillAlignment) -> Vec<i64> {
-        let max_right_pad = (1..width)
+    fn runtime_fill_right_len_thresholds(
+        width: usize,
+        alignment: FillAlignment,
+        input_max_digits: usize,
+    ) -> Vec<i64> {
+        let max_right_pad = (1..=input_max_digits)
             .map(|digits| Self::runtime_fill_pad_counts(width, alignment, digits).1)
             .max()
             .unwrap_or(0);
@@ -3028,6 +3066,17 @@ impl<'a> HirToMirLowering<'a> {
         10_i64.pow(digits as u32)
     }
 
+    fn emit_runtime_fill_padding_literal(&mut self, slot: StackSlotId, len_vreg: VReg, fill: &str) {
+        self.emit(MirInst::StringAppend {
+            dst_buffer: slot,
+            dst_len: len_vreg,
+            val: MirValue::Const(0),
+            val_type: StringAppendType::Literal {
+                bytes: fill.as_bytes().to_vec(),
+            },
+        });
+    }
+
     fn emit_runtime_fill_padding_if_lt(
         &mut self,
         slot: StackSlotId,
@@ -3054,14 +3103,7 @@ impl<'a> HirToMirLowering<'a> {
         });
 
         self.current_block = pad_block;
-        self.emit(MirInst::StringAppend {
-            dst_buffer: slot,
-            dst_len: len_vreg,
-            val: MirValue::Const(0),
-            val_type: StringAppendType::Literal {
-                bytes: fill.as_bytes().to_vec(),
-            },
-        });
+        self.emit_runtime_fill_padding_literal(slot, len_vreg, fill);
         self.terminate(MirInst::Jump {
             target: continuation_block,
         });

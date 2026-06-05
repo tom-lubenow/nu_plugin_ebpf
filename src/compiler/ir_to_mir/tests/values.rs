@@ -15268,13 +15268,34 @@ fn test_lower_fill_width_127_left_on_runtime_unsigned_int_materializes_dynamic_p
 }
 
 #[test]
-fn test_lower_fill_width_eleven_right_rejects_runtime_unsigned_int() {
-    let fill_decl = DeclId::new(2537);
-    let starts_with_decl = DeclId::new(2538);
+fn test_lower_fill_width_127_right_on_runtime_unsigned_int_materializes_dynamic_padding() {
+    let result = lower_ctx_pid_fill_then_starts_with_program_with_options(
+        DeclId::new(2537),
+        DeclId::new(2538),
+        Some(127),
+        Some("right"),
+        Some("0"),
+        "0",
+        "fill --width 127 --alignment right should lower for runtime unsigned integer input",
+    );
+
+    assert_runtime_integer_fill_padding_shape(
+        &result,
+        &[10, 1_000_000_000],
+        b"0",
+        126,
+        "runtime integer right fill --width 127",
+    );
+}
+
+#[test]
+fn test_lower_fill_width_128_right_rejects_runtime_unsigned_int() {
+    let fill_decl = DeclId::new(2539);
+    let starts_with_decl = DeclId::new(2540);
     let hir = make_ctx_pid_fill_then_starts_with_program_with_options(
         fill_decl,
         starts_with_decl,
-        Some(11),
+        Some(128),
         Some("right"),
         Some("0"),
         "0",
@@ -15293,7 +15314,7 @@ fn test_lower_fill_width_eleven_right_rejects_runtime_unsigned_int() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("fill --width 11 --alignment right should reject runtime integer input");
+    .expect_err("fill --width 128 --alignment right should reject runtime integer input");
 
     assert!(
         err.to_string()
