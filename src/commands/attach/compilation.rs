@@ -700,6 +700,10 @@ fn eval_supported_constant_call(
             eval_supported_constant_no_argument_call(cmd_name, &call.arguments)?;
             eval_supported_constant_bytes_length(input, span)
         }
+        "bytes reverse" => {
+            eval_supported_constant_no_argument_call(cmd_name, &call.arguments)?;
+            eval_supported_constant_bytes_reverse(input, span)
+        }
         "bytes starts-with" | "bytes ends-with" => {
             let pattern = eval_supported_constant_bytes_predicate_call_pattern(
                 working_set,
@@ -1082,6 +1086,10 @@ fn eval_supported_constant_external_call(
         "bytes length" => {
             eval_supported_constant_no_external_args(cmd_name, args, span)?;
             eval_supported_constant_bytes_length(input, span)
+        }
+        "bytes reverse" => {
+            eval_supported_constant_no_external_args(cmd_name, args, span)?;
+            eval_supported_constant_bytes_reverse(input, span)
         }
         "bytes starts-with" | "bytes ends-with" => {
             let pattern = eval_supported_constant_bytes_predicate_external_pattern(
@@ -1930,6 +1938,52 @@ fn eval_supported_constant_bytes_length(
     }
 }
 
+fn eval_supported_constant_bytes_reverse(
+    input: Option<Value>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let value = eval_supported_constant_required_pipeline_input("bytes reverse", input, span)?;
+    let value_span = value.span();
+    match value {
+        Value::Binary { mut val, .. } => {
+            val.reverse();
+            Ok(Value::binary(val, value_span))
+        }
+        Value::List { vals, .. } => {
+            let reversed = vals
+                .into_iter()
+                .enumerate()
+                .map(|(index, value)| {
+                    let Value::Binary { mut val, .. } = value else {
+                        return Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
+                        .with_label(
+                            format!(
+                                "`bytes reverse` requires binary list items in compile-time global initializers; item {index} has type {}",
+                                value.get_type()
+                            ),
+                            span,
+                        ));
+                    };
+                    val.reverse();
+                    Ok(Value::binary(val, value_span))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(Value::list(reversed, value_span))
+        }
+        other => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`bytes reverse` in a compile-time global initializer requires binary or list<binary> input; got {}",
+                    other.get_type()
+                ),
+                span,
+            ),
+        ),
+    }
+}
+
 fn eval_supported_constant_binary_argument(
     working_set: &StateWorkingSet,
     expr: &nu_protocol::ast::Expression,
@@ -2468,6 +2522,10 @@ fn eval_supported_constant_bytes_external_call(
         "length" => {
             eval_supported_constant_no_external_args("bytes length", remaining_args, span)?;
             eval_supported_constant_bytes_length(input, span)
+        }
+        "reverse" => {
+            eval_supported_constant_no_external_args("bytes reverse", remaining_args, span)?;
+            eval_supported_constant_bytes_reverse(input, span)
         }
         "starts-with" | "ends-with" => {
             let cmd_name = format!("bytes {subcommand}");
