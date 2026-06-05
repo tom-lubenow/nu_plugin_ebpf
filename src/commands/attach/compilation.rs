@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
+use fancy_regex::Regex as FancyRegex;
 use nu_cmd_lang::create_default_context;
 use nu_parser::parse;
 use nu_plugin::{EngineInterface, EvaluatedCall};
@@ -725,6 +726,11 @@ fn eval_supported_constant_call(
                 eval_supported_constant_split_chars_mode_call(&call.arguments)?;
             eval_supported_constant_split_chars(input, use_grapheme_clusters, span)
         }
+        "split row" => {
+            let args =
+                eval_supported_constant_split_row_call_args(working_set, &call.arguments, env)?;
+            eval_supported_constant_split_row(input, args, span)
+        }
         "split words" => {
             let args =
                 eval_supported_constant_split_words_call_args(working_set, &call.arguments, env)?;
@@ -1023,6 +1029,10 @@ fn eval_supported_constant_external_call(
             let use_grapheme_clusters =
                 eval_supported_constant_split_chars_mode_external_args(working_set, args, env, span)?;
             eval_supported_constant_split_chars(input, use_grapheme_clusters, span)
+        }
+        "split row" => {
+            let args = eval_supported_constant_split_row_external_args(working_set, args, env, span)?;
+            eval_supported_constant_split_row(input, args, span)
         }
         "split words" => {
             let args =
@@ -2690,6 +2700,326 @@ fn eval_supported_constant_split_chars_known_string(
     }
 }
 
+struct ConstantSplitRowArgs {
+    separator: String,
+    number: Option<usize>,
+    use_regex: bool,
+}
+
+fn eval_supported_constant_split_row_call_args(
+    working_set: &StateWorkingSet,
+    args: &[nu_protocol::ast::Argument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+) -> Result<ConstantSplitRowArgs, LabeledError> {
+    let mut separator_expr = None;
+    let mut number = None;
+    let mut use_regex = false;
+    for arg in args {
+        match arg {
+            nu_protocol::ast::Argument::Positional(expr)
+            | nu_protocol::ast::Argument::Unknown(expr) => {
+                if separator_expr.replace(expr).is_some() {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            "`split row` accepts exactly one separator argument in compile-time global initializers",
+                            arg.span(),
+                        ));
+                }
+            }
+            nu_protocol::ast::Argument::Named(named) => match named.0.item.as_str() {
+                "regex" => {
+                    if named.2.is_some() {
+                        return Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
+                        .with_label(
+                            "`split row --regex` cannot receive a value in compile-time global initializers",
+                            arg.span(),
+                        ));
+                    }
+                    use_regex = true;
+                }
+                "number" => {
+                    let Some(expr) = named.2.as_ref() else {
+                        return Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
+                        .with_label(
+                            "`split row --number` requires a value in compile-time global initializers",
+                            arg.span(),
+                        ));
+                    };
+                    if number
+                        .replace(eval_supported_constant_non_negative_usize_argument(
+                            working_set,
+                            expr,
+                            env,
+                            "split row --number",
+                        )?)
+                        .is_some()
+                    {
+                        return Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
+                        .with_label(
+                            "`split row` accepts only one --number value in compile-time global initializers",
+                            arg.span(),
+                        ));
+                    }
+                }
+                _ => {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            format!(
+                                "`split row` does not support named argument --{} in compile-time global initializers",
+                                named.0.item
+                            ),
+                            arg.span(),
+                        ));
+                }
+            },
+            nu_protocol::ast::Argument::Spread(expr) => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`split row` arguments cannot use spread syntax in compile-time global initializers",
+                        expr.span,
+                    ));
+            }
+        }
+    }
+
+    let Some(separator_expr) = separator_expr else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`split row` requires exactly one separator argument in compile-time global initializers",
+                Span::unknown(),
+            ),
+        );
+    };
+    let separator =
+        eval_supported_constant_string_argument(working_set, separator_expr, env, "split row")?;
+    Ok(ConstantSplitRowArgs {
+        separator,
+        number,
+        use_regex,
+    })
+}
+
+fn eval_supported_constant_split_row_external_args(
+    working_set: &StateWorkingSet,
+    args: &[ExternalArgument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<ConstantSplitRowArgs, LabeledError> {
+    let mut separator = None;
+    let mut number = None;
+    let mut use_regex = false;
+    let mut iter = args.iter().peekable();
+    while let Some(arg) = iter.next() {
+        let ExternalArgument::Regular(expr) = arg else {
+            return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                .with_label(
+                    "`split row` arguments cannot use spread syntax in compile-time global initializers",
+                    arg.expr().span,
+                ));
+        };
+        let value = eval_supported_constant_value_with_env(working_set, expr, env)?;
+        let flag_or_separator = match value {
+            Value::String { val, .. } | Value::Glob { val, .. } => val,
+            _ => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`split row` separator and flags must be compile-time strings in global initializers",
+                        expr.span,
+                    ));
+            }
+        };
+        let Some(flag) = flag_or_separator.strip_prefix("--") else {
+            if separator.replace(flag_or_separator).is_some() {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`split row` accepts exactly one separator argument in compile-time global initializers",
+                        expr.span,
+                    ));
+            }
+            continue;
+        };
+        match flag {
+            "regex" => use_regex = true,
+            "number" => {
+                let Some(next_arg) = iter.next() else {
+                    return Err(LabeledError::new(
+                        "Unsupported annotated mutable global initializer",
+                    )
+                    .with_label(
+                        "`split row --number` requires a value in compile-time global initializers",
+                        expr.span,
+                    ));
+                };
+                let ExternalArgument::Regular(next_expr) = next_arg else {
+                    return Err(LabeledError::new(
+                        "Unsupported annotated mutable global initializer",
+                    )
+                    .with_label(
+                        "`split row --number` value cannot use spread syntax in compile-time global initializers",
+                        next_arg.expr().span,
+                    ));
+                };
+                if number
+                    .replace(eval_supported_constant_non_negative_usize_argument(
+                        working_set,
+                        next_expr,
+                        env,
+                        "split row --number",
+                    )?)
+                    .is_some()
+                {
+                    return Err(LabeledError::new(
+                        "Unsupported annotated mutable global initializer",
+                    )
+                    .with_label(
+                        "`split row` accepts only one --number value in compile-time global initializers",
+                        next_expr.span,
+                    ));
+                }
+            }
+            _ => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`split row` supports only --number and --regex in compile-time global initializers",
+                        expr.span,
+                    ));
+            }
+        }
+    }
+
+    let Some(separator) = separator else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`split row` requires exactly one separator argument in compile-time global initializers",
+                span,
+            ),
+        );
+    };
+    Ok(ConstantSplitRowArgs {
+        separator,
+        number,
+        use_regex,
+    })
+}
+
+fn eval_supported_constant_split_row(
+    input: Option<Value>,
+    args: ConstantSplitRowArgs,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let value = eval_supported_constant_required_pipeline_input("split row", input, span)?;
+    let value_span = value.span();
+    let output = match value {
+        Value::List { vals, .. } => vals
+            .into_iter()
+            .enumerate()
+            .try_fold(Vec::new(), |mut output, (index, value)| {
+                let input = match value {
+                    Value::String { val, .. } | Value::Glob { val, .. } => val,
+                    other => {
+                        return Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
+                        .with_label(
+                            format!(
+                                "`split row` requires string list items in compile-time global initializers; item {index} has type {}",
+                                other.get_type()
+                            ),
+                            span,
+                        ));
+                    }
+                };
+                output.extend(eval_supported_constant_split_row_known_string(
+                    &input,
+                    &args.separator,
+                    args.number,
+                    args.use_regex,
+                    value_span,
+                    span,
+                )?);
+                Ok(output)
+            })?,
+        value => {
+            let input = eval_supported_constant_exact_string_value(value, "split row", span)?;
+            eval_supported_constant_split_row_known_string(
+                &input,
+                &args.separator,
+                args.number,
+                args.use_regex,
+                value_span,
+                span,
+            )?
+        }
+    };
+    Ok(Value::list(output, value_span))
+}
+
+fn eval_supported_constant_split_row_known_string(
+    input: &str,
+    separator: &str,
+    number: Option<usize>,
+    use_regex: bool,
+    value_span: Span,
+    error_span: Span,
+) -> Result<Vec<Value>, LabeledError> {
+    let parts = if use_regex {
+        let regex = FancyRegex::new(separator).map_err(|err| {
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!("`split row --regex` pattern is invalid in compile-time global initializers: {err}"),
+                error_span,
+            )
+        })?;
+        if let Some(number) = number {
+            regex
+                .splitn(input, number)
+                .map(|part| {
+                    part.map(str::to_string).map_err(|err| {
+                        LabeledError::new("Unsupported annotated mutable global initializer")
+                            .with_label(
+                                format!(
+                                    "`split row --regex` failed at compile time in global initializers: {err}"
+                                ),
+                                error_span,
+                            )
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?
+        } else {
+            regex
+                .split(input)
+                .map(|part| {
+                    part.map(str::to_string).map_err(|err| {
+                        LabeledError::new("Unsupported annotated mutable global initializer")
+                            .with_label(
+                                format!(
+                                    "`split row --regex` failed at compile time in global initializers: {err}"
+                                ),
+                                error_span,
+                            )
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?
+        }
+    } else if let Some(number) = number {
+        input
+            .splitn(number, separator)
+            .map(str::to_string)
+            .collect()
+    } else {
+        input.split(separator).map(str::to_string).collect()
+    };
+    Ok(parts
+        .into_iter()
+        .map(|part| Value::string(part, value_span))
+        .collect())
+}
+
 struct ConstantSplitWordsArgs {
     min_word_len: Option<usize>,
     use_grapheme_clusters: bool,
@@ -3063,6 +3393,15 @@ fn eval_supported_constant_split_external_call(
                 span,
             )?;
             eval_supported_constant_split_chars(input, use_grapheme_clusters, span)
+        }
+        "row" => {
+            let args = eval_supported_constant_split_row_external_args(
+                working_set,
+                remaining_args,
+                env,
+                span,
+            )?;
+            eval_supported_constant_split_row(input, args, span)
         }
         "words" => {
             let args = eval_supported_constant_split_words_external_args(
