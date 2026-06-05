@@ -36103,6 +36103,43 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "callback-for-each-map-elem-rejects-nonzero-flags"
+        category: "callbacks"
+        tags: [helper-call callback map array flags reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define elems --kind array --value-type "record{seen:u64}"'
+            '  helper-call "bpf_for_each_map_elem" elems {|m k v cb|'
+            '    0'
+            '  } "ctx" 1 --kind array'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_for_each_map_elem' requires arg3 flags to be 0"
+    }
+    {
+        name: "callback-for-each-map-elem-rejects-dynamic-flags"
+        category: "callbacks"
+        tags: [helper-call callback map array flags reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define elems --kind array --value-type "record{seen:u64}"'
+            '  let flags = (helper-call "bpf_get_prandom_u32")'
+            '  helper-call "bpf_for_each_map_elem" elems {|m k v cb|'
+            '    0'
+            '  } "ctx" $flags --kind array'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_for_each_map_elem' requires arg3 flags to be 0"
+    }
+    {
         name: "callback-find-vma-btf-field"
         category: "callbacks"
         tags: [helper-call callback btf kernel-btf]
@@ -36119,6 +36156,43 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
+    }
+    {
+        name: "callback-find-vma-rejects-nonzero-flags"
+        category: "callbacks"
+        tags: [helper-call callback btf kernel-btf flags reject]
+        requires: [kernel-btf]
+        target: "kprobe:tcp_connect"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_find_vma" $ctx.current_task 0 {|task vma cb|'
+            '    0'
+            '  } "ctx" 1'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_find_vma' requires arg4 flags to be 0"
+    }
+    {
+        name: "callback-find-vma-rejects-dynamic-flags"
+        category: "callbacks"
+        tags: [helper-call callback btf kernel-btf flags reject]
+        requires: [kernel-btf]
+        target: "kprobe:tcp_connect"
+        program: [
+            '{|ctx|'
+            '  let flags = (helper-call "bpf_get_prandom_u32")'
+            '  helper-call "bpf_find_vma" $ctx.current_task 0 {|task vma cb|'
+            '    0'
+            '  } "ctx" $flags'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_find_vma' requires arg4 flags to be 0"
     }
     {
         name: "callback-find-vma-rejects-extra-declared-param"
