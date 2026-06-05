@@ -10,6 +10,7 @@ use crate::compiler::CompileError;
 use super::instruction::{EbpfReg, KfuncSignature, unknown_kfunc_signature_message};
 use super::lir::{LirBlock, LirFunction, LirInst, LirProgram};
 use super::mir::{MirFunction, MirInst, MirProgram, MirValue, VReg};
+use super::mir_integrity::validate_mir_structural_references;
 
 const ABI_REGS: [EbpfReg; 6] = [
     EbpfReg::R0,
@@ -64,6 +65,14 @@ fn lower_function(mir: &MirFunction) -> Result<LirFunction, CompileError> {
             "BPF subfunctions support at most 5 arguments, got {}",
             mir.param_count
         )));
+    }
+    if let Err(errors) = validate_mir_structural_references(mir) {
+        let messages = errors
+            .into_iter()
+            .map(|err| err.message)
+            .collect::<Vec<_>>()
+            .join("; ");
+        return Err(CompileError::UnsupportedInstruction(messages));
     }
 
     let mut func = LirFunction::new();

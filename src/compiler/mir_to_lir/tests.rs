@@ -1,5 +1,7 @@
 use super::*;
-use crate::compiler::mir::{MirFunction, MirInst, MirProgram, MirValue, SubfunctionId};
+use crate::compiler::mir::{
+    BlockId, MirFunction, MirInst, MirProgram, MirValue, SubfunctionId, VReg,
+};
 
 #[test]
 fn test_lower_rejects_helper_call_with_too_many_args() {
@@ -114,6 +116,61 @@ fn test_lower_rejects_subfunction_with_too_many_params() {
     match err {
         CompileError::UnsupportedInstruction(msg) => {
             assert!(msg.contains("at most 5 arguments"));
+        }
+        other => panic!("expected unsupported-instruction error, got {other}"),
+    }
+}
+
+#[test]
+fn test_lower_rejects_out_of_range_vreg_def() {
+    let mut main = MirFunction::new();
+    let entry = main.alloc_block();
+    main.entry = entry;
+    main.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: VReg(99),
+        src: MirValue::Const(0),
+    });
+    main.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let program = MirProgram {
+        main,
+        subfunctions: vec![],
+    };
+
+    let err =
+        lower_mir_to_lir_checked(&program).expect_err("expected malformed MIR lowering rejection");
+    match err {
+        CompileError::UnsupportedInstruction(msg) => {
+            assert!(msg.contains("out-of-range virtual register 99"));
+        }
+        other => panic!("expected unsupported-instruction error, got {other}"),
+    }
+}
+
+#[test]
+fn test_lower_rejects_missing_subfunction_block_target() {
+    let mut main = MirFunction::new();
+    let entry = main.alloc_block();
+    main.entry = entry;
+    main.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut subfn = MirFunction::with_name("bad_subfn");
+    let sub_entry = subfn.alloc_block();
+    subfn.entry = sub_entry;
+    subfn.block_mut(sub_entry).terminator = MirInst::Jump {
+        target: BlockId(99),
+    };
+
+    let program = MirProgram {
+        main,
+        subfunctions: vec![subfn],
+    };
+
+    let err = lower_mir_to_lir_checked(&program)
+        .expect_err("expected malformed subfunction lowering rejection");
+    match err {
+        CompileError::UnsupportedInstruction(msg) => {
+            assert!(msg.contains("missing basic block 99"));
         }
         other => panic!("expected unsupported-instruction error, got {other}"),
     }
