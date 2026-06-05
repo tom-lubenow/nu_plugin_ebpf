@@ -17811,6 +17811,27 @@ const FIXTURES = [
         error_contains: "helper get_current_comm dst requires 16 bytes"
     }
     {
+        name: "source-helper-get-current-comm-rejects-dynamic-short-map-buffer"
+        category: "helper-state"
+        tags: [helper current comm map-bounds dynamic reject source metadata]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define comm_buf_dyn_short --kind array --value-type bytes:8 --max-entries 1'
+            '  let dst = (0 | map-get comm_buf_dyn_short)'
+            '  if $dst {'
+            '    let selector = (helper-call "bpf_get_prandom_u32")'
+            '    let size = (if $selector == 0 { 8 } else { 16 })'
+            '    helper-call "bpf_get_current_comm" $dst $size'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper get_current_comm dst requires 16 bytes"
+    }
+    {
         name: "xdp-ktime-get-coarse-helper"
         category: "helper-state"
         tags: [helper time accept source metadata]
@@ -17871,6 +17892,27 @@ const FIXTURES = [
             '  let ns = (0 | map-get nsdata_short)'
             '  if $ns {'
             '    helper-call "bpf_get_ns_current_pid_tgid" 0 0 $ns 8'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper get_ns_current_pid_tgid nsdata requires 8 bytes"
+    }
+    {
+        name: "source-helper-get-ns-current-pid-tgid-rejects-dynamic-short-map-buffer"
+        category: "helper-state"
+        tags: [helper current namespace map-bounds dynamic reject source metadata]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define nsdata_dyn_short --kind array --value-type bytes:4 --max-entries 1'
+            '  let ns = (0 | map-get nsdata_dyn_short)'
+            '  if $ns {'
+            '    let selector = (helper-call "bpf_get_prandom_u32")'
+            '    let size = (if $selector == 0 { 4 } else { 8 })'
+            '    helper-call "bpf_get_ns_current_pid_tgid" 0 0 $ns $size'
             '  }'
             '  0'
             '}'
@@ -18282,6 +18324,27 @@ const FIXTURES = [
         error_contains: "helper sysctl_get_current_value buf requires 8 bytes"
     }
     {
+        name: "source-helper-cgroup-sysctl-rejects-dynamic-short-map-buffer"
+        category: "helper-state"
+        tags: [helper sysctl cgroup-sysctl map-bounds dynamic reject source metadata]
+        target: "cgroup_sysctl:/sys/fs/cgroup"
+        program: [
+            '{|ctx|'
+            '  map-define sysctl_buf_dyn_short --kind array --value-type bytes:4 --max-entries 1'
+            '  let buf = (0 | map-get sysctl_buf_dyn_short)'
+            '  if $buf {'
+            '    let selector = (helper-call "bpf_get_prandom_u32")'
+            '    let size = (if $selector == 0 { 4 } else { 8 })'
+            '    helper-call "bpf_sysctl_get_current_value" $ctx $buf $size'
+            '  }'
+            '  "allow"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper sysctl_get_current_value buf requires 8 bytes"
+    }
+    {
         name: "source-helper-cgroup-sysctl-rejects-xdp"
         category: "helper-state"
         tags: [helper sysctl program-policy reject source metadata]
@@ -18440,6 +18503,28 @@ const FIXTURES = [
             '  let input = (0 | map-get strncmp_input_short)'
             '  if $input {'
             '    helper-call "bpf_strncmp" $input 8 0x[61 62 63 64 65 66 67 68 00]'
+            '  }'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper strncmp s1 requires 8 bytes"
+    }
+    {
+        name: "source-helper-strncmp-rejects-dynamic-short-map-input"
+        category: "helper-state"
+        tags: [helper string compare map-bounds dynamic reject source metadata]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  map-define strncmp_input_dyn_short --kind array --value-type bytes:4 --max-entries 1'
+            '  let input = (0 | map-get strncmp_input_dyn_short)'
+            '  if $input {'
+            '    let selector = (helper-call "bpf_get_prandom_u32")'
+            '    let size = (if $selector == 0 { 4 } else { 8 })'
+            '    helper-call "bpf_strncmp" $input $size 0x[61 62 63 64 65 66 67 68 00]'
             '  }'
             '  "pass"'
             '}'
@@ -22889,6 +22974,28 @@ const FIXTURES = [
         error_contains: "helper xdp_bytes buf requires 8 bytes"
     }
     {
+        name: "xdp-store-bytes-rejects-dynamic-small-source-buffer"
+        category: "helper-state"
+        tags: [xdp helper bytes bounds dynamic reject]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  map-define scratch_dyn_short --kind array --value-type bytes:1 --max-entries 1'
+            '  let bytes = (0 | map-get scratch_dyn_short --kind array)'
+            '  if $bytes {'
+            '    let selector = (helper-call "bpf_get_prandom_u32")'
+            '    let size = (if $selector == 0 { 1 } else { 8 })'
+            '    helper-call "bpf_xdp_store_bytes" $ctx 0 $bytes $size'
+            '  }'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper xdp_bytes buf requires 8 bytes"
+    }
+    {
         name: "tc-skb-get-xfrm-state-helper-rejects-non-tc"
         category: "helper-state"
         tags: [helper xfrm reject]
@@ -22932,6 +23039,28 @@ const FIXTURES = [
             '  map-define xfrm_states --kind array --value-type "bytes:8" --max-entries 1'
             '  let state = (0 | map-get xfrm_states --kind array)'
             '  if $state { helper-call "bpf_skb_get_xfrm_state" $ctx 0 $state 16 0 }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper skb_get_xfrm_state xfrm_state requires 16 bytes"
+    }
+    {
+        name: "tc-skb-get-xfrm-state-helper-rejects-dynamic-small-buffer"
+        category: "helper-state"
+        tags: [tc helper xfrm bounds dynamic reject]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  map-define xfrm_states_dyn_short --kind array --value-type "bytes:8" --max-entries 1'
+            '  let state = (0 | map-get xfrm_states_dyn_short --kind array)'
+            '  if $state {'
+            '    let selector = (helper-call "bpf_get_prandom_u32")'
+            '    let size = (if $selector == 0 { 8 } else { 16 })'
+            '    helper-call "bpf_skb_get_xfrm_state" $ctx 0 $state $size 0'
+            '  }'
             '  0'
             '}'
         ]
@@ -27465,6 +27594,27 @@ const FIXTURES = [
             '  map-define seg6_bytes --kind array --value-type bytes:8 --max-entries 1'
             '  let bytes = (0 | map-get seg6_bytes --kind array)'
             '  if $bytes { helper-call "bpf_lwt_seg6_store_bytes" $ctx 0 $bytes 16 }'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper lwt buffer requires 16 bytes"
+    }
+    {
+        name: "lwt-seg6local-store-bytes-rejects-dynamic-small-buffer"
+        category: "helper-state"
+        tags: [lwt helper-call seg6local bounds dynamic reject source metadata]
+        target: "lwt_seg6local:demo-route"
+        program: [
+            '{|ctx|'
+            '  map-define seg6_bytes_dyn_short --kind array --value-type bytes:8 --max-entries 1'
+            '  let bytes = (0 | map-get seg6_bytes_dyn_short --kind array)'
+            '  if $bytes {'
+            '    let selector = (helper-call "bpf_get_prandom_u32")'
+            '    let size = (if $selector == 0 { 8 } else { 16 })'
+            '    helper-call "bpf_lwt_seg6_store_bytes" $ctx 0 $bytes $size'
+            '  }'
             '  "pass"'
             '}'
         ]
