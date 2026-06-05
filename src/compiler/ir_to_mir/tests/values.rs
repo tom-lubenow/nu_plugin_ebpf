@@ -14912,6 +14912,162 @@ fn test_lower_fill_width_three_right_on_runtime_unsigned_int_materializes_dynami
 }
 
 #[test]
+fn test_lower_fill_width_three_center_on_runtime_unsigned_int_materializes_dynamic_padding() {
+    let result = lower_ctx_pid_fill_then_starts_with_program_with_options(
+        DeclId::new(2521),
+        DeclId::new(2522),
+        Some(3),
+        Some("center"),
+        Some("0"),
+        "0",
+        "fill --width 3 --alignment center should lower for runtime unsigned integer input",
+    );
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .any(|block| matches!(block.terminator, MirInst::Branch { .. })),
+        "expected runtime integer center fill --width 3 to branch on input magnitude and length"
+    );
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::Lt,
+                rhs: MirValue::Const(10),
+                ..
+            }
+        )),
+        "expected runtime integer center fill --width 3 to test input < 10"
+    );
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::Lt,
+                rhs: MirValue::Const(3),
+                ..
+            }
+        )),
+        "expected runtime integer center fill --width 3 to test padded formatted length < 3"
+    );
+    assert_eq!(
+        instructions
+            .iter()
+            .filter(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.as_slice() == b"0"
+            ))
+            .count(),
+        2,
+        "expected runtime integer center fill --width 3 to append up to two fill characters"
+    );
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::StringAppend {
+                val_type: StringAppendType::Integer,
+                ..
+            }
+        )),
+        "expected runtime integer center fill --width 3 to format through StringAppend::Integer"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("runtime integer center fill --width 3 result should compile");
+}
+
+#[test]
+fn test_lower_fill_width_three_center_right_on_runtime_unsigned_int_materializes_dynamic_padding() {
+    let result = lower_ctx_pid_fill_then_starts_with_program_with_options(
+        DeclId::new(2523),
+        DeclId::new(2524),
+        Some(3),
+        Some("cr"),
+        Some("0"),
+        "0",
+        "fill --width 3 --alignment cr should lower for runtime unsigned integer input",
+    );
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .any(|block| matches!(block.terminator, MirInst::Branch { .. })),
+        "expected runtime integer center-right fill --width 3 to branch on input magnitude and length"
+    );
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::Lt,
+                rhs: MirValue::Const(100),
+                ..
+            }
+        )),
+        "expected runtime integer center-right fill --width 3 to test input < 100"
+    );
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::Lt,
+                rhs: MirValue::Const(3),
+                ..
+            }
+        )),
+        "expected runtime integer center-right fill --width 3 to test padded formatted length < 3"
+    );
+    assert_eq!(
+        instructions
+            .iter()
+            .filter(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::Literal { bytes },
+                    ..
+                } if bytes.as_slice() == b"0"
+            ))
+            .count(),
+        2,
+        "expected runtime integer center-right fill --width 3 to append up to two fill characters"
+    );
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::StringAppend {
+                val_type: StringAppendType::Integer,
+                ..
+            }
+        )),
+        "expected runtime integer center-right fill --width 3 to format through StringAppend::Integer"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("runtime integer center-right fill --width 3 result should compile");
+}
+
+#[test]
 fn test_lower_fill_width_four_rejects_runtime_unsigned_int() {
     let fill_decl = DeclId::new(2509);
     let starts_with_decl = DeclId::new(2510);

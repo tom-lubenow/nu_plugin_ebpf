@@ -2821,7 +2821,12 @@ impl<'a> HirToMirLowering<'a> {
                         && fill.len() <= 1
                         && matches!(input_ty, MirType::U8 | MirType::U16 | MirType::U32))
                     || (width == 3
-                        && alignment == FillAlignment::Right
+                        && matches!(
+                            alignment,
+                            FillAlignment::Right
+                                | FillAlignment::Center
+                                | FillAlignment::CenterRight
+                        )
                         && fill.len() <= 1
                         && matches!(input_ty, MirType::U8 | MirType::U16 | MirType::U32))
             });
@@ -2938,6 +2943,22 @@ impl<'a> HirToMirLowering<'a> {
                     100,
                     fill,
                 );
+            } else if width == 3 && alignment == FillAlignment::Center {
+                self.emit_runtime_fill_padding_if_lt(
+                    slot,
+                    len_vreg,
+                    MirValue::VReg(input_vreg),
+                    10,
+                    fill,
+                );
+            } else if width == 3 && alignment == FillAlignment::CenterRight {
+                self.emit_runtime_fill_padding_if_lt(
+                    slot,
+                    len_vreg,
+                    MirValue::VReg(input_vreg),
+                    100,
+                    fill,
+                );
             }
         }
         self.emit(MirInst::StringAppend {
@@ -2963,6 +2984,19 @@ impl<'a> HirToMirLowering<'a> {
                     2,
                     fill,
                 );
+                self.emit_runtime_fill_padding_if_lt(
+                    slot,
+                    len_vreg,
+                    MirValue::VReg(len_vreg),
+                    3,
+                    fill,
+                );
+            } else if width == 3
+                && matches!(
+                    alignment,
+                    FillAlignment::Center | FillAlignment::CenterRight
+                )
+            {
                 self.emit_runtime_fill_padding_if_lt(
                     slot,
                     len_vreg,
