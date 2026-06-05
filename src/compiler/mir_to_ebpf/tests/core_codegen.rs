@@ -497,6 +497,129 @@ fn test_comparison_codegen_does_not_spill_r0_as_temp() {
 }
 
 #[test]
+fn test_unsigned_scalar_comparison_emits_unsigned_jump() {
+    let mut func = LirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let cmp = func.alloc_vreg();
+    let lhs = func.alloc_vreg();
+    let rhs = func.alloc_vreg();
+
+    func.precolored.insert(cmp, EbpfReg::R3);
+    func.precolored.insert(lhs, EbpfReg::R1);
+    func.precolored.insert(rhs, EbpfReg::R2);
+
+    func.block_mut(entry).instructions.push(LirInst::BinOp {
+        dst: cmp,
+        op: BinOpKind::Lt,
+        lhs: MirValue::VReg(lhs),
+        rhs: MirValue::VReg(rhs),
+    });
+    func.block_mut(entry).terminator = LirInst::Return {
+        val: Some(MirValue::VReg(cmp)),
+    };
+
+    let program = LirProgram::new(func);
+    let mut program_types = ProgramVregTypes::default();
+    program_types.main.insert(lhs, MirType::U64);
+    program_types.main.insert(rhs, MirType::U64);
+
+    let mut compiler = MirToEbpfCompiler::new_with_types(&program, None, program_types.clone());
+    compiler.current_types = program_types.main.clone();
+    compiler
+        .prepare_function_state(
+            &program.main,
+            compiler.available_regs.clone(),
+            program.main.precolored.clone(),
+        )
+        .expect("unsigned comparison program should prepare");
+    compiler
+        .compile_function(&program.main)
+        .expect("unsigned comparison program should compile");
+    compiler.fixup_jumps().expect("jump fixups should succeed");
+
+    let unsigned_lt = opcode::BPF_JMP | opcode::BPF_JLT | opcode::BPF_X;
+    let signed_lt = opcode::BPF_JMP | opcode::BPF_JSLT | opcode::BPF_X;
+    assert!(
+        compiler
+            .instructions
+            .iter()
+            .any(|insn| insn.opcode == unsigned_lt),
+        "unsigned scalar comparisons should emit unsigned eBPF jumps"
+    );
+    assert!(
+        !compiler
+            .instructions
+            .iter()
+            .any(|insn| insn.opcode == signed_lt),
+        "unsigned scalar comparisons must not emit signed eBPF jumps"
+    );
+}
+
+#[test]
+fn test_binop_large_rhs_constant_materializes_register_operand() {
+    let mut func = LirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let cmp = func.alloc_vreg();
+    let lhs = func.alloc_vreg();
+
+    func.precolored.insert(cmp, EbpfReg::R1);
+    func.precolored.insert(lhs, EbpfReg::R1);
+
+    func.block_mut(entry).instructions.push(LirInst::BinOp {
+        dst: cmp,
+        op: BinOpKind::Lt,
+        lhs: MirValue::VReg(lhs),
+        rhs: MirValue::Const(0x1_0000_0000),
+    });
+    func.block_mut(entry).terminator = LirInst::Return {
+        val: Some(MirValue::VReg(cmp)),
+    };
+
+    let program = LirProgram::new(func);
+    let mut program_types = ProgramVregTypes::default();
+    program_types.main.insert(lhs, MirType::U64);
+
+    let mut compiler = MirToEbpfCompiler::new_with_types(&program, None, program_types.clone());
+    compiler.current_types = program_types.main.clone();
+    compiler
+        .prepare_function_state(
+            &program.main,
+            compiler.available_regs.clone(),
+            program.main.precolored.clone(),
+        )
+        .expect("large-constant comparison program should prepare");
+    compiler
+        .compile_function(&program.main)
+        .expect("large-constant comparison program should compile");
+    compiler.fixup_jumps().expect("jump fixups should succeed");
+
+    assert!(
+        compiler.instructions.windows(2).any(|pair| {
+            pair[0].opcode == opcode::LD_DW_IMM
+                && pair[0].dst_reg == EbpfReg::R0.as_u8()
+                && pair[0].imm == 0
+                && pair[1].opcode == 0
+                && pair[1].imm == 1
+        }),
+        "large RHS constants should be materialized as full 64-bit immediates"
+    );
+
+    let unsigned_lt_reg = opcode::BPF_JMP | opcode::BPF_JLT | opcode::BPF_X;
+    assert!(
+        compiler.instructions.iter().any(|insn| {
+            insn.opcode == unsigned_lt_reg
+                && insn.dst_reg == EbpfReg::R1.as_u8()
+                && insn.src_reg == EbpfReg::R0.as_u8()
+        }),
+        "large RHS constants should compare through a register operand"
+    );
+}
+
+#[test]
 fn test_binop_codegen_does_not_spill_r0_as_temp() {
     let mut func = LirFunction::new();
     let entry = func.alloc_block();

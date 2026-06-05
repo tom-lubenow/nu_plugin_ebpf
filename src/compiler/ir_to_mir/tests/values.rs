@@ -5026,6 +5026,26 @@ fn make_ctx_pid_fill_then_starts_with_program_with_options(
     character: Option<&str>,
     prefix: &str,
 ) -> HirProgram {
+    make_ctx_field_fill_then_starts_with_program_with_options(
+        "pid",
+        fill_decl,
+        starts_with_decl,
+        width,
+        alignment,
+        character,
+        prefix,
+    )
+}
+
+fn make_ctx_field_fill_then_starts_with_program_with_options(
+    field_name: &str,
+    fill_decl: DeclId,
+    starts_with_decl: DeclId,
+    width: Option<i64>,
+    alignment: Option<&str>,
+    character: Option<&str>,
+    prefix: &str,
+) -> HirProgram {
     let ctx_var = VarId::new(0);
     let mut stmts = vec![
         HirStmt::LoadVariable {
@@ -5035,7 +5055,7 @@ fn make_ctx_pid_fill_then_starts_with_program_with_options(
         HirStmt::LoadLiteral {
             dst: RegId::new(1),
             lit: HirLiteral::CellPath(Box::new(CellPath {
-                members: vec![string_member("pid")],
+                members: vec![string_member(field_name)],
             })),
         },
         HirStmt::FollowCellPath {
@@ -5125,6 +5145,42 @@ fn lower_ctx_pid_fill_then_starts_with_program_with_options(
     expect_msg: &str,
 ) -> MirLoweringResult {
     let hir = make_ctx_pid_fill_then_starts_with_program_with_options(
+        fill_decl,
+        starts_with_decl,
+        width,
+        alignment,
+        character,
+        prefix,
+    );
+    let decl_names = HashMap::from([
+        (fill_decl, "fill".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
+
+    lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect(expect_msg)
+}
+
+fn lower_ctx_field_fill_then_starts_with_program_with_options(
+    field_name: &str,
+    fill_decl: DeclId,
+    starts_with_decl: DeclId,
+    width: Option<i64>,
+    alignment: Option<&str>,
+    character: Option<&str>,
+    prefix: &str,
+    expect_msg: &str,
+) -> MirLoweringResult {
+    let hir = make_ctx_field_fill_then_starts_with_program_with_options(
+        field_name,
         fill_decl,
         starts_with_decl,
         width,
@@ -15278,6 +15334,64 @@ fn test_lower_fill_width_ten_right_on_runtime_unsigned_int_materializes_dynamic_
         b"0",
         9,
         "runtime integer right fill --width 10",
+    );
+}
+
+#[test]
+fn test_lower_fill_width_19_right_on_runtime_u64_materializes_dynamic_padding() {
+    let result = lower_ctx_field_fill_then_starts_with_program_with_options(
+        "ktime",
+        DeclId::new(2547),
+        DeclId::new(2548),
+        Some(19),
+        Some("right"),
+        Some("0"),
+        "0",
+        "fill --width 19 --alignment right should lower for runtime u64 input",
+    );
+
+    assert_runtime_integer_fill_padding_shape(
+        &result,
+        &[10, 1_000_000_000_000_000_000],
+        b"0",
+        18,
+        "runtime u64 right fill --width 19",
+    );
+}
+
+#[test]
+fn test_lower_fill_width_20_right_on_runtime_u64_rejects_unrepresentable_threshold() {
+    let fill_decl = DeclId::new(2549);
+    let starts_with_decl = DeclId::new(2550);
+    let hir = make_ctx_field_fill_then_starts_with_program_with_options(
+        "ktime",
+        fill_decl,
+        starts_with_decl,
+        Some(20),
+        Some("right"),
+        Some("0"),
+        "0",
+    );
+    let decl_names = HashMap::from([
+        (fill_decl, "fill".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("fill --width 20 --alignment right should reject runtime u64 input");
+
+    assert!(
+        err.to_string()
+            .contains("fill requires compile-time known string, int, float, or filesize input"),
+        "unexpected error: {err}"
     );
 }
 

@@ -5,6 +5,16 @@ fn record_store_requires_pointer(ty: &MirType) -> bool {
 }
 
 impl<'a> MirToEbpfCompiler<'a> {
+    fn emit_load_const(&mut self, dst: EbpfReg, value: i64) {
+        if let Ok(imm) = i32::try_from(value) {
+            self.instructions.push(EbpfInsn::mov64_imm(dst, imm));
+        } else {
+            let [lo, hi] = EbpfInsn::ld_imm64(dst, value);
+            self.instructions.push(lo);
+            self.instructions.push(hi);
+        }
+    }
+
     fn value_is_packet_ptr(&self, value: &MirValue) -> bool {
         match value {
             MirValue::VReg(vreg) => matches!(
@@ -18,6 +28,22 @@ impl<'a> MirToEbpfCompiler<'a> {
         }
     }
 
+    fn value_is_unsigned_scalar(&self, value: &MirValue) -> bool {
+        match value {
+            MirValue::VReg(vreg) => matches!(
+                self.current_types.get(vreg),
+                Some(MirType::U8 | MirType::U16 | MirType::U32 | MirType::U64)
+            ),
+            MirValue::Const(value) => *value >= 0,
+            MirValue::StackSlot(_) => false,
+        }
+    }
+
+    fn operands_use_unsigned_compare(&self, lhs: &MirValue, rhs: &MirValue) -> bool {
+        (self.value_is_packet_ptr(lhs) && self.value_is_packet_ptr(rhs))
+            || (self.value_is_unsigned_scalar(lhs) && self.value_is_unsigned_scalar(rhs))
+    }
+
     pub(super) fn compile_copy(&mut self, dst: VReg, src: &MirValue) -> Result<(), CompileError> {
         let dst_reg = self.alloc_dst_reg(dst)?;
         match src {
@@ -29,22 +55,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                 }
             }
             MirValue::Const(c) => {
-                if *c >= i32::MIN as i64 && *c <= i32::MAX as i64 {
-                    self.instructions
-                        .push(EbpfInsn::mov64_imm(dst_reg, *c as i32));
-                } else {
-                    // Large constant - split into two parts
-                    let low = *c as i32;
-                    let high = (*c >> 32) as i32;
-                    self.instructions.push(EbpfInsn::mov64_imm(dst_reg, low));
-                    if high != 0 {
-                        self.instructions
-                            .push(EbpfInsn::mov64_imm(EbpfReg::R0, high));
-                        self.instructions.push(EbpfInsn::lsh64_imm(EbpfReg::R0, 32));
-                        self.instructions
-                            .push(EbpfInsn::or64_reg(dst_reg, EbpfReg::R0));
-                    }
-                }
+                self.emit_load_const(dst_reg, *c);
             }
             MirValue::StackSlot(slot) => {
                 let offset = self.slot_offsets.get(slot).copied().unwrap_or(0);
@@ -213,8 +224,7 @@ impl<'a> MirToEbpfCompiler<'a> {
         let unsigned_compare = matches!(
             op,
             BinOpKind::Lt | BinOpKind::Le | BinOpKind::Gt | BinOpKind::Ge
-        ) && self.value_is_packet_ptr(lhs)
-            && self.value_is_packet_ptr(rhs);
+        ) && self.operands_use_unsigned_compare(lhs, rhs);
         let lhs_src_reg = match lhs {
             MirValue::VReg(v) => Some(self.ensure_reg(*v)?),
             _ => None,
@@ -274,8 +284,7 @@ impl<'a> MirToEbpfCompiler<'a> {
                 }
             }
             MirValue::Const(c) => {
-                self.instructions
-                    .push(EbpfInsn::mov64_imm(dst_reg, *c as i32));
+                self.emit_load_const(dst_reg, *c);
             }
             MirValue::StackSlot(_) => {
                 return Err(CompileError::UnsupportedInstruction(
@@ -295,7 +304,31 @@ impl<'a> MirToEbpfCompiler<'a> {
                 self.emit_binop_reg(dst_reg, op, rhs_reg, unsigned_compare)?;
             }
             MirValue::Const(c) => {
-                self.emit_binop_imm(dst_reg, op, *c as i32, unsigned_compare)?;
+                if let Ok(imm) = i32::try_from(*c) {
+                    self.emit_binop_imm(dst_reg, op, imm, unsigned_compare)?;
+                } else if dst_reg != EbpfReg::R0 {
+                    self.emit_load_const(EbpfReg::R0, *c);
+                    self.emit_binop_reg(dst_reg, op, EbpfReg::R0, unsigned_compare)?;
+                } else {
+                    let scratch = self
+                        .available_regs
+                        .iter()
+                        .copied()
+                        .find(|reg| *reg != dst_reg)
+                        .ok_or_else(|| {
+                            CompileError::UnsupportedInstruction(
+                                "no temporary register available for large binop constant".into(),
+                            )
+                        })?;
+                    self.check_stack_space(8)?;
+                    self.stack_offset -= 8;
+                    let spill_offset = self.stack_offset;
+                    self.emit_store(EbpfReg::R10, spill_offset, scratch, 8)?;
+                    self.emit_load_const(scratch, *c);
+                    self.emit_binop_reg(dst_reg, op, scratch, unsigned_compare)?;
+                    self.emit_load(scratch, EbpfReg::R10, spill_offset, 8)?;
+                    self.stack_offset += 8;
+                }
             }
             MirValue::StackSlot(_) => {
                 return Err(CompileError::UnsupportedInstruction(

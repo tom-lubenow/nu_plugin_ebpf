@@ -52,6 +52,7 @@ struct RuntimeStringDynamicEnd {
 
 const MAX_STRING_EXPAND_RESULTS: usize = 60;
 const MAX_RUNTIME_UNSIGNED_LEFT_FILL_WIDTH: usize = MAX_STRING_SIZE - 1;
+const MAX_RUNTIME_FILL_DIGIT_THRESHOLD: usize = 18;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FillAlignment {
@@ -2896,7 +2897,7 @@ impl<'a> HirToMirLowering<'a> {
             FillAlignment::Left => true,
             FillAlignment::Center if width <= 2 => true,
             FillAlignment::Right | FillAlignment::Center | FillAlignment::CenterRight => {
-                matches!(input_ty, MirType::U8 | MirType::U16 | MirType::U32)
+                Self::runtime_fill_digit_thresholds_supported(width, alignment, input_max_digits)
             }
         }
     }
@@ -3012,6 +3013,36 @@ impl<'a> HirToMirLowering<'a> {
         Some(bound)
     }
 
+    fn runtime_fill_digit_thresholds_supported(
+        width: usize,
+        alignment: FillAlignment,
+        input_max_digits: usize,
+    ) -> bool {
+        let max_left_pad = (1..=input_max_digits)
+            .map(|digits| Self::runtime_fill_pad_counts(width, alignment, digits).0)
+            .max()
+            .unwrap_or(0);
+        let guaranteed_left_pad = (1..=input_max_digits)
+            .map(|digits| Self::runtime_fill_pad_counts(width, alignment, digits).0)
+            .min()
+            .unwrap_or(0);
+
+        for pad_index in (guaranteed_left_pad + 1)..=max_left_pad {
+            let Some(max_digits) = (1..=input_max_digits)
+                .filter(|digits| {
+                    Self::runtime_fill_pad_counts(width, alignment, *digits).0 >= pad_index
+                })
+                .max()
+            else {
+                continue;
+            };
+            if max_digits > MAX_RUNTIME_FILL_DIGIT_THRESHOLD {
+                return false;
+            }
+        }
+        true
+    }
+
     fn runtime_unsigned_integer_decimal_digits(input_ty: &MirType) -> usize {
         match input_ty {
             MirType::U8 => 3,
@@ -3084,7 +3115,7 @@ impl<'a> HirToMirLowering<'a> {
     }
 
     fn runtime_fill_digit_threshold(digits: usize) -> i64 {
-        debug_assert!(digits <= 10);
+        debug_assert!(digits <= MAX_RUNTIME_FILL_DIGIT_THRESHOLD);
         10_i64.pow(digits as u32)
     }
 
