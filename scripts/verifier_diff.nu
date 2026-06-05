@@ -30342,6 +30342,40 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "source-kfunc-task-from-vpid-ref-release"
+        category: "helper-state"
+        tags: [kfunc ref-lifetime source accept]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let task = (kfunc-call "bpf_task_from_vpid" 1)'
+            '  if $task {'
+            '    kfunc-call "bpf_task_release" $task'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-kfunc-task-from-vpid-rejects-leak"
+        category: "helper-state"
+        tags: [kfunc ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let task = (kfunc-call "bpf_task_from_vpid" 1)'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "unreleased kfunc reference at function exit"
+    }
+    {
         name: "source-kfunc-task-ref-rejects-leak"
         category: "helper-state"
         tags: [kfunc ref-lifetime source reject]
@@ -35197,6 +35231,48 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
+    }
+    {
+        name: "source-kfunc-task-get-cgroup1-release"
+        category: "helper-state"
+        tags: [kfunc cgroup ref-lifetime source accept]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let task = (kfunc-call "bpf_task_from_pid" 1)'
+            '  if $task {'
+            '    let cgrp = (kfunc-call "bpf_task_get_cgroup1" $task 0)'
+            '    if $cgrp {'
+            '      $cgrp | kfunc-call "bpf_cgroup_release"'
+            '    }'
+            '    $task | kfunc-call "bpf_task_release"'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-kfunc-task-get-cgroup1-rejects-cgroup-leak"
+        category: "helper-state"
+        tags: [kfunc cgroup ref-lifetime source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let task = (kfunc-call "bpf_task_from_pid" 1)'
+            '  if $task {'
+            '    let cgrp = (kfunc-call "bpf_task_get_cgroup1" $task 0)'
+            '    $task | kfunc-call "bpf_task_release"'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "unreleased kfunc reference at function exit"
     }
     {
         name: "source-kfunc-cgroup-release-accepts-acquire-or-null-release"

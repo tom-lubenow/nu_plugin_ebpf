@@ -70,6 +70,8 @@ documentation changes that matter to external alpha consumers.
 - Preserved simple scalar expression identities across source lowering,
   verifier-types, and VCC so repeated graph-root map lookups using equivalent
   dynamic key expressions satisfy same-map-value `bpf_spin_lock` checks.
+- Added source verifier coverage for the modeled `bpf_task_from_vpid` and
+  `bpf_task_get_cgroup1` acquired-reference kfunc flows.
 - Added dynamic branch coverage for timer and workqueue map-origin rejects,
   including phi-joined concrete-map source metadata.
 - Added dynamic branch coverage for workqueue callback map-origin rejects.

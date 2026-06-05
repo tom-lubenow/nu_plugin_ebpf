@@ -1072,6 +1072,11 @@ argument classes, exact pointer-argument pointee checks for named struct
 targets, and exact return type; pointer returns from that path can use the same
 BTF-backed field projection during local compilation, with live availability
 still left to the kernel verifier.
+Task and cgroup refcounted kfuncs are modeled as ordinary acquired-reference
+flows: `bpf_task_from_pid` and `bpf_task_from_vpid` return nullable task
+references released by `bpf_task_release`, while `bpf_cgroup_acquire`,
+`bpf_cgroup_from_id`, `bpf_cgroup_ancestor`, and `bpf_task_get_cgroup1` return
+nullable cgroup references released by `bpf_cgroup_release`.
 For raw object and graph kfuncs, operands that map to verifier-rewritten
 `__ign` metadata parameters must be known zero in source; the kernel replaces
 them during load with the appropriate BTF metadata when the call is valid.
