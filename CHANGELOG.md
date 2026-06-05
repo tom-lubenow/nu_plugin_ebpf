@@ -6,6 +6,8 @@ documentation changes that matter to external alpha consumers.
 
 ## Unreleased
 
+- Added source verifier coverage for `bpf_throw`, including void-return misuse
+  and lock-held kfunc rejects.
 - Added source verifier coverage for `bpf_task_under_cgroup` task/cgroup
   pointer provenance, including task-reference misuse rejects.
 - Added source verifier coverage for `bpf_map_sum_elem_count` on

@@ -36071,6 +36071,35 @@ const FIXTURES = [
         error_contains: "kfunc 'bpf_res_spin_lock' arg0 expects pointer"
     }
     {
+        name: "source-kfunc-throw"
+        category: "helper-state"
+        tags: [kfunc throw source accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  kfunc-call "bpf_throw" 1'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-kfunc-throw-rejects-return-use"
+        category: "helper-state"
+        tags: [kfunc throw source void-return reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  kfunc-call "bpf_throw" 1 | count'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "void kfunc 'bpf_throw' return value cannot be used"
+    }
+    {
         name: "source-kfunc-rcu-read-lock-unlock"
         category: "helper-state"
         tags: [kfunc rcu source accept]
@@ -36745,6 +36774,27 @@ const FIXTURES = [
         local: "reject"
         kernel: "skip"
         error_contains: "cannot be called while bpf_spin_lock is held"
+    }
+    {
+        name: "spin-lock-rejects-throw-while-held"
+        category: "helper-state"
+        tags: [spin-lock map-define kfunc throw reject]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  map-define locks --kind hash --value-type "record{lock:bpf_spin_lock,counter:u64}"'
+            '  let entry = (0 | map-get locks --kind hash)'
+            '  if $entry {'
+            '    helper-call "bpf_spin_lock" $entry.lock'
+            '    kfunc-call "bpf_throw" 1'
+            '    helper-call "bpf_spin_unlock" $entry.lock'
+            '  }'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc 'bpf_throw' cannot be called while bpf_spin_lock is held"
     }
     {
         name: "spin-lock-map-define-rejects-lru-hash"
