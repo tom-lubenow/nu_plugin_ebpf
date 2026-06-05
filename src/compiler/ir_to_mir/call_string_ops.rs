@@ -52,6 +52,7 @@ struct RuntimeStringDynamicEnd {
 
 const MAX_STRING_EXPAND_RESULTS: usize = 60;
 const MAX_RUNTIME_UNSIGNED_FILL_WIDTH: usize = 10;
+const MAX_RUNTIME_UNSIGNED_LEFT_FILL_WIDTH: usize = MAX_STRING_SIZE - 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FillAlignment {
@@ -2878,15 +2879,16 @@ impl<'a> HirToMirLowering<'a> {
         if width <= 1 || fill.is_empty() {
             return true;
         }
-        if fill.len() > 1 || width > MAX_RUNTIME_UNSIGNED_FILL_WIDTH {
+        if fill.len() > 1 {
             return false;
         }
 
         match alignment {
-            FillAlignment::Left => true,
+            FillAlignment::Left => width <= MAX_RUNTIME_UNSIGNED_LEFT_FILL_WIDTH,
             FillAlignment::Center if width <= 2 => true,
             FillAlignment::Right | FillAlignment::Center | FillAlignment::CenterRight => {
-                matches!(input_ty, MirType::U8 | MirType::U16 | MirType::U32)
+                width <= MAX_RUNTIME_UNSIGNED_FILL_WIDTH
+                    && matches!(input_ty, MirType::U8 | MirType::U16 | MirType::U32)
             }
         }
     }
@@ -2900,12 +2902,11 @@ impl<'a> HirToMirLowering<'a> {
         alignment: FillAlignment,
         fill: &str,
     ) -> Result<(), CompileError> {
-        let pad_len = if !fill.is_empty() && width <= MAX_RUNTIME_UNSIGNED_FILL_WIDTH {
-            fill.len() * (width - 1)
+        let string_len_bound = if fill.is_empty() || width <= 1 {
+            MAX_INT_STRING_LEN
         } else {
-            0
+            MAX_INT_STRING_LEN.max(width)
         };
-        let string_len_bound = MAX_INT_STRING_LEN + pad_len;
         let aligned_len = align_to_eight(string_len_bound + 1)
             .min(MAX_STRING_SIZE)
             .max(16);

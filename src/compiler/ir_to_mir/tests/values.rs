@@ -15247,10 +15247,38 @@ fn test_lower_fill_width_ten_right_on_runtime_unsigned_int_materializes_dynamic_
 }
 
 #[test]
-fn test_lower_fill_width_eleven_rejects_runtime_unsigned_int() {
-    let fill_decl = DeclId::new(2509);
-    let starts_with_decl = DeclId::new(2510);
-    let hir = make_ctx_pid_fill_then_starts_with_program(fill_decl, starts_with_decl, Some(11));
+fn test_lower_fill_width_127_left_on_runtime_unsigned_int_materializes_dynamic_padding() {
+    let result = lower_ctx_pid_fill_then_starts_with_program_with_options(
+        DeclId::new(2535),
+        DeclId::new(2536),
+        Some(127),
+        None,
+        None,
+        "0",
+        "fill --width 127 should lower for runtime unsigned integer input",
+    );
+
+    assert_runtime_integer_fill_padding_shape(
+        &result,
+        &[2, 127],
+        b" ",
+        126,
+        "runtime integer left fill --width 127",
+    );
+}
+
+#[test]
+fn test_lower_fill_width_eleven_right_rejects_runtime_unsigned_int() {
+    let fill_decl = DeclId::new(2537);
+    let starts_with_decl = DeclId::new(2538);
+    let hir = make_ctx_pid_fill_then_starts_with_program_with_options(
+        fill_decl,
+        starts_with_decl,
+        Some(11),
+        Some("right"),
+        Some("0"),
+        "0",
+    );
     let decl_names = HashMap::from([
         (fill_decl, "fill".to_string()),
         (starts_with_decl, "str starts-with".to_string()),
@@ -15265,7 +15293,35 @@ fn test_lower_fill_width_eleven_rejects_runtime_unsigned_int() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("fill --width 11 should reject runtime integer input because padding is dynamic");
+    .expect_err("fill --width 11 --alignment right should reject runtime integer input");
+
+    assert!(
+        err.to_string()
+            .contains("fill requires compile-time known string, int, float, or filesize input"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_fill_width_128_left_rejects_runtime_unsigned_int() {
+    let fill_decl = DeclId::new(2509);
+    let starts_with_decl = DeclId::new(2510);
+    let hir = make_ctx_pid_fill_then_starts_with_program(fill_decl, starts_with_decl, Some(128));
+    let decl_names = HashMap::from([
+        (fill_decl, "fill".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("fill --width 128 should reject runtime integer input because padding exceeds the string buffer cap");
 
     assert!(
         err.to_string()
