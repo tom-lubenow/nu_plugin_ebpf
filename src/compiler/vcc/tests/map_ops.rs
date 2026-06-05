@@ -1217,7 +1217,8 @@ fn test_verify_mir_map_ops_reject_conflicting_map_kinds() {
     assert!(
         err.iter()
             .any(|e| e.kind == VccErrorKind::UnsupportedInstruction
-                && e.message.contains("used with conflicting kinds")),
+                && (e.message.contains("used with conflicting kinds")
+                    || e.message.contains("referenced with conflicting kinds"))),
         "unexpected error messages: {:?}",
         err
     );
@@ -1306,7 +1307,8 @@ fn test_verify_mir_counter_map_rejects_conflicting_kinds() {
     assert!(
         err.iter()
             .any(|e| e.kind == VccErrorKind::UnsupportedInstruction
-                && e.message.contains("used with conflicting kinds")),
+                && (e.message.contains("used with conflicting kinds")
+                    || e.message.contains("referenced with conflicting kinds"))),
         "unexpected error messages: {:?}",
         err
     );

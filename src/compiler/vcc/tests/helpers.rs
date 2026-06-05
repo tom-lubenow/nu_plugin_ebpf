@@ -21453,6 +21453,26 @@ fn test_verify_mir_rejects_more_than_five_params() {
 }
 
 #[test]
+fn test_verify_mir_rejects_out_of_range_vreg_def() {
+    let (mut func, entry) = new_mir_function();
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: VReg(99),
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let err = verify_mir(&func, &HashMap::new())
+        .expect_err("out-of-range virtual register should be rejected before VCC lowering");
+    assert!(
+        err.iter()
+            .any(|e| e.kind == VccErrorKind::UnsupportedInstruction
+                && e.message.contains("out-of-range virtual register 99")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_rejects_out_of_range_type_map_key() {
     let (mut func, entry) = new_mir_function();
     let dst = func.alloc_vreg();
@@ -21468,6 +21488,26 @@ fn test_verify_mir_rejects_out_of_range_type_map_key() {
         err.iter()
             .any(|e| e.kind == VccErrorKind::UnsupportedInstruction
                 && e.message.contains("out-of-range virtual register 99")),
+        "unexpected error messages: {:?}",
+        err
+    );
+}
+
+#[test]
+fn test_verify_mir_rejects_invalid_block_terminator() {
+    let (mut func, entry) = new_mir_function();
+    let dst = func.alloc_vreg();
+    func.block_mut(entry).terminator = MirInst::Copy {
+        dst,
+        src: MirValue::Const(0),
+    };
+
+    let err =
+        verify_mir(&func, &HashMap::new()).expect_err("invalid terminator should be rejected");
+    assert!(
+        err.iter()
+            .any(|e| e.kind == VccErrorKind::UnsupportedInstruction
+                && e.message.contains("invalid terminator")),
         "unexpected error messages: {:?}",
         err
     );

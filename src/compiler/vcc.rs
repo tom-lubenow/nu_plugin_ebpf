@@ -52,6 +52,7 @@ use crate::compiler::mir::{
     StackSlotKind, StringAppendType, SubfunctionId, TIMESTAMP_MAP_NAME, USTACK_MAP_NAME,
     UnaryOpKind, VReg,
 };
+use crate::compiler::mir_integrity::validate_mir_structural_references;
 use crate::compiler::passes::{ListLowering, MirPass};
 use crate::compiler::type_infer::validate_program_capabilities_for_info;
 use crate::compiler::{ProbeContext, ProgramTypeInfo};
@@ -794,6 +795,12 @@ fn verify_mir_with_subfunction_summaries_impl(
                 func.param_count
             ),
         )]);
+    }
+    if let Err(errors) = validate_mir_structural_references(func) {
+        return Err(errors
+            .into_iter()
+            .map(|err| VccError::new(VccErrorKind::UnsupportedInstruction, err.message))
+            .collect());
     }
     let total_vregs = (func.vreg_count as usize).max(func.param_count);
     if let Err(errors) = validate_type_map_vregs(types, total_vregs) {

@@ -16,6 +16,34 @@ impl MirIntegrityError {
 }
 
 pub(crate) fn validate_mir_references(func: &MirFunction) -> Result<(), Vec<MirIntegrityError>> {
+    validate_mir_references_with_options(
+        func,
+        MirIntegrityOptions {
+            validate_param_indices: true,
+        },
+    )
+}
+
+pub(crate) fn validate_mir_structural_references(
+    func: &MirFunction,
+) -> Result<(), Vec<MirIntegrityError>> {
+    validate_mir_references_with_options(
+        func,
+        MirIntegrityOptions {
+            validate_param_indices: false,
+        },
+    )
+}
+
+#[derive(Clone, Copy)]
+struct MirIntegrityOptions {
+    validate_param_indices: bool,
+}
+
+fn validate_mir_references_with_options(
+    func: &MirFunction,
+    options: MirIntegrityOptions,
+) -> Result<(), Vec<MirIntegrityError>> {
     let mut errors = Vec::new();
     let mut declared = HashSet::with_capacity(func.stack_slots.len());
     let mut block_ids = HashSet::with_capacity(func.blocks.len());
@@ -48,7 +76,9 @@ pub(crate) fn validate_mir_references(func: &MirFunction) -> Result<(), Vec<MirI
     }
 
     for (idx, slot) in &func.param_stack_slots {
-        check_param_index(*idx, "param stack slot", func.param_count, &mut errors);
+        if options.validate_param_indices {
+            check_param_index(*idx, "param stack slot", func.param_count, &mut errors);
+        }
         check_slot(
             *slot,
             &format!("param stack slot arg{idx}"),
@@ -56,29 +86,31 @@ pub(crate) fn validate_mir_references(func: &MirFunction) -> Result<(), Vec<MirI
             &mut errors,
         );
     }
-    for idx in &func.param_non_null {
-        check_param_index(
-            *idx,
-            "non-null parameter metadata",
-            func.param_count,
-            &mut errors,
-        );
-    }
-    for idx in &func.param_trusted_btf {
-        check_param_index(
-            *idx,
-            "trusted BTF parameter metadata",
-            func.param_count,
-            &mut errors,
-        );
-    }
-    for (symbol, idx) in &func.global_param_aliases {
-        check_param_index(
-            *idx,
-            &format!("global parameter alias '{symbol}'"),
-            func.param_count,
-            &mut errors,
-        );
+    if options.validate_param_indices {
+        for idx in &func.param_non_null {
+            check_param_index(
+                *idx,
+                "non-null parameter metadata",
+                func.param_count,
+                &mut errors,
+            );
+        }
+        for idx in &func.param_trusted_btf {
+            check_param_index(
+                *idx,
+                "trusted BTF parameter metadata",
+                func.param_count,
+                &mut errors,
+            );
+        }
+        for (symbol, idx) in &func.global_param_aliases {
+            check_param_index(
+                *idx,
+                &format!("global parameter alias '{symbol}'"),
+                func.param_count,
+                &mut errors,
+            );
+        }
     }
     for slot in &func.entry_initialized_dynptr_slots {
         check_slot(
