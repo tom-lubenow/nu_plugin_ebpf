@@ -17586,6 +17586,25 @@ const FIXTURES = [
         error_contains: "helper 148 arg0 requires arg1 = 0 when arg0 is null"
     }
     {
+        name: "source-helper-copy-from-user-rejects-null-dst-dynamic-size"
+        category: "helper-state"
+        tags: [helper copy-user zero-size dynamic reject]
+        target: "uprobe:/bin/true:main"
+        program: [
+            '{|ctx|'
+            '  let ptr = $ctx.arg0'
+            '  if $ptr {'
+            '    let size = (helper-call "bpf_get_prandom_u32")'
+            '    helper-call "bpf_copy_from_user" 0 $size $ptr'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 148 arg0 requires arg1 = 0 when arg0 is null"
+    }
+    {
         name: "source-helper-copy-from-user-rejects-stack-src"
         category: "helper-state"
         tags: [helper copy-user reject]
@@ -18526,6 +18545,22 @@ const FIXTURES = [
         error_contains: "helper 176 arg0 requires arg1 = 0 when arg0 is null"
     }
     {
+        name: "source-helper-get-branch-snapshot-rejects-null-dynamic-size"
+        category: "helper-state"
+        tags: [helper branch-stack zero-size dynamic reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let size = (helper-call "bpf_get_prandom_u32")'
+            '  helper-call "bpf_get_branch_snapshot" 0 $size 0'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 176 arg0 requires arg1 = 0 when arg0 is null"
+    }
+    {
         name: "source-helper-get-branch-snapshot-rejects-nonzero-flags"
         category: "helper-state"
         tags: [helper branch-stack flags reject]
@@ -18595,6 +18630,22 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  helper-call "bpf_read_branch_records" $ctx 0 8 0'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 119 arg1 requires arg2 = 0 when arg1 is null"
+    }
+    {
+        name: "source-helper-read-branch-records-rejects-null-dynamic-size"
+        category: "helper-state"
+        tags: [helper branch-stack zero-size dynamic reject]
+        target: "perf_event:software:cpu-clock:period=100000"
+        program: [
+            '{|ctx|'
+            '  let size = (helper-call "bpf_get_prandom_u32")'
+            '  helper-call "bpf_read_branch_records" $ctx 0 $size 0'
             '  0'
             '}'
         ]
@@ -18687,6 +18738,22 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  helper-call "bpf_get_task_stack" $ctx.current_task 0 24 0'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 141 arg1 requires arg2 = 0 when arg1 is null"
+    }
+    {
+        name: "source-helper-get-task-stack-rejects-null-dynamic-size"
+        category: "helper-state"
+        tags: [helper task stack-copy zero-size dynamic reject]
+        target: "kprobe:do_exit"
+        program: [
+            '{|ctx|'
+            '  let size = (helper-call "bpf_get_prandom_u32")'
+            '  helper-call "bpf_get_task_stack" $ctx.current_task 0 $size 0'
             '  0'
             '}'
         ]
