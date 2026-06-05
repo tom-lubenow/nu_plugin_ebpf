@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::Bound;
 
 use fancy_regex::{NoExpand, Regex as FancyRegex};
@@ -802,6 +802,10 @@ fn eval_supported_constant_call(
             eval_supported_constant_no_argument_call(cmd_name, &call.arguments)?;
             eval_supported_constant_math_median(input, span)
         }
+        "math mode" => {
+            eval_supported_constant_no_argument_call(cmd_name, &call.arguments)?;
+            eval_supported_constant_math_mode(input, span)
+        }
         "math ceil" | "math floor" | "math round" => {
             eval_supported_constant_no_argument_call(cmd_name, &call.arguments)?;
             eval_supported_constant_math_rounding(cmd_name, input, span)
@@ -1250,6 +1254,10 @@ fn eval_supported_constant_external_call(
         "math median" => {
             eval_supported_constant_no_external_args(cmd_name, args, span)?;
             eval_supported_constant_math_median(input, span)
+        }
+        "math mode" => {
+            eval_supported_constant_no_external_args(cmd_name, args, span)?;
+            eval_supported_constant_math_mode(input, span)
         }
         "math ceil" | "math floor" | "math round" => {
             eval_supported_constant_no_external_args(cmd_name, args, span)?;
@@ -5678,6 +5686,58 @@ fn eval_supported_constant_math_median(
     }
 }
 
+fn eval_supported_constant_math_mode(
+    input: Option<Value>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    const MAX_MODE_STACK_LIST_CAPACITY: usize = 60;
+
+    let value = eval_supported_constant_required_pipeline_input("math mode", input, span)?;
+    let value_span = value.span();
+    let Value::List { vals, .. } = value else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`math mode` in a compile-time global initializer requires list<int> input",
+                span,
+            ),
+        );
+    };
+
+    let mut counts = BTreeMap::<i64, usize>::new();
+    for (index, value) in vals.into_iter().enumerate() {
+        let Value::Int { val, .. } = value else {
+            return Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    format!(
+                        "`math mode` requires integer list items in compile-time global initializers; item {index} has type {}",
+                        value.get_type()
+                    ),
+                    span,
+                ),
+            );
+        };
+        *counts.entry(val).or_default() += 1;
+    }
+
+    let max_count = counts.values().copied().max().unwrap_or(0);
+    let modes = counts
+        .into_iter()
+        .filter_map(|(value, count)| (count == max_count).then_some(Value::int(value, value_span)))
+        .collect::<Vec<_>>();
+    if modes.len() > MAX_MODE_STACK_LIST_CAPACITY {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`math mode` output exceeds stack-backed numeric list capacity {MAX_MODE_STACK_LIST_CAPACITY} in compile-time global initializers"
+                ),
+                span,
+            ),
+        );
+    }
+
+    Ok(Value::list(modes, value_span))
+}
+
 fn eval_supported_constant_math_rounding(
     cmd_name: &str,
     input: Option<Value>,
@@ -5841,6 +5901,10 @@ fn eval_supported_constant_math_external_call(
         "math median" => {
             eval_supported_constant_no_external_args(&cmd_name, remaining_args, span)?;
             eval_supported_constant_math_median(input, span)
+        }
+        "math mode" => {
+            eval_supported_constant_no_external_args(&cmd_name, remaining_args, span)?;
+            eval_supported_constant_math_mode(input, span)
         }
         "math ceil" | "math floor" | "math round" => {
             eval_supported_constant_no_external_args(&cmd_name, remaining_args, span)?;
