@@ -407,7 +407,28 @@ pub(super) fn check_map_operand_scalar_size(
     }
 }
 
-pub(super) fn map_value_limit_from_dst_type(dst_ty: Option<&MirType>) -> Option<i64> {
+pub(super) fn verifier_limit_from_size(
+    size: usize,
+    what: &str,
+    errors: &mut Vec<VerifierTypeError>,
+) -> Option<i64> {
+    if size == 0 {
+        return None;
+    }
+    if size > i64::MAX as usize {
+        errors.push(VerifierTypeError::new(format!(
+            "{what} size {size} exceeds representable verifier bounds"
+        )));
+        return None;
+    }
+    Some((size - 1) as i64)
+}
+
+pub(super) fn map_value_limit_from_dst_type(
+    dst_ty: Option<&MirType>,
+    what: &str,
+    errors: &mut Vec<VerifierTypeError>,
+) -> Option<i64> {
     let pointee = match dst_ty {
         Some(MirType::Ptr { pointee, .. }) => pointee.as_ref(),
         _ => return None,
@@ -415,9 +436,5 @@ pub(super) fn map_value_limit_from_dst_type(dst_ty: Option<&MirType>) -> Option<
     if matches!(pointee, MirType::Unknown) {
         return None;
     }
-    let size = pointee.size();
-    if size == 0 {
-        return None;
-    }
-    Some(size.saturating_sub(1) as i64)
+    verifier_limit_from_size(pointee.size(), what, errors)
 }

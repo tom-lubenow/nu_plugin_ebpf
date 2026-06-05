@@ -20300,6 +20300,49 @@ fn test_helper_get_local_storage_accepts_zero_flags() {
 }
 
 #[test]
+fn test_helper_get_local_storage_rejects_unrepresentable_value_type_bounds() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let map_slot = func.alloc_stack_slot(8, 8, StackSlotKind::StringBuffer);
+    let storage = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::CallHelper {
+            dst: storage,
+            helper: BpfHelper::GetLocalStorage as u32,
+            args: vec![MirValue::StackSlot(map_slot), MirValue::Const(0)],
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        storage,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Array {
+                elem: Box::new(MirType::U64),
+                len: usize::MAX,
+            }),
+            address_space: AddressSpace::Map,
+        },
+    );
+
+    let probe_ctx = ProbeContext::new(EbpfProgramType::CgroupSkb, "/sys/fs/cgroup:ingress");
+    let err = verify_mir_for_probe_context(&func, &types, &probe_ctx)
+        .expect_err("expected unrepresentable helper return bounds rejection");
+    assert!(
+        err.iter().any(|e| {
+            e.message
+                .contains("get_local_storage return value type size")
+                && e.message.contains("representable verifier bounds")
+        }),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_helper_get_local_storage_rejects_nonzero_flags() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

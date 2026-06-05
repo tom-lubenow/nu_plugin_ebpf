@@ -135,7 +135,7 @@ pub(super) fn apply_inst(
             apply_map_lookup_dynamic_inst(*dst, *map_ptr, inner_map, *key, types, state, errors);
         }
         MirInst::LoadGlobal { dst, ty, .. } => {
-            apply_global_load_inst(*dst, ty, state);
+            apply_global_load_inst(*dst, ty, state, errors);
         }
         MirInst::ListNew { dst, buffer, .. } => {
             apply_list_new_inst(*dst, *buffer, slot_sizes, state);

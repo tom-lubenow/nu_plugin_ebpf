@@ -30,9 +30,11 @@ pub(super) fn apply_map_lookup_inst(
         return;
     }
 
-    let bounds = map_value_limit(map)
-        .or_else(|| map_value_limit_from_dst_type(types.get(&dst)))
-        .map(|limit| PtrBounds::new(PtrOrigin::Map(dst), 0, 0, limit));
+    let limit = match map_value_limit(map) {
+        Some(limit) => Some(limit),
+        None => map_value_limit_from_dst_type(types.get(&dst), "map lookup value type", errors),
+    };
+    let bounds = limit.map(|limit| PtrBounds::new(PtrOrigin::Map(dst), 0, 0, limit));
     state.set(
         dst,
         VerifierType::Ptr {
@@ -72,9 +74,13 @@ pub(super) fn apply_map_lookup_dynamic_inst(
     check_map_operand_scalar_size(key, "map key", types, errors);
     check_map_key_access(inner_map, key, types, state, errors);
 
-    let bounds = map_value_limit(inner_map)
-        .or_else(|| map_value_limit_from_dst_type(types.get(&dst)))
-        .map(|limit| PtrBounds::new(PtrOrigin::Map(dst), 0, 0, limit));
+    let limit = match map_value_limit(inner_map) {
+        Some(limit) => Some(limit),
+        None => {
+            map_value_limit_from_dst_type(types.get(&dst), "dynamic map lookup value type", errors)
+        }
+    };
+    let bounds = limit.map(|limit| PtrBounds::new(PtrOrigin::Map(dst), 0, 0, limit));
     state.set(
         dst,
         VerifierType::Ptr {
@@ -87,17 +93,14 @@ pub(super) fn apply_map_lookup_dynamic_inst(
     );
 }
 
-pub(super) fn apply_global_load_inst(dst: VReg, ty: &MirType, state: &mut VerifierState) {
-    let bounds = if ty.size() == 0 {
-        None
-    } else {
-        Some(PtrBounds::new(
-            PtrOrigin::Map(dst),
-            0,
-            0,
-            ty.size().saturating_sub(1) as i64,
-        ))
-    };
+pub(super) fn apply_global_load_inst(
+    dst: VReg,
+    ty: &MirType,
+    state: &mut VerifierState,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    let bounds = verifier_limit_from_size(ty.size(), "global value type", errors)
+        .map(|limit| PtrBounds::new(PtrOrigin::Map(dst), 0, 0, limit));
     state.set(
         dst,
         VerifierType::Ptr {

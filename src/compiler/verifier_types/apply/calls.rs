@@ -147,8 +147,12 @@ pub(super) fn apply_call_helper_inst(
                 Some(BpfHelper::GetLocalStorage) => VerifierType::Ptr {
                     space: AddressSpace::Map,
                     nullability: Nullability::NonNull,
-                    bounds: map_value_limit_from_dst_type(types.get(&dst))
-                        .map(|limit| PtrBounds::new(PtrOrigin::Map(dst), 0, 0, limit)),
+                    bounds: map_value_limit_from_dst_type(
+                        types.get(&dst),
+                        "get_local_storage return value type",
+                        errors,
+                    )
+                    .map(|limit| PtrBounds::new(PtrOrigin::Map(dst), 0, 0, limit)),
                     ringbuf_ref: None,
                     kfunc_ref: None,
                 },
@@ -226,8 +230,12 @@ pub(super) fn apply_call_helper_inst(
                     }),
                 },
                 _ => {
-                    let bounds = map_value_limit_from_dst_type(types.get(&dst))
-                        .map(|limit| PtrBounds::new(PtrOrigin::Map(dst), 0, 0, limit));
+                    let bounds = map_value_limit_from_dst_type(
+                        types.get(&dst),
+                        "helper return map value type",
+                        errors,
+                    )
+                    .map(|limit| PtrBounds::new(PtrOrigin::Map(dst), 0, 0, limit));
                     VerifierType::Ptr {
                         space: AddressSpace::Map,
                         nullability: Nullability::MaybeNull,

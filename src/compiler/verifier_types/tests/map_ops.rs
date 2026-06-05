@@ -1516,3 +1516,33 @@ fn test_map_update_rejects_oversized_key_layout() {
         err
     );
 }
+
+#[test]
+fn test_global_load_rejects_unrepresentable_value_type_bounds() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let dst = func.alloc_vreg();
+    func.block_mut(entry)
+        .instructions
+        .push(MirInst::LoadGlobal {
+            dst,
+            symbol: "__nu_rodata_huge".to_string(),
+            ty: MirType::Array {
+                elem: Box::new(MirType::U64),
+                len: usize::MAX,
+            },
+        });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let err = verify_mir(&func, &HashMap::new()).expect_err("expected global bounds rejection");
+    assert!(
+        err.iter().any(|e| {
+            e.message.contains("global value type size")
+                && e.message.contains("representable verifier bounds")
+        }),
+        "unexpected errors: {:?}",
+        err
+    );
+}
