@@ -653,6 +653,14 @@ fn eval_supported_constant_call(
             env,
             span,
         ),
+        "merge" => eval_supported_constant_record_merge_call(
+            working_set,
+            cmd_name,
+            input,
+            call.positional_nth(0),
+            env,
+            span,
+        ),
         "insert" | "update" | "upsert" => eval_supported_constant_path_mutation_call(
             working_set,
             cmd_name,
@@ -736,6 +744,31 @@ fn eval_supported_constant_external_call(
                 cmd_name,
                 input,
                 Some(item_expr),
+                env,
+                span,
+            )
+        }
+        "merge" => {
+            let [record_arg] = args else {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(format!("`{cmd_name}` requires exactly one argument"), span));
+            };
+
+            let ExternalArgument::Regular(record_expr) = record_arg else {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        format!(
+                            "`{cmd_name}` record argument cannot use spread syntax in compile-time global initializers"
+                        ),
+                        record_arg.expr().span,
+                    ));
+            };
+
+            eval_supported_constant_record_merge_call(
+                working_set,
+                cmd_name,
+                input,
+                Some(record_expr),
                 env,
                 span,
             )
@@ -865,6 +898,56 @@ fn eval_supported_constant_list_mutation_call(
     };
 
     Ok(Value::list(updated, value_span))
+}
+
+fn eval_supported_constant_record_merge_call(
+    working_set: &StateWorkingSet,
+    cmd_name: &str,
+    input: Option<Value>,
+    merge_expr: Option<&nu_protocol::ast::Expression>,
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let value = input.ok_or_else(|| {
+        LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+            format!(
+                "`{cmd_name}` in a compile-time global initializer must receive pipeline input"
+            ),
+            span,
+        )
+    })?;
+    let merge_expr = merge_expr.ok_or_else(|| {
+        LabeledError::new("Unsupported annotated mutable global initializer")
+            .with_label(format!("`{cmd_name}` requires a record argument"), span)
+    })?;
+    let merge_value = eval_supported_constant_value_with_env(working_set, merge_expr, env)?;
+
+    let value_span = value.span();
+    let Value::Record { val: input, .. } = value else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!("`{cmd_name}` in a compile-time global initializer requires record input"),
+                span,
+            ),
+        );
+    };
+    let Value::Record { val: merge, .. } = merge_value else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`{cmd_name}` in a compile-time global initializer requires a record argument"
+                ),
+                span,
+            ),
+        );
+    };
+
+    let mut record = input.into_owned();
+    for (key, value) in merge.iter() {
+        record.insert(key.clone(), value.clone());
+    }
+
+    Ok(Value::record(record, value_span))
 }
 
 fn eval_supported_constant_path_mutation_call(
