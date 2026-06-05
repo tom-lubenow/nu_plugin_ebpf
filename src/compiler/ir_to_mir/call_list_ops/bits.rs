@@ -977,11 +977,11 @@ impl<'a> HirToMirLowering<'a> {
         })
     }
 
-    fn bits_shift_runtime_auto_right_count(
-        &self,
-        cmd_name: &str,
-    ) -> Result<Option<i64>, CompileError> {
-        if cmd_name != "bits shr" || !self.named_flags.is_empty() || !self.named_args.is_empty() {
+    fn bits_shift_runtime_auto_count(&self, cmd_name: &str) -> Result<Option<i64>, CompileError> {
+        if !matches!(cmd_name, "bits shl" | "bits shr")
+            || !self.named_flags.is_empty()
+            || !self.named_args.is_empty()
+        {
             return Ok(None);
         }
         if !self.parser_info_args.is_empty() {
@@ -1013,6 +1013,28 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         Ok(Some(shift_count))
+    }
+
+    fn bits_shift_runtime_auto_left_count(
+        &self,
+        cmd_name: &str,
+    ) -> Result<Option<i64>, CompileError> {
+        if cmd_name == "bits shl" {
+            self.bits_shift_runtime_auto_count(cmd_name)
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn bits_shift_runtime_auto_right_count(
+        &self,
+        cmd_name: &str,
+    ) -> Result<Option<i64>, CompileError> {
+        if cmd_name == "bits shr" {
+            self.bits_shift_runtime_auto_count(cmd_name)
+        } else {
+            Ok(None)
+        }
     }
 
     fn bits_rotate_spec(
@@ -1156,7 +1178,7 @@ impl<'a> HirToMirLowering<'a> {
         ))
     }
 
-    fn bits_rotate_runtime_auto_unsigned_u32_or_narrower_input(
+    fn bits_runtime_auto_unsigned_u32_or_narrower_input(
         &self,
         input_meta: Option<&RegMetadata>,
         input_vreg: VReg,
@@ -1572,21 +1594,38 @@ impl<'a> HirToMirLowering<'a> {
             if let Some(count) = self.bits_shift_runtime_auto_right_count(cmd_name)? {
                 self.emit_bits_shift_auto_right_value(result_vreg, lhs_value, count);
             } else {
-                let spec = self.bits_shift_spec(cmd_name, None)?;
-                if spec.mode == BitsShiftMode::UnsignedI64 && cmd_name == "bits shl" {
-                    self.validate_bits_unsigned_i64_left_shift_runtime_scalar(
-                        cmd_name,
+                let runtime_auto_left_count = if self
+                    .bits_runtime_auto_unsigned_u32_or_narrower_input(
                         input_meta.as_ref(),
                         input_vreg,
-                        spec.count,
-                    )?;
-                    self.emit_bits_shift_unsigned_i64_left_value(
+                    ) {
+                    self.bits_shift_runtime_auto_left_count(cmd_name)?
+                } else {
+                    None
+                };
+                if let Some(count) = runtime_auto_left_count {
+                    self.emit_bits_shift_auto_left_unsigned_u32_value(
                         result_vreg,
                         lhs_value,
-                        spec.count,
+                        count,
                     );
                 } else {
-                    self.emit_bits_shift_value(cmd_name, result_vreg, lhs_value, spec);
+                    let spec = self.bits_shift_spec(cmd_name, None)?;
+                    if spec.mode == BitsShiftMode::UnsignedI64 && cmd_name == "bits shl" {
+                        self.validate_bits_unsigned_i64_left_shift_runtime_scalar(
+                            cmd_name,
+                            input_meta.as_ref(),
+                            input_vreg,
+                            spec.count,
+                        )?;
+                        self.emit_bits_shift_unsigned_i64_left_value(
+                            result_vreg,
+                            lhs_value,
+                            spec.count,
+                        );
+                    } else {
+                        self.emit_bits_shift_value(cmd_name, result_vreg, lhs_value, spec);
+                    }
                 }
             }
             self.reset_call_result_metadata(src_dst);
@@ -1781,6 +1820,92 @@ impl<'a> HirToMirLowering<'a> {
         });
 
         self.current_block = continuation_block;
+    }
+
+    fn emit_bits_shift_auto_left_unsigned_u32_value(
+        &mut self,
+        dst: VReg,
+        src: MirValue,
+        shift_count: i64,
+    ) {
+        let src = match src {
+            MirValue::VReg(src_vreg) if src_vreg == dst => {
+                let original_vreg = self.func.alloc_vreg();
+                self.emit(MirInst::Copy {
+                    dst: original_vreg,
+                    src: MirValue::VReg(src_vreg),
+                });
+                self.vreg_type_hints.insert(original_vreg, MirType::I64);
+                MirValue::VReg(original_vreg)
+            }
+            other => other,
+        };
+
+        if shift_count == 0 {
+            self.emit(MirInst::Copy { dst, src });
+            self.vreg_type_hints.insert(dst, MirType::I64);
+            return;
+        }
+
+        let continuation_block = self.func.alloc_block();
+        let check_u16_block = self.emit_bits_shift_auto_left_unsigned_case(
+            dst,
+            src.clone(),
+            shift_count,
+            0xff,
+            continuation_block,
+        );
+        self.current_block = check_u16_block;
+        let shift_u32_block = self.emit_bits_shift_auto_left_unsigned_case(
+            dst,
+            src.clone(),
+            shift_count,
+            0xffff,
+            continuation_block,
+        );
+        self.current_block = shift_u32_block;
+        self.emit_bits_shift_fixed_unsigned_value("bits shl", dst, src, shift_count, 0xffff_ffff);
+        self.terminate(MirInst::Jump {
+            target: continuation_block,
+        });
+
+        self.current_block = continuation_block;
+        self.vreg_type_hints.insert(dst, MirType::I64);
+    }
+
+    fn emit_bits_shift_auto_left_unsigned_case(
+        &mut self,
+        dst: VReg,
+        src: MirValue,
+        shift_count: i64,
+        max_value: i64,
+        continuation_block: BlockId,
+    ) -> BlockId {
+        let shift_block = self.func.alloc_block();
+        let next_block = self.func.alloc_block();
+
+        let cmp_vreg = self.func.alloc_vreg();
+        let max_operand = self.large_const_operand(&MirType::I64, max_value);
+        self.emit(MirInst::BinOp {
+            dst: cmp_vreg,
+            op: BinOpKind::Le,
+            lhs: src.clone(),
+            rhs: max_operand,
+        });
+        self.vreg_type_hints.insert(cmp_vreg, MirType::Bool);
+        self.terminate(MirInst::Branch {
+            cond: cmp_vreg,
+            if_true: shift_block,
+            if_false: next_block,
+        });
+
+        self.current_block = shift_block;
+        self.emit_bits_shift_fixed_unsigned_value("bits shl", dst, src, shift_count, max_value);
+        self.terminate(MirInst::Jump {
+            target: continuation_block,
+        });
+
+        next_block
     }
 
     fn emit_bits_shift_auto_right_negative_case(
@@ -2299,7 +2424,7 @@ impl<'a> HirToMirLowering<'a> {
                 });
             } else if let Some(count) = runtime_auto_count
                 && (0..=8).contains(&count)
-                && self.bits_rotate_runtime_auto_unsigned_u32_or_narrower_input(
+                && self.bits_runtime_auto_unsigned_u32_or_narrower_input(
                     input_meta.as_ref(),
                     input_vreg,
                 )

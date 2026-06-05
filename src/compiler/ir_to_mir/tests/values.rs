@@ -23979,6 +23979,80 @@ fn test_lower_bits_shift_default_left_rejects_runtime_scalar_integer_input() {
 }
 
 #[test]
+fn test_lower_bits_shift_default_left_on_runtime_u32_context_input() {
+    let bits_decl = DeclId::new(70152);
+    let hir = make_ctx_pid_bits_shift_default_program(bits_decl, 1);
+    let decl_names = HashMap::from([(bits_decl, "bits shl".to_string())]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("default bits shl should lower runtime u32 input");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .any(|block| matches!(block.terminator, MirInst::Branch { .. })),
+        "expected runtime u32 default bits shl to branch on auto-width ranges"
+    );
+    for expected_op in [BinOpKind::Le, BinOpKind::Shl, BinOpKind::And] {
+        assert!(
+            instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op,
+                    ..
+                } if *op == expected_op
+            )),
+            "expected runtime u32 default bits shl to emit {expected_op:?}"
+        );
+    }
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("default bits shl runtime u32 input should compile through codegen");
+}
+
+#[test]
+fn test_lower_bits_shift_default_left_rejects_runtime_u32_context_count_over_u8_bucket() {
+    let bits_decl = DeclId::new(70153);
+    let hir = make_ctx_pid_bits_shift_default_program(bits_decl, 8);
+    let decl_names = HashMap::from([(bits_decl, "bits shl".to_string())]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("default bits shl should reject counts invalid for the 8-bit auto-width bucket");
+
+    assert!(
+        err.to_string().contains(
+            "bits shl default auto-width runtime shifts support shift counts from 0 through 7"
+        ),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn test_lower_bits_shift_default_right_on_runtime_scalar_integer_input() {
     let bits_decl = DeclId::new(70148);
     let random_decl = DeclId::new(70149);
