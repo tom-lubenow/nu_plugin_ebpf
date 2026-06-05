@@ -798,6 +798,10 @@ fn eval_supported_constant_call(
             eval_supported_constant_no_argument_call(cmd_name, &call.arguments)?;
             eval_supported_constant_math_int_reduce(cmd_name, input, span)
         }
+        "math median" => {
+            eval_supported_constant_no_argument_call(cmd_name, &call.arguments)?;
+            eval_supported_constant_math_median(input, span)
+        }
         "math ceil" | "math floor" | "math round" => {
             eval_supported_constant_no_argument_call(cmd_name, &call.arguments)?;
             eval_supported_constant_math_rounding(cmd_name, input, span)
@@ -1242,6 +1246,10 @@ fn eval_supported_constant_external_call(
         "math max" | "math min" | "math product" | "math sum" => {
             eval_supported_constant_no_external_args(cmd_name, args, span)?;
             eval_supported_constant_math_int_reduce(cmd_name, input, span)
+        }
+        "math median" => {
+            eval_supported_constant_no_external_args(cmd_name, args, span)?;
+            eval_supported_constant_math_median(input, span)
         }
         "math ceil" | "math floor" | "math round" => {
             eval_supported_constant_no_external_args(cmd_name, args, span)?;
@@ -5590,6 +5598,86 @@ fn eval_supported_constant_math_int_reduce(
     Ok(Value::int(result, value_span))
 }
 
+fn eval_supported_constant_math_median(
+    input: Option<Value>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let value = eval_supported_constant_required_pipeline_input("math median", input, span)?;
+    let value_span = value.span();
+    let Value::List { vals, .. } = value else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`math median` in a compile-time global initializer requires non-empty numeric list input",
+                span,
+            ),
+        );
+    };
+
+    if vals.is_empty() {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`math median` requires a non-empty numeric list in compile-time global initializers",
+                span,
+            ),
+        );
+    }
+    if vals.len() % 2 == 0 {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`math median` compile-time list median has type float for even-length lists; mutable global initializers support only materializable eBPF values",
+                span,
+            ),
+        );
+    }
+
+    let mut values = Vec::with_capacity(vals.len());
+    for (index, value) in vals.into_iter().enumerate() {
+        match &value {
+            Value::Int { .. } => {}
+            Value::Float { val, .. } if val.is_finite() => {}
+            Value::Float { val, .. } => {
+                return Err(
+                    LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            format!(
+                                "`math median` requires finite float list items in compile-time global initializers; item {index} is {val}"
+                            ),
+                            span,
+                        ),
+                );
+            }
+            other => {
+                return Err(
+                    LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            format!(
+                                "`math median` requires integer or finite float list items in compile-time global initializers; item {index} has type {}",
+                                other.get_type()
+                            ),
+                            span,
+                        ),
+                );
+            }
+        }
+        values.push(value);
+    }
+
+    values.sort_by(|lhs, rhs| {
+        lhs.partial_cmp(rhs)
+            .expect("median float values are validated as finite")
+    });
+    match &values[values.len() / 2] {
+        Value::Int { val, .. } => Ok(Value::int(*val, value_span)),
+        Value::Float { .. } => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`math median` compile-time list median has type float; mutable global initializers support only materializable eBPF values",
+                span,
+            ),
+        ),
+        _ => unreachable!("median values were validated as integer or finite float"),
+    }
+}
+
 fn eval_supported_constant_math_rounding(
     cmd_name: &str,
     input: Option<Value>,
@@ -5749,6 +5837,10 @@ fn eval_supported_constant_math_external_call(
         "math max" | "math min" | "math product" | "math sum" => {
             eval_supported_constant_no_external_args(&cmd_name, remaining_args, span)?;
             eval_supported_constant_math_int_reduce(&cmd_name, input, span)
+        }
+        "math median" => {
+            eval_supported_constant_no_external_args(&cmd_name, remaining_args, span)?;
+            eval_supported_constant_math_median(input, span)
         }
         "math ceil" | "math floor" | "math round" => {
             eval_supported_constant_no_external_args(&cmd_name, remaining_args, span)?;
