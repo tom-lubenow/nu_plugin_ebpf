@@ -726,6 +726,11 @@ fn eval_supported_constant_call(
                 eval_supported_constant_split_chars_mode_call(&call.arguments)?;
             eval_supported_constant_split_chars(input, use_grapheme_clusters, span)
         }
+        "split list" => {
+            let args =
+                eval_supported_constant_split_list_call_args(working_set, &call.arguments, env)?;
+            eval_supported_constant_split_list(input, args, span)
+        }
         "split row" => {
             let args =
                 eval_supported_constant_split_row_call_args(working_set, &call.arguments, env)?;
@@ -1029,6 +1034,10 @@ fn eval_supported_constant_external_call(
             let use_grapheme_clusters =
                 eval_supported_constant_split_chars_mode_external_args(working_set, args, env, span)?;
             eval_supported_constant_split_chars(input, use_grapheme_clusters, span)
+        }
+        "split list" => {
+            let args = eval_supported_constant_split_list_external_args(working_set, args, env, span)?;
+            eval_supported_constant_split_list(input, args, span)
         }
         "split row" => {
             let args = eval_supported_constant_split_row_external_args(working_set, args, env, span)?;
@@ -2700,6 +2709,355 @@ fn eval_supported_constant_split_chars_known_string(
     }
 }
 
+#[derive(Clone, Copy)]
+enum ConstantSplitListMode {
+    On,
+    Before,
+    After,
+}
+
+struct ConstantSplitListArgs {
+    separator: Value,
+    mode: ConstantSplitListMode,
+    use_regex: bool,
+}
+
+fn eval_supported_constant_split_list_call_args(
+    working_set: &StateWorkingSet,
+    args: &[nu_protocol::ast::Argument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+) -> Result<ConstantSplitListArgs, LabeledError> {
+    let mut separator_expr = None;
+    let mut mode = None;
+    let mut use_regex = false;
+    for arg in args {
+        match arg {
+            nu_protocol::ast::Argument::Positional(expr)
+            | nu_protocol::ast::Argument::Unknown(expr) => {
+                if separator_expr.replace(expr).is_some() {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            "`split list` accepts exactly one separator argument in compile-time global initializers",
+                            arg.span(),
+                        ));
+                }
+            }
+            nu_protocol::ast::Argument::Named(named) => match named.0.item.as_str() {
+                "regex" => {
+                    if named.2.is_some() {
+                        return Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
+                        .with_label(
+                            "`split list --regex` cannot receive a value in compile-time global initializers",
+                            arg.span(),
+                        ));
+                    }
+                    use_regex = true;
+                }
+                "split" => {
+                    let Some(expr) = named.2.as_ref() else {
+                        return Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
+                        .with_label(
+                            "`split list --split` requires a value in compile-time global initializers",
+                            arg.span(),
+                        ));
+                    };
+                    if mode
+                        .replace(eval_supported_constant_split_list_mode_argument(
+                            working_set,
+                            expr,
+                            env,
+                        )?)
+                        .is_some()
+                    {
+                        return Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
+                        .with_label(
+                            "`split list` accepts only one --split value in compile-time global initializers",
+                            arg.span(),
+                        ));
+                    }
+                }
+                _ => {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            format!(
+                                "`split list` does not support named argument --{} in compile-time global initializers",
+                                named.0.item
+                            ),
+                            arg.span(),
+                        ));
+                }
+            },
+            nu_protocol::ast::Argument::Spread(expr) => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`split list` arguments cannot use spread syntax in compile-time global initializers",
+                        expr.span,
+                    ));
+            }
+        }
+    }
+
+    let Some(separator_expr) = separator_expr else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`split list` requires exactly one separator argument in compile-time global initializers",
+                Span::unknown(),
+            ),
+        );
+    };
+    Ok(ConstantSplitListArgs {
+        separator: eval_supported_constant_value_with_env(working_set, separator_expr, env)?,
+        mode: mode.unwrap_or(ConstantSplitListMode::On),
+        use_regex,
+    })
+}
+
+fn eval_supported_constant_split_list_external_args(
+    working_set: &StateWorkingSet,
+    args: &[ExternalArgument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<ConstantSplitListArgs, LabeledError> {
+    let mut separator = None;
+    let mut mode = None;
+    let mut use_regex = false;
+    let mut iter = args.iter().peekable();
+    while let Some(arg) = iter.next() {
+        let ExternalArgument::Regular(expr) = arg else {
+            return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                .with_label(
+                    "`split list` arguments cannot use spread syntax in compile-time global initializers",
+                    arg.expr().span,
+                ));
+        };
+        let value = eval_supported_constant_value_with_env(working_set, expr, env)?;
+        let flag = match &value {
+            Value::String { val, .. } | Value::Glob { val, .. } => val.strip_prefix("--"),
+            _ => None,
+        };
+        let Some(flag) = flag else {
+            if separator.replace(value).is_some() {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`split list` accepts exactly one separator argument in compile-time global initializers",
+                        expr.span,
+                    ));
+            }
+            continue;
+        };
+        match flag {
+            "regex" => use_regex = true,
+            "split" => {
+                let Some(next_arg) = iter.next() else {
+                    return Err(LabeledError::new(
+                        "Unsupported annotated mutable global initializer",
+                    )
+                    .with_label(
+                        "`split list --split` requires a value in compile-time global initializers",
+                        expr.span,
+                    ));
+                };
+                let ExternalArgument::Regular(next_expr) = next_arg else {
+                    return Err(LabeledError::new(
+                        "Unsupported annotated mutable global initializer",
+                    )
+                    .with_label(
+                        "`split list --split` value cannot use spread syntax in compile-time global initializers",
+                        next_arg.expr().span,
+                    ));
+                };
+                if mode
+                    .replace(eval_supported_constant_split_list_mode_argument(
+                        working_set,
+                        next_expr,
+                        env,
+                    )?)
+                    .is_some()
+                {
+                    return Err(LabeledError::new(
+                        "Unsupported annotated mutable global initializer",
+                    )
+                    .with_label(
+                        "`split list` accepts only one --split value in compile-time global initializers",
+                        next_expr.span,
+                    ));
+                }
+            }
+            _ => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`split list` supports only --split and --regex in compile-time global initializers",
+                        expr.span,
+                    ));
+            }
+        }
+    }
+
+    let Some(separator) = separator else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`split list` requires exactly one separator argument in compile-time global initializers",
+                span,
+            ),
+        );
+    };
+    Ok(ConstantSplitListArgs {
+        separator,
+        mode: mode.unwrap_or(ConstantSplitListMode::On),
+        use_regex,
+    })
+}
+
+fn eval_supported_constant_split_list_mode_argument(
+    working_set: &StateWorkingSet,
+    expr: &nu_protocol::ast::Expression,
+    env: &HashMap<nu_protocol::VarId, Value>,
+) -> Result<ConstantSplitListMode, LabeledError> {
+    let mode = eval_supported_constant_string_argument(working_set, expr, env, "split list")?;
+    match mode.as_str() {
+        "on" => Ok(ConstantSplitListMode::On),
+        "before" => Ok(ConstantSplitListMode::Before),
+        "after" => Ok(ConstantSplitListMode::After),
+        _ => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`split list --split` must be 'on', 'before', or 'after' in compile-time global initializers, got '{mode}'"
+                ),
+                expr.span,
+            ),
+        ),
+    }
+}
+
+fn eval_supported_constant_split_list(
+    input: Option<Value>,
+    args: ConstantSplitListArgs,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let value = eval_supported_constant_required_pipeline_input("split list", input, span)?;
+    let value_span = value.span();
+    let Value::List { vals, .. } = value else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`split list` requires a compile-time known list pipeline input in global initializers",
+                span,
+            ),
+        );
+    };
+
+    let regex = if args.use_regex {
+        Some(eval_supported_constant_split_list_regex(
+            &args.separator,
+            span,
+        )?)
+    } else {
+        None
+    };
+    let mut groups = vec![Vec::new()];
+    for value in vals {
+        let is_separator = if let Some(regex) = regex.as_ref() {
+            eval_supported_constant_split_list_regex_matches(&value, regex, span)?
+        } else {
+            value == args.separator
+        };
+        if is_separator {
+            match args.mode {
+                ConstantSplitListMode::On => groups.push(Vec::new()),
+                ConstantSplitListMode::Before => groups.push(vec![value]),
+                ConstantSplitListMode::After => {
+                    groups
+                        .last_mut()
+                        .expect("split list always has a current group")
+                        .push(value);
+                    groups.push(Vec::new());
+                }
+            }
+        } else {
+            groups
+                .last_mut()
+                .expect("split list always has a current group")
+                .push(value);
+        }
+    }
+
+    Ok(Value::list(
+        groups
+            .into_iter()
+            .map(|group| Value::list(group, value_span))
+            .collect(),
+        value_span,
+    ))
+}
+
+fn eval_supported_constant_split_list_regex(
+    separator: &Value,
+    span: Span,
+) -> Result<FancyRegex, LabeledError> {
+    let pattern = match separator {
+        Value::String { val, .. } | Value::Glob { val, .. } => val,
+        other => {
+            return Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    format!(
+                        "`split list --regex` separator must be a compile-time string in global initializers; got {}",
+                        other.get_type()
+                    ),
+                    span,
+                ),
+            );
+        }
+    };
+    FancyRegex::new(pattern).map_err(|err| {
+        LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+            format!("`split list --regex` pattern is invalid in global initializers: {err}"),
+            span,
+        )
+    })
+}
+
+fn eval_supported_constant_split_list_regex_matches(
+    value: &Value,
+    regex: &FancyRegex,
+    span: Span,
+) -> Result<bool, LabeledError> {
+    let Some(text) = eval_supported_constant_split_list_regex_item_text(value, span)? else {
+        return Ok(false);
+    };
+    regex.is_match(&text).map_err(|err| {
+        LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+            format!("`split list --regex` failed at compile time in global initializers: {err}"),
+            span,
+        )
+    })
+}
+
+fn eval_supported_constant_split_list_regex_item_text(
+    value: &Value,
+    span: Span,
+) -> Result<Option<String>, LabeledError> {
+    match value {
+        Value::String { val, .. } | Value::Glob { val, .. } => Ok(Some(val.clone())),
+        Value::Int { val, .. } => Ok(Some(val.to_string())),
+        Value::Bool { val, .. } => Ok(Some(val.to_string())),
+        Value::Nothing { .. } | Value::Filesize { .. } | Value::Duration { .. } => Ok(None),
+        other => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`split list --regex` supports only string, int, bool, null, filesize, and duration compile-time list items; got {}",
+                    other.get_type()
+                ),
+                span,
+            ),
+        ),
+    }
+}
+
 struct ConstantSplitRowArgs {
     separator: String,
     number: Option<usize>,
@@ -3393,6 +3751,15 @@ fn eval_supported_constant_split_external_call(
                 span,
             )?;
             eval_supported_constant_split_chars(input, use_grapheme_clusters, span)
+        }
+        "list" => {
+            let args = eval_supported_constant_split_list_external_args(
+                working_set,
+                remaining_args,
+                env,
+                span,
+            )?;
+            eval_supported_constant_split_list(input, args, span)
         }
         "row" => {
             let args = eval_supported_constant_split_row_external_args(
