@@ -318,6 +318,38 @@ pub(crate) fn scalar_range_contains_only_multiple_of(min: i64, max: i64, multipl
     min == max && min.rem_euclid(multiple) == 0
 }
 
+pub(crate) fn scalar_multiple_of_known_value(value: i64) -> i64 {
+    value.saturating_abs()
+}
+
+pub(crate) fn scalar_multiple_of_merge(lhs: Option<i64>, rhs: Option<i64>) -> Option<i64> {
+    match (lhs, rhs) {
+        (Some(lhs), Some(rhs)) => Some(scalar_multiple_of_gcd(lhs, rhs)),
+        _ => None,
+    }
+}
+
+pub(crate) fn scalar_multiple_fact_satisfies(fact: Option<i64>, multiple: i64) -> bool {
+    let Some(fact) = fact else {
+        return false;
+    };
+    if multiple == 0 {
+        return false;
+    }
+    fact == 0 || fact.rem_euclid(multiple.saturating_abs()) == 0
+}
+
+fn scalar_multiple_of_gcd(lhs: i64, rhs: i64) -> i64 {
+    let mut lhs = lhs.saturating_abs();
+    let mut rhs = rhs.saturating_abs();
+    while rhs != 0 {
+        let next = lhs % rhs;
+        lhs = rhs;
+        rhs = next;
+    }
+    lhs
+}
+
 pub(crate) fn scalar_value_satisfies_bit_combination(
     value: i64,
     requirement: ScalarArgBitCombinationRequirement,

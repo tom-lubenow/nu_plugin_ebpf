@@ -1,7 +1,9 @@
 use super::*;
 use crate::compiler::instruction::{
     scalar_range_contains_only_allowed_values, scalar_range_contains_only_bitmask,
-    scalar_range_contains_only_multiple_of, scalar_range_satisfies_bit_combination,
+    scalar_range_contains_only_multiple_of, scalar_multiple_fact_satisfies,
+    scalar_multiple_of_known_value, scalar_multiple_of_merge,
+    scalar_range_satisfies_bit_combination,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -15,6 +17,32 @@ fn iter_lifecycle_result(
     failure: IterLifecycleFailure,
 ) -> Result<(), IterLifecycleFailure> {
     if valid { Ok(()) } else { Err(failure) }
+}
+
+fn scalar_multiple_fact_for_value(value: VccValue, state: &VccState) -> Option<i64> {
+    match value {
+        VccValue::Imm(value) => Some(scalar_multiple_of_known_value(value)),
+        VccValue::Reg(reg) => state.scalar_multiple_fact_for_reg(reg),
+    }
+}
+
+fn scalar_multiple_fact_for_binop(
+    op: VccBinOp,
+    lhs: Option<i64>,
+    rhs: Option<i64>,
+) -> Option<i64> {
+    match op {
+        VccBinOp::Add | VccBinOp::Sub => scalar_multiple_of_merge(lhs, rhs),
+        VccBinOp::Mul => lhs.or(rhs),
+        _ => None,
+    }
+}
+
+fn scalar_multiple_fact_for_phi(args: &[(VccBlockId, VccReg)], state: &VccState) -> Option<i64> {
+    args.iter()
+        .map(|(_, reg)| state.scalar_multiple_fact_for_reg(*reg))
+        .reduce(scalar_multiple_of_merge)
+        .flatten()
 }
 
 fn iter_lifecycle_error_message(
@@ -206,6 +234,10 @@ impl VccVerifier {
                         }),
                     },
                 );
+                state.set_scalar_multiple_fact(
+                    *dst,
+                    Some(scalar_multiple_of_known_value(*value)),
+                );
                 if *value != 0 {
                     state.set_not_equal_const(*dst, 0);
                 }
@@ -277,7 +309,9 @@ impl VccVerifier {
                         }
                         _ => None,
                     };
+                    let src_multiple_fact = scalar_multiple_fact_for_value(*src, state);
                     state.set_reg(*dst, ty);
+                    state.set_scalar_multiple_fact(*dst, src_multiple_fact);
                     if let Some(src_reg) = src_scalar_alias {
                         state.set_scalar_alias(*dst, src_reg);
                     }
@@ -520,6 +554,12 @@ impl VccVerifier {
                         },
                         "expected scalar value",
                     ));
+                    return;
+                }
+                if scalar_multiple_fact_satisfies(
+                    scalar_multiple_fact_for_value(*value, state),
+                    *multiple,
+                ) {
                     return;
                 }
                 if let Some(range) = state.value_range(*value, ty)
@@ -1341,7 +1381,13 @@ impl VccVerifier {
                             return;
                         }
                         let range = state.binop_range(*op, *lhs, lhs_ty, *rhs, rhs_ty);
+                        let multiple_fact = scalar_multiple_fact_for_binop(
+                            *op,
+                            scalar_multiple_fact_for_value(*lhs, state),
+                            scalar_multiple_fact_for_value(*rhs, state),
+                        );
                         state.set_reg(*dst, VccValueType::Scalar { range });
+                        state.set_scalar_multiple_fact(*dst, multiple_fact);
                     }
                 }
             }
@@ -1678,6 +1724,7 @@ impl VccVerifier {
                     ty = Self::ctx_field_phi_type(*dst, ty, source);
                 }
                 let scalar_alias_root = Self::scalar_alias_root_for_phi(args, state, ty);
+                let scalar_multiple_fact = scalar_multiple_fact_for_phi(args, state);
                 let merged_map_value_source = Self::map_value_source_for_phi(args, state);
                 let mut merged_map_fd: Option<Option<MapRef>> = None;
                 for (_, reg) in args {
@@ -1692,6 +1739,7 @@ impl VccVerifier {
                     }
                 }
                 state.set_reg(*dst, ty);
+                state.set_scalar_multiple_fact(*dst, scalar_multiple_fact);
                 if let Some(root) = scalar_alias_root
                     && root != *dst
                 {

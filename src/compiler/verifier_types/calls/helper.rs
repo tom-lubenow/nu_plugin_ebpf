@@ -2,9 +2,10 @@ use super::*;
 use crate::compiler::elf::GetSocketCookieArgPolicy;
 use crate::compiler::instruction::{
     BPF_MTU_CHK_SEGS, HelperDynptrArgRole, KfuncRefKind, helper_named_arg_shape,
-    helper_pointer_arg_ref_kind, kfunc_ref_kind_from_bpf_type_name,
-    scalar_range_contains_only_allowed_values, scalar_range_contains_only_bitmask,
-    scalar_range_contains_only_multiple_of, scalar_range_satisfies_bit_combination,
+    helper_pointer_arg_ref_kind, kfunc_ref_kind_from_bpf_type_name, scalar_multiple_fact_satisfies,
+    scalar_multiple_of_known_value, scalar_range_contains_only_allowed_values,
+    scalar_range_contains_only_bitmask, scalar_range_contains_only_multiple_of,
+    scalar_range_satisfies_bit_combination,
 };
 use crate::compiler::{EbpfProgramType, ProbeContext, ProgramTypeInfo};
 
@@ -190,6 +191,14 @@ fn validate_helper_scalar_multiple_of(
     let Some((multiple, message)) = helper.scalar_arg_multiple_of_requirement(arg_idx) else {
         return;
     };
+    let fact = match value {
+        MirValue::Const(value) => Some(scalar_multiple_of_known_value(*value)),
+        MirValue::VReg(vreg) => state.scalar_multiple_fact(*vreg),
+        MirValue::StackSlot(_) => None,
+    };
+    if scalar_multiple_fact_satisfies(fact, multiple) {
+        return;
+    }
     if let ValueRange::Known { min, max } = value_range(value, state)
         && !scalar_range_contains_only_multiple_of(min, max, multiple)
     {

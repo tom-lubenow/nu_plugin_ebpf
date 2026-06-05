@@ -64,6 +64,9 @@ documentation changes that matter to external alpha consumers.
   attr-size rejects from branch-selected helper return ranges.
 - Rejected dynamic scalar ranges that do not prove helper multiple-of
   requirements, with trace-vprintk, seq-printf, and csum source coverage.
+- Preserved branch-selected scalar multiple facts so aligned dynamic helper
+  sizes, such as tunnel option lengths, can pass without accepting unaligned
+  alternatives.
 - Added dynamic branch coverage for timer and workqueue map-origin rejects,
   including phi-joined concrete-map source metadata.
 - Added dynamic branch coverage for workqueue callback map-origin rejects.

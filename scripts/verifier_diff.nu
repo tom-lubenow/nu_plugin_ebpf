@@ -22667,6 +22667,27 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "tc-skb-set-tunnel-opt-accepts-dynamic-aligned-size"
+        category: "helper-state"
+        tags: [tc helper tunnel size dynamic accept source metadata]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  map-define tunnel_opt_dyn_ok --kind array --value-type bytes:16 --max-entries 1'
+            '  let opt = (0 | map-get tunnel_opt_dyn_ok --kind array)'
+            '  if $opt {'
+            '    let selector = (helper-call "bpf_get_prandom_u32")'
+            '    let size = (if $selector == 0 { 8 } else { 16 })'
+            '    helper-call "bpf_skb_set_tunnel_opt" $ctx $opt $size'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "tc-skb-set-tunnel-opt-rejects-small-buffer"
         category: "helper-state"
         tags: [tc helper tunnel bounds reject source metadata]
@@ -22683,6 +22704,28 @@ const FIXTURES = [
         local: "reject"
         kernel: "skip"
         error_contains: "helper skb_tunnel buffer requires 16 bytes"
+    }
+    {
+        name: "tc-skb-set-tunnel-opt-rejects-dynamic-unaligned-size"
+        category: "helper-state"
+        tags: [tc helper tunnel size dynamic reject source metadata]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  map-define tunnel_opt_dyn_bad --kind array --value-type bytes:16 --max-entries 1'
+            '  let opt = (0 | map-get tunnel_opt_dyn_bad --kind array)'
+            '  if $opt {'
+            '    let selector = (helper-call "bpf_get_prandom_u32")'
+            '    let size = (if $selector == 0 { 8 } else { 10 })'
+            '    helper-call "bpf_skb_set_tunnel_opt" $ctx $opt $size'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_skb_set_tunnel_opt' requires arg2 size to be a multiple of 4"
     }
     {
         name: "tc-skb-set-tunnel-opt-rejects-dynamic-small-buffer"

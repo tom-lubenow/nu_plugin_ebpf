@@ -1,4 +1,5 @@
 use super::*;
+use crate::compiler::instruction::{scalar_multiple_of_known_value, scalar_multiple_of_merge};
 use crate::compiler::mir::UnaryOpKind;
 
 pub(super) fn apply_copy_inst(
@@ -45,6 +46,7 @@ pub(super) fn apply_copy_inst(
         MirValue::Const(value) => *value != 0,
         _ => false,
     };
+    let src_multiple_fact = multiple_fact_for_value(src, state);
     let src_not_equal = match src {
         MirValue::VReg(vreg) => state.not_equal_consts(*vreg).to_vec(),
         MirValue::Const(value) if *value != 0 => vec![0],
@@ -59,6 +61,7 @@ pub(super) fn apply_copy_inst(
         _ => None,
     };
     state.set_with_range(dst, ty, range);
+    state.set_scalar_multiple_fact(dst, src_multiple_fact);
     if let Some(src_vreg) = src_scalar_alias {
         state.set_scalar_alias(dst, src_vreg);
     }
@@ -108,10 +111,12 @@ pub(super) fn apply_phi_edge_inst(
     let src_guard = state.guard(src);
     let src_non_zero = state.is_non_zero(src);
     let src_not_equal = state.not_equal_consts(src).to_vec();
+    let src_multiple_fact = state.scalar_multiple_fact(src);
     let src_released_kfunc_ref = state.is_released_kfunc_ref(src);
     let src_scalar_alias = matches!(ty, VerifierType::Scalar | VerifierType::Bool).then_some(src);
 
     state.set_with_range(dst, ty, range);
+    state.set_scalar_multiple_fact(dst, src_multiple_fact);
     if let Some(src_vreg) = src_scalar_alias {
         state.set_scalar_alias(dst, src_vreg);
     }
@@ -265,7 +270,13 @@ pub(super) fn apply_binop_inst(
     }
 
     let range = range_for_binop(op, lhs, rhs, state);
+    let multiple_fact = multiple_fact_for_binop(
+        op,
+        multiple_fact_for_value(lhs, state),
+        multiple_fact_for_value(rhs, state),
+    );
     state.set_with_range(dst, VerifierType::Scalar, range);
+    state.set_scalar_multiple_fact(dst, multiple_fact);
     if let Some(src) = scalar_identity_source(op, lhs, rhs, state, slot_sizes) {
         state.set_scalar_alias(dst, src);
     }
@@ -469,6 +480,7 @@ pub(super) fn apply_phi_inst(
         .map(verifier_type_from_mir)
         .unwrap_or(VerifierType::Scalar);
     let range = range_for_phi(args, state);
+    let multiple_fact = multiple_fact_for_phi(args, state);
     let mut ty = ptr_type_for_phi_with_hint(args, state, ty).unwrap_or(ty);
     if let Some(Some(source)) = &merged_ctx_field {
         ty = ctx_field_phi_type(dst, ty, source);
@@ -491,6 +503,7 @@ pub(super) fn apply_phi_inst(
         }
     }
     state.set_with_range(dst, ty, range);
+    state.set_scalar_multiple_fact(dst, multiple_fact);
     if let Some(root) = scalar_alias_root
         && root != dst
     {
@@ -521,6 +534,29 @@ pub(super) fn apply_phi_inst(
     if let Some(guard) = phi_guard {
         state.set_guard(dst, guard);
     }
+}
+
+fn multiple_fact_for_value(value: &MirValue, state: &VerifierState) -> Option<i64> {
+    match value {
+        MirValue::Const(value) => Some(scalar_multiple_of_known_value(*value)),
+        MirValue::VReg(vreg) => state.scalar_multiple_fact(*vreg),
+        MirValue::StackSlot(_) => None,
+    }
+}
+
+fn multiple_fact_for_binop(op: BinOpKind, lhs: Option<i64>, rhs: Option<i64>) -> Option<i64> {
+    match op {
+        BinOpKind::Add | BinOpKind::Sub => scalar_multiple_of_merge(lhs, rhs),
+        BinOpKind::Mul => lhs.or(rhs),
+        _ => None,
+    }
+}
+
+fn multiple_fact_for_phi(args: &[(BlockId, VReg)], state: &VerifierState) -> Option<i64> {
+    args.iter()
+        .map(|(_, vreg)| state.scalar_multiple_fact(*vreg))
+        .reduce(scalar_multiple_of_merge)
+        .flatten()
 }
 
 fn ptr_type_for_phi_with_hint(

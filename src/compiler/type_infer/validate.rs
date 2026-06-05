@@ -285,6 +285,7 @@ impl<'a> TypeInference<'a> {
         let void_returns = Self::collect_void_call_returns(func);
         let list_caps = self.compute_list_caps(func);
         let value_ranges = self.compute_value_ranges(func, types, &list_caps);
+        let value_multiple_facts = self.compute_value_multiple_facts(func);
         let stack_slot_value_ranges =
             self.compute_stack_slot_value_ranges_at_inst_entries(func, types, &list_caps);
         let direct_ctx_field_sources =
@@ -305,6 +306,7 @@ impl<'a> TypeInference<'a> {
                     inst,
                     types,
                     &value_ranges,
+                    &value_multiple_facts,
                     stack_slot_value_ranges.get(&(block.id, idx)),
                     &direct_ctx_field_sources,
                     block_ctx_field_ranges,
@@ -317,6 +319,7 @@ impl<'a> TypeInference<'a> {
                 &block.terminator,
                 types,
                 &value_ranges,
+                &value_multiple_facts,
                 stack_slot_value_ranges.get(&(block.id, block.instructions.len())),
                 &direct_ctx_field_sources,
                 block_ctx_field_ranges,
@@ -334,6 +337,7 @@ impl<'a> TypeInference<'a> {
         inst: &MirInst,
         types: &HashMap<VReg, MirType>,
         value_ranges: &HashMap<VReg, ValueRange>,
+        value_multiple_facts: &HashMap<VReg, i64>,
         stack_slot_value_ranges: Option<&HashMap<StackSlotId, ValueRange>>,
         direct_ctx_field_sources: &HashMap<VReg, CtxField>,
         block_ctx_field_ranges: Option<&HashMap<CtxField, ValueRange>>,
@@ -1057,6 +1061,7 @@ impl<'a> TypeInference<'a> {
                         args,
                         types,
                         value_ranges,
+                        value_multiple_facts,
                         stack_slot_value_ranges,
                         direct_ctx_field_sources,
                         stack_bounds,

@@ -1,9 +1,9 @@
 use super::*;
 use crate::compiler::elf::GetSocketCookieArgPolicy;
 use crate::compiler::instruction::{
-    BPF_MTU_CHK_SEGS, helper_named_arg_shape, scalar_range_contains_only_allowed_values,
-    scalar_range_contains_only_bitmask, scalar_range_contains_only_multiple_of,
-    scalar_range_satisfies_bit_combination,
+    BPF_MTU_CHK_SEGS, helper_named_arg_shape, scalar_multiple_fact_satisfies,
+    scalar_range_contains_only_allowed_values, scalar_range_contains_only_bitmask,
+    scalar_range_contains_only_multiple_of, scalar_range_satisfies_bit_combination,
 };
 use crate::kernel_btf::KernelBtf;
 
@@ -284,11 +284,22 @@ impl<'a> TypeInference<'a> {
         arg_idx: usize,
         value: &MirValue,
         value_ranges: &HashMap<VReg, ValueRange>,
+        value_multiple_facts: &HashMap<VReg, i64>,
         errors: &mut Vec<TypeError>,
     ) {
         let Some((multiple, message)) = helper.scalar_arg_multiple_of_requirement(arg_idx) else {
             return;
         };
+        let fact = match value {
+            MirValue::Const(value) => {
+                Some(crate::compiler::instruction::scalar_multiple_of_known_value(*value))
+            }
+            MirValue::VReg(vreg) => value_multiple_facts.get(vreg).copied(),
+            MirValue::StackSlot(_) => None,
+        };
+        if scalar_multiple_fact_satisfies(fact, multiple) {
+            return;
+        }
         if let ValueRange::Known { min, max } = self.value_range_for(value, value_ranges)
             && !scalar_range_contains_only_multiple_of(min, max, multiple)
         {
@@ -452,6 +463,7 @@ impl<'a> TypeInference<'a> {
         args: &[MirValue],
         types: &HashMap<VReg, MirType>,
         value_ranges: &HashMap<VReg, ValueRange>,
+        value_multiple_facts: &HashMap<VReg, i64>,
         stack_slot_value_ranges: Option<&HashMap<StackSlotId, ValueRange>>,
         direct_ctx_field_sources: &HashMap<VReg, CtxField>,
         stack_bounds: &HashMap<VReg, StackBounds>,
@@ -476,7 +488,14 @@ impl<'a> TypeInference<'a> {
             }
         }
         for (arg_idx, value) in args.iter().enumerate().take(5) {
-            self.validate_helper_scalar_multiple_of(helper, arg_idx, value, value_ranges, errors);
+            self.validate_helper_scalar_multiple_of(
+                helper,
+                arg_idx,
+                value,
+                value_ranges,
+                value_multiple_facts,
+                errors,
+            );
             self.validate_helper_scalar_range(helper, arg_idx, value, value_ranges, errors);
             self.validate_program_helper_scalar_range(helper, arg_idx, value, value_ranges, errors);
             self.validate_helper_scalar_allowed_values(

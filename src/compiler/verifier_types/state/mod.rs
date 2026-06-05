@@ -168,6 +168,7 @@ pub(super) enum Guard {
 pub(super) struct VerifierState {
     regs: Vec<VerifierType>,
     ranges: Vec<ValueRange>,
+    scalar_multiple_facts: Vec<Option<i64>>,
     scalar_alias_roots: Vec<Option<VReg>>,
     non_zero: Vec<bool>,
     not_equal: Vec<Vec<i64>>,
@@ -242,6 +243,7 @@ impl VerifierState {
         Self {
             regs: vec![VerifierType::Uninit; total_vregs],
             ranges: vec![ValueRange::Unknown; total_vregs],
+            scalar_multiple_facts: vec![None; total_vregs],
             scalar_alias_roots: vec![None; total_vregs],
             non_zero: vec![false; total_vregs],
             not_equal: vec![Vec::new(); total_vregs],
@@ -324,6 +326,13 @@ impl VerifierState {
             .unwrap_or(ValueRange::Unknown)
     }
 
+    pub(super) fn scalar_multiple_fact(&self, vreg: VReg) -> Option<i64> {
+        self.scalar_multiple_facts
+            .get(vreg.0 as usize)
+            .copied()
+            .flatten()
+    }
+
     pub(super) fn scalar_alias_root(&self, vreg: VReg) -> VReg {
         self.scalar_alias_roots
             .get(vreg.0 as usize)
@@ -360,6 +369,7 @@ impl VerifierState {
         if let Some(slot) = self.ranges.get_mut(vreg.0 as usize) {
             *slot = range;
         }
+        self.clear_scalar_multiple_fact(vreg);
     }
 
     pub(super) fn not_equal_consts(&self, vreg: VReg) -> &[i64] {
@@ -380,6 +390,7 @@ impl VerifierState {
         if let Some(slot) = self.ranges.get_mut(vreg.0 as usize) {
             *slot = range;
         }
+        self.clear_scalar_multiple_fact(vreg);
         if let Some(slot) = self.scalar_alias_roots.get_mut(vreg.0 as usize) {
             *slot = None;
         }
@@ -416,6 +427,18 @@ impl VerifierState {
     pub(super) fn set_ctx_field_source(&mut self, vreg: VReg, source: Option<CtxField>) {
         if let Some(slot) = self.ctx_field_sources.get_mut(vreg.0 as usize) {
             *slot = source;
+        }
+    }
+
+    pub(super) fn set_scalar_multiple_fact(&mut self, vreg: VReg, fact: Option<i64>) {
+        if let Some(slot) = self.scalar_multiple_facts.get_mut(vreg.0 as usize) {
+            *slot = fact;
+        }
+    }
+
+    fn clear_scalar_multiple_fact(&mut self, vreg: VReg) {
+        if let Some(slot) = self.scalar_multiple_facts.get_mut(vreg.0 as usize) {
+            *slot = None;
         }
     }
 

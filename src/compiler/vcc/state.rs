@@ -1,5 +1,7 @@
 type UnknownStackObjectTypeKey = (String, Option<u32>);
 
+use crate::compiler::instruction::scalar_multiple_of_merge;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum ResSpinLockIdentity {
     Reg(VccReg),
@@ -39,6 +41,7 @@ fn unknown_stack_object_type_key(
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct VccState {
     reg_types: HashMap<VccReg, VccValueType>,
+    scalar_multiple_facts: HashMap<VccReg, i64>,
     scalar_alias_roots: HashMap<VccReg, VccReg>,
     ctx_field_sources: HashMap<VccReg, CtxField>,
     map_lookup_sources: HashMap<VccReg, VccMapLookupSource>,
@@ -137,6 +140,7 @@ impl VccState {
     fn with_seed(seed: HashMap<VccReg, VccValueType>) -> Self {
         Self {
             reg_types: seed,
+            scalar_multiple_facts: HashMap::new(),
             scalar_alias_roots: HashMap::new(),
             ctx_field_sources: HashMap::new(),
             map_lookup_sources: HashMap::new(),
@@ -212,6 +216,7 @@ impl VccState {
 
     fn set_reg(&mut self, reg: VccReg, ty: VccValueType) {
         self.reg_types.insert(reg, ty);
+        self.scalar_multiple_facts.remove(&reg);
         self.scalar_alias_roots.remove(&reg);
         self.ctx_field_sources.remove(&reg);
         self.map_lookup_sources.remove(&reg);
@@ -221,6 +226,18 @@ impl VccState {
         self.not_equal_consts.remove(&reg);
         self.released_kfunc_ref_regs.remove(&reg);
         self.cond_refinements.remove(&reg);
+    }
+
+    fn scalar_multiple_fact_for_reg(&self, reg: VccReg) -> Option<i64> {
+        self.scalar_multiple_facts.get(&reg).copied()
+    }
+
+    fn set_scalar_multiple_fact(&mut self, reg: VccReg, fact: Option<i64>) {
+        if let Some(fact) = fact {
+            self.scalar_multiple_facts.insert(reg, fact);
+        } else {
+            self.scalar_multiple_facts.remove(&reg);
+        }
     }
 
     fn set_ctx_field_source(&mut self, reg: VccReg, source: Option<CtxField>) {
@@ -1437,6 +1454,18 @@ impl VccState {
             };
             merged.insert(reg, ty);
         }
+        let mut scalar_multiple_fact_regs: HashSet<VccReg> =
+            self.scalar_multiple_facts.keys().copied().collect();
+        scalar_multiple_fact_regs.extend(other.scalar_multiple_facts.keys().copied());
+        let mut scalar_multiple_facts = HashMap::new();
+        for reg in scalar_multiple_fact_regs {
+            if let Some(fact) = scalar_multiple_of_merge(
+                self.scalar_multiple_facts.get(&reg).copied(),
+                other.scalar_multiple_facts.get(&reg).copied(),
+            ) {
+                scalar_multiple_facts.insert(reg, fact);
+            }
+        }
         let mut scalar_alias_regs: HashSet<VccReg> =
             self.scalar_alias_roots.keys().copied().collect();
         scalar_alias_regs.extend(other.scalar_alias_roots.keys().copied());
@@ -1683,6 +1712,7 @@ impl VccState {
             .collect();
         VccState {
             reg_types: merged,
+            scalar_multiple_facts,
             scalar_alias_roots,
             ctx_field_sources,
             map_lookup_sources,
@@ -1850,6 +1880,7 @@ impl VccState {
         }
         VccState {
             reg_types: widened,
+            scalar_multiple_facts: HashMap::new(),
             scalar_alias_roots: self.scalar_alias_roots.clone(),
             ctx_field_sources: self.ctx_field_sources.clone(),
             map_lookup_sources: self.map_lookup_sources.clone(),

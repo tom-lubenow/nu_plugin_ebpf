@@ -1,5 +1,7 @@
 use super::*;
-use crate::compiler::instruction::BpfHelper;
+use crate::compiler::instruction::{
+    BpfHelper, scalar_multiple_of_known_value, scalar_multiple_of_merge,
+};
 use crate::compiler::mir::BlockId;
 use std::collections::{HashMap, VecDeque};
 
@@ -390,6 +392,84 @@ impl<'a> TypeInference<'a> {
             .enumerate()
             .map(|(idx, range)| (VReg(idx as u32), range))
             .collect()
+    }
+
+    pub(super) fn compute_value_multiple_facts(&self, func: &MirFunction) -> HashMap<VReg, i64> {
+        let total_vregs = func.vreg_count.max(func.param_count as u32);
+        let mut facts = vec![None; total_vregs as usize];
+        let mut changed = true;
+        let max_iters = total_vregs.max(1);
+
+        for _ in 0..max_iters {
+            if !changed {
+                break;
+            }
+            changed = false;
+            for block in &func.blocks {
+                for inst in block
+                    .instructions
+                    .iter()
+                    .chain(std::iter::once(&block.terminator))
+                {
+                    let Some(dst) = inst.def() else {
+                        continue;
+                    };
+                    let fact = self.multiple_fact_for_inst(inst, &facts);
+                    let Some(slot) = facts.get_mut(dst.0 as usize) else {
+                        continue;
+                    };
+                    if *slot != fact {
+                        *slot = fact;
+                        changed = true;
+                    }
+                }
+            }
+        }
+
+        facts
+            .into_iter()
+            .enumerate()
+            .filter_map(|(idx, fact)| fact.map(|fact| (VReg(idx as u32), fact)))
+            .collect()
+    }
+
+    fn multiple_fact_for_inst(&self, inst: &MirInst, facts: &[Option<i64>]) -> Option<i64> {
+        match inst {
+            MirInst::Copy { src, .. } => Self::multiple_fact_for_value(src, facts),
+            MirInst::BinOp { op, lhs, rhs, .. } => {
+                let lhs = Self::multiple_fact_for_value(lhs, facts);
+                let rhs = Self::multiple_fact_for_value(rhs, facts);
+                Self::multiple_fact_for_binop(*op, lhs, rhs)
+            }
+            MirInst::Phi { args, .. } => args
+                .iter()
+                .map(|(_, vreg)| facts.get(vreg.0 as usize).copied().flatten())
+                .reduce(scalar_multiple_of_merge)
+                .flatten(),
+            MirInst::CallSubfn { args, subfn, .. } => self
+                .subfn_summaries
+                .and_then(|summaries| summaries.get(subfn))
+                .and_then(|summary| summary.return_arg())
+                .and_then(|idx| args.get(idx))
+                .and_then(|arg| facts.get(arg.0 as usize).copied().flatten()),
+            _ => None,
+        }
+    }
+
+    fn multiple_fact_for_value(value: &MirValue, facts: &[Option<i64>]) -> Option<i64> {
+        match value {
+            MirValue::Const(value) => Some(scalar_multiple_of_known_value(*value)),
+            MirValue::VReg(vreg) => facts.get(vreg.0 as usize).copied().flatten(),
+            MirValue::StackSlot(_) => None,
+        }
+    }
+
+    fn multiple_fact_for_binop(op: BinOpKind, lhs: Option<i64>, rhs: Option<i64>) -> Option<i64> {
+        match op {
+            BinOpKind::Add | BinOpKind::Sub => scalar_multiple_of_merge(lhs, rhs),
+            BinOpKind::Mul => lhs.or(rhs),
+            _ => None,
+        }
     }
 
     pub(super) fn compute_stack_slot_value_ranges_at_inst_entries(

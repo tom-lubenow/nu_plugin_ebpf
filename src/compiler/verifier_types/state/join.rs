@@ -1,9 +1,11 @@
 use super::*;
+use crate::compiler::instruction::scalar_multiple_of_merge;
 
 impl VerifierState {
     pub(in crate::compiler::verifier_types) fn equivalent(&self, other: &VerifierState) -> bool {
         self.regs == other.regs
             && self.ranges == other.ranges
+            && self.scalar_multiple_facts == other.scalar_multiple_facts
             && self.scalar_alias_roots == other.scalar_alias_roots
             && self.non_zero == other.non_zero
             && self.not_equal == other.not_equal
@@ -90,6 +92,13 @@ impl VerifierState {
             let a = self.ranges[i];
             let b = other.ranges[i];
             ranges.push(join_range(a, b));
+        }
+        let mut scalar_multiple_facts = Vec::with_capacity(self.scalar_multiple_facts.len());
+        for i in 0..self.scalar_multiple_facts.len() {
+            scalar_multiple_facts.push(scalar_multiple_of_merge(
+                self.scalar_multiple_facts[i],
+                other.scalar_multiple_facts[i],
+            ));
         }
         let mut scalar_alias_roots = Vec::with_capacity(self.scalar_alias_roots.len());
         for i in 0..self.scalar_alias_roots.len() {
@@ -300,6 +309,7 @@ impl VerifierState {
         VerifierState {
             regs,
             ranges,
+            scalar_multiple_facts,
             scalar_alias_roots,
             non_zero,
             not_equal,
