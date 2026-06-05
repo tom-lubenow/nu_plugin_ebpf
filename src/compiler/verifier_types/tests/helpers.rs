@@ -4959,6 +4959,27 @@ fn test_verify_mir_rejects_undeclared_load_slot_reference() {
 }
 
 #[test]
+fn test_verify_mir_rejects_out_of_range_vreg_def() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: VReg(99),
+        src: MirValue::Const(0),
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let err = verify_mir(&func, &HashMap::new())
+        .expect_err("out-of-range virtual register should be rejected before verifier propagation");
+    assert!(
+        err.iter()
+            .any(|e| e.message.contains("out-of-range virtual register 99")),
+        "unexpected errors: {:?}",
+        err
+    );
+}
+
+#[test]
 fn test_verify_mir_accepts_helper_context_argument_from_ctx_pointer_load() {
     let mut func = MirFunction::new();
     let entry = func.alloc_block();

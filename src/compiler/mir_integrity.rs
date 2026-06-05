@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use super::mir::{MirFunction, MirInst, MirValue, StackSlotId};
+use super::mir::{MirFunction, MirInst, MirValue, StackSlotId, VReg};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct MirIntegrityError {
@@ -15,11 +15,10 @@ impl MirIntegrityError {
     }
 }
 
-pub(crate) fn validate_stack_slot_references(
-    func: &MirFunction,
-) -> Result<(), Vec<MirIntegrityError>> {
+pub(crate) fn validate_mir_references(func: &MirFunction) -> Result<(), Vec<MirIntegrityError>> {
     let mut errors = Vec::new();
     let mut declared = HashSet::with_capacity(func.stack_slots.len());
+    let total_vregs = (func.vreg_count as usize).max(func.param_count);
 
     for slot in &func.stack_slots {
         if !declared.insert(slot.id) {
@@ -49,9 +48,9 @@ pub(crate) fn validate_stack_slot_references(
 
     for block in &func.blocks {
         for inst in &block.instructions {
-            check_inst(inst, &declared, &mut errors);
+            check_inst(inst, &declared, total_vregs, &mut errors);
         }
-        check_inst(&block.terminator, &declared, &mut errors);
+        check_inst(&block.terminator, &declared, total_vregs, &mut errors);
     }
 
     if errors.is_empty() {
@@ -64,8 +63,16 @@ pub(crate) fn validate_stack_slot_references(
 fn check_inst(
     inst: &MirInst,
     declared: &HashSet<StackSlotId>,
+    total_vregs: usize,
     errors: &mut Vec<MirIntegrityError>,
 ) {
+    if let Some(dst) = inst.def() {
+        check_vreg(dst, "destination register", total_vregs, errors);
+    }
+    for vreg in inst.uses() {
+        check_vreg(vreg, "operand register", total_vregs, errors);
+    }
+
     match inst {
         MirInst::Copy { src, .. } => {
             check_value(src, "copy source", declared, errors);
@@ -169,6 +176,15 @@ fn check_inst(
         MirInst::TailCall { index, .. } => {
             check_value(index, "tail call index", declared, errors);
         }
+    }
+}
+
+fn check_vreg(vreg: VReg, context: &str, total_vregs: usize, errors: &mut Vec<MirIntegrityError>) {
+    if (vreg.0 as usize) >= total_vregs {
+        errors.push(MirIntegrityError::new(format!(
+            "{context} references out-of-range virtual register {} (valid range 0..{})",
+            vreg.0, total_vregs
+        )));
     }
 }
 

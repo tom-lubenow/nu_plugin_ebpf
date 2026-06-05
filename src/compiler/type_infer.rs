@@ -52,7 +52,7 @@ use super::mir::{
     MirType, MirValue, STRING_COUNTER_MAP_NAME, ScalarValueRange, StackSlotId, StackSlotKind,
     StringAppendType, StructField, SubfunctionId, TIMESTAMP_MAP_NAME, UnaryOpKind, VReg,
 };
-use super::mir_integrity::validate_stack_slot_references;
+use super::mir_integrity::validate_mir_references;
 use super::subfn_summaries::SubfunctionSummary;
 use crate::kernel_btf::{KernelBtf, TypeInfo};
 
@@ -480,7 +480,7 @@ impl<'a> TypeInference<'a> {
             ))]);
         }
 
-        if let Err(errors) = validate_stack_slot_references(func) {
+        if let Err(errors) = validate_mir_references(func) {
             return Err(errors
                 .into_iter()
                 .map(|err| TypeError::new(err.message))
