@@ -18457,6 +18457,29 @@ const FIXTURES = [
         error_contains: "helper strtox res requires 8 bytes"
     }
     {
+        name: "source-helper-strtox-rejects-dynamic-short-map-result"
+        category: "helper-state"
+        tags: [helper string parse map-bounds dynamic reject source metadata]
+        requires: [loopback-interface]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  map-define strtox_out_dyn_short --kind array --value-type bytes:4 --max-entries 1'
+            '  let input = "12345678"'
+            '  let out = (0 | map-get strtox_out_dyn_short)'
+            '  if $out {'
+            '    let selector = (helper-call "bpf_get_prandom_u32")'
+            '    let size = (if $selector == 0 { 4 } else { 8 })'
+            '    helper-call "bpf_strtol" $input $size 10 $out'
+            '  }'
+            '  "pass"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper strtox res requires 8 bytes"
+    }
+    {
         name: "source-helper-strncmp-accepts-rodata-binary-needle"
         category: "helper-state"
         tags: [helper string compare rodata accept source metadata]
@@ -22653,6 +22676,27 @@ const FIXTURES = [
             '{|ctx|'
             '  map-define tunnel_opt --kind array --value-type bytes:8 --max-entries 1'
             '  let opt = (0 | map-get tunnel_opt --kind array)'
+            '  if $opt { helper-call "bpf_skb_set_tunnel_opt" $ctx $opt 16 }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper skb_tunnel buffer requires 16 bytes"
+    }
+    {
+        name: "tc-skb-set-tunnel-opt-rejects-dynamic-small-buffer"
+        category: "helper-state"
+        tags: [tc helper tunnel bounds dynamic reject source metadata]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  map-define tunnel_opt_dyn_short --kind array --value-type bytes:8 --max-entries 1'
+            '  let opt_a = (0 | map-get tunnel_opt_dyn_short --kind array)'
+            '  let opt_b = (0 | map-get tunnel_opt_dyn_short --kind array)'
+            '  let selector = (helper-call "bpf_get_prandom_u32")'
+            '  let opt = (if $selector == 0 { $opt_a } else { $opt_b })'
             '  if $opt { helper-call "bpf_skb_set_tunnel_opt" $ctx $opt 16 }'
             '  0'
             '}'

@@ -69,6 +69,8 @@ documentation changes that matter to external alpha consumers.
 - Added dynamic branch coverage for workqueue callback map-origin rejects.
 - Added source verifier coverage for dynamic helper size ranges against short
   map-backed buffers.
+- Extended dynamic helper buffer coverage to `strtox` result buffers and
+  tunnel option pointer joins.
 - Added actionable BTF target diagnostics for invalid `fentry`, `fexit`,
   `fmod_ret`, `tp_btf`, and LSM targets so compile-time errors include the
   modeled target-family rewrite guidance.
