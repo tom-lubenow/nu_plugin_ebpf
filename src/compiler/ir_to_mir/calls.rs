@@ -1358,13 +1358,15 @@ impl<'a> HirToMirLowering<'a> {
                     ));
                 }
 
+                let range_arg = self.positional_args.first().copied();
+
                 self.emit(MirInst::CallHelper {
                     dst: dst_vreg,
                     helper: BpfHelper::GetPrandomU32 as u32,
                     args: Vec::new(),
                 });
 
-                if let Some((_, range_reg)) = self.positional_args.first().copied() {
+                if let Some((_, range_reg)) = range_arg {
                     let range = self
                         .get_metadata(range_reg)
                         .and_then(|meta| meta.bounded_range)
@@ -1415,8 +1417,14 @@ impl<'a> HirToMirLowering<'a> {
                     }
                 }
 
-                self.vreg_type_hints.insert(dst_vreg, MirType::I64);
+                let output_ty = if range_arg.is_some() {
+                    MirType::I64
+                } else {
+                    MirType::U32
+                };
+                self.vreg_type_hints.insert(dst_vreg, output_ty.clone());
                 self.reset_call_result_metadata(src_dst);
+                self.get_or_create_metadata(src_dst).field_type = Some(output_ty);
             }
 
             "read-str" => {

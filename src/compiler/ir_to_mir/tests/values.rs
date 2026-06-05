@@ -21786,7 +21786,7 @@ fn test_lower_math_abs_on_i64_min_wraps_like_nushell() {
 }
 
 #[test]
-fn test_lower_math_abs_on_runtime_scalar_integer_uses_negation_branch() {
+fn test_lower_math_abs_on_runtime_prandom_u32_uses_identity_path() {
     let abs_decl = DeclId::new(264);
     let random_decl = DeclId::new(265);
     let hir = make_runtime_scalar_math_unary_program(abs_decl, random_decl);
@@ -21813,14 +21813,41 @@ fn test_lower_math_abs_on_runtime_scalar_integer_uses_negation_branch() {
         .collect::<Vec<_>>();
 
     assert!(
-        instructions.iter().any(|inst| matches!(
+        instructions.iter().all(|inst| !matches!(
             inst,
             MirInst::UnaryOp {
                 op: UnaryOpKind::Neg,
                 ..
             }
         )),
-        "expected runtime scalar math abs to emit a signed negation path"
+        "runtime prandom u32 math abs should not emit a signed negation path"
+    );
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::Copy {
+                src: MirValue::VReg(_),
+                ..
+            }
+        )),
+        "expected runtime prandom u32 math abs to copy the unsigned input"
+    );
+    let returned_vreg = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .find_map(|block| match &block.terminator {
+            MirInst::Return {
+                val: Some(MirValue::VReg(vreg)),
+            } => Some(*vreg),
+            _ => None,
+        })
+        .expect("math abs program should return a vreg");
+    assert_eq!(
+        result.type_hints.main.get(&returned_vreg),
+        Some(&MirType::U32),
+        "runtime prandom u32 math abs should preserve the unsigned output type"
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("runtime scalar math abs should compile through codegen");
@@ -23996,7 +24023,7 @@ fn test_lower_bits_shift_default_zero_count_on_runtime_scalar_integer_inputs() {
 }
 
 #[test]
-fn test_lower_bits_shift_default_left_rejects_runtime_scalar_integer_input() {
+fn test_lower_bits_shift_default_left_on_runtime_prandom_u32_input() {
     let bits_decl = DeclId::new(70140);
     let random_decl = DeclId::new(70141);
     let hir = make_runtime_scalar_bits_shift_program(bits_decl, random_decl, 1, false, None);
@@ -24005,7 +24032,7 @@ fn test_lower_bits_shift_default_left_rejects_runtime_scalar_integer_input() {
         (random_decl, "random int".to_string()),
     ]);
 
-    let err = lower_hir_to_mir_with_hints(
+    let result = lower_hir_to_mir_with_hints(
         &hir,
         None,
         &decl_names,
@@ -24013,14 +24040,38 @@ fn test_lower_bits_shift_default_left_rejects_runtime_scalar_integer_input() {
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("default bits shl should reject runtime scalar input");
+    .expect("default bits shl should lower bare random int input as runtime u32");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
 
     assert!(
-        err.to_string().contains(
-            "bits shl default auto-width shifts require compile-time known integer input"
-        ),
-        "unexpected error: {err}"
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .any(|block| matches!(block.terminator, MirInst::Branch { .. })),
+        "expected runtime prandom u32 default bits shl to branch on auto-width ranges"
     );
+    for expected_op in [BinOpKind::Le, BinOpKind::Shl, BinOpKind::And] {
+        assert!(
+            instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op,
+                    ..
+                } if *op == expected_op
+            )),
+            "expected runtime prandom u32 default bits shl to emit {expected_op:?}"
+        );
+    }
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("default bits shl bare random int input should compile through codegen");
 }
 
 #[test]
@@ -24288,7 +24339,7 @@ fn test_lower_bits_shift_unsigned_i64_left_rejects_unsafe_runtime_u32_count() {
 }
 
 #[test]
-fn test_lower_bits_shift_unsigned_i64_left_rejects_runtime_scalar_integer_input() {
+fn test_lower_bits_shift_unsigned_i64_left_on_runtime_prandom_u32_input() {
     let bits_decl = DeclId::new(70146);
     let random_decl = DeclId::new(70147);
     let hir = make_runtime_scalar_bits_shift_program(bits_decl, random_decl, 1, false, Some(8));
@@ -24297,7 +24348,7 @@ fn test_lower_bits_shift_unsigned_i64_left_rejects_runtime_scalar_integer_input(
         (random_decl, "random int".to_string()),
     ]);
 
-    let err = lower_hir_to_mir_with_hints(
+    let result = lower_hir_to_mir_with_hints(
         &hir,
         None,
         &decl_names,
@@ -24305,14 +24356,36 @@ fn test_lower_bits_shift_unsigned_i64_left_rejects_runtime_scalar_integer_input(
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("bits shl --number-bytes 8 should reject runtime scalar input");
+    .expect("bits shl --number-bytes 8 should lower bare random int input as runtime u32");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
 
     assert!(
-        err.to_string().contains(
-            "bits shl unsigned --number-bytes 8 requires compile-time known integer input"
-        ),
-        "unexpected error: {err}"
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::Shl,
+                ..
+            }
+        )),
+        "expected runtime prandom u32 bits shl --number-bytes 8 to emit a left shift"
     );
+    assert!(
+        !result
+            .program
+            .main
+            .blocks
+            .iter()
+            .any(|block| matches!(block.terminator, MirInst::Branch { .. })),
+        "runtime prandom u32 bits shl --number-bytes 8 should not need sign branching"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("bits shl --number-bytes 8 bare random int input should compile");
 }
 
 #[test]
@@ -25157,7 +25230,7 @@ fn test_lower_bits_rotate_default_zero_count_on_runtime_scalar_integer_inputs() 
 }
 
 #[test]
-fn test_lower_bits_rotate_default_nonzero_rejects_runtime_scalar_integer_input() {
+fn test_lower_bits_rotate_default_nonzero_on_runtime_prandom_u32_input() {
     let bits_decl = DeclId::new(70840);
     let random_decl = DeclId::new(70841);
     let hir = make_runtime_scalar_bits_shift_program(bits_decl, random_decl, 1, false, None);
@@ -25166,7 +25239,7 @@ fn test_lower_bits_rotate_default_nonzero_rejects_runtime_scalar_integer_input()
         (random_decl, "random int".to_string()),
     ]);
 
-    let err = lower_hir_to_mir_with_hints(
+    let result = lower_hir_to_mir_with_hints(
         &hir,
         None,
         &decl_names,
@@ -25174,14 +25247,38 @@ fn test_lower_bits_rotate_default_nonzero_rejects_runtime_scalar_integer_input()
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("default bits rol should reject runtime scalar input");
+    .expect("default bits rol should lower bare random int input as runtime u32");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
 
     assert!(
-        err.to_string().contains(
-            "bits rol default auto-width rotates require compile-time known integer input"
-        ),
-        "unexpected error: {err}"
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .any(|block| matches!(block.terminator, MirInst::Branch { .. })),
+        "expected runtime prandom u32 default bits rol to branch on auto-width ranges"
     );
+    for expected_op in [BinOpKind::Le, BinOpKind::Shl, BinOpKind::Shr, BinOpKind::Or] {
+        assert!(
+            instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op,
+                    ..
+                } if *op == expected_op
+            )),
+            "expected runtime prandom u32 default bits rol to emit {expected_op:?}"
+        );
+    }
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("default bits rol bare random int input should compile through codegen");
 }
 
 #[test]
