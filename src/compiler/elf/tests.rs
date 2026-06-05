@@ -10839,6 +10839,19 @@ fn test_counter_key_schema_filters_synthetic_padding_fields() {
 }
 
 #[test]
+fn test_counter_key_schema_size_saturates_array_overflow() {
+    let schema = CounterKeySchema::Array {
+        elem: Box::new(CounterKeySchema::Int {
+            size: 8,
+            signed: false,
+        }),
+        len: usize::MAX,
+    };
+
+    assert_eq!(schema.size(), usize::MAX);
+}
+
+#[test]
 fn test_validate_runtime_artifacts_rejects_event_schema_without_ringbuf_map() {
     let program = EbpfProgram::with_maps(
         EbpfProgramType::Kprobe,

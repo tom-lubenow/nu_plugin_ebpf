@@ -36,6 +36,33 @@ fn test_alloc_block_stays_unique_after_block_removal() {
 }
 
 #[test]
+fn test_mir_type_size_saturates_array_overflow() {
+    let ty = MirType::Array {
+        elem: Box::new(MirType::U64),
+        len: usize::MAX,
+    };
+
+    assert_eq!(ty.size(), usize::MAX);
+}
+
+#[test]
+fn test_mir_type_size_saturates_struct_field_end_overflow() {
+    let ty = MirType::Struct {
+        name: Some("huge".to_string()),
+        kernel_btf_type_id: None,
+        fields: vec![StructField {
+            name: "field".to_string(),
+            ty: MirType::U64,
+            offset: usize::MAX,
+            synthetic: false,
+            bitfield: None,
+        }],
+    };
+
+    assert_eq!(ty.size(), usize::MAX);
+}
+
+#[test]
 fn test_map_kind_surface_classification() {
     let mut keys = HashSet::new();
     let mut aliases = HashSet::new();

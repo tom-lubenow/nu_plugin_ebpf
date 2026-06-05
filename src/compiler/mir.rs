@@ -665,10 +665,10 @@ impl MirType {
             MirType::I32 | MirType::U32 => 4,
             MirType::I64 | MirType::U64 => 8,
             MirType::Ptr { .. } => 8,
-            MirType::Array { elem, len } => elem.size() * len,
+            MirType::Array { elem, len } => elem.size().saturating_mul(*len),
             MirType::Struct { fields, .. } => fields
                 .iter()
-                .filter_map(|field| field.offset.checked_add(field.ty.size()))
+                .map(|field| field.offset.saturating_add(field.ty.size()))
                 .max()
                 .unwrap_or(0),
             MirType::MapRef { .. } => 8, // Map FD

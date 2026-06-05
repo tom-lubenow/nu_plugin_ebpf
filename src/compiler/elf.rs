@@ -1048,7 +1048,7 @@ impl CounterKeySchema {
             CounterKeySchema::Int { size, .. }
             | CounterKeySchema::String { size }
             | CounterKeySchema::Bytes { size } => *size,
-            CounterKeySchema::Array { elem, len } => elem.size() * len,
+            CounterKeySchema::Array { elem, len } => elem.size().saturating_mul(*len),
             CounterKeySchema::Record { total_size, .. } => *total_size,
         }
     }

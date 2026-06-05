@@ -1956,7 +1956,7 @@ fn test_map_update_rejects_oversized_key_layout() {
         key,
         MirType::Ptr {
             pointee: Box::new(MirType::Array {
-                elem: Box::new(MirType::U8),
+                elem: Box::new(MirType::U64),
                 len: usize::MAX,
             }),
             address_space: AddressSpace::Stack,

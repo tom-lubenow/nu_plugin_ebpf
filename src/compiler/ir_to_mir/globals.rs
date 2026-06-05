@@ -1085,7 +1085,7 @@ impl ParsedNamedGlobalType {
         let node_size = node_ty.size();
         let payload_size = payload_fields
             .iter()
-            .filter_map(|field| field.offset.checked_add(field.ty.size()))
+            .map(|field| field.offset.saturating_add(field.ty.size()))
             .max()
             .unwrap_or(0);
         let payload_align = payload_fields
