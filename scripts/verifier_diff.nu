@@ -23272,6 +23272,21 @@ const FIXTURES = [
         kernel: "skip"
     }
     {
+        name: "source-helper-per-cpu-pointers"
+        category: "helper-state"
+        tags: [helper per-cpu accept source metadata]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  helper-call "bpf_per_cpu_ptr" $ctx 0'
+            '  helper-call "bpf_this_cpu_ptr" $ctx'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "source-helper-socket-conversions"
         category: "helper-state"
         tags: [tc cgroup-skb cgroup-sockopt helper socket accept source metadata]

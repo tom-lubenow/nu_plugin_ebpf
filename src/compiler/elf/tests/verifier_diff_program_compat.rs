@@ -466,7 +466,6 @@ fn test_verifier_diff_source_fixtures_cover_modeled_helper_names() {
     let pending = BTreeSet::from([
         "bpf_ima_file_hash".to_string(),
         "bpf_ima_inode_hash".to_string(),
-        "bpf_per_cpu_ptr".to_string(),
         "bpf_rc_keydown".to_string(),
         "bpf_rc_pointer_rel".to_string(),
         "bpf_rc_repeat".to_string(),
@@ -474,7 +473,6 @@ fn test_verifier_diff_source_fixtures_cover_modeled_helper_names() {
         "bpf_tcp_check_syncookie".to_string(),
         "bpf_tcp_gen_syncookie".to_string(),
         "bpf_tcp_send_ack".to_string(),
-        "bpf_this_cpu_ptr".to_string(),
     ]);
 
     let missing = modeled
