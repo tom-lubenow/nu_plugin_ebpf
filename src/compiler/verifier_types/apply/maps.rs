@@ -114,7 +114,7 @@ pub(super) fn apply_map_update_inst(
     map: &MapRef,
     key: VReg,
     val: VReg,
-    flags: u64,
+    _flags: u64,
     types: &HashMap<VReg, MirType>,
     state: &VerifierState,
     errors: &mut Vec<VerifierTypeError>,
@@ -123,12 +123,6 @@ pub(super) fn apply_map_update_inst(
         errors.push(VerifierTypeError::new(
             map.kind.generic_map_op_error(MapOpKind::Update, &map.name),
         ));
-    }
-    if flags > i32::MAX as u64 {
-        errors.push(VerifierTypeError::new(format!(
-            "map update flags {} exceed supported 32-bit immediate range",
-            flags
-        )));
     }
     check_map_operand_scalar_size(key, "map key", types, errors);
     check_map_operand_scalar_size(val, "map value", types, errors);
@@ -141,7 +135,7 @@ pub(super) fn apply_map_update_dynamic_inst(
     inner_map: &MapRef,
     key: VReg,
     val: VReg,
-    flags: u64,
+    _flags: u64,
     types: &HashMap<VReg, MirType>,
     state: &VerifierState,
     errors: &mut Vec<VerifierTypeError>,
@@ -152,12 +146,6 @@ pub(super) fn apply_map_update_dynamic_inst(
                 .kind
                 .generic_map_op_error(MapOpKind::Update, &inner_map.name),
         ));
-    }
-    if flags > i32::MAX as u64 {
-        errors.push(VerifierTypeError::new(format!(
-            "map update flags {} exceed supported 32-bit immediate range",
-            flags
-        )));
     }
     let _ = require_ptr_with_space(
         map_ptr,
@@ -217,7 +205,7 @@ pub(super) fn apply_map_delete_dynamic_inst(
 pub(super) fn apply_map_push_inst(
     map: &MapRef,
     val: VReg,
-    flags: u64,
+    _flags: u64,
     types: &HashMap<VReg, MirType>,
     state: &VerifierState,
     errors: &mut Vec<VerifierTypeError>,
@@ -226,12 +214,6 @@ pub(super) fn apply_map_push_inst(
         errors.push(VerifierTypeError::new(
             map.kind.generic_map_op_error(MapOpKind::Push, &map.name),
         ));
-    }
-    if flags > i32::MAX as u64 {
-        errors.push(VerifierTypeError::new(format!(
-            "map push flags {} exceed supported 32-bit immediate range",
-            flags
-        )));
     }
     check_map_operand_scalar_size(val, "map value", types, errors);
     check_map_value_access(val, types, state, errors);

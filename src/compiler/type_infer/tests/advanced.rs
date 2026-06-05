@@ -1524,7 +1524,7 @@ fn test_type_infer_rejects_array_map_delete() {
 }
 
 #[test]
-fn test_type_infer_rejects_out_of_range_map_update_flags() {
+fn test_type_infer_accepts_large_map_update_flags() {
     let mut func = make_test_function();
     let key = func.alloc_vreg();
     let val = func.alloc_vreg();
@@ -1549,19 +1549,13 @@ fn test_type_infer_rejects_out_of_range_map_update_flags() {
     });
     block.terminator = MirInst::Return { val: None };
 
-    let mut ti = TypeInference::new(None);
-    let errors = ti
+    TypeInference::new(None)
         .infer(&func)
-        .expect_err("out-of-range map update flags should be rejected");
-
-    assert!(errors.iter().any(|e| {
-        e.message
-            .contains("map update flags 2147483648 exceed supported 32-bit immediate range")
-    }));
+        .expect("large map update flags should be accepted");
 }
 
 #[test]
-fn test_type_infer_rejects_out_of_range_map_push_flags() {
+fn test_type_infer_accepts_large_map_push_flags() {
     let mut func = make_test_function();
     let val = func.alloc_vreg();
 
@@ -1580,15 +1574,9 @@ fn test_type_infer_rejects_out_of_range_map_push_flags() {
     });
     block.terminator = MirInst::Return { val: None };
 
-    let mut ti = TypeInference::new(None);
-    let errors = ti
+    TypeInference::new(None)
         .infer(&func)
-        .expect_err("out-of-range map push flags should be rejected");
-
-    assert!(errors.iter().any(|e| {
-        e.message
-            .contains("map push flags 2147483648 exceed supported 32-bit immediate range")
-    }));
+        .expect("large map push flags should be accepted");
 }
 
 #[test]

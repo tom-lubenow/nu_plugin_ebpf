@@ -728,7 +728,7 @@ fn test_verify_mir_map_delete_rejects_array_map_kind() {
 }
 
 #[test]
-fn test_verify_mir_map_update_rejects_out_of_range_flags() {
+fn test_verify_mir_map_update_accepts_large_flags() {
     let (mut func, entry) = new_mir_function();
     let key = func.alloc_vreg();
     let val = func.alloc_vreg();
@@ -752,15 +752,7 @@ fn test_verify_mir_map_update_rejects_out_of_range_flags() {
     });
     func.block_mut(entry).terminator = MirInst::Return { val: None };
 
-    let err = verify_mir(&func, &HashMap::new()).expect_err("expected map-update flags error");
-    assert!(
-        err.iter()
-            .any(|e| e.kind == VccErrorKind::UnsupportedInstruction
-                && e.message
-                    .contains("exceed supported 32-bit immediate range")),
-        "unexpected error messages: {:?}",
-        err
-    );
+    verify_mir(&func, &HashMap::new()).expect("large map-update flags should verify");
 }
 
 #[test]
@@ -1012,7 +1004,7 @@ fn test_verify_mir_map_push_rejects_unsupported_map_kind() {
 }
 
 #[test]
-fn test_verify_mir_map_push_rejects_out_of_range_flags() {
+fn test_verify_mir_map_push_accepts_large_flags() {
     let (mut func, entry) = new_mir_function();
     let val = func.alloc_vreg();
 
@@ -1030,15 +1022,7 @@ fn test_verify_mir_map_push_rejects_out_of_range_flags() {
     });
     func.block_mut(entry).terminator = MirInst::Return { val: None };
 
-    let err = verify_mir(&func, &HashMap::new()).expect_err("expected map-push flags error");
-    assert!(
-        err.iter()
-            .any(|e| e.kind == VccErrorKind::UnsupportedInstruction
-                && e.message
-                    .contains("map push flags 2147483648 exceed supported 32-bit immediate range")),
-        "unexpected error messages: {:?}",
-        err
-    );
+    verify_mir(&func, &HashMap::new()).expect("large map-push flags should verify");
 }
 
 #[test]

@@ -1124,21 +1124,12 @@ impl<'a> VccLowerer<'a> {
                 map,
                 key,
                 val,
-                flags,
+                flags: _,
             } => {
                 if !map.kind.supports_generic_map_op(MapOpKind::Update) {
                     return Err(VccError::new(
                         VccErrorKind::UnsupportedInstruction,
                         map.kind.generic_map_op_error(MapOpKind::Update, &map.name),
-                    ));
-                }
-                if *flags > i32::MAX as u64 {
-                    return Err(VccError::new(
-                        VccErrorKind::UnsupportedInstruction,
-                        format!(
-                            "map update flags {} exceed supported 32-bit immediate range",
-                            flags
-                        ),
                     ));
                 }
                 self.verify_map_key(&map.name, *key, out)?;
@@ -1149,7 +1140,7 @@ impl<'a> VccLowerer<'a> {
                 inner_map,
                 key,
                 val,
-                flags,
+                flags: _,
             } => {
                 if !inner_map.kind.supports_generic_map_op(MapOpKind::Update) {
                     return Err(VccError::new(
@@ -1157,15 +1148,6 @@ impl<'a> VccLowerer<'a> {
                         inner_map
                             .kind
                             .generic_map_op_error(MapOpKind::Update, &inner_map.name),
-                    ));
-                }
-                if *flags > i32::MAX as u64 {
-                    return Err(VccError::new(
-                        VccErrorKind::UnsupportedInstruction,
-                        format!(
-                            "map update flags {} exceed supported 32-bit immediate range",
-                            flags
-                        ),
                     ));
                 }
                 out.push(VccInst::AssertPtrAccess {
@@ -1205,20 +1187,11 @@ impl<'a> VccLowerer<'a> {
                 });
                 self.verify_map_key(&inner_map.name, *key, out)?;
             }
-            MirInst::MapPush { map, val, flags } => {
+            MirInst::MapPush { map, val, flags: _ } => {
                 if !map.kind.supports_generic_map_op(MapOpKind::Push) {
                     return Err(VccError::new(
                         VccErrorKind::UnsupportedInstruction,
                         map.kind.generic_map_op_error(MapOpKind::Push, &map.name),
-                    ));
-                }
-                if *flags > i32::MAX as u64 {
-                    return Err(VccError::new(
-                        VccErrorKind::UnsupportedInstruction,
-                        format!(
-                            "map push flags {} exceed supported 32-bit immediate range",
-                            flags
-                        ),
                     ));
                 }
                 self.verify_map_value(*val, out)?;

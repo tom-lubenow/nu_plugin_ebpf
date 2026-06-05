@@ -15,6 +15,17 @@ impl<'a> MirToEbpfCompiler<'a> {
         }
     }
 
+    pub(super) fn emit_load_u64_const(&mut self, dst: EbpfReg, value: u64) {
+        if value <= i32::MAX as u64 {
+            self.instructions
+                .push(EbpfInsn::mov64_imm(dst, value as i32));
+        } else {
+            let [lo, hi] = EbpfInsn::ld_imm64(dst, value as i64);
+            self.instructions.push(lo);
+            self.instructions.push(hi);
+        }
+    }
+
     fn value_is_packet_ptr(&self, value: &MirValue) -> bool {
         match value {
             MirValue::VReg(vreg) => matches!(

@@ -666,18 +666,12 @@ impl<'a> TypeInference<'a> {
                 map,
                 key,
                 val,
-                flags,
+                flags: _,
             } => {
                 if !map.kind.supports_generic_map_op(MapOpKind::Update) {
                     errors.push(TypeError::new(
                         map.kind.generic_map_op_error(MapOpKind::Update, &map.name),
                     ));
-                }
-                if *flags > i32::MAX as u64 {
-                    errors.push(TypeError::new(format!(
-                        "map update flags {} exceed supported 32-bit immediate range",
-                        flags
-                    )));
                 }
                 let key_ty = self.mir_type_for_vreg(*key, types);
                 if map.name == STRING_COUNTER_MAP_NAME || map.name == BYTES_COUNTER_MAP_NAME {
@@ -720,7 +714,7 @@ impl<'a> TypeInference<'a> {
                 inner_map,
                 key,
                 val,
-                flags,
+                flags: _,
             } => {
                 if !inner_map.kind.supports_generic_map_op(MapOpKind::Update) {
                     errors.push(TypeError::new(
@@ -728,12 +722,6 @@ impl<'a> TypeInference<'a> {
                             .kind
                             .generic_map_op_error(MapOpKind::Update, &inner_map.name),
                     ));
-                }
-                if *flags > i32::MAX as u64 {
-                    errors.push(TypeError::new(format!(
-                        "map update flags {} exceed supported 32-bit immediate range",
-                        flags
-                    )));
                 }
                 let map_ptr_ty = self.mir_type_for_vreg(*map_ptr, types);
                 if Self::mir_ptr_space(&map_ptr_ty).is_none() {
@@ -827,19 +815,12 @@ impl<'a> TypeInference<'a> {
                 }
             }
 
-            MirInst::MapPush { map, val, flags } => {
+            MirInst::MapPush { map, val, flags: _ } => {
                 if !map.kind.supports_generic_map_op(MapOpKind::Push) {
                     errors.push(TypeError::new(
                         map.kind.generic_map_op_error(MapOpKind::Push, &map.name),
                     ));
                 }
-                if *flags > i32::MAX as u64 {
-                    errors.push(TypeError::new(format!(
-                        "map push flags {} exceed supported 32-bit immediate range",
-                        flags
-                    )));
-                }
-
                 let val_ty = self.mir_type_for_vreg(*val, types);
                 match val_ty {
                     MirType::Ptr { address_space, .. }

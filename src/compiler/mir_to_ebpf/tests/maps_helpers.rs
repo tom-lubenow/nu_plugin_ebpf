@@ -1,5 +1,25 @@
 use super::*;
 
+const LARGE_MAP_FLAG: u64 = 0x1_0000_0000;
+
+fn bytecode_has_ld_imm64(bytecode: &[u8], dst: EbpfReg, value: u64) -> bool {
+    let bytes = value.to_le_bytes();
+    let lo = i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+    let hi = i32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
+    let insns: Vec<_> = bytecode.chunks_exact(8).collect();
+
+    insns.windows(2).any(|pair| {
+        let first = pair[0];
+        let second = pair[1];
+        first[0] == opcode::LD_DW_IMM
+            && first[1] & 0x0f == dst.as_u8()
+            && first[1] >> 4 == 0
+            && i32::from_le_bytes([first[4], first[5], first[6], first[7]]) == lo
+            && second[0] == 0
+            && i32::from_le_bytes([second[4], second[5], second[6], second[7]]) == hi
+    })
+}
+
 #[test]
 fn test_string_literal_lowering_populates_buffer() {
     use crate::compiler::mir::{MirInst, StringAppendType};
@@ -1412,7 +1432,7 @@ fn test_dynamic_map_update_and_delete_compile_after_map_in_map_outer_lookup() {
             inner_map: inner.clone(),
             key: inner_key,
             val: inner_value,
-            flags: 0,
+            flags: LARGE_MAP_FLAG,
         });
     func.block_mut(mutate_inner)
         .instructions
@@ -1449,6 +1469,10 @@ fn test_dynamic_map_update_and_delete_compile_after_map_in_map_outer_lookup() {
 
     let result = compile_mir_to_ebpf_with_hints(&program, None, Some(&type_hints))
         .expect("dynamic map update/delete should compile");
+    assert!(
+        bytecode_has_ld_imm64(&result.bytecode, EbpfReg::R4, LARGE_MAP_FLAG),
+        "expected dynamic map update to materialize large flags in R4"
+    );
     let update_calls = result
         .bytecode
         .chunks(8)
@@ -1796,6 +1820,49 @@ fn test_map_update_compiles_and_emits_generic_map() {
     assert!(
         has_update_helper,
         "expected bpf_map_update_elem helper call"
+    );
+}
+
+#[test]
+fn test_map_update_materializes_large_u64_flags() {
+    use crate::compiler::mir::*;
+
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let key = func.alloc_vreg();
+    let val = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: key,
+        src: MirValue::Const(42),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: val,
+        src: MirValue::Const(99),
+    });
+    func.block_mut(entry).instructions.push(MirInst::MapUpdate {
+        map: MapRef {
+            name: "custom_update_large_flags".to_string(),
+            kind: MapKind::Hash,
+        },
+        key,
+        val,
+        flags: LARGE_MAP_FLAG,
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let program = MirProgram {
+        main: func,
+        subfunctions: vec![],
+    };
+
+    let result =
+        compile_mir_to_ebpf(&program, None).expect("large map update flags should compile");
+    assert!(
+        bytecode_has_ld_imm64(&result.bytecode, EbpfReg::R4, LARGE_MAP_FLAG),
+        "expected map update to materialize large flags in R4"
     );
 }
 
@@ -3074,6 +3141,42 @@ fn test_compile_generic_map_push_accepts_bloom_filter_map() {
     assert_eq!(map.def.map_type, BpfMapType::BloomFilter as u32);
     assert_eq!(map.def.key_size, 0);
     assert_eq!(map.def.value_size, 8);
+}
+
+#[test]
+fn test_compile_generic_map_push_materializes_large_u64_flags() {
+    use crate::compiler::mir::*;
+
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let value = func.alloc_vreg();
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: value,
+        src: MirValue::Const(42),
+    });
+    func.block_mut(entry).instructions.push(MirInst::MapPush {
+        map: MapRef {
+            name: "demo_queue_large_flags".to_string(),
+            kind: MapKind::Queue,
+        },
+        val: value,
+        flags: LARGE_MAP_FLAG,
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let program = MirProgram {
+        main: func,
+        subfunctions: vec![],
+    };
+    let compiled = compile_mir_to_ebpf(&program, None)
+        .expect("large map-push flags should compile queue maps");
+
+    assert!(
+        bytecode_has_ld_imm64(&compiled.bytecode, EbpfReg::R3, LARGE_MAP_FLAG),
+        "expected map push to materialize large flags in R3"
+    );
 }
 
 #[test]

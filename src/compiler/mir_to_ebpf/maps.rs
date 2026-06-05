@@ -888,12 +888,6 @@ impl<'a> MirToEbpfCompiler<'a> {
                     .generic_map_op_error(MapOpKind::Update, &inner_map.name),
             ));
         }
-        if flags > i32::MAX as u64 {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "map update flags {} exceed supported 32-bit immediate range",
-                flags
-            )));
-        }
         let default_key_size = self
             .generic_map_key_types
             .get(inner_map)
@@ -911,8 +905,7 @@ impl<'a> MirToEbpfCompiler<'a> {
 
         self.setup_map_key_arg(key_reg, key_layout)?;
         self.setup_map_value_arg(val_reg, val_layout)?;
-        self.instructions
-            .push(EbpfInsn::mov64_imm(EbpfReg::R4, flags as i32));
+        self.emit_load_u64_const(EbpfReg::R4, flags);
         self.restore_dynamic_map_ptr_arg(map_ptr_offset);
         self.instructions
             .push(EbpfInsn::call(BpfHelper::MapUpdateElem));
@@ -979,17 +972,10 @@ impl<'a> MirToEbpfCompiler<'a> {
             MapOperandLayout::Pointer { size } | MapOperandLayout::Scalar { size } => size,
         };
         self.register_generic_map_spec(map, key_size, Some(value_size))?;
-        if flags > i32::MAX as u64 {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "map update flags {} exceed supported 32-bit immediate range",
-                flags
-            )));
-        }
 
         self.setup_map_key_arg(key_reg, key_layout)?;
         self.setup_map_value_arg(val_reg, val_layout)?;
-        self.instructions
-            .push(EbpfInsn::mov64_imm(EbpfReg::R4, flags as i32));
+        self.emit_load_u64_const(EbpfReg::R4, flags);
         self.emit_map_fd_load(EbpfReg::R1, &map.name);
         self.instructions
             .push(EbpfInsn::call(BpfHelper::MapUpdateElem));
@@ -1042,16 +1028,9 @@ impl<'a> MirToEbpfCompiler<'a> {
             MapOperandLayout::Pointer { size } | MapOperandLayout::Scalar { size } => size,
         };
         self.register_generic_map_spec(map, 0, Some(value_size))?;
-        if flags > i32::MAX as u64 {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "map push flags {} exceed supported 32-bit immediate range",
-                flags
-            )));
-        }
 
         self.setup_map_value_arg_in_reg(val_reg, val_layout, EbpfReg::R2)?;
-        self.instructions
-            .push(EbpfInsn::mov64_imm(EbpfReg::R3, flags as i32));
+        self.emit_load_u64_const(EbpfReg::R3, flags);
         self.emit_map_fd_load(EbpfReg::R1, &map.name);
         self.instructions
             .push(EbpfInsn::call(BpfHelper::MapPushElem));
