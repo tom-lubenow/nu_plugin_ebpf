@@ -601,7 +601,9 @@ fn summarize_function(
         let Some(state_in) = in_states.get(&block_id).cloned() else {
             continue;
         };
-        let block = func.block(block_id);
+        let Some(block) = func.blocks.iter().find(|block| block.id == block_id) else {
+            return SubfunctionSummary::unknown();
+        };
         let mut state = state_in;
 
         for inst in &block.instructions {
@@ -2205,6 +2207,38 @@ mod tests {
         assert_eq!(
             summaries.get(&SubfunctionId(1)),
             Some(&SubfunctionReturnSummary::ReturnsArg(0))
+        );
+    }
+
+    #[test]
+    fn test_infer_summary_returns_unknown_for_missing_entry_block() {
+        let mut subfn = MirFunction::new();
+        subfn.entry = BlockId(99);
+
+        let summaries = infer_subfunction_summaries(&[subfn]);
+        assert_eq!(
+            summaries
+                .get(&SubfunctionId(0))
+                .map(|summary| summary.return_summary()),
+            Some(SubfunctionReturnSummary::Unknown)
+        );
+    }
+
+    #[test]
+    fn test_infer_summary_returns_unknown_for_missing_successor_block() {
+        let mut subfn = MirFunction::new();
+        let entry = subfn.alloc_block();
+        subfn.entry = entry;
+        subfn.block_mut(entry).terminator = MirInst::Jump {
+            target: BlockId(99),
+        };
+
+        let summaries = infer_subfunction_summaries(&[subfn]);
+        assert_eq!(
+            summaries
+                .get(&SubfunctionId(0))
+                .map(|summary| summary.return_summary()),
+            Some(SubfunctionReturnSummary::Unknown)
         );
     }
 
