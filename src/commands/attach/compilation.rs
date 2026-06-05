@@ -680,6 +680,14 @@ fn eval_supported_constant_call(
             env,
             span,
         ),
+        "length" => {
+            eval_supported_constant_no_argument_call(cmd_name, &call.arguments)?;
+            eval_supported_constant_length(input, span)
+        }
+        "is-empty" | "is-not-empty" => {
+            eval_supported_constant_no_argument_call(cmd_name, &call.arguments)?;
+            eval_supported_constant_empty_predicate(cmd_name, input, span)
+        }
         "get" => eval_supported_constant_get_call(
             working_set,
             cmd_name,
@@ -924,6 +932,14 @@ fn eval_supported_constant_external_call(
                 env,
                 span,
             )
+        }
+        "length" => {
+            eval_supported_constant_no_external_args(cmd_name, args, span)?;
+            eval_supported_constant_length(input, span)
+        }
+        "is-empty" | "is-not-empty" => {
+            eval_supported_constant_no_external_args(cmd_name, args, span)?;
+            eval_supported_constant_empty_predicate(cmd_name, input, span)
         }
         "get" => {
             let [path_arg] = args else {
@@ -1480,6 +1496,148 @@ fn eval_supported_constant_compact_keeps_value(value: &Value, remove_empty: bool
         Value::Record { val, .. } => !remove_empty || !val.is_empty(),
         _ => true,
     }
+}
+
+fn eval_supported_constant_no_argument_call(
+    cmd_name: &str,
+    args: &[nu_protocol::ast::Argument],
+) -> Result<(), LabeledError> {
+    for arg in args {
+        match arg {
+            nu_protocol::ast::Argument::Named(named) => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        format!(
+                            "`{cmd_name}` does not accept named argument --{} in compile-time global initializers",
+                            named.0.item
+                        ),
+                        arg.span(),
+                    ));
+            }
+            nu_protocol::ast::Argument::Spread(expr) => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        format!(
+                            "`{cmd_name}` arguments cannot use spread syntax in compile-time global initializers"
+                        ),
+                        expr.span,
+                    ));
+            }
+            nu_protocol::ast::Argument::Positional(_) | nu_protocol::ast::Argument::Unknown(_) => {
+                return Err(
+                    LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            format!(
+                                "`{cmd_name}` does not accept arguments in compile-time global initializers"
+                            ),
+                            arg.span(),
+                        ),
+                );
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn eval_supported_constant_no_external_args(
+    cmd_name: &str,
+    args: &[ExternalArgument],
+    span: Span,
+) -> Result<(), LabeledError> {
+    if let Some(arg) = args.first() {
+        if let ExternalArgument::Spread(expr) = arg {
+            return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                .with_label(
+                    format!(
+                        "`{cmd_name}` arguments cannot use spread syntax in compile-time global initializers"
+                    ),
+                    expr.span,
+                ));
+        }
+
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`{cmd_name}` does not accept arguments in compile-time global initializers"
+                ),
+                span,
+            ),
+        );
+    }
+
+    Ok(())
+}
+
+fn eval_supported_constant_required_pipeline_input(
+    cmd_name: &str,
+    input: Option<Value>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    input.ok_or_else(|| {
+        LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+            format!(
+                "`{cmd_name}` in a compile-time global initializer must receive pipeline input"
+            ),
+            span,
+        )
+    })
+}
+
+fn eval_supported_constant_length(input: Option<Value>, span: Span) -> Result<Value, LabeledError> {
+    let value = eval_supported_constant_required_pipeline_input("length", input, span)?;
+    let len = match value {
+        Value::Nothing { .. } => 0,
+        Value::List { ref vals, .. } => vals.len(),
+        Value::Binary { ref val, .. } => val.len(),
+        _ => {
+            return Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    "`length` in a compile-time global initializer requires list, binary, or null input",
+                    span,
+                ),
+            );
+        }
+    };
+
+    Ok(Value::int(len as i64, span))
+}
+
+fn eval_supported_constant_empty_predicate(
+    cmd_name: &str,
+    input: Option<Value>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let value = eval_supported_constant_required_pipeline_input(cmd_name, input, span)?;
+    let empty = match value {
+        Value::Nothing { .. } => true,
+        Value::String { ref val, .. } => val.is_empty(),
+        Value::Binary { ref val, .. } => val.is_empty(),
+        Value::List { ref vals, .. } => vals.is_empty(),
+        Value::Record { ref val, .. } => val.is_empty(),
+        Value::Bool { .. }
+        | Value::Int { .. }
+        | Value::Float { .. }
+        | Value::Filesize { .. }
+        | Value::Duration { .. } => false,
+        _ => {
+            return Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    format!(
+                        "`{cmd_name}` in a compile-time global initializer requires list, record, string, binary, scalar, or null input"
+                    ),
+                    span,
+                ),
+            );
+        }
+    };
+    let result = if cmd_name == "is-not-empty" {
+        !empty
+    } else {
+        empty
+    };
+
+    Ok(Value::bool(result, span))
 }
 
 #[derive(Debug, Clone, Copy)]
