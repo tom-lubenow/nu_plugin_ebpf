@@ -790,6 +790,10 @@ fn eval_supported_constant_call(
             )?;
             eval_supported_constant_bits_shift_rotate(cmd_name, input, args, span)
         }
+        "math abs" => {
+            eval_supported_constant_no_argument_call(cmd_name, &call.arguments)?;
+            eval_supported_constant_math_abs(input, span)
+        }
         "char" => {
             let output =
                 eval_supported_constant_char_call_args(working_set, &call.arguments, env, span)?;
@@ -1221,6 +1225,11 @@ fn eval_supported_constant_external_call(
                 span,
             )?;
             eval_supported_constant_bits_shift_rotate(cmd_name, input, args, span)
+        }
+        "math" => eval_supported_constant_math_external_call(working_set, input, args, env, span),
+        "math abs" => {
+            eval_supported_constant_no_external_args(cmd_name, args, span)?;
+            eval_supported_constant_math_abs(input, span)
         }
         "char" => {
             let output = eval_supported_constant_char_external_args(working_set, args, env, span)?;
@@ -5424,6 +5433,118 @@ fn eval_supported_constant_bits_external_call(
         _ => Err(
             LabeledError::new("Unsupported annotated mutable global initializer").with_label(
                 format!("`bits {subcommand}` is not supported in compile-time global initializers"),
+                subcommand_expr.span,
+            ),
+        ),
+    }
+}
+
+fn eval_supported_constant_math_abs(
+    input: Option<Value>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let value = eval_supported_constant_required_pipeline_input("math abs", input, span)?;
+    let value_span = value.span();
+    match value {
+        Value::Int { val, .. } => Ok(Value::int(val.wrapping_abs(), value_span)),
+        Value::List { vals, .. } => {
+            let output = vals
+                .into_iter()
+                .enumerate()
+                .map(|(index, value)| {
+                    let Value::Int { val, .. } = value else {
+                        return Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
+                        .with_label(
+                            format!(
+                                "`math abs` requires integer list items in compile-time global initializers; item {index} has type {}",
+                                value.get_type()
+                            ),
+                            span,
+                        ));
+                    };
+                    Ok(Value::int(val.wrapping_abs(), value_span))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(Value::list(output, value_span))
+        }
+        Value::Float { val, .. } if !val.is_finite() => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`math abs` requires finite float input in compile-time global initializers; input is {val}"
+                ),
+                span,
+            ),
+        ),
+        Value::Float { .. } => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`math abs` compile-time result has type float; mutable global initializers support only materializable eBPF values",
+                span,
+            ),
+        ),
+        other => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`math abs` in a compile-time global initializer requires integer or list<int> input; got {}",
+                    other.get_type()
+                ),
+                span,
+            ),
+        ),
+    }
+}
+
+fn eval_supported_constant_math_external_call(
+    working_set: &StateWorkingSet,
+    input: Option<Value>,
+    args: &[ExternalArgument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let Some((subcommand_arg, remaining_args)) = args.split_first() else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`math` requires a subcommand in compile-time global initializers",
+                span,
+            ),
+        );
+    };
+    let ExternalArgument::Regular(subcommand_expr) = subcommand_arg else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`math` subcommand cannot use spread syntax in compile-time global initializers",
+                subcommand_arg.expr().span,
+            ),
+        );
+    };
+    let subcommand = match eval_supported_constant_value_with_env(
+        working_set,
+        subcommand_expr,
+        env,
+    )? {
+        Value::String { val, .. } | Value::Glob { val, .. } => val,
+        other => {
+            return Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    format!(
+                        "`math` subcommand must be a compile-time string in global initializers; got {}",
+                        other.get_type()
+                    ),
+                    subcommand_expr.span,
+                ),
+            );
+        }
+    };
+    let cmd_name = format!("math {subcommand}");
+    match cmd_name.as_str() {
+        "math abs" => {
+            eval_supported_constant_no_external_args(&cmd_name, remaining_args, span)?;
+            eval_supported_constant_math_abs(input, span)
+        }
+        _ => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!("`math {subcommand}` is not supported in compile-time global initializers"),
                 subcommand_expr.span,
             ),
         ),
