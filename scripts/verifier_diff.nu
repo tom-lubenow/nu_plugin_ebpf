@@ -21310,6 +21310,23 @@ const FIXTURES = [
         error_contains: "helper 'bpf_skb_change_proto' requires arg2 = 0"
     }
     {
+        name: "tc-skb-change-proto-rejects-dynamic-flags"
+        category: "helper-state"
+        tags: [tc helper skb-change flags reject source metadata]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let flags = (helper-call "bpf_get_prandom_u32")'
+            '  helper-call "bpf_skb_change_proto" $ctx 34525 $flags'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_skb_change_proto' requires arg2 = 0"
+    }
+    {
         name: "tc-skb-change-tail-rejects-stale-data"
         category: "helper-state"
         tags: [tc helper skb-change packet-bounds reject source metadata]
@@ -21360,6 +21377,23 @@ const FIXTURES = [
         error_contains: "helper 'bpf_skb_change_head' requires arg2 = 0"
     }
     {
+        name: "tc-skb-change-head-rejects-dynamic-flags"
+        category: "helper-state"
+        tags: [tc helper skb-change flags reject source metadata]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let flags = (helper-call "bpf_get_prandom_u32")'
+            '  helper-call "bpf_skb_change_head" $ctx 14 $flags'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_skb_change_head' requires arg2 = 0"
+    }
+    {
         name: "tc-skb-adjust-room-helper"
         category: "helper-state"
         tags: [tc helper skb-change accept source metadata]
@@ -21373,6 +21407,23 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
+    }
+    {
+        name: "tc-skb-adjust-room-rejects-dynamic-flags"
+        category: "helper-state"
+        tags: [tc helper skb-change flags reject source metadata]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let flags = (helper-call "bpf_get_prandom_u32")'
+            '  helper-call "bpf_skb_adjust_room" $ctx 0 0 $flags'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_skb_adjust_room' requires arg3 flags"
     }
     {
         name: "tc-skb-change-type-helper"
@@ -21486,6 +21537,24 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
+    }
+    {
+        name: "tc-skb-store-bytes-rejects-dynamic-flags"
+        category: "helper-state"
+        tags: [tc helper packet-bounds flags reject]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let bytes = "x"'
+            '  let flags = (helper-call "bpf_get_prandom_u32")'
+            '  helper-call "bpf_skb_store_bytes" $ctx 0 $bytes 1 $flags'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_skb_store_bytes' requires arg4 flags"
     }
     {
         name: "tc-subfn-skb-store-bytes-rejects-stale-data"
@@ -21684,6 +21753,23 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "tc-l3-csum-replace-rejects-dynamic-flags"
+        category: "helper-state"
+        tags: [tc helper checksum flags reject]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let flags = (helper-call "bpf_get_prandom_u32")'
+            '  helper-call "bpf_l3_csum_replace" $ctx 0 0 0 $flags'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_l3_csum_replace' requires arg4 flags"
+    }
+    {
         name: "tc-l4-csum-replace-rejects-stale-data"
         category: "helper-state"
         tags: [tc helper checksum packet-bounds reject]
@@ -21716,6 +21802,23 @@ const FIXTURES = [
         ]
         local: "accept"
         kernel: "accept"
+    }
+    {
+        name: "tc-l4-csum-replace-rejects-dynamic-flags"
+        category: "helper-state"
+        tags: [tc helper checksum flags reject]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let flags = (helper-call "bpf_get_prandom_u32")'
+            '  helper-call "bpf_l4_csum_replace" $ctx 0 0 0 $flags'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_l4_csum_replace' requires arg4 flags"
     }
     {
         name: "tc-csum-update-preserves-packet-data"
