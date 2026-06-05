@@ -18796,7 +18796,24 @@ const FIXTURES = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "helper 141 arg2 must be >= 0"
+        error_contains: "stack-copy helpers require arg2 size to be between 0 and u32::MAX"
+    }
+    {
+        name: "source-helper-get-task-stack-rejects-dynamic-negative-size"
+        category: "helper-state"
+        tags: [helper task stack-copy size dynamic reject]
+        target: "kprobe:do_exit"
+        program: [
+            '{|ctx|'
+            '  let buf = "0123456789abcdefghijklmn"'
+            '  let size = (0 - (helper-call "bpf_get_prandom_u32"))'
+            '  helper-call "bpf_get_task_stack" $ctx.current_task $buf $size 0'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "stack-copy helpers require arg2 size to be between 0 and u32::MAX"
     }
     {
         name: "source-helper-get-task-stack-rejects-invalid-flags"
