@@ -5008,6 +5008,24 @@ fn make_ctx_pid_fill_then_starts_with_program(
     starts_with_decl: DeclId,
     width: Option<i64>,
 ) -> HirProgram {
+    make_ctx_pid_fill_then_starts_with_program_with_options(
+        fill_decl,
+        starts_with_decl,
+        width,
+        None,
+        None,
+        "0",
+    )
+}
+
+fn make_ctx_pid_fill_then_starts_with_program_with_options(
+    fill_decl: DeclId,
+    starts_with_decl: DeclId,
+    width: Option<i64>,
+    alignment: Option<&str>,
+    character: Option<&str>,
+    prefix: &str,
+) -> HirProgram {
     let ctx_var = VarId::new(0);
     let mut stmts = vec![
         HirStmt::LoadVariable {
@@ -5036,6 +5054,24 @@ fn make_ctx_pid_fill_then_starts_with_program(
         });
         named.push((b"width".to_vec(), width_reg));
     }
+    if let Some(alignment) = alignment {
+        let alignment_reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadValue {
+            dst: alignment_reg,
+            val: Box::new(Value::string(alignment, Span::test_data())),
+        });
+        named.push((b"alignment".to_vec(), alignment_reg));
+    }
+    if let Some(character) = character {
+        let character_reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadValue {
+            dst: character_reg,
+            val: Box::new(Value::string(character, Span::test_data())),
+        });
+        named.push((b"character".to_vec(), character_reg));
+    }
 
     stmts.push(HirStmt::Call {
         decl_id: fill_decl,
@@ -5051,7 +5087,7 @@ fn make_ctx_pid_fill_then_starts_with_program(
     next_reg += 1;
     stmts.push(HirStmt::LoadValue {
         dst: prefix_reg,
-        val: Box::new(Value::string("0", Span::test_data())),
+        val: Box::new(Value::string(prefix, Span::test_data())),
     });
     stmts.push(HirStmt::Call {
         decl_id: starts_with_decl,
@@ -14478,6 +14514,85 @@ fn test_lower_fill_width_two_on_runtime_unsigned_int_materializes_dynamic_paddin
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("runtime integer fill --width 2 result should compile");
+}
+
+#[test]
+fn test_lower_fill_width_two_right_on_runtime_unsigned_int_materializes_dynamic_padding() {
+    let fill_decl = DeclId::new(2511);
+    let starts_with_decl = DeclId::new(2512);
+    let hir = make_ctx_pid_fill_then_starts_with_program_with_options(
+        fill_decl,
+        starts_with_decl,
+        Some(2),
+        Some("right"),
+        Some("0"),
+        "0",
+    );
+    let decl_names = HashMap::from([
+        (fill_decl, "fill".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("fill --width 2 --alignment right should lower for runtime unsigned integer input");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .any(|block| matches!(block.terminator, MirInst::Branch { .. })),
+        "expected runtime integer right fill --width 2 to branch on input magnitude"
+    );
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::BinOp {
+                op: BinOpKind::Lt,
+                rhs: MirValue::Const(10),
+                ..
+            }
+        )),
+        "expected runtime integer right fill --width 2 to test input < 10"
+    );
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::StringAppend {
+                val_type: StringAppendType::Literal { bytes },
+                ..
+            } if bytes.as_slice() == b"0"
+        )),
+        "expected runtime integer right fill --width 2 to append one leading fill character"
+    );
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::StringAppend {
+                val_type: StringAppendType::Integer,
+                ..
+            }
+        )),
+        "expected runtime integer right fill --width 2 to format through StringAppend::Integer"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("runtime integer right fill --width 2 result should compile");
 }
 
 #[test]
