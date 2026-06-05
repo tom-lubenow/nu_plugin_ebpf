@@ -35599,6 +35599,51 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "source-kfunc-cpumask-and-release"
+        category: "helper-state"
+        tags: [kfunc cpumask source accept]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let dst = (kfunc-call "bpf_cpumask_create")'
+            '  if $dst {'
+            '    let src = (kfunc-call "bpf_cpumask_create")'
+            '    if $src {'
+            '      kfunc-call "bpf_cpumask_set_cpu" 0 $src'
+            '      let matched = (kfunc-call "bpf_cpumask_and" $dst $src $src)'
+            '      $matched | count'
+            '      $src | kfunc-call "bpf_cpumask_release"'
+            '    }'
+            '    $dst | kfunc-call "bpf_cpumask_release"'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "source-kfunc-cpumask-and-rejects-scalar-arg"
+        category: "helper-state"
+        tags: [kfunc cpumask source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let mask = (kfunc-call "bpf_cpumask_create")'
+            '  if $mask {'
+            '    kfunc-call "bpf_cpumask_and" $mask 7 $mask'
+            '    $mask | kfunc-call "bpf_cpumask_release"'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "arg1 expects pointer"
+    }
+    {
         name: "source-kptr-xchg-task-ref-transfer"
         category: "helper-state"
         tags: [kfunc helper-call kptr ref-lifetime source accept]

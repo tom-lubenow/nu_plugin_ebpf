@@ -1077,6 +1077,12 @@ flows: `bpf_task_from_pid` and `bpf_task_from_vpid` return nullable task
 references released by `bpf_task_release`, while `bpf_cgroup_acquire`,
 `bpf_cgroup_from_id`, `bpf_cgroup_ancestor`, and `bpf_task_get_cgroup1` return
 nullable cgroup references released by `bpf_cgroup_release`.
+Cpumask kfuncs are modeled as acquired-reference flows too:
+`bpf_cpumask_create` and `bpf_cpumask_acquire` return nullable cpumask
+references released by `bpf_cpumask_release` or `bpf_cpumask_release_dtor`.
+Cpumask query and mutation kfuncs such as `bpf_cpumask_and`,
+`bpf_cpumask_set_cpu`, and `bpf_cpumask_first` require cpumask pointer
+provenance for their pointer arguments.
 `bpf_task_under_cgroup` is modeled as a task/cgroup query that requires a task
 pointer for arg0 and a cgroup pointer for arg1; passing a task reference as the
 cgroup argument is rejected before load.
