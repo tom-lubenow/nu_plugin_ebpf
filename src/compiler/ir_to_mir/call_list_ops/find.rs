@@ -19,15 +19,15 @@ impl<'a> HirToMirLowering<'a> {
             ));
         }
 
-        let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
+        let mut input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
         let input_reg = self
             .pipeline_input_reg
             .or(src_dst_had_value.then_some(src_dst));
         let (needle_vreg, needle_reg) = self.positional_args[0];
 
-        if let Some(values) = input_reg.and_then(|reg| {
+        if let Some((builder_reg, values)) = input_reg.and_then(|reg| {
             self.compile_time_only_list_builder_values(reg, input_vreg)
-                .map(|values| values.to_vec())
+                .map(|values| (reg, values.to_vec()))
         }) {
             let Some(needle) = self
                 .get_metadata(needle_reg)
@@ -38,10 +38,40 @@ impl<'a> HirToMirLowering<'a> {
                         .map(|value| nu_protocol::Value::int(value, Span::unknown()))
                 })
             else {
-                return Err(CompileError::UnsupportedInstruction(
-                    "find search argument must be compile-time constant for compile-time known fixed lists in eBPF"
-                        .into(),
-                ));
+                if values
+                    .iter()
+                    .any(|value| Self::numeric_value_from_value(value).is_none())
+                {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "find search argument must be compile-time constant for compile-time known fixed lists in eBPF"
+                            .into(),
+                    ));
+                }
+
+                let materialized = nu_protocol::Value::list(values, Span::unknown());
+                self.assign_fresh_vreg(builder_reg);
+                self.lower_constant_value(builder_reg, &materialized)?;
+                input_vreg = self.get_vreg(builder_reg);
+                let input_meta = self.get_metadata(builder_reg).cloned().ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(
+                        "find could not materialize compile-time known integer list in eBPF".into(),
+                    )
+                })?;
+                if input_meta.list_buffer.is_none() {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "find could not materialize compile-time known integer list in eBPF".into(),
+                    ));
+                }
+
+                return self.lower_stack_list_find_materialized(
+                    src_dst,
+                    dst_vreg,
+                    src_dst_had_value,
+                    input_vreg,
+                    input_meta,
+                    needle_vreg,
+                    needle_reg,
+                );
             };
             let vals = values
                 .into_iter()
@@ -61,6 +91,27 @@ impl<'a> HirToMirLowering<'a> {
                     "find requires a pipeline input with tracked metadata in eBPF".into(),
                 )
             })?;
+        self.lower_stack_list_find_materialized(
+            src_dst,
+            dst_vreg,
+            src_dst_had_value,
+            input_vreg,
+            input_meta,
+            needle_vreg,
+            needle_reg,
+        )
+    }
+
+    fn lower_stack_list_find_materialized(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+        input_vreg: VReg,
+        input_meta: RegMetadata,
+        needle_vreg: VReg,
+        needle_reg: RegId,
+    ) -> Result<(), CompileError> {
         let Some((_input_slot, max_len)) = input_meta.list_buffer else {
             return Err(CompileError::UnsupportedInstruction(
                 "find requires a stack-backed numeric list input in eBPF".into(),

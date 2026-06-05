@@ -471,6 +471,98 @@ fn make_int_list_builder_transform_runtime_get_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_int_list_builder_transform_runtime_find_length_program(
+    transform_decl: DeclId,
+    random_decl: DeclId,
+    find_decl: DeclId,
+    length_decl: DeclId,
+    values: &[i64],
+    in_place_find: bool,
+) -> HirProgram {
+    let mut stmts = vec![HirStmt::LoadLiteral {
+        dst: RegId::new(0),
+        lit: HirLiteral::List {
+            capacity: values.len(),
+        },
+    }];
+
+    let mut next_reg = 2;
+    for value in values {
+        let item_reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadLiteral {
+            dst: item_reg,
+            lit: HirLiteral::Int(*value),
+        });
+        stmts.push(HirStmt::ListPush {
+            src_dst: RegId::new(0),
+            item: item_reg,
+        });
+    }
+
+    stmts.push(HirStmt::Call {
+        decl_id: transform_decl,
+        src_dst: RegId::new(1),
+        args: HirCallArgs {
+            pipeline_input: Some(RegId::new(0)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let needle_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::Call {
+        decl_id: random_decl,
+        src_dst: needle_reg,
+        args: HirCallArgs::default(),
+    });
+
+    let find_result_reg = if in_place_find {
+        RegId::new(1)
+    } else {
+        let reg = RegId::new(next_reg);
+        next_reg += 1;
+        reg
+    };
+    stmts.push(HirStmt::Call {
+        decl_id: find_decl,
+        src_dst: find_result_reg,
+        args: HirCallArgs {
+            positional: vec![needle_reg],
+            pipeline_input: Some(RegId::new(1)),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let length_result_reg = RegId::new(next_reg);
+    next_reg += 1;
+    stmts.push(HirStmt::Call {
+        decl_id: length_decl,
+        src_dst: length_result_reg,
+        args: HirCallArgs {
+            pipeline_input: Some(find_result_reg),
+            ..HirCallArgs::default()
+        },
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return {
+                src: length_result_reg,
+            },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: next_reg,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_numeric_list_call_then_length_program(
     command_decl: DeclId,
     length_decl: DeclId,
@@ -8716,6 +8808,93 @@ fn test_lower_runtime_get_on_metadata_only_integer_list_builder_materializes_lis
         Some(&in_place_result.type_hints),
     )
     .expect("in-place runtime get on materialized integer list should compile through codegen");
+}
+
+#[test]
+fn test_lower_runtime_find_on_metadata_only_integer_list_builder_materializes_list() {
+    let reverse_decl = DeclId::new(10004);
+    let random_decl = DeclId::new(10005);
+    let find_decl = DeclId::new(10006);
+    let length_decl = DeclId::new(10007);
+    let hir = make_int_list_builder_transform_runtime_find_length_program(
+        reverse_decl,
+        random_decl,
+        find_decl,
+        length_decl,
+        &[10, 20, 30],
+        false,
+    );
+    let decl_names = HashMap::from([
+        (reverse_decl, "reverse".to_string()),
+        (random_decl, "random int".to_string()),
+        (find_decl, "find".to_string()),
+        (length_decl, "length".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("runtime find should materialize metadata-only integer list builders");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+
+    assert!(
+        instructions
+            .iter()
+            .any(|inst| matches!(inst, MirInst::ListGet { .. }))
+            && instructions
+                .iter()
+                .any(|inst| matches!(inst, MirInst::ListPush { .. })),
+        "expected runtime find to scan and push matches from a materialized list"
+    );
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::StoreSlot {
+                offset: 0,
+                val: MirValue::Const(3),
+                ty: MirType::U64,
+                ..
+            }
+        )),
+        "expected metadata-only integer list to be materialized with the known length"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("runtime find on materialized integer list should compile through codegen");
+
+    let in_place_hir = make_int_list_builder_transform_runtime_find_length_program(
+        reverse_decl,
+        random_decl,
+        find_decl,
+        length_decl,
+        &[10, 20, 30],
+        true,
+    );
+    let in_place_result = lower_hir_to_mir_with_hints(
+        &in_place_hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("in-place runtime find should preserve the stack-backed result list");
+    compile_mir_to_ebpf_with_hints(
+        &in_place_result.program,
+        None,
+        Some(&in_place_result.type_hints),
+    )
+    .expect("in-place runtime find on materialized integer list should compile through codegen");
 }
 
 #[test]
