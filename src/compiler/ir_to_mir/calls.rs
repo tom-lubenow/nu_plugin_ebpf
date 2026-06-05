@@ -1366,6 +1366,7 @@ impl<'a> HirToMirLowering<'a> {
                     args: Vec::new(),
                 });
 
+                let mut output_range = None;
                 if let Some((_, range_reg)) = range_arg {
                     let range = self
                         .get_metadata(range_reg)
@@ -1398,6 +1399,7 @@ impl<'a> HirToMirLowering<'a> {
                             "random int eBPF ranges must cover at most 2^32 values".into(),
                         ));
                     }
+                    output_range = Some((min, max));
 
                     let span_operand = self.large_const_operand(&MirType::I64, span as i64);
                     self.emit(MirInst::BinOp {
@@ -1417,10 +1419,12 @@ impl<'a> HirToMirLowering<'a> {
                     }
                 }
 
-                let output_ty = if range_arg.is_some() {
-                    MirType::I64
-                } else {
-                    MirType::U32
+                let output_ty = match output_range {
+                    None => MirType::U32,
+                    Some((min, max)) if min >= 0 && max <= u8::MAX as i64 => MirType::U8,
+                    Some((min, max)) if min >= 0 && max <= u16::MAX as i64 => MirType::U16,
+                    Some((min, max)) if min >= 0 && max <= u32::MAX as i64 => MirType::U32,
+                    Some(_) => MirType::I64,
                 };
                 self.vreg_type_hints.insert(dst_vreg, output_ty.clone());
                 self.reset_call_result_metadata(src_dst);

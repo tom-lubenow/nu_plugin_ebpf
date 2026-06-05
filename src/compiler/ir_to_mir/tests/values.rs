@@ -20001,6 +20001,89 @@ fn make_runtime_scalar_bits_shift_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_runtime_scalar_bits_shift_with_random_range_program(
+    bits_decl: DeclId,
+    random_decl: DeclId,
+    count: i64,
+    signed: bool,
+    number_bytes: Option<i64>,
+    range_start: i64,
+    range_end: i64,
+) -> HirProgram {
+    let mut stmts = vec![
+        HirStmt::LoadLiteral {
+            dst: RegId::new(0),
+            lit: HirLiteral::Int(range_start),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: HirLiteral::Int(1),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(2),
+            lit: HirLiteral::Int(range_end),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(3),
+            lit: HirLiteral::Range {
+                start: RegId::new(0),
+                step: RegId::new(1),
+                end: RegId::new(2),
+                inclusion: RangeInclusion::Inclusive,
+            },
+        },
+        HirStmt::Call {
+            decl_id: random_decl,
+            src_dst: RegId::new(4),
+            args: HirCallArgs {
+                positional: vec![RegId::new(3)],
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(5),
+            lit: HirLiteral::Int(count),
+        },
+    ];
+    let named = if let Some(number_bytes) = number_bytes {
+        stmts.push(HirStmt::LoadLiteral {
+            dst: RegId::new(6),
+            lit: HirLiteral::Int(number_bytes),
+        });
+        vec![(b"number-bytes".to_vec(), RegId::new(6))]
+    } else {
+        Vec::new()
+    };
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: {
+                stmts.push(HirStmt::Call {
+                    decl_id: bits_decl,
+                    src_dst: RegId::new(7),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(4)),
+                        positional: vec![RegId::new(5)],
+                        named,
+                        flags: signed.then(|| b"signed".to_vec()).into_iter().collect(),
+                        ..HirCallArgs::default()
+                    },
+                });
+                stmts
+            },
+            terminator: HirTerminator::Return { src: RegId::new(7) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 8,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_ctx_pid_bits_shift_program(bits_decl: DeclId, count: i64, number_bytes: i64) -> HirProgram {
     let ctx_var = VarId::new(0);
     let func = HirFunction {
@@ -24075,6 +24158,71 @@ fn test_lower_bits_shift_default_left_on_runtime_prandom_u32_input() {
 }
 
 #[test]
+fn test_lower_bits_shift_default_left_on_runtime_bounded_random_u8_input() {
+    let bits_decl = DeclId::new(70170);
+    let random_decl = DeclId::new(70171);
+    let hir = make_runtime_scalar_bits_shift_with_random_range_program(
+        bits_decl,
+        random_decl,
+        1,
+        false,
+        None,
+        0,
+        255,
+    );
+    let decl_names = HashMap::from([
+        (bits_decl, "bits shl".to_string()),
+        (random_decl, "random int".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("default bits shl should lower bounded random u8 input");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .any(|block| matches!(block.terminator, MirInst::Branch { .. })),
+        "expected bounded random u8 default bits shl to branch on auto-width ranges"
+    );
+    for expected_op in [
+        BinOpKind::Mod,
+        BinOpKind::Le,
+        BinOpKind::Shl,
+        BinOpKind::And,
+    ] {
+        assert!(
+            instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op,
+                    ..
+                } if *op == expected_op
+            )),
+            "expected bounded random u8 default bits shl to emit {expected_op:?}"
+        );
+    }
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("default bits shl bounded random u8 input should compile through codegen");
+}
+
+#[test]
 fn test_lower_bits_shift_default_left_on_runtime_u32_context_input() {
     let bits_decl = DeclId::new(70152);
     let hir = make_ctx_pid_bits_shift_default_program(bits_decl, 1);
@@ -24386,6 +24534,137 @@ fn test_lower_bits_shift_unsigned_i64_left_on_runtime_prandom_u32_input() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("bits shl --number-bytes 8 bare random int input should compile");
+}
+
+#[test]
+fn test_lower_bits_shift_unsigned_i64_left_on_runtime_bounded_random_u16_input() {
+    let bits_decl = DeclId::new(70172);
+    let random_decl = DeclId::new(70173);
+    let hir = make_runtime_scalar_bits_shift_with_random_range_program(
+        bits_decl,
+        random_decl,
+        32,
+        false,
+        Some(8),
+        0,
+        65_535,
+    );
+    let decl_names = HashMap::from([
+        (bits_decl, "bits shl".to_string()),
+        (random_decl, "random int".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bits shl --number-bytes 8 should lower bounded random u16 input");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+
+    for expected_op in [BinOpKind::Mod, BinOpKind::Shl] {
+        assert!(
+            instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op,
+                    ..
+                } if *op == expected_op
+            )),
+            "expected bounded random u16 bits shl --number-bytes 8 to emit {expected_op:?}"
+        );
+    }
+    assert!(
+        !result
+            .program
+            .main
+            .blocks
+            .iter()
+            .any(|block| matches!(block.terminator, MirInst::Branch { .. })),
+        "bounded random u16 bits shl --number-bytes 8 should not need sign branching"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("bits shl --number-bytes 8 bounded random u16 input should compile");
+}
+
+#[test]
+fn test_lower_bits_shift_unsigned_i64_left_rejects_bounded_random_u16_unsafe_count() {
+    let bits_decl = DeclId::new(70174);
+    let random_decl = DeclId::new(70175);
+    let hir = make_runtime_scalar_bits_shift_with_random_range_program(
+        bits_decl,
+        random_decl,
+        48,
+        false,
+        Some(8),
+        0,
+        65_535,
+    );
+    let decl_names = HashMap::from([
+        (bits_decl, "bits shl".to_string()),
+        (random_decl, "random int".to_string()),
+    ]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("bits shl --number-bytes 8 should reject unsafe bounded random u16 count");
+
+    assert!(
+        err.to_string()
+            .contains("runtime u16 input supports shift counts from 0 through 47"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_lower_bits_shift_default_left_rejects_negative_bounded_random_range() {
+    let bits_decl = DeclId::new(70176);
+    let random_decl = DeclId::new(70177);
+    let hir = make_runtime_scalar_bits_shift_with_random_range_program(
+        bits_decl,
+        random_decl,
+        1,
+        false,
+        None,
+        -1,
+        255,
+    );
+    let decl_names = HashMap::from([
+        (bits_decl, "bits shl".to_string()),
+        (random_decl, "random int".to_string()),
+    ]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("default bits shl should reject negative bounded random range");
+
+    assert!(
+        err.to_string().contains(
+            "bits shl default auto-width shifts require compile-time known integer input"
+        ),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]
