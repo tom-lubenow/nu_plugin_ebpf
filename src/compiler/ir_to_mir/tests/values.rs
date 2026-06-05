@@ -23951,6 +23951,51 @@ fn test_lower_bits_shift_signed_fixed_width_on_runtime_scalar_integer_inputs() {
 }
 
 #[test]
+fn test_lower_bits_shift_default_zero_count_on_runtime_scalar_integer_inputs() {
+    for (offset, command_name) in [(0, "bits shl"), (1, "bits shr")] {
+        let bits_decl = DeclId::new(70156 + offset);
+        let random_decl = DeclId::new(70158 + offset);
+        let hir = make_runtime_scalar_bits_shift_program(bits_decl, random_decl, 0, false, None);
+        let decl_names = HashMap::from([
+            (bits_decl, command_name.to_string()),
+            (random_decl, "random int".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("{command_name} default shift count 0 should lower runtime scalar input: {err}")
+        });
+        let instructions = result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .collect::<Vec<_>>();
+
+        assert!(
+            instructions
+                .iter()
+                .any(|inst| matches!(inst, MirInst::Copy { .. })),
+            "expected runtime scalar {command_name} default shift count 0 to copy input"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!(
+                    "{command_name} default shift count 0 runtime scalar input should compile: {err}"
+                )
+            });
+    }
+}
+
+#[test]
 fn test_lower_bits_shift_default_left_rejects_runtime_scalar_integer_input() {
     let bits_decl = DeclId::new(70140);
     let random_decl = DeclId::new(70141);
@@ -26652,6 +26697,64 @@ fn test_lower_bits_shift_signed_fixed_width_on_runtime_stack_numeric_lists() {
             .unwrap_or_else(|err| {
                 panic!(
                     "{command_name} --signed --number-bytes 1 runtime list output consumed by length should compile: {err}"
+                )
+            });
+    }
+}
+
+#[test]
+fn test_lower_bits_shift_default_zero_count_on_runtime_stack_numeric_lists() {
+    for (offset, command_name) in [(0, "bits shl"), (1, "bits shr")] {
+        let bits_decl = DeclId::new(719120 + offset);
+        let length_decl = DeclId::new(719122 + offset);
+        let random_decl = DeclId::new(719124 + offset);
+        let hir = make_runtime_bits_shift_list_length_program(
+            bits_decl,
+            length_decl,
+            random_decl,
+            0,
+            false,
+            None,
+        );
+        let decl_names = HashMap::from([
+            (bits_decl, command_name.to_string()),
+            (length_decl, "length".to_string()),
+            (random_decl, "random int".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!(
+                "{command_name} default shift count 0 should lower on runtime stack-backed numeric lists: {err}"
+            )
+        });
+        let instructions = result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            instructions
+                .iter()
+                .filter(|inst| matches!(inst, MirInst::ListPush { .. }))
+                .count(),
+            1,
+            "expected runtime {command_name} default shift count 0 to pass through the input list without an extra output ListPush"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!(
+                    "{command_name} default shift count 0 runtime list output consumed by length should compile: {err}"
                 )
             });
     }

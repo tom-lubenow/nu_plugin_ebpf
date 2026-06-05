@@ -1006,13 +1006,21 @@ impl<'a> HirToMirLowering<'a> {
                 "{cmd_name} requires a compile-time integer shift count in eBPF"
             )));
         };
+
+        Ok(Some(shift_count))
+    }
+
+    fn validate_bits_shift_runtime_auto_count(
+        &self,
+        cmd_name: &str,
+        shift_count: i64,
+    ) -> Result<(), CompileError> {
         if !(0..=7).contains(&shift_count) {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "{cmd_name} default auto-width runtime shifts support shift counts from 0 through 7 in eBPF; got {shift_count}"
             )));
         }
-
-        Ok(Some(shift_count))
+        Ok(())
     }
 
     fn bits_shift_runtime_auto_left_count(
@@ -1020,7 +1028,11 @@ impl<'a> HirToMirLowering<'a> {
         cmd_name: &str,
     ) -> Result<Option<i64>, CompileError> {
         if cmd_name == "bits shl" {
-            self.bits_shift_runtime_auto_count(cmd_name)
+            let Some(count) = self.bits_shift_runtime_auto_count(cmd_name)? else {
+                return Ok(None);
+            };
+            self.validate_bits_shift_runtime_auto_count(cmd_name, count)?;
+            Ok(Some(count))
         } else {
             Ok(None)
         }
@@ -1031,10 +1043,21 @@ impl<'a> HirToMirLowering<'a> {
         cmd_name: &str,
     ) -> Result<Option<i64>, CompileError> {
         if cmd_name == "bits shr" {
-            self.bits_shift_runtime_auto_count(cmd_name)
+            let Some(count) = self.bits_shift_runtime_auto_count(cmd_name)? else {
+                return Ok(None);
+            };
+            self.validate_bits_shift_runtime_auto_count(cmd_name, count)?;
+            Ok(Some(count))
         } else {
             Ok(None)
         }
+    }
+
+    fn bits_shift_runtime_auto_zero_count(&self, cmd_name: &str) -> Result<bool, CompileError> {
+        Ok(matches!(
+            self.bits_shift_runtime_auto_count(cmd_name)?,
+            Some(0)
+        ))
     }
 
     fn bits_rotate_spec(
@@ -1525,6 +1548,19 @@ impl<'a> HirToMirLowering<'a> {
         if let Some(input_meta) = input_meta.as_ref()
             && input_meta.list_buffer.is_some()
         {
+            if self.bits_shift_runtime_auto_zero_count(cmd_name)? {
+                self.emit(MirInst::Copy {
+                    dst: result_vreg,
+                    src: MirValue::VReg(input_vreg),
+                });
+                self.propagate_passthrough_reg_metadata(
+                    src_dst,
+                    result_vreg,
+                    input_reg,
+                    input_vreg,
+                );
+                return Ok(());
+            }
             if let Some(count) = self.bits_shift_runtime_auto_right_count(cmd_name)? {
                 return self.lower_bits_shift_runtime_list(
                     cmd_name,
@@ -1591,7 +1627,12 @@ impl<'a> HirToMirLowering<'a> {
             ));
             out_meta.literal_int = Some(output);
         } else {
-            if let Some(count) = self.bits_shift_runtime_auto_right_count(cmd_name)? {
+            if self.bits_shift_runtime_auto_zero_count(cmd_name)? {
+                self.emit(MirInst::Copy {
+                    dst: result_vreg,
+                    src: lhs_value,
+                });
+            } else if let Some(count) = self.bits_shift_runtime_auto_right_count(cmd_name)? {
                 self.emit_bits_shift_auto_right_value(result_vreg, lhs_value, count);
             } else {
                 let runtime_auto_left_count = if self
