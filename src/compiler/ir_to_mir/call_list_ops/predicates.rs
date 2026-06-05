@@ -54,7 +54,7 @@ impl<'a> HirToMirLowering<'a> {
             )));
         };
 
-        let result_vreg = if self.pipeline_input.is_none() && src_dst_had_value {
+        let result_vreg = if src_dst_had_value {
             self.assign_fresh_vreg(src_dst)
         } else {
             dst_vreg

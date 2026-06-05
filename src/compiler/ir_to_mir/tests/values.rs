@@ -1739,6 +1739,88 @@ fn make_numeric_list_in_place_predicate_call_program(
     )
 }
 
+fn make_numeric_list_in_place_pipeline_predicate_call_program(
+    command_decl: DeclId,
+    command_name: &str,
+    threshold: i64,
+) -> (HirProgram, HashMap<DeclId, String>) {
+    let closure_block_id = nu_protocol::BlockId::new(1);
+    let main = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadValue {
+                    dst: RegId::new(0),
+                    val: Box::new(Value::list(
+                        vec![
+                            Value::int(10, Span::test_data()),
+                            Value::int(20, Span::test_data()),
+                            Value::int(30, Span::test_data()),
+                        ],
+                        Span::test_data(),
+                    )),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Closure(closure_block_id),
+                },
+                HirStmt::Call {
+                    decl_id: command_decl,
+                    src_dst: RegId::new(0),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(1)],
+                        pipeline_input: Some(RegId::new(0)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 2,
+        file_count: 0,
+    };
+    let closure = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: IN_VARIABLE_ID,
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::Int(threshold),
+                },
+                HirStmt::BinaryOp {
+                    lhs_dst: RegId::new(0),
+                    op: Operator::Comparison(Comparison::GreaterThan),
+                    rhs: RegId::new(1),
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 2,
+        file_count: 0,
+    };
+    (
+        HirProgram::new(
+            main,
+            HashMap::from([(closure_block_id, closure)]),
+            Vec::new(),
+            None,
+        ),
+        HashMap::from([(command_decl, command_name.to_string())]),
+    )
+}
+
 fn make_string_pipeline_call_program(decl_id: DeclId, value: &str) -> HirProgram {
     make_string_pipeline_call_program_with_flags(decl_id, value, Vec::new())
 }
@@ -8322,6 +8404,53 @@ fn test_lower_any_on_in_place_numeric_list_writes_fresh_scalar_result() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
         .expect("optimized in-place any should compile through codegen");
+}
+
+#[test]
+fn test_lower_any_on_in_place_pipeline_numeric_list_writes_fresh_scalar_result() {
+    let any_decl = DeclId::new(10014);
+    let (hir, decl_names) =
+        make_numeric_list_in_place_pipeline_predicate_call_program(any_decl, "any", 15);
+
+    let hir_types = crate::compiler::hir_type_infer::infer_hir_types(&hir, &decl_names)
+        .expect("source-like pipeline any HIR should type-check");
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "ksys_read");
+    let mut result = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        Some(&hir_types),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("any should lower when pipeline input reuses the list register as src_dst");
+
+    let return_vreg = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .find_map(|block| match block.terminator {
+            MirInst::Return {
+                val: Some(MirValue::VReg(vreg)),
+            } => Some(vreg),
+            _ => None,
+        })
+        .expect("expected scalar any result to be returned");
+    assert_eq!(
+        result.type_hints.main.get(&return_vreg),
+        Some(&MirType::Bool),
+        "expected in-place pipeline any lowering to return the fresh boolean result vreg"
+    );
+    optimize_with_ssa_hints(
+        &mut result.program.main,
+        Some(&probe_ctx),
+        &mut result.type_hints.main,
+        &result.type_hints.main_stack_slots,
+        &result.type_hints.generic_map_value_types,
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, Some(&probe_ctx), Some(&result.type_hints))
+        .expect("optimized in-place pipeline any should compile through codegen");
 }
 
 #[test]
