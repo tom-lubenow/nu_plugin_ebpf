@@ -255,8 +255,6 @@ impl<'a> HirToMirLowering<'a> {
         dst_vreg: VReg,
         src_dst_had_value: bool,
     ) -> Result<(), CompileError> {
-        const MAX_STACK_LIST_CAPACITY: usize = 60;
-
         let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
         let input_reg = self
             .pipeline_input_reg
@@ -275,20 +273,64 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         let (item_vreg, item_reg) = self.positional_args[0];
-        if let Some(values) = input_reg.and_then(|reg| {
+        let item_constant = self.get_metadata(item_reg).and_then(|meta| {
+            meta.constant_value.clone().or_else(|| {
+                meta.literal_int
+                    .map(|value| nu_protocol::Value::int(value, Span::unknown()))
+            })
+        });
+        if let Some((builder_reg, values)) = input_reg.and_then(|reg| {
             self.compile_time_only_list_builder_values(reg, input_vreg)
-                .map(|values| values.to_vec())
+                .map(|values| (reg, values.to_vec()))
         }) {
-            let item_constant = self.get_metadata(item_reg).and_then(|meta| {
-                meta.constant_value.clone().or_else(|| {
-                    meta.literal_int
-                        .map(|value| nu_protocol::Value::int(value, Span::unknown()))
-                })
-            });
-            let Some(item) = item_constant else {
-                return Err(CompileError::UnsupportedInstruction(format!(
-                    "{cmd_name} item must be compile-time constant for compile-time known fixed lists in eBPF"
-                )));
+            let Some(item) = item_constant.clone() else {
+                if values
+                    .iter()
+                    .any(|value| !matches!(value, nu_protocol::Value::Int { .. }))
+                    || !matches!(
+                        self.typed_value_runtime_type(item_reg, item_vreg),
+                        Some(
+                            MirType::I8
+                                | MirType::I16
+                                | MirType::I32
+                                | MirType::I64
+                                | MirType::U8
+                                | MirType::U16
+                                | MirType::U32
+                                | MirType::U64
+                        )
+                    )
+                {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{cmd_name} item must be compile-time constant for compile-time known fixed lists in eBPF"
+                    )));
+                }
+
+                let materialized = nu_protocol::Value::list(values, Span::unknown());
+                self.assign_fresh_vreg(builder_reg);
+                self.lower_constant_value(builder_reg, &materialized)?;
+                let input_vreg = self.get_vreg(builder_reg);
+                let input_meta = self.get_metadata(builder_reg).cloned().ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "{cmd_name} could not materialize compile-time known integer list in eBPF"
+                    ))
+                })?;
+                if input_meta.list_buffer.is_none() {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "{cmd_name} could not materialize compile-time known integer list in eBPF"
+                    )));
+                }
+
+                return self.lower_stack_list_append_or_prepend_materialized(
+                    cmd_name,
+                    src_dst,
+                    dst_vreg,
+                    src_dst_had_value,
+                    input_vreg,
+                    input_meta,
+                    item_vreg,
+                    item_reg,
+                );
             };
             let mut vals = values;
             if cmd_name == "prepend" {
@@ -308,6 +350,32 @@ impl<'a> HirToMirLowering<'a> {
                     "{cmd_name} requires a pipeline input with tracked metadata in eBPF"
                 ))
             })?;
+
+        self.lower_stack_list_append_or_prepend_materialized(
+            cmd_name,
+            src_dst,
+            dst_vreg,
+            src_dst_had_value,
+            input_vreg,
+            input_meta,
+            item_vreg,
+            item_reg,
+        )
+    }
+
+    fn lower_stack_list_append_or_prepend_materialized(
+        &mut self,
+        cmd_name: &str,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+        input_vreg: VReg,
+        input_meta: RegMetadata,
+        item_vreg: VReg,
+        item_reg: RegId,
+    ) -> Result<(), CompileError> {
+        const MAX_STACK_LIST_CAPACITY: usize = 60;
+
         let Some((_input_slot, max_len)) = input_meta.list_buffer else {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "{cmd_name} requires a stack-backed list input in eBPF"
@@ -325,7 +393,7 @@ impl<'a> HirToMirLowering<'a> {
             )));
         }
 
-        let result_vreg = if self.pipeline_input.is_none() && src_dst_had_value {
+        let result_vreg = if src_dst_had_value {
             self.assign_fresh_vreg(src_dst)
         } else {
             dst_vreg
