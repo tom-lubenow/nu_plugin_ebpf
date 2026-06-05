@@ -775,6 +775,11 @@ fn eval_supported_constant_call(
             )?;
             eval_supported_constant_bits_binary(cmd_name, input, args, span)
         }
+        "bits not" => {
+            let mode =
+                eval_supported_constant_bits_not_call_mode(working_set, &call.arguments, env, span)?;
+            eval_supported_constant_bits_not(cmd_name, input, mode, span)
+        }
         "char" => {
             let output =
                 eval_supported_constant_char_call_args(working_set, &call.arguments, env, span)?;
@@ -1191,6 +1196,11 @@ fn eval_supported_constant_external_call(
             let args =
                 eval_supported_constant_bits_binary_external_args(working_set, cmd_name, args, env, span)?;
             eval_supported_constant_bits_binary(cmd_name, input, args, span)
+        }
+        "bits not" => {
+            let mode =
+                eval_supported_constant_bits_not_external_mode(working_set, args, env, span)?;
+            eval_supported_constant_bits_not(cmd_name, input, mode, span)
         }
         "char" => {
             let output = eval_supported_constant_char_external_args(working_set, args, env, span)?;
@@ -4081,6 +4091,379 @@ fn eval_supported_constant_bits_binary_bytes_output(
     output
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ConstantBitsNotMode {
+    Signed,
+    Auto,
+    Masked { mask: i64 },
+}
+
+const CONSTANT_BITS_NOT_UNSIGNED_I64_MASK: i64 = 0x7fff_ffff_ffff;
+
+fn eval_supported_constant_bits_not_call_mode(
+    working_set: &StateWorkingSet,
+    args: &[nu_protocol::ast::Argument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<ConstantBitsNotMode, LabeledError> {
+    let mut signed = false;
+    let mut number_bytes = None;
+    for arg in args {
+        match arg {
+            nu_protocol::ast::Argument::Named(named) => match named.0.item.as_str() {
+                "signed" | "s" => {
+                    if named.2.is_some() {
+                        return Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
+                        .with_label(
+                            "`bits not --signed` cannot receive a value in compile-time global initializers",
+                            arg.span(),
+                        ));
+                    }
+                    signed = true;
+                }
+                "number-bytes" | "n" => {
+                    let Some(expr) = named.2.as_ref() else {
+                        return Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
+                        .with_label(
+                            "`bits not --number-bytes` requires a value in compile-time global initializers",
+                            arg.span(),
+                        ));
+                    };
+                    let next =
+                        eval_supported_constant_bits_not_number_bytes_arg(working_set, expr, env)?;
+                    if number_bytes.replace((next, expr.span)).is_some() {
+                        return Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
+                        .with_label(
+                            "`bits not` accepts only one --number-bytes value in compile-time global initializers",
+                            arg.span(),
+                        ));
+                    }
+                }
+                _ => {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            "`bits not` supports only --signed and --number-bytes in compile-time global initializers",
+                            arg.span(),
+                        ));
+                }
+            },
+            nu_protocol::ast::Argument::Spread(expr) => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`bits not` arguments cannot use spread syntax in compile-time global initializers",
+                        expr.span,
+                    ));
+            }
+            nu_protocol::ast::Argument::Positional(_) | nu_protocol::ast::Argument::Unknown(_) => {
+                return Err(
+                    LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            "`bits not` accepts no positional arguments in compile-time global initializers",
+                            arg.span(),
+                        ),
+                );
+            }
+        }
+    }
+
+    eval_supported_constant_bits_not_mode(signed, number_bytes, span)
+}
+
+fn eval_supported_constant_bits_not_external_mode(
+    working_set: &StateWorkingSet,
+    args: &[ExternalArgument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<ConstantBitsNotMode, LabeledError> {
+    let mut signed = false;
+    let mut number_bytes = None;
+    let mut index = 0;
+    while index < args.len() {
+        let arg = &args[index];
+        let ExternalArgument::Regular(expr) = arg else {
+            return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                .with_label(
+                    "`bits not` arguments cannot use spread syntax in compile-time global initializers",
+                    arg.expr().span,
+                ));
+        };
+        let value = eval_supported_constant_value_with_env(working_set, expr, env)?;
+        match value {
+            Value::String { val, .. } | Value::Glob { val, .. }
+                if val == "--signed" || val == "-s" =>
+            {
+                signed = true;
+            }
+            Value::String { val, .. } | Value::Glob { val, .. }
+                if val == "--number-bytes" || val == "-n" =>
+            {
+                index += 1;
+                let Some(next_arg) = args.get(index) else {
+                    return Err(
+                        LabeledError::new("Unsupported annotated mutable global initializer")
+                            .with_label(
+                                "`bits not --number-bytes` requires a value in compile-time global initializers",
+                                expr.span,
+                            ),
+                    );
+                };
+                let ExternalArgument::Regular(next_expr) = next_arg else {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            "`bits not --number-bytes` value cannot use spread syntax in compile-time global initializers",
+                            next_arg.expr().span,
+                        ));
+                };
+                let next =
+                    eval_supported_constant_bits_not_number_bytes_arg(working_set, next_expr, env)?;
+                if number_bytes.replace((next, next_expr.span)).is_some() {
+                    return Err(LabeledError::new(
+                        "Unsupported annotated mutable global initializer",
+                    )
+                    .with_label(
+                        "`bits not` accepts only one --number-bytes value in compile-time global initializers",
+                        next_expr.span,
+                    ));
+                }
+            }
+            Value::String { val, .. } | Value::Glob { val, .. }
+                if val.starts_with("--number-bytes=") =>
+            {
+                let raw = val
+                    .split_once('=')
+                    .map(|(_, value)| value)
+                    .expect("starts_with --number-bytes= prechecked");
+                let next = raw.parse::<i64>().map_err(|_| {
+                    LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            "`bits not --number-bytes` requires a compile-time integer value in global initializers",
+                            expr.span,
+                        )
+                })?;
+                if number_bytes.replace((next, expr.span)).is_some() {
+                    return Err(LabeledError::new(
+                        "Unsupported annotated mutable global initializer",
+                    )
+                    .with_label(
+                        "`bits not` accepts only one --number-bytes value in compile-time global initializers",
+                        expr.span,
+                    ));
+                }
+            }
+            Value::String { val, .. } | Value::Glob { val, .. } if val.starts_with('-') => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`bits not` supports only --signed and --number-bytes in compile-time global initializers",
+                        expr.span,
+                    ));
+            }
+            _ => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`bits not` accepts no positional arguments in compile-time global initializers",
+                        expr.span,
+                    ));
+            }
+        }
+        index += 1;
+    }
+
+    eval_supported_constant_bits_not_mode(signed, number_bytes, span)
+}
+
+fn eval_supported_constant_bits_not_number_bytes_arg(
+    working_set: &StateWorkingSet,
+    expr: &nu_protocol::ast::Expression,
+    env: &HashMap<nu_protocol::VarId, Value>,
+) -> Result<i64, LabeledError> {
+    match eval_supported_constant_value_with_env(working_set, expr, env)? {
+        Value::Int { val, .. } => Ok(val),
+        other => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`bits not --number-bytes` requires a compile-time integer value in global initializers; got {}",
+                    other.get_type()
+                ),
+                expr.span,
+            ),
+        ),
+    }
+}
+
+fn eval_supported_constant_bits_not_mode(
+    signed: bool,
+    number_bytes: Option<(i64, Span)>,
+    _span: Span,
+) -> Result<ConstantBitsNotMode, LabeledError> {
+    if signed {
+        if let Some((number_bytes, number_bytes_span)) = number_bytes
+            && !matches!(number_bytes, 1 | 2 | 4 | 8)
+        {
+            return Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    format!(
+                        "`bits not --signed` supports --number-bytes 1, 2, 4, or 8 in compile-time global initializers; got {number_bytes}"
+                    ),
+                    number_bytes_span,
+                ),
+            );
+        }
+        return Ok(ConstantBitsNotMode::Signed);
+    }
+
+    let Some((number_bytes, number_bytes_span)) = number_bytes else {
+        return Ok(ConstantBitsNotMode::Auto);
+    };
+    let mask = match number_bytes {
+        1 => 0xff,
+        2 => 0xffff,
+        4 => 0xffff_ffff,
+        8 => CONSTANT_BITS_NOT_UNSIGNED_I64_MASK,
+        _ => {
+            return Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    format!(
+                        "`bits not` masked integer mode supports --number-bytes 1, 2, 4, or 8 in compile-time global initializers; got {number_bytes}"
+                    ),
+                    number_bytes_span,
+                ),
+            );
+        }
+    };
+    Ok(ConstantBitsNotMode::Masked { mask })
+}
+
+fn eval_supported_constant_bits_not(
+    cmd_name: &str,
+    input: Option<Value>,
+    mode: ConstantBitsNotMode,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let value = eval_supported_constant_required_pipeline_input(cmd_name, input, span)?;
+    let value_span = value.span();
+    match value {
+        Value::Int { val, .. } => Ok(Value::int(
+            eval_supported_constant_bits_not_int_output(val, mode),
+            value_span,
+        )),
+        Value::Binary { val, .. } => {
+            Ok(Value::binary(
+                eval_supported_constant_bits_not_binary_output(&val),
+                value_span,
+            ))
+        }
+        Value::List { vals, .. } => {
+            eval_supported_constant_bits_not_list(vals, mode, value_span, span)
+        }
+        other => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`bits not` in a compile-time global initializer requires integer, binary, list<int>, or list<binary> input; got {}",
+                    other.get_type()
+                ),
+                span,
+            ),
+        ),
+    }
+}
+
+fn eval_supported_constant_bits_not_list(
+    vals: Vec<Value>,
+    mode: ConstantBitsNotMode,
+    value_span: Span,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    if !vals.is_empty()
+        && vals
+            .iter()
+            .all(|value| matches!(value, Value::Binary { .. }))
+    {
+        let output = vals
+            .into_iter()
+            .enumerate()
+            .map(|(index, value)| {
+                let Value::Binary { val, .. } = value else {
+                    return Err(LabeledError::new(
+                        "Unsupported annotated mutable global initializer",
+                    )
+                    .with_label(
+                        format!(
+                            "`bits not` requires binary list items in compile-time global initializers; item {index} has type {}",
+                            value.get_type()
+                        ),
+                        span,
+                    ));
+                };
+                Ok(Value::binary(
+                    eval_supported_constant_bits_not_binary_output(&val),
+                    value_span,
+                ))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        return Ok(Value::list(output, value_span));
+    }
+
+    let output = vals
+        .into_iter()
+        .enumerate()
+        .map(|(index, value)| {
+            let Value::Int { val, .. } = value else {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        format!(
+                            "`bits not` requires integer list items in compile-time global initializers; item {index} has type {}",
+                            value.get_type()
+                        ),
+                        span,
+                    ));
+            };
+            Ok(Value::int(
+                eval_supported_constant_bits_not_int_output(val, mode),
+                value_span,
+            ))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Value::list(output, value_span))
+}
+
+fn eval_supported_constant_bits_not_int_output(input: i64, mode: ConstantBitsNotMode) -> i64 {
+    match mode {
+        ConstantBitsNotMode::Signed => !input,
+        ConstantBitsNotMode::Auto => eval_supported_constant_bits_not_auto_output(input),
+        ConstantBitsNotMode::Masked { mask } => {
+            if input < 0 {
+                !input
+            } else {
+                (!input) & mask
+            }
+        }
+    }
+}
+
+fn eval_supported_constant_bits_not_auto_output(input: i64) -> i64 {
+    if input < 0 {
+        return !input;
+    }
+
+    let mask = match input {
+        0..=0xff => 0xff,
+        0x100..=0xffff => 0xffff,
+        0x1_0000..=0xffff_ffff => 0xffff_ffff,
+        _ => CONSTANT_BITS_NOT_UNSIGNED_I64_MASK,
+    };
+    (!input) & mask
+}
+
+fn eval_supported_constant_bits_not_binary_output(input: &[u8]) -> Vec<u8> {
+    input.iter().map(|byte| !byte).collect()
+}
+
 fn eval_supported_constant_bits_external_call(
     working_set: &StateWorkingSet,
     input: Option<Value>,
@@ -4133,6 +4516,15 @@ fn eval_supported_constant_bits_external_call(
                 span,
             )?;
             eval_supported_constant_bits_binary(&cmd_name, input, args, span)
+        }
+        "bits not" => {
+            let mode = eval_supported_constant_bits_not_external_mode(
+                working_set,
+                remaining_args,
+                env,
+                span,
+            )?;
+            eval_supported_constant_bits_not(&cmd_name, input, mode, span)
         }
         _ => Err(
             LabeledError::new("Unsupported annotated mutable global initializer").with_label(
