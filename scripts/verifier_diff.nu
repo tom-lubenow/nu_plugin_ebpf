@@ -34423,6 +34423,26 @@ const FIXTURES = [
         kernel: "accept"
     }
     {
+        name: "source-helper-tcp-raw-syncookie"
+        category: "helper-state"
+        tags: [helper-call tcp syncookie source accept]
+        target: "xdp:lo"
+        program: [
+            '{|ctx|'
+            '  let ip4 = "01234567890123456789"'
+            '  let ip6 = "0123456789012345678901234567890123456789"'
+            '  let th = "01234567890123456789"'
+            '  helper-call "bpf_tcp_raw_gen_syncookie_ipv4" $ip4 $th 20'
+            '  helper-call "bpf_tcp_raw_gen_syncookie_ipv6" $ip6 $th 20'
+            '  helper-call "bpf_tcp_raw_check_syncookie_ipv4" $ip4 $th'
+            '  helper-call "bpf_tcp_raw_check_syncookie_ipv6" $ip6 $th'
+            '  "pass"'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
         name: "source-helper-sk-lookup-rejects-leak"
         category: "helper-state"
         tags: [helper-call socket ref-lifetime source reject]
