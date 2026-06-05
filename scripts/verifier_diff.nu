@@ -17161,6 +17161,29 @@ const FIXTURES = [
         error_contains: "helper 'bpf_dynptr_read' requires arg4 flags to be 0"
     }
     {
+        name: "dynptr-read-rejects-dynamic-flags"
+        category: "helper-state"
+        tags: [dynptr flags reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  "abcdefgh" | map-put dynptr_read_dynamic_flag_buffers 0 --kind array'
+            '  let flags = (helper-call "bpf_get_prandom_u32")'
+            '  let entry = (0 | map-get dynptr_read_dynamic_flag_buffers --kind array)'
+            '  if $entry {'
+            '    let d = "0123456789abcdef"'
+            '    let out = "0000"'
+            '    helper-call "bpf_dynptr_from_mem" $entry 8 0 $d'
+            '    helper-call "bpf_dynptr_read" $out 4 $d 0 $flags'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_dynptr_read' requires arg4 flags to be 0"
+    }
+    {
         name: "dynptr-read-rejects-use-after-ringbuf-submit"
         category: "helper-state"
         tags: [dynptr ringbuf ref-lifetime reject]
@@ -17210,6 +17233,29 @@ const FIXTURES = [
             '    let src = "wxyz"'
             '    helper-call "bpf_dynptr_from_mem" $entry 8 0 $d'
             '    helper-call "bpf_dynptr_write" $d 0 $src 4 1'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_dynptr_write' requires arg4 flags to be 0 for modeled dynptr sources"
+    }
+    {
+        name: "dynptr-write-rejects-dynamic-flags"
+        category: "helper-state"
+        tags: [dynptr flags reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  "abcdefgh" | map-put dynptr_write_dynamic_flag_buffers 0 --kind array'
+            '  let flags = (helper-call "bpf_get_prandom_u32")'
+            '  let entry = (0 | map-get dynptr_write_dynamic_flag_buffers --kind array)'
+            '  if $entry {'
+            '    let d = "0123456789abcdef"'
+            '    let src = "wxyz"'
+            '    helper-call "bpf_dynptr_from_mem" $entry 8 0 $d'
+            '    helper-call "bpf_dynptr_write" $d 0 $src 4 $flags'
             '  }'
             '  0'
             '}'
