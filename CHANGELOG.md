@@ -6,6 +6,10 @@ documentation changes that matter to external alpha consumers.
 
 ## Unreleased
 
+- Added source verifier coverage for raw `bpf_snprintf` and
+  `bpf_seq_printf_btf` helper calls.
+- Fixed source helper-call lowering to report oversized helper arity instead of
+  panicking while materializing arguments.
 - Added source verifier coverage for raw task pt_regs and file-to-socket helper
   calls on BTF-backed tracing contexts.
 - Added source verifier coverage for raw `bpf_perf_prog_read_value` helper

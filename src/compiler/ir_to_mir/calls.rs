@@ -2070,46 +2070,67 @@ impl<'a> HirToMirLowering<'a> {
                 let has_explicit_context_arg = positional_args
                     .iter()
                     .any(|(_, arg_reg)| self.is_context_reg(*arg_reg));
+                let should_prepend_pipeline_arg = self.pipeline_input.is_some()
+                    && self.positional_args.len() == 1
+                    && sig.max_args != 0
+                    && !has_explicit_context_arg;
+                let helper_arg_count =
+                    positional_args.len() + usize::from(should_prepend_pipeline_arg);
+                if helper_arg_count > 5 {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "BPF helper calls support at most 5 arguments".into(),
+                    ));
+                }
+                if helper_arg_count < sig.min_args || helper_arg_count > sig.max_args {
+                    let with_live_value = helper_arg_count.saturating_add(1);
+                    if self.pipeline_input.is_some()
+                        && self.positional_args.len() > 1
+                        && with_live_value >= sig.min_args
+                        && with_live_value <= sig.max_args
+                    {
+                        return Err(CompileError::UnsupportedInstruction(format!(
+                            "helper-call '{}' does not prepend the piped value when explicit helper arguments are present; pass that value explicitly as the first helper argument",
+                            helper.name()
+                        )));
+                    }
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "helper-call '{}' expects {}..={} helper arguments after the helper name, got {}",
+                        helper.name(),
+                        sig.min_args,
+                        sig.max_args,
+                        helper_arg_count
+                    )));
+                }
                 let mut args = Vec::new();
                 let mut helper_arg_regs: Vec<(usize, RegId)> = Vec::new();
                 let mut helper_map_args: Vec<(usize, MapRef, VReg)> = Vec::new();
-                if let Some(input) = self.pipeline_input
-                    && self.positional_args.len() == 1
-                    && sig.max_args != 0
-                {
-                    if has_explicit_context_arg {
-                        // Real attached closures carry the program context as ambient
-                        // pipeline input. If the caller already passed `$ctx`
-                        // explicitly, don't prepend that ambient value again.
+                if should_prepend_pipeline_arg && let Some(input) = self.pipeline_input {
+                    let arg_vreg = if self
+                        .pipeline_input_reg
+                        .is_some_and(|reg| self.is_context_reg(reg))
+                    {
+                        self.materialize_context_pointer_arg()
                     } else {
-                        let arg_vreg = if self
-                            .pipeline_input_reg
-                            .is_some_and(|reg| self.is_context_reg(reg))
-                        {
-                            self.materialize_context_pointer_arg()
-                        } else {
-                            input
-                        };
-                        let helper_arg_idx = args.len();
-                        let arg_vreg =
-                            if matches!(sig.arg_kind(helper_arg_idx), HelperArgKind::Pointer)
-                                && let Some(input_reg) = self.pipeline_input_reg
-                            {
-                                self.materialized_metadata_aggregate_vreg(input_reg, arg_vreg)?
-                            } else {
-                                arg_vreg
-                            };
-                        let arg_vreg = self.materialize_kernel_btf_field_addr_helper_arg(
-                            helper,
-                            helper_arg_idx,
-                            arg_vreg,
-                            self.pipeline_input_reg,
-                        );
-                        if let Some(input_reg) = self.pipeline_input_reg {
-                            helper_arg_regs.push((helper_arg_idx, input_reg));
-                        }
-                        args.push(MirValue::VReg(arg_vreg));
+                        input
+                    };
+                    let helper_arg_idx = args.len();
+                    let arg_vreg = if matches!(sig.arg_kind(helper_arg_idx), HelperArgKind::Pointer)
+                        && let Some(input_reg) = self.pipeline_input_reg
+                    {
+                        self.materialized_metadata_aggregate_vreg(input_reg, arg_vreg)?
+                    } else {
+                        arg_vreg
+                    };
+                    let arg_vreg = self.materialize_kernel_btf_field_addr_helper_arg(
+                        helper,
+                        helper_arg_idx,
+                        arg_vreg,
+                        self.pipeline_input_reg,
+                    );
+                    if let Some(input_reg) = self.pipeline_input_reg {
+                        helper_arg_regs.push((helper_arg_idx, input_reg));
                     }
+                    args.push(MirValue::VReg(arg_vreg));
                 }
                 for (pos_idx, (arg_vreg, arg_reg)) in positional_args.iter().copied().enumerate() {
                     let helper_arg_idx = args.len();
@@ -2154,31 +2175,6 @@ impl<'a> HirToMirLowering<'a> {
                     );
                     helper_arg_regs.push((helper_arg_idx, arg_reg));
                     args.push(MirValue::VReg(helper_arg_vreg));
-                }
-                if args.len() > 5 {
-                    return Err(CompileError::UnsupportedInstruction(
-                        "BPF helper calls support at most 5 arguments".into(),
-                    ));
-                }
-                if args.len() < sig.min_args || args.len() > sig.max_args {
-                    let with_live_value = args.len().saturating_add(1);
-                    if self.pipeline_input.is_some()
-                        && self.positional_args.len() > 1
-                        && with_live_value >= sig.min_args
-                        && with_live_value <= sig.max_args
-                    {
-                        return Err(CompileError::UnsupportedInstruction(format!(
-                            "helper-call '{}' does not prepend the piped value when explicit helper arguments are present; pass that value explicitly as the first helper argument",
-                            helper.name()
-                        )));
-                    }
-                    return Err(CompileError::UnsupportedInstruction(format!(
-                        "helper-call '{}' expects {}..={} helper arguments after the helper name, got {}",
-                        helper.name(),
-                        sig.min_args,
-                        sig.max_args,
-                        args.len()
-                    )));
                 }
                 self.validate_timer_helper_call_args(helper, &helper_map_args, &helper_arg_regs)?;
                 self.validate_kptr_xchg_helper_call_args(helper, &args, &helper_arg_regs)?;
