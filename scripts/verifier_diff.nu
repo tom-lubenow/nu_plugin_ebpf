@@ -35630,6 +35630,44 @@ const FIXTURES = [
         error_contains: "unreleased kfunc reference at function exit"
     }
     {
+        name: "source-kfunc-cpumask-populate-release"
+        category: "helper-state"
+        tags: [kfunc cpumask source accept]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let mask = (kfunc-call "bpf_cpumask_create")'
+            '  if $mask {'
+            '    let bits = "0100000000000000"'
+            '    let populated = (kfunc-call "bpf_cpumask_populate" $mask $bits 8)'
+            '    $populated | count'
+            '    $mask | kfunc-call "bpf_cpumask_release"'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "accept"
+        kernel: "skip"
+    }
+    {
+        name: "source-kfunc-cpumask-populate-rejects-scalar-mask"
+        category: "helper-state"
+        tags: [kfunc cpumask source reject]
+        requires: [kernel-btf]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let bits = "0100000000000000"'
+            '  kfunc-call "bpf_cpumask_populate" 7 $bits 8'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "arg0 expects pointer"
+    }
+    {
         name: "source-kfunc-cpumask-set-first-release"
         category: "helper-state"
         tags: [kfunc cpumask source accept]

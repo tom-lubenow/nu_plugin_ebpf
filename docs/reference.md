@@ -1088,8 +1088,9 @@ Cpumask query and mutation kfuncs such as `bpf_cpumask_and`,
 `bpf_cpumask_first_zero`, `bpf_cpumask_weight`, `bpf_cpumask_first_and`,
 `bpf_cpumask_subset`, `bpf_cpumask_any_distribute`,
 `bpf_cpumask_any_and_distribute`, `bpf_cpumask_or`, `bpf_cpumask_xor`,
-`bpf_cpumask_set_cpu`, and `bpf_cpumask_first` require cpumask pointer
-provenance for their pointer arguments.
+`bpf_cpumask_set_cpu`, `bpf_cpumask_first`, and `bpf_cpumask_populate`
+require cpumask pointer provenance for their cpumask arguments; populate also
+requires a pointer-backed source byte buffer.
 Crypto context kfuncs are modeled as acquired-reference flows:
 `bpf_crypto_ctx_create` and `bpf_crypto_ctx_acquire` return nullable crypto
 context references released by `bpf_crypto_ctx_release`; encrypt/decrypt kfuncs
