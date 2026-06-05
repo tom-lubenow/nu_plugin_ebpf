@@ -700,6 +700,16 @@ fn eval_supported_constant_call(
             eval_supported_constant_no_argument_call(cmd_name, &call.arguments)?;
             eval_supported_constant_bytes_length(input, span)
         }
+        "bytes starts-with" | "bytes ends-with" => {
+            let pattern = eval_supported_constant_bytes_predicate_call_pattern(
+                working_set,
+                cmd_name,
+                &call.arguments,
+                env,
+                span,
+            )?;
+            eval_supported_constant_bytes_predicate(cmd_name, input, pattern, span)
+        }
         "char" => {
             let output =
                 eval_supported_constant_char_call_args(working_set, &call.arguments, env, span)?;
@@ -1057,10 +1067,22 @@ fn eval_supported_constant_external_call(
             eval_supported_constant_no_external_args(cmd_name, args, span)?;
             eval_supported_constant_empty_predicate(cmd_name, input, span)
         }
-        "bytes" => eval_supported_constant_bytes_external_call(working_set, input, args, span),
+        "bytes" => {
+            eval_supported_constant_bytes_external_call(working_set, input, args, env, span)
+        }
         "bytes length" => {
             eval_supported_constant_no_external_args(cmd_name, args, span)?;
             eval_supported_constant_bytes_length(input, span)
+        }
+        "bytes starts-with" | "bytes ends-with" => {
+            let pattern = eval_supported_constant_bytes_predicate_external_pattern(
+                working_set,
+                cmd_name,
+                args,
+                env,
+                span,
+            )?;
+            eval_supported_constant_bytes_predicate(cmd_name, input, pattern, span)
         }
         "char" => {
             let output = eval_supported_constant_char_external_args(working_set, args, env, span)?;
@@ -1894,10 +1916,213 @@ fn eval_supported_constant_bytes_length(
     }
 }
 
+fn eval_supported_constant_binary_argument(
+    working_set: &StateWorkingSet,
+    expr: &nu_protocol::ast::Expression,
+    env: &HashMap<nu_protocol::VarId, Value>,
+    cmd_name: &str,
+) -> Result<Vec<u8>, LabeledError> {
+    match eval_supported_constant_value_with_env(working_set, expr, env)? {
+        Value::Binary { val, .. } => Ok(val),
+        Value::String { val, .. } | Value::Glob { val, .. }
+            if eval_supported_constant_binary_token(&val).is_some() =>
+        {
+            eval_supported_constant_binary_token(&val)
+                .expect("binary token parser prechecked")
+                .map_err(|err| {
+                    LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            format!("`{cmd_name}` requires a valid binary literal: {err}"),
+                            expr.span,
+                        )
+                })
+        }
+        other => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`{cmd_name}` argument must be a compile-time binary value in global initializers; got {}",
+                    other.get_type()
+                ),
+                expr.span,
+            ),
+        ),
+    }
+}
+
+fn eval_supported_constant_binary_token(token: &str) -> Option<Result<Vec<u8>, String>> {
+    let inner = token
+        .strip_prefix("0x[")
+        .or_else(|| token.strip_prefix("0X["))?
+        .strip_suffix(']')?;
+    let hex = inner
+        .chars()
+        .filter(|ch| !ch.is_whitespace() && *ch != '_')
+        .collect::<String>();
+    if hex.is_empty() {
+        return Some(Ok(Vec::new()));
+    }
+    if hex.len() % 2 != 0 {
+        return Some(Err(
+            "hex byte sequence must contain an even number of digits".into(),
+        ));
+    }
+    let mut bytes = Vec::with_capacity(hex.len() / 2);
+    for index in (0..hex.len()).step_by(2) {
+        let byte = u8::from_str_radix(&hex[index..index + 2], 16)
+            .map_err(|_| format!("invalid hex byte '{}'", &hex[index..index + 2]));
+        match byte {
+            Ok(byte) => bytes.push(byte),
+            Err(err) => return Some(Err(err)),
+        }
+    }
+    Some(Ok(bytes))
+}
+
+fn eval_supported_constant_bytes_predicate_call_pattern(
+    working_set: &StateWorkingSet,
+    cmd_name: &str,
+    args: &[nu_protocol::ast::Argument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<Vec<u8>, LabeledError> {
+    let mut pattern_expr = None;
+    for arg in args {
+        match arg {
+            nu_protocol::ast::Argument::Positional(expr)
+            | nu_protocol::ast::Argument::Unknown(expr) => {
+                if pattern_expr.replace(expr).is_some() {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            format!(
+                                "`{cmd_name}` accepts exactly one binary pattern argument in compile-time global initializers"
+                            ),
+                            arg.span(),
+                        ));
+                }
+            }
+            nu_protocol::ast::Argument::Named(named) => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        format!(
+                            "`{cmd_name}` does not accept named argument --{} in compile-time global initializers",
+                            named.0.item
+                        ),
+                        arg.span(),
+                    ));
+            }
+            nu_protocol::ast::Argument::Spread(expr) => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        format!(
+                            "`{cmd_name}` arguments cannot use spread syntax in compile-time global initializers"
+                        ),
+                        expr.span,
+                    ));
+            }
+        }
+    }
+
+    let Some(pattern_expr) = pattern_expr else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`{cmd_name}` accepts exactly one binary pattern argument in compile-time global initializers"
+                ),
+                span,
+            ),
+        );
+    };
+    eval_supported_constant_binary_argument(working_set, pattern_expr, env, cmd_name)
+}
+
+fn eval_supported_constant_bytes_predicate_external_pattern(
+    working_set: &StateWorkingSet,
+    cmd_name: &str,
+    args: &[ExternalArgument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<Vec<u8>, LabeledError> {
+    let [pattern_arg] = args else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`{cmd_name}` accepts exactly one binary pattern argument in compile-time global initializers"
+                ),
+                span,
+            ),
+        );
+    };
+
+    let ExternalArgument::Regular(pattern_expr) = pattern_arg else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`{cmd_name}` pattern argument cannot use spread syntax in compile-time global initializers"
+                ),
+                pattern_arg.expr().span,
+            ),
+        );
+    };
+    eval_supported_constant_binary_argument(working_set, pattern_expr, env, cmd_name)
+}
+
+fn eval_supported_constant_bytes_predicate(
+    cmd_name: &str,
+    input: Option<Value>,
+    pattern: Vec<u8>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let value = eval_supported_constant_required_pipeline_input(cmd_name, input, span)?;
+    let value_span = value.span();
+    let matches = |bytes: &[u8]| {
+        if cmd_name == "bytes starts-with" {
+            bytes.starts_with(&pattern)
+        } else {
+            bytes.ends_with(&pattern)
+        }
+    };
+
+    match value {
+        Value::Binary { val, .. } => Ok(Value::bool(matches(&val), value_span)),
+        Value::List { vals, .. } => {
+            let matched = vals
+                .into_iter()
+                .enumerate()
+                .map(|(index, value)| {
+                    let Value::Binary { val, .. } = value else {
+                        return Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
+                        .with_label(
+                            format!(
+                                "`{cmd_name}` requires binary list items in compile-time global initializers; item {index} has type {}",
+                                value.get_type()
+                            ),
+                            span,
+                        ));
+                    };
+                    Ok(Value::bool(matches(&val), value_span))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(Value::list(matched, value_span))
+        }
+        other => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`{cmd_name}` in a compile-time global initializer requires binary or list<binary> input; got {}",
+                    other.get_type()
+                ),
+                span,
+            ),
+        ),
+    }
+}
+
 fn eval_supported_constant_bytes_external_call(
     working_set: &StateWorkingSet,
     input: Option<Value>,
     args: &[ExternalArgument],
+    env: &HashMap<nu_protocol::VarId, Value>,
     span: Span,
 ) -> Result<Value, LabeledError> {
     let [subcommand_arg, remaining_args @ ..] = args else {
@@ -1923,6 +2148,17 @@ fn eval_supported_constant_bytes_external_call(
         "length" => {
             eval_supported_constant_no_external_args("bytes length", remaining_args, span)?;
             eval_supported_constant_bytes_length(input, span)
+        }
+        "starts-with" | "ends-with" => {
+            let cmd_name = format!("bytes {subcommand}");
+            let pattern = eval_supported_constant_bytes_predicate_external_pattern(
+                working_set,
+                &cmd_name,
+                remaining_args,
+                env,
+                span,
+            )?;
+            eval_supported_constant_bytes_predicate(&cmd_name, input, pattern, span)
         }
         _ => Err(
             LabeledError::new("Unsupported annotated mutable global initializer").with_label(
