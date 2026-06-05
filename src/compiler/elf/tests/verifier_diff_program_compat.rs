@@ -385,6 +385,51 @@ fn verifier_diff_quoted_strings(text: &str) -> BTreeSet<String> {
     values
 }
 
+fn modeled_kfunc_signature_names(source: &str) -> BTreeSet<String> {
+    source
+        .lines()
+        .filter(|line| line.contains("=> Some(Self"))
+        .flat_map(verifier_diff_quoted_strings)
+        .filter(|name| name.starts_with("bpf_") || name.starts_with("scx_"))
+        .collect()
+}
+
+fn verifier_diff_kfunc_call_names(source: &str) -> BTreeSet<String> {
+    let mut names = BTreeSet::new();
+    let mut rest = source;
+    let marker = "kfunc-call \"";
+
+    while let Some(start) = rest.find(marker) {
+        rest = &rest[start + marker.len()..];
+        let Some(end) = rest.find('"') else {
+            break;
+        };
+        names.insert(rest[..end].to_string());
+        rest = &rest[end + 1..];
+    }
+
+    names
+}
+
+#[test]
+fn test_verifier_diff_source_fixtures_cover_modeled_kfunc_signatures() {
+    let signature_source = include_str!("../../instruction/kfunc_signature.rs");
+    let verifier_diff = include_str!("../../../../scripts/verifier_diff.nu");
+
+    let modeled = modeled_kfunc_signature_names(signature_source);
+    let fixture_calls = verifier_diff_kfunc_call_names(verifier_diff);
+    let missing = modeled
+        .difference(&fixture_calls)
+        .cloned()
+        .collect::<Vec<_>>();
+
+    assert!(
+        missing.is_empty(),
+        "scripts/verifier_diff.nu source fixtures are missing modeled kfunc-call coverage for: {}",
+        missing.join(", ")
+    );
+}
+
 fn verifier_diff_kernel_feature_default_lane_keys(source: &str, lane: &str) -> BTreeSet<String> {
     let body = source
         .split_once("def kernel-feature-default-test-lane [feature] {")
