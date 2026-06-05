@@ -3235,7 +3235,13 @@ impl<'a> HirToMirLowering<'a> {
         else {
             return Ok(" ".to_string());
         };
-        self.literal_string_arg(character_reg, "fill --character")
+        let fill = self.literal_string_arg(character_reg, "fill --character")?;
+        if fill.as_bytes().contains(&0) {
+            return Err(CompileError::UnsupportedInstruction(
+                "fill --character does not support NUL bytes in eBPF".into(),
+            ));
+        }
+        Ok(fill)
     }
 
     fn fill_known_string(
