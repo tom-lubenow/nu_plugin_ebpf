@@ -21676,6 +21676,23 @@ const FIXTURES = [
         error_contains: "helper 'bpf_skb_set_tstamp' requires arg2"
     }
     {
+        name: "tc-skb-set-tstamp-rejects-dynamic-type"
+        category: "helper-state"
+        tags: [tc helper skb-metadata timestamp flags dynamic reject source metadata]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let tstype = (helper-call "bpf_get_prandom_u32")'
+            '  helper-call "bpf_skb_set_tstamp" $ctx 123 $tstype'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_skb_set_tstamp' requires arg2"
+    }
+    {
         name: "tc-skb-set-tstamp-rejects-unspec-nonzero-tstamp"
         category: "helper-state"
         tags: [tc helper skb-metadata timestamp flags reject source metadata]
@@ -21684,6 +21701,23 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  helper-call "bpf_skb_set_tstamp" $ctx 123 0'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_skb_set_tstamp' requires arg1 = 0 when arg2 is 0"
+    }
+    {
+        name: "tc-skb-set-tstamp-rejects-unspec-dynamic-tstamp"
+        category: "helper-state"
+        tags: [tc helper skb-metadata timestamp dynamic reject source metadata]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  let tstamp = (helper-call "bpf_get_prandom_u32")'
+            '  helper-call "bpf_skb_set_tstamp" $ctx $tstamp 0'
             '  0'
             '}'
         ]
@@ -22513,6 +22547,25 @@ const FIXTURES = [
             '  map-define rel_bytes --kind array --value-type bytes:8 --max-entries 1'
             '  let dst = (0 | map-get rel_bytes --kind array)'
             '  if $dst { helper-call "bpf_skb_load_bytes_relative" $ctx 0 $dst 8 2 }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_skb_load_bytes_relative' requires arg4 start_header"
+    }
+    {
+        name: "tc-skb-load-bytes-relative-rejects-dynamic-start"
+        category: "helper-state"
+        tags: [tc helper skb-load-bytes flags dynamic reject source metadata]
+        requires: [loopback-interface]
+        target: "tc:lo:ingress"
+        program: [
+            '{|ctx|'
+            '  map-define rel_bytes --kind array --value-type bytes:8 --max-entries 1'
+            '  let dst = (0 | map-get rel_bytes --kind array)'
+            '  let start = (helper-call "bpf_get_prandom_u32")'
+            '  if $dst { helper-call "bpf_skb_load_bytes_relative" $ctx 0 $dst 8 $start }'
             '  0'
             '}'
         ]
@@ -37259,6 +37312,22 @@ const FIXTURES = [
         program: [
             '{|ctx|'
             '  helper-call "bpf_csum_diff" 0 4 0 0 0'
+            '  "ok"'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 28 arg0 requires arg1 = 0 when arg0 is null"
+    }
+    {
+        name: "csum-diff-rejects-null-dynamic-side"
+        category: "helper-state"
+        tags: [csum null-pointer dynamic reject tc-action]
+        target: "tc_action:diff-action"
+        program: [
+            '{|ctx|'
+            '  let size = ((helper-call "bpf_get_prandom_u32") + 4)'
+            '  helper-call "bpf_csum_diff" 0 $size 0 0 0'
             '  "ok"'
             '}'
         ]

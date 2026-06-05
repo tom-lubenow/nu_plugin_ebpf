@@ -50,6 +50,8 @@ documentation changes that matter to external alpha consumers.
   length rejects derived from helper return ranges.
 - Added source verifier coverage for dynamic null-buffer size rejects on
   copy-from-user, branch-stack, and task-stack helpers.
+- Added source verifier coverage for dynamic skb timestamp, load-relative
+  start-header, and csum null-side scalar policy rejects.
 - Added actionable BTF target diagnostics for invalid `fentry`, `fexit`,
   `fmod_ret`, `tp_btf`, and LSM targets so compile-time errors include the
   modeled target-family rewrite guidance.
