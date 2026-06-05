@@ -51,7 +51,6 @@ struct RuntimeStringDynamicEnd {
 }
 
 const MAX_STRING_EXPAND_RESULTS: usize = 60;
-const MAX_RUNTIME_UNSIGNED_FILL_WIDTH: usize = 10;
 const MAX_RUNTIME_UNSIGNED_LEFT_FILL_WIDTH: usize = MAX_STRING_SIZE - 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2883,10 +2882,13 @@ impl<'a> HirToMirLowering<'a> {
         if width <= 1 || fill.is_empty() {
             return true;
         }
-        if fill.len() > 1 {
+        let input_max_digits = Self::runtime_unsigned_integer_decimal_digits(input_ty);
+        let Some(string_len_bound) =
+            Self::runtime_fill_string_len_bound(width, fill.len(), input_max_digits)
+        else {
             return false;
-        }
-        if width > MAX_RUNTIME_UNSIGNED_LEFT_FILL_WIDTH {
+        };
+        if string_len_bound > MAX_RUNTIME_UNSIGNED_LEFT_FILL_WIDTH {
             return false;
         }
 
@@ -2909,12 +2911,13 @@ impl<'a> HirToMirLowering<'a> {
         alignment: FillAlignment,
         fill: &str,
     ) -> Result<(), CompileError> {
-        let string_len_bound = if fill.is_empty() || width <= 1 {
-            MAX_INT_STRING_LEN
-        } else {
-            MAX_INT_STRING_LEN.max(width)
-        };
-        let aligned_len = align_to_eight(string_len_bound + 1)
+        let input_max_digits = Self::runtime_unsigned_integer_decimal_digits(input_ty);
+        let string_len_bound =
+            Self::runtime_fill_string_len_bound(width, fill.len(), input_max_digits)
+                .unwrap_or(input_max_digits)
+                .min(MAX_RUNTIME_UNSIGNED_LEFT_FILL_WIDTH);
+        let stack_len_bound = string_len_bound.max(MAX_INT_STRING_LEN);
+        let aligned_len = align_to_eight(stack_len_bound + 1)
             .min(MAX_STRING_SIZE)
             .max(16);
         let slot = self
@@ -2990,6 +2993,25 @@ impl<'a> HirToMirLowering<'a> {
         Ok(())
     }
 
+    fn runtime_fill_string_len_bound(
+        width: usize,
+        fill_len: usize,
+        input_max_digits: usize,
+    ) -> Option<usize> {
+        if fill_len == 0 || width <= 1 {
+            return Some(input_max_digits);
+        }
+
+        let mut bound = input_max_digits;
+        let max_padded_digits = input_max_digits.min(width.saturating_sub(1));
+        for digits in 1..=max_padded_digits {
+            let pad_count = width.saturating_sub(digits);
+            let padded_len = fill_len.checked_mul(pad_count)?.checked_add(digits)?;
+            bound = bound.max(padded_len);
+        }
+        Some(bound)
+    }
+
     fn runtime_unsigned_integer_decimal_digits(input_ty: &MirType) -> usize {
         match input_ty {
             MirType::U8 => 3,
@@ -3062,7 +3084,7 @@ impl<'a> HirToMirLowering<'a> {
     }
 
     fn runtime_fill_digit_threshold(digits: usize) -> i64 {
-        debug_assert!(digits < MAX_RUNTIME_UNSIGNED_FILL_WIDTH);
+        debug_assert!(digits <= 10);
         10_i64.pow(digits as u32)
     }
 

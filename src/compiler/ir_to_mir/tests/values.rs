@@ -15324,6 +15324,62 @@ fn test_lower_fill_width_127_right_on_runtime_unsigned_int_materializes_dynamic_
 }
 
 #[test]
+fn test_lower_fill_width_64_right_with_multibyte_character_on_runtime_unsigned_int() {
+    let result = lower_ctx_pid_fill_then_starts_with_program_with_options(
+        DeclId::new(2543),
+        DeclId::new(2544),
+        Some(64),
+        Some("right"),
+        Some("__"),
+        "_",
+        "fill --width 64 --alignment right --character __ should lower for runtime unsigned integer input",
+    );
+
+    assert_runtime_integer_fill_padding_shape(
+        &result,
+        &[10, 1_000_000_000],
+        b"__",
+        63,
+        "runtime integer right fill --width 64 --character __",
+    );
+}
+
+#[test]
+fn test_lower_fill_width_65_left_with_multibyte_character_rejects_runtime_unsigned_int() {
+    let fill_decl = DeclId::new(2545);
+    let starts_with_decl = DeclId::new(2546);
+    let hir = make_ctx_pid_fill_then_starts_with_program_with_options(
+        fill_decl,
+        starts_with_decl,
+        Some(65),
+        None,
+        Some("__"),
+        "_",
+    );
+    let decl_names = HashMap::from([
+        (fill_decl, "fill".to_string()),
+        (starts_with_decl, "str starts-with".to_string()),
+    ]);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("fill --width 65 --character __ should reject runtime integer input");
+
+    assert!(
+        err.to_string()
+            .contains("fill requires compile-time known string, int, float, or filesize input"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn test_lower_fill_width_128_right_rejects_runtime_unsigned_int() {
     let fill_decl = DeclId::new(2539);
     let starts_with_decl = DeclId::new(2540);
