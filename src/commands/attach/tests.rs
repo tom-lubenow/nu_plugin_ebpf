@@ -1951,6 +1951,117 @@ fn test_map_leading_annotated_mut_globals_supports_constant_bytes_length_list_in
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_str_length_initializer() {
+    let source = "{|| mut count: int = (\"abcd\" | str length); $count }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant str length initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(
+        globals[0]
+            .initial_value
+            .as_int()
+            .expect("str length should produce an integer"),
+        4
+    );
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_str_length_chars_initializer() {
+    let source = "{|| mut count: int = (\"abcd\" | str length --chars); $count }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant str length --chars initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(
+        globals[0]
+            .initial_value
+            .as_int()
+            .expect("str length --chars should produce an integer"),
+        4
+    );
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_str_length_list_initializer() {
+    let source = "{|| mut counts: list<int> = ([\"a\", \"bb\", \"\"] | str length); $counts }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant str length list initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let lengths = vals
+                .iter()
+                .map(|value| value.as_int().expect("str length should produce ints"))
+                .collect::<Vec<_>>();
+            assert_eq!(lengths, vec![1, 2, 0]);
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_constant_empty_predicate_initializer() {
     let source = "{|| mut empty: bool = (\"\" | is-empty); $empty }";
     let ir_block = IrBlock {
@@ -2017,6 +2128,41 @@ fn test_map_leading_annotated_mut_globals_supports_constant_non_empty_predicate_
             .initial_value
             .as_bool()
             .expect("is-not-empty should produce a boolean")
+    );
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_rejects_constant_str_length_mixed_list_initializer() {
+    let source = "{|| mut counts: list<int> = ([\"a\", 1] | str length); $counts }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let err = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect_err("str length on a mixed list should be rejected");
+
+    assert!(
+        err.labels
+            .iter()
+            .any(|label| label.text.contains("requires string list items")),
+        "unexpected labels: {:?}",
+        err.labels
     );
 }
 

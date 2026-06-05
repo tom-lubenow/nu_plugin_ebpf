@@ -12,6 +12,7 @@ use nu_protocol::{
     BlockId, DeclId, FromValue, IntoSpanned, LabeledError, ParseError, PipelineData, Record,
     Signature, Span, Spanned, Type, Value,
 };
+use unicode_segmentation::UnicodeSegmentation;
 
 use super::closure_params::recover_closure_param_sources;
 use super::struct_ops::{
@@ -692,6 +693,10 @@ fn eval_supported_constant_call(
             eval_supported_constant_no_argument_call(cmd_name, &call.arguments)?;
             eval_supported_constant_bytes_length(input, span)
         }
+        "str length" => {
+            let mode = eval_supported_constant_str_length_mode_call(&call.arguments)?;
+            eval_supported_constant_str_length(input, mode, span)
+        }
         "get" => eval_supported_constant_get_call(
             working_set,
             cmd_name,
@@ -949,6 +954,16 @@ fn eval_supported_constant_external_call(
         "bytes length" => {
             eval_supported_constant_no_external_args(cmd_name, args, span)?;
             eval_supported_constant_bytes_length(input, span)
+        }
+        "str" => eval_supported_constant_str_external_call(working_set, input, args, span),
+        "str length" => {
+            let mode = eval_supported_constant_str_length_mode_external_args(
+                working_set,
+                "str length",
+                args,
+                span,
+            )?;
+            eval_supported_constant_str_length(input, mode, span)
         }
         "get" => {
             let [path_arg] = args else {
@@ -1723,6 +1738,247 @@ fn eval_supported_constant_bytes_external_call(
                 format!(
                     "`bytes {subcommand}` is not supported in compile-time global initializers"
                 ),
+                subcommand_expr.span,
+            ),
+        ),
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ConstantStringLengthMode {
+    Utf8Bytes,
+    Chars,
+    GraphemeClusters,
+}
+
+fn eval_supported_constant_str_length_mode_call(
+    args: &[nu_protocol::ast::Argument],
+) -> Result<ConstantStringLengthMode, LabeledError> {
+    let mut mode = None;
+    for arg in args {
+        match arg {
+            nu_protocol::ast::Argument::Named(named) => {
+                if named.2.is_some() {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            "`str length` mode flags cannot receive values in compile-time global initializers",
+                            arg.span(),
+                        ));
+                }
+                let next = eval_supported_constant_str_length_mode_flag(&named.0.item)
+                    .ok_or_else(|| {
+                        LabeledError::new("Unsupported annotated mutable global initializer")
+                            .with_label(
+                                "`str length` supports only --utf-8-bytes, --chars, and --grapheme-clusters in compile-time global initializers",
+                                arg.span(),
+                            )
+                    })?;
+                if mode.replace(next).is_some() {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            "`str length` accepts only one length mode flag in compile-time global initializers",
+                            arg.span(),
+                        ));
+                }
+            }
+            nu_protocol::ast::Argument::Spread(expr) => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`str length` arguments cannot use spread syntax in compile-time global initializers",
+                        expr.span,
+                    ));
+            }
+            nu_protocol::ast::Argument::Positional(_) | nu_protocol::ast::Argument::Unknown(_) => {
+                return Err(
+                    LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            "`str length` does not accept arguments in compile-time global initializers",
+                            arg.span(),
+                        ),
+                );
+            }
+        }
+    }
+
+    Ok(mode.unwrap_or(ConstantStringLengthMode::Utf8Bytes))
+}
+
+fn eval_supported_constant_str_length_mode_external_args(
+    working_set: &StateWorkingSet,
+    cmd_name: &str,
+    args: &[ExternalArgument],
+    span: Span,
+) -> Result<ConstantStringLengthMode, LabeledError> {
+    let mut mode = None;
+    for arg in args {
+        let ExternalArgument::Regular(expr) = arg else {
+            return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                .with_label(
+                    format!(
+                        "`{cmd_name}` arguments cannot use spread syntax in compile-time global initializers"
+                    ),
+                    arg.expr().span,
+                ));
+        };
+        let value = eval_supported_constant_value(working_set, expr)?;
+        let flag = match value {
+            Value::String { val, .. } | Value::Glob { val, .. } => val,
+            _ => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        format!(
+                            "`{cmd_name}` accepts only string mode flags in compile-time global initializers"
+                        ),
+                        expr.span,
+                    ));
+            }
+        };
+        let Some(flag) = flag.strip_prefix("--") else {
+            return Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    format!(
+                        "`{cmd_name}` does not accept arguments in compile-time global initializers"
+                    ),
+                    span,
+                ),
+            );
+        };
+        let next = eval_supported_constant_str_length_mode_flag(flag).ok_or_else(|| {
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`{cmd_name}` supports only --utf-8-bytes, --chars, and --grapheme-clusters in compile-time global initializers"
+                ),
+                expr.span,
+            )
+        })?;
+        if mode.replace(next).is_some() {
+            return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                .with_label(
+                    format!(
+                        "`{cmd_name}` accepts only one length mode flag in compile-time global initializers"
+                    ),
+                    expr.span,
+                ));
+        }
+    }
+
+    Ok(mode.unwrap_or(ConstantStringLengthMode::Utf8Bytes))
+}
+
+fn eval_supported_constant_str_length_mode_flag(flag: &str) -> Option<ConstantStringLengthMode> {
+    match flag {
+        "utf-8-bytes" => Some(ConstantStringLengthMode::Utf8Bytes),
+        "chars" => Some(ConstantStringLengthMode::Chars),
+        "grapheme-clusters" => Some(ConstantStringLengthMode::GraphemeClusters),
+        _ => None,
+    }
+}
+
+fn eval_supported_constant_str_length(
+    input: Option<Value>,
+    mode: ConstantStringLengthMode,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let value = eval_supported_constant_required_pipeline_input("str length", input, span)?;
+    let value_span = value.span();
+    match value {
+        Value::String { val, .. } | Value::Glob { val, .. } => {
+            Ok(Value::int(eval_supported_constant_known_string_length(&val, mode), span))
+        }
+        Value::Binary { val, .. } if mode != ConstantStringLengthMode::Utf8Bytes => {
+            let val = String::from_utf8(val).map_err(|_| {
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    "`str length` requires valid UTF-8 binary input for character length modes in compile-time global initializers",
+                    span,
+                )
+            })?;
+            Ok(Value::int(eval_supported_constant_known_string_length(&val, mode), span))
+        }
+        Value::List { vals, .. } => {
+            let lengths = vals
+                .into_iter()
+                .enumerate()
+                .map(|(index, value)| {
+                    let val = match value {
+                        Value::String { val, .. } | Value::Glob { val, .. } => val,
+                        other => {
+                            return Err(LabeledError::new(
+                                "Unsupported annotated mutable global initializer",
+                            )
+                            .with_label(
+                                format!(
+                                    "`str length` requires string list items in compile-time global initializers; item {index} has type {}",
+                                    other.get_type()
+                                ),
+                                span,
+                            ));
+                        }
+                    };
+                    Ok(Value::int(
+                        eval_supported_constant_known_string_length(&val, mode),
+                        value_span,
+                    ))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(Value::list(lengths, value_span))
+        }
+        _ => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`str length` in a compile-time global initializer requires string or list<string> input",
+                span,
+            ),
+        ),
+    }
+}
+
+fn eval_supported_constant_known_string_length(input: &str, mode: ConstantStringLengthMode) -> i64 {
+    match mode {
+        ConstantStringLengthMode::Utf8Bytes => input.len() as i64,
+        ConstantStringLengthMode::Chars => input.chars().count() as i64,
+        ConstantStringLengthMode::GraphemeClusters => {
+            UnicodeSegmentation::graphemes(input, true).count() as i64
+        }
+    }
+}
+
+fn eval_supported_constant_str_external_call(
+    working_set: &StateWorkingSet,
+    input: Option<Value>,
+    args: &[ExternalArgument],
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let [subcommand_arg, remaining_args @ ..] = args else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`str` requires a supported subcommand in compile-time global initializers",
+                span,
+            ),
+        );
+    };
+
+    let ExternalArgument::Regular(subcommand_expr) = subcommand_arg else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`str` subcommand cannot use spread syntax in compile-time global initializers",
+                subcommand_arg.expr().span,
+            ),
+        );
+    };
+    let subcommand = eval_supported_constant_record_field_name(working_set, subcommand_expr)?;
+
+    match subcommand.as_str() {
+        "length" => {
+            let mode = eval_supported_constant_str_length_mode_external_args(
+                working_set,
+                "str length",
+                remaining_args,
+                span,
+            )?;
+            eval_supported_constant_str_length(input, mode, span)
+        }
+        _ => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!("`str {subcommand}` is not supported in compile-time global initializers"),
                 subcommand_expr.span,
             ),
         ),
