@@ -16596,6 +16596,25 @@ const FIXTURES = [
         error_contains: "helper 'bpf_ringbuf_submit' requires arg1 flags to contain only BPF_RB_* wakeup bits"
     }
     {
+        name: "ringbuf-submit-rejects-dynamic-wakeup-flags"
+        category: "helper-state"
+        tags: [ringbuf flags ref-lifetime reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let flags = (helper-call "bpf_get_prandom_u32")'
+            '  let rec = (helper-call "bpf_ringbuf_reserve" events 8 0)'
+            '  if $rec {'
+            '    helper-call "bpf_ringbuf_submit" $rec $flags'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_ringbuf_submit' requires arg1 flags to contain only BPF_RB_* wakeup bits"
+    }
+    {
         name: "ringbuf-discard-rejects-invalid-wakeup-flags"
         category: "helper-state"
         tags: [ringbuf flags ref-lifetime reject]
@@ -16605,6 +16624,25 @@ const FIXTURES = [
             '  let rec = (helper-call "bpf_ringbuf_reserve" events 8 0)'
             '  if $rec {'
             '    helper-call "bpf_ringbuf_discard" $rec 4'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_ringbuf_discard' requires arg1 flags to contain only BPF_RB_* wakeup bits"
+    }
+    {
+        name: "ringbuf-discard-rejects-dynamic-wakeup-flags"
+        category: "helper-state"
+        tags: [ringbuf flags ref-lifetime reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let flags = (helper-call "bpf_get_prandom_u32")'
+            '  let rec = (helper-call "bpf_ringbuf_reserve" events 8 0)'
+            '  if $rec {'
+            '    helper-call "bpf_ringbuf_discard" $rec $flags'
             '  }'
             '  0'
             '}'
@@ -16961,6 +16999,24 @@ const FIXTURES = [
         error_contains: "helper 'bpf_ringbuf_submit_dynptr' requires arg1 flags to contain only BPF_RB_* wakeup bits"
     }
     {
+        name: "ringbuf-dynptr-submit-rejects-dynamic-wakeup-flags"
+        category: "helper-state"
+        tags: [ringbuf dynptr flags ref-lifetime reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let d = "0123456789abcdef"'
+            '  let flags = (helper-call "bpf_get_prandom_u32")'
+            '  helper-call "bpf_ringbuf_reserve_dynptr" events 8 0 $d'
+            '  helper-call "bpf_ringbuf_submit_dynptr" $d $flags'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_ringbuf_submit_dynptr' requires arg1 flags to contain only BPF_RB_* wakeup bits"
+    }
+    {
         name: "ringbuf-dynptr-discard-rejects-invalid-wakeup-flags"
         category: "helper-state"
         tags: [ringbuf dynptr flags ref-lifetime reject]
@@ -16970,6 +17026,24 @@ const FIXTURES = [
             '  let d = "0123456789abcdef"'
             '  helper-call "bpf_ringbuf_reserve_dynptr" events 8 0 $d'
             '  helper-call "bpf_ringbuf_discard_dynptr" $d 4'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "helper 'bpf_ringbuf_discard_dynptr' requires arg1 flags to contain only BPF_RB_* wakeup bits"
+    }
+    {
+        name: "ringbuf-dynptr-discard-rejects-dynamic-wakeup-flags"
+        category: "helper-state"
+        tags: [ringbuf dynptr flags ref-lifetime reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  let d = "0123456789abcdef"'
+            '  let flags = (helper-call "bpf_get_prandom_u32")'
+            '  helper-call "bpf_ringbuf_reserve_dynptr" events 8 0 $d'
+            '  helper-call "bpf_ringbuf_discard_dynptr" $d $flags'
             '  0'
             '}'
         ]
