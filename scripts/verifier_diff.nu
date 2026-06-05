@@ -28456,6 +28456,27 @@ const FIXTURES = [
         error_contains: "requires arg0 to be a bpf_wq field projected from a concrete map value"
     }
     {
+        name: "bpf-wq-set-callback-rejects-dynamic-non-map-field"
+        category: "helper-state"
+        tags: [bpf_wq kfunc-call callback dynamic branch reject]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  map-define work_items_dyn_cb --kind array --value-type "record{work:bpf_wq,cookie:u64}" --max-entries 1'
+            '  let entry = (0 | map-get work_items_dyn_cb --kind array)'
+            '  if $entry {'
+            '    let selector = (helper-call "bpf_get_prandom_u32")'
+            '    let work = (if $selector == 0 { $entry.work } else { 0 })'
+            '    kfunc-call "bpf_wq_set_callback_impl" $work {|map key work| 0} 0 0'
+            '  }'
+            '  0'
+            '}'
+        ]
+        local: "reject"
+        kernel: "skip"
+        error_contains: "kfunc-call 'bpf_wq_set_callback_impl' requires arg0 to be a bpf_wq field projected from a concrete map value"
+    }
+    {
         name: "bpf-wq-kfunc-set-callback"
         category: "helper-state"
         tags: [bpf_wq kfunc-call callback accept]
