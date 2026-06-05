@@ -630,17 +630,22 @@ impl<'a> MirToEbpfCompiler<'a> {
             ));
         }
 
-        let mut inferred_key_size = key_size.max(1) as u32;
-        if map.kind.is_keyless_map() {
-            inferred_key_size = 0;
+        let inferred_key_size = if map.kind.is_keyless_map() {
+            0
         } else if map.kind.is_array_index_map() {
-            inferred_key_size = 4;
-        }
+            4
+        } else {
+            Self::checked_map_layout_size(map, "key", key_size, false)?
+        };
         let (inferred_value_size, defaulted) = match value_size {
-            Some(size) if matches!(map.kind, MapKind::RingBuf | MapKind::UserRingBuf) => {
-                (size as u32, false)
-            }
-            Some(size) => (size.max(1) as u32, false),
+            Some(size) if matches!(map.kind, MapKind::RingBuf | MapKind::UserRingBuf) => (
+                Self::checked_map_layout_size(map, "value", size, true)?,
+                false,
+            ),
+            Some(size) => (
+                Self::checked_map_layout_size(map, "value", size, false)?,
+                false,
+            ),
             None => (8, true),
         };
         let inferred_max_entries = self
@@ -696,6 +701,21 @@ impl<'a> MirToEbpfCompiler<'a> {
         }
 
         Ok(())
+    }
+
+    fn checked_map_layout_size(
+        map: &crate::compiler::mir::MapRef,
+        role: &str,
+        size: usize,
+        allow_zero: bool,
+    ) -> Result<u32, CompileError> {
+        let normalized = if allow_zero { size } else { size.max(1) };
+        u32::try_from(normalized).map_err(|_| {
+            CompileError::UnsupportedInstruction(format!(
+                "map '{}' {} size {} exceeds the u32 eBPF map definition range",
+                map.name, role, normalized
+            ))
+        })
     }
 
     pub(super) fn register_declared_generic_maps(&mut self) -> Result<(), CompileError> {

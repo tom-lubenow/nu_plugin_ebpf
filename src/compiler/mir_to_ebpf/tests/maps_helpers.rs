@@ -1916,6 +1916,68 @@ fn test_map_update_materializes_large_u64_flags() {
 }
 
 #[test]
+fn test_map_update_rejects_oversized_key_layout() {
+    use crate::compiler::mir::*;
+
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let key_slot = func.alloc_stack_slot(8, 8, StackSlotKind::Local);
+    let key = func.alloc_vreg();
+    let val = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: key,
+        src: MirValue::StackSlot(key_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: val,
+        src: MirValue::Const(99),
+    });
+    func.block_mut(entry).instructions.push(MirInst::MapUpdate {
+        map: MapRef {
+            name: "custom_update_huge_key".to_string(),
+            kind: MapKind::Hash,
+        },
+        key,
+        val,
+        flags: 0,
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let program = MirProgram {
+        main: func,
+        subfunctions: vec![],
+    };
+    let lir = lower_mir_to_lir(&program);
+    let mut program_types = ProgramVregTypes::default();
+    program_types.main.insert(
+        key,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Array {
+                elem: Box::new(MirType::U8),
+                len: usize::MAX,
+            }),
+            address_space: AddressSpace::Stack,
+        },
+    );
+
+    let compiler = MirToEbpfCompiler::new_with_types(&lir, None, program_types);
+    match compiler.compile() {
+        Err(CompileError::UnsupportedInstruction(msg)) => {
+            assert!(msg.contains("key size"), "unexpected error: {msg}");
+            assert!(
+                msg.contains("u32 eBPF map definition range"),
+                "unexpected error: {msg}"
+            );
+        }
+        Err(err) => panic!("expected oversized map key layout error, got {err:?}"),
+        Ok(_) => panic!("expected oversized map key layout error, got Ok"),
+    }
+}
+
+#[test]
 fn test_map_delete_compiles_and_emits_generic_map() {
     use crate::compiler::mir::*;
 

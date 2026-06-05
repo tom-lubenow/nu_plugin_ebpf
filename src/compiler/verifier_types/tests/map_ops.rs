@@ -1465,3 +1465,54 @@ fn test_map_ops_reject_conflicting_value_sizes() {
         err
     );
 }
+
+#[test]
+fn test_map_update_rejects_oversized_key_layout() {
+    let mut func = MirFunction::new();
+    let entry = func.alloc_block();
+    func.entry = entry;
+
+    let key_slot = func.alloc_stack_slot(8, 8, StackSlotKind::Local);
+    let key = func.alloc_vreg();
+    let val = func.alloc_vreg();
+
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: key,
+        src: MirValue::StackSlot(key_slot),
+    });
+    func.block_mut(entry).instructions.push(MirInst::Copy {
+        dst: val,
+        src: MirValue::Const(7),
+    });
+    func.block_mut(entry).instructions.push(MirInst::MapUpdate {
+        map: MapRef {
+            name: "huge_key_map".to_string(),
+            kind: MapKind::Hash,
+        },
+        key,
+        val,
+        flags: 0,
+    });
+    func.block_mut(entry).terminator = MirInst::Return { val: None };
+
+    let mut types = HashMap::new();
+    types.insert(
+        key,
+        MirType::Ptr {
+            pointee: Box::new(MirType::Array {
+                elem: Box::new(MirType::U8),
+                len: usize::MAX,
+            }),
+            address_space: AddressSpace::Stack,
+        },
+    );
+
+    let err = verify_mir(&func, &types).expect_err("expected oversized map key layout rejection");
+    assert!(
+        err.iter().any(|e| {
+            e.message.contains("key size") && e.message.contains("u32 eBPF map definition range")
+        }),
+        "unexpected errors: {:?}",
+        err
+    );
+}

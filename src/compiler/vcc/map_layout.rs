@@ -140,14 +140,23 @@ fn register_generic_map_layout_spec(
         return;
     }
 
-    let mut inferred_key_size = key_size.max(1) as u32;
-    if map.kind.is_keyless_map() {
-        inferred_key_size = 0;
+    let inferred_key_size = if map.kind.is_keyless_map() {
+        0
     } else if map.kind.is_array_index_map() {
-        inferred_key_size = 4;
-    }
+        4
+    } else {
+        match checked_map_layout_size(map, "key", key_size, false, errors) {
+            Some(size) => size,
+            None => return,
+        }
+    };
     let (inferred_value_size, defaulted) = match value_size {
-        Some(size) => (size.max(1) as u32, false),
+        Some(size) => {
+            let Some(size) = checked_map_layout_size(map, "value", size, false, errors) else {
+                return;
+            };
+            (size, false)
+        }
         None => (8, true),
     };
 
@@ -198,6 +207,29 @@ fn register_generic_map_layout_spec(
                     value_size_defaulted: defaulted,
                 },
             );
+        }
+    }
+}
+
+fn checked_map_layout_size(
+    map: &crate::compiler::mir::MapRef,
+    role: &str,
+    size: usize,
+    allow_zero: bool,
+    errors: &mut Vec<VccError>,
+) -> Option<u32> {
+    let normalized = if allow_zero { size } else { size.max(1) };
+    match u32::try_from(normalized) {
+        Ok(size) => Some(size),
+        Err(_) => {
+            errors.push(VccError::new(
+                VccErrorKind::UnsupportedInstruction,
+                format!(
+                    "map '{}' {} size {} exceeds the u32 eBPF map definition range",
+                    map.name, role, normalized
+                ),
+            ));
+            None
         }
     }
 }
