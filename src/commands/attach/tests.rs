@@ -9009,6 +9009,49 @@ fn test_map_leading_annotated_mut_globals_supports_constant_record_get_initializ
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_let_bound_record_get_path_initializer() {
+    let source =
+        r#"{|| let field = "pid"; mut pid: int = ({pid: 8, ok: false} | get $field); $pid }"#;
+    let ir_block = one_let_then_single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("let-bound record get path initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(globals[0].initial_value.as_int().ok(), Some(8));
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_let_bound_list_get_index_initializer() {
+    let source = "{|| let index = 1; mut second: int = ([1, 2, 3] | get $index); $second }";
+    let ir_block = one_let_then_single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("let-bound list get index initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(globals[0].initial_value.as_int().ok(), Some(2));
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_let_bound_path_mutation_initializer() {
+    let source = r#"{|| let field = "pid"; mut rec: record<pid: int cpu: int> = ({pid: 7, cpu: 2} | upsert $field 9); $rec }"#;
+    let ir_block = one_let_then_single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("let-bound path mutation initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::Record { val, .. } => {
+            assert_eq!(val.get("pid").and_then(|v| v.as_int().ok()), Some(9));
+            assert_eq!(val.get("cpu").and_then(|v| v.as_int().ok()), Some(2));
+        }
+        other => panic!("expected record initializer, got {other:?}"),
+    }
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_constant_arithmetic_initializer() {
     let source = "{|| mut sum: int = (2 + 3); $sum }";
     let ir_block = IrBlock {

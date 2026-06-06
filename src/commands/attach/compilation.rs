@@ -951,6 +951,7 @@ fn eval_supported_constant_block(
 fn eval_supported_constant_cell_path(
     working_set: &StateWorkingSet,
     expr: &nu_protocol::ast::Expression,
+    env: &HashMap<nu_protocol::VarId, Value>,
 ) -> Result<CellPath, LabeledError> {
     match &expr.expr {
         Expr::String(path)
@@ -974,7 +975,14 @@ fn eval_supported_constant_cell_path(
                     .with_label(e.to_string(), expr.span)
             });
         }
-        Expr::Var(_) => {
+        Expr::Var(var_id) => {
+            if let Some(value) = env.get(var_id) {
+                return CellPath::from_value(value.clone()).map_err(|e| {
+                    LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(e.to_string(), expr.span)
+                });
+            }
+
             let path =
                 String::from_utf8_lossy(working_set.get_span_contents(expr.span)).into_owned();
             let value = path
@@ -991,7 +999,7 @@ fn eval_supported_constant_cell_path(
         _ => {}
     }
 
-    let value = eval_supported_constant_value(working_set, expr)?;
+    let value = eval_supported_constant_value_with_env(working_set, expr, env)?;
     CellPath::from_value(value).map_err(|e| {
         LabeledError::new("Unsupported annotated mutable global initializer")
             .with_label(e.to_string(), expr.span)
@@ -1290,6 +1298,7 @@ fn eval_supported_constant_call(
             cmd_name,
             input,
             call.positional_nth(0),
+            env,
             span,
         ),
         "append" | "prepend" => eval_supported_constant_list_mutation_call(
@@ -1759,7 +1768,14 @@ fn eval_supported_constant_external_call(
                     ));
             };
 
-            eval_supported_constant_get_call(working_set, cmd_name, input, Some(path_expr), span)
+            eval_supported_constant_get_call(
+                working_set,
+                cmd_name,
+                input,
+                Some(path_expr),
+                env,
+                span,
+            )
         }
         "append" | "prepend" => {
             let [item_arg] = args else {
@@ -1982,6 +1998,7 @@ fn eval_supported_constant_get_call(
     cmd_name: &str,
     input: Option<Value>,
     path_expr: Option<&nu_protocol::ast::Expression>,
+    env: &HashMap<nu_protocol::VarId, Value>,
     span: Span,
 ) -> Result<Value, LabeledError> {
     let value = input.ok_or_else(|| {
@@ -1996,7 +2013,7 @@ fn eval_supported_constant_get_call(
         LabeledError::new("Unsupported annotated mutable global initializer")
             .with_label(format!("`{cmd_name}` requires a cell path argument"), span)
     })?;
-    let path = eval_supported_constant_cell_path(working_set, path_expr)?;
+    let path = eval_supported_constant_cell_path(working_set, path_expr, env)?;
 
     value
         .follow_cell_path(&path.members)
@@ -13045,7 +13062,7 @@ fn eval_supported_constant_path_mutation_call(
         LabeledError::new("Unsupported annotated mutable global initializer")
             .with_label(format!("`{cmd_name}` requires a replacement value"), span)
     })?;
-    let path = eval_supported_constant_cell_path(working_set, path_expr)?;
+    let path = eval_supported_constant_cell_path(working_set, path_expr, env)?;
     let new_value = eval_supported_constant_value_with_env(working_set, new_value_expr, env)?;
 
     match cmd_name {
