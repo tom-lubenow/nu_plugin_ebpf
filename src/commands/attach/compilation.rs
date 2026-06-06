@@ -6785,14 +6785,7 @@ fn eval_supported_constant_math_min_max(
 
     match selected.expect("math min/max validates non-empty input") {
         Value::Int { val, .. } => Ok(Value::int(val, value_span)),
-        Value::Float { .. } => Err(
-            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
-                format!(
-                    "`{cmd_name}` compile-time list result has type float; mutable global initializers support only materializable eBPF values"
-                ),
-                span,
-            ),
-        ),
+        Value::Float { val, .. } => Ok(Value::float(val, value_span)),
         _ => unreachable!("min/max values were validated as integer or finite float"),
     }
 }

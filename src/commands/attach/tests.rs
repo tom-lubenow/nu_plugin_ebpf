@@ -5528,35 +5528,35 @@ fn test_map_leading_annotated_mut_globals_rejects_constant_math_int_reduce_non_i
 }
 
 #[test]
-fn test_map_leading_annotated_mut_globals_rejects_constant_math_min_max_float_result() {
-    let source = "{|| mut out: int = ([1.5, 2, 3] | math min); $out }";
-    let ir_block = IrBlock {
-        instructions: vec![
-            Instruction::StoreVariable {
-                var_id: VarId::new(11),
-                src: RegId::new(0),
-            },
-            Instruction::LoadVariable {
-                dst: RegId::new(0),
-                var_id: VarId::new(11),
-            },
-            Instruction::Return { src: RegId::new(0) },
-        ],
-        spans: vec![Span::test_data(); 3],
-        data: Vec::<u8>::new().into(),
-        ast: vec![None; 3],
-        comments: vec!["let".into(), "".into(), "".into()],
-        register_count: 1,
-        file_count: 0,
-    };
+fn test_map_leading_annotated_mut_globals_supports_constant_math_min_max_float_fill() {
+    let cases = [
+        (
+            r#"{|| mut value: string = ([1.5, 2, 3] | math min | fill --width 4 --alignment right --character "0"); $value }"#,
+            "01.5",
+            "math min selected float should feed fill",
+        ),
+        (
+            r#"{|| mut value: string = ([1, 2, 3.5] | math max | fill --width 4 --alignment right --character "0"); $value }"#,
+            "03.5",
+            "math max selected float should feed fill",
+        ),
+        (
+            r#"{|| mut value: string = ([1, 2, 3.5] | ^math max | fill --width 4 --alignment right --character "0"); $value }"#,
+            "03.5",
+            "external math max selected float should feed fill",
+        ),
+    ];
 
-    let err = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
-        .expect_err("math min/max should reject selected float materialization");
+    for (source, expected, message) in cases {
+        let ir_block = single_annotated_global_return_ir_block();
 
-    assert!(
-        format!("{err:?}").contains("result has type float"),
-        "unexpected error: {err:?}"
-    );
+        let globals =
+            super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+                .unwrap_or_else(|err| panic!("{message}: {err:?}"));
+
+        assert_eq!(globals.len(), 1);
+        assert_eq!(globals[0].initial_value.as_str().ok(), Some(expected));
+    }
 }
 
 #[test]
