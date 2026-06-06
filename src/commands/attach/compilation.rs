@@ -6517,25 +6517,77 @@ fn eval_supported_constant_math_int_reduce(
         return eval_supported_constant_math_min_max(cmd_name, vals, value_span, span);
     }
 
-    let ints = vals
-        .into_iter()
-        .enumerate()
-        .map(|(index, value)| {
-            let Value::Int { val, .. } = value else {
+    let mut ints = Vec::with_capacity(vals.len());
+    let mut floats = None::<Vec<f64>>;
+    for (index, value) in vals.into_iter().enumerate() {
+        match value {
+            Value::Int { val, .. } => {
+                if let Some(floats) = &mut floats {
+                    floats.push(val as f64);
+                } else {
+                    ints.push(val);
+                }
+            }
+            Value::Float { val, .. } if val.is_finite() => {
+                let floats = floats.get_or_insert_with(|| {
+                    ints.iter().map(|value| *value as f64).collect::<Vec<_>>()
+                });
+                floats.push(val);
+            }
+            Value::Float { val, .. } => {
                 return Err(
                     LabeledError::new("Unsupported annotated mutable global initializer")
                         .with_label(
                             format!(
-                                "`{cmd_name}` requires integer list items in compile-time global initializers; item {index} has type {}",
-                                value.get_type()
+                                "`{cmd_name}` requires finite float list items in compile-time global initializers; item {index} is {val}"
                             ),
                             span,
                         ),
                 );
-            };
-            Ok(val)
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+            }
+            other => {
+                return Err(
+                    LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            format!(
+                                "`{cmd_name}` requires integer or finite float list items in compile-time global initializers; item {index} has type {}",
+                                other.get_type()
+                            ),
+                            span,
+                        ),
+                );
+            }
+        }
+    }
+
+    if let Some(floats) = floats {
+        let result = match cmd_name {
+            "math product" => floats.into_iter().fold(1.0, |acc, value| acc * value),
+            "math sum" => floats.into_iter().sum::<f64>(),
+            _ => {
+                return Err(
+                    LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            format!(
+                                "`{cmd_name}` is not a supported numeric reduction command in compile-time global initializers"
+                            ),
+                            span,
+                        ),
+                );
+            }
+        };
+        if !result.is_finite() {
+            return Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    format!(
+                        "`{cmd_name}` compile-time list result must be finite in compile-time global initializers"
+                    ),
+                    span,
+                ),
+            );
+        }
+        return Ok(Value::float(result, value_span));
+    }
 
     let result = match cmd_name {
         "math max" => ints

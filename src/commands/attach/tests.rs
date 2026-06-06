@@ -5338,6 +5338,38 @@ fn test_map_leading_annotated_mut_globals_supports_constant_math_int_reduce_init
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_math_sum_product_float_fill() {
+    let cases = [
+        (
+            r#"{|| mut value: string = ([1.5, 2] | math sum | fill --width 4 --alignment right --character "0"); $value }"#,
+            "03.5",
+            "math sum float result should feed fill",
+        ),
+        (
+            r#"{|| mut value: string = ([1.5, 2] | math product | fill --width 4 --alignment right --character "0"); $value }"#,
+            "0003",
+            "math product float result should feed fill",
+        ),
+        (
+            r#"{|| mut value: string = ([1.5, 2] | ^math sum | fill --width 4 --alignment right --character "0"); $value }"#,
+            "03.5",
+            "external math sum float result should feed fill",
+        ),
+    ];
+
+    for (source, expected, message) in cases {
+        let ir_block = single_annotated_global_return_ir_block();
+
+        let globals =
+            super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+                .unwrap_or_else(|err| panic!("{message}: {err:?}"));
+
+        assert_eq!(globals.len(), 1);
+        assert_eq!(globals[0].initial_value.as_str().ok(), Some(expected));
+    }
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_constant_math_min_max_mixed_numeric_integer_result()
  {
     let cases = [
