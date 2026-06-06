@@ -2294,6 +2294,56 @@ fn test_map_leading_annotated_mut_globals_supports_let_bound_external_fill_optio
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_math_sqrt_fill_initializer() {
+    let source = r#"{|| mut value: string = (9 | math sqrt | fill --width 4 --alignment right --character "0"); $value }"#;
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant math sqrt result should feed fill cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(globals[0].initial_value.as_str().ok(), Some("0003"));
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_math_sqrt_str_join_initializer() {
+    let source = r#"{|| mut value: string = ([2.25, 6.25] | math sqrt | str join ","); $value }"#;
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant math sqrt list result should feed str join cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(globals[0].initial_value.as_str().ok(), Some("1.5,2.5"));
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_let_bound_external_math_sqrt_fill_initializer() {
+    let source = r#"{|| let root = (9 | ^math sqrt); mut value: string = ($root | fill --width 4 --alignment right --character "0"); $value }"#;
+    let ir_block = one_let_then_single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("let-bound external math sqrt result should feed fill cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(globals[0].initial_value.as_str().ok(), Some("0003"));
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_rejects_negative_constant_math_sqrt_input() {
+    let source = r#"{|| mut value: string = (-1 | math sqrt | fill); $value }"#;
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let err = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect_err("math sqrt should reject negative input");
+
+    assert!(
+        format!("{err:?}").contains("requires non-negative input"),
+        "unexpected error: {err:?}"
+    );
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_constant_length_initializer() {
     let source = "{|| mut count: int = ([7, 2, 4] | length); $count }";
     let ir_block = IrBlock {

@@ -7861,6 +7861,50 @@ fn test_lower_leading_annotated_mut_scalar_uses_global_backing_and_skips_init_st
 }
 
 #[test]
+fn test_lower_leading_annotated_mut_float_initializer_is_rejected() {
+    let global_var = VarId::new(357);
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![HirStmt::LoadVariable {
+                dst: RegId::new(0),
+                var_id: global_var,
+            }],
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 1,
+        file_count: 0,
+    };
+    let mut hir = HirProgram::new(func, HashMap::new(), vec![], None);
+    hir.annotated_mut_globals = vec![AnnotatedMutGlobal {
+        var_id: global_var,
+        declared_type: Type::Float,
+        initial_value: Value::float(3.0, Span::test_data()),
+    }];
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &HashMap::new(),
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("float annotated mutable globals should not be materialized");
+
+    assert!(
+        err.to_string().contains(
+            "leading annotated mutable variable 357 declared as float is not yet supported"
+        ),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn test_lower_leading_annotated_mut_scalar_null_uses_bss_global() {
     let global_var = VarId::new(349);
     let func = HirFunction {

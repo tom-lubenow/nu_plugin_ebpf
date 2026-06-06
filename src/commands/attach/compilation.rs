@@ -1183,6 +1183,10 @@ fn eval_supported_constant_call(
             eval_supported_constant_no_argument_call(cmd_name, &call.arguments)?;
             eval_supported_constant_math_rounding(cmd_name, input, span)
         }
+        "math sqrt" => {
+            eval_supported_constant_no_argument_call(cmd_name, &call.arguments)?;
+            eval_supported_constant_math_sqrt(input, span)
+        }
         "char" => {
             let output =
                 eval_supported_constant_char_call_args(working_set, &call.arguments, env, span)?;
@@ -1658,6 +1662,10 @@ fn eval_supported_constant_external_call(
         "math ceil" | "math floor" | "math round" => {
             eval_supported_constant_no_external_args(cmd_name, args, span)?;
             eval_supported_constant_math_rounding(cmd_name, input, span)
+        }
+        "math sqrt" => {
+            eval_supported_constant_no_external_args(cmd_name, args, span)?;
+            eval_supported_constant_math_sqrt(input, span)
         }
         "char" => {
             let output = eval_supported_constant_char_external_args(working_set, args, env, span)?;
@@ -6996,6 +7004,113 @@ fn eval_supported_constant_math_rounding_i64(
     Ok(value as i64)
 }
 
+fn eval_supported_constant_math_sqrt(
+    input: Option<Value>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let value = eval_supported_constant_required_pipeline_input("math sqrt", input, span)?;
+    let value_span = value.span();
+    match value {
+        Value::Int { .. } | Value::Float { .. } => {
+            eval_supported_constant_math_sqrt_value(value, None, span)
+        }
+        Value::List { vals, .. } => {
+            let output = vals
+                .into_iter()
+                .enumerate()
+                .map(|(index, value)| {
+                    eval_supported_constant_math_sqrt_value(value, Some(index), span)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(Value::list(output, value_span))
+        }
+        other => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`math sqrt` in a compile-time global initializer requires non-negative integer, finite non-negative float, list<int>, or list<float> input; got {}",
+                    other.get_type()
+                ),
+                span,
+            ),
+        ),
+    }
+}
+
+fn eval_supported_constant_math_sqrt_value(
+    value: Value,
+    list_index: Option<usize>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let value_span = value.span();
+    let raw = match value {
+        Value::Int { val, .. } if val >= 0 => val as f64,
+        Value::Int { val, .. } => {
+            return Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    match list_index {
+                        Some(index) => format!(
+                            "`math sqrt` requires non-negative integer or finite non-negative float list items in compile-time global initializers; item {index} is {val}"
+                        ),
+                        None => format!(
+                            "`math sqrt` requires non-negative input in compile-time global initializers; input is {val}"
+                        ),
+                    },
+                    span,
+                ),
+            );
+        }
+        Value::Float { val, .. } if val.is_finite() && val >= 0.0 => val,
+        Value::Float { val, .. } if val.is_finite() => {
+            return Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    match list_index {
+                        Some(index) => format!(
+                            "`math sqrt` requires non-negative integer or finite non-negative float list items in compile-time global initializers; item {index} is {val}"
+                        ),
+                        None => format!(
+                            "`math sqrt` requires non-negative input in compile-time global initializers; input is {val}"
+                        ),
+                    },
+                    span,
+                ),
+            );
+        }
+        Value::Float { val, .. } => {
+            return Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    match list_index {
+                        Some(index) => format!(
+                            "`math sqrt` requires finite float list items in compile-time global initializers; item {index} is {val}"
+                        ),
+                        None => format!(
+                            "`math sqrt` requires finite float input in compile-time global initializers; input is {val}"
+                        ),
+                    },
+                    span,
+                ),
+            );
+        }
+        other => {
+            return Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    match list_index {
+                        Some(index) => format!(
+                            "`math sqrt` requires non-negative integer or finite non-negative float list items in compile-time global initializers; item {index} has type {}",
+                            other.get_type()
+                        ),
+                        None => format!(
+                            "`math sqrt` in a compile-time global initializer requires non-negative integer or finite non-negative float input; got {}",
+                            other.get_type()
+                        ),
+                    },
+                    span,
+                ),
+            );
+        }
+    };
+    Ok(Value::float(raw.sqrt(), value_span))
+}
+
 fn eval_supported_constant_math_external_call(
     working_set: &StateWorkingSet,
     input: Option<Value>,
@@ -7062,6 +7177,10 @@ fn eval_supported_constant_math_external_call(
         "math ceil" | "math floor" | "math round" => {
             eval_supported_constant_no_external_args(&cmd_name, remaining_args, span)?;
             eval_supported_constant_math_rounding(&cmd_name, input, span)
+        }
+        "math sqrt" => {
+            eval_supported_constant_no_external_args(&cmd_name, remaining_args, span)?;
+            eval_supported_constant_math_sqrt(input, span)
         }
         _ => Err(
             LabeledError::new("Unsupported annotated mutable global initializer").with_label(
