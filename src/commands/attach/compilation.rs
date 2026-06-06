@@ -6264,29 +6264,8 @@ fn eval_supported_constant_math_abs(
     let value_span = value.span();
     match value {
         Value::Int { val, .. } => Ok(Value::int(val.wrapping_abs(), value_span)),
-        Value::List { vals, .. } => {
-            let output = vals
-                .into_iter()
-                .enumerate()
-                .map(|(index, value)| {
-                    let Value::Int { val, .. } = value else {
-                        return Err(LabeledError::new(
-                            "Unsupported annotated mutable global initializer",
-                        )
-                        .with_label(
-                            format!(
-                                "`math abs` requires integer list items in compile-time global initializers; item {index} has type {}",
-                                value.get_type()
-                            ),
-                            span,
-                        ));
-                    };
-                    Ok(Value::int(val.wrapping_abs(), value_span))
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok(Value::list(output, value_span))
-        }
-        Value::Float { val, .. } if !val.is_finite() => Err(
+        Value::Float { val, .. } if val.is_finite() => Ok(Value::float(val.abs(), value_span)),
+        Value::Float { val, .. } => Err(
             LabeledError::new("Unsupported annotated mutable global initializer").with_label(
                 format!(
                     "`math abs` requires finite float input in compile-time global initializers; input is {val}"
@@ -6294,16 +6273,44 @@ fn eval_supported_constant_math_abs(
                 span,
             ),
         ),
-        Value::Float { .. } => Err(
-            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
-                "`math abs` compile-time result has type float; mutable global initializers support only materializable eBPF values",
-                span,
-            ),
-        ),
+        Value::List { vals, .. } => {
+            let output = vals
+                .into_iter()
+                .enumerate()
+                .map(|(index, value)| {
+                    match value {
+                        Value::Int { val, .. } => Ok(Value::int(val.wrapping_abs(), value_span)),
+                        Value::Float { val, .. } if val.is_finite() => {
+                            Ok(Value::float(val.abs(), value_span))
+                        }
+                        Value::Float { val, .. } => Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
+                        .with_label(
+                            format!(
+                                "`math abs` requires finite float list items in compile-time global initializers; item {index} is {val}"
+                            ),
+                            span,
+                        )),
+                        other => Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
+                        .with_label(
+                            format!(
+                                "`math abs` requires integer or finite float list items in compile-time global initializers; item {index} has type {}",
+                                other.get_type()
+                            ),
+                            span,
+                        )),
+                    }
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(Value::list(output, value_span))
+        }
         other => Err(
             LabeledError::new("Unsupported annotated mutable global initializer").with_label(
                 format!(
-                    "`math abs` in a compile-time global initializer requires integer or list<int> input; got {}",
+                    "`math abs` in a compile-time global initializer requires integer, finite float, list<int>, or list<float> input; got {}",
                     other.get_type()
                 ),
                 span,

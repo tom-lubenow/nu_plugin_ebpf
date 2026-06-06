@@ -5212,35 +5212,35 @@ fn test_map_leading_annotated_mut_globals_supports_root_external_constant_math_a
 }
 
 #[test]
-fn test_map_leading_annotated_mut_globals_rejects_constant_math_abs_float_initializer() {
-    let source = "{|| mut out: int = (-1.5 | math abs); $out }";
-    let ir_block = IrBlock {
-        instructions: vec![
-            Instruction::StoreVariable {
-                var_id: VarId::new(11),
-                src: RegId::new(0),
-            },
-            Instruction::LoadVariable {
-                dst: RegId::new(0),
-                var_id: VarId::new(11),
-            },
-            Instruction::Return { src: RegId::new(0) },
-        ],
-        spans: vec![Span::test_data(); 3],
-        data: Vec::<u8>::new().into(),
-        ast: vec![None; 3],
-        comments: vec!["let".into(), "".into(), "".into()],
-        register_count: 1,
-        file_count: 0,
-    };
+fn test_map_leading_annotated_mut_globals_supports_constant_math_abs_float_fill() {
+    let cases = [
+        (
+            r#"{|| mut value: string = (-1.5 | math abs | fill --width 4 --alignment right --character "0"); $value }"#,
+            "01.5",
+            "math abs scalar float should feed fill",
+        ),
+        (
+            r#"{|| mut value: string = ([-2, -1.5] | math abs | str join ","); $value }"#,
+            "2,1.5",
+            "math abs mixed list should feed str join",
+        ),
+        (
+            r#"{|| mut value: string = (-1.5 | ^math abs | fill --width 4 --alignment right --character "0"); $value }"#,
+            "01.5",
+            "external math abs scalar float should feed fill",
+        ),
+    ];
 
-    let err = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
-        .expect_err("math abs float output should not materialize as a mutable global");
+    for (source, expected, message) in cases {
+        let ir_block = single_annotated_global_return_ir_block();
 
-    assert!(
-        format!("{err:?}").contains("result has type float"),
-        "unexpected error: {err:?}"
-    );
+        let globals =
+            super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+                .unwrap_or_else(|err| panic!("{message}: {err:?}"));
+
+        assert_eq!(globals.len(), 1);
+        assert_eq!(globals[0].initial_value.as_str().ok(), Some(expected));
+    }
 }
 
 #[test]
@@ -5270,7 +5270,7 @@ fn test_map_leading_annotated_mut_globals_rejects_constant_math_abs_non_integer_
         .expect_err("math abs should reject non-integer list items");
 
     assert!(
-        format!("{err:?}").contains("integer list items"),
+        format!("{err:?}").contains("integer or finite float list items"),
         "unexpected error: {err:?}"
     );
 }
