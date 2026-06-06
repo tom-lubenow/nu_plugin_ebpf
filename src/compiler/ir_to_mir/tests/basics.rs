@@ -283,6 +283,111 @@ fn make_random_int_pow_program(random_decl: DeclId, exponent: i64) -> HirProgram
     )
 }
 
+fn make_random_int_floor_divide_program(random_decl: DeclId, divisor: i64) -> HirProgram {
+    use nu_protocol::ast::{Math, Operator};
+
+    HirProgram::new(
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::Call {
+                        decl_id: random_decl,
+                        src_dst: RegId::new(0),
+                        args: HirCallArgs::default(),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::Int(divisor),
+                    },
+                    HirStmt::BinaryOp {
+                        lhs_dst: RegId::new(0),
+                        op: Operator::Math(Math::FloorDivide),
+                        rhs: RegId::new(1),
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(0) },
+            }],
+            entry: HirBlockId(0),
+            spans: Vec::new(),
+            ast: Vec::new(),
+            comments: Vec::new(),
+            register_count: 2,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        None,
+    )
+}
+
+fn make_random_int_range_floor_divide_program(
+    random_decl: DeclId,
+    start: i64,
+    end: i64,
+    divisor: i64,
+) -> HirProgram {
+    use nu_protocol::ast::{Math, Operator};
+
+    HirProgram::new(
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(0),
+                        lit: HirLiteral::Int(start),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::Int(1),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::Int(end),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(3),
+                        lit: HirLiteral::Range {
+                            start: RegId::new(0),
+                            step: RegId::new(1),
+                            end: RegId::new(2),
+                            inclusion: RangeInclusion::Inclusive,
+                        },
+                    },
+                    HirStmt::Call {
+                        decl_id: random_decl,
+                        src_dst: RegId::new(4),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(3)],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(5),
+                        lit: HirLiteral::Int(divisor),
+                    },
+                    HirStmt::BinaryOp {
+                        lhs_dst: RegId::new(4),
+                        op: Operator::Math(Math::FloorDivide),
+                        rhs: RegId::new(5),
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(4) },
+            }],
+            entry: HirBlockId(0),
+            spans: Vec::new(),
+            ast: Vec::new(),
+            comments: Vec::new(),
+            register_count: 6,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        None,
+    )
+}
+
 fn integer_expr(value: i64) -> Expression {
     Expression {
         expr: Expr::Int(value),
@@ -2138,43 +2243,71 @@ fn test_lower_constant_equality_respects_scalar_semantic_types() {
 }
 
 #[test]
-fn test_unsupported_runtime_operator_message_mentions_compile_time_constant_escape_hatch() {
-    use nu_protocol::ast::{Math, Operator};
-
+fn test_lower_runtime_floor_divide_for_nonnegative_random_int() {
     let random_decl = DeclId::new(47);
-    let hir_program = HirProgram::new(
-        HirFunction {
-            blocks: vec![HirBlock {
-                id: HirBlockId(0),
-                stmts: vec![
-                    HirStmt::Call {
-                        decl_id: random_decl,
-                        src_dst: RegId::new(0),
-                        args: HirCallArgs::default(),
-                    },
-                    HirStmt::LoadLiteral {
-                        dst: RegId::new(1),
-                        lit: HirLiteral::Int(3),
-                    },
-                    HirStmt::BinaryOp {
-                        lhs_dst: RegId::new(0),
-                        op: Operator::Math(Math::FloorDivide),
-                        rhs: RegId::new(1),
-                    },
-                ],
-                terminator: HirTerminator::Return { src: RegId::new(0) },
-            }],
-            entry: HirBlockId(0),
-            spans: Vec::new(),
-            ast: Vec::new(),
-            comments: Vec::new(),
-            register_count: 2,
-            file_count: 0,
-        },
-        HashMap::new(),
-        vec![],
+    let hir_program = make_random_int_floor_divide_program(random_decl, 3);
+    let decl_names = HashMap::from([(random_decl, "random int".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir_program,
         None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("runtime floor-divide over non-negative random int should lower");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op: BinOpKind::Div,
+                    ..
+                }
+            )),
+        "expected floor-divide to lower to integer division"
     );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("runtime floor-divide should compile through codegen");
+}
+
+#[test]
+fn test_lower_runtime_floor_divide_rejects_nonpositive_divisor() {
+    let random_decl = DeclId::new(48);
+    let decl_names = HashMap::from([(random_decl, "random int".to_string())]);
+
+    for divisor in [0, -1] {
+        let hir_program = make_random_int_floor_divide_program(random_decl, divisor);
+        let err = match lower_hir_to_mir_with_hints(
+            &hir_program,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        ) {
+            Ok(_) => panic!("floor-divide divisor {divisor} should be rejected"),
+            Err(err) => err,
+        };
+
+        assert!(
+            err.to_string().contains("positive integer divisor"),
+            "unexpected error for divisor {divisor}: {err}"
+        );
+    }
+}
+
+#[test]
+fn test_lower_runtime_floor_divide_rejects_possible_negative_left_operand() {
+    let random_decl = DeclId::new(49);
+    let hir_program = make_random_int_range_floor_divide_program(random_decl, -10, 10, 3);
     let decl_names = HashMap::from([(random_decl, "random int".to_string())]);
 
     let err = lower_hir_to_mir_with_hints(
@@ -2185,16 +2318,12 @@ fn test_unsupported_runtime_operator_message_mentions_compile_time_constant_esca
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("runtime-only floor-divide lowering should be rejected");
+    .expect_err("floor-divide over possible negative runtime input should be rejected");
 
-    let message = err.to_string();
     assert!(
-        message.contains("Operator // is not supported in eBPF runtime lowering"),
-        "unexpected error message: {message}"
-    );
-    assert!(
-        message.contains("compile-time constant"),
-        "unexpected error message: {message}"
+        err.to_string()
+            .contains("left operand is provably non-negative"),
+        "unexpected error: {err}"
     );
 }
 

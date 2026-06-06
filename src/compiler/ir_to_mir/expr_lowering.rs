@@ -148,6 +148,11 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(());
         }
 
+        if matches!(op, Operator::Math(Math::FloorDivide)) {
+            self.lower_nonnegative_floor_divide(lhs_dst, lhs_vreg, rhs, rhs_vreg, constant_value)?;
+            return Ok(());
+        }
+
         if let Some(value) = constant_value.as_ref()
             && Self::runtime_binop_kind(op).is_none()
         {
@@ -549,6 +554,77 @@ impl<'a> HirToMirLowering<'a> {
                     _ => None,
                 })
         })
+    }
+
+    fn reg_proven_nonnegative_integer(&self, reg: RegId) -> bool {
+        let Some(meta) = self.get_metadata(reg) else {
+            return false;
+        };
+        if meta.literal_int.is_some_and(|value| value >= 0) {
+            return true;
+        }
+        if meta
+            .constant_value
+            .as_ref()
+            .is_some_and(|value| matches!(value, Value::Int { val, .. } if *val >= 0))
+        {
+            return true;
+        }
+        if meta
+            .bounded_range
+            .is_some_and(|range| range.start.min(range.end) >= 0)
+        {
+            return true;
+        }
+        meta.field_type.as_ref().is_some_and(|ty| {
+            ty.scalar_value_range().is_some_and(|(lower, _)| lower >= 0)
+                || matches!(ty, MirType::U64)
+        })
+    }
+
+    fn lower_nonnegative_floor_divide(
+        &mut self,
+        lhs_dst: RegId,
+        lhs_vreg: VReg,
+        rhs: RegId,
+        rhs_vreg: VReg,
+        constant_value: Option<Value>,
+    ) -> Result<(), CompileError> {
+        if let Some(value) = constant_value.as_ref() {
+            self.lower_constant_value(lhs_dst, value)?;
+            return Ok(());
+        }
+
+        let divisor = self.compile_time_integer_value(rhs).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "Operator // requires a compile-time known positive integer divisor in eBPF runtime lowering"
+                    .into(),
+            )
+        })?;
+        if divisor <= 0 {
+            return Err(CompileError::UnsupportedInstruction(
+                "Operator // requires a positive integer divisor in eBPF runtime lowering".into(),
+            ));
+        }
+        if !self.reg_proven_nonnegative_integer(lhs_dst) {
+            return Err(CompileError::UnsupportedInstruction(
+                "Operator // supports runtime lowering only when the left operand is provably non-negative in eBPF"
+                    .into(),
+            ));
+        }
+
+        self.emit(MirInst::BinOp {
+            dst: lhs_vreg,
+            op: BinOpKind::Div,
+            lhs: MirValue::VReg(lhs_vreg),
+            rhs: MirValue::VReg(rhs_vreg),
+        });
+        self.clear_source_var(lhs_dst);
+        self.set_reg_constant_value(lhs_dst, None);
+        let meta = self.get_or_create_metadata(lhs_dst);
+        meta.bounded_range = None;
+        meta.maybe_open_range = None;
+        Ok(())
     }
 
     /// Lower Match instruction (used for pattern matching and short-circuit boolean evaluation)
