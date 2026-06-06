@@ -2459,6 +2459,113 @@ fn test_map_leading_annotated_mut_globals_rejects_constant_math_log_invalid_inpu
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_math_variance_stddev_fill_initializer()
+{
+    let cases = [
+        (
+            r#"{|| mut value: string = ([1, 2, 3, 4, 5] | math variance | fill --width 4 --alignment right --character "0"); $value }"#,
+            "0002",
+            "population variance should feed fill",
+        ),
+        (
+            r#"{|| mut value: string = ([1, 2, 3, 4, 5] | math variance --sample | fill --width 4 --alignment right --character "0"); $value }"#,
+            "02.5",
+            "sample variance should feed fill",
+        ),
+        (
+            r#"{|| mut value: string = ([1, 2, 3, 4, 5] | math stddev | fill --width 4 --alignment right --character "0"); $value }"#,
+            "1.414",
+            "population stddev should feed fill",
+        ),
+        (
+            r#"{|| mut value: string = ([1, 2, 3, 4, 5] | math stddev --sample | fill --width 4 --alignment right --character "0"); $value }"#,
+            "1.581",
+            "sample stddev should feed fill",
+        ),
+    ];
+
+    for (source, expected_prefix, message) in cases {
+        let ir_block = single_annotated_global_return_ir_block();
+
+        let globals =
+            super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+                .unwrap_or_else(|err| panic!("{message}: {err:?}"));
+
+        assert_eq!(globals.len(), 1);
+        let text = globals[0]
+            .initial_value
+            .as_str()
+            .expect("math stats fill should produce a string");
+        assert!(
+            text.starts_with(expected_prefix),
+            "{message}: expected {text:?} to start with {expected_prefix:?}"
+        );
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_external_constant_math_variance_sample_fill() {
+    let source = r#"{|| mut value: string = ([1, 2, 3, 4, 5] | ^math variance --sample | fill --width 4 --alignment right --character "0"); $value }"#;
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("external constant sample variance result should feed fill cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(globals[0].initial_value.as_str().ok(), Some("02.5"));
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_rejects_constant_math_variance_stddev_invalid_inputs() {
+    let cases = [
+        (
+            "{|| mut value: string = ([] | math variance | fill); $value }",
+            "requires a non-empty numeric list",
+            "variance should reject empty input",
+        ),
+        (
+            "{|| mut value: string = ([1] | math stddev --sample | fill); $value }",
+            "--sample requires at least two numeric list items",
+            "sample stddev should reject single-item input",
+        ),
+        (
+            r#"{|| mut value: string = ([1, "x"] | math variance | fill); $value }"#,
+            "requires integer or float list items",
+            "variance should reject non-numeric input",
+        ),
+    ];
+
+    for (source, expected, message) in cases {
+        let ir_block = single_annotated_global_return_ir_block();
+
+        let err =
+            match super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data()) {
+                Ok(value) => panic!("{message}: unexpectedly mapped {value:?}"),
+                Err(err) => err,
+            };
+
+        assert!(
+            format!("{err:?}").contains(expected),
+            "{message}: unexpected error: {err:?}"
+        );
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_rejects_constant_math_variance_stddev_unknown_flag() {
+    let source = "{|| mut value: string = ([1, 2] | math variance --population | fill); $value }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let err = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect_err("math variance should reject unknown flags");
+
+    assert!(
+        format!("{err:?}").contains("accepts only the optional --sample flag"),
+        "unexpected error: {err:?}"
+    );
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_constant_length_initializer() {
     let source = "{|| mut count: int = ([7, 2, 4] | length); $count }";
     let ir_block = IrBlock {

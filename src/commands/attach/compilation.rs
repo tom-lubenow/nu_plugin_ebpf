@@ -1179,6 +1179,13 @@ fn eval_supported_constant_call(
             eval_supported_constant_no_argument_call(cmd_name, &call.arguments)?;
             eval_supported_constant_math_mode(input, span)
         }
+        "math stddev" | "math variance" => {
+            let sample = eval_supported_constant_math_variance_stddev_call_sample(
+                cmd_name,
+                &call.arguments,
+            )?;
+            eval_supported_constant_math_variance_stddev(cmd_name, input, sample, span)
+        }
         "math ceil" | "math floor" | "math round" => {
             eval_supported_constant_no_argument_call(cmd_name, &call.arguments)?;
             eval_supported_constant_math_rounding(cmd_name, input, span)
@@ -1666,6 +1673,16 @@ fn eval_supported_constant_external_call(
         "math mode" => {
             eval_supported_constant_no_external_args(cmd_name, args, span)?;
             eval_supported_constant_math_mode(input, span)
+        }
+        "math stddev" | "math variance" => {
+            let sample = eval_supported_constant_math_variance_stddev_external_sample(
+                working_set,
+                cmd_name,
+                args,
+                env,
+                span,
+            )?;
+            eval_supported_constant_math_variance_stddev(cmd_name, input, sample, span)
         }
         "math ceil" | "math floor" | "math round" => {
             eval_supported_constant_no_external_args(cmd_name, args, span)?;
@@ -6912,6 +6929,191 @@ fn eval_supported_constant_math_mode(
     Ok(Value::list(modes, value_span))
 }
 
+fn eval_supported_constant_math_variance_stddev_call_sample(
+    cmd_name: &str,
+    args: &[nu_protocol::ast::Argument],
+) -> Result<bool, LabeledError> {
+    let mut sample = false;
+    for arg in args {
+        match arg {
+            nu_protocol::ast::Argument::Named(named) => {
+                if !matches!(named.0.item.as_str(), "sample" | "s") {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            format!(
+                                "`{cmd_name}` accepts only the optional --sample flag in compile-time global initializers"
+                            ),
+                            arg.span(),
+                        ));
+                }
+                if named.2.is_some() {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            format!(
+                                "`{cmd_name}` --sample cannot receive a value in compile-time global initializers"
+                            ),
+                            arg.span(),
+                        ));
+                }
+                sample = true;
+            }
+            nu_protocol::ast::Argument::Spread(expr) => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        format!(
+                            "`{cmd_name}` arguments cannot use spread syntax in compile-time global initializers"
+                        ),
+                        expr.span,
+                    ));
+            }
+            nu_protocol::ast::Argument::Positional(_) | nu_protocol::ast::Argument::Unknown(_) => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        format!(
+                            "`{cmd_name}` accepts only the optional --sample flag in compile-time global initializers"
+                        ),
+                        arg.span(),
+                    ));
+            }
+        }
+    }
+    Ok(sample)
+}
+
+fn eval_supported_constant_math_variance_stddev_external_sample(
+    working_set: &StateWorkingSet,
+    cmd_name: &str,
+    args: &[ExternalArgument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<bool, LabeledError> {
+    let mut sample = false;
+    for arg in args {
+        let ExternalArgument::Regular(expr) = arg else {
+            return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                .with_label(
+                    format!(
+                        "`{cmd_name}` arguments cannot use spread syntax in compile-time global initializers"
+                    ),
+                    arg.expr().span,
+                ));
+        };
+        let value = eval_supported_constant_value_with_env(working_set, expr, env)?;
+        let text = match value {
+            Value::String { val, .. } | Value::Glob { val, .. } => val,
+            _ => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        format!(
+                            "`{cmd_name}` external arguments must be compile-time string flags in global initializers"
+                        ),
+                        expr.span,
+                    ));
+            }
+        };
+        if !matches!(text.as_str(), "--sample" | "--s" | "-s") {
+            return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                .with_label(
+                    format!(
+                        "`{cmd_name}` accepts only the optional --sample flag in compile-time global initializers"
+                    ),
+                    span,
+                ));
+        }
+        sample = true;
+    }
+    Ok(sample)
+}
+
+fn eval_supported_constant_math_variance_stddev(
+    cmd_name: &str,
+    input: Option<Value>,
+    sample: bool,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let value = eval_supported_constant_required_pipeline_input(cmd_name, input, span)?;
+    let value_span = value.span();
+    let Value::List { vals, .. } = value else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`{cmd_name}` in a compile-time global initializer requires non-empty numeric list input"
+                ),
+                span,
+            ),
+        );
+    };
+
+    if vals.is_empty() {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!("`{cmd_name}` requires a non-empty numeric list in compile-time global initializers"),
+                span,
+            ),
+        );
+    }
+    if sample && vals.len() < 2 {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`{cmd_name}` --sample requires at least two numeric list items in compile-time global initializers"
+                ),
+                span,
+            ),
+        );
+    }
+
+    let mut values = Vec::with_capacity(vals.len());
+    for (index, value) in vals.into_iter().enumerate() {
+        let raw = match value {
+            Value::Int { val, .. } => val as f64,
+            Value::Float { val, .. } if val.is_finite() => val,
+            Value::Float { val, .. } => {
+                return Err(
+                    LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            format!(
+                                "`{cmd_name}` requires finite float list items in compile-time global initializers; item {index} is {val}"
+                            ),
+                            span,
+                        ),
+                );
+            }
+            other => {
+                return Err(
+                    LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            format!(
+                                "`{cmd_name}` requires integer or float list items in compile-time global initializers; item {index} has type {}",
+                                other.get_type()
+                            ),
+                            span,
+                        ),
+                );
+            }
+        };
+        values.push(raw);
+    }
+
+    let len = values.len() as f64;
+    let mean = values.iter().sum::<f64>() / len;
+    let sum_squared_deviation = values
+        .iter()
+        .map(|value| {
+            let deviation = value - mean;
+            deviation * deviation
+        })
+        .sum::<f64>();
+    let denominator = if sample { len - 1.0 } else { len };
+    let variance = sum_squared_deviation / denominator;
+    let result = if cmd_name == "math stddev" {
+        variance.sqrt()
+    } else {
+        variance
+    };
+    eval_supported_constant_math_float_unary_result(cmd_name, result, value_span, None, span)
+}
+
 fn eval_supported_constant_math_rounding(
     cmd_name: &str,
     input: Option<Value>,
@@ -7663,6 +7865,16 @@ fn eval_supported_constant_math_external_call(
         "math mode" => {
             eval_supported_constant_no_external_args(&cmd_name, remaining_args, span)?;
             eval_supported_constant_math_mode(input, span)
+        }
+        "math stddev" | "math variance" => {
+            let sample = eval_supported_constant_math_variance_stddev_external_sample(
+                working_set,
+                &cmd_name,
+                remaining_args,
+                env,
+                span,
+            )?;
+            eval_supported_constant_math_variance_stddev(&cmd_name, input, sample, span)
         }
         "math ceil" | "math floor" | "math round" => {
             eval_supported_constant_no_external_args(&cmd_name, remaining_args, span)?;
