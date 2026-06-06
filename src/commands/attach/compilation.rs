@@ -455,7 +455,7 @@ fn eval_supported_constant_value_with_input(
             for item in items {
                 match item {
                     RecordItem::Pair(key_expr, value_expr) => {
-                        let key = constant_record_key(working_set, key_expr)?;
+                        let key = constant_record_key(working_set, key_expr, env)?;
                         let value = eval_supported_constant_value_with_input(
                             working_set, value_expr, None, env,
                         )?;
@@ -13112,12 +13112,16 @@ fn eval_supported_constant_path_mutation_call(
 fn constant_record_key(
     working_set: &StateWorkingSet,
     expr: &nu_protocol::ast::Expression,
+    env: &HashMap<nu_protocol::VarId, Value>,
 ) -> Result<String, LabeledError> {
+    if let Expr::Var(var_id) = &expr.expr
+        && let Some(value) = env.get(var_id)
+    {
+        return constant_record_key_from_value(value.clone(), expr.span);
+    }
+
     if let Ok(value) = eval_constant(working_set, expr) {
-        return value.coerce_into_string().map_err(|e| {
-            LabeledError::new("Unsupported annotated mutable global initializer")
-                .with_label(e.to_string(), expr.span)
-        });
+        return constant_record_key_from_value(value, expr.span);
     }
 
     if let Some(string) = expr.as_string() {
@@ -13125,6 +13129,10 @@ fn constant_record_key(
     }
     if let Some((path, _quoted)) = expr.as_filepath() {
         return Ok(path);
+    }
+
+    if let Ok(value) = eval_supported_constant_value_with_env(working_set, expr, env) {
+        return constant_record_key_from_value(value, expr.span);
     }
 
     match &expr.expr {
@@ -13136,6 +13144,13 @@ fn constant_record_key(
                 .with_label("record key is not a constant string", expr.span),
         ),
     }
+}
+
+fn constant_record_key_from_value(value: Value, span: Span) -> Result<String, LabeledError> {
+    value.coerce_into_string().map_err(|e| {
+        LabeledError::new("Unsupported annotated mutable global initializer")
+            .with_label(e.to_string(), span)
+    })
 }
 
 fn parse_leading_variable_declarations(

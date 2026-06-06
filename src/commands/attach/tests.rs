@@ -516,6 +516,24 @@ fn test_map_leading_annotated_mut_globals_supports_let_bound_record_merge_initia
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_let_bound_record_key_initializer() {
+    let source = r#"{|| let field = "pid"; mut state: record<pid: int cpu: int> = {$field: 7, cpu: 2}; $state }"#;
+    let ir_block = one_let_then_single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("let-bound record key initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::Record { val, .. } => {
+            assert_eq!(val.get("pid").and_then(|v| v.as_int().ok()), Some(7));
+            assert_eq!(val.get("cpu").and_then(|v| v.as_int().ok()), Some(2));
+        }
+        other => panic!("expected record initializer, got {other:?}"),
+    }
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_let_bound_integer_expression_initializer() {
     let source = "{|| let base = 40; mut value: int = ($base + 2); $value }";
     let ir_block = one_let_then_single_annotated_global_return_ir_block();
