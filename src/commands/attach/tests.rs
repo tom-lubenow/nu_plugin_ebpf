@@ -912,6 +912,19 @@ fn test_map_leading_annotated_mut_globals_supports_constant_default_empty_initia
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_let_bound_external_default_empty_flag() {
+    let source =
+        r#"{|| let flag = "--empty"; mut val: string = ("" | ^default $flag "fallback"); $val }"#;
+    let ir_block = one_let_then_single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("let-bound external default --empty flag should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(globals[0].initial_value.as_str().ok(), Some("fallback"));
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_constant_default_missing_record_field() {
     let source = "{|| mut state: record<pid: int cpu: int> = ({pid: 7} | default 2 cpu); $state }";
     let ir_block = IrBlock {
@@ -2030,6 +2043,27 @@ fn test_map_leading_annotated_mut_globals_supports_constant_list_sort_reverse_in
 
     let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
         .expect("constant list sort --reverse initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let strings = vals
+                .iter()
+                .map(|value| value.as_str().expect("sort should keep strings"))
+                .collect::<Vec<_>>();
+            assert_eq!(strings, vec!["c", "b", "a"]);
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_let_bound_external_sort_reverse_flag() {
+    let source = r#"{|| let flag = "--reverse"; mut vals: list<string> = (["a", "c", "b"] | ^sort $flag); $vals }"#;
+    let ir_block = one_let_then_single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("let-bound external sort --reverse flag should map cleanly");
 
     assert_eq!(globals.len(), 1);
     match &globals[0].initial_value {
@@ -6180,6 +6214,25 @@ fn test_map_leading_annotated_mut_globals_supports_constant_str_length_chars_ini
             .as_int()
             .expect("str length --chars should produce an integer"),
         4
+    );
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_let_bound_external_str_length_mode_flag() {
+    let source =
+        "{|| let flag = \"--chars\"; mut count: int = (\"\u{00e9}\" | ^str length $flag); $count }";
+    let ir_block = one_let_then_single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("let-bound external str length mode flag should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(
+        globals[0]
+            .initial_value
+            .as_int()
+            .expect("external str length --chars should produce an integer"),
+        1
     );
 }
 

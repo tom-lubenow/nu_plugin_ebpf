@@ -388,13 +388,6 @@ fn fetch_view_source(
     }
 }
 
-fn eval_supported_constant_value(
-    working_set: &StateWorkingSet,
-    expr: &nu_protocol::ast::Expression,
-) -> Result<Value, LabeledError> {
-    eval_supported_constant_value_with_env(working_set, expr, &HashMap::new())
-}
-
 fn eval_supported_constant_value_with_env(
     working_set: &StateWorkingSet,
     expr: &nu_protocol::ast::Expression,
@@ -1497,7 +1490,8 @@ fn eval_supported_constant_external_call(
                             first_arg.expr().span,
                         ));
                 };
-                let first_value = eval_supported_constant_value(working_set, first_expr)?;
+                let first_value =
+                    eval_supported_constant_value_with_env(working_set, first_expr, env)?;
                 if matches!(
                     first_value,
                     Value::String { ref val, .. } | Value::Glob { ref val, .. } if val == "--reverse"
@@ -1667,6 +1661,7 @@ fn eval_supported_constant_external_call(
                 working_set,
                 "str length",
                 args,
+                env,
                 span,
             )?;
             eval_supported_constant_str_length(input, mode, span)
@@ -7659,6 +7654,7 @@ fn eval_supported_constant_str_length_mode_external_args(
     working_set: &StateWorkingSet,
     cmd_name: &str,
     args: &[ExternalArgument],
+    env: &HashMap<nu_protocol::VarId, Value>,
     span: Span,
 ) -> Result<ConstantStringLengthMode, LabeledError> {
     let mut mode = None;
@@ -7672,7 +7668,7 @@ fn eval_supported_constant_str_length_mode_external_args(
                     arg.expr().span,
                 ));
         };
-        let value = eval_supported_constant_value(working_set, expr)?;
+        let value = eval_supported_constant_value_with_env(working_set, expr, env)?;
         let flag = match value {
             Value::String { val, .. } | Value::Glob { val, .. } => val,
             _ => {
@@ -11759,6 +11755,7 @@ fn eval_supported_constant_str_external_call(
                 working_set,
                 "str length",
                 remaining_args,
+                env,
                 span,
             )?;
             eval_supported_constant_str_length(input, mode, span)
@@ -12954,7 +12951,7 @@ fn eval_supported_constant_default_external_call(
 
     let mut replace_empty = false;
     if let Some(first) = positional.first() {
-        let first_value = eval_supported_constant_value(working_set, first)?;
+        let first_value = eval_supported_constant_value_with_env(working_set, first, env)?;
         if matches!(
             first_value,
             Value::String { ref val, .. } | Value::Glob { ref val, .. } if val == "--empty"
