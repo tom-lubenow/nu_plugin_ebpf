@@ -1183,9 +1183,12 @@ fn eval_supported_constant_call(
             eval_supported_constant_no_argument_call(cmd_name, &call.arguments)?;
             eval_supported_constant_math_rounding(cmd_name, input, span)
         }
-        "math sqrt" => {
-            eval_supported_constant_no_argument_call(cmd_name, &call.arguments)?;
-            eval_supported_constant_math_sqrt(input, span)
+        "math arccos" | "math arccosh" | "math arcsin" | "math arcsinh" | "math arctan"
+        | "math arctanh" | "math cos" | "math cosh" | "math exp" | "math ln"
+        | "math sin" | "math sinh" | "math sqrt" | "math tan" | "math tanh" => {
+            let degrees =
+                eval_supported_constant_math_float_unary_call_degrees(cmd_name, &call.arguments)?;
+            eval_supported_constant_math_float_unary(cmd_name, input, degrees, span)
         }
         "char" => {
             let output =
@@ -1663,9 +1666,13 @@ fn eval_supported_constant_external_call(
             eval_supported_constant_no_external_args(cmd_name, args, span)?;
             eval_supported_constant_math_rounding(cmd_name, input, span)
         }
-        "math sqrt" => {
-            eval_supported_constant_no_external_args(cmd_name, args, span)?;
-            eval_supported_constant_math_sqrt(input, span)
+        "math arccos" | "math arccosh" | "math arcsin" | "math arcsinh" | "math arctan"
+        | "math arctanh" | "math cos" | "math cosh" | "math exp" | "math ln"
+        | "math sin" | "math sinh" | "math sqrt" | "math tan" | "math tanh" => {
+            let degrees = eval_supported_constant_math_float_unary_external_degrees(
+                working_set, cmd_name, args, env, span,
+            )?;
+            eval_supported_constant_math_float_unary(cmd_name, input, degrees, span)
         }
         "char" => {
             let output = eval_supported_constant_char_external_args(working_set, args, env, span)?;
@@ -7004,22 +7011,167 @@ fn eval_supported_constant_math_rounding_i64(
     Ok(value as i64)
 }
 
-fn eval_supported_constant_math_sqrt(
+fn eval_supported_constant_math_float_unary_accepts_degrees(cmd_name: &str) -> bool {
+    matches!(
+        cmd_name,
+        "math arccos" | "math arcsin" | "math arctan" | "math cos" | "math sin" | "math tan"
+    )
+}
+
+fn eval_supported_constant_math_float_unary_input_degrees(cmd_name: &str) -> bool {
+    matches!(cmd_name, "math cos" | "math sin" | "math tan")
+}
+
+fn eval_supported_constant_math_float_unary_output_degrees(cmd_name: &str) -> bool {
+    matches!(cmd_name, "math arccos" | "math arcsin" | "math arctan")
+}
+
+fn eval_supported_constant_math_float_unary_call_degrees(
+    cmd_name: &str,
+    args: &[nu_protocol::ast::Argument],
+) -> Result<bool, LabeledError> {
+    let mut degrees = false;
+    for arg in args {
+        match arg {
+            nu_protocol::ast::Argument::Named(named) => {
+                if !matches!(named.0.item.as_str(), "degrees" | "d")
+                    || !eval_supported_constant_math_float_unary_accepts_degrees(cmd_name)
+                {
+                    return Err(
+                        LabeledError::new("Unsupported annotated mutable global initializer")
+                            .with_label(
+                                if eval_supported_constant_math_float_unary_accepts_degrees(
+                                    cmd_name,
+                                ) {
+                                    format!(
+                                        "`{cmd_name}` accepts only the optional --degrees flag in compile-time global initializers"
+                                    )
+                                } else {
+                                    format!(
+                                        "`{cmd_name}` does not accept arguments in compile-time global initializers"
+                                    )
+                                },
+                                arg.span(),
+                            ),
+                    );
+                }
+                if named.2.is_some() {
+                    return Err(
+                        LabeledError::new("Unsupported annotated mutable global initializer")
+                            .with_label(
+                                format!(
+                                    "`{cmd_name}` --degrees cannot receive a value in compile-time global initializers"
+                                ),
+                                arg.span(),
+                            ),
+                    );
+                }
+                degrees = true;
+            }
+            nu_protocol::ast::Argument::Spread(expr) => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        format!(
+                            "`{cmd_name}` arguments cannot use spread syntax in compile-time global initializers"
+                        ),
+                        expr.span,
+                    ));
+            }
+            nu_protocol::ast::Argument::Positional(_) | nu_protocol::ast::Argument::Unknown(_) => {
+                return Err(
+                    LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            format!(
+                                "`{cmd_name}` does not accept positional arguments in compile-time global initializers"
+                            ),
+                            arg.span(),
+                        ),
+                );
+            }
+        }
+    }
+    Ok(degrees)
+}
+
+fn eval_supported_constant_math_float_unary_external_degrees(
+    working_set: &StateWorkingSet,
+    cmd_name: &str,
+    args: &[ExternalArgument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<bool, LabeledError> {
+    let mut degrees = false;
+    for arg in args {
+        let ExternalArgument::Regular(expr) = arg else {
+            return Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    format!(
+                        "`{cmd_name}` arguments cannot use spread syntax in compile-time global initializers"
+                    ),
+                    arg.expr().span,
+                ),
+            );
+        };
+        let value = eval_supported_constant_value_with_env(working_set, expr, env)?;
+        let flag = match value {
+            Value::String { val, .. } | Value::Glob { val, .. } => val,
+            _ => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        format!(
+                            "`{cmd_name}` external arguments must be compile-time string flags in global initializers"
+                        ),
+                        expr.span,
+                    ));
+            }
+        };
+        if !matches!(flag.as_str(), "--degrees" | "--d" | "-d")
+            || !eval_supported_constant_math_float_unary_accepts_degrees(cmd_name)
+        {
+            return Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    if eval_supported_constant_math_float_unary_accepts_degrees(cmd_name) {
+                        format!(
+                            "`{cmd_name}` accepts only the optional --degrees flag in compile-time global initializers"
+                        )
+                    } else {
+                        format!(
+                            "`{cmd_name}` does not accept arguments in compile-time global initializers"
+                        )
+                    },
+                    span,
+                ),
+            );
+        }
+        degrees = true;
+    }
+    Ok(degrees)
+}
+
+fn eval_supported_constant_math_float_unary(
+    cmd_name: &str,
     input: Option<Value>,
+    degrees: bool,
     span: Span,
 ) -> Result<Value, LabeledError> {
-    let value = eval_supported_constant_required_pipeline_input("math sqrt", input, span)?;
+    let value = eval_supported_constant_required_pipeline_input(cmd_name, input, span)?;
     let value_span = value.span();
     match value {
         Value::Int { .. } | Value::Float { .. } => {
-            eval_supported_constant_math_sqrt_value(value, None, span)
+            eval_supported_constant_math_float_unary_value(cmd_name, value, None, degrees, span)
         }
         Value::List { vals, .. } => {
             let output = vals
                 .into_iter()
                 .enumerate()
                 .map(|(index, value)| {
-                    eval_supported_constant_math_sqrt_value(value, Some(index), span)
+                    eval_supported_constant_math_float_unary_value(
+                        cmd_name,
+                        value,
+                        Some(index),
+                        degrees,
+                        span,
+                    )
                 })
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(Value::list(output, value_span))
@@ -7027,7 +7179,7 @@ fn eval_supported_constant_math_sqrt(
         other => Err(
             LabeledError::new("Unsupported annotated mutable global initializer").with_label(
                 format!(
-                    "`math sqrt` in a compile-time global initializer requires non-negative integer, finite non-negative float, list<int>, or list<float> input; got {}",
+                    "`{cmd_name}` in a compile-time global initializer requires integer, finite float, list<int>, or list<float> input; got {}",
                     other.get_type()
                 ),
                 span,
@@ -7036,79 +7188,224 @@ fn eval_supported_constant_math_sqrt(
     }
 }
 
-fn eval_supported_constant_math_sqrt_value(
+fn eval_supported_constant_math_float_unary_value(
+    cmd_name: &str,
     value: Value,
     list_index: Option<usize>,
+    degrees: bool,
     span: Span,
 ) -> Result<Value, LabeledError> {
     let value_span = value.span();
-    let raw = match value {
-        Value::Int { val, .. } if val >= 0 => val as f64,
-        Value::Int { val, .. } => {
-            return Err(
-                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
-                    match list_index {
-                        Some(index) => format!(
-                            "`math sqrt` requires non-negative integer or finite non-negative float list items in compile-time global initializers; item {index} is {val}"
-                        ),
-                        None => format!(
-                            "`math sqrt` requires non-negative input in compile-time global initializers; input is {val}"
-                        ),
-                    },
+    let raw = eval_supported_constant_math_float_unary_input(cmd_name, value, list_index, span)?;
+    let command_result = match cmd_name {
+        "math arccos" => {
+            if !(-1.0..=1.0).contains(&raw) {
+                return Err(eval_supported_constant_math_float_unary_domain_error(
+                    cmd_name,
+                    "requires list items in the closed interval [-1, 1]",
+                    "requires input in the closed interval [-1, 1]",
+                    raw,
+                    list_index,
                     span,
-                ),
-            );
+                ));
+            }
+            raw.acos()
         }
-        Value::Float { val, .. } if val.is_finite() && val >= 0.0 => val,
-        Value::Float { val, .. } if val.is_finite() => {
-            return Err(
-                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
-                    match list_index {
-                        Some(index) => format!(
-                            "`math sqrt` requires non-negative integer or finite non-negative float list items in compile-time global initializers; item {index} is {val}"
-                        ),
-                        None => format!(
-                            "`math sqrt` requires non-negative input in compile-time global initializers; input is {val}"
-                        ),
-                    },
+        "math arccosh" => {
+            if raw < 1.0 {
+                return Err(eval_supported_constant_math_float_unary_domain_error(
+                    cmd_name,
+                    "requires list items >= 1",
+                    "requires input >= 1",
+                    raw,
+                    list_index,
                     span,
-                ),
-            );
+                ));
+            }
+            raw.acosh()
         }
-        Value::Float { val, .. } => {
-            return Err(
-                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
-                    match list_index {
-                        Some(index) => format!(
-                            "`math sqrt` requires finite float list items in compile-time global initializers; item {index} is {val}"
-                        ),
-                        None => format!(
-                            "`math sqrt` requires finite float input in compile-time global initializers; input is {val}"
-                        ),
-                    },
+        "math arcsin" => {
+            if !(-1.0..=1.0).contains(&raw) {
+                return Err(eval_supported_constant_math_float_unary_domain_error(
+                    cmd_name,
+                    "requires list items in the closed interval [-1, 1]",
+                    "requires input in the closed interval [-1, 1]",
+                    raw,
+                    list_index,
                     span,
-                ),
-            );
+                ));
+            }
+            raw.asin()
         }
-        other => {
+        "math arcsinh" => raw.asinh(),
+        "math arctan" => raw.atan(),
+        "math arctanh" => {
+            if raw <= -1.0 || raw >= 1.0 {
+                return Err(eval_supported_constant_math_float_unary_domain_error(
+                    cmd_name,
+                    "requires list items in the open interval (-1, 1)",
+                    "requires input in the open interval (-1, 1)",
+                    raw,
+                    list_index,
+                    span,
+                ));
+            }
+            raw.atanh()
+        }
+        "math cos" => {
+            eval_supported_constant_math_float_unary_trig_input(cmd_name, raw, degrees).cos()
+        }
+        "math cosh" => raw.cosh(),
+        "math exp" => raw.exp(),
+        "math ln" => {
+            if raw <= 0.0 {
+                return Err(eval_supported_constant_math_float_unary_domain_error(
+                    cmd_name,
+                    "requires positive list items",
+                    "requires positive input",
+                    raw,
+                    list_index,
+                    span,
+                ));
+            }
+            raw.ln()
+        }
+        "math sin" => {
+            eval_supported_constant_math_float_unary_trig_input(cmd_name, raw, degrees).sin()
+        }
+        "math sinh" => raw.sinh(),
+        "math sqrt" => {
+            if raw < 0.0 {
+                return Err(eval_supported_constant_math_float_unary_domain_error(
+                    cmd_name,
+                    "requires non-negative list items",
+                    "requires non-negative input",
+                    raw,
+                    list_index,
+                    span,
+                ));
+            }
+            raw.sqrt()
+        }
+        "math tan" => {
+            eval_supported_constant_math_float_unary_trig_input(cmd_name, raw, degrees).tan()
+        }
+        "math tanh" => raw.tanh(),
+        _ => {
             return Err(
                 LabeledError::new("Unsupported annotated mutable global initializer").with_label(
-                    match list_index {
-                        Some(index) => format!(
-                            "`math sqrt` requires non-negative integer or finite non-negative float list items in compile-time global initializers; item {index} has type {}",
-                            other.get_type()
-                        ),
-                        None => format!(
-                            "`math sqrt` in a compile-time global initializer requires non-negative integer or finite non-negative float input; got {}",
-                            other.get_type()
-                        ),
-                    },
+                    format!("`{cmd_name}` is not supported in compile-time global initializers"),
                     span,
                 ),
             );
         }
     };
-    Ok(Value::float(raw.sqrt(), value_span))
+    let result = if degrees && eval_supported_constant_math_float_unary_output_degrees(cmd_name) {
+        command_result.to_degrees()
+    } else {
+        command_result
+    };
+    eval_supported_constant_math_float_unary_result(cmd_name, result, value_span, list_index, span)
+}
+
+fn eval_supported_constant_math_float_unary_input(
+    cmd_name: &str,
+    value: Value,
+    list_index: Option<usize>,
+    span: Span,
+) -> Result<f64, LabeledError> {
+    match value {
+        Value::Int { val, .. } => Ok(val as f64),
+        Value::Float { val, .. } if val.is_finite() => Ok(val),
+        Value::Float { val, .. } => {
+            Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    match list_index {
+                        Some(index) => format!(
+                            "`{cmd_name}` requires finite float list items in compile-time global initializers; item {index} is {val}"
+                        ),
+                        None => format!(
+                            "`{cmd_name}` requires finite float input in compile-time global initializers; input is {val}"
+                        ),
+                    },
+                    span,
+                ),
+            )
+        }
+        other => {
+            Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    match list_index {
+                        Some(index) => format!(
+                            "`{cmd_name}` requires integer or finite float list items in compile-time global initializers; item {index} has type {}",
+                            other.get_type()
+                        ),
+                        None => format!(
+                            "`{cmd_name}` in a compile-time global initializer requires integer or finite float input; got {}",
+                            other.get_type()
+                        ),
+                    },
+                    span,
+                ),
+            )
+        }
+    }
+}
+
+fn eval_supported_constant_math_float_unary_trig_input(
+    cmd_name: &str,
+    raw: f64,
+    degrees: bool,
+) -> f64 {
+    if degrees && eval_supported_constant_math_float_unary_input_degrees(cmd_name) {
+        raw.to_radians()
+    } else {
+        raw
+    }
+}
+
+fn eval_supported_constant_math_float_unary_domain_error(
+    cmd_name: &str,
+    list_message: &str,
+    scalar_message: &str,
+    raw: f64,
+    list_index: Option<usize>,
+    span: Span,
+) -> LabeledError {
+    LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+        match list_index {
+            Some(index) => format!(
+                "`{cmd_name}` {list_message} in compile-time global initializers; item {index} is {raw}"
+            ),
+            None => format!(
+                "`{cmd_name}` {scalar_message} in compile-time global initializers; input is {raw}"
+            ),
+        },
+        span,
+    )
+}
+
+fn eval_supported_constant_math_float_unary_result(
+    cmd_name: &str,
+    result: f64,
+    value_span: Span,
+    list_index: Option<usize>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    if !result.is_finite() {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                match list_index {
+                    Some(index) => {
+                        format!("`{cmd_name}` compile-time list item {index} result must be finite")
+                    }
+                    None => format!("`{cmd_name}` compile-time result must be finite"),
+                },
+                span,
+            ),
+        );
+    }
+    Ok(Value::float(result, value_span))
 }
 
 fn eval_supported_constant_math_external_call(
@@ -7178,9 +7475,17 @@ fn eval_supported_constant_math_external_call(
             eval_supported_constant_no_external_args(&cmd_name, remaining_args, span)?;
             eval_supported_constant_math_rounding(&cmd_name, input, span)
         }
-        "math sqrt" => {
-            eval_supported_constant_no_external_args(&cmd_name, remaining_args, span)?;
-            eval_supported_constant_math_sqrt(input, span)
+        "math arccos" | "math arccosh" | "math arcsin" | "math arcsinh" | "math arctan"
+        | "math arctanh" | "math cos" | "math cosh" | "math exp" | "math ln" | "math sin"
+        | "math sinh" | "math sqrt" | "math tan" | "math tanh" => {
+            let degrees = eval_supported_constant_math_float_unary_external_degrees(
+                working_set,
+                &cmd_name,
+                remaining_args,
+                env,
+                span,
+            )?;
+            eval_supported_constant_math_float_unary(&cmd_name, input, degrees, span)
         }
         _ => Err(
             LabeledError::new("Unsupported annotated mutable global initializer").with_label(
