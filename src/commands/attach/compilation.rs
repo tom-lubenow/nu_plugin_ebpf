@@ -674,6 +674,24 @@ fn eval_supported_constant_comparison_op(
         | Comparison::GreaterThan
         | Comparison::LessThanOrEqual
         | Comparison::GreaterThanOrEqual => eval_supported_constant_values_compare(op, &lhs, &rhs),
+        Comparison::StartsWith | Comparison::NotStartsWith => {
+            eval_supported_constant_values_affix(op, &lhs, &rhs).map(|value| {
+                if op == Comparison::NotStartsWith {
+                    !value
+                } else {
+                    value
+                }
+            })
+        }
+        Comparison::EndsWith | Comparison::NotEndsWith => {
+            eval_supported_constant_values_affix(op, &lhs, &rhs).map(|value| {
+                if op == Comparison::NotEndsWith {
+                    !value
+                } else {
+                    value
+                }
+            })
+        }
         _ => None,
     };
 
@@ -739,6 +757,21 @@ fn eval_supported_constant_ord_compare(
         Comparison::GreaterThan => Some(ordering.is_gt()),
         Comparison::LessThanOrEqual => Some(!ordering.is_gt()),
         Comparison::GreaterThanOrEqual => Some(!ordering.is_lt()),
+        _ => None,
+    }
+}
+
+fn eval_supported_constant_values_affix(op: Comparison, lhs: &Value, rhs: &Value) -> Option<bool> {
+    let check_start = matches!(op, Comparison::StartsWith | Comparison::NotStartsWith);
+    match (lhs, rhs) {
+        (Value::String { val: lhs, .. }, Value::String { val: rhs, .. })
+        | (Value::String { val: lhs, .. }, Value::Glob { val: rhs, .. })
+        | (Value::Glob { val: lhs, .. }, Value::String { val: rhs, .. })
+        | (Value::Glob { val: lhs, .. }, Value::Glob { val: rhs, .. }) => Some(if check_start {
+            lhs.starts_with(rhs)
+        } else {
+            lhs.ends_with(rhs)
+        }),
         _ => None,
     }
 }
