@@ -6337,6 +6337,14 @@ fn eval_supported_constant_math_i64_value(value: &Value) -> Option<i64> {
     }
 }
 
+fn eval_supported_constant_math_numeric_value(value: &Value) -> Option<f64> {
+    match value {
+        Value::Int { val, .. } => Some(*val as f64),
+        Value::Float { val, .. } if val.is_finite() => Some(*val),
+        _ => None,
+    }
+}
+
 fn eval_supported_constant_math_unit_value(
     value: i64,
     unit: ConstantMathI64Unit,
@@ -6820,14 +6828,6 @@ fn eval_supported_constant_math_median(
     {
         return eval_supported_constant_math_unit_median(vals, value_span, span);
     }
-    if vals.len() % 2 == 0 {
-        return Err(
-            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
-                "`math median` compile-time list median has type float for even-length lists; mutable global initializers support only materializable eBPF values",
-                span,
-            ),
-        );
-    }
 
     let mut values = Vec::with_capacity(vals.len());
     for (index, value) in vals.into_iter().enumerate() {
@@ -6865,14 +6865,24 @@ fn eval_supported_constant_math_median(
         lhs.partial_cmp(rhs)
             .expect("median float values are validated as finite")
     });
+    if values.len() % 2 == 0 {
+        let upper = values.len() / 2;
+        let lower = eval_supported_constant_math_numeric_value(&values[upper - 1])
+            .expect("median values were validated as integer or finite float");
+        let upper = eval_supported_constant_math_numeric_value(&values[upper])
+            .expect("median values were validated as integer or finite float");
+        let median = (lower + upper) / 2.0;
+        return eval_supported_constant_math_float_unary_result(
+            "math median",
+            median,
+            value_span,
+            None,
+            span,
+        );
+    }
     match &values[values.len() / 2] {
         Value::Int { val, .. } => Ok(Value::int(*val, value_span)),
-        Value::Float { .. } => Err(
-            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
-                "`math median` compile-time list median has type float; mutable global initializers support only materializable eBPF values",
-                span,
-            ),
-        ),
+        Value::Float { val, .. } => Ok(Value::float(*val, value_span)),
         _ => unreachable!("median values were validated as integer or finite float"),
     }
 }
