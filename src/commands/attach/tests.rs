@@ -2395,6 +2395,70 @@ fn test_map_leading_annotated_mut_globals_rejects_constant_math_float_unary_doma
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_math_log_fill_initializer() {
+    let source = r#"{|| mut value: string = (100 | math log 10 | fill --width 4 --alignment right --character "0"); $value }"#;
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant math log result should feed fill cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(globals[0].initial_value.as_str().ok(), Some("0002"));
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_math_log_list_str_join_initializer() {
+    let source = r#"{|| mut value: string = ([16, 8, 4] | math log 2 | str join ","); $value }"#;
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant math log list result should feed str join cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(globals[0].initial_value.as_str().ok(), Some("4.0,3.0,2.0"));
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_external_constant_math_log_fill_initializer() {
+    let source = r#"{|| mut value: string = (100 | ^math log 10 | fill --width 4 --alignment right --character "0"); $value }"#;
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("external constant math log result should feed fill cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(globals[0].initial_value.as_str().ok(), Some("0002"));
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_rejects_constant_math_log_invalid_base() {
+    let source = r#"{|| mut value: string = (100 | math log 1 | fill); $value }"#;
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let err = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect_err("math log should reject base 1");
+
+    assert!(
+        format!("{err:?}").contains("base must be positive and not 1"),
+        "unexpected error: {err:?}"
+    );
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_rejects_constant_math_log_invalid_input() {
+    let source = r#"{|| mut value: string = (0 | math log 10 | fill); $value }"#;
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let err = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect_err("math log should reject non-positive input");
+
+    assert!(
+        format!("{err:?}").contains("requires positive input"),
+        "unexpected error: {err:?}"
+    );
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_constant_length_initializer() {
     let source = "{|| mut count: int = ([7, 2, 4] | length); $count }";
     let ir_block = IrBlock {

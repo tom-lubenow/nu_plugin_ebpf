@@ -1183,6 +1183,11 @@ fn eval_supported_constant_call(
             eval_supported_constant_no_argument_call(cmd_name, &call.arguments)?;
             eval_supported_constant_math_rounding(cmd_name, input, span)
         }
+        "math log" => {
+            let base =
+                eval_supported_constant_math_log_call_base(working_set, &call.arguments, env, span)?;
+            eval_supported_constant_math_log(input, base, span)
+        }
         "math arccos" | "math arccosh" | "math arcsin" | "math arcsinh" | "math arctan"
         | "math arctanh" | "math cos" | "math cosh" | "math exp" | "math ln"
         | "math sin" | "math sinh" | "math sqrt" | "math tan" | "math tanh" => {
@@ -1665,6 +1670,11 @@ fn eval_supported_constant_external_call(
         "math ceil" | "math floor" | "math round" => {
             eval_supported_constant_no_external_args(cmd_name, args, span)?;
             eval_supported_constant_math_rounding(cmd_name, input, span)
+        }
+        "math log" => {
+            let base =
+                eval_supported_constant_math_log_external_base(working_set, args, env, span)?;
+            eval_supported_constant_math_log(input, base, span)
         }
         "math arccos" | "math arccosh" | "math arcsin" | "math arcsinh" | "math arctan"
         | "math arctanh" | "math cos" | "math cosh" | "math exp" | "math ln"
@@ -7408,6 +7418,189 @@ fn eval_supported_constant_math_float_unary_result(
     Ok(Value::float(result, value_span))
 }
 
+fn eval_supported_constant_math_log_call_base(
+    working_set: &StateWorkingSet,
+    args: &[nu_protocol::ast::Argument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<f64, LabeledError> {
+    let mut base_expr = None;
+    for arg in args {
+        match arg {
+            nu_protocol::ast::Argument::Positional(expr)
+            | nu_protocol::ast::Argument::Unknown(expr) => {
+                if base_expr.replace(expr).is_some() {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            "`math log` requires exactly one base argument in compile-time global initializers",
+                            arg.span(),
+                        ));
+                }
+            }
+            nu_protocol::ast::Argument::Named(named) => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        format!(
+                            "`math log` does not accept named argument --{} in compile-time global initializers",
+                            named.0.item
+                        ),
+                        arg.span(),
+                    ));
+            }
+            nu_protocol::ast::Argument::Spread(expr) => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`math log` base argument cannot use spread syntax in compile-time global initializers",
+                        expr.span,
+                    ));
+            }
+        }
+    }
+
+    let Some(base_expr) = base_expr else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`math log` requires exactly one base argument in compile-time global initializers",
+                span,
+            ),
+        );
+    };
+    let value = eval_supported_constant_value_with_env(working_set, base_expr, env)?;
+    eval_supported_constant_math_log_base_value(value, false, base_expr.span)
+}
+
+fn eval_supported_constant_math_log_external_base(
+    working_set: &StateWorkingSet,
+    args: &[ExternalArgument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<f64, LabeledError> {
+    let [base_arg] = args else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`math log` requires exactly one base argument in compile-time global initializers",
+                span,
+            ),
+        );
+    };
+    let ExternalArgument::Regular(base_expr) = base_arg else {
+        return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+            .with_label(
+                "`math log` base argument cannot use spread syntax in compile-time global initializers",
+                base_arg.expr().span,
+            ));
+    };
+    let value = eval_supported_constant_value_with_env(working_set, base_expr, env)?;
+    eval_supported_constant_math_log_base_value(value, true, base_expr.span)
+}
+
+fn eval_supported_constant_math_log_base_value(
+    value: Value,
+    allow_string: bool,
+    span: Span,
+) -> Result<f64, LabeledError> {
+    let base = match value {
+        Value::Int { val, .. } => val as f64,
+        Value::Float { val, .. } if val.is_finite() => val,
+        Value::Float { val, .. } => {
+            return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                .with_label(
+                    format!(
+                        "`math log` base must be finite in compile-time global initializers; base is {val}"
+                    ),
+                    span,
+                ));
+        }
+        Value::String { val, .. } | Value::Glob { val, .. } if allow_string => {
+            val.parse::<f64>().map_err(|_| {
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    format!(
+                        "`math log` external base must be a compile-time integer or float in global initializers; got {val:?}"
+                    ),
+                    span,
+                )
+            })?
+        }
+        other => {
+            return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                .with_label(
+                    format!(
+                        "`math log` base must be a compile-time integer or finite float in global initializers; got {}",
+                        other.get_type()
+                    ),
+                    span,
+                ));
+        }
+    };
+
+    if !base.is_finite() {
+        return Err(LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+            format!(
+                "`math log` base must be finite in compile-time global initializers; base is {base}"
+            ),
+            span,
+        ));
+    }
+    if base <= 0.0 || base == 1.0 {
+        return Err(LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+            format!(
+                "`math log` base must be positive and not 1 in compile-time global initializers; base is {base}"
+            ),
+            span,
+        ));
+    }
+    Ok(base)
+}
+
+fn eval_supported_constant_math_log(
+    input: Option<Value>,
+    base: f64,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let value = eval_supported_constant_required_pipeline_input("math log", input, span)?;
+    let value_span = value.span();
+    match value {
+        Value::List { vals, .. } => {
+            let output = vals
+                .into_iter()
+                .enumerate()
+                .map(|(index, value)| {
+                    eval_supported_constant_math_log_value(value, base, Some(index), span)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(Value::list(output, value_span))
+        }
+        value => eval_supported_constant_math_log_value(value, base, None, span),
+    }
+}
+
+fn eval_supported_constant_math_log_value(
+    value: Value,
+    base: f64,
+    list_index: Option<usize>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let value_span = value.span();
+    let raw = eval_supported_constant_math_float_unary_input("math log", value, list_index, span)?;
+    if raw <= 0.0 {
+        return Err(eval_supported_constant_math_float_unary_domain_error(
+            "math log",
+            "requires positive list items",
+            "requires positive input",
+            raw,
+            list_index,
+            span,
+        ));
+    }
+    eval_supported_constant_math_float_unary_result(
+        "math log",
+        raw.log(base),
+        value_span,
+        list_index,
+        span,
+    )
+}
+
 fn eval_supported_constant_math_external_call(
     working_set: &StateWorkingSet,
     input: Option<Value>,
@@ -7474,6 +7667,15 @@ fn eval_supported_constant_math_external_call(
         "math ceil" | "math floor" | "math round" => {
             eval_supported_constant_no_external_args(&cmd_name, remaining_args, span)?;
             eval_supported_constant_math_rounding(&cmd_name, input, span)
+        }
+        "math log" => {
+            let base = eval_supported_constant_math_log_external_base(
+                working_set,
+                remaining_args,
+                env,
+                span,
+            )?;
+            eval_supported_constant_math_log(input, base, span)
         }
         "math arccos" | "math arccosh" | "math arcsin" | "math arcsinh" | "math arctan"
         | "math arctanh" | "math cos" | "math cosh" | "math exp" | "math ln" | "math sin"
