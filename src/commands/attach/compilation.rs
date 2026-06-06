@@ -665,6 +665,13 @@ fn eval_supported_constant_comparison_op(
     rhs: Value,
     span: Span,
 ) -> Result<Value, LabeledError> {
+    if matches!(
+        op,
+        Comparison::In | Comparison::NotIn | Comparison::Has | Comparison::NotHas
+    ) {
+        return eval_supported_constant_membership_comparison_op(op, &lhs, &rhs, span);
+    }
+
     let result = match op {
         Comparison::Equal => eval_supported_constant_values_equal(&lhs, &rhs),
         Comparison::NotEqual => {
@@ -704,6 +711,26 @@ fn eval_supported_constant_comparison_op(
             ),
             span,
         )
+    })
+}
+
+fn eval_supported_constant_membership_comparison_op(
+    op: Comparison,
+    lhs: &Value,
+    rhs: &Value,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let result = match op {
+        Comparison::In => lhs.r#in(span, rhs, span),
+        Comparison::NotIn => lhs.not_in(span, rhs, span),
+        Comparison::Has => lhs.has(span, rhs, span),
+        Comparison::NotHas => lhs.not_has(span, rhs, span),
+        _ => unreachable!("membership comparison op prefiltered"),
+    };
+
+    result.map_err(|err| {
+        LabeledError::new("Unsupported annotated mutable global initializer")
+            .with_label(err.to_string(), span)
     })
 }
 

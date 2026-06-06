@@ -564,6 +564,31 @@ fn test_map_leading_annotated_mut_globals_supports_let_bound_string_affix_compar
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_let_bound_list_membership_initializer() {
+    let source =
+        "{|| let values = [1, 2, 3]; mut ok: bool = (2 in $values and 4 not-in $values); $ok }";
+    let ir_block = one_let_then_single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("let-bound list membership initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(globals[0].initial_value.as_bool().ok(), Some(true));
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_let_bound_record_membership_initializer() {
+    let source = r#"{|| let field = "pid"; mut ok: bool = ({pid: 7, cpu: 2} has $field and {pid: 7, cpu: 2} not-has "mem"); $ok }"#;
+    let ir_block = one_let_then_single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("let-bound record membership initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(globals[0].initial_value.as_bool().ok(), Some(true));
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_constant_record_columns_initializer() {
     let source = "{|| mut fields: list<string> = ({pid: 7, cpu: 2, mem: 4} | columns); $fields }";
     let ir_block = IrBlock {
