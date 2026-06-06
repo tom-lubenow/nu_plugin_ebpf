@@ -1188,6 +1188,14 @@ fn eval_supported_constant_call(
                 eval_supported_constant_char_call_args(working_set, &call.arguments, env, span)?;
             eval_supported_constant_char(input, output, span)
         }
+        "fill" => {
+            let args = eval_supported_constant_fill_call_args(
+                working_set,
+                &call.arguments,
+                env,
+            )?;
+            eval_supported_constant_fill(input, args, span)
+        }
         "str length" => {
             let mode = eval_supported_constant_str_length_mode_call(&call.arguments)?;
             eval_supported_constant_str_length(input, mode, span)
@@ -1654,6 +1662,10 @@ fn eval_supported_constant_external_call(
         "char" => {
             let output = eval_supported_constant_char_external_args(working_set, args, env, span)?;
             eval_supported_constant_char(input, output, span)
+        }
+        "fill" => {
+            let args = eval_supported_constant_fill_external_args(working_set, args, env)?;
+            eval_supported_constant_fill(input, args, span)
         }
         "str" => eval_supported_constant_str_external_call(working_set, input, args, env, span),
         "str length" => {
@@ -7589,6 +7601,346 @@ fn eval_supported_constant_char(
         );
     }
     Ok(Value::string(output, span))
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ConstantFillAlignment {
+    Left,
+    Right,
+    Center,
+    CenterRight,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ConstantFillOption {
+    Width,
+    Alignment,
+    Character,
+}
+
+struct ConstantFillArgs {
+    width: usize,
+    alignment: ConstantFillAlignment,
+    character: String,
+}
+
+fn eval_supported_constant_fill_call_args(
+    working_set: &StateWorkingSet,
+    args: &[nu_protocol::ast::Argument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+) -> Result<ConstantFillArgs, LabeledError> {
+    let mut width = None;
+    let mut alignment = None;
+    let mut character = None;
+
+    for arg in args {
+        match arg {
+            nu_protocol::ast::Argument::Named(named) => {
+                let option = eval_supported_constant_fill_option(
+                    &named.0.item,
+                    named.1.as_ref().map(|short| short.item.as_str()),
+                    arg.span(),
+                )?;
+                let Some(value_expr) = named.2.as_ref() else {
+                    return Err(LabeledError::new(
+                        "Unsupported annotated mutable global initializer",
+                    )
+                    .with_label(
+                        "`fill` named options require values in compile-time global initializers",
+                        arg.span(),
+                    ));
+                };
+                eval_supported_constant_fill_set_option(
+                    working_set,
+                    env,
+                    option,
+                    value_expr,
+                    &mut width,
+                    &mut alignment,
+                    &mut character,
+                )?;
+            }
+            nu_protocol::ast::Argument::Spread(expr) => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`fill` arguments cannot use spread syntax in compile-time global initializers",
+                        expr.span,
+                    ));
+            }
+            nu_protocol::ast::Argument::Positional(_) | nu_protocol::ast::Argument::Unknown(_) => {
+                return Err(
+                    LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            "`fill` supports only named options in compile-time global initializers",
+                            arg.span(),
+                        ),
+                );
+            }
+        }
+    }
+
+    Ok(ConstantFillArgs {
+        width: width.unwrap_or(1),
+        alignment: alignment.unwrap_or(ConstantFillAlignment::Left),
+        character: character.unwrap_or_else(|| " ".to_string()),
+    })
+}
+
+fn eval_supported_constant_fill_external_args(
+    working_set: &StateWorkingSet,
+    args: &[ExternalArgument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+) -> Result<ConstantFillArgs, LabeledError> {
+    let mut width = None;
+    let mut alignment = None;
+    let mut character = None;
+    let mut iter = args.iter().peekable();
+
+    while let Some(arg) = iter.next() {
+        let ExternalArgument::Regular(expr) = arg else {
+            return Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    "`fill` arguments cannot use spread syntax in compile-time global initializers",
+                    arg.expr().span,
+                ),
+            );
+        };
+        let value = eval_supported_constant_value_with_env(working_set, expr, env)?;
+        let flag = match value {
+            Value::String { val, .. } | Value::Glob { val, .. } => val,
+            _ => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`fill` external arguments must be compile-time string flags in global initializers",
+                        expr.span,
+                    ));
+            }
+        };
+        let option = eval_supported_constant_fill_external_option(&flag, expr.span)?;
+        let Some(next_arg) = iter.next() else {
+            return Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    format!("`fill {flag}` requires a value in compile-time global initializers"),
+                    expr.span,
+                ),
+            );
+        };
+        let ExternalArgument::Regular(value_expr) = next_arg else {
+            return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                .with_label(
+                    "`fill` option values cannot use spread syntax in compile-time global initializers",
+                    next_arg.expr().span,
+                ));
+        };
+        eval_supported_constant_fill_set_option(
+            working_set,
+            env,
+            option,
+            value_expr,
+            &mut width,
+            &mut alignment,
+            &mut character,
+        )?;
+    }
+
+    Ok(ConstantFillArgs {
+        width: width.unwrap_or(1),
+        alignment: alignment.unwrap_or(ConstantFillAlignment::Left),
+        character: character.unwrap_or_else(|| " ".to_string()),
+    })
+}
+
+fn eval_supported_constant_fill_option(
+    name: &str,
+    short: Option<&str>,
+    span: Span,
+) -> Result<ConstantFillOption, LabeledError> {
+    match (name, short) {
+        ("width", _) | ("w", _) | (_, Some("w")) => Ok(ConstantFillOption::Width),
+        ("alignment", _) | ("a", _) | (_, Some("a")) => Ok(ConstantFillOption::Alignment),
+        ("character", _) | ("c", _) | (_, Some("c")) => Ok(ConstantFillOption::Character),
+        _ => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`fill` supports only --width, --alignment, and --character in compile-time global initializers",
+                span,
+            ),
+        ),
+    }
+}
+
+fn eval_supported_constant_fill_external_option(
+    flag: &str,
+    span: Span,
+) -> Result<ConstantFillOption, LabeledError> {
+    match flag {
+        "--width" | "--w" | "-w" => Ok(ConstantFillOption::Width),
+        "--alignment" | "--a" | "-a" => Ok(ConstantFillOption::Alignment),
+        "--character" | "--c" | "-c" => Ok(ConstantFillOption::Character),
+        _ => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`fill` supports only --width, --alignment, and --character in compile-time global initializers",
+                span,
+            ),
+        ),
+    }
+}
+
+fn eval_supported_constant_fill_set_option(
+    working_set: &StateWorkingSet,
+    env: &HashMap<nu_protocol::VarId, Value>,
+    option: ConstantFillOption,
+    value_expr: &nu_protocol::ast::Expression,
+    width: &mut Option<usize>,
+    alignment: &mut Option<ConstantFillAlignment>,
+    character: &mut Option<String>,
+) -> Result<(), LabeledError> {
+    match option {
+        ConstantFillOption::Width => {
+            let value = eval_supported_constant_non_negative_usize_argument(
+                working_set,
+                value_expr,
+                env,
+                "fill --width",
+            )?;
+            if width.replace(value).is_some() {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`fill` accepts only one --width value in compile-time global initializers",
+                        value_expr.span,
+                    ));
+            }
+        }
+        ConstantFillOption::Alignment => {
+            let raw = eval_supported_constant_string_argument(
+                working_set,
+                value_expr,
+                env,
+                "fill --alignment",
+            )?;
+            let value = eval_supported_constant_fill_alignment(&raw);
+            if alignment.replace(value).is_some() {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`fill` accepts only one --alignment value in compile-time global initializers",
+                        value_expr.span,
+                    ));
+            }
+        }
+        ConstantFillOption::Character => {
+            let value = eval_supported_constant_string_argument(
+                working_set,
+                value_expr,
+                env,
+                "fill --character",
+            )?;
+            eval_supported_constant_reject_nul_string_argument(
+                "fill --character",
+                &value,
+                value_expr.span,
+            )?;
+            if character.replace(value).is_some() {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`fill` accepts only one --character value in compile-time global initializers",
+                        value_expr.span,
+                    ));
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn eval_supported_constant_fill_alignment(value: &str) -> ConstantFillAlignment {
+    match value.to_ascii_lowercase().as_str() {
+        "right" | "r" => ConstantFillAlignment::Right,
+        "center" | "middle" | "c" | "m" => ConstantFillAlignment::Center,
+        "cr" | "mr" => ConstantFillAlignment::CenterRight,
+        _ => ConstantFillAlignment::Left,
+    }
+}
+
+fn eval_supported_constant_fill(
+    input: Option<Value>,
+    args: ConstantFillArgs,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let value = eval_supported_constant_required_pipeline_input("fill", input, span)?;
+    let value_span = value.span();
+    match value {
+        Value::List { vals, .. } => {
+            let values = vals
+                .into_iter()
+                .enumerate()
+                .map(|(index, value)| {
+                    let text = eval_supported_constant_fill_value_text(value, Some(index), span)?;
+                    Ok(Value::string(
+                        eval_supported_constant_fill_known_string(&text, &args),
+                        value_span,
+                    ))
+                })
+                .collect::<Result<Vec<_>, LabeledError>>()?;
+            Ok(Value::list(values, value_span))
+        }
+        value => {
+            let text = eval_supported_constant_fill_value_text(value, None, span)?;
+            Ok(Value::string(
+                eval_supported_constant_fill_known_string(&text, &args),
+                value_span,
+            ))
+        }
+    }
+}
+
+fn eval_supported_constant_fill_value_text(
+    value: Value,
+    list_index: Option<usize>,
+    span: Span,
+) -> Result<String, LabeledError> {
+    match value {
+        Value::String { val, .. } | Value::Glob { val, .. } => Ok(val),
+        Value::Int { val, .. } => Ok(val.to_string()),
+        Value::Float { val, .. } => Ok(val.to_string()),
+        Value::Filesize { val, .. } => Ok(val.get().to_string()),
+        other => {
+            let supported = "string, int, float, and filesize";
+            Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    match list_index {
+                        Some(index) => format!(
+                            "`fill` supports only {supported} compile-time list items in global initializers; item {index} has type {}",
+                            other.get_type()
+                        ),
+                        None => format!(
+                            "`fill` requires compile-time known {supported} input in global initializers; input has type {}",
+                            other.get_type()
+                        ),
+                    },
+                    span,
+                ),
+            )
+        }
+    }
+}
+
+fn eval_supported_constant_fill_known_string(input: &str, args: &ConstantFillArgs) -> String {
+    let input_width = input.chars().count();
+    let pad_width = args.width.saturating_sub(input_width);
+    if pad_width == 0 || args.character.is_empty() {
+        return input.to_string();
+    }
+
+    let (left_pad, right_pad) = match args.alignment {
+        ConstantFillAlignment::Left => (0, pad_width),
+        ConstantFillAlignment::Right => (pad_width, 0),
+        ConstantFillAlignment::Center => (pad_width / 2, pad_width - (pad_width / 2)),
+        ConstantFillAlignment::CenterRight => (pad_width.div_ceil(2), pad_width / 2),
+    };
+    let mut output = String::with_capacity(input.len() + args.character.len() * pad_width);
+    output.push_str(&args.character.repeat(left_pad));
+    output.push_str(input);
+    output.push_str(&args.character.repeat(right_pad));
+    output
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

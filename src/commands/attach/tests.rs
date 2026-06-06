@@ -2249,6 +2249,51 @@ fn test_map_leading_annotated_mut_globals_rejects_constant_list_find_missing_nee
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_fill_initializer() {
+    let source = r#"{|| mut value: string = ("ab" | fill --width 5 --alignment right --character "0"); $value }"#;
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant fill initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(globals[0].initial_value.as_str().ok(), Some("000ab"));
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_fill_list_initializer() {
+    let source = r#"{|| mut vals: list<string> = ([1, "ab"] | fill --width 3 --alignment right --character "0"); $vals }"#;
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant fill list initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let strings = vals
+                .iter()
+                .map(|value| value.as_str().expect("fill should produce strings"))
+                .collect::<Vec<_>>();
+            assert_eq!(strings, vec!["001", "0ab"]);
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_let_bound_external_fill_options() {
+    let source = r#"{|| let opts = {width: 5, alignment: "right", character: "0"}; mut value: string = ("ab" | ^fill --width $opts.width --alignment $opts.alignment --character $opts.character); $value }"#;
+    let ir_block = one_let_then_single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("let-bound external fill options should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(globals[0].initial_value.as_str().ok(), Some("000ab"));
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_constant_length_initializer() {
     let source = "{|| mut count: int = ([7, 2, 4] | length); $count }";
     let ir_block = IrBlock {
