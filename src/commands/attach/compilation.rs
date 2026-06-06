@@ -6379,10 +6379,12 @@ fn eval_supported_constant_math_avg(
         return eval_supported_constant_math_unit_avg(vals, value_span, span);
     }
 
+    let len = vals.len() as f64;
+    let mut total = 0.0;
     for (index, value) in vals.into_iter().enumerate() {
-        match value {
-            Value::Int { .. } => {}
-            Value::Float { val, .. } if val.is_finite() => {}
+        let raw = match value {
+            Value::Int { val, .. } => val as f64,
+            Value::Float { val, .. } if val.is_finite() => val,
             Value::Float { val, .. } => {
                 return Err(
                     LabeledError::new("Unsupported annotated mutable global initializer")
@@ -6406,15 +6408,20 @@ fn eval_supported_constant_math_avg(
                         ),
                 );
             }
-        }
+        };
+        total += raw;
     }
 
-    Err(
-        LabeledError::new("Unsupported annotated mutable global initializer").with_label(
-            "`math avg` compile-time list result has type float; mutable global initializers support only materializable eBPF values",
-            span,
-        ),
-    )
+    let avg = total / len;
+    if !avg.is_finite() {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`math avg` compile-time list result must be finite in compile-time global initializers",
+                span,
+            ),
+        );
+    }
+    Ok(Value::float(avg, value_span))
 }
 
 fn eval_supported_constant_math_unit_avg(

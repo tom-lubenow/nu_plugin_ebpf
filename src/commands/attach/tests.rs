@@ -5561,6 +5561,38 @@ fn test_map_leading_annotated_mut_globals_supports_constant_math_avg_filesize_in
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_math_avg_numeric_fill_initializer() {
+    let cases = [
+        (
+            r#"{|| mut value: string = ([1, 2, 3] | math avg | fill --width 4 --alignment right --character "0"); $value }"#,
+            "0002",
+            "integer average should feed fill",
+        ),
+        (
+            r#"{|| mut value: string = ([1.0, 2] | math avg | fill --width 4 --alignment right --character "0"); $value }"#,
+            "01.5",
+            "mixed numeric average should feed fill",
+        ),
+        (
+            r#"{|| mut value: string = ([1.0, 2] | ^math avg | fill --width 4 --alignment right --character "0"); $value }"#,
+            "01.5",
+            "external mixed numeric average should feed fill",
+        ),
+    ];
+
+    for (source, expected, message) in cases {
+        let ir_block = single_annotated_global_return_ir_block();
+
+        let globals =
+            super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+                .unwrap_or_else(|err| panic!("{message}: {err:?}"));
+
+        assert_eq!(globals.len(), 1);
+        assert_eq!(globals[0].initial_value.as_str().ok(), Some(expected));
+    }
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_root_external_constant_math_avg_duration() {
     let source = "{|| mut out: duration = ([1sec, 3sec] | ^math avg); $out }";
     let ir_block = IrBlock {
