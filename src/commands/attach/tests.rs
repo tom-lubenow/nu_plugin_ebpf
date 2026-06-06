@@ -29,6 +29,28 @@ const BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB: i64 = 4;
 const BPF_SOCK_OPS_PARSE_HDR_OPT_CB: i64 = 13;
 const BPF_SOCK_OPS_HDR_OPT_LEN_CB: i64 = 14;
 
+fn single_annotated_global_return_ir_block() -> IrBlock {
+    IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    }
+}
+
 #[test]
 fn test_extract_decl_names_from_formatted_instructions_preserves_user_function_names() {
     let decl_names = super::extract_decl_names_from_formatted_instructions(&[
@@ -541,6 +563,157 @@ fn test_map_leading_annotated_mut_globals_supports_constant_record_values_initia
         }
         other => panic!("expected list initializer, got {other:?}"),
     }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_record_transpose_initializer() {
+    let source = "{|| mut rows: list<record<column0: string column1: int>> = ({pid: 7, cpu: 2} | transpose); $rows }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant record transpose initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    let Value::List { vals, .. } = &globals[0].initial_value else {
+        panic!(
+            "expected list initializer, got {:?}",
+            globals[0].initial_value
+        );
+    };
+    assert_eq!(vals.len(), 2);
+
+    let Value::Record { val: first, .. } = &vals[0] else {
+        panic!("expected first transposed row, got {:?}", vals[0]);
+    };
+    assert_eq!(
+        first.get("column0").and_then(|v| v.as_str().ok()),
+        Some("pid")
+    );
+    assert_eq!(first.get("column1").and_then(|v| v.as_int().ok()), Some(7));
+
+    let Value::Record { val: second, .. } = &vals[1] else {
+        panic!("expected second transposed row, got {:?}", vals[1]);
+    };
+    assert_eq!(
+        second.get("column0").and_then(|v| v.as_str().ok()),
+        Some("cpu")
+    );
+    assert_eq!(second.get("column1").and_then(|v| v.as_int().ok()), Some(2));
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_record_transpose_custom_columns() {
+    let source = "{|| mut rows: list<record<name: string val: int>> = ({pid: 7, cpu: 2} | transpose name val); $rows }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant record transpose custom columns initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    let Value::List { vals, .. } = &globals[0].initial_value else {
+        panic!(
+            "expected list initializer, got {:?}",
+            globals[0].initial_value
+        );
+    };
+    let Value::Record { val, .. } = &vals[1] else {
+        panic!("expected transposed row, got {:?}", vals[1]);
+    };
+    assert_eq!(val.get("name").and_then(|v| v.as_str().ok()), Some("cpu"));
+    assert_eq!(val.get("val").and_then(|v| v.as_int().ok()), Some(2));
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_record_transpose_ignore_titles() {
+    let source = "{|| mut rows: list<record<column0: int>> = ({pid: 7, cpu: 2} | transpose --ignore-titles); $rows }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant record transpose ignore titles initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    let Value::List { vals, .. } = &globals[0].initial_value else {
+        panic!(
+            "expected list initializer, got {:?}",
+            globals[0].initial_value
+        );
+    };
+    let Value::Record { val, .. } = &vals[0] else {
+        panic!("expected transposed row, got {:?}", vals[0]);
+    };
+    assert_eq!(val.len(), 1);
+    assert_eq!(val.get("column0").and_then(|v| v.as_int().ok()), Some(7));
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_root_external_constant_record_transpose() {
+    let source = "{|| mut rows: list<record<column0: string column1: int>> = ({pid: 7, cpu: 2} | ^transpose); $rows }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("root external constant record transpose initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    let Value::List { vals, .. } = &globals[0].initial_value else {
+        panic!(
+            "expected list initializer, got {:?}",
+            globals[0].initial_value
+        );
+    };
+    let Value::Record { val, .. } = &vals[1] else {
+        panic!("expected transposed row, got {:?}", vals[1]);
+    };
+    assert_eq!(
+        val.get("column0").and_then(|v| v.as_str().ok()),
+        Some("cpu")
+    );
+    assert_eq!(val.get("column1").and_then(|v| v.as_int().ok()), Some(2));
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_root_external_constant_record_transpose_custom_columns()
+ {
+    let source = "{|| mut rows: list<record<name: string val: int>> = ({pid: 7, cpu: 2} | ^transpose name val); $rows }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("root external constant record transpose custom columns should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    let Value::List { vals, .. } = &globals[0].initial_value else {
+        panic!(
+            "expected list initializer, got {:?}",
+            globals[0].initial_value
+        );
+    };
+    let Value::Record { val, .. } = &vals[1] else {
+        panic!("expected transposed row, got {:?}", vals[1]);
+    };
+    assert_eq!(val.get("name").and_then(|v| v.as_str().ok()), Some("cpu"));
+    assert_eq!(val.get("val").and_then(|v| v.as_int().ok()), Some(2));
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_root_external_constant_record_transpose_ignore_titles()
+ {
+    let source = "{|| mut rows: list<record<column0: int>> = ({pid: 7, cpu: 2} | ^transpose --ignore-titles); $rows }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("root external constant record transpose ignore titles should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    let Value::List { vals, .. } = &globals[0].initial_value else {
+        panic!(
+            "expected list initializer, got {:?}",
+            globals[0].initial_value
+        );
+    };
+    let Value::Record { val, .. } = &vals[0] else {
+        panic!("expected transposed row, got {:?}", vals[0]);
+    };
+    assert_eq!(val.len(), 1);
+    assert_eq!(val.get("column0").and_then(|v| v.as_int().ok()), Some(7));
 }
 
 #[test]

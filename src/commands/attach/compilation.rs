@@ -966,6 +966,15 @@ fn eval_supported_constant_call(
             }
             eval_supported_constant_record_columns_or_values(cmd_name, input, span)
         }
+        "transpose" => {
+            let args = eval_supported_constant_record_transpose_call_args(
+                working_set,
+                &call.arguments,
+                env,
+                span,
+            )?;
+            eval_supported_constant_record_transpose(input, args, span)
+        }
         "default" => eval_supported_constant_default_call(
             working_set,
             input,
@@ -1532,6 +1541,15 @@ fn eval_supported_constant_external_call(
                     ));
             }
             eval_supported_constant_record_columns_or_values(cmd_name, input, span)
+        }
+        "transpose" => {
+            let args = eval_supported_constant_record_transpose_external_args(
+                working_set,
+                args,
+                env,
+                span,
+            )?;
+            eval_supported_constant_record_transpose(input, args, span)
         }
         "default" => eval_supported_constant_default_external_call(
             working_set,
@@ -11974,6 +11992,171 @@ fn eval_supported_constant_record_columns_or_values(
     };
 
     Ok(Value::list(vals, value_span))
+}
+
+#[derive(Debug, Clone)]
+struct ConstantRecordTransposeArgs {
+    output_names: [String; 2],
+    ignore_titles: bool,
+}
+
+fn eval_supported_constant_record_transpose_call_args(
+    working_set: &StateWorkingSet,
+    args: &[nu_protocol::ast::Argument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<ConstantRecordTransposeArgs, LabeledError> {
+    let mut output_names = ["column0".to_string(), "column1".to_string()];
+    let mut output_name_count = 0usize;
+    let mut ignore_titles = false;
+
+    for arg in args {
+        match arg {
+            nu_protocol::ast::Argument::Named(named) => {
+                let is_ignore_titles = named.0.item.as_str() == "ignore-titles"
+                    || named.0.item.as_str() == "i"
+                    || named
+                        .1
+                        .as_ref()
+                        .is_some_and(|short| short.item.as_str() == "i");
+                if !is_ignore_titles || named.2.is_some() {
+                    return Err(LabeledError::new(
+                        "Unsupported annotated mutable global initializer",
+                    )
+                    .with_label(
+                        "`transpose` supports only the --ignore-titles flag in compile-time global initializers",
+                        arg.span(),
+                    ));
+                }
+                if ignore_titles {
+                    return Err(LabeledError::new(
+                        "Unsupported annotated mutable global initializer",
+                    )
+                    .with_label(
+                        "`transpose` accepts --ignore-titles at most once in compile-time global initializers",
+                        arg.span(),
+                    ));
+                }
+                ignore_titles = true;
+            }
+            nu_protocol::ast::Argument::Positional(expr)
+            | nu_protocol::ast::Argument::Unknown(expr) => {
+                if output_name_count >= output_names.len() {
+                    return Err(LabeledError::new(
+                        "Unsupported annotated mutable global initializer",
+                    )
+                    .with_label(
+                        "`transpose` accepts at most two output column names in compile-time global initializers",
+                        span,
+                    ));
+                }
+                output_names[output_name_count] =
+                    eval_supported_constant_string_argument(working_set, expr, env, "transpose")?;
+                output_name_count += 1;
+            }
+            nu_protocol::ast::Argument::Spread(expr) => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`transpose` output column names cannot use spread syntax in compile-time global initializers",
+                        expr.span,
+                    ));
+            }
+        }
+    }
+
+    Ok(ConstantRecordTransposeArgs {
+        output_names,
+        ignore_titles,
+    })
+}
+
+fn eval_supported_constant_record_transpose_external_args(
+    working_set: &StateWorkingSet,
+    args: &[ExternalArgument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<ConstantRecordTransposeArgs, LabeledError> {
+    let mut output_names = ["column0".to_string(), "column1".to_string()];
+    let mut output_name_count = 0usize;
+    let mut ignore_titles = false;
+
+    for arg in args {
+        let ExternalArgument::Regular(expr) = arg else {
+            return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                .with_label(
+                    "`transpose` output column names cannot use spread syntax in compile-time global initializers",
+                    arg.expr().span,
+                ));
+        };
+
+        let value = eval_supported_constant_string_argument(working_set, expr, env, "transpose")?;
+        if value == "--ignore-titles" || value == "-i" {
+            if ignore_titles {
+                return Err(LabeledError::new(
+                    "Unsupported annotated mutable global initializer",
+                )
+                .with_label(
+                    "`transpose` accepts --ignore-titles at most once in compile-time global initializers",
+                    expr.span,
+                ));
+            }
+            ignore_titles = true;
+            continue;
+        }
+        if value.starts_with('-') {
+            return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                .with_label(
+                    "`transpose` supports only the --ignore-titles flag in compile-time global initializers",
+                    expr.span,
+                ));
+        }
+
+        if output_name_count >= output_names.len() {
+            return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                .with_label(
+                    "`transpose` accepts at most two output column names in compile-time global initializers",
+                    span,
+                ));
+        }
+        output_names[output_name_count] = value;
+        output_name_count += 1;
+    }
+
+    Ok(ConstantRecordTransposeArgs {
+        output_names,
+        ignore_titles,
+    })
+}
+
+fn eval_supported_constant_record_transpose(
+    input: Option<Value>,
+    args: ConstantRecordTransposeArgs,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let value = eval_supported_constant_required_pipeline_input("transpose", input, span)?;
+    let value_span = value.span();
+    let Value::Record { val, .. } = value else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`transpose` in a compile-time global initializer requires record input",
+                span,
+            ),
+        );
+    };
+
+    let mut rows = Vec::with_capacity(val.len());
+    for (key, value) in val.iter() {
+        let mut row = Record::new();
+        if args.ignore_titles {
+            row.push(args.output_names[0].clone(), value.clone());
+        } else {
+            row.push(args.output_names[0].clone(), Value::string(key, value_span));
+            row.push(args.output_names[1].clone(), value.clone());
+        }
+        rows.push(Value::record(row, value_span));
+    }
+
+    Ok(Value::list(rows, value_span))
 }
 
 fn eval_supported_constant_default_call(
