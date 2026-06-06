@@ -2272,6 +2272,157 @@ fn test_map_leading_annotated_mut_globals_supports_let_bound_constant_bytes_at_r
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_bytes_add_initializers() {
+    let cases = [
+        (
+            "{|| mut added: binary = (0x[01 04] | bytes add --index 1 0x[02 03]); $added }",
+            vec![1, 2, 3, 4],
+            "bytes add --index should insert from the start",
+        ),
+        (
+            "{|| mut added: binary = (0x[01 02 05] | bytes add --end --index 1 0x[03 04]); $added }",
+            vec![1, 2, 3, 4, 5],
+            "bytes add --end --index should insert relative to the end",
+        ),
+        (
+            "{|| mut added: binary = (0x[01 02] | bytes add --index 99 0x[03]); $added }",
+            vec![1, 2, 3],
+            "bytes add should clamp start-relative indexes to the end",
+        ),
+    ];
+
+    for (source, expected, message) in cases {
+        let ir_block = single_annotated_global_return_ir_block();
+
+        let globals =
+            super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+                .unwrap_or_else(|err| panic!("{message}: {err:?}"));
+
+        assert_eq!(globals.len(), 1);
+        assert_eq!(
+            globals[0]
+                .initial_value
+                .as_binary()
+                .expect("bytes add should produce binary"),
+            expected.as_slice(),
+            "{message}"
+        );
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_bytes_add_list_initializer() {
+    let source = "{|| mut added: list<binary> = ([0x[01], 0x[02 03]] | bytes add --index 1 0x[FF]); $added }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant bytes add list initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            let added = vals
+                .iter()
+                .map(|value| {
+                    value
+                        .as_binary()
+                        .expect("bytes add should produce binary")
+                        .to_vec()
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(added, vec![vec![1, 0xff], vec![2, 0xff, 3]]);
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_let_bound_constant_bytes_add_args() {
+    let source = "{|| let chunk = 0x[AA BB]; let idx = 1; mut added: binary = (0x[01 04] | bytes add --index $idx $chunk); $added }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(10),
+                src: RegId::new(0),
+            },
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(1),
+            },
+            Instruction::StoreVariable {
+                var_id: VarId::new(12),
+                src: RegId::new(2),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(12),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 5],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 5],
+        comments: vec![
+            "let".into(),
+            "let".into(),
+            "let".into(),
+            "".into(),
+            "".into(),
+        ],
+        register_count: 3,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("let-bound constant bytes add args should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(
+        globals[0]
+            .initial_value
+            .as_binary()
+            .expect("bytes add should produce binary"),
+        &[1, 0xaa, 0xbb, 4]
+    );
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_external_constant_bytes_add_initializer() {
+    let source = "{|| mut added: binary = (0x[01 04] | ^bytes add --index=1 0x[02 03]); $added }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("external constant bytes add initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(
+        globals[0]
+            .initial_value
+            .as_binary()
+            .expect("bytes add should produce binary"),
+        &[1, 2, 3, 4]
+    );
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_rejects_constant_bytes_add_negative_index() {
+    let source = "{|| mut added: binary = (0x[01 02] | bytes add --index -1 0x[03]); $added }";
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let err = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect_err("negative bytes add index should be rejected");
+
+    assert!(
+        err.labels
+            .iter()
+            .any(|label| label.text.contains("bytes add --index")
+                && label.text.contains("non-negative")),
+        "unexpected labels: {:?}",
+        err.labels
+    );
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_constant_bytes_build_initializers() {
     let cases = [
         (

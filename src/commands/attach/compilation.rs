@@ -705,6 +705,11 @@ fn eval_supported_constant_call(
                 eval_supported_constant_bytes_at_call_range(working_set, &call.arguments, env, span)?;
             eval_supported_constant_bytes_at(input, range, span)
         }
+        "bytes add" => {
+            let args =
+                eval_supported_constant_bytes_add_call_args(working_set, &call.arguments, env, span)?;
+            eval_supported_constant_bytes_add(input, args, span)
+        }
         "bytes build" => {
             let bytes =
                 eval_supported_constant_bytes_build_call_args(working_set, &call.arguments, env)?;
@@ -1190,6 +1195,10 @@ fn eval_supported_constant_external_call(
         "bytes at" => {
             let range = eval_supported_constant_bytes_at_external_range(working_set, args, env, span)?;
             eval_supported_constant_bytes_at(input, range, span)
+        }
+        "bytes add" => {
+            let args = eval_supported_constant_bytes_add_external_args(working_set, args, env, span)?;
+            eval_supported_constant_bytes_add(input, args, span)
         }
         "bytes build" => {
             let bytes = eval_supported_constant_bytes_build_external_args(working_set, args, env)?;
@@ -2272,6 +2281,326 @@ fn eval_supported_constant_bytes_at(
 fn eval_supported_constant_bytes_slice(input: Vec<u8>, range: ConstantMaybeOpenRange) -> Vec<u8> {
     let (start, end) = eval_supported_constant_string_range_bounds(range, input.len());
     input[start..end].to_vec()
+}
+
+#[derive(Clone)]
+struct ConstantBytesAddArgs {
+    data: Vec<u8>,
+    index: i64,
+    from_end: bool,
+}
+
+fn eval_supported_constant_bytes_add_call_args(
+    working_set: &StateWorkingSet,
+    args: &[nu_protocol::ast::Argument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<ConstantBytesAddArgs, LabeledError> {
+    let mut data_expr = None;
+    let mut index = None;
+    let mut from_end = false;
+
+    for arg in args {
+        match arg {
+            nu_protocol::ast::Argument::Positional(expr)
+            | nu_protocol::ast::Argument::Unknown(expr) => {
+                if data_expr.replace(expr).is_some() {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            "`bytes add` accepts exactly one binary data argument in compile-time global initializers",
+                            arg.span(),
+                        ));
+                }
+            }
+            nu_protocol::ast::Argument::Named(named) => match named.0.item.as_str() {
+                "end" => {
+                    if named.2.is_some() {
+                        return Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
+                        .with_label(
+                            "`bytes add --end` cannot receive a value in compile-time global initializers",
+                            arg.span(),
+                        ));
+                    }
+                    if from_end {
+                        return Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
+                        .with_label(
+                            "`bytes add` accepts --end at most once in compile-time global initializers",
+                            arg.span(),
+                        ));
+                    }
+                    from_end = true;
+                }
+                "index" => {
+                    let Some(index_expr) = named.2.as_ref() else {
+                        return Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
+                        .with_label(
+                            "`bytes add --index` requires a compile-time integer value in global initializers",
+                            arg.span(),
+                        ));
+                    };
+                    if index
+                        .replace(eval_supported_constant_bytes_add_index_arg(
+                            working_set,
+                            index_expr,
+                            env,
+                            false,
+                        )?)
+                        .is_some()
+                    {
+                        return Err(LabeledError::new(
+                            "Unsupported annotated mutable global initializer",
+                        )
+                        .with_label(
+                            "`bytes add` accepts --index at most once in compile-time global initializers",
+                            arg.span(),
+                        ));
+                    }
+                }
+                _ => {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            "`bytes add` supports only --end and --index in compile-time global initializers",
+                            arg.span(),
+                        ));
+                }
+            },
+            nu_protocol::ast::Argument::Spread(expr) => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`bytes add` arguments cannot use spread syntax in compile-time global initializers",
+                        expr.span,
+                    ));
+            }
+        }
+    }
+
+    let Some(data_expr) = data_expr else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`bytes add` requires exactly one binary data argument in compile-time global initializers",
+                span,
+            ),
+        );
+    };
+    let data = eval_supported_constant_binary_argument(working_set, data_expr, env, "bytes add")?;
+    let index = index.unwrap_or(0);
+    eval_supported_constant_bytes_add_validate_index(index, span)?;
+
+    Ok(ConstantBytesAddArgs {
+        data,
+        index,
+        from_end,
+    })
+}
+
+fn eval_supported_constant_bytes_add_external_args(
+    working_set: &StateWorkingSet,
+    args: &[ExternalArgument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<ConstantBytesAddArgs, LabeledError> {
+    let mut data_expr = None;
+    let mut index = None;
+    let mut from_end = false;
+    let mut arg_index = 0usize;
+
+    while arg_index < args.len() {
+        let arg = &args[arg_index];
+        let ExternalArgument::Regular(expr) = arg else {
+            return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                .with_label(
+                    "`bytes add` arguments cannot use spread syntax in compile-time global initializers",
+                    arg.expr().span,
+                ));
+        };
+
+        let value = eval_supported_constant_value_with_env(working_set, expr, env)?;
+        match value {
+            Value::String { val, .. } | Value::Glob { val, .. } if val == "--end" => {
+                if from_end {
+                    return Err(LabeledError::new(
+                        "Unsupported annotated mutable global initializer",
+                    )
+                    .with_label(
+                        "`bytes add` accepts --end at most once in compile-time global initializers",
+                        expr.span,
+                    ));
+                }
+                from_end = true;
+            }
+            Value::String { val, .. } | Value::Glob { val, .. } if val == "--index" => {
+                let Some(next_arg) = args.get(arg_index + 1) else {
+                    return Err(LabeledError::new(
+                        "Unsupported annotated mutable global initializer",
+                    )
+                    .with_label(
+                        "`bytes add --index` requires a compile-time integer value in global initializers",
+                        expr.span,
+                    ));
+                };
+                let ExternalArgument::Regular(next_expr) = next_arg else {
+                    return Err(LabeledError::new(
+                        "Unsupported annotated mutable global initializer",
+                    )
+                    .with_label(
+                        "`bytes add --index` cannot use spread syntax in compile-time global initializers",
+                        next_arg.expr().span,
+                    ));
+                };
+                if index
+                    .replace(eval_supported_constant_bytes_add_index_arg(
+                        working_set,
+                        next_expr,
+                        env,
+                        true,
+                    )?)
+                    .is_some()
+                {
+                    return Err(LabeledError::new(
+                        "Unsupported annotated mutable global initializer",
+                    )
+                    .with_label(
+                        "`bytes add` accepts --index at most once in compile-time global initializers",
+                        expr.span,
+                    ));
+                }
+                arg_index += 1;
+            }
+            Value::String { val, .. } | Value::Glob { val, .. } if val.starts_with("--index=") => {
+                let raw = val
+                    .split_once('=')
+                    .map(|(_, value)| value)
+                    .expect("starts_with --index= prechecked");
+                let parsed = raw.parse::<i64>().map_err(|_| {
+                    LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            "`bytes add --index` requires a compile-time integer value in global initializers",
+                            expr.span,
+                        )
+                })?;
+                if index.replace(parsed).is_some() {
+                    return Err(LabeledError::new(
+                        "Unsupported annotated mutable global initializer",
+                    )
+                    .with_label(
+                        "`bytes add` accepts --index at most once in compile-time global initializers",
+                        expr.span,
+                    ));
+                }
+            }
+            Value::String { val, .. } | Value::Glob { val, .. } if val.starts_with("--") => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`bytes add` supports only --end and --index in compile-time global initializers",
+                        expr.span,
+                    ));
+            }
+            _ => {
+                if data_expr.replace(expr).is_some() {
+                    return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            "`bytes add` accepts exactly one binary data argument in compile-time global initializers",
+                            expr.span,
+                        ));
+                }
+            }
+        }
+
+        arg_index += 1;
+    }
+
+    let Some(data_expr) = data_expr else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`bytes add` requires exactly one binary data argument in compile-time global initializers",
+                span,
+            ),
+        );
+    };
+    let data = eval_supported_constant_binary_argument(working_set, data_expr, env, "bytes add")?;
+    let index = index.unwrap_or(0);
+    eval_supported_constant_bytes_add_validate_index(index, span)?;
+
+    Ok(ConstantBytesAddArgs {
+        data,
+        index,
+        from_end,
+    })
+}
+
+fn eval_supported_constant_bytes_add_index_arg(
+    working_set: &StateWorkingSet,
+    expr: &nu_protocol::ast::Expression,
+    env: &HashMap<nu_protocol::VarId, Value>,
+    parse_string: bool,
+) -> Result<i64, LabeledError> {
+    match eval_supported_constant_value_with_env(working_set, expr, env)? {
+        Value::Int { val, .. } => Ok(val),
+        Value::String { val, .. } | Value::Glob { val, .. } if parse_string => {
+            val.parse::<i64>().map_err(|_| {
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    "`bytes add --index` requires a compile-time integer value in global initializers",
+                    expr.span,
+                )
+            })
+        }
+        other => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`bytes add --index` requires a compile-time integer value in global initializers; got {}",
+                    other.get_type()
+                ),
+                expr.span,
+            ),
+        ),
+    }
+}
+
+fn eval_supported_constant_bytes_add_validate_index(
+    index: i64,
+    span: Span,
+) -> Result<(), LabeledError> {
+    if index < 0 {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`bytes add --index` requires a non-negative integer in compile-time global initializers",
+                span,
+            ),
+        );
+    }
+    Ok(())
+}
+
+fn eval_supported_constant_bytes_add(
+    input: Option<Value>,
+    args: ConstantBytesAddArgs,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    eval_supported_constant_bytes_transform_items("bytes add", input, span, |bytes| {
+        eval_supported_constant_add_bytes(bytes, &args)
+    })
+}
+
+fn eval_supported_constant_add_bytes(input: Vec<u8>, args: &ConstantBytesAddArgs) -> Vec<u8> {
+    let index = usize::try_from(args.index)
+        .expect("bytes add index is validated as non-negative before use");
+    let insert_at = if args.from_end {
+        input.len().saturating_sub(index)
+    } else {
+        index.min(input.len())
+    };
+
+    let mut output = Vec::with_capacity(input.len().saturating_add(args.data.len()));
+    output.extend_from_slice(&input[..insert_at]);
+    output.extend_from_slice(&args.data);
+    output.extend_from_slice(&input[insert_at..]);
+    output
 }
 
 fn eval_supported_constant_bytes_build_call_args(
@@ -6394,6 +6723,15 @@ fn eval_supported_constant_bytes_external_call(
                 span,
             )?;
             eval_supported_constant_bytes_at(input, range, span)
+        }
+        "add" => {
+            let args = eval_supported_constant_bytes_add_external_args(
+                working_set,
+                remaining_args,
+                env,
+                span,
+            )?;
+            eval_supported_constant_bytes_add(input, args, span)
         }
         "build" => {
             let bytes = eval_supported_constant_bytes_build_external_args(
