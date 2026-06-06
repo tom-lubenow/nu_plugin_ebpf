@@ -1048,6 +1048,7 @@ fn eval_supported_constant_call(
             working_set,
             input,
             &call.arguments,
+            env,
             span,
         ),
         "sort" => eval_supported_constant_list_sort_call(input, &call.arguments, span),
@@ -1322,14 +1323,10 @@ fn eval_supported_constant_call(
             cmd_name,
             input,
             &call.arguments,
+            env,
             span,
         ),
-        "rename" => eval_supported_constant_record_rename_call(
-            working_set,
-            input,
-            call,
-            span,
-        ),
+        "rename" => eval_supported_constant_record_rename_call(working_set, input, call, env, span),
         "columns" | "values" => {
             if !call.arguments.is_empty() {
                 return Err(LabeledError::new("Unsupported annotated mutable global initializer")
@@ -1487,7 +1484,7 @@ fn eval_supported_constant_external_call(
                 arg_exprs.push(expr);
             }
             eval_supported_constant_list_compact_external_call(
-                working_set, input, arg_exprs, span,
+                working_set, input, arg_exprs, env, span,
             )
         }
         "sort" => {
@@ -1842,7 +1839,7 @@ fn eval_supported_constant_external_call(
                             arg.expr().span,
                         ));
                     };
-                    eval_supported_constant_record_field_name(working_set, field_expr)
+                    eval_supported_constant_record_field_name(working_set, field_expr, env)
                 })
                 .collect::<Result<Vec<_>, _>>()?;
 
@@ -1862,7 +1859,8 @@ fn eval_supported_constant_external_call(
                             first_arg.expr().span,
                         ));
                 };
-                let first_value = eval_supported_constant_value(working_set, first_expr)?;
+                let first_value =
+                    eval_supported_constant_value_with_env(working_set, first_expr, env)?;
                 if matches!(
                     first_value,
                     Value::String { ref val, .. } | Value::Glob { ref val, .. } if val == "--block" || val == "-b"
@@ -1894,6 +1892,7 @@ fn eval_supported_constant_external_call(
                     let pairs = eval_supported_constant_record_rename_column_pairs(
                         working_set,
                         column_expr,
+                        env,
                     )?;
                     return eval_supported_constant_record_rename_column(input, pairs, span);
                 }
@@ -1911,7 +1910,7 @@ fn eval_supported_constant_external_call(
                             arg.expr().span,
                         ));
                     };
-                    eval_supported_constant_record_field_name(working_set, field_expr)
+                    eval_supported_constant_record_field_name(working_set, field_expr, env)
                 })
                 .collect::<Result<Vec<_>, _>>()?;
 
@@ -2194,6 +2193,7 @@ fn eval_supported_constant_list_compact_call(
     working_set: &StateWorkingSet,
     input: Option<Value>,
     args: &[nu_protocol::ast::Argument],
+    env: &HashMap<nu_protocol::VarId, Value>,
     span: Span,
 ) -> Result<Value, LabeledError> {
     let mut remove_empty = false;
@@ -2205,6 +2205,7 @@ fn eval_supported_constant_list_compact_call(
                 columns.push(eval_supported_constant_record_field_name(
                     working_set,
                     expr,
+                    env,
                 )?);
             }
             nu_protocol::ast::Argument::Named(named) => {
@@ -2234,11 +2235,12 @@ fn eval_supported_constant_list_compact_external_call(
     working_set: &StateWorkingSet,
     input: Option<Value>,
     mut arg_exprs: Vec<&nu_protocol::ast::Expression>,
+    env: &HashMap<nu_protocol::VarId, Value>,
     span: Span,
 ) -> Result<Value, LabeledError> {
     let mut remove_empty = false;
     if let Some(first) = arg_exprs.first() {
-        let first_value = eval_supported_constant_value(working_set, first)?;
+        let first_value = eval_supported_constant_value_with_env(working_set, first, env)?;
         if matches!(
             first_value,
             Value::String { ref val, .. } | Value::Glob { ref val, .. } if val == "--empty"
@@ -2250,7 +2252,7 @@ fn eval_supported_constant_list_compact_external_call(
 
     let columns = arg_exprs
         .into_iter()
-        .map(|expr| eval_supported_constant_record_field_name(working_set, expr))
+        .map(|expr| eval_supported_constant_record_field_name(working_set, expr, env))
         .collect::<Result<Vec<_>, _>>()?;
     eval_supported_constant_list_compact(input, remove_empty, columns, span)
 }
@@ -7087,7 +7089,7 @@ fn eval_supported_constant_bytes_external_call(
             ),
         );
     };
-    let subcommand = eval_supported_constant_record_field_name(working_set, subcommand_expr)?;
+    let subcommand = eval_supported_constant_record_field_name(working_set, subcommand_expr, env)?;
 
     match subcommand.as_str() {
         "length" => {
@@ -11675,7 +11677,7 @@ fn eval_supported_constant_split_external_call(
             ),
         );
     };
-    let subcommand = eval_supported_constant_record_field_name(working_set, subcommand_expr)?;
+    let subcommand = eval_supported_constant_record_field_name(working_set, subcommand_expr, env)?;
 
     match subcommand.as_str() {
         "chars" => {
@@ -11749,7 +11751,7 @@ fn eval_supported_constant_str_external_call(
             ),
         );
     };
-    let subcommand = eval_supported_constant_record_field_name(working_set, subcommand_expr)?;
+    let subcommand = eval_supported_constant_record_field_name(working_set, subcommand_expr, env)?;
 
     match subcommand.as_str() {
         "length" => {
@@ -12328,6 +12330,7 @@ fn eval_supported_constant_record_select_or_reject_call(
     cmd_name: &str,
     input: Option<Value>,
     args: &[nu_protocol::ast::Argument],
+    env: &HashMap<nu_protocol::VarId, Value>,
     span: Span,
 ) -> Result<Value, LabeledError> {
     let fields = args
@@ -12335,7 +12338,7 @@ fn eval_supported_constant_record_select_or_reject_call(
         .map(|arg| match arg {
             nu_protocol::ast::Argument::Positional(expr)
             | nu_protocol::ast::Argument::Unknown(expr) => {
-                eval_supported_constant_record_field_name(working_set, expr)
+                eval_supported_constant_record_field_name(working_set, expr, env)
             }
             nu_protocol::ast::Argument::Named(named) => Err(LabeledError::new(
                 "Unsupported annotated mutable global initializer",
@@ -12435,8 +12438,16 @@ fn eval_supported_constant_record_select_or_reject(
 fn eval_supported_constant_record_field_name(
     working_set: &StateWorkingSet,
     expr: &nu_protocol::ast::Expression,
+    env: &HashMap<nu_protocol::VarId, Value>,
 ) -> Result<String, LabeledError> {
-    match eval_supported_constant_value(working_set, expr)? {
+    let value = match &expr.expr {
+        Expr::Var(var_id) if env.contains_key(var_id) => {
+            env.get(var_id).expect("env key checked").clone()
+        }
+        _ => eval_supported_constant_value_with_env(working_set, expr, env)?,
+    };
+
+    match value {
         Value::String { val, .. } | Value::Glob { val, .. } => Ok(val),
         Value::CellPath { val, .. } => match val.members.as_slice() {
             [nu_protocol::ast::PathMember::String { val, .. }] => Ok(val.clone()),
@@ -12460,6 +12471,7 @@ fn eval_supported_constant_record_rename_call(
     working_set: &StateWorkingSet,
     input: Option<Value>,
     call: &nu_protocol::ast::Call,
+    env: &HashMap<nu_protocol::VarId, Value>,
     span: Span,
 ) -> Result<Value, LabeledError> {
     for (name, _, _) in call.named_iter() {
@@ -12502,13 +12514,14 @@ fn eval_supported_constant_record_rename_call(
                     span,
                 ));
         }
-        let pairs = eval_supported_constant_record_rename_column_pairs(working_set, column_expr)?;
+        let pairs =
+            eval_supported_constant_record_rename_column_pairs(working_set, column_expr, env)?;
         return eval_supported_constant_record_rename_column(input, pairs, span);
     }
 
     let positional = call.positional_iter().collect::<Vec<_>>();
     if let Some(first) = positional.first() {
-        let first_value = eval_supported_constant_value(working_set, first)?;
+        let first_value = eval_supported_constant_value_with_env(working_set, first, env)?;
         if matches!(
             first_value,
             Value::String { ref val, .. } | Value::Glob { ref val, .. } if val == "--column" || val == "-c"
@@ -12521,12 +12534,12 @@ fn eval_supported_constant_record_rename_call(
                     ));
             };
             let pairs =
-                eval_supported_constant_record_rename_column_pairs(working_set, column_expr)?;
+                eval_supported_constant_record_rename_column_pairs(working_set, column_expr, env)?;
             return eval_supported_constant_record_rename_column(input, pairs, span);
         }
     }
     if positional.len() == 1 {
-        let value = eval_supported_constant_value(working_set, positional[0])?;
+        let value = eval_supported_constant_value_with_env(working_set, positional[0], env)?;
         if matches!(value, Value::Record { .. }) {
             let pairs = eval_supported_constant_record_rename_column_pairs_from_value(
                 value,
@@ -12538,7 +12551,7 @@ fn eval_supported_constant_record_rename_call(
 
     let fields = call
         .positional_iter()
-        .map(|expr| eval_supported_constant_record_field_name(working_set, expr))
+        .map(|expr| eval_supported_constant_record_field_name(working_set, expr, env))
         .collect::<Result<Vec<_>, _>>()?;
     eval_supported_constant_record_rename_positional(input, fields, span)
 }
@@ -12546,8 +12559,9 @@ fn eval_supported_constant_record_rename_call(
 fn eval_supported_constant_record_rename_column_pairs(
     working_set: &StateWorkingSet,
     expr: &nu_protocol::ast::Expression,
+    env: &HashMap<nu_protocol::VarId, Value>,
 ) -> Result<Vec<(String, String)>, LabeledError> {
-    let value = eval_supported_constant_value(working_set, expr)?;
+    let value = eval_supported_constant_value_with_env(working_set, expr, env)?;
     eval_supported_constant_record_rename_column_pairs_from_value(value, expr.span)
 }
 
@@ -13004,7 +13018,7 @@ fn eval_supported_constant_default(
     let mut record = val.into_owned();
     let mut column_names = Vec::new();
     for expr in column_exprs {
-        let name = eval_supported_constant_record_field_name(working_set, expr)?;
+        let name = eval_supported_constant_record_field_name(working_set, expr, env)?;
         if !column_names.contains(&name) {
             column_names.push(name);
         }

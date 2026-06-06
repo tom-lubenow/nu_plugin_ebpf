@@ -984,6 +984,24 @@ fn test_map_leading_annotated_mut_globals_supports_constant_default_null_record_
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_let_bound_default_record_field_initializer() {
+    let source = r#"{|| let field = "pid"; mut state: record<pid: int cpu: int> = ({cpu: 2} | default 9 $field); $state }"#;
+    let ir_block = one_let_then_single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("let-bound default record field initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::Record { val, .. } => {
+            assert_eq!(val.get("pid").and_then(|v| v.as_int().ok()), Some(9));
+            assert_eq!(val.get("cpu").and_then(|v| v.as_int().ok()), Some(2));
+        }
+        other => panic!("expected record initializer, got {other:?}"),
+    }
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_rejects_default_missing_value() {
     let source = "{|| mut val: int = (null | default); $val }";
     let ir_block = IrBlock {
@@ -1089,6 +1107,43 @@ fn test_map_leading_annotated_mut_globals_supports_constant_record_reject_initia
             assert_eq!(val.len(), 2);
             assert_eq!(val.get("pid").and_then(|v| v.as_int().ok()), Some(7));
             assert_eq!(val.get("mem").and_then(|v| v.as_int().ok()), Some(4));
+            assert!(val.get("cpu").is_none());
+        }
+        other => panic!("expected record initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_let_bound_record_select_field_initializer() {
+    let source = r#"{|| let field = "pid"; mut state: record<pid: int> = ({pid: 7, cpu: 2} | select $field); $state }"#;
+    let ir_block = one_let_then_single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("let-bound record select field initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::Record { val, .. } => {
+            assert_eq!(val.len(), 1);
+            assert_eq!(val.get("pid").and_then(|v| v.as_int().ok()), Some(7));
+        }
+        other => panic!("expected record initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_let_bound_record_reject_field_initializer() {
+    let source = r#"{|| let field = "cpu"; mut state: record<pid: int> = ({pid: 7, cpu: 2} | reject $field); $state }"#;
+    let ir_block = one_let_then_single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("let-bound record reject field initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::Record { val, .. } => {
+            assert_eq!(val.len(), 1);
+            assert_eq!(val.get("pid").and_then(|v| v.as_int().ok()), Some(7));
             assert!(val.get("cpu").is_none());
         }
         other => panic!("expected record initializer, got {other:?}"),
@@ -1208,6 +1263,44 @@ fn test_map_leading_annotated_mut_globals_supports_constant_record_rename_column
             assert_eq!(val.get("mem").and_then(|v| v.as_int().ok()), Some(4));
             assert!(val.get("pid").is_none());
             assert!(val.get("cpu").is_none());
+        }
+        other => panic!("expected record initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_let_bound_record_rename_field_initializer() {
+    let source = r#"{|| let target = "tid"; mut state: record<tid: int cpu: int> = ({pid: 7, cpu: 2} | rename $target); $state }"#;
+    let ir_block = one_let_then_single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("let-bound record rename field initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::Record { val, .. } => {
+            assert_eq!(val.get("tid").and_then(|v| v.as_int().ok()), Some(7));
+            assert_eq!(val.get("cpu").and_then(|v| v.as_int().ok()), Some(2));
+            assert!(val.get("pid").is_none());
+        }
+        other => panic!("expected record initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_let_bound_record_rename_column_initializer() {
+    let source = r#"{|| let mapping = {pid: "tid"}; mut state: record<tid: int cpu: int> = ({pid: 7, cpu: 2} | rename --column $mapping); $state }"#;
+    let ir_block = one_let_then_single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("let-bound record rename --column initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::Record { val, .. } => {
+            assert_eq!(val.get("tid").and_then(|v| v.as_int().ok()), Some(7));
+            assert_eq!(val.get("cpu").and_then(|v| v.as_int().ok()), Some(2));
+            assert!(val.get("pid").is_none());
         }
         other => panic!("expected record initializer, got {other:?}"),
     }
@@ -1788,6 +1881,35 @@ fn test_map_leading_annotated_mut_globals_supports_constant_record_list_compact_
 
     let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
         .expect("constant record-list compact column initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::List { vals, .. } => {
+            assert_eq!(vals.len(), 1);
+            let Value::Record { val, .. } = &vals[0] else {
+                panic!("expected compacted item to be a record, got {:?}", vals[0]);
+            };
+            assert_eq!(
+                val.get("pid").and_then(|value| value.as_int().ok()),
+                Some(7)
+            );
+            assert_eq!(
+                val.get("ok").and_then(|value| value.as_bool().ok()),
+                Some(true)
+            );
+        }
+        other => panic!("expected list initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_let_bound_record_list_compact_column_initializer()
+ {
+    let source = r#"{|| let field = "ok"; mut vals: list<record<pid: int ok: bool>> = ([{pid: 7, ok: true}, {pid: 8, ok: null}] | compact $field); $vals }"#;
+    let ir_block = one_let_then_single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("let-bound record-list compact column initializer should map cleanly");
 
     assert_eq!(globals.len(), 1);
     match &globals[0].initial_value {
@@ -7318,6 +7440,24 @@ fn test_map_leading_annotated_mut_globals_supports_constant_str_trim_initializer
             .initial_value
             .as_str()
             .expect("str trim should produce a string"),
+        "abc"
+    );
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_let_bound_external_str_subcommand_initializer() {
+    let source = r#"{|| let subcommand = "trim"; mut trimmed: string = ("  abc  " | ^str $subcommand); $trimmed }"#;
+    let ir_block = one_let_then_single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("let-bound external str subcommand initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(
+        globals[0]
+            .initial_value
+            .as_str()
+            .expect("external str trim should produce a string"),
         "abc"
     );
 }
