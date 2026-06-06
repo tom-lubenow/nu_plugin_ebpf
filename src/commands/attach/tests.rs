@@ -4614,6 +4614,237 @@ fn test_map_leading_annotated_mut_globals_rejects_constant_math_min_max_float_re
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_math_avg_filesize_initializer() {
+    let source = "{|| mut out: filesize = ([1000b, 2000b] | math avg); $out }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant math avg filesize initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::Filesize { val, .. } => assert_eq!(val.get(), 1500),
+        other => panic!("expected filesize initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_root_external_constant_math_avg_duration() {
+    let source = "{|| mut out: duration = ([1sec, 3sec] | ^math avg); $out }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("root external constant math avg duration initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::Duration { val, .. } => assert_eq!(*val, 2_000_000_000),
+        other => panic!("expected duration initializer, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_math_unit_reductions() {
+    let cases = [
+        (
+            "{|| mut out: filesize = ([1000b, 2000b] | math sum); $out }",
+            3000,
+            "math sum should fold homogeneous filesize input",
+        ),
+        (
+            "{|| mut out: filesize = ([3000b, 1000b, 2000b] | math min); $out }",
+            1000,
+            "math min should fold filesize input",
+        ),
+        (
+            "{|| mut out: filesize = ([1000b, 3000b, 2000b] | math max); $out }",
+            3000,
+            "math max should fold filesize input",
+        ),
+    ];
+
+    for (source, expected, message) in cases {
+        let ir_block = IrBlock {
+            instructions: vec![
+                Instruction::StoreVariable {
+                    var_id: VarId::new(11),
+                    src: RegId::new(0),
+                },
+                Instruction::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: VarId::new(11),
+                },
+                Instruction::Return { src: RegId::new(0) },
+            ],
+            spans: vec![Span::test_data(); 3],
+            data: Vec::<u8>::new().into(),
+            ast: vec![None; 3],
+            comments: vec!["let".into(), "".into(), "".into()],
+            register_count: 1,
+            file_count: 0,
+        };
+
+        let globals =
+            super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+                .unwrap_or_else(|err| panic!("{message}: {err:?}"));
+
+        assert_eq!(globals.len(), 1);
+        match &globals[0].initial_value {
+            Value::Filesize { val, .. } => assert_eq!(val.get(), expected, "{message}"),
+            other => panic!("expected filesize initializer, got {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_math_median_unit_initializers() {
+    let cases = [
+        (
+            "{|| mut out: filesize = ([3000b, 1000b, 2000b] | math median); $out }",
+            2000,
+            "math median should fold odd filesize input",
+        ),
+        (
+            "{|| mut out: filesize = ([1000b, 3000b] | math median); $out }",
+            2000,
+            "math median should fold even filesize input with integer average",
+        ),
+    ];
+
+    for (source, expected, message) in cases {
+        let ir_block = IrBlock {
+            instructions: vec![
+                Instruction::StoreVariable {
+                    var_id: VarId::new(11),
+                    src: RegId::new(0),
+                },
+                Instruction::LoadVariable {
+                    dst: RegId::new(0),
+                    var_id: VarId::new(11),
+                },
+                Instruction::Return { src: RegId::new(0) },
+            ],
+            spans: vec![Span::test_data(); 3],
+            data: Vec::<u8>::new().into(),
+            ast: vec![None; 3],
+            comments: vec!["let".into(), "".into(), "".into()],
+            register_count: 1,
+            file_count: 0,
+        };
+
+        let globals =
+            super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+                .unwrap_or_else(|err| panic!("{message}: {err:?}"));
+
+        assert_eq!(globals.len(), 1);
+        match &globals[0].initial_value {
+            Value::Filesize { val, .. } => assert_eq!(val.get(), expected, "{message}"),
+            other => panic!("expected filesize initializer, got {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_rejects_constant_math_avg_mixed_units() {
+    let source = "{|| mut out: filesize = ([1000b, 1sec] | math avg); $out }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let err = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect_err("math avg should reject mixed filesize and duration units");
+
+    assert!(
+        format!("{err:?}").contains("homogeneous filesize or duration"),
+        "unexpected error: {err:?}"
+    );
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_rejects_constant_math_product_unit_input() {
+    let source = "{|| mut out: filesize = ([1000b, 2000b] | math product); $out }";
+    let ir_block = IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(0),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 3],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 3],
+        comments: vec!["let".into(), "".into(), "".into()],
+        register_count: 1,
+        file_count: 0,
+    };
+
+    let err = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect_err("math product should reject filesize input");
+
+    assert!(
+        format!("{err:?}").contains("does not support filesize or duration"),
+        "unexpected error: {err:?}"
+    );
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_supports_constant_math_median_int_initializer() {
     let source = "{|| mut out: int = ([30, 10, 20] | math median); $out }";
     let ir_block = IrBlock {

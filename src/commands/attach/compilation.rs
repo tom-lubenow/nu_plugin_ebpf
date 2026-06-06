@@ -794,6 +794,10 @@ fn eval_supported_constant_call(
             eval_supported_constant_no_argument_call(cmd_name, &call.arguments)?;
             eval_supported_constant_math_abs(input, span)
         }
+        "math avg" => {
+            eval_supported_constant_no_argument_call(cmd_name, &call.arguments)?;
+            eval_supported_constant_math_avg(input, span)
+        }
         "math max" | "math min" | "math product" | "math sum" => {
             eval_supported_constant_no_argument_call(cmd_name, &call.arguments)?;
             eval_supported_constant_math_int_reduce(cmd_name, input, span)
@@ -1246,6 +1250,10 @@ fn eval_supported_constant_external_call(
         "math abs" => {
             eval_supported_constant_no_external_args(cmd_name, args, span)?;
             eval_supported_constant_math_abs(input, span)
+        }
+        "math avg" => {
+            eval_supported_constant_no_external_args(cmd_name, args, span)?;
+            eval_supported_constant_math_avg(input, span)
         }
         "math max" | "math min" | "math product" | "math sum" => {
             eval_supported_constant_no_external_args(cmd_name, args, span)?;
@@ -5527,6 +5535,164 @@ fn eval_supported_constant_math_abs(
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ConstantMathI64Unit {
+    Filesize,
+    Duration,
+}
+
+fn eval_supported_constant_math_i64_unit_value(
+    value: &Value,
+) -> Option<(i64, ConstantMathI64Unit)> {
+    match value {
+        Value::Filesize { val, .. } => Some((val.get(), ConstantMathI64Unit::Filesize)),
+        Value::Duration { val, .. } => Some((*val, ConstantMathI64Unit::Duration)),
+        _ => None,
+    }
+}
+
+fn eval_supported_constant_math_i64_value(value: &Value) -> Option<i64> {
+    match value {
+        Value::Int { val, .. } => Some(*val),
+        Value::Filesize { val, .. } => Some(val.get()),
+        Value::Duration { val, .. } => Some(*val),
+        _ => None,
+    }
+}
+
+fn eval_supported_constant_math_unit_value(
+    value: i64,
+    unit: ConstantMathI64Unit,
+    span: Span,
+) -> Value {
+    match unit {
+        ConstantMathI64Unit::Filesize => Value::filesize(nu_protocol::Filesize::new(value), span),
+        ConstantMathI64Unit::Duration => Value::duration(value, span),
+    }
+}
+
+fn eval_supported_constant_math_avg(
+    input: Option<Value>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let value = eval_supported_constant_required_pipeline_input("math avg", input, span)?;
+    let value_span = value.span();
+    let Value::List { vals, .. } = value else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`math avg` in a compile-time global initializer requires non-empty numeric list input",
+                span,
+            ),
+        );
+    };
+
+    if vals.is_empty() {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`math avg` requires a non-empty numeric list in compile-time global initializers",
+                span,
+            ),
+        );
+    }
+
+    if vals
+        .iter()
+        .any(|value| eval_supported_constant_math_i64_unit_value(value).is_some())
+    {
+        return eval_supported_constant_math_unit_avg(vals, value_span, span);
+    }
+
+    for (index, value) in vals.into_iter().enumerate() {
+        match value {
+            Value::Int { .. } => {}
+            Value::Float { val, .. } if val.is_finite() => {}
+            Value::Float { val, .. } => {
+                return Err(
+                    LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            format!(
+                                "`math avg` requires finite float list items in compile-time global initializers; item {index} is {val}"
+                            ),
+                            span,
+                        ),
+                );
+            }
+            other => {
+                return Err(
+                    LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            format!(
+                                "`math avg` requires integer, finite float, filesize, or duration list items in compile-time global initializers; item {index} has type {}",
+                                other.get_type()
+                            ),
+                            span,
+                        ),
+                );
+            }
+        }
+    }
+
+    Err(
+        LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+            "`math avg` compile-time list result has type float; mutable global initializers support only materializable eBPF values",
+            span,
+        ),
+    )
+}
+
+fn eval_supported_constant_math_unit_avg(
+    vals: Vec<Value>,
+    value_span: Span,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let len = vals.len() as i128;
+    let mut unit = None;
+    let mut total = 0i128;
+    for (index, value) in vals.into_iter().enumerate() {
+        let Some((raw, value_unit)) = eval_supported_constant_math_i64_unit_value(&value) else {
+            return Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    format!(
+                        "`math avg` requires homogeneous filesize or duration list items in compile-time global initializers; item {index} has type {}",
+                        value.get_type()
+                    ),
+                    span,
+                ),
+            );
+        };
+        if let Some(unit) = unit {
+            if unit != value_unit {
+                return Err(
+                    LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            format!(
+                                "`math avg` requires homogeneous filesize or duration list items in compile-time global initializers; item {index} has type {}",
+                                value.get_type()
+                            ),
+                            span,
+                        ),
+                );
+            }
+        } else {
+            unit = Some(value_unit);
+        }
+        total += raw as i128;
+    }
+
+    let avg = total / len;
+    let avg = i64::try_from(avg).map_err(|_| {
+        LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+            "`math avg` filesize/duration result overflows i64 in compile-time global initializers",
+            span,
+        )
+    })?;
+    Ok(eval_supported_constant_math_unit_value(
+        avg,
+        unit.expect("non-empty unit avg has a unit"),
+        value_span,
+    ))
+}
+
 fn eval_supported_constant_math_int_reduce(
     cmd_name: &str,
     input: Option<Value>,
@@ -5554,6 +5720,13 @@ fn eval_supported_constant_math_int_reduce(
                 span,
             ),
         );
+    }
+
+    if vals
+        .iter()
+        .any(|value| eval_supported_constant_math_i64_unit_value(value).is_some())
+    {
+        return eval_supported_constant_math_unit_reduce(cmd_name, vals, value_span, span);
     }
 
     if matches!(cmd_name, "math max" | "math min") {
@@ -5608,6 +5781,120 @@ fn eval_supported_constant_math_int_reduce(
     };
 
     Ok(Value::int(result, value_span))
+}
+
+fn eval_supported_constant_math_unit_reduce(
+    cmd_name: &str,
+    vals: Vec<Value>,
+    value_span: Span,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    match cmd_name {
+        "math sum" => eval_supported_constant_math_unit_sum(cmd_name, vals, value_span, span),
+        "math min" | "math max" => {
+            eval_supported_constant_math_unit_min_max(cmd_name, vals, span)
+        }
+        "math product" => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "`math product` does not support filesize or duration list input in compile-time global initializers",
+                span,
+            ),
+        ),
+        _ => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`{cmd_name}` is not a supported filesize/duration reducer in compile-time global initializers"
+                ),
+                span,
+            ),
+        ),
+    }
+}
+
+fn eval_supported_constant_math_unit_sum(
+    cmd_name: &str,
+    vals: Vec<Value>,
+    value_span: Span,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let mut unit = None;
+    let mut total = 0i64;
+    for (index, value) in vals.into_iter().enumerate() {
+        let Some((raw, value_unit)) = eval_supported_constant_math_i64_unit_value(&value) else {
+            return Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    format!(
+                        "`{cmd_name}` requires homogeneous filesize or duration list items in compile-time global initializers; item {index} has type {}",
+                        value.get_type()
+                    ),
+                    span,
+                ),
+            );
+        };
+        if let Some(unit) = unit {
+            if unit != value_unit {
+                return Err(
+                    LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            format!(
+                                "`{cmd_name}` requires homogeneous filesize or duration list items in compile-time global initializers; item {index} has type {}",
+                                value.get_type()
+                            ),
+                            span,
+                        ),
+                );
+            }
+        } else {
+            unit = Some(value_unit);
+        }
+        total = total.checked_add(raw).ok_or_else(|| {
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`{cmd_name}` filesize/duration result overflows i64 in compile-time global initializers"
+                ),
+                span,
+            )
+        })?;
+    }
+
+    Ok(eval_supported_constant_math_unit_value(
+        total,
+        unit.expect("non-empty unit sum has a unit"),
+        value_span,
+    ))
+}
+
+fn eval_supported_constant_math_unit_min_max(
+    cmd_name: &str,
+    vals: Vec<Value>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let mut selected = None::<(i64, Value)>;
+    for (index, value) in vals.into_iter().enumerate() {
+        let Some(raw) = eval_supported_constant_math_i64_value(&value) else {
+            return Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    format!(
+                        "`{cmd_name}` requires integer, filesize, or duration list items in compile-time global initializers; item {index} has type {}",
+                        value.get_type()
+                    ),
+                    span,
+                ),
+            );
+        };
+        let should_update = selected.as_ref().is_none_or(|(selected_raw, _)| {
+            if cmd_name == "math min" {
+                raw < *selected_raw
+            } else {
+                raw > *selected_raw
+            }
+        });
+        if should_update {
+            selected = Some((raw, value));
+        }
+    }
+
+    Ok(selected.expect("non-empty min/max has a selected value").1)
 }
 
 fn eval_supported_constant_math_min_max(
@@ -5697,6 +5984,13 @@ fn eval_supported_constant_math_median(
             ),
         );
     }
+
+    if vals
+        .iter()
+        .any(|value| eval_supported_constant_math_i64_unit_value(value).is_some())
+    {
+        return eval_supported_constant_math_unit_median(vals, value_span, span);
+    }
     if vals.len() % 2 == 0 {
         return Err(
             LabeledError::new("Unsupported annotated mutable global initializer").with_label(
@@ -5752,6 +6046,58 @@ fn eval_supported_constant_math_median(
         ),
         _ => unreachable!("median values were validated as integer or finite float"),
     }
+}
+
+fn eval_supported_constant_math_unit_median(
+    vals: Vec<Value>,
+    value_span: Span,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let mut unit = None;
+    let mut values = Vec::with_capacity(vals.len());
+    for (index, value) in vals.into_iter().enumerate() {
+        let Some((raw, value_unit)) = eval_supported_constant_math_i64_unit_value(&value) else {
+            return Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    format!(
+                        "`math median` requires homogeneous filesize or duration list items in compile-time global initializers; item {index} has type {}",
+                        value.get_type()
+                    ),
+                    span,
+                ),
+            );
+        };
+        if let Some(unit) = unit {
+            if unit != value_unit {
+                return Err(
+                    LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            format!(
+                                "`math median` requires homogeneous filesize or duration list items in compile-time global initializers; item {index} has type {}",
+                                value.get_type()
+                            ),
+                            span,
+                        ),
+                );
+            }
+        } else {
+            unit = Some(value_unit);
+        }
+        values.push(raw);
+    }
+
+    values.sort_unstable();
+    let median = if values.len() % 2 == 1 {
+        values[values.len() / 2]
+    } else {
+        let upper = values.len() / 2;
+        ((values[upper - 1] as i128 + values[upper] as i128) / 2) as i64
+    };
+    Ok(eval_supported_constant_math_unit_value(
+        median,
+        unit.expect("non-empty unit median has a unit"),
+        value_span,
+    ))
 }
 
 fn eval_supported_constant_math_mode(
@@ -5961,6 +6307,10 @@ fn eval_supported_constant_math_external_call(
         "math abs" => {
             eval_supported_constant_no_external_args(&cmd_name, remaining_args, span)?;
             eval_supported_constant_math_abs(input, span)
+        }
+        "math avg" => {
+            eval_supported_constant_no_external_args(&cmd_name, remaining_args, span)?;
+            eval_supported_constant_math_avg(input, span)
         }
         "math max" | "math min" | "math product" | "math sum" => {
             eval_supported_constant_no_external_args(&cmd_name, remaining_args, span)?;
