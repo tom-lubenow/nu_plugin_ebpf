@@ -8,7 +8,10 @@ use heck::{
 use nu_cmd_lang::create_default_context;
 use nu_parser::parse;
 use nu_plugin::{EngineInterface, EvaluatedCall};
-use nu_protocol::ast::{CellPath, Expr, ExternalArgument, ListItem, RangeInclusion, RecordItem};
+use nu_protocol::ast::{
+    Boolean, CellPath, Comparison, Expr, ExternalArgument, ListItem, Math, Operator,
+    RangeInclusion, RecordItem,
+};
 use nu_protocol::casing::Casing;
 use nu_protocol::engine::{Closure, StateWorkingSet};
 use nu_protocol::eval_const::{eval_constant, eval_constant_with_input};
@@ -435,6 +438,10 @@ fn eval_supported_constant_value_with_input(
                     "Only earlier leading `let` declarations with supported constant initializers can be referenced by annotated `mut` global initializers",
                 )
         }),
+        Expr::UnaryNot(inner) => eval_supported_constant_unary_not(working_set, inner, env),
+        Expr::BinaryOp(lhs, op_expr, rhs) => {
+            eval_supported_constant_binary_op(working_set, lhs, op_expr, rhs, env, expr.span)
+        }
         Expr::FullCellPath(full_cell_path) => {
             let value = eval_supported_constant_value_with_input(
                 working_set,
@@ -535,6 +542,301 @@ fn eval_supported_constant_value_with_input(
             .with_help(
                 "Leading annotated `mut` declarations in eBPF closures require a compile-time constant initializer",
             )),
+    }
+}
+
+fn eval_supported_constant_unary_not(
+    working_set: &StateWorkingSet,
+    expr: &nu_protocol::ast::Expression,
+    env: &HashMap<nu_protocol::VarId, Value>,
+) -> Result<Value, LabeledError> {
+    let value = eval_supported_constant_value_with_env(working_set, expr, env)?;
+    let Value::Bool { val, .. } = value else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`not` requires a compile-time boolean in global initializers; got {}",
+                    value.get_type()
+                ),
+                expr.span,
+            ),
+        );
+    };
+    Ok(Value::bool(!val, expr.span))
+}
+
+fn eval_supported_constant_binary_op(
+    working_set: &StateWorkingSet,
+    lhs: &nu_protocol::ast::Expression,
+    op_expr: &nu_protocol::ast::Expression,
+    rhs: &nu_protocol::ast::Expression,
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let Expr::Operator(op) = &op_expr.expr else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                "constant binary expressions require an operator in global initializers",
+                op_expr.span,
+            ),
+        );
+    };
+    let op = *op;
+
+    match op {
+        Operator::Boolean(boolean) => {
+            eval_supported_constant_boolean_op(working_set, lhs, boolean, rhs, env, span)
+        }
+        Operator::Comparison(comparison) => {
+            let lhs_value = eval_supported_constant_value_with_env(working_set, lhs, env)?;
+            let rhs_value = eval_supported_constant_value_with_env(working_set, rhs, env)?;
+            eval_supported_constant_comparison_op(comparison, lhs_value, rhs_value, span)
+        }
+        Operator::Math(math) => {
+            let lhs_value = eval_supported_constant_value_with_env(working_set, lhs, env)?;
+            let rhs_value = eval_supported_constant_value_with_env(working_set, rhs, env)?;
+            eval_supported_constant_math_binary_op(math, lhs_value, rhs_value, span)
+        }
+        Operator::Bits(_) | Operator::Assignment(_) => Err(LabeledError::new(
+            "Unsupported annotated mutable global initializer",
+        )
+        .with_label(
+            format!(
+                "operator `{}` is not supported in compile-time global initializers",
+                op.as_str()
+            ),
+            span,
+        )),
+    }
+}
+
+fn eval_supported_constant_boolean_op(
+    working_set: &StateWorkingSet,
+    lhs: &nu_protocol::ast::Expression,
+    op: Boolean,
+    rhs: &nu_protocol::ast::Expression,
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let lhs_value = eval_supported_constant_value_with_env(working_set, lhs, env)?;
+    let Value::Bool { val: lhs_bool, .. } = lhs_value else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`{op}` requires compile-time boolean operands in global initializers; left operand has type {}",
+                    lhs_value.get_type()
+                ),
+                lhs.span,
+            ),
+        );
+    };
+
+    if op == Boolean::And && !lhs_bool {
+        return Ok(Value::bool(false, span));
+    }
+    if op == Boolean::Or && lhs_bool {
+        return Ok(Value::bool(true, span));
+    }
+
+    let rhs_value = eval_supported_constant_value_with_env(working_set, rhs, env)?;
+    let Value::Bool { val: rhs_bool, .. } = rhs_value else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`{op}` requires compile-time boolean operands in global initializers; right operand has type {}",
+                    rhs_value.get_type()
+                ),
+                rhs.span,
+            ),
+        );
+    };
+
+    let output = match op {
+        Boolean::And => lhs_bool && rhs_bool,
+        Boolean::Or => lhs_bool || rhs_bool,
+        Boolean::Xor => lhs_bool ^ rhs_bool,
+    };
+    Ok(Value::bool(output, span))
+}
+
+fn eval_supported_constant_comparison_op(
+    op: Comparison,
+    lhs: Value,
+    rhs: Value,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let result = match op {
+        Comparison::Equal => eval_supported_constant_values_equal(&lhs, &rhs),
+        Comparison::NotEqual => {
+            eval_supported_constant_values_equal(&lhs, &rhs).map(|value| !value)
+        }
+        Comparison::LessThan
+        | Comparison::GreaterThan
+        | Comparison::LessThanOrEqual
+        | Comparison::GreaterThanOrEqual => eval_supported_constant_values_compare(op, &lhs, &rhs),
+        _ => None,
+    };
+
+    result.map(|value| Value::bool(value, span)).ok_or_else(|| {
+        LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+            format!(
+                "`{op}` is not supported for compile-time operands {} and {} in global initializers",
+                lhs.get_type(),
+                rhs.get_type()
+            ),
+            span,
+        )
+    })
+}
+
+fn eval_supported_constant_values_equal(lhs: &Value, rhs: &Value) -> Option<bool> {
+    match (lhs, rhs) {
+        (Value::Bool { val: lhs, .. }, Value::Bool { val: rhs, .. }) => Some(lhs == rhs),
+        (Value::Int { val: lhs, .. }, Value::Int { val: rhs, .. }) => Some(lhs == rhs),
+        (Value::Filesize { val: lhs, .. }, Value::Filesize { val: rhs, .. }) => Some(lhs == rhs),
+        (Value::Duration { val: lhs, .. }, Value::Duration { val: rhs, .. }) => Some(lhs == rhs),
+        (Value::String { val: lhs, .. }, Value::String { val: rhs, .. })
+        | (Value::String { val: lhs, .. }, Value::Glob { val: rhs, .. })
+        | (Value::Glob { val: lhs, .. }, Value::String { val: rhs, .. })
+        | (Value::Glob { val: lhs, .. }, Value::Glob { val: rhs, .. }) => Some(lhs == rhs),
+        (Value::Binary { val: lhs, .. }, Value::Binary { val: rhs, .. }) => Some(lhs == rhs),
+        (Value::Nothing { .. }, Value::Nothing { .. }) => Some(true),
+        _ => None,
+    }
+}
+
+fn eval_supported_constant_values_compare(
+    op: Comparison,
+    lhs: &Value,
+    rhs: &Value,
+) -> Option<bool> {
+    match (lhs, rhs) {
+        (Value::Int { val: lhs, .. }, Value::Int { val: rhs, .. }) => {
+            eval_supported_constant_ord_compare(op, lhs.cmp(rhs))
+        }
+        (Value::Filesize { val: lhs, .. }, Value::Filesize { val: rhs, .. }) => {
+            eval_supported_constant_ord_compare(op, lhs.cmp(rhs))
+        }
+        (Value::Duration { val: lhs, .. }, Value::Duration { val: rhs, .. }) => {
+            eval_supported_constant_ord_compare(op, lhs.cmp(rhs))
+        }
+        (Value::String { val: lhs, .. }, Value::String { val: rhs, .. })
+        | (Value::String { val: lhs, .. }, Value::Glob { val: rhs, .. })
+        | (Value::Glob { val: lhs, .. }, Value::String { val: rhs, .. })
+        | (Value::Glob { val: lhs, .. }, Value::Glob { val: rhs, .. }) => {
+            eval_supported_constant_ord_compare(op, lhs.cmp(rhs))
+        }
+        _ => None,
+    }
+}
+
+fn eval_supported_constant_ord_compare(
+    op: Comparison,
+    ordering: std::cmp::Ordering,
+) -> Option<bool> {
+    match op {
+        Comparison::LessThan => Some(ordering.is_lt()),
+        Comparison::GreaterThan => Some(ordering.is_gt()),
+        Comparison::LessThanOrEqual => Some(!ordering.is_gt()),
+        Comparison::GreaterThanOrEqual => Some(!ordering.is_lt()),
+        _ => None,
+    }
+}
+
+fn eval_supported_constant_math_binary_op(
+    op: Math,
+    lhs: Value,
+    rhs: Value,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    match op {
+        Math::Add | Math::Subtract | Math::Multiply => {
+            eval_supported_constant_int_math_binary_op(op, lhs, rhs, span)
+        }
+        Math::Concatenate => eval_supported_constant_concatenate_binary_op(lhs, rhs, span),
+        Math::Divide | Math::FloorDivide | Math::Modulo | Math::Pow => Err(LabeledError::new(
+            "Unsupported annotated mutable global initializer",
+        )
+        .with_label(
+            format!(
+                "operator `{}` is not supported in compile-time global initializers",
+                op.as_str()
+            ),
+            span,
+        )),
+    }
+}
+
+fn eval_supported_constant_int_math_binary_op(
+    op: Math,
+    lhs: Value,
+    rhs: Value,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let (Value::Int { val: lhs, .. }, Value::Int { val: rhs, .. }) = (&lhs, &rhs) else {
+        return Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "operator `{}` requires compile-time integer operands in global initializers; got {} and {}",
+                    op.as_str(),
+                    lhs.get_type(),
+                    rhs.get_type()
+                ),
+                span,
+            ),
+        );
+    };
+
+    let output = match op {
+        Math::Add => lhs.checked_add(*rhs),
+        Math::Subtract => lhs.checked_sub(*rhs),
+        Math::Multiply => lhs.checked_mul(*rhs),
+        _ => unreachable!("integer math op prefiltered"),
+    }
+    .ok_or_else(|| {
+        LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+            format!(
+                "operator `{}` overflows i64 in compile-time global initializers",
+                op.as_str()
+            ),
+            span,
+        )
+    })?;
+
+    Ok(Value::int(output, span))
+}
+
+fn eval_supported_constant_concatenate_binary_op(
+    lhs: Value,
+    rhs: Value,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    match (lhs, rhs) {
+        (Value::String { mut val, .. }, Value::String { val: rhs, .. })
+        | (Value::String { mut val, .. }, Value::Glob { val: rhs, .. })
+        | (Value::Glob { mut val, .. }, Value::String { val: rhs, .. })
+        | (Value::Glob { mut val, .. }, Value::Glob { val: rhs, .. }) => {
+            val.push_str(&rhs);
+            Ok(Value::string(val, span))
+        }
+        (Value::Binary { mut val, .. }, Value::Binary { val: rhs, .. }) => {
+            val.extend(rhs);
+            Ok(Value::binary(val, span))
+        }
+        (Value::List { mut vals, .. }, Value::List { vals: rhs, .. }) => {
+            vals.extend(rhs);
+            Ok(Value::list(vals, span))
+        }
+        (lhs, rhs) => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "operator `++` requires string, binary, or list operands in compile-time global initializers; got {} and {}",
+                    lhs.get_type(),
+                    rhs.get_type()
+                ),
+                span,
+            ),
+        ),
     }
 }
 

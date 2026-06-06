@@ -51,6 +51,32 @@ fn single_annotated_global_return_ir_block() -> IrBlock {
     }
 }
 
+fn one_let_then_single_annotated_global_return_ir_block() -> IrBlock {
+    IrBlock {
+        instructions: vec![
+            Instruction::StoreVariable {
+                var_id: VarId::new(10),
+                src: RegId::new(0),
+            },
+            Instruction::StoreVariable {
+                var_id: VarId::new(11),
+                src: RegId::new(1),
+            },
+            Instruction::LoadVariable {
+                dst: RegId::new(0),
+                var_id: VarId::new(11),
+            },
+            Instruction::Return { src: RegId::new(0) },
+        ],
+        spans: vec![Span::test_data(); 4],
+        data: Vec::<u8>::new().into(),
+        ast: vec![None; 4],
+        comments: vec!["let".into(), "let".into(), "".into(), "".into()],
+        register_count: 2,
+        file_count: 0,
+    }
+}
+
 #[test]
 fn test_extract_decl_names_from_formatted_instructions_preserves_user_function_names() {
     let decl_names = super::extract_decl_names_from_formatted_instructions(&[
@@ -487,6 +513,42 @@ fn test_map_leading_annotated_mut_globals_supports_let_bound_record_merge_initia
         }
         other => panic!("expected record initializer, got {other:?}"),
     }
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_let_bound_integer_expression_initializer() {
+    let source = "{|| let base = 40; mut value: int = ($base + 2); $value }";
+    let ir_block = one_let_then_single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("let-bound integer expression initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(globals[0].initial_value.as_int().ok(), Some(42));
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_let_bound_boolean_expression_initializer() {
+    let source = "{|| let threshold = 4; mut ok: bool = ($threshold >= 4 and not false); $ok }";
+    let ir_block = one_let_then_single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("let-bound boolean expression initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(globals[0].initial_value.as_bool().ok(), Some(true));
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_let_bound_concat_expression_initializer() {
+    let source = r#"{|| let suffix = "bar"; mut name: string = ("foo" ++ $suffix); $name }"#;
+    let ir_block = one_let_then_single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("let-bound concat expression initializer should map cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(globals[0].initial_value.as_str().ok(), Some("foobar"));
 }
 
 #[test]
