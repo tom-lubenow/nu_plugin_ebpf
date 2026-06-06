@@ -6360,6 +6360,42 @@ fn test_map_leading_annotated_mut_globals_supports_root_external_constant_math_r
 }
 
 #[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_math_round_precision_fill() {
+    let source = r#"{|| mut value: string = (1.234 | math round --precision 2 | fill --width 5 --alignment right --character "0"); $value }"#;
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant math round precision result should feed fill cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(globals[0].initial_value.as_str().ok(), Some("01.23"));
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_constant_math_round_precision_list_str_join() {
+    let source = r#"{|| mut value: string = ([1.234, 5.678, 10] | math round --precision 1 | str join ","); $value }"#;
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("constant math round precision list result should feed str join cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(globals[0].initial_value.as_str().ok(), Some("1.2,5.7,10.0"));
+}
+
+#[test]
+fn test_map_leading_annotated_mut_globals_supports_external_constant_math_round_precision_fill() {
+    let source = r#"{|| mut value: string = (1.234 | ^math round --precision 2 | fill --width 5 --alignment right --character "0"); $value }"#;
+    let ir_block = single_annotated_global_return_ir_block();
+
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("external constant math round precision result should feed fill cleanly");
+
+    assert_eq!(globals.len(), 1);
+    assert_eq!(globals[0].initial_value.as_str().ok(), Some("01.23"));
+}
+
+#[test]
 fn test_map_leading_annotated_mut_globals_rejects_constant_math_rounding_non_numeric_list_item() {
     let source = "{|| mut out: list<int> = ([1, \"bad\"] | math ceil); $out }";
     let ir_block = IrBlock {
@@ -6392,8 +6428,8 @@ fn test_map_leading_annotated_mut_globals_rejects_constant_math_rounding_non_num
 }
 
 #[test]
-fn test_map_leading_annotated_mut_globals_rejects_constant_math_rounding_precision() {
-    let source = "{|| mut out: int = (1.25 | math round --precision 1); $out }";
+fn test_map_leading_annotated_mut_globals_supports_round_precision_float_initializer() {
+    let source = "{|| mut out: float = (1.25 | math round --precision 1); $out }";
     let ir_block = IrBlock {
         instructions: vec![
             Instruction::StoreVariable {
@@ -6414,13 +6450,14 @@ fn test_map_leading_annotated_mut_globals_rejects_constant_math_rounding_precisi
         file_count: 0,
     };
 
-    let err = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
-        .expect_err("math round precision should be rejected for mutable global materialization");
+    let globals = super::map_leading_annotated_mut_globals(source, &ir_block, Span::test_data())
+        .expect("math round precision float initializer should map cleanly");
 
-    assert!(
-        format!("{err:?}").contains("does not accept arguments"),
-        "unexpected error: {err:?}"
-    );
+    assert_eq!(globals.len(), 1);
+    match &globals[0].initial_value {
+        Value::Float { val, .. } => assert!((*val - 1.3).abs() < f64::EPSILON),
+        other => panic!("expected float initializer, got {other:?}"),
+    }
 }
 
 #[test]

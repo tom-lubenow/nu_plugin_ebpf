@@ -1187,8 +1187,13 @@ fn eval_supported_constant_call(
             eval_supported_constant_math_variance_stddev(cmd_name, input, sample, span)
         }
         "math ceil" | "math floor" | "math round" => {
-            eval_supported_constant_no_argument_call(cmd_name, &call.arguments)?;
-            eval_supported_constant_math_rounding(cmd_name, input, span)
+            let mode = eval_supported_constant_math_rounding_call_mode(
+                working_set,
+                cmd_name,
+                &call.arguments,
+                env,
+            )?;
+            eval_supported_constant_math_rounding(cmd_name, input, mode, span)
         }
         "math log" => {
             let base =
@@ -1685,8 +1690,14 @@ fn eval_supported_constant_external_call(
             eval_supported_constant_math_variance_stddev(cmd_name, input, sample, span)
         }
         "math ceil" | "math floor" | "math round" => {
-            eval_supported_constant_no_external_args(cmd_name, args, span)?;
-            eval_supported_constant_math_rounding(cmd_name, input, span)
+            let mode = eval_supported_constant_math_rounding_external_mode(
+                working_set,
+                cmd_name,
+                args,
+                env,
+                span,
+            )?;
+            eval_supported_constant_math_rounding(cmd_name, input, mode, span)
         }
         "math log" => {
             let base =
@@ -7183,23 +7194,249 @@ fn eval_supported_constant_math_variance_stddev(
     eval_supported_constant_math_float_unary_result(cmd_name, result, value_span, None, span)
 }
 
+#[derive(Debug, Clone, Copy)]
+enum ConstantMathRoundingMode {
+    Integer,
+    Precision(i64),
+}
+
+fn eval_supported_constant_math_rounding_call_mode(
+    working_set: &StateWorkingSet,
+    cmd_name: &str,
+    args: &[nu_protocol::ast::Argument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+) -> Result<ConstantMathRoundingMode, LabeledError> {
+    if cmd_name != "math round" {
+        eval_supported_constant_no_argument_call(cmd_name, args)?;
+        return Ok(ConstantMathRoundingMode::Integer);
+    }
+
+    let mut precision = None;
+    for arg in args {
+        match arg {
+            nu_protocol::ast::Argument::Named(named) => {
+                let is_precision = matches!(named.0.item.as_str(), "precision" | "p")
+                    || named
+                        .1
+                        .as_ref()
+                        .is_some_and(|short| short.item.as_str() == "p");
+                if !is_precision {
+                    return Err(
+                        LabeledError::new("Unsupported annotated mutable global initializer")
+                            .with_label(
+                                "`math round` accepts only the optional --precision argument in compile-time global initializers",
+                                arg.span(),
+                            ),
+                    );
+                }
+                let Some(value_expr) = named.2.as_ref() else {
+                    return Err(
+                        LabeledError::new("Unsupported annotated mutable global initializer")
+                            .with_label(
+                                "`math round --precision` requires a value in compile-time global initializers",
+                                arg.span(),
+                            ),
+                    );
+                };
+                let value = eval_supported_constant_value_with_env(working_set, value_expr, env)?;
+                let value = eval_supported_constant_math_round_precision_argument_value(
+                    value,
+                    false,
+                    value_expr.span,
+                )?;
+                if precision.replace(value).is_some() {
+                    return Err(
+                        LabeledError::new("Unsupported annotated mutable global initializer")
+                            .with_label(
+                                "`math round` accepts only one --precision value in compile-time global initializers",
+                                arg.span(),
+                            ),
+                    );
+                }
+            }
+            nu_protocol::ast::Argument::Spread(expr) => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`math round` arguments cannot use spread syntax in compile-time global initializers",
+                        expr.span,
+                    ));
+            }
+            nu_protocol::ast::Argument::Positional(_) | nu_protocol::ast::Argument::Unknown(_) => {
+                return Err(
+                    LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            "`math round` accepts only the optional --precision argument in compile-time global initializers",
+                            arg.span(),
+                        ),
+                );
+            }
+        }
+    }
+
+    Ok(precision
+        .map(ConstantMathRoundingMode::Precision)
+        .unwrap_or(ConstantMathRoundingMode::Integer))
+}
+
+fn eval_supported_constant_math_rounding_external_mode(
+    working_set: &StateWorkingSet,
+    cmd_name: &str,
+    args: &[ExternalArgument],
+    env: &HashMap<nu_protocol::VarId, Value>,
+    span: Span,
+) -> Result<ConstantMathRoundingMode, LabeledError> {
+    if cmd_name != "math round" {
+        eval_supported_constant_no_external_args(cmd_name, args, span)?;
+        return Ok(ConstantMathRoundingMode::Integer);
+    }
+
+    let mut precision = None;
+    let mut iter = args.iter();
+    while let Some(arg) = iter.next() {
+        let ExternalArgument::Regular(expr) = arg else {
+            return Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    "`math round` arguments cannot use spread syntax in compile-time global initializers",
+                    arg.expr().span,
+                ),
+            );
+        };
+        let value = eval_supported_constant_value_with_env(working_set, expr, env)?;
+        let flag = match value {
+            Value::String { val, .. } | Value::Glob { val, .. } => val,
+            _ => {
+                return Err(LabeledError::new("Unsupported annotated mutable global initializer")
+                    .with_label(
+                        "`math round` external arguments must be compile-time string flags in global initializers",
+                        expr.span,
+                    ));
+            }
+        };
+
+        if let Some(raw) = flag
+            .strip_prefix("--precision=")
+            .or_else(|| flag.strip_prefix("--p="))
+            .or_else(|| flag.strip_prefix("-p="))
+        {
+            let value = eval_supported_constant_math_round_precision_string(raw, expr.span)?;
+            if precision.replace(value).is_some() {
+                return Err(
+                    LabeledError::new("Unsupported annotated mutable global initializer")
+                        .with_label(
+                            "`math round` accepts only one --precision value in compile-time global initializers",
+                            expr.span,
+                        ),
+                );
+            }
+            continue;
+        }
+
+        if !matches!(flag.as_str(), "--precision" | "--p" | "-p") {
+            return Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    "`math round` accepts only the optional --precision argument in compile-time global initializers",
+                    span,
+                ),
+            );
+        }
+
+        let Some(value_arg) = iter.next() else {
+            return Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    "`math round --precision` requires a value in compile-time global initializers",
+                    expr.span,
+                ),
+            );
+        };
+        let ExternalArgument::Regular(value_expr) = value_arg else {
+            return Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    "`math round --precision` value cannot use spread syntax in compile-time global initializers",
+                    value_arg.expr().span,
+                ),
+            );
+        };
+        let value = eval_supported_constant_value_with_env(working_set, value_expr, env)?;
+        let value = eval_supported_constant_math_round_precision_argument_value(
+            value,
+            true,
+            value_expr.span,
+        )?;
+        if precision.replace(value).is_some() {
+            return Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    "`math round` accepts only one --precision value in compile-time global initializers",
+                    expr.span,
+                ),
+            );
+        }
+    }
+
+    Ok(precision
+        .map(ConstantMathRoundingMode::Precision)
+        .unwrap_or(ConstantMathRoundingMode::Integer))
+}
+
+fn eval_supported_constant_math_round_precision_argument_value(
+    value: Value,
+    allow_string: bool,
+    span: Span,
+) -> Result<i64, LabeledError> {
+    match value {
+        Value::Int { val, .. } => Ok(val),
+        Value::String { val, .. } | Value::Glob { val, .. } if allow_string => {
+            eval_supported_constant_math_round_precision_string(&val, span)
+        }
+        other => Err(
+            LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                format!(
+                    "`math round --precision` requires a compile-time integer precision in global initializers; got {}",
+                    other.get_type()
+                ),
+                span,
+            ),
+        ),
+    }
+}
+
+fn eval_supported_constant_math_round_precision_string(
+    raw: &str,
+    span: Span,
+) -> Result<i64, LabeledError> {
+    raw.parse::<i64>().map_err(|_| {
+        LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+            format!(
+                "`math round --precision` requires a compile-time integer precision in global initializers; got {raw:?}"
+            ),
+            span,
+        )
+    })
+}
+
 fn eval_supported_constant_math_rounding(
     cmd_name: &str,
     input: Option<Value>,
+    mode: ConstantMathRoundingMode,
     span: Span,
 ) -> Result<Value, LabeledError> {
     let value = eval_supported_constant_required_pipeline_input(cmd_name, input, span)?;
     let value_span = value.span();
     match value {
         Value::Int { .. } | Value::Float { .. } => {
-            eval_supported_constant_math_rounding_value(cmd_name, value, None, span)
+            eval_supported_constant_math_rounding_value(cmd_name, value, None, mode, span)
         }
         Value::List { vals, .. } => {
             let output = vals
                 .into_iter()
                 .enumerate()
                 .map(|(index, value)| {
-                    eval_supported_constant_math_rounding_value(cmd_name, value, Some(index), span)
+                    eval_supported_constant_math_rounding_value(
+                        cmd_name,
+                        value,
+                        Some(index),
+                        mode,
+                        span,
+                    )
                 })
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(Value::list(output, value_span))
@@ -7220,9 +7457,24 @@ fn eval_supported_constant_math_rounding_value(
     cmd_name: &str,
     value: Value,
     list_index: Option<usize>,
+    mode: ConstantMathRoundingMode,
     span: Span,
 ) -> Result<Value, LabeledError> {
     let value_span = value.span();
+    if let ConstantMathRoundingMode::Precision(precision) = mode {
+        if cmd_name != "math round" {
+            return Err(
+                LabeledError::new("Unsupported annotated mutable global initializer").with_label(
+                    format!("`{cmd_name}` does not accept --precision in compile-time global initializers"),
+                    span,
+                ),
+            );
+        }
+        return eval_supported_constant_math_round_precision_value(
+            value, precision, list_index, span,
+        );
+    }
+
     match value {
         Value::Int { .. } => Ok(value),
         Value::Float { val, .. } => {
@@ -7262,6 +7514,26 @@ fn eval_supported_constant_math_rounding_value(
             ),
         ),
     }
+}
+
+fn eval_supported_constant_math_round_precision_value(
+    value: Value,
+    precision: i64,
+    list_index: Option<usize>,
+    span: Span,
+) -> Result<Value, LabeledError> {
+    let value_span = value.span();
+    let raw =
+        eval_supported_constant_math_float_unary_input("math round", value, list_index, span)?;
+    let factor = 10.0_f64.powf(precision as f64);
+    let result = (raw * factor).round() / factor;
+    eval_supported_constant_math_float_unary_result(
+        "math round",
+        result,
+        value_span,
+        list_index,
+        span,
+    )
 }
 
 fn eval_supported_constant_math_rounding_i64(
@@ -7946,8 +8218,14 @@ fn eval_supported_constant_math_external_call(
             eval_supported_constant_math_variance_stddev(&cmd_name, input, sample, span)
         }
         "math ceil" | "math floor" | "math round" => {
-            eval_supported_constant_no_external_args(&cmd_name, remaining_args, span)?;
-            eval_supported_constant_math_rounding(&cmd_name, input, span)
+            let mode = eval_supported_constant_math_rounding_external_mode(
+                working_set,
+                &cmd_name,
+                remaining_args,
+                env,
+                span,
+            )?;
+            eval_supported_constant_math_rounding(&cmd_name, input, mode, span)
         }
         "math log" => {
             let base = eval_supported_constant_math_log_external_base(
