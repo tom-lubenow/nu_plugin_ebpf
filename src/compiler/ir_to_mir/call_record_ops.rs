@@ -415,6 +415,17 @@ impl<'a> HirToMirLowering<'a> {
                 ))
             })?;
         if input_meta.record_fields.is_empty() {
+            if Self::typed_record_visible_fields(&input_meta).is_some() {
+                return self.lower_typed_record_select_or_reject(
+                    cmd_name,
+                    src_dst,
+                    dst_vreg,
+                    src_dst_had_value,
+                    input_reg,
+                    input_meta,
+                    &names,
+                );
+            }
             return Err(CompileError::UnsupportedInstruction(format!(
                 "{cmd_name} requires record input with compiler-known fields in eBPF"
             )));
@@ -488,6 +499,167 @@ impl<'a> HirToMirLowering<'a> {
         self.emit_metadata_record_result(src_dst, result_vreg, projected_meta)?;
 
         Ok(())
+    }
+
+    fn lower_typed_record_select_or_reject(
+        &mut self,
+        cmd_name: &str,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+        input_reg: Option<RegId>,
+        input_meta: RegMetadata,
+        names: &[String],
+    ) -> Result<(), CompileError> {
+        let input_reg = input_reg.ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires typed record input in eBPF"
+            ))
+        })?;
+        let input_vreg = self.reg_map.get(&input_reg.get()).copied().ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires a typed record value in eBPF"
+            ))
+        })?;
+        let mut input_vreg = input_vreg;
+        let mut input_runtime_ty = self
+            .typed_value_runtime_type(input_reg, input_vreg)
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "{cmd_name} requires type information for typed record input in eBPF"
+                ))
+            })?;
+        if !matches!(input_runtime_ty, MirType::Ptr { .. })
+            && Self::aggregate_call_value_type(&input_runtime_ty).is_some()
+        {
+            input_vreg = self.materialized_metadata_aggregate_vreg(input_reg, input_vreg)?;
+            input_runtime_ty = self
+                .typed_value_runtime_type(input_reg, input_vreg)
+                .ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "{cmd_name} requires type information for materialized typed record input in eBPF"
+                    ))
+                })?;
+        }
+        if !matches!(input_runtime_ty, MirType::Ptr { .. }) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires a typed record pointer input in eBPF"
+            )));
+        }
+
+        let typed_fields = Self::typed_record_visible_fields(&input_meta).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires typed record input in eBPF"
+            ))
+        })?;
+
+        for name in names {
+            if !typed_fields.iter().any(|field| field.name == *name) {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{cmd_name} cannot find record field '{name}'"
+                )));
+            }
+        }
+
+        let selected_typed_fields = if cmd_name == "select" {
+            names
+                .iter()
+                .filter_map(|name| {
+                    typed_fields
+                        .iter()
+                        .find(|field| field.name == *name)
+                        .cloned()
+                })
+                .collect::<Vec<_>>()
+        } else {
+            typed_fields
+                .iter()
+                .filter(|field| !names.contains(&field.name))
+                .cloned()
+                .collect::<Vec<_>>()
+        };
+
+        let mut selected_fields = Vec::with_capacity(selected_typed_fields.len());
+        for field in selected_typed_fields {
+            selected_fields.push(self.project_typed_record_scalar_field(
+                cmd_name,
+                src_dst,
+                input_vreg,
+                &input_runtime_ty,
+                &input_meta,
+                &field,
+            )?);
+        }
+
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+        let projected_meta = RegMetadata {
+            record_fields: selected_fields,
+            ..Default::default()
+        };
+        self.emit_metadata_record_result(src_dst, result_vreg, projected_meta)
+    }
+
+    fn project_typed_record_scalar_field(
+        &mut self,
+        cmd_name: &str,
+        scratch_reg: RegId,
+        input_vreg: VReg,
+        input_runtime_ty: &MirType,
+        input_meta: &RegMetadata,
+        field: &StructField,
+    ) -> Result<RecordField, CompileError> {
+        if field.bitfield.is_some() {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} cannot preserve bitfield typed record field '{}' in eBPF",
+                field.name
+            )));
+        }
+
+        let path_members = vec![PathMember::string(
+            field.name.clone(),
+            false,
+            Casing::Sensitive,
+            Span::unknown(),
+        )];
+        let projected_semantics = input_meta
+            .annotated_semantics
+            .as_ref()
+            .and_then(|semantics| {
+                Self::project_annotated_value_semantics(semantics, &path_members)
+            });
+        let field_vreg = self.func.alloc_vreg();
+        let projected_ty = self.lower_typed_value_projection(
+            scratch_reg,
+            field_vreg,
+            input_vreg,
+            input_runtime_ty,
+            &path_members,
+            &field.name,
+            input_meta.root_ctx_field.as_ref(),
+            input_meta.trusted_btf,
+            projected_semantics.as_ref(),
+        )?;
+        if !projected_ty.is_scalar_like() {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} on typed record input currently supports only scalar output fields in eBPF; field '{}' has type {:?}",
+                field.name, projected_ty
+            )));
+        }
+
+        Ok(RecordField {
+            name: field.name.clone(),
+            value_vreg: field_vreg,
+            source_reg: None,
+            stack_offset: None,
+            ty: projected_ty,
+            semantics: projected_semantics,
+            is_context: false,
+            root_ctx_field: input_meta.root_ctx_field.clone(),
+        })
     }
 
     pub(super) fn lower_metadata_record_rename(
@@ -850,22 +1022,27 @@ impl<'a> HirToMirLowering<'a> {
         Ok(())
     }
 
-    fn typed_record_field_names(meta: &RegMetadata) -> Option<Vec<String>> {
-        fn struct_field_names(ty: &MirType) -> Option<Vec<String>> {
+    fn typed_record_visible_fields(meta: &RegMetadata) -> Option<Vec<StructField>> {
+        fn struct_fields(ty: &MirType) -> Option<Vec<StructField>> {
             match ty {
                 MirType::Struct { fields, .. } => Some(
                     fields
                         .iter()
                         .filter(|field| !field.synthetic)
-                        .map(|field| field.name.clone())
+                        .cloned()
                         .collect(),
                 ),
-                MirType::Ptr { pointee, .. } => struct_field_names(pointee),
+                MirType::Ptr { pointee, .. } => struct_fields(pointee),
                 _ => None,
             }
         }
 
-        meta.field_type.as_ref().and_then(struct_field_names)
+        meta.field_type.as_ref().and_then(struct_fields)
+    }
+
+    fn typed_record_field_names(meta: &RegMetadata) -> Option<Vec<String>> {
+        Self::typed_record_visible_fields(meta)
+            .map(|fields| fields.into_iter().map(|field| field.name).collect())
     }
 
     fn record_values_list_is_metadata_only_supported(value: &nu_protocol::Value) -> bool {

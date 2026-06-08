@@ -9683,6 +9683,149 @@ fn test_lower_global_define_type_record_supports_command_get_field() {
 }
 
 #[test]
+fn test_lower_global_define_type_record_select_reject_supports_scalar_fields() {
+    for (case_idx, (cmd_name, field_names)) in
+        [("select", vec!["pid", "uid"]), ("reject", vec!["comm"])]
+            .into_iter()
+            .enumerate()
+    {
+        let base_decl = 10_350 + case_idx * 10;
+        let define_decl = DeclId::new(base_decl);
+        let global_get_decl = DeclId::new(base_decl + 1);
+        let transform_decl = DeclId::new(base_decl + 2);
+        let get_decl = DeclId::new(base_decl + 3);
+        let decl_names = HashMap::from([
+            (define_decl, "global-define".to_string()),
+            (global_get_decl, "global-get".to_string()),
+            (transform_decl, cmd_name.to_string()),
+            (get_decl, "get".to_string()),
+        ]);
+
+        let mut stmts = vec![
+            HirStmt::LoadLiteral {
+                dst: RegId::new(0),
+                lit: HirLiteral::String("seen_state".into()),
+            },
+            HirStmt::LoadLiteral {
+                dst: RegId::new(1),
+                lit: HirLiteral::String("record{pid:i64,uid:u32,comm:string:8}".into()),
+            },
+            HirStmt::Call {
+                decl_id: define_decl,
+                src_dst: RegId::new(2),
+                args: HirCallArgs {
+                    positional: vec![RegId::new(0)],
+                    named: vec![(b"type".to_vec(), RegId::new(1))],
+                    ..HirCallArgs::default()
+                },
+            },
+            HirStmt::Call {
+                decl_id: global_get_decl,
+                src_dst: RegId::new(3),
+                args: HirCallArgs {
+                    positional: vec![RegId::new(0)],
+                    ..HirCallArgs::default()
+                },
+            },
+        ];
+
+        let mut next_reg = 4;
+        let mut transform_args = Vec::new();
+        for field_name in field_names {
+            let reg = RegId::new(next_reg);
+            next_reg += 1;
+            stmts.push(HirStmt::LoadLiteral {
+                dst: reg,
+                lit: HirLiteral::String(field_name.into()),
+            });
+            transform_args.push(reg);
+        }
+
+        let transform_reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::Call {
+            decl_id: transform_decl,
+            src_dst: transform_reg,
+            args: HirCallArgs {
+                positional: transform_args,
+                pipeline_input: Some(RegId::new(3)),
+                ..HirCallArgs::default()
+            },
+        });
+
+        let uid_field_reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::LoadLiteral {
+            dst: uid_field_reg,
+            lit: HirLiteral::String("uid".into()),
+        });
+
+        let uid_result_reg = RegId::new(next_reg);
+        next_reg += 1;
+        stmts.push(HirStmt::Call {
+            decl_id: get_decl,
+            src_dst: uid_result_reg,
+            args: HirCallArgs {
+                positional: vec![uid_field_reg],
+                pipeline_input: Some(transform_reg),
+                ..HirCallArgs::default()
+            },
+        });
+
+        let func = HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts,
+                terminator: HirTerminator::Return {
+                    src: uid_result_reg,
+                },
+            }],
+            entry: HirBlockId(0),
+            spans: Vec::new(),
+            ast: Vec::new(),
+            comments: Vec::new(),
+            register_count: next_reg,
+            file_count: 0,
+        };
+        let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("global-define --type record{{...}} | {cmd_name} should lower: {err:?}")
+        });
+
+        assert!(
+            result
+                .program
+                .main
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .any(|inst| matches!(
+                    inst,
+                    MirInst::Load {
+                        offset: 8,
+                        ty: MirType::U32,
+                        ..
+                    }
+                )),
+            "expected typed record {cmd_name} output to preserve uid scalar projection"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("typed record {cmd_name} output should compile through codegen: {err:?}")
+            });
+    }
+}
+
+#[test]
 fn test_lower_global_define_type_record_values_shape_consumers_use_field_count() {
     for (case_idx, (consumer_name, expected_const)) in
         [("length", 2), ("is-empty", 0), ("is-not-empty", 1)]
