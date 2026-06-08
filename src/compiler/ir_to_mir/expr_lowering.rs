@@ -161,6 +161,12 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(());
         }
 
+        if matches!(op, Operator::Comparison(Comparison::In | Comparison::NotIn)) {
+            let invert = matches!(op, Operator::Comparison(Comparison::NotIn));
+            self.lower_runtime_string_in_operator(lhs_dst, rhs, invert, constant_value)?;
+            return Ok(());
+        }
+
         if matches!(op, Operator::Math(Math::Pow)) {
             self.lower_integer_pow(lhs_dst, lhs_vreg, rhs, constant_value)?;
             return Ok(());
@@ -522,6 +528,130 @@ impl<'a> HirToMirLowering<'a> {
                 dst: result_vreg,
                 op: BinOpKind::Eq,
                 lhs: MirValue::VReg(matches_vreg),
+                rhs: MirValue::Const(0),
+            });
+        }
+        self.finish_runtime_bool_result(lhs_dst, result_vreg);
+        Ok(())
+    }
+
+    fn lower_runtime_string_in_operator(
+        &mut self,
+        lhs_dst: RegId,
+        rhs: RegId,
+        invert: bool,
+        constant_value: Option<Value>,
+    ) -> Result<(), CompileError> {
+        if let Some(value) = constant_value.as_ref() {
+            self.lower_constant_value(lhs_dst, value)?;
+            return Ok(());
+        }
+
+        let needle = self.source_literal_string(lhs_dst).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "in operator requires a compile-time known string needle in eBPF".into(),
+            )
+        })?;
+        if needle.as_bytes().contains(&0) {
+            return Err(CompileError::UnsupportedInstruction(
+                "in operator does not support NUL bytes in the string needle in eBPF".into(),
+            ));
+        }
+
+        let lhs_meta = self.get_metadata(lhs_dst).cloned();
+        let rhs_meta = self.get_metadata(rhs).cloned();
+        let needle_source = lhs_meta
+            .as_ref()
+            .and_then(|meta| self.string_equality_source(meta))
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "in operator requires tracked string needle in eBPF".into(),
+                )
+            })?;
+        let haystack_source = rhs_meta
+            .as_ref()
+            .and_then(|meta| self.string_equality_source(meta))
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "in operator requires tracked string haystack in eBPF".into(),
+                )
+            })?;
+        let needle_len = needle.len();
+
+        let result_vreg = self.assign_fresh_vreg(lhs_dst);
+        if needle_len == 0 {
+            self.lower_runtime_string_equality_const(lhs_dst, result_vreg, invert, true);
+            return Ok(());
+        }
+        if needle_len > haystack_source.max_len
+            || haystack_source
+                .exact_len
+                .is_some_and(|len| len < needle_len)
+        {
+            self.lower_runtime_string_equality_const(lhs_dst, result_vreg, invert, false);
+            return Ok(());
+        }
+
+        let contains_vreg = if invert {
+            self.func.alloc_vreg()
+        } else {
+            result_vreg
+        };
+        self.emit(MirInst::Copy {
+            dst: contains_vreg,
+            src: MirValue::Const(0),
+        });
+        self.vreg_type_hints.insert(contains_vreg, MirType::Bool);
+
+        let last_offset = haystack_source.exact_len.unwrap_or(haystack_source.max_len) - needle_len;
+        for offset in 0..=last_offset {
+            let bytes_match = self.func.alloc_vreg();
+            self.emit(MirInst::StrCmp {
+                dst: bytes_match,
+                lhs: haystack_source.slot,
+                lhs_offset: offset,
+                rhs: needle_source.slot,
+                rhs_offset: 0,
+                len: needle_len,
+            });
+            self.vreg_type_hints.insert(bytes_match, MirType::Bool);
+
+            let candidate = if haystack_source.exact_len.is_some() {
+                bytes_match
+            } else {
+                let len_matches = self.func.alloc_vreg();
+                self.emit(MirInst::BinOp {
+                    dst: len_matches,
+                    op: BinOpKind::Ge,
+                    lhs: MirValue::VReg(haystack_source.len_vreg),
+                    rhs: MirValue::Const((offset + needle_len) as i64),
+                });
+                self.vreg_type_hints.insert(len_matches, MirType::Bool);
+
+                let candidate = self.func.alloc_vreg();
+                self.emit(MirInst::BinOp {
+                    dst: candidate,
+                    op: BinOpKind::And,
+                    lhs: MirValue::VReg(len_matches),
+                    rhs: MirValue::VReg(bytes_match),
+                });
+                self.vreg_type_hints.insert(candidate, MirType::Bool);
+                candidate
+            };
+
+            self.emit(MirInst::BinOp {
+                dst: contains_vreg,
+                op: BinOpKind::Or,
+                lhs: MirValue::VReg(contains_vreg),
+                rhs: MirValue::VReg(candidate),
+            });
+        }
+
+        if invert {
+            self.emit(MirInst::BinOp {
+                dst: result_vreg,
+                op: BinOpKind::Eq,
+                lhs: MirValue::VReg(contains_vreg),
                 rhs: MirValue::Const(0),
             });
         }
