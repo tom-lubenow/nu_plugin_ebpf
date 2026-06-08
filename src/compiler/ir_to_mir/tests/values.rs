@@ -5504,9 +5504,10 @@ fn make_ctx_pid_mixed_scalar_list_membership_operator_program(
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
-fn make_ctx_pid_filesize_list_in_operator_program(op: Comparison) -> HirProgram {
+fn make_ctx_pid_filesize_list_membership_operator_program(op: Comparison) -> HirProgram {
     let ctx_var = VarId::new(0);
-    let stmts = vec![
+    let list_is_lhs = matches!(op, Comparison::Has | Comparison::NotHas);
+    let mut stmts = vec![
         HirStmt::LoadVariable {
             dst: RegId::new(0),
             var_id: ctx_var,
@@ -5531,18 +5532,32 @@ fn make_ctx_pid_filesize_list_in_operator_program(op: Comparison) -> HirProgram 
                 Span::test_data(),
             )),
         },
+    ];
+    stmts.push(if list_is_lhs {
+        HirStmt::BinaryOp {
+            lhs_dst: RegId::new(2),
+            op: Operator::Comparison(op),
+            rhs: RegId::new(0),
+        }
+    } else {
         HirStmt::BinaryOp {
             lhs_dst: RegId::new(0),
             op: Operator::Comparison(op),
             rhs: RegId::new(2),
-        },
-    ];
+        }
+    });
 
     let func = HirFunction {
         blocks: vec![HirBlock {
             id: HirBlockId(0),
             stmts,
-            terminator: HirTerminator::Return { src: RegId::new(0) },
+            terminator: HirTerminator::Return {
+                src: if list_is_lhs {
+                    RegId::new(2)
+                } else {
+                    RegId::new(0)
+                },
+            },
         }],
         entry: HirBlockId(0),
         spans: Vec::new(),
@@ -15311,9 +15326,13 @@ fn test_lower_membership_operator_on_mixed_scalar_list_filters_by_needle_kind() 
 
     for (op, context, bool_needle) in [
         (Comparison::In, "in numeric", false),
+        (Comparison::NotIn, "not-in numeric", false),
         (Comparison::Has, "has numeric", false),
+        (Comparison::NotHas, "not-has numeric", false),
         (Comparison::In, "in bool", true),
+        (Comparison::NotIn, "not-in bool", true),
         (Comparison::Has, "has bool", true),
+        (Comparison::NotHas, "not-has bool", true),
     ] {
         let hir = make_ctx_pid_mixed_scalar_list_membership_operator_program(op, bool_needle);
 
@@ -15358,8 +15377,13 @@ fn test_lower_membership_operator_on_mixed_scalar_list_filters_by_needle_kind() 
 fn test_lower_membership_operator_rejects_runtime_int_for_filesize_list() {
     let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
 
-    for (op, context) in [(Comparison::In, "in"), (Comparison::NotIn, "not-in")] {
-        let hir = make_ctx_pid_filesize_list_in_operator_program(op);
+    for (op, context) in [
+        (Comparison::In, "in"),
+        (Comparison::NotIn, "not-in"),
+        (Comparison::Has, "has"),
+        (Comparison::NotHas, "not-has"),
+    ] {
+        let hir = make_ctx_pid_filesize_list_membership_operator_program(op);
 
         let err = lower_hir_to_mir_with_hints(
             &hir,
