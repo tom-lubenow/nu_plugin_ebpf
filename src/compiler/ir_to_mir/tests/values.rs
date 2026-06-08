@@ -14944,6 +14944,114 @@ fn test_lower_in_operator_needle_beyond_runtime_capacity_is_constant() {
 }
 
 #[test]
+fn test_lower_has_operator_on_runtime_tracked_string() {
+    let fill_decl = DeclId::new(517);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
+
+    for (op, context) in [(Comparison::Has, "has"), (Comparison::NotHas, "not-has")] {
+        let hir = make_ctx_pid_fill_then_string_comparison_operator_program(fill_decl, "0", op);
+        let decl_names = HashMap::from([(fill_decl, "fill".to_string())]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            Some(&probe_ctx),
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("{context} operator should lower: {err}"));
+
+        assert!(
+            result
+                .program
+                .main
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .any(|inst| matches!(inst, MirInst::StrCmp { len: 1, .. })),
+            "expected {context} operator to lower to bounded substring StrCmp checks"
+        );
+        assert!(
+            result
+                .program
+                .main
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .any(|inst| matches!(
+                    inst,
+                    MirInst::BinOp {
+                        op: BinOpKind::Ge,
+                        rhs: MirValue::Const(1),
+                        ..
+                    }
+                )),
+            "expected {context} operator to guard substring offsets with length checks"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{context} operator should compile: {err}"));
+    }
+}
+
+#[test]
+fn test_lower_has_operator_needle_beyond_runtime_capacity_is_constant() {
+    let fill_decl = DeclId::new(518);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
+
+    for (op, context, expected) in [
+        (Comparison::Has, "has", 0),
+        (Comparison::NotHas, "not-has", 1),
+    ] {
+        let hir = make_ctx_pid_fill_then_string_comparison_operator_program(
+            fill_decl,
+            "000000000000000000000",
+            op,
+        );
+        let decl_names = HashMap::from([(fill_decl, "fill".to_string())]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            Some(&probe_ctx),
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("{context} operator should lower: {err}"));
+
+        assert!(
+            !result
+                .program
+                .main
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .any(|inst| matches!(inst, MirInst::StrCmp { .. })),
+            "expected impossible {context} operator needle to avoid out-of-slot StrCmp"
+        );
+        assert!(
+            result
+                .program
+                .main
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .any(|inst| matches!(
+                    inst,
+                    MirInst::Copy {
+                        src: MirValue::Const(value),
+                        ..
+                    } if *value == expected
+                )),
+            "expected impossible {context} operator needle to lower to constant {expected}"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{context} operator should compile: {err}"));
+    }
+}
+
+#[test]
 fn test_lower_fill_rejects_nul_character() {
     let fill_decl = DeclId::new(2541);
     let starts_with_decl = DeclId::new(2542);

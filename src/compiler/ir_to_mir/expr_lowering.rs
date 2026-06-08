@@ -167,6 +167,15 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(());
         }
 
+        if matches!(
+            op,
+            Operator::Comparison(Comparison::Has | Comparison::NotHas)
+        ) {
+            let invert = matches!(op, Operator::Comparison(Comparison::NotHas));
+            self.lower_runtime_string_has_operator(lhs_dst, rhs, invert, constant_value)?;
+            return Ok(());
+        }
+
         if matches!(op, Operator::Math(Math::Pow)) {
             self.lower_integer_pow(lhs_dst, lhs_vreg, rhs, constant_value)?;
             return Ok(());
@@ -547,40 +556,66 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(());
         }
 
-        let needle = self.source_literal_string(lhs_dst).ok_or_else(|| {
-            CompileError::UnsupportedInstruction(
-                "in operator requires a compile-time known string needle in eBPF".into(),
-            )
-        })?;
-        if needle.as_bytes().contains(&0) {
-            return Err(CompileError::UnsupportedInstruction(
-                "in operator does not support NUL bytes in the string needle in eBPF".into(),
-            ));
+        self.lower_runtime_string_contains_operator(lhs_dst, lhs_dst, rhs, invert, "in")
+    }
+
+    fn lower_runtime_string_has_operator(
+        &mut self,
+        lhs_dst: RegId,
+        rhs: RegId,
+        invert: bool,
+        constant_value: Option<Value>,
+    ) -> Result<(), CompileError> {
+        if let Some(value) = constant_value.as_ref() {
+            self.lower_constant_value(lhs_dst, value)?;
+            return Ok(());
         }
 
-        let lhs_meta = self.get_metadata(lhs_dst).cloned();
-        let rhs_meta = self.get_metadata(rhs).cloned();
-        let needle_source = lhs_meta
+        self.lower_runtime_string_contains_operator(lhs_dst, rhs, lhs_dst, invert, "has")
+    }
+
+    fn lower_runtime_string_contains_operator(
+        &mut self,
+        result_dst: RegId,
+        needle_reg: RegId,
+        haystack_reg: RegId,
+        invert: bool,
+        context: &str,
+    ) -> Result<(), CompileError> {
+        let needle = self.source_literal_string(needle_reg).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "{context} operator requires a compile-time known string needle in eBPF"
+            ))
+        })?;
+        if needle.as_bytes().contains(&0) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{context} operator does not support NUL bytes in the string needle in eBPF"
+            )));
+        }
+
+        let needle_meta = self.get_metadata(needle_reg).cloned();
+        let haystack_meta = self.get_metadata(haystack_reg).cloned();
+        let needle_source = needle_meta
             .as_ref()
             .and_then(|meta| self.string_equality_source(meta))
             .ok_or_else(|| {
-                CompileError::UnsupportedInstruction(
-                    "in operator requires tracked string needle in eBPF".into(),
-                )
+                CompileError::UnsupportedInstruction(format!(
+                    "{context} operator requires tracked string needle in eBPF"
+                ))
             })?;
-        let haystack_source = rhs_meta
+        let haystack_source = haystack_meta
             .as_ref()
             .and_then(|meta| self.string_equality_source(meta))
             .ok_or_else(|| {
-                CompileError::UnsupportedInstruction(
-                    "in operator requires tracked string haystack in eBPF".into(),
-                )
+                CompileError::UnsupportedInstruction(format!(
+                    "{context} operator requires tracked string haystack in eBPF"
+                ))
             })?;
         let needle_len = needle.len();
 
-        let result_vreg = self.assign_fresh_vreg(lhs_dst);
+        let result_vreg = self.assign_fresh_vreg(result_dst);
         if needle_len == 0 {
-            self.lower_runtime_string_equality_const(lhs_dst, result_vreg, invert, true);
+            self.lower_runtime_string_equality_const(result_dst, result_vreg, invert, true);
             return Ok(());
         }
         if needle_len > haystack_source.max_len
@@ -588,7 +623,7 @@ impl<'a> HirToMirLowering<'a> {
                 .exact_len
                 .is_some_and(|len| len < needle_len)
         {
-            self.lower_runtime_string_equality_const(lhs_dst, result_vreg, invert, false);
+            self.lower_runtime_string_equality_const(result_dst, result_vreg, invert, false);
             return Ok(());
         }
 
@@ -655,7 +690,7 @@ impl<'a> HirToMirLowering<'a> {
                 rhs: MirValue::Const(0),
             });
         }
-        self.finish_runtime_bool_result(lhs_dst, result_vreg);
+        self.finish_runtime_bool_result(result_dst, result_vreg);
         Ok(())
     }
 
