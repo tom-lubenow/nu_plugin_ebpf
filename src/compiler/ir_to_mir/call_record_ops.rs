@@ -672,6 +672,31 @@ impl<'a> HirToMirLowering<'a> {
         })
     }
 
+    fn project_typed_record_scalar_fields(
+        &mut self,
+        cmd_name: &str,
+        scratch_reg: RegId,
+        input_reg: Option<RegId>,
+        input_meta: &RegMetadata,
+        typed_fields: &[StructField],
+    ) -> Result<Vec<RecordField>, CompileError> {
+        let (_input_reg, input_vreg, input_runtime_ty) =
+            self.typed_record_input_vreg_and_runtime_ty(cmd_name, input_reg)?;
+
+        let mut projected_fields = Vec::with_capacity(typed_fields.len());
+        for field in typed_fields {
+            projected_fields.push(self.project_typed_record_scalar_field(
+                cmd_name,
+                scratch_reg,
+                input_vreg,
+                &input_runtime_ty,
+                input_meta,
+                field,
+            )?);
+        }
+        Ok(projected_fields)
+    }
+
     pub(super) fn lower_metadata_record_rename(
         &mut self,
         src_dst: RegId,
@@ -1725,13 +1750,23 @@ impl<'a> HirToMirLowering<'a> {
             input_meta.constant_value.as_ref(),
             Some(nu_protocol::Value::Record { val, .. }) if val.is_empty()
         );
-        if input_meta.record_fields.is_empty() && !input_is_known_empty_record {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "{cmd_name} requires record input with compiler-known fields in eBPF"
-            )));
-        }
-
-        let mut fields = input_meta.record_fields.clone();
+        let mut fields = if input_meta.record_fields.is_empty() && !input_is_known_empty_record {
+            if let Some(typed_fields) = Self::typed_record_visible_fields(&input_meta) {
+                self.project_typed_record_scalar_fields(
+                    cmd_name,
+                    src_dst,
+                    input_reg,
+                    &input_meta,
+                    &typed_fields,
+                )?
+            } else {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{cmd_name} requires record input with compiler-known fields in eBPF"
+                )));
+            }
+        } else {
+            input_meta.record_fields.clone()
+        };
         let existing_index = fields.iter().position(|field| field.name == field_name);
         match (cmd_name, existing_index) {
             ("insert", Some(_)) => {
