@@ -664,38 +664,54 @@ impl<'a> HirToMirLowering<'a> {
 
         let list_vreg = self.get_vreg(list_reg);
         let needle_vreg = self.get_vreg(needle_reg);
-        let list_kind = list_meta
+        let list_kinds = match list_meta
             .as_ref()
-            .and_then(Self::constant_list_scalar_match_kind);
-        if list_kind.is_none()
-            && matches!(
-                list_meta
-                    .as_ref()
-                    .and_then(|meta| meta.constant_value.as_ref()),
-                Some(Value::List { .. })
-            )
+            .and_then(|meta| meta.constant_value.as_ref())
         {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "{context} operator requires a homogeneous stack-backed scalar list for runtime membership in eBPF"
-            )));
-        }
-        if matches!(list_kind, Some(None)) || max_len == 0 {
+            Some(Value::List { vals, .. }) => {
+                Some(Self::constant_list_scalar_match_kinds(vals).ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "{context} operator requires a stack-backed scalar list for runtime membership in eBPF"
+                    ))
+                })?)
+            }
+            _ => None,
+        };
+        if list_kinds.as_ref().is_some_and(Vec::is_empty) || max_len == 0 {
             let result_vreg = self.assign_fresh_vreg(result_dst);
             self.lower_runtime_string_equality_const(result_dst, result_vreg, invert, false);
             return Ok(true);
         }
+        let list_kind = list_kinds
+            .as_deref()
+            .and_then(Self::homogeneous_scalar_match_kind);
 
         let needle_meta = self.get_metadata(needle_reg).cloned();
         let needle_const = needle_meta
             .as_ref()
             .and_then(Self::stack_scalar_operand_value_from_metadata);
-        self.validate_stack_list_membership_needle(
+        let needle_kind = self.validate_stack_list_membership_needle(
             needle_reg,
             needle_vreg,
             needle_meta.as_ref(),
-            list_kind.flatten(),
+            list_kind,
+            list_kinds.as_deref(),
             context,
         )?;
+        let source_indices = (0..max_len)
+            .filter(|source_index| {
+                list_kinds.as_ref().is_none_or(|kinds| {
+                    kinds
+                        .get(*source_index)
+                        .is_some_and(|kind| *kind == needle_kind)
+                })
+            })
+            .collect::<Vec<_>>();
+        if source_indices.is_empty() {
+            let result_vreg = self.assign_fresh_vreg(result_dst);
+            self.lower_runtime_string_equality_const(result_dst, result_vreg, invert, false);
+            return Ok(true);
+        }
 
         let needle_value = needle_const
             .map(|needle| self.large_const_operand(&MirType::I64, needle))
@@ -721,9 +737,9 @@ impl<'a> HirToMirLowering<'a> {
             self.vreg_type_hints.insert(len_vreg, MirType::U64);
 
             let continuation_block = self.func.alloc_block();
-            for source_index in 0..max_len {
+            for (iteration, source_index) in source_indices.iter().copied().enumerate() {
                 let compare_block = self.func.alloc_block();
-                let next_block = if source_index + 1 == max_len {
+                let next_block = if iteration + 1 == source_indices.len() {
                     continuation_block
                 } else {
                     self.func.alloc_block()
@@ -785,23 +801,21 @@ impl<'a> HirToMirLowering<'a> {
         Ok(true)
     }
 
-    fn constant_list_scalar_match_kind(meta: &RegMetadata) -> Option<Option<ScalarMatchKind>> {
-        let Value::List { vals, .. } = meta.constant_value.as_ref()? else {
-            return None;
-        };
-
-        let mut expected = None;
+    fn constant_list_scalar_match_kinds(vals: &[Value]) -> Option<Vec<ScalarMatchKind>> {
+        let mut kinds = Vec::with_capacity(vals.len());
         for value in vals {
             let kind = Self::scalar_match_kind_for_value(value)?;
             if matches!(kind, ScalarMatchKind::String) {
                 return None;
             }
-            if expected.is_some_and(|expected| expected != kind) {
-                return None;
-            }
-            expected = Some(kind);
+            kinds.push(kind);
         }
-        Some(expected)
+        Some(kinds)
+    }
+
+    fn homogeneous_scalar_match_kind(kinds: &[ScalarMatchKind]) -> Option<ScalarMatchKind> {
+        let first = *kinds.first()?;
+        kinds.iter().all(|kind| *kind == first).then_some(first)
     }
 
     fn stack_scalar_operand_value_from_metadata(meta: &RegMetadata) -> Option<i64> {
@@ -822,72 +836,71 @@ impl<'a> HirToMirLowering<'a> {
         needle_vreg: VReg,
         needle_meta: Option<&RegMetadata>,
         list_kind: Option<ScalarMatchKind>,
+        allowed_kinds: Option<&[ScalarMatchKind]>,
         context: &str,
-    ) -> Result<(), CompileError> {
+    ) -> Result<ScalarMatchKind, CompileError> {
         if let Some(value) = needle_meta.and_then(|meta| meta.constant_value.as_ref()) {
             let Some(needle_kind) = Self::scalar_match_kind_for_value(value) else {
                 return Err(Self::stack_list_membership_needle_error(context, list_kind));
             };
-            match list_kind {
-                Some(list_kind) if needle_kind != list_kind => {
-                    return Err(Self::stack_list_membership_needle_error(
-                        context,
-                        Some(list_kind),
-                    ));
-                }
-                None if needle_kind != ScalarMatchKind::Int => {
-                    return Err(Self::stack_list_membership_needle_error(context, None));
-                }
-                _ => {}
+            if !Self::stack_list_membership_kind_allowed(needle_kind, list_kind, allowed_kinds) {
+                return Err(Self::stack_list_membership_needle_error(context, list_kind));
             }
-            return Ok(());
+            return Ok(needle_kind);
         }
 
-        match list_kind {
-            Some(ScalarMatchKind::Bool) => {
-                if matches!(
-                    self.source_match_kind(needle_reg, needle_vreg),
-                    Some(KnownSourceMatchKind::Scalar(ScalarMatchKind::Bool))
-                ) {
-                    Ok(())
-                } else {
-                    Err(Self::stack_list_membership_needle_error(
-                        context,
-                        Some(ScalarMatchKind::Bool),
-                    ))
-                }
+        if matches!(
+            self.source_match_kind(needle_reg, needle_vreg),
+            Some(KnownSourceMatchKind::Scalar(ScalarMatchKind::Bool))
+        ) {
+            if Self::stack_list_membership_kind_allowed(
+                ScalarMatchKind::Bool,
+                list_kind,
+                allowed_kinds,
+            ) {
+                return Ok(ScalarMatchKind::Bool);
             }
-            Some(ScalarMatchKind::Int) | None => {
-                if matches!(
-                    self.typed_value_runtime_type(needle_reg, needle_vreg),
-                    Some(
-                        MirType::I8
-                            | MirType::I16
-                            | MirType::I32
-                            | MirType::I64
-                            | MirType::U8
-                            | MirType::U16
-                            | MirType::U32
-                            | MirType::U64
-                    )
-                ) {
-                    Ok(())
-                } else {
-                    Err(Self::stack_list_membership_needle_error(context, list_kind))
-                }
-            }
-            Some(
-                kind @ (ScalarMatchKind::Filesize
-                | ScalarMatchKind::Duration
-                | ScalarMatchKind::Nothing),
-            ) => Err(Self::stack_list_membership_needle_error(
-                context,
-                Some(kind),
-            )),
-            Some(ScalarMatchKind::String) => {
-                Err(Self::stack_list_membership_needle_error(context, list_kind))
-            }
+            return Err(Self::stack_list_membership_needle_error(context, list_kind));
         }
+
+        if matches!(
+            self.typed_value_runtime_type(needle_reg, needle_vreg),
+            Some(
+                MirType::I8
+                    | MirType::I16
+                    | MirType::I32
+                    | MirType::I64
+                    | MirType::U8
+                    | MirType::U16
+                    | MirType::U32
+                    | MirType::U64
+            )
+        ) {
+            if Self::stack_list_membership_kind_allowed(
+                ScalarMatchKind::Int,
+                list_kind,
+                allowed_kinds,
+            ) {
+                return Ok(ScalarMatchKind::Int);
+            }
+            return Err(Self::stack_list_membership_needle_error(context, list_kind));
+        }
+
+        Err(Self::stack_list_membership_needle_error(context, list_kind))
+    }
+
+    fn stack_list_membership_kind_allowed(
+        needle_kind: ScalarMatchKind,
+        list_kind: Option<ScalarMatchKind>,
+        allowed_kinds: Option<&[ScalarMatchKind]>,
+    ) -> bool {
+        if let Some(allowed_kinds) = allowed_kinds {
+            return allowed_kinds.iter().any(|kind| *kind == needle_kind);
+        }
+        if let Some(list_kind) = list_kind {
+            return needle_kind == list_kind;
+        }
+        needle_kind == ScalarMatchKind::Int
     }
 
     fn stack_list_membership_needle_error(
