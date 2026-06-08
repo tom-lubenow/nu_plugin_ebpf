@@ -3494,6 +3494,9 @@ impl<'a> HirToMirLowering<'a> {
         if let Some(value) = meta.constant_value.as_ref() {
             return Some(value.get_type().to_string());
         }
+        if let Some(output) = Self::describe_typed_mutable_global_record_type(meta) {
+            return Some(output);
+        }
         if let Some(output) = meta
             .annotated_semantics
             .as_ref()
@@ -3517,6 +3520,36 @@ impl<'a> HirToMirLowering<'a> {
             .as_ref()
             .or(type_hint)
             .and_then(Self::describe_mir_type)
+    }
+
+    fn describe_typed_mutable_global_record_type(meta: &RegMetadata) -> Option<String> {
+        if !meta.mutable_global_runtime || meta.is_context || meta.trusted_btf {
+            return None;
+        }
+
+        let fields = Self::typed_record_visible_fields(meta)?;
+        if fields.is_empty() {
+            return Some("record".to_string());
+        }
+
+        let semantics = match meta.annotated_semantics.as_ref() {
+            Some(AnnotatedValueSemantics::Record(fields)) => Some(fields),
+            _ => None,
+        };
+        let mut parts = Vec::with_capacity(fields.len());
+        for field in fields {
+            let field_type = semantics
+                .and_then(|fields| {
+                    fields.iter().find_map(|(name, semantics)| {
+                        (name == &field.name)
+                            .then(|| Self::describe_annotated_semantics_type(semantics))
+                            .flatten()
+                    })
+                })
+                .or_else(|| Self::describe_mir_type(&field.ty))?;
+            parts.push(format!("{}: {field_type}", field.name));
+        }
+        Some(format!("record<{}>", parts.join(", ")))
     }
 
     fn describe_record_fields_type(fields: &[RecordField]) -> Option<String> {
