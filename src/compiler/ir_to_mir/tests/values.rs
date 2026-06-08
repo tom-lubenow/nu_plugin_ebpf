@@ -5298,6 +5298,57 @@ fn make_ctx_pid_numeric_list_in_operator_program(op: Comparison) -> HirProgram {
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
+fn make_ctx_pid_numeric_list_has_operator_program(op: Comparison) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let stmts = vec![
+        HirStmt::LoadVariable {
+            dst: RegId::new(0),
+            var_id: ctx_var,
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: HirLiteral::CellPath(Box::new(CellPath {
+                members: vec![string_member("pid")],
+            })),
+        },
+        HirStmt::FollowCellPath {
+            src_dst: RegId::new(0),
+            path: RegId::new(1),
+        },
+        HirStmt::LoadValue {
+            dst: RegId::new(2),
+            val: Box::new(Value::list(
+                vec![
+                    Value::int(1, Span::test_data()),
+                    Value::int(2, Span::test_data()),
+                    Value::int(3, Span::test_data()),
+                ],
+                Span::test_data(),
+            )),
+        },
+        HirStmt::BinaryOp {
+            lhs_dst: RegId::new(2),
+            op: Operator::Comparison(op),
+            rhs: RegId::new(0),
+        },
+    ];
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(2) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
 fn lower_ctx_pid_fill_then_starts_with_program_with_options(
     fill_decl: DeclId,
     starts_with_decl: DeclId,
@@ -15102,6 +15153,66 @@ fn test_lower_has_operator_on_runtime_tracked_string() {
         );
         compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
             .unwrap_or_else(|err| panic!("{context} operator should compile: {err}"));
+    }
+}
+
+#[test]
+fn test_lower_has_operator_on_runtime_numeric_list() {
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
+
+    for (op, context) in [(Comparison::Has, "has"), (Comparison::NotHas, "not-has")] {
+        let hir = make_ctx_pid_numeric_list_has_operator_program(op);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            Some(&probe_ctx),
+            &HashMap::new(),
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("numeric-list {context} operator should lower: {err}"));
+
+        assert!(
+            result
+                .program
+                .main
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .any(|inst| matches!(inst, MirInst::ListLen { .. })),
+            "expected numeric-list {context} operator to read the bounded list length"
+        );
+        assert_eq!(
+            result
+                .program
+                .main
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .filter(|inst| matches!(inst, MirInst::ListGet { .. }))
+                .count(),
+            3,
+            "expected numeric-list {context} operator to scan each bounded list slot"
+        );
+        assert!(
+            result
+                .program
+                .main
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .any(|inst| matches!(
+                    inst,
+                    MirInst::BinOp {
+                        op: BinOpKind::Eq,
+                        ..
+                    }
+                )),
+            "expected numeric-list {context} operator to compare list items with the needle"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("numeric-list {context} operator should compile: {err}"));
     }
 }
 

@@ -217,6 +217,13 @@ impl<'a> HirToMirLowering<'a> {
             Operator::Comparison(Comparison::Has | Comparison::NotHas)
         ) {
             let invert = matches!(op, Operator::Comparison(Comparison::NotHas));
+            if let Some(value) = constant_value.as_ref() {
+                self.lower_constant_value(lhs_dst, value)?;
+                return Ok(());
+            }
+            if self.lower_runtime_numeric_list_has_operator(lhs_dst, rhs, invert)? {
+                return Ok(());
+            }
             self.lower_runtime_string_has_operator(lhs_dst, rhs, invert, constant_value)?;
             return Ok(());
         }
@@ -610,13 +617,35 @@ impl<'a> HirToMirLowering<'a> {
         rhs: RegId,
         invert: bool,
     ) -> Result<bool, CompileError> {
-        let rhs_meta = self.get_metadata(rhs).cloned();
-        let Some((_rhs_slot, max_len)) = rhs_meta.as_ref().and_then(|meta| meta.list_buffer) else {
+        self.lower_runtime_numeric_list_membership_operator(lhs_dst, rhs, lhs_dst, invert, "in")
+    }
+
+    fn lower_runtime_numeric_list_has_operator(
+        &mut self,
+        lhs_dst: RegId,
+        rhs: RegId,
+        invert: bool,
+    ) -> Result<bool, CompileError> {
+        self.lower_runtime_numeric_list_membership_operator(lhs_dst, lhs_dst, rhs, invert, "has")
+    }
+
+    fn lower_runtime_numeric_list_membership_operator(
+        &mut self,
+        result_dst: RegId,
+        list_reg: RegId,
+        needle_reg: RegId,
+        invert: bool,
+        context: &str,
+    ) -> Result<bool, CompileError> {
+        let list_meta = self.get_metadata(list_reg).cloned();
+        let Some((_list_slot, max_len)) = list_meta.as_ref().and_then(|meta| meta.list_buffer)
+        else {
             return Ok(false);
         };
 
-        let needle_vreg = self.get_vreg(lhs_dst);
-        let needle_meta = self.get_metadata(lhs_dst).cloned();
+        let list_vreg = self.get_vreg(list_reg);
+        let needle_vreg = self.get_vreg(needle_reg);
+        let needle_meta = self.get_metadata(needle_reg).cloned();
         let needle_const = needle_meta
             .as_ref()
             .and_then(Self::numeric_in_operand_value_from_metadata);
@@ -626,14 +655,13 @@ impl<'a> HirToMirLowering<'a> {
                 .and_then(|meta| meta.constant_value.as_ref())
                 .is_some()
         {
-            return Err(CompileError::UnsupportedInstruction(
-                "in operator requires a numeric scalar needle for stack-backed numeric lists in eBPF"
-                    .into(),
-            ));
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{context} operator requires a numeric scalar needle for stack-backed numeric lists in eBPF"
+            )));
         }
         if needle_const.is_none()
             && !matches!(
-                self.typed_value_runtime_type(lhs_dst, needle_vreg),
+                self.typed_value_runtime_type(needle_reg, needle_vreg),
                 Some(
                     MirType::I8
                         | MirType::I16
@@ -646,17 +674,15 @@ impl<'a> HirToMirLowering<'a> {
                 )
             )
         {
-            return Err(CompileError::UnsupportedInstruction(
-                "in operator requires a numeric scalar needle for stack-backed numeric lists in eBPF"
-                    .into(),
-            ));
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{context} operator requires a numeric scalar needle for stack-backed numeric lists in eBPF"
+            )));
         }
 
         let needle_value = needle_const
             .map(|needle| self.large_const_operand(&MirType::I64, needle))
             .unwrap_or(MirValue::VReg(needle_vreg));
-        let list_vreg = self.get_vreg(rhs);
-        let result_vreg = self.assign_fresh_vreg(lhs_dst);
+        let result_vreg = self.assign_fresh_vreg(result_dst);
         let contains_vreg = if invert {
             self.func.alloc_vreg()
         } else {
@@ -737,7 +763,7 @@ impl<'a> HirToMirLowering<'a> {
                 rhs: MirValue::Const(0),
             });
         }
-        self.finish_runtime_bool_result(lhs_dst, result_vreg);
+        self.finish_runtime_bool_result(result_dst, result_vreg);
         Ok(true)
     }
 
