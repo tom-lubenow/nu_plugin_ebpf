@@ -40992,6 +40992,113 @@ fn test_lower_empty_record_metadata_lists_counted_first_last_feed_is_empty() {
 }
 
 #[test]
+fn test_lower_record_metadata_lists_feed_empty_predicates() {
+    for (producer_offset, producer_name) in [(0, "columns"), (100, "values")] {
+        for (record_offset, (record_name, record, expected_empty)) in [
+            (
+                0,
+                (
+                    "empty",
+                    Value::record(Record::new(), Span::test_data()),
+                    true,
+                ),
+            ),
+            (
+                10,
+                (
+                    "mixed",
+                    Value::record(
+                        test_record(vec![
+                            ("pid", Value::int(7, Span::test_data())),
+                            ("comm", Value::string("nu", Span::test_data())),
+                        ]),
+                        Span::test_data(),
+                    ),
+                    false,
+                ),
+            ),
+        ] {
+            for (predicate_offset, predicate_name, expected) in [
+                (0, "is-empty", expected_empty),
+                (1, "is-not-empty", !expected_empty),
+            ] {
+                let producer_decl =
+                    DeclId::new(1420 + producer_offset + record_offset + predicate_offset);
+                let predicate_decl =
+                    DeclId::new(1421 + producer_offset + record_offset + predicate_offset);
+                let func = HirFunction {
+                    blocks: vec![HirBlock {
+                        id: HirBlockId(0),
+                        stmts: vec![
+                            HirStmt::LoadValue {
+                                dst: RegId::new(0),
+                                val: Box::new(record.clone()),
+                            },
+                            HirStmt::Call {
+                                decl_id: producer_decl,
+                                src_dst: RegId::new(1),
+                                args: HirCallArgs {
+                                    pipeline_input: Some(RegId::new(0)),
+                                    ..HirCallArgs::default()
+                                },
+                            },
+                            HirStmt::Call {
+                                decl_id: predicate_decl,
+                                src_dst: RegId::new(2),
+                                args: HirCallArgs {
+                                    pipeline_input: Some(RegId::new(1)),
+                                    ..HirCallArgs::default()
+                                },
+                            },
+                        ],
+                        terminator: HirTerminator::Return { src: RegId::new(2) },
+                    }],
+                    entry: HirBlockId(0),
+                    spans: Vec::new(),
+                    ast: Vec::new(),
+                    comments: Vec::new(),
+                    register_count: 3,
+                    file_count: 0,
+                };
+                let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+                let decl_names = HashMap::from([
+                    (producer_decl, producer_name.to_string()),
+                    (predicate_decl, predicate_name.to_string()),
+                ]);
+
+                let result = lower_hir_to_mir_with_hints(
+                    &hir,
+                    None,
+                    &decl_names,
+                    None,
+                    &HashMap::new(),
+                    &HashMap::new(),
+                )
+                .unwrap_or_else(|err| {
+                    panic!(
+                        "{record_name} record {producer_name} should feed {predicate_name}: {err}"
+                    )
+                });
+
+                assert_program_returns_constant(
+                    &result.program,
+                    i64::from(expected),
+                    &format!("{record_name} record {producer_name} {predicate_name}"),
+                );
+                assert_no_runtime_list_operations(
+                    &result.program,
+                    &format!("{record_name} record {producer_name} {predicate_name}"),
+                );
+                compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+                    .unwrap_or_else(|err| {
+                        panic!("{record_name} record {producer_name} {predicate_name} should compile: {err}")
+                    });
+            }
+        }
+    }
+}
+
+#[test]
 fn test_lower_columns_on_empty_metadata_record_materializes_empty_list() {
     let columns_decl = DeclId::new(205);
     let length_decl = DeclId::new(206);

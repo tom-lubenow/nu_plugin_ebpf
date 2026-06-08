@@ -538,6 +538,16 @@ mod tests {
     use crate::program_spec::ProgramSpec;
     use std::collections::HashSet;
 
+    const VERIFIER_DIFF_METADATA_SOURCE: &str = concat!(
+        include_str!("../../../scripts/verifier_diff/metadata/core_features.nu"),
+        "\n",
+        include_str!("../../../scripts/verifier_diff/metadata/tracepoint_features.nu"),
+        "\n",
+        include_str!("../../../scripts/verifier_diff/metadata/context_features.nu"),
+        "\n",
+        include_str!("../../../scripts/verifier_diff/metadata/expectations.nu"),
+    );
+
     fn assert_unique_ctx_field_entry_names(table_name: &str, entries: &[CtxFieldNameEntry]) {
         let mut seen = HashSet::new();
 
@@ -712,7 +722,7 @@ mod tests {
 
     #[test]
     fn test_verifier_diff_generic_context_field_metadata_matches_rust() {
-        let verifier_diff = include_str!("../../../scripts/verifier_diff.nu");
+        let verifier_diff = VERIFIER_DIFF_METADATA_SOURCE;
         let table_body =
             verifier_diff_const_body(verifier_diff, "CONTEXT_FIELD_KERNEL_FEATURES", '[');
 
@@ -760,7 +770,7 @@ mod tests {
 
     #[test]
     fn test_verifier_diff_target_context_field_metadata_matches_rust() {
-        let verifier_diff = include_str!("../../../scripts/verifier_diff.nu");
+        let verifier_diff = VERIFIER_DIFF_METADATA_SOURCE;
         let table_body = verifier_diff_const_body(
             verifier_diff,
             "TARGET_CONTEXT_FIELD_KERNEL_FEATURE_EXPECTATIONS",
@@ -827,7 +837,7 @@ mod tests {
 
     #[test]
     fn test_verifier_diff_context_field_helper_metadata_matches_rust() {
-        let verifier_diff = include_str!("../../../scripts/verifier_diff.nu");
+        let verifier_diff = VERIFIER_DIFF_METADATA_SOURCE;
         let table_body = verifier_diff_const_body(
             verifier_diff,
             "CONTEXT_FIELD_HELPER_KERNEL_FEATURE_EXPECTATIONS",
@@ -894,7 +904,7 @@ mod tests {
 
     #[test]
     fn test_verifier_diff_context_projection_metadata_matches_rust() {
-        let verifier_diff = include_str!("../../../scripts/verifier_diff.nu");
+        let verifier_diff = VERIFIER_DIFF_METADATA_SOURCE;
         let table_body = verifier_diff_const_body(
             verifier_diff,
             "CONTEXT_PROJECTION_KERNEL_FEATURE_EXPECTATIONS",

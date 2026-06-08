@@ -16,20 +16,86 @@ use crate::program_spec::{IterTargetKind, ProgramSpec};
 
 static NU_SCRIPT_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-const VERIFIER_DIFF_SOURCE_WITH_FIXTURES: &str = concat!(
+const VERIFIER_DIFF_SOURCE: &str = concat!(
     include_str!("../../../../scripts/verifier_diff.nu"),
+    "\n",
+    include_str!("../../../../scripts/verifier_diff/metadata/core_features.nu"),
+    "\n",
+    include_str!("../../../../scripts/verifier_diff/metadata/tracepoint_features.nu"),
+    "\n",
+    include_str!("../../../../scripts/verifier_diff/metadata/context_features.nu"),
+    "\n",
+    include_str!("../../../../scripts/verifier_diff/metadata/expectations.nu"),
     "\n",
     include_str!("../../../../scripts/verifier_diff/fixtures.nu"),
     "\n",
-    include_str!("../../../../scripts/verifier_diff/fixtures/fixtures_0001_0500.nu"),
+    include_str!("../../../../scripts/verifier_diff/runtime/core.nu"),
     "\n",
-    include_str!("../../../../scripts/verifier_diff/fixtures/fixtures_0501_1000.nu"),
+    include_str!("../../../../scripts/verifier_diff/runtime/source_text.nu"),
     "\n",
-    include_str!("../../../../scripts/verifier_diff/fixtures/fixtures_1001_1500.nu"),
+    include_str!("../../../../scripts/verifier_diff/runtime/context_fields.nu"),
     "\n",
-    include_str!("../../../../scripts/verifier_diff/fixtures/fixtures_1501_2000.nu"),
+    include_str!("../../../../scripts/verifier_diff/runtime/context_roots.nu"),
     "\n",
-    include_str!("../../../../scripts/verifier_diff/fixtures/fixtures_2001_2282.nu"),
+    include_str!("../../../../scripts/verifier_diff/runtime/program_features.nu"),
+    "\n",
+    include_str!("../../../../scripts/verifier_diff/runtime/matrix_validation.nu"),
+    "\n",
+    include_str!("../../../../scripts/verifier_diff/runtime/execution.nu"),
+    "\n",
+    include_str!("../../../../scripts/verifier_diff/runtime/cli_options.nu"),
+);
+
+const VERIFIER_DIFF_SOURCE_WITH_FIXTURES: &str = concat!(
+    include_str!("../../../../scripts/verifier_diff.nu"),
+    "\n",
+    include_str!("../../../../scripts/verifier_diff/metadata/core_features.nu"),
+    "\n",
+    include_str!("../../../../scripts/verifier_diff/metadata/tracepoint_features.nu"),
+    "\n",
+    include_str!("../../../../scripts/verifier_diff/metadata/context_features.nu"),
+    "\n",
+    include_str!("../../../../scripts/verifier_diff/metadata/expectations.nu"),
+    "\n",
+    include_str!("../../../../scripts/verifier_diff/fixtures.nu"),
+    "\n",
+    include_str!("../../../../scripts/verifier_diff/fixtures/fixtures_0001_0250.nu"),
+    "\n",
+    include_str!("../../../../scripts/verifier_diff/fixtures/fixtures_0251_0500.nu"),
+    "\n",
+    include_str!("../../../../scripts/verifier_diff/fixtures/fixtures_0501_0750.nu"),
+    "\n",
+    include_str!("../../../../scripts/verifier_diff/fixtures/fixtures_0751_1000.nu"),
+    "\n",
+    include_str!("../../../../scripts/verifier_diff/fixtures/fixtures_1001_1250.nu"),
+    "\n",
+    include_str!("../../../../scripts/verifier_diff/fixtures/fixtures_1251_1500.nu"),
+    "\n",
+    include_str!("../../../../scripts/verifier_diff/fixtures/fixtures_1501_1750.nu"),
+    "\n",
+    include_str!("../../../../scripts/verifier_diff/fixtures/fixtures_1751_2000.nu"),
+    "\n",
+    include_str!("../../../../scripts/verifier_diff/fixtures/fixtures_2001_2250.nu"),
+    "\n",
+    include_str!("../../../../scripts/verifier_diff/fixtures/fixtures_2251_2284.nu"),
+    "\n",
+    include_str!("../../../../scripts/verifier_diff/fixtures/fixtures_2285_2285.nu"),
+    "\n",
+    include_str!("../../../../scripts/verifier_diff/runtime/core.nu"),
+    "\n",
+    include_str!("../../../../scripts/verifier_diff/runtime/source_text.nu"),
+    "\n",
+    include_str!("../../../../scripts/verifier_diff/runtime/context_fields.nu"),
+    "\n",
+    include_str!("../../../../scripts/verifier_diff/runtime/context_roots.nu"),
+    "\n",
+    include_str!("../../../../scripts/verifier_diff/runtime/program_features.nu"),
+    "\n",
+    include_str!("../../../../scripts/verifier_diff/runtime/matrix_validation.nu"),
+    "\n",
+    include_str!("../../../../scripts/verifier_diff/runtime/execution.nu"),
+    "\n",
+    include_str!("../../../../scripts/verifier_diff/runtime/cli_options.nu"),
 );
 
 const REPRESENTATIVE_CONTEXT_FIELD_SPEC_SOURCES: &[&str] = &[
@@ -557,7 +623,7 @@ fn verifier_diff_program_target_expectations(source: &str) -> BTreeMap<String, B
 
 #[test]
 fn test_verifier_diff_fixture_summary_exposes_target() {
-    let verifier_diff = include_str!("../../../../scripts/verifier_diff.nu");
+    let verifier_diff = VERIFIER_DIFF_SOURCE;
     let summary_body = verifier_diff
         .split_once("def fixture-summary [fixture compat_kernel] {")
         .expect("expected fixture-summary function")
@@ -841,7 +907,7 @@ fn program_compatibility_verifier_feature_key(
 
 #[test]
 fn test_verifier_diff_iter_target_feature_table_matches_rust() {
-    let verifier_diff = include_str!("../../../../scripts/verifier_diff.nu");
+    let verifier_diff = VERIFIER_DIFF_SOURCE;
     let records =
         verifier_diff_feature_table_records(verifier_diff, "ITER_TARGET_KERNEL_FEATURES", "target");
     let mut expected_targets = BTreeSet::new();
@@ -923,7 +989,7 @@ fn assert_verifier_feature_record_matches_map_kind(
 
 #[test]
 fn test_verifier_diff_map_feature_metadata_matches_rust() {
-    let verifier_diff = include_str!("../../../../scripts/verifier_diff.nu");
+    let verifier_diff = VERIFIER_DIFF_SOURCE;
     let records =
         verifier_diff_feature_table_records(verifier_diff, "MAP_KIND_KERNEL_FEATURES", "kind");
 
@@ -1633,7 +1699,7 @@ $checks
 
 #[test]
 fn test_verifier_diff_map_value_feature_metadata_matches_rust() {
-    let verifier_diff = include_str!("../../../../scripts/verifier_diff.nu");
+    let verifier_diff = VERIFIER_DIFF_SOURCE;
     let records =
         verifier_diff_feature_table_records(verifier_diff, "MAP_VALUE_KERNEL_FEATURES", "token");
     let mut expected_tokens = BTreeSet::new();
@@ -1663,7 +1729,7 @@ fn test_verifier_diff_map_value_feature_metadata_matches_rust() {
 
 #[test]
 fn test_verifier_diff_context_field_feature_metadata_matches_rust() {
-    let verifier_diff = include_str!("../../../../scripts/verifier_diff.nu");
+    let verifier_diff = VERIFIER_DIFF_SOURCE;
     let records = verifier_diff_feature_table_records(
         verifier_diff,
         "CONTEXT_FIELD_KERNEL_FEATURES",
@@ -3622,7 +3688,7 @@ fn test_verifier_diff_context_kfunc_write_scanner_covers_rust_write_surfaces() {
 
 #[test]
 fn test_verifier_diff_target_context_field_feature_metadata_matches_rust() {
-    let verifier_diff = include_str!("../../../../scripts/verifier_diff.nu");
+    let verifier_diff = VERIFIER_DIFF_SOURCE;
     let records = verifier_diff_target_context_field_feature_records(verifier_diff);
 
     for record in &records {
@@ -3674,7 +3740,7 @@ fn test_verifier_diff_target_context_field_feature_metadata_matches_rust() {
 
 #[test]
 fn test_verifier_diff_tracepoint_field_feature_metadata_matches_rust() {
-    let verifier_diff = include_str!("../../../../scripts/verifier_diff.nu");
+    let verifier_diff = VERIFIER_DIFF_SOURCE;
     let records = verifier_diff_tracepoint_field_feature_records(verifier_diff);
 
     for record in &records {
@@ -3710,7 +3776,7 @@ fn test_verifier_diff_tracepoint_field_feature_metadata_matches_rust() {
 
 #[test]
 fn test_verifier_diff_kfunc_feature_metadata_matches_rust() {
-    let verifier_diff = include_str!("../../../../scripts/verifier_diff.nu");
+    let verifier_diff = VERIFIER_DIFF_SOURCE;
     let explicit_records =
         verifier_diff_feature_table_records(verifier_diff, "KFUNC_KERNEL_FEATURES", "name");
     let fallback_records = verifier_diff_kfunc_fallback_records(verifier_diff);
@@ -3873,7 +3939,7 @@ fn test_verifier_diff_target_kernel_features_cover_representative_rust_program_s
 
 #[test]
 fn test_verifier_diff_program_feature_metadata_matches_rust() {
-    let verifier_diff = include_str!("../../../../scripts/verifier_diff.nu");
+    let verifier_diff = VERIFIER_DIFF_SOURCE;
     let verifier_records = verifier_diff_program_feature_records(verifier_diff);
     let vm_only_keys = verifier_diff_kernel_feature_default_lane_keys(verifier_diff, "vm-only");
     let dry_run_keys = verifier_diff_kernel_feature_default_lane_keys(verifier_diff, "dry-run");
@@ -3981,7 +4047,7 @@ fn test_verifier_diff_program_feature_metadata_matches_rust() {
 
 #[test]
 fn test_verifier_diff_program_target_expectations_match_rust() {
-    let verifier_diff = include_str!("../../../../scripts/verifier_diff.nu");
+    let verifier_diff = VERIFIER_DIFF_SOURCE;
     let expectations = verifier_diff_program_target_expectations(verifier_diff);
     assert!(
         !expectations.is_empty(),

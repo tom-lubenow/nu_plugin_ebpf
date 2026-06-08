@@ -1,5 +1,15 @@
 use super::*;
 
+const VERIFIER_DIFF_METADATA_SOURCE: &str = concat!(
+    include_str!("../../../scripts/verifier_diff/metadata/core_features.nu"),
+    "\n",
+    include_str!("../../../scripts/verifier_diff/metadata/tracepoint_features.nu"),
+    "\n",
+    include_str!("../../../scripts/verifier_diff/metadata/context_features.nu"),
+    "\n",
+    include_str!("../../../scripts/verifier_diff/metadata/expectations.nu"),
+);
+
 #[test]
 fn test_mov64_imm_encoding() {
     let insn = EbpfInsn::mov64_imm(EbpfReg::R0, 0);
@@ -883,7 +893,7 @@ fn test_bpf_helper_kernel_compatibility_metadata() {
 
 #[test]
 fn test_verifier_diff_helper_metadata_matches_rust() {
-    let verifier_diff = include_str!("../../../scripts/verifier_diff.nu");
+    let verifier_diff = VERIFIER_DIFF_METADATA_SOURCE;
     let helper_ids_body = nu_const_body(verifier_diff, "BPF_HELPER_IDS", '[');
     let mut helper_ids = std::collections::BTreeMap::new();
     for line in helper_ids_body.lines() {
@@ -6225,7 +6235,7 @@ fn test_known_kfunc_signatures_have_compatibility_metadata() {
 
 #[test]
 fn test_verifier_diff_kfunc_metadata_matches_rust() {
-    let verifier_diff = include_str!("../../../scripts/verifier_diff.nu");
+    let verifier_diff = VERIFIER_DIFF_METADATA_SOURCE;
     let fallback_body = nu_const_body(verifier_diff, "KFUNC_KERNEL_FEATURE_FALLBACKS", '[');
     let mut fallback = std::collections::BTreeMap::new();
     for line in fallback_body.lines() {
