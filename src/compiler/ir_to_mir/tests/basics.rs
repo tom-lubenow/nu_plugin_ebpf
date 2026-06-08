@@ -2158,6 +2158,24 @@ fn test_lower_unsupported_runtime_binary_operator_with_constant_operands() {
             1,
             "constant starts-with",
         ),
+        (
+            make_literal_binary_op_program(
+                HirLiteral::String(b"kernel".to_vec()),
+                Operator::Comparison(Comparison::RegexMatch),
+                HirLiteral::String(b"^kern".to_vec()),
+            ),
+            1,
+            "constant regex match",
+        ),
+        (
+            make_literal_binary_op_program(
+                HirLiteral::String(b"kernel".to_vec()),
+                Operator::Comparison(Comparison::NotRegexMatch),
+                HirLiteral::String(b"^user".to_vec()),
+            ),
+            1,
+            "constant not-regex match",
+        ),
     ] {
         let result = lower_hir_to_mir_with_hints(
             &hir_program,

@@ -3,6 +3,7 @@ use crate::compiler::subfn_summaries::{
     SubfunctionReturnSummary, infer_subfunction_return_summaries,
 };
 use nu_protocol::Record;
+use regex::Regex;
 use std::collections::HashSet;
 
 #[derive(Debug, Clone, Copy)]
@@ -514,7 +515,8 @@ impl<'a> HirToMirLowering<'a> {
                 Comparison::NotStartsWith => lhs.not_starts_with(op_span, rhs, span).ok(),
                 Comparison::EndsWith => lhs.ends_with(op_span, rhs, span).ok(),
                 Comparison::NotEndsWith => lhs.not_ends_with(op_span, rhs, span).ok(),
-                Comparison::RegexMatch | Comparison::NotRegexMatch => None,
+                Comparison::RegexMatch => Self::constant_regex_match(lhs, rhs, false),
+                Comparison::NotRegexMatch => Self::constant_regex_match(lhs, rhs, true),
             },
             Operator::Bits(bits) => match bits {
                 Bits::BitAnd => lhs.bit_and(op_span, rhs, span).ok(),
@@ -530,6 +532,18 @@ impl<'a> HirToMirLowering<'a> {
             },
             Operator::Assignment(_) => None,
         }
+    }
+
+    fn constant_regex_match(lhs: &Value, rhs: &Value, invert: bool) -> Option<Value> {
+        let (Value::String { val: lhs, .. }, Value::String { val: rhs, .. }) = (lhs, rhs) else {
+            return None;
+        };
+
+        let matches = Regex::new(rhs).ok()?.is_match(lhs);
+        Some(Value::bool(
+            if invert { !matches } else { matches },
+            Span::unknown(),
+        ))
     }
 
     pub(super) fn apply_constant_hir_stmt(

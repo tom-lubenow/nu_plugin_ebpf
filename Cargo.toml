@@ -41,6 +41,9 @@ unicode-width = "0.2"
 # Compile-time regex replacement for known string literals
 fancy-regex = "0.17"
 
+# Compile-time regex comparisons for known string literals
+regex = "1"
+
 # Compile-time case conversion for known string literals
 heck = "0.5"
 
