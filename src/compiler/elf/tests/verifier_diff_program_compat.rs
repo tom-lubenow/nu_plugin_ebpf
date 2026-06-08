@@ -183,6 +183,8 @@ const VERIFIER_DIFF_SOURCE_WITH_FIXTURES: &str = concat!(
     "\n",
     include_str!("../../../../scripts/verifier_diff/fixtures/fixtures_2307_2307.nu"),
     "\n",
+    include_str!("../../../../scripts/verifier_diff/fixtures/fixtures_2308_2308.nu"),
+    "\n",
     include_str!("../../../../scripts/verifier_diff/runtime/core.nu"),
     "\n",
     include_str!("../../../../scripts/verifier_diff/runtime/source_text.nu"),
