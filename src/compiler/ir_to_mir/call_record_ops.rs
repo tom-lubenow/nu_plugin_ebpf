@@ -511,41 +511,8 @@ impl<'a> HirToMirLowering<'a> {
         input_meta: RegMetadata,
         names: &[String],
     ) -> Result<(), CompileError> {
-        let input_reg = input_reg.ok_or_else(|| {
-            CompileError::UnsupportedInstruction(format!(
-                "{cmd_name} requires typed record input in eBPF"
-            ))
-        })?;
-        let input_vreg = self.reg_map.get(&input_reg.get()).copied().ok_or_else(|| {
-            CompileError::UnsupportedInstruction(format!(
-                "{cmd_name} requires a typed record value in eBPF"
-            ))
-        })?;
-        let mut input_vreg = input_vreg;
-        let mut input_runtime_ty = self
-            .typed_value_runtime_type(input_reg, input_vreg)
-            .ok_or_else(|| {
-                CompileError::UnsupportedInstruction(format!(
-                    "{cmd_name} requires type information for typed record input in eBPF"
-                ))
-            })?;
-        if !matches!(input_runtime_ty, MirType::Ptr { .. })
-            && Self::aggregate_call_value_type(&input_runtime_ty).is_some()
-        {
-            input_vreg = self.materialized_metadata_aggregate_vreg(input_reg, input_vreg)?;
-            input_runtime_ty = self
-                .typed_value_runtime_type(input_reg, input_vreg)
-                .ok_or_else(|| {
-                    CompileError::UnsupportedInstruction(format!(
-                        "{cmd_name} requires type information for materialized typed record input in eBPF"
-                    ))
-                })?;
-        }
-        if !matches!(input_runtime_ty, MirType::Ptr { .. }) {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "{cmd_name} requires a typed record pointer input in eBPF"
-            )));
-        }
+        let (_input_reg, input_vreg, input_runtime_ty) =
+            self.typed_record_input_vreg_and_runtime_ty(cmd_name, input_reg)?;
 
         let typed_fields = Self::typed_record_visible_fields(&input_meta).ok_or_else(|| {
             CompileError::UnsupportedInstruction(format!(
@@ -601,6 +568,49 @@ impl<'a> HirToMirLowering<'a> {
             ..Default::default()
         };
         self.emit_metadata_record_result(src_dst, result_vreg, projected_meta)
+    }
+
+    fn typed_record_input_vreg_and_runtime_ty(
+        &mut self,
+        cmd_name: &str,
+        input_reg: Option<RegId>,
+    ) -> Result<(RegId, VReg, MirType), CompileError> {
+        let input_reg = input_reg.ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires typed record input in eBPF"
+            ))
+        })?;
+        let input_vreg = self.reg_map.get(&input_reg.get()).copied().ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires a typed record value in eBPF"
+            ))
+        })?;
+        let mut input_vreg = input_vreg;
+        let mut input_runtime_ty = self
+            .typed_value_runtime_type(input_reg, input_vreg)
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "{cmd_name} requires type information for typed record input in eBPF"
+                ))
+            })?;
+        if !matches!(input_runtime_ty, MirType::Ptr { .. })
+            && Self::aggregate_call_value_type(&input_runtime_ty).is_some()
+        {
+            input_vreg = self.materialized_metadata_aggregate_vreg(input_reg, input_vreg)?;
+            input_runtime_ty = self
+                .typed_value_runtime_type(input_reg, input_vreg)
+                .ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "{cmd_name} requires type information for materialized typed record input in eBPF"
+                    ))
+                })?;
+        }
+        if !matches!(input_runtime_ty, MirType::Ptr { .. }) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires a typed record pointer input in eBPF"
+            )));
+        }
+        Ok((input_reg, input_vreg, input_runtime_ty))
     }
 
     fn project_typed_record_scalar_field(
@@ -726,6 +736,22 @@ impl<'a> HirToMirLowering<'a> {
                 )
             })?;
         if input_meta.record_fields.is_empty() {
+            if let Some(typed_fields) = Self::typed_record_visible_fields(&input_meta) {
+                let block_names = block_rename
+                    .map(|block_id| self.rename_block_typed_field_names(block_id, &typed_fields))
+                    .transpose()?;
+                return self.lower_typed_record_rename(
+                    src_dst,
+                    dst_vreg,
+                    src_dst_had_value,
+                    input_reg,
+                    input_meta,
+                    typed_fields,
+                    block_names.as_ref(),
+                    column_renames.as_deref(),
+                    &positional_names,
+                );
+            }
             return Err(CompileError::UnsupportedInstruction(
                 "rename requires record input with compiler-known fields in eBPF".into(),
             ));
@@ -790,6 +816,94 @@ impl<'a> HirToMirLowering<'a> {
         let projected_meta = RegMetadata {
             record_fields: renamed_fields,
             constant_value,
+            ..Default::default()
+        };
+        self.emit_metadata_record_result(src_dst, result_vreg, projected_meta)
+    }
+
+    fn rename_block_typed_field_names(
+        &self,
+        block_id: NuBlockId,
+        fields: &[StructField],
+    ) -> Result<Vec<String>, CompileError> {
+        let commands = self.rename_block_string_transform_commands(block_id)?;
+        fields
+            .iter()
+            .map(|field| {
+                commands
+                    .iter()
+                    .try_fold(field.name.clone(), |name, command| {
+                        Self::known_string_transform(command, name)
+                    })
+            })
+            .collect()
+    }
+
+    fn lower_typed_record_rename(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+        input_reg: Option<RegId>,
+        input_meta: RegMetadata,
+        typed_fields: Vec<StructField>,
+        block_names: Option<&Vec<String>>,
+        column_renames: Option<&[(String, String)]>,
+        positional_names: &[String],
+    ) -> Result<(), CompileError> {
+        let (_input_reg, input_vreg, input_runtime_ty) =
+            self.typed_record_input_vreg_and_runtime_ty("rename", input_reg)?;
+
+        let mut renamed_names = typed_fields
+            .iter()
+            .map(|field| field.name.clone())
+            .collect::<Vec<_>>();
+        if let Some(block_names) = block_names {
+            for (name, block_name) in renamed_names.iter_mut().zip(block_names) {
+                *name = block_name.clone();
+            }
+        } else if let Some(column_renames) = column_renames {
+            for (source, target) in column_renames {
+                let mut found = false;
+                for name in &mut renamed_names {
+                    if name == source {
+                        *name = target.clone();
+                        found = true;
+                    }
+                }
+                if !found {
+                    return Err(CompileError::UnsupportedInstruction(format!(
+                        "rename --column cannot find record field '{source}'"
+                    )));
+                }
+            }
+        } else {
+            for (name, positional_name) in renamed_names.iter_mut().zip(positional_names) {
+                *name = positional_name.clone();
+            }
+        }
+
+        let mut renamed_fields = Vec::with_capacity(typed_fields.len());
+        for (field, renamed_name) in typed_fields.iter().zip(renamed_names) {
+            let mut record_field = self.project_typed_record_scalar_field(
+                "rename",
+                src_dst,
+                input_vreg,
+                &input_runtime_ty,
+                &input_meta,
+                field,
+            )?;
+            record_field.name = renamed_name;
+            renamed_fields.push(record_field);
+        }
+
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+        let projected_meta = RegMetadata {
+            record_fields: renamed_fields,
             ..Default::default()
         };
         self.emit_metadata_record_result(src_dst, result_vreg, projected_meta)
