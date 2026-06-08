@@ -5135,9 +5135,9 @@ fn make_ctx_field_fill_then_starts_with_program_with_options(
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
-fn make_ctx_pid_fill_then_starts_with_operator_program(
+fn make_ctx_pid_fill_then_string_comparison_operator_program(
     fill_decl: DeclId,
-    prefix: &str,
+    rhs: &str,
     op: Comparison,
 ) -> HirProgram {
     let ctx_var = VarId::new(0);
@@ -5166,7 +5166,7 @@ fn make_ctx_pid_fill_then_starts_with_operator_program(
         },
         HirStmt::LoadValue {
             dst: RegId::new(3),
-            val: Box::new(Value::string(prefix, Span::test_data())),
+            val: Box::new(Value::string(rhs, Span::test_data())),
         },
         HirStmt::BinaryOp {
             lhs_dst: RegId::new(2),
@@ -14569,7 +14569,7 @@ fn test_lower_starts_with_operator_on_runtime_tracked_string() {
         (Comparison::StartsWith, "starts-with"),
         (Comparison::NotStartsWith, "not starts-with"),
     ] {
-        let hir = make_ctx_pid_fill_then_starts_with_operator_program(fill_decl, "0", op);
+        let hir = make_ctx_pid_fill_then_string_comparison_operator_program(fill_decl, "0", op);
         let decl_names = HashMap::from([(fill_decl, "fill".to_string())]);
 
         let result = lower_hir_to_mir_with_hints(
@@ -14623,7 +14623,7 @@ fn test_lower_starts_with_operator_prefix_beyond_runtime_capacity_is_constant() 
         (Comparison::StartsWith, "starts-with", 0),
         (Comparison::NotStartsWith, "not starts-with", 1),
     ] {
-        let hir = make_ctx_pid_fill_then_starts_with_operator_program(
+        let hir = make_ctx_pid_fill_then_string_comparison_operator_program(
             fill_decl,
             "000000000000000000000",
             op,
@@ -14665,6 +14665,117 @@ fn test_lower_starts_with_operator_prefix_beyond_runtime_capacity_is_constant() 
                     } if *value == expected
                 )),
             "expected impossible {context} operator prefix to lower to constant {expected}"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{context} operator should compile: {err}"));
+    }
+}
+
+#[test]
+fn test_lower_ends_with_operator_on_runtime_tracked_string() {
+    let fill_decl = DeclId::new(513);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
+
+    for (op, context) in [
+        (Comparison::EndsWith, "ends-with"),
+        (Comparison::NotEndsWith, "not ends-with"),
+    ] {
+        let hir = make_ctx_pid_fill_then_string_comparison_operator_program(fill_decl, "0", op);
+        let decl_names = HashMap::from([(fill_decl, "fill".to_string())]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            Some(&probe_ctx),
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("{context} operator should lower: {err}"));
+
+        assert!(
+            result
+                .program
+                .main
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .any(|inst| matches!(inst, MirInst::StrCmp { len: 1, .. })),
+            "expected {context} operator to lower to bounded suffix StrCmp checks"
+        );
+        assert!(
+            result
+                .program
+                .main
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .any(|inst| matches!(
+                    inst,
+                    MirInst::BinOp {
+                        op: BinOpKind::Eq,
+                        rhs: MirValue::Const(1),
+                        ..
+                    }
+                )),
+            "expected {context} operator to guard suffix offsets with length checks"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{context} operator should compile: {err}"));
+    }
+}
+
+#[test]
+fn test_lower_ends_with_operator_suffix_beyond_runtime_capacity_is_constant() {
+    let fill_decl = DeclId::new(514);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
+
+    for (op, context, expected) in [
+        (Comparison::EndsWith, "ends-with", 0),
+        (Comparison::NotEndsWith, "not ends-with", 1),
+    ] {
+        let hir = make_ctx_pid_fill_then_string_comparison_operator_program(
+            fill_decl,
+            "000000000000000000000",
+            op,
+        );
+        let decl_names = HashMap::from([(fill_decl, "fill".to_string())]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            Some(&probe_ctx),
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("{context} operator should lower: {err}"));
+
+        assert!(
+            !result
+                .program
+                .main
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .any(|inst| matches!(inst, MirInst::StrCmp { .. })),
+            "expected impossible {context} operator suffix to avoid out-of-slot StrCmp"
+        );
+        assert!(
+            result
+                .program
+                .main
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .any(|inst| matches!(
+                    inst,
+                    MirInst::Copy {
+                        src: MirValue::Const(value),
+                        ..
+                    } if *value == expected
+                )),
+            "expected impossible {context} operator suffix to lower to constant {expected}"
         );
         compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
             .unwrap_or_else(|err| panic!("{context} operator should compile: {err}"));
