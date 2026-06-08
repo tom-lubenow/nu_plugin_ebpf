@@ -9936,6 +9936,127 @@ fn test_lower_global_define_type_record_reject_all_fields_marks_empty_record() {
 }
 
 #[test]
+fn test_lower_global_define_type_record_metadata_reject_all_fields_marks_empty_record() {
+    let define_decl = DeclId::new(10_360);
+    let global_get_decl = DeclId::new(10_361);
+    let select_decl = DeclId::new(10_362);
+    let reject_decl = DeclId::new(10_363);
+    let is_empty_decl = DeclId::new(10_364);
+    let decl_names = HashMap::from([
+        (define_decl, "global-define".to_string()),
+        (global_get_decl, "global-get".to_string()),
+        (select_decl, "select".to_string()),
+        (reject_decl, "reject".to_string()),
+        (is_empty_decl, "is-empty".to_string()),
+    ]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::String("seen_state".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("record{pid:i64,uid:u32}".into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        named: vec![(b"type".to_vec(), RegId::new(1))],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: global_get_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::String("pid".into()),
+                },
+                HirStmt::Call {
+                    decl_id: select_decl,
+                    src_dst: RegId::new(5),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(4)],
+                        pipeline_input: Some(RegId::new(3)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(6),
+                    lit: HirLiteral::String("pid".into()),
+                },
+                HirStmt::Call {
+                    decl_id: reject_decl,
+                    src_dst: RegId::new(7),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(6)],
+                        pipeline_input: Some(RegId::new(5)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: is_empty_decl,
+                    src_dst: RegId::new(8),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(7)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(8) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 9,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("metadata-backed record reject all fields should preserve empty record shape");
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::Copy {
+                src: MirValue::Const(1),
+                ..
+            }
+        )),
+        "expected is-empty after metadata-backed reject-all to fold to true"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("metadata-backed reject-all is-empty result should compile through codegen");
+}
+
+#[test]
 fn test_lower_global_define_type_record_rename_supports_scalar_fields() {
     for (case_idx, use_column_mapping) in [false, true].into_iter().enumerate() {
         let base_decl = 10_370 + case_idx * 10;

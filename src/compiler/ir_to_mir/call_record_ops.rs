@@ -483,6 +483,10 @@ impl<'a> HirToMirLowering<'a> {
                 }
                 Some(nu_protocol::Value::record(out, Span::unknown()))
             }
+            _ if selected_fields.is_empty() => Some(nu_protocol::Value::record(
+                nu_protocol::Record::new(),
+                Span::unknown(),
+            )),
             _ => None,
         };
 
