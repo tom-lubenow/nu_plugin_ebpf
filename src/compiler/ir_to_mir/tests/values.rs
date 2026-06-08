@@ -5349,6 +5349,130 @@ fn make_ctx_pid_numeric_list_has_operator_program(op: Comparison) -> HirProgram 
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
+fn make_ctx_pid_bool_list_membership_operator_program(op: Comparison) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let list_is_lhs = matches!(op, Comparison::Has | Comparison::NotHas);
+    let mut stmts = vec![
+        HirStmt::LoadVariable {
+            dst: RegId::new(0),
+            var_id: ctx_var,
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: HirLiteral::CellPath(Box::new(CellPath {
+                members: vec![string_member("pid")],
+            })),
+        },
+        HirStmt::FollowCellPath {
+            src_dst: RegId::new(0),
+            path: RegId::new(1),
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(3),
+            lit: HirLiteral::Int(0),
+        },
+        HirStmt::BinaryOp {
+            lhs_dst: RegId::new(0),
+            op: Operator::Comparison(Comparison::Equal),
+            rhs: RegId::new(3),
+        },
+        HirStmt::LoadValue {
+            dst: RegId::new(2),
+            val: Box::new(Value::list(
+                vec![
+                    Value::bool(true, Span::test_data()),
+                    Value::bool(false, Span::test_data()),
+                ],
+                Span::test_data(),
+            )),
+        },
+    ];
+    stmts.push(if list_is_lhs {
+        HirStmt::BinaryOp {
+            lhs_dst: RegId::new(2),
+            op: Operator::Comparison(op),
+            rhs: RegId::new(0),
+        }
+    } else {
+        HirStmt::BinaryOp {
+            lhs_dst: RegId::new(0),
+            op: Operator::Comparison(op),
+            rhs: RegId::new(2),
+        }
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return {
+                src: if list_is_lhs {
+                    RegId::new(2)
+                } else {
+                    RegId::new(0)
+                },
+            },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 4,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
+fn make_ctx_pid_filesize_list_in_operator_program(op: Comparison) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let stmts = vec![
+        HirStmt::LoadVariable {
+            dst: RegId::new(0),
+            var_id: ctx_var,
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: HirLiteral::CellPath(Box::new(CellPath {
+                members: vec![string_member("pid")],
+            })),
+        },
+        HirStmt::FollowCellPath {
+            src_dst: RegId::new(0),
+            path: RegId::new(1),
+        },
+        HirStmt::LoadValue {
+            dst: RegId::new(2),
+            val: Box::new(Value::list(
+                vec![
+                    Value::filesize(Filesize::new(1024), Span::test_data()),
+                    Value::filesize(Filesize::new(2048), Span::test_data()),
+                ],
+                Span::test_data(),
+            )),
+        },
+        HirStmt::BinaryOp {
+            lhs_dst: RegId::new(0),
+            op: Operator::Comparison(op),
+            rhs: RegId::new(2),
+        },
+    ];
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 3,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
 fn lower_ctx_pid_fill_then_starts_with_program_with_options(
     fill_decl: DeclId,
     starts_with_decl: DeclId,
@@ -15048,6 +15172,81 @@ fn test_lower_in_operator_on_runtime_numeric_list() {
         );
         compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
             .unwrap_or_else(|err| panic!("numeric-list {context} operator should compile: {err}"));
+    }
+}
+
+#[test]
+fn test_lower_membership_operator_on_runtime_bool_list() {
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
+
+    for (op, context) in [
+        (Comparison::In, "in"),
+        (Comparison::NotIn, "not-in"),
+        (Comparison::Has, "has"),
+        (Comparison::NotHas, "not-has"),
+    ] {
+        let hir = make_ctx_pid_bool_list_membership_operator_program(op);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            Some(&probe_ctx),
+            &HashMap::new(),
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("bool-list {context} operator should lower: {err}"));
+
+        assert!(
+            result
+                .program
+                .main
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .any(|inst| matches!(inst, MirInst::ListLen { .. })),
+            "expected bool-list {context} operator to read the bounded list length"
+        );
+        assert_eq!(
+            result
+                .program
+                .main
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .filter(|inst| matches!(inst, MirInst::ListGet { .. }))
+                .count(),
+            2,
+            "expected bool-list {context} operator to scan each bounded list slot"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("bool-list {context} operator should compile: {err}"));
+    }
+}
+
+#[test]
+fn test_lower_membership_operator_rejects_runtime_int_for_filesize_list() {
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
+
+    for (op, context) in [(Comparison::In, "in"), (Comparison::NotIn, "not-in")] {
+        let hir = make_ctx_pid_filesize_list_in_operator_program(op);
+
+        let err = lower_hir_to_mir_with_hints(
+            &hir,
+            Some(&probe_ctx),
+            &HashMap::new(),
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .expect_err("runtime int membership in a filesize list should be rejected");
+
+        assert!(
+            err.to_string().contains(
+                "requires a compile-time constant filesize scalar needle for stack-backed scalar lists"
+            ),
+            "unexpected {context} error: {err}"
+        );
     }
 }
 

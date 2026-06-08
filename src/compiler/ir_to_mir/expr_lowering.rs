@@ -272,8 +272,13 @@ impl<'a> HirToMirLowering<'a> {
             lhs: MirValue::VReg(lhs_vreg),
             rhs: MirValue::VReg(rhs_vreg),
         });
-        self.clear_source_var(lhs_dst);
-        self.set_reg_constant_value(lhs_dst, constant_value);
+        if matches!(op, Operator::Comparison(_) | Operator::Boolean(_)) {
+            self.finish_runtime_bool_result(lhs_dst, lhs_vreg);
+            self.set_reg_constant_value(lhs_dst, constant_value);
+        } else {
+            self.clear_source_var(lhs_dst);
+            self.set_reg_constant_value(lhs_dst, constant_value);
+        }
 
         Ok(())
     }
@@ -659,39 +664,38 @@ impl<'a> HirToMirLowering<'a> {
 
         let list_vreg = self.get_vreg(list_reg);
         let needle_vreg = self.get_vreg(needle_reg);
-        let needle_meta = self.get_metadata(needle_reg).cloned();
-        let needle_const = needle_meta
+        let list_kind = list_meta
             .as_ref()
-            .and_then(Self::numeric_in_operand_value_from_metadata);
-        if needle_const.is_none()
-            && needle_meta
-                .as_ref()
-                .and_then(|meta| meta.constant_value.as_ref())
-                .is_some()
-        {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "{context} operator requires a numeric scalar needle for stack-backed numeric lists in eBPF"
-            )));
-        }
-        if needle_const.is_none()
-            && !matches!(
-                self.typed_value_runtime_type(needle_reg, needle_vreg),
-                Some(
-                    MirType::I8
-                        | MirType::I16
-                        | MirType::I32
-                        | MirType::I64
-                        | MirType::U8
-                        | MirType::U16
-                        | MirType::U32
-                        | MirType::U64
-                )
+            .and_then(Self::constant_list_scalar_match_kind);
+        if list_kind.is_none()
+            && matches!(
+                list_meta
+                    .as_ref()
+                    .and_then(|meta| meta.constant_value.as_ref()),
+                Some(Value::List { .. })
             )
         {
             return Err(CompileError::UnsupportedInstruction(format!(
-                "{context} operator requires a numeric scalar needle for stack-backed numeric lists in eBPF"
+                "{context} operator requires a homogeneous stack-backed scalar list for runtime membership in eBPF"
             )));
         }
+        if matches!(list_kind, Some(None)) || max_len == 0 {
+            let result_vreg = self.assign_fresh_vreg(result_dst);
+            self.lower_runtime_string_equality_const(result_dst, result_vreg, invert, false);
+            return Ok(true);
+        }
+
+        let needle_meta = self.get_metadata(needle_reg).cloned();
+        let needle_const = needle_meta
+            .as_ref()
+            .and_then(Self::stack_scalar_operand_value_from_metadata);
+        self.validate_stack_list_membership_needle(
+            needle_reg,
+            needle_vreg,
+            needle_meta.as_ref(),
+            list_kind.flatten(),
+            context,
+        )?;
 
         let needle_value = needle_const
             .map(|needle| self.large_const_operand(&MirType::I64, needle))
@@ -781,12 +785,126 @@ impl<'a> HirToMirLowering<'a> {
         Ok(true)
     }
 
-    fn numeric_in_operand_value_from_metadata(meta: &RegMetadata) -> Option<i64> {
+    fn constant_list_scalar_match_kind(meta: &RegMetadata) -> Option<Option<ScalarMatchKind>> {
+        let Value::List { vals, .. } = meta.constant_value.as_ref()? else {
+            return None;
+        };
+
+        let mut expected = None;
+        for value in vals {
+            let kind = Self::scalar_match_kind_for_value(value)?;
+            if matches!(kind, ScalarMatchKind::String) {
+                return None;
+            }
+            if expected.is_some_and(|expected| expected != kind) {
+                return None;
+            }
+            expected = Some(kind);
+        }
+        Some(expected)
+    }
+
+    fn stack_scalar_operand_value_from_metadata(meta: &RegMetadata) -> Option<i64> {
         meta.literal_int
             .or_else(|| match meta.constant_value.as_ref()? {
+                Value::Bool { val, .. } => Some(if *val { 1 } else { 0 }),
                 Value::Int { val, .. } => Some(*val),
+                Value::Filesize { val, .. } => Some(val.get()),
+                Value::Duration { val, .. } => Some(*val),
+                Value::Nothing { .. } => Some(0),
                 _ => None,
             })
+    }
+
+    fn validate_stack_list_membership_needle(
+        &self,
+        needle_reg: RegId,
+        needle_vreg: VReg,
+        needle_meta: Option<&RegMetadata>,
+        list_kind: Option<ScalarMatchKind>,
+        context: &str,
+    ) -> Result<(), CompileError> {
+        if let Some(value) = needle_meta.and_then(|meta| meta.constant_value.as_ref()) {
+            let Some(needle_kind) = Self::scalar_match_kind_for_value(value) else {
+                return Err(Self::stack_list_membership_needle_error(context, list_kind));
+            };
+            match list_kind {
+                Some(list_kind) if needle_kind != list_kind => {
+                    return Err(Self::stack_list_membership_needle_error(
+                        context,
+                        Some(list_kind),
+                    ));
+                }
+                None if needle_kind != ScalarMatchKind::Int => {
+                    return Err(Self::stack_list_membership_needle_error(context, None));
+                }
+                _ => {}
+            }
+            return Ok(());
+        }
+
+        match list_kind {
+            Some(ScalarMatchKind::Bool) => {
+                if matches!(
+                    self.source_match_kind(needle_reg, needle_vreg),
+                    Some(KnownSourceMatchKind::Scalar(ScalarMatchKind::Bool))
+                ) {
+                    Ok(())
+                } else {
+                    Err(Self::stack_list_membership_needle_error(
+                        context,
+                        Some(ScalarMatchKind::Bool),
+                    ))
+                }
+            }
+            Some(ScalarMatchKind::Int) | None => {
+                if matches!(
+                    self.typed_value_runtime_type(needle_reg, needle_vreg),
+                    Some(
+                        MirType::I8
+                            | MirType::I16
+                            | MirType::I32
+                            | MirType::I64
+                            | MirType::U8
+                            | MirType::U16
+                            | MirType::U32
+                            | MirType::U64
+                    )
+                ) {
+                    Ok(())
+                } else {
+                    Err(Self::stack_list_membership_needle_error(context, list_kind))
+                }
+            }
+            Some(
+                kind @ (ScalarMatchKind::Filesize
+                | ScalarMatchKind::Duration
+                | ScalarMatchKind::Nothing),
+            ) => Err(Self::stack_list_membership_needle_error(
+                context,
+                Some(kind),
+            )),
+            Some(ScalarMatchKind::String) => {
+                Err(Self::stack_list_membership_needle_error(context, list_kind))
+            }
+        }
+    }
+
+    fn stack_list_membership_needle_error(
+        context: &str,
+        list_kind: Option<ScalarMatchKind>,
+    ) -> CompileError {
+        let expected = match list_kind {
+            Some(ScalarMatchKind::Bool) => "a bool scalar",
+            Some(ScalarMatchKind::Int) | None => "an integer scalar",
+            Some(ScalarMatchKind::Filesize) => "a compile-time constant filesize scalar",
+            Some(ScalarMatchKind::Duration) => "a compile-time constant duration scalar",
+            Some(ScalarMatchKind::Nothing) => "a compile-time constant null scalar",
+            Some(ScalarMatchKind::String) => "a non-string scalar",
+        };
+        CompileError::UnsupportedInstruction(format!(
+            "{context} operator requires {expected} needle for stack-backed scalar lists in eBPF"
+        ))
     }
 
     fn lower_runtime_string_has_operator(
