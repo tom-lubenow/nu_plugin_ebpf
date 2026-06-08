@@ -779,10 +779,32 @@ impl<'a> HirToMirLowering<'a> {
             }
         }
 
-        if input_meta.record_fields.is_empty() && !input_is_known_empty_record {
+        let typed_record_field_count =
+            Self::typed_record_field_names(&input_meta).map(|names| names.len());
+        let shape_only_field_count = if input_meta.record_fields.is_empty() {
+            typed_record_field_count
+        } else {
+            Some(input_meta.record_fields.len())
+        };
+
+        if input_meta.record_fields.is_empty()
+            && !input_is_known_empty_record
+            && !(self.current_call_result_list_shape_metadata_only
+                && shape_only_field_count.is_some())
+        {
             return Err(CompileError::UnsupportedInstruction(
                 "values requires record input with compiler-known fields in eBPF".into(),
             ));
+        }
+
+        if self.current_call_result_list_shape_metadata_only {
+            let field_count = shape_only_field_count.unwrap_or(0);
+            let vals = (0..field_count)
+                .map(|_| nu_protocol::Value::nothing(Span::unknown()))
+                .collect::<Vec<_>>();
+            let value_list = nu_protocol::Value::list(vals, Span::unknown());
+            self.lower_compile_time_only_constant_value(src_dst, &value_list);
+            return Ok(());
         }
 
         for field in &input_meta.record_fields {
@@ -826,6 +848,24 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         Ok(())
+    }
+
+    fn typed_record_field_names(meta: &RegMetadata) -> Option<Vec<String>> {
+        fn struct_field_names(ty: &MirType) -> Option<Vec<String>> {
+            match ty {
+                MirType::Struct { fields, .. } => Some(
+                    fields
+                        .iter()
+                        .filter(|field| !field.synthetic)
+                        .map(|field| field.name.clone())
+                        .collect(),
+                ),
+                MirType::Ptr { pointee, .. } => struct_field_names(pointee),
+                _ => None,
+            }
+        }
+
+        meta.field_type.as_ref().and_then(struct_field_names)
     }
 
     fn record_values_list_is_metadata_only_supported(value: &nu_protocol::Value) -> bool {
@@ -880,27 +920,38 @@ impl<'a> HirToMirLowering<'a> {
             input_meta.constant_value.as_ref(),
             Some(nu_protocol::Value::Record { val, .. }) if val.is_empty()
         );
-        if input_meta.record_fields.is_empty() && !input_is_known_empty_record {
+        let typed_record_field_names = Self::typed_record_field_names(&input_meta);
+        if input_meta.record_fields.is_empty()
+            && !input_is_known_empty_record
+            && typed_record_field_names.is_none()
+        {
             return Err(CompileError::UnsupportedInstruction(
                 "columns requires record input with compiler-known fields in eBPF".into(),
             ));
         }
-        if input_meta.record_fields.len() > MAX_RECORD_COLUMNS_RESULTS {
+        let columns = if input_meta.record_fields.is_empty() {
+            typed_record_field_names.unwrap_or_default()
+        } else {
+            input_meta
+                .record_fields
+                .iter()
+                .map(|field| field.name.clone())
+                .collect::<Vec<_>>()
+        };
+        if columns.len() > MAX_RECORD_COLUMNS_RESULTS {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "columns supports at most {MAX_RECORD_COLUMNS_RESULTS} record fields in eBPF"
             )));
         }
 
-        let mut columns = Vec::with_capacity(input_meta.record_fields.len());
-        for field in &input_meta.record_fields {
-            if field.name.len().saturating_add(1) > MAX_STRING_SIZE {
+        for column in &columns {
+            if column.len().saturating_add(1) > MAX_STRING_SIZE {
                 return Err(CompileError::UnsupportedInstruction(format!(
                     "columns field name '{}' exceeds the eBPF string capacity of {} bytes",
-                    field.name,
+                    column,
                     MAX_STRING_SIZE - 1
                 )));
             }
-            columns.push(field.name.clone());
         }
 
         let result_vreg = if src_dst_had_value {
@@ -910,7 +961,6 @@ impl<'a> HirToMirLowering<'a> {
         };
         self.lower_known_string_list_result(src_dst, result_vreg, columns)
     }
-
     pub(super) fn lower_metadata_record_transpose(
         &mut self,
         src_dst: RegId,

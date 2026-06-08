@@ -19,7 +19,8 @@ use super::hir::{
     compile_time_list_push_item_is_constant,
     compile_time_value_flows_to_bits_binary_transform_aggregate_consumer,
     compile_time_value_flows_to_fixed_layout_aggregate_consumer,
-    compile_time_value_flows_to_fixed_layout_consumer, lower_ir_to_hir,
+    compile_time_value_flows_to_fixed_layout_consumer,
+    compile_time_value_flows_to_fixed_layout_consumer_without_transforms, lower_ir_to_hir,
 };
 use super::hir_type_infer::HirTypeInfo;
 use super::mir::{
@@ -385,6 +386,8 @@ pub struct HirToMirLowering<'a> {
     positional_args: Vec<(VReg, RegId)>,
     /// Current call result is only used by consumers that fold compile-time metadata.
     current_call_result_metadata_only: bool,
+    /// Current call result is only used by direct list-length or empty-predicate consumers.
+    current_call_result_list_shape_metadata_only: bool,
     /// Current call result is only used through list-preserving transforms by metadata consumers.
     current_call_result_list_transform_metadata_only: bool,
     /// Named flags for the next call (e.g., --verbose)
@@ -564,6 +567,7 @@ impl<'a> HirToMirLowering<'a> {
             pipeline_input_reg: None,
             positional_args: Vec::new(),
             current_call_result_metadata_only: false,
+            current_call_result_list_shape_metadata_only: false,
             current_call_result_list_transform_metadata_only: false,
             named_flags: Vec::new(),
             named_args: HashMap::new(),

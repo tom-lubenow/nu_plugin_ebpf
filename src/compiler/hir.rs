@@ -341,7 +341,20 @@ pub fn compile_time_value_flows_to_fixed_layout_consumer(
     flow: CompileTimeValueFlow,
 ) -> bool {
     compile_time_value_flows_to_fixed_layout_consumer_inner(
-        stmts, stmt_index, dst, decl_names, consumer, flow, false,
+        stmts, stmt_index, dst, decl_names, consumer, flow, true, false,
+    )
+}
+
+pub fn compile_time_value_flows_to_fixed_layout_consumer_without_transforms(
+    stmts: &[HirStmt],
+    stmt_index: usize,
+    dst: RegId,
+    decl_names: &HashMap<DeclId, String>,
+    consumer: FixedLayoutValueConsumer,
+    flow: CompileTimeValueFlow,
+) -> bool {
+    compile_time_value_flows_to_fixed_layout_consumer_inner(
+        stmts, stmt_index, dst, decl_names, consumer, flow, false, false,
     )
 }
 
@@ -354,7 +367,7 @@ pub fn compile_time_value_flows_to_fixed_layout_consumer_through_list_transforms
     flow: CompileTimeValueFlow,
 ) -> bool {
     compile_time_value_flows_to_fixed_layout_consumer_inner(
-        stmts, stmt_index, dst, decl_names, consumer, flow, true,
+        stmts, stmt_index, dst, decl_names, consumer, flow, true, true,
     )
 }
 
@@ -365,6 +378,7 @@ fn compile_time_value_flows_to_fixed_layout_consumer_inner(
     decl_names: &HashMap<DeclId, String>,
     consumer: FixedLayoutValueConsumer,
     flow: CompileTimeValueFlow,
+    allow_aggregate_transforms: bool,
     list_transforms_only: bool,
 ) -> bool {
     let Some(rest) = stmts.get(stmt_index.saturating_add(1)..) else {
@@ -501,13 +515,15 @@ fn compile_time_value_flows_to_fixed_layout_consumer_inner(
                     );
                 }
 
-                if compile_time_aggregate_transform_preserves_tracked_input(
-                    decl_names.get(decl_id).map(String::as_str),
-                    *src_dst,
-                    args,
-                    &tracked_regs,
-                    list_transforms_only,
-                ) {
+                if allow_aggregate_transforms
+                    && compile_time_aggregate_transform_preserves_tracked_input(
+                        decl_names.get(decl_id).map(String::as_str),
+                        *src_dst,
+                        args,
+                        &tracked_regs,
+                        list_transforms_only,
+                    )
+                {
                     tracked_regs.insert(*src_dst);
                     continue;
                 }

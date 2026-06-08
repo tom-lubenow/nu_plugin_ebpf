@@ -609,11 +609,22 @@ impl<'a> HirToMirLowering<'a> {
                     continue;
                 }
                 let previous_call_result_metadata_only = self.current_call_result_metadata_only;
+                let previous_call_result_list_shape_metadata_only =
+                    self.current_call_result_list_shape_metadata_only;
                 let previous_call_result_list_transform_metadata_only =
                     self.current_call_result_list_transform_metadata_only;
                 self.current_call_result_metadata_only = match stmt {
                     HirStmt::Call { src_dst, .. } => self
                         .call_result_flows_to_metadata_only_consumer(
+                            &block.stmts,
+                            stmt_index,
+                            *src_dst,
+                        ),
+                    _ => false,
+                };
+                self.current_call_result_list_shape_metadata_only = match stmt {
+                    HirStmt::Call { src_dst, .. } => self
+                        .call_result_flows_to_list_shape_metadata_only_consumer(
                             &block.stmts,
                             stmt_index,
                             *src_dst,
@@ -631,6 +642,8 @@ impl<'a> HirToMirLowering<'a> {
                 };
                 let result = self.lower_stmt(stmt);
                 self.current_call_result_metadata_only = previous_call_result_metadata_only;
+                self.current_call_result_list_shape_metadata_only =
+                    previous_call_result_list_shape_metadata_only;
                 self.current_call_result_list_transform_metadata_only =
                     previous_call_result_list_transform_metadata_only;
                 result?;
@@ -1554,6 +1567,29 @@ impl<'a> HirToMirLowering<'a> {
         .into_iter()
         .any(|consumer| {
             compile_time_value_flows_to_fixed_layout_consumer(
+                stmts,
+                stmt_index,
+                dst,
+                self.decl_names,
+                consumer,
+                CompileTimeValueFlow::Direct,
+            )
+        })
+    }
+
+    fn call_result_flows_to_list_shape_metadata_only_consumer(
+        &self,
+        stmts: &[HirStmt],
+        stmt_index: usize,
+        dst: RegId,
+    ) -> bool {
+        [
+            FixedLayoutValueConsumer::Length,
+            FixedLayoutValueConsumer::EmptyPredicate,
+        ]
+        .into_iter()
+        .any(|consumer| {
+            compile_time_value_flows_to_fixed_layout_consumer_without_transforms(
                 stmts,
                 stmt_index,
                 dst,
