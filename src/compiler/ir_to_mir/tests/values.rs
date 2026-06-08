@@ -7391,7 +7391,7 @@ fn make_record_columns_transform_join_starts_with_program(
     transform_decl: DeclId,
     join_decl: DeclId,
     starts_with_decl: DeclId,
-    transform_arg: Option<&str>,
+    transform_arg: Option<Value>,
     expected_prefix: &str,
 ) -> HirProgram {
     let mut record = Record::new();
@@ -7420,7 +7420,7 @@ fn make_record_columns_transform_join_starts_with_program(
         next_reg += 1;
         stmts.push(HirStmt::LoadValue {
             dst: arg_reg,
-            val: Box::new(Value::string(arg, Span::test_data())),
+            val: Box::new(arg),
         });
         vec![arg_reg]
     } else {
@@ -40297,9 +40297,27 @@ fn test_lower_columns_feed_metadata_only_list_transforms() {
     for (offset, transform_name, transform_arg, expected_prefix) in [
         (0, "sort", None, "cpu,ok,pid"),
         (10, "reverse", None, "ok,cpu,pid"),
-        (20, "find", Some("cpu"), "cpu"),
+        (
+            20,
+            "find",
+            Some(Value::string("cpu", Span::test_data())),
+            "cpu",
+        ),
         (30, "skip", None, "cpu,ok"),
         (40, "drop", None, "pid,cpu"),
+        (
+            50,
+            "take",
+            Some(Value::int(2, Span::test_data())),
+            "pid,cpu",
+        ),
+        (
+            60,
+            "first",
+            Some(Value::int(2, Span::test_data())),
+            "pid,cpu",
+        ),
+        (70, "last", Some(Value::int(2, Span::test_data())), "cpu,ok"),
     ] {
         let columns_decl = DeclId::new(215 + offset);
         let transform_decl = DeclId::new(216 + offset);
