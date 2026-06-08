@@ -15302,6 +15302,36 @@ fn test_lower_string_ordering_operator_rejects_runtime_tracked_string() {
 }
 
 #[test]
+fn test_lower_regex_operator_rejects_runtime_tracked_string() {
+    let fill_decl = DeclId::new(520);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
+    let decl_names = HashMap::from([(fill_decl, "fill".to_string())]);
+
+    for (op, context) in [
+        (Comparison::RegexMatch, "regex match"),
+        (Comparison::NotRegexMatch, "not-regex match"),
+    ] {
+        let hir = make_ctx_pid_fill_then_string_comparison_operator_program(fill_decl, "^0", op);
+
+        let err = lower_hir_to_mir_with_hints(
+            &hir,
+            Some(&probe_ctx),
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .expect_err(&format!("runtime {context} should be rejected"));
+
+        assert!(
+            err.to_string()
+                .contains("regex comparisons require compile-time constant string operands"),
+            "unexpected {context} error: {err}"
+        );
+    }
+}
+
+#[test]
 fn test_lower_fill_rejects_nul_character() {
     let fill_decl = DeclId::new(2541);
     let starts_with_decl = DeclId::new(2542);

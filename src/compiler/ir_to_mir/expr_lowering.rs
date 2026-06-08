@@ -165,6 +165,20 @@ impl<'a> HirToMirLowering<'a> {
             ));
         }
 
+        if matches!(
+            op,
+            Operator::Comparison(Comparison::RegexMatch | Comparison::NotRegexMatch)
+        ) {
+            if let Some(value) = constant_value.as_ref() {
+                self.lower_constant_value(lhs_dst, value)?;
+                return Ok(());
+            }
+
+            return Err(CompileError::UnsupportedInstruction(
+                "regex comparisons require compile-time constant string operands in eBPF".into(),
+            ));
+        }
+
         if let Some(Value::String { val, .. } | Value::Glob { val, .. }) = constant_value.as_ref() {
             self.lower_string_like_literal(lhs_dst, lhs_vreg, val.as_bytes())?;
             self.clear_source_var(lhs_dst);
