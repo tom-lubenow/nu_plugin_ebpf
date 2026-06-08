@@ -16,6 +16,12 @@ use crate::program_spec::{IterTargetKind, ProgramSpec};
 
 static NU_SCRIPT_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+const VERIFIER_DIFF_SOURCE_WITH_FIXTURES: &str = concat!(
+    include_str!("../../../../scripts/verifier_diff.nu"),
+    "\n",
+    include_str!("../../../../scripts/verifier_diff/fixtures.nu"),
+);
+
 const REPRESENTATIVE_CONTEXT_FIELD_SPEC_SOURCES: &[&str] = &[
     "raw_tracepoint:sys_enter",
     "tracepoint:syscalls/sys_enter_openat",
@@ -440,7 +446,7 @@ fn verifier_diff_helper_call_names(source: &str) -> BTreeSet<String> {
 #[test]
 fn test_verifier_diff_source_fixtures_cover_modeled_kfunc_signatures() {
     let signature_source = include_str!("../../instruction/kfunc_signature.rs");
-    let verifier_diff = include_str!("../../../../scripts/verifier_diff.nu");
+    let verifier_diff = VERIFIER_DIFF_SOURCE_WITH_FIXTURES;
 
     let modeled = modeled_kfunc_signature_names(signature_source);
     let fixture_calls = verifier_diff_kfunc_call_names(verifier_diff);
@@ -459,7 +465,7 @@ fn test_verifier_diff_source_fixtures_cover_modeled_kfunc_signatures() {
 #[test]
 fn test_verifier_diff_source_fixtures_cover_modeled_helper_names() {
     let instruction_source = include_str!("../../instruction.rs");
-    let verifier_diff = include_str!("../../../../scripts/verifier_diff.nu");
+    let verifier_diff = VERIFIER_DIFF_SOURCE_WITH_FIXTURES;
 
     let modeled = modeled_helper_names(instruction_source);
     let fixture_calls = verifier_diff_helper_call_names(verifier_diff);
