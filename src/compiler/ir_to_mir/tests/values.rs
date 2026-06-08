@@ -40902,6 +40902,96 @@ fn test_lower_empty_record_metadata_lists_first_last_feed_is_empty() {
 }
 
 #[test]
+fn test_lower_empty_record_metadata_lists_counted_first_last_feed_is_empty() {
+    for (producer_offset, producer_name) in [(0, "columns"), (100, "values")] {
+        for (offset, scalar_name) in [(0, "first"), (10, "last")] {
+            let producer_decl = DeclId::new(1400 + producer_offset + offset);
+            let scalar_decl = DeclId::new(1401 + producer_offset + offset);
+            let is_empty_decl = DeclId::new(1402 + producer_offset + offset);
+            let func = HirFunction {
+                blocks: vec![HirBlock {
+                    id: HirBlockId(0),
+                    stmts: vec![
+                        HirStmt::LoadLiteral {
+                            dst: RegId::new(0),
+                            lit: HirLiteral::Record { capacity: 0 },
+                        },
+                        HirStmt::Call {
+                            decl_id: producer_decl,
+                            src_dst: RegId::new(1),
+                            args: HirCallArgs {
+                                pipeline_input: Some(RegId::new(0)),
+                                ..HirCallArgs::default()
+                            },
+                        },
+                        HirStmt::LoadLiteral {
+                            dst: RegId::new(2),
+                            lit: HirLiteral::Int(1),
+                        },
+                        HirStmt::Call {
+                            decl_id: scalar_decl,
+                            src_dst: RegId::new(3),
+                            args: HirCallArgs {
+                                pipeline_input: Some(RegId::new(1)),
+                                positional: vec![RegId::new(2)],
+                                ..HirCallArgs::default()
+                            },
+                        },
+                        HirStmt::Call {
+                            decl_id: is_empty_decl,
+                            src_dst: RegId::new(4),
+                            args: HirCallArgs {
+                                pipeline_input: Some(RegId::new(3)),
+                                ..HirCallArgs::default()
+                            },
+                        },
+                    ],
+                    terminator: HirTerminator::Return { src: RegId::new(4) },
+                }],
+                entry: HirBlockId(0),
+                spans: Vec::new(),
+                ast: Vec::new(),
+                comments: Vec::new(),
+                register_count: 5,
+                file_count: 0,
+            };
+            let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+            let decl_names = HashMap::from([
+                (producer_decl, producer_name.to_string()),
+                (scalar_decl, scalar_name.to_string()),
+                (is_empty_decl, "is-empty".to_string()),
+            ]);
+
+            let result = lower_hir_to_mir_with_hints(
+                &hir,
+                None,
+                &decl_names,
+                None,
+                &HashMap::new(),
+                &HashMap::new(),
+            )
+            .unwrap_or_else(|err| {
+                panic!("empty {producer_name} should feed counted {scalar_name}: {err}")
+            });
+
+            assert_program_returns_constant(
+                &result.program,
+                1,
+                &format!("empty {producer_name} counted {scalar_name} is-empty"),
+            );
+            assert_no_runtime_list_operations(
+                &result.program,
+                &format!("empty {producer_name} counted {scalar_name}"),
+            );
+            compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+                .unwrap_or_else(|err| {
+                    panic!("empty {producer_name} counted {scalar_name} should compile: {err}")
+                });
+        }
+    }
+}
+
+#[test]
 fn test_lower_columns_on_empty_metadata_record_materializes_empty_list() {
     let columns_decl = DeclId::new(205);
     let length_decl = DeclId::new(206);
