@@ -201,6 +201,13 @@ impl<'a> HirToMirLowering<'a> {
 
         if matches!(op, Operator::Comparison(Comparison::In | Comparison::NotIn)) {
             let invert = matches!(op, Operator::Comparison(Comparison::NotIn));
+            if let Some(value) = constant_value.as_ref() {
+                self.lower_constant_value(lhs_dst, value)?;
+                return Ok(());
+            }
+            if self.lower_runtime_numeric_list_in_operator(lhs_dst, rhs, invert)? {
+                return Ok(());
+            }
             self.lower_runtime_string_in_operator(lhs_dst, rhs, invert, constant_value)?;
             return Ok(());
         }
@@ -595,6 +602,151 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         self.lower_runtime_string_contains_operator(lhs_dst, lhs_dst, rhs, invert, "in")
+    }
+
+    fn lower_runtime_numeric_list_in_operator(
+        &mut self,
+        lhs_dst: RegId,
+        rhs: RegId,
+        invert: bool,
+    ) -> Result<bool, CompileError> {
+        let rhs_meta = self.get_metadata(rhs).cloned();
+        let Some((_rhs_slot, max_len)) = rhs_meta.as_ref().and_then(|meta| meta.list_buffer) else {
+            return Ok(false);
+        };
+
+        let needle_vreg = self.get_vreg(lhs_dst);
+        let needle_meta = self.get_metadata(lhs_dst).cloned();
+        let needle_const = needle_meta
+            .as_ref()
+            .and_then(Self::numeric_in_operand_value_from_metadata);
+        if needle_const.is_none()
+            && needle_meta
+                .as_ref()
+                .and_then(|meta| meta.constant_value.as_ref())
+                .is_some()
+        {
+            return Err(CompileError::UnsupportedInstruction(
+                "in operator requires a numeric scalar needle for stack-backed numeric lists in eBPF"
+                    .into(),
+            ));
+        }
+        if needle_const.is_none()
+            && !matches!(
+                self.typed_value_runtime_type(lhs_dst, needle_vreg),
+                Some(
+                    MirType::I8
+                        | MirType::I16
+                        | MirType::I32
+                        | MirType::I64
+                        | MirType::U8
+                        | MirType::U16
+                        | MirType::U32
+                        | MirType::U64
+                )
+            )
+        {
+            return Err(CompileError::UnsupportedInstruction(
+                "in operator requires a numeric scalar needle for stack-backed numeric lists in eBPF"
+                    .into(),
+            ));
+        }
+
+        let needle_value = needle_const
+            .map(|needle| self.large_const_operand(&MirType::I64, needle))
+            .unwrap_or(MirValue::VReg(needle_vreg));
+        let list_vreg = self.get_vreg(rhs);
+        let result_vreg = self.assign_fresh_vreg(lhs_dst);
+        let contains_vreg = if invert {
+            self.func.alloc_vreg()
+        } else {
+            result_vreg
+        };
+        self.emit(MirInst::Copy {
+            dst: contains_vreg,
+            src: MirValue::Const(0),
+        });
+        self.vreg_type_hints.insert(contains_vreg, MirType::Bool);
+
+        if max_len > 0 {
+            let len_vreg = self.func.alloc_vreg();
+            self.emit(MirInst::ListLen {
+                dst: len_vreg,
+                list: list_vreg,
+            });
+            self.vreg_type_hints.insert(len_vreg, MirType::U64);
+
+            let continuation_block = self.func.alloc_block();
+            for source_index in 0..max_len {
+                let compare_block = self.func.alloc_block();
+                let next_block = if source_index + 1 == max_len {
+                    continuation_block
+                } else {
+                    self.func.alloc_block()
+                };
+
+                let in_bounds_vreg = self.func.alloc_vreg();
+                self.emit(MirInst::BinOp {
+                    dst: in_bounds_vreg,
+                    op: BinOpKind::Lt,
+                    lhs: MirValue::Const(source_index as i64),
+                    rhs: MirValue::VReg(len_vreg),
+                });
+                self.vreg_type_hints.insert(in_bounds_vreg, MirType::Bool);
+                self.terminate(MirInst::Branch {
+                    cond: in_bounds_vreg,
+                    if_true: compare_block,
+                    if_false: next_block,
+                });
+
+                self.current_block = compare_block;
+                let item_vreg = self.func.alloc_vreg();
+                self.emit(MirInst::ListGet {
+                    dst: item_vreg,
+                    list: list_vreg,
+                    idx: MirValue::Const(source_index as i64),
+                });
+                self.vreg_type_hints.insert(item_vreg, MirType::I64);
+
+                let is_match_vreg = self.func.alloc_vreg();
+                self.emit(MirInst::BinOp {
+                    dst: is_match_vreg,
+                    op: BinOpKind::Eq,
+                    lhs: MirValue::VReg(item_vreg),
+                    rhs: needle_value.clone(),
+                });
+                self.vreg_type_hints.insert(is_match_vreg, MirType::Bool);
+
+                self.emit(MirInst::BinOp {
+                    dst: contains_vreg,
+                    op: BinOpKind::Or,
+                    lhs: MirValue::VReg(contains_vreg),
+                    rhs: MirValue::VReg(is_match_vreg),
+                });
+                self.terminate(MirInst::Jump { target: next_block });
+                self.current_block = next_block;
+            }
+            self.current_block = continuation_block;
+        }
+
+        if invert {
+            self.emit(MirInst::BinOp {
+                dst: result_vreg,
+                op: BinOpKind::Eq,
+                lhs: MirValue::VReg(contains_vreg),
+                rhs: MirValue::Const(0),
+            });
+        }
+        self.finish_runtime_bool_result(lhs_dst, result_vreg);
+        Ok(true)
+    }
+
+    fn numeric_in_operand_value_from_metadata(meta: &RegMetadata) -> Option<i64> {
+        meta.literal_int
+            .or_else(|| match meta.constant_value.as_ref()? {
+                Value::Int { val, .. } => Some(*val),
+                _ => None,
+            })
     }
 
     fn lower_runtime_string_has_operator(
