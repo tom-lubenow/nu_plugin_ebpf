@@ -1065,25 +1065,20 @@ impl<'a> HirToMirLowering<'a> {
             }
         }
 
-        let typed_record_field_count =
-            Self::typed_record_field_names(&input_meta).map(|names| names.len());
+        let typed_record_fields = if input_meta.record_fields.is_empty() {
+            Self::typed_record_visible_fields(&input_meta)
+        } else {
+            None
+        };
         let shape_only_field_count = if input_meta.record_fields.is_empty() {
-            typed_record_field_count
+            typed_record_fields.as_ref().map(Vec::len)
         } else {
             Some(input_meta.record_fields.len())
         };
 
-        if input_meta.record_fields.is_empty()
-            && !input_is_known_empty_record
-            && !(self.current_call_result_list_shape_metadata_only
-                && shape_only_field_count.is_some())
+        if self.current_call_result_list_shape_metadata_only
+            && (shape_only_field_count.is_some() || input_is_known_empty_record)
         {
-            return Err(CompileError::UnsupportedInstruction(
-                "values requires record input with compiler-known fields in eBPF".into(),
-            ));
-        }
-
-        if self.current_call_result_list_shape_metadata_only {
             let field_count = shape_only_field_count.unwrap_or(0);
             let vals = (0..field_count)
                 .map(|_| nu_protocol::Value::nothing(Span::unknown()))
@@ -1091,6 +1086,22 @@ impl<'a> HirToMirLowering<'a> {
             let value_list = nu_protocol::Value::list(vals, Span::unknown());
             self.lower_compile_time_only_constant_value(src_dst, &value_list);
             return Ok(());
+        }
+
+        if input_meta.record_fields.is_empty() && !input_is_known_empty_record {
+            if let Some(typed_fields) = typed_record_fields {
+                return self.lower_typed_record_values(
+                    src_dst,
+                    dst_vreg,
+                    src_dst_had_value,
+                    input_reg,
+                    input_meta,
+                    typed_fields,
+                );
+            }
+            return Err(CompileError::UnsupportedInstruction(
+                "values requires record input with compiler-known fields in eBPF".into(),
+            ));
         }
 
         for field in &input_meta.record_fields {
@@ -1133,6 +1144,62 @@ impl<'a> HirToMirLowering<'a> {
                 Some(nu_protocol::Value::list(vals, Span::unknown()));
         }
 
+        Ok(())
+    }
+
+    fn lower_typed_record_values(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+        input_reg: Option<RegId>,
+        input_meta: RegMetadata,
+        typed_fields: Vec<StructField>,
+    ) -> Result<(), CompileError> {
+        let (_input_reg, input_vreg, input_runtime_ty) =
+            self.typed_record_input_vreg_and_runtime_ty("values", input_reg)?;
+
+        let mut value_fields = Vec::with_capacity(typed_fields.len());
+        for field in &typed_fields {
+            let value_field = self.project_typed_record_scalar_field(
+                "values",
+                src_dst,
+                input_vreg,
+                &input_runtime_ty,
+                &input_meta,
+                field,
+            )?;
+            if !Self::metadata_record_values_supported_field(&input_meta, &value_field) {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "values supports only numeric scalar record fields in eBPF; field '{}' has type {:?}",
+                    value_field.name, value_field.ty
+                )));
+            }
+            value_fields.push(value_field);
+        }
+
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+        let max_len = value_fields.len();
+        let (out_slot, out_ty) = self.create_stack_numeric_list_result(result_vreg, max_len);
+
+        for field in value_fields {
+            self.emit(MirInst::ListPush {
+                list: result_vreg,
+                item: field.value_vreg,
+            });
+        }
+
+        self.install_stack_numeric_list_result_metadata(
+            src_dst,
+            out_slot,
+            out_ty,
+            max_len,
+            Some(max_len),
+        );
         Ok(())
     }
 

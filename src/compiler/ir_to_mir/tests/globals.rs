@@ -9974,6 +9974,124 @@ fn test_lower_global_define_type_record_rename_supports_scalar_fields() {
 }
 
 #[test]
+fn test_lower_global_define_type_record_values_supports_scalar_fields() {
+    let define_decl = DeclId::new(10_390);
+    let global_get_decl = DeclId::new(10_391);
+    let values_decl = DeclId::new(10_392);
+    let get_decl = DeclId::new(10_393);
+    let decl_names = HashMap::from([
+        (define_decl, "global-define".to_string()),
+        (global_get_decl, "global-get".to_string()),
+        (values_decl, "values".to_string()),
+        (get_decl, "get".to_string()),
+    ]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::String("seen_state".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("record{pid:i64,uid:u32,cpu:u32}".into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        named: vec![(b"type".to_vec(), RegId::new(1))],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: global_get_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: values_decl,
+                    src_dst: RegId::new(4),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(3)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(5),
+                    lit: HirLiteral::Int(1),
+                },
+                HirStmt::Call {
+                    decl_id: get_decl,
+                    src_dst: RegId::new(6),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(5)],
+                        pipeline_input: Some(RegId::new(4)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(6) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 7,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .unwrap_or_else(|err| {
+        panic!("global-define --type record{{...}} | values should lower: {err:?}")
+    });
+    let instructions = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        instructions
+            .iter()
+            .filter(|inst| matches!(inst, MirInst::ListPush { .. }))
+            .count(),
+        3,
+        "expected values to materialize each scalar typed record field"
+    );
+    assert!(
+        instructions.iter().any(|inst| matches!(
+            inst,
+            MirInst::Load {
+                offset: 8,
+                ty: MirType::U32,
+                ..
+            }
+        )),
+        "expected values output to preserve uid scalar projection"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).unwrap_or_else(
+        |err| panic!("typed record values output should compile through codegen: {err:?}"),
+    );
+}
+
+#[test]
 fn test_lower_global_define_type_record_values_shape_consumers_use_field_count() {
     for (case_idx, (consumer_name, expected_const)) in
         [("length", 2), ("is-empty", 0), ("is-not-empty", 1)]
@@ -10293,8 +10411,13 @@ fn test_lower_global_define_type_record_values_first_does_not_use_shape_placehol
     .expect_err("values | first must not use field-count-only placeholder values");
 
     assert!(
-        format!("{err:?}").contains("values requires record input with compiler-known fields"),
-        "expected values | first to avoid field-count-only lowering, got {err:?}"
+        format!("{err:?}")
+            .contains("values on typed record input currently supports only scalar output fields"),
+        "expected values | first to reject non-scalar typed record fields without shape-only lowering, got {err:?}"
+    );
+    assert!(
+        format!("{err:?}").contains("comm"),
+        "expected values | first rejection to name the non-scalar field, got {err:?}"
     );
 }
 
