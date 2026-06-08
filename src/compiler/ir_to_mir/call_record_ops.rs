@@ -563,8 +563,12 @@ impl<'a> HirToMirLowering<'a> {
         } else {
             dst_vreg
         };
+        let constant_value = selected_fields
+            .is_empty()
+            .then(|| nu_protocol::Value::record(nu_protocol::Record::new(), Span::unknown()));
         let projected_meta = RegMetadata {
             record_fields: selected_fields,
+            constant_value,
             ..Default::default()
         };
         self.emit_metadata_record_result(src_dst, result_vreg, projected_meta)
