@@ -1010,24 +1010,48 @@ impl<'a> HirToMirLowering<'a> {
             input_meta.constant_value.as_ref(),
             Some(nu_protocol::Value::Record { val, .. }) if val.is_empty()
         );
-        if input_meta.record_fields.is_empty() && !input_is_known_empty_record {
-            return Err(CompileError::UnsupportedInstruction(
-                "merge requires record input with compiler-known fields in eBPF".into(),
-            ));
-        }
+        let input_fields = if input_meta.record_fields.is_empty() && !input_is_known_empty_record {
+            if let Some(typed_fields) = Self::typed_record_visible_fields(&input_meta) {
+                self.project_typed_record_scalar_fields(
+                    "merge",
+                    src_dst,
+                    input_reg,
+                    &input_meta,
+                    &typed_fields,
+                )?
+            } else {
+                return Err(CompileError::UnsupportedInstruction(
+                    "merge requires record input with compiler-known fields in eBPF".into(),
+                ));
+            }
+        } else {
+            input_meta.record_fields.clone()
+        };
 
         let merge_is_known_empty_record = matches!(
             merge_meta.constant_value.as_ref(),
             Some(nu_protocol::Value::Record { val, .. }) if val.is_empty()
         );
-        if merge_meta.record_fields.is_empty() && !merge_is_known_empty_record {
-            return Err(CompileError::UnsupportedInstruction(
-                "merge requires a record argument with compiler-known fields in eBPF".into(),
-            ));
-        }
+        let merge_fields = if merge_meta.record_fields.is_empty() && !merge_is_known_empty_record {
+            if let Some(typed_fields) = Self::typed_record_visible_fields(&merge_meta) {
+                self.project_typed_record_scalar_fields(
+                    "merge",
+                    merge_reg,
+                    Some(merge_reg),
+                    &merge_meta,
+                    &typed_fields,
+                )?
+            } else {
+                return Err(CompileError::UnsupportedInstruction(
+                    "merge requires a record argument with compiler-known fields in eBPF".into(),
+                ));
+            }
+        } else {
+            merge_meta.record_fields.clone()
+        };
 
-        let mut fields = input_meta.record_fields.clone();
-        for merge_field in &merge_meta.record_fields {
+        let mut fields = input_fields;
+        for merge_field in &merge_fields {
             if let Some(index) = fields
                 .iter()
                 .position(|field| field.name == merge_field.name)

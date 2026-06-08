@@ -10349,6 +10349,131 @@ fn test_lower_global_define_type_record_default_supports_scalar_fields() {
 }
 
 #[test]
+fn test_lower_global_define_type_record_merge_supports_scalar_fields() {
+    for (case_idx, (merge_field, get_field, expected_offset)) in
+        [("tid", "uid", 8), ("uid", "cpu", 12)]
+            .into_iter()
+            .enumerate()
+    {
+        let base_decl = 10_450 + case_idx * 10;
+        let define_decl = DeclId::new(base_decl);
+        let global_get_decl = DeclId::new(base_decl + 1);
+        let merge_decl = DeclId::new(base_decl + 2);
+        let get_decl = DeclId::new(base_decl + 3);
+        let decl_names = HashMap::from([
+            (define_decl, "global-define".to_string()),
+            (global_get_decl, "global-get".to_string()),
+            (merge_decl, "merge".to_string()),
+            (get_decl, "get".to_string()),
+        ]);
+
+        let mut merge_record = Record::new();
+        merge_record.push(merge_field, Value::int(7, Span::test_data()));
+
+        let func = HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(0),
+                        lit: HirLiteral::String("seen_state".into()),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::String("record{pid:i64,uid:u32,cpu:u32}".into()),
+                    },
+                    HirStmt::Call {
+                        decl_id: define_decl,
+                        src_dst: RegId::new(2),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(0)],
+                            named: vec![(b"type".to_vec(), RegId::new(1))],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::Call {
+                        decl_id: global_get_decl,
+                        src_dst: RegId::new(3),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(0)],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::LoadValue {
+                        dst: RegId::new(4),
+                        val: Box::new(Value::record(merge_record, Span::test_data())),
+                    },
+                    HirStmt::Call {
+                        decl_id: merge_decl,
+                        src_dst: RegId::new(5),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(4)],
+                            pipeline_input: Some(RegId::new(3)),
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(6),
+                        lit: HirLiteral::String(get_field.into()),
+                    },
+                    HirStmt::Call {
+                        decl_id: get_decl,
+                        src_dst: RegId::new(7),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(6)],
+                            pipeline_input: Some(RegId::new(5)),
+                            ..HirCallArgs::default()
+                        },
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(7) },
+            }],
+            entry: HirBlockId(0),
+            spans: Vec::new(),
+            ast: Vec::new(),
+            comments: Vec::new(),
+            register_count: 8,
+            file_count: 0,
+        };
+        let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("global-define --type record{{...}} | merge should lower: {err:?}")
+        });
+
+        assert!(
+            result
+                .program
+                .main
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .any(|inst| matches!(
+                    inst,
+                    MirInst::Load {
+                        offset,
+                        ty: MirType::U32,
+                        ..
+                    } if *offset == expected_offset
+                )),
+            "expected merge output to preserve typed field '{get_field}'"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("typed record merge output should compile through codegen: {err:?}")
+            });
+    }
+}
+
+#[test]
 fn test_lower_global_define_type_record_values_shape_consumers_use_field_count() {
     for (case_idx, (consumer_name, expected_const)) in
         [("length", 2), ("is-empty", 0), ("is-not-empty", 1)]
