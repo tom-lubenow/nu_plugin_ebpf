@@ -20,6 +20,16 @@ const VERIFIER_DIFF_SOURCE_WITH_FIXTURES: &str = concat!(
     include_str!("../../../../scripts/verifier_diff.nu"),
     "\n",
     include_str!("../../../../scripts/verifier_diff/fixtures.nu"),
+    "\n",
+    include_str!("../../../../scripts/verifier_diff/fixtures/fixtures_0001_0500.nu"),
+    "\n",
+    include_str!("../../../../scripts/verifier_diff/fixtures/fixtures_0501_1000.nu"),
+    "\n",
+    include_str!("../../../../scripts/verifier_diff/fixtures/fixtures_1001_1500.nu"),
+    "\n",
+    include_str!("../../../../scripts/verifier_diff/fixtures/fixtures_1501_2000.nu"),
+    "\n",
+    include_str!("../../../../scripts/verifier_diff/fixtures/fixtures_2001_2282.nu"),
 );
 
 const REPRESENTATIVE_CONTEXT_FIELD_SPEC_SOURCES: &[&str] = &[
