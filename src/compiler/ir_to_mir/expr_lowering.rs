@@ -143,6 +143,15 @@ impl<'a> HirToMirLowering<'a> {
             }
         }
 
+        if matches!(
+            op,
+            Operator::Comparison(Comparison::StartsWith | Comparison::NotStartsWith)
+        ) {
+            let invert = matches!(op, Operator::Comparison(Comparison::NotStartsWith));
+            self.lower_runtime_string_starts_with_operator(lhs_dst, rhs, invert, constant_value)?;
+            return Ok(());
+        }
+
         if matches!(op, Operator::Math(Math::Pow)) {
             self.lower_integer_pow(lhs_dst, lhs_vreg, rhs, constant_value)?;
             return Ok(());
@@ -288,6 +297,99 @@ impl<'a> HirToMirLowering<'a> {
             src: MirValue::Const(if result { 1 } else { 0 }),
         });
         self.finish_runtime_bool_result(dst, dst_vreg);
+    }
+
+    fn lower_runtime_string_starts_with_operator(
+        &mut self,
+        lhs_dst: RegId,
+        rhs: RegId,
+        invert: bool,
+        constant_value: Option<Value>,
+    ) -> Result<(), CompileError> {
+        if let Some(value) = constant_value.as_ref() {
+            self.lower_constant_value(lhs_dst, value)?;
+            return Ok(());
+        }
+
+        let lhs_meta = self.get_metadata(lhs_dst).cloned();
+        let rhs_meta = self.get_metadata(rhs).cloned();
+        let lhs_source = lhs_meta
+            .as_ref()
+            .and_then(|meta| self.string_equality_source(meta))
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "starts-with operator requires tracked string left operand in eBPF".into(),
+                )
+            })?;
+        let prefix_source = rhs_meta
+            .as_ref()
+            .and_then(|meta| self.string_equality_source(meta))
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "starts-with operator requires tracked string prefix in eBPF".into(),
+                )
+            })?;
+        let prefix_len = prefix_source.exact_len.ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "starts-with operator requires a compile-time known string prefix in eBPF".into(),
+            )
+        })?;
+
+        let result_vreg = self.assign_fresh_vreg(lhs_dst);
+        if prefix_len == 0 {
+            self.lower_runtime_string_equality_const(lhs_dst, result_vreg, invert, true);
+            return Ok(());
+        }
+        if prefix_len > lhs_source.max_len
+            || lhs_source.exact_len.is_some_and(|len| len < prefix_len)
+        {
+            self.lower_runtime_string_equality_const(lhs_dst, result_vreg, invert, false);
+            return Ok(());
+        }
+
+        let bytes_match = self.func.alloc_vreg();
+        self.emit(MirInst::StrCmp {
+            dst: bytes_match,
+            lhs: lhs_source.slot,
+            lhs_offset: 0,
+            rhs: prefix_source.slot,
+            rhs_offset: 0,
+            len: prefix_len,
+        });
+        self.vreg_type_hints.insert(bytes_match, MirType::Bool);
+
+        let len_matches = self.func.alloc_vreg();
+        self.emit(MirInst::BinOp {
+            dst: len_matches,
+            op: BinOpKind::Ge,
+            lhs: MirValue::VReg(lhs_source.len_vreg),
+            rhs: MirValue::Const(prefix_len as i64),
+        });
+        self.vreg_type_hints.insert(len_matches, MirType::Bool);
+
+        let starts_with = if invert {
+            self.func.alloc_vreg()
+        } else {
+            result_vreg
+        };
+        self.emit(MirInst::BinOp {
+            dst: starts_with,
+            op: BinOpKind::And,
+            lhs: MirValue::VReg(len_matches),
+            rhs: MirValue::VReg(bytes_match),
+        });
+        self.vreg_type_hints.insert(starts_with, MirType::Bool);
+
+        if invert {
+            self.emit(MirInst::BinOp {
+                dst: result_vreg,
+                op: BinOpKind::Eq,
+                lhs: MirValue::VReg(starts_with),
+                rhs: MirValue::Const(0),
+            });
+        }
+        self.finish_runtime_bool_result(lhs_dst, result_vreg);
+        Ok(())
     }
 
     fn finish_runtime_bool_result(&mut self, dst: RegId, dst_vreg: VReg) {

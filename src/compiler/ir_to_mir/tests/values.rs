@@ -5135,6 +5135,62 @@ fn make_ctx_field_fill_then_starts_with_program_with_options(
     HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
 }
 
+fn make_ctx_pid_fill_then_starts_with_operator_program(
+    fill_decl: DeclId,
+    prefix: &str,
+    op: Comparison,
+) -> HirProgram {
+    let ctx_var = VarId::new(0);
+    let stmts = vec![
+        HirStmt::LoadVariable {
+            dst: RegId::new(0),
+            var_id: ctx_var,
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(1),
+            lit: HirLiteral::CellPath(Box::new(CellPath {
+                members: vec![string_member("pid")],
+            })),
+        },
+        HirStmt::FollowCellPath {
+            src_dst: RegId::new(0),
+            path: RegId::new(1),
+        },
+        HirStmt::Call {
+            decl_id: fill_decl,
+            src_dst: RegId::new(2),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(0)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::LoadValue {
+            dst: RegId::new(3),
+            val: Box::new(Value::string(prefix, Span::test_data())),
+        },
+        HirStmt::BinaryOp {
+            lhs_dst: RegId::new(2),
+            op: Operator::Comparison(op),
+            rhs: RegId::new(3),
+        },
+    ];
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(2) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 4,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], Some(ctx_var))
+}
+
 fn lower_ctx_pid_fill_then_starts_with_program_with_options(
     fill_decl: DeclId,
     starts_with_decl: DeclId,
@@ -14502,6 +14558,117 @@ fn test_lower_fill_on_runtime_unsigned_int_materializes_tracked_string() {
     );
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("runtime integer fill result consumed by str starts-with should compile");
+}
+
+#[test]
+fn test_lower_starts_with_operator_on_runtime_tracked_string() {
+    let fill_decl = DeclId::new(509);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
+
+    for (op, context) in [
+        (Comparison::StartsWith, "starts-with"),
+        (Comparison::NotStartsWith, "not starts-with"),
+    ] {
+        let hir = make_ctx_pid_fill_then_starts_with_operator_program(fill_decl, "0", op);
+        let decl_names = HashMap::from([(fill_decl, "fill".to_string())]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            Some(&probe_ctx),
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("{context} operator should lower: {err}"));
+
+        assert!(
+            result
+                .program
+                .main
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .any(|inst| matches!(inst, MirInst::StrCmp { len: 1, .. })),
+            "expected {context} operator to lower to a bounded prefix StrCmp"
+        );
+        assert!(
+            result
+                .program
+                .main
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .any(|inst| matches!(
+                    inst,
+                    MirInst::BinOp {
+                        op: BinOpKind::Ge,
+                        rhs: MirValue::Const(1),
+                        ..
+                    }
+                )),
+            "expected {context} operator to guard StrCmp with a prefix-length check"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{context} operator should compile: {err}"));
+    }
+}
+
+#[test]
+fn test_lower_starts_with_operator_prefix_beyond_runtime_capacity_is_constant() {
+    let fill_decl = DeclId::new(512);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
+
+    for (op, context, expected) in [
+        (Comparison::StartsWith, "starts-with", 0),
+        (Comparison::NotStartsWith, "not starts-with", 1),
+    ] {
+        let hir = make_ctx_pid_fill_then_starts_with_operator_program(
+            fill_decl,
+            "000000000000000000000",
+            op,
+        );
+        let decl_names = HashMap::from([(fill_decl, "fill".to_string())]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            Some(&probe_ctx),
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| panic!("{context} operator should lower: {err}"));
+
+        assert!(
+            !result
+                .program
+                .main
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .any(|inst| matches!(inst, MirInst::StrCmp { .. })),
+            "expected impossible {context} operator prefix to avoid out-of-slot StrCmp"
+        );
+        assert!(
+            result
+                .program
+                .main
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .any(|inst| matches!(
+                    inst,
+                    MirInst::Copy {
+                        src: MirValue::Const(value),
+                        ..
+                    } if *value == expected
+                )),
+            "expected impossible {context} operator prefix to lower to constant {expected}"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| panic!("{context} operator should compile: {err}"));
+    }
 }
 
 #[test]
