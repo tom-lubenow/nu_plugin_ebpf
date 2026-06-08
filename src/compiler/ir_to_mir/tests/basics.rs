@@ -2161,6 +2161,15 @@ fn test_lower_unsupported_runtime_binary_operator_with_constant_operands() {
         (
             make_literal_binary_op_program(
                 HirLiteral::String(b"kernel".to_vec()),
+                Operator::Comparison(Comparison::LessThan),
+                HirLiteral::String(b"user".to_vec()),
+            ),
+            1,
+            "constant string less-than",
+        ),
+        (
+            make_literal_binary_op_program(
+                HirLiteral::String(b"kernel".to_vec()),
                 Operator::Comparison(Comparison::RegexMatch),
                 HirLiteral::String(b"^kern".to_vec()),
             ),

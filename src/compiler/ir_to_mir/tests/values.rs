@@ -15052,6 +15052,34 @@ fn test_lower_has_operator_needle_beyond_runtime_capacity_is_constant() {
 }
 
 #[test]
+fn test_lower_string_ordering_operator_rejects_runtime_tracked_string() {
+    let fill_decl = DeclId::new(519);
+    let probe_ctx = ProbeContext::new(EbpfProgramType::Kprobe, "sys_clone");
+    let hir = make_ctx_pid_fill_then_string_comparison_operator_program(
+        fill_decl,
+        "0",
+        Comparison::LessThan,
+    );
+    let decl_names = HashMap::from([(fill_decl, "fill".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        Some(&probe_ctx),
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("runtime string ordering should be rejected instead of comparing pointers");
+
+    assert!(
+        err.to_string()
+            .contains("string ordering comparisons require compile-time constant operands"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn test_lower_fill_rejects_nul_character() {
     let fill_decl = DeclId::new(2541);
     let starts_with_decl = DeclId::new(2542);

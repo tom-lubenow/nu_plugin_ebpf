@@ -127,6 +127,44 @@ impl<'a> HirToMirLowering<'a> {
             }
         }
 
+        if matches!(
+            op,
+            Operator::Comparison(
+                Comparison::LessThan
+                    | Comparison::LessThanOrEqual
+                    | Comparison::GreaterThan
+                    | Comparison::GreaterThanOrEqual
+            )
+        ) && matches!(
+            (
+                self.source_match_kind(lhs_dst, lhs_vreg),
+                self.source_match_kind(rhs, rhs_vreg)
+            ),
+            (
+                Some(KnownSourceMatchKind::Scalar(ScalarMatchKind::String)),
+                _
+            ) | (
+                _,
+                Some(KnownSourceMatchKind::Scalar(ScalarMatchKind::String))
+            )
+        ) {
+            if let Some(value @ Value::Bool { .. }) = constant_value.as_ref()
+                && self
+                    .get_metadata(lhs_dst)
+                    .is_some_and(|meta| meta.constant_value.is_some())
+                && self
+                    .get_metadata(rhs)
+                    .is_some_and(|meta| meta.constant_value.is_some())
+            {
+                self.lower_constant_value(lhs_dst, value)?;
+                return Ok(());
+            }
+
+            return Err(CompileError::UnsupportedInstruction(
+                "string ordering comparisons require compile-time constant operands in eBPF".into(),
+            ));
+        }
+
         if let Some(Value::String { val, .. } | Value::Glob { val, .. }) = constant_value.as_ref() {
             self.lower_string_like_literal(lhs_dst, lhs_vreg, val.as_bytes())?;
             self.clear_source_var(lhs_dst);
