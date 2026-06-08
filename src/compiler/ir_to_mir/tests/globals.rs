@@ -10594,6 +10594,116 @@ fn test_lower_global_define_type_record_values_shape_consumers_use_field_count()
 }
 
 #[test]
+fn test_lower_global_define_type_record_shape_consumers_use_field_count() {
+    for (case_idx, (consumer_name, expected_const)) in
+        [("length", 2), ("is-empty", 0), ("is-not-empty", 1)]
+            .into_iter()
+            .enumerate()
+    {
+        let base_decl = 10_550 + case_idx * 10;
+        let define_decl = DeclId::new(base_decl);
+        let global_get_decl = DeclId::new(base_decl + 1);
+        let consumer_decl = DeclId::new(base_decl + 2);
+        let decl_names = HashMap::from([
+            (define_decl, "global-define".to_string()),
+            (global_get_decl, "global-get".to_string()),
+            (consumer_decl, consumer_name.to_string()),
+        ]);
+
+        let func = HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(0),
+                        lit: HirLiteral::String("seen_state".into()),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::String("record{pid:i64,uid:u32}".into()),
+                    },
+                    HirStmt::Call {
+                        decl_id: define_decl,
+                        src_dst: RegId::new(2),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(0)],
+                            named: vec![(b"type".to_vec(), RegId::new(1))],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::Call {
+                        decl_id: global_get_decl,
+                        src_dst: RegId::new(3),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(0)],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::Call {
+                        decl_id: consumer_decl,
+                        src_dst: RegId::new(4),
+                        args: HirCallArgs {
+                            pipeline_input: Some(RegId::new(3)),
+                            ..HirCallArgs::default()
+                        },
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(4) },
+            }],
+            entry: HirBlockId(0),
+            spans: Vec::new(),
+            ast: Vec::new(),
+            comments: Vec::new(),
+            register_count: 5,
+            file_count: 0,
+        };
+        let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("typed record | {consumer_name} should lower from field count: {err:?}")
+        });
+        let instructions = result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .collect::<Vec<_>>();
+
+        assert!(
+            instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::Copy {
+                    src: MirValue::Const(value),
+                    ..
+                } if *value == expected_const
+            )),
+            "expected typed record | {consumer_name} to fold to {expected_const}"
+        );
+        assert!(
+            !instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::ListNew { .. } | MirInst::ListPush { .. } | MirInst::ListGet { .. }
+            )),
+            "typed record | {consumer_name} should not materialize runtime list operations"
+        );
+
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("typed record | {consumer_name} should compile through codegen: {err:?}")
+            });
+    }
+}
+
+#[test]
 fn test_lower_global_define_type_record_columns_uses_typed_field_names() {
     let define_decl = DeclId::new(10_330);
     let global_get_decl = DeclId::new(10_331);

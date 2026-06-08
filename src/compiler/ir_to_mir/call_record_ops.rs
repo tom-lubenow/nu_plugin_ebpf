@@ -1289,7 +1289,7 @@ impl<'a> HirToMirLowering<'a> {
         Ok(())
     }
 
-    fn typed_record_visible_fields(meta: &RegMetadata) -> Option<Vec<StructField>> {
+    pub(super) fn typed_record_visible_fields(meta: &RegMetadata) -> Option<Vec<StructField>> {
         fn struct_fields(ty: &MirType) -> Option<Vec<StructField>> {
             match ty {
                 MirType::Struct { fields, .. } => Some(
@@ -1305,6 +1305,14 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         meta.field_type.as_ref().and_then(struct_fields)
+    }
+
+    pub(super) fn typed_mutable_global_record_field_count(meta: &RegMetadata) -> Option<usize> {
+        if !meta.mutable_global_runtime || meta.is_context || meta.trusted_btf {
+            return None;
+        }
+
+        Self::typed_record_visible_fields(meta).map(|fields| fields.len())
     }
 
     fn typed_record_field_names(meta: &RegMetadata) -> Option<Vec<String>> {

@@ -3610,6 +3610,10 @@ impl<'a> HirToMirLowering<'a> {
                 } else if let Some(empty) = input_meta.as_ref().and_then(|meta| {
                     if !meta.record_fields.is_empty() {
                         Some(false)
+                    } else if let Some(field_count) =
+                        Self::typed_mutable_global_record_field_count(meta)
+                    {
+                        Some(field_count == 0)
                     } else if let Some(semantics) = &meta.annotated_semantics {
                         match semantics {
                             AnnotatedValueSemantics::Binary { len } => Some(*len == 0),
@@ -3652,7 +3656,7 @@ impl<'a> HirToMirLowering<'a> {
                     });
                 } else {
                     return Err(CompileError::UnsupportedInstruction(format!(
-                        "{cmd_name} requires a stack-backed list, tracked string, typed fixed array, metadata-backed record, or literal null input in eBPF"
+                        "{cmd_name} requires a stack-backed list, tracked string, typed fixed array, metadata-backed or typed global record, or literal null input in eBPF"
                     )));
                 }
 
@@ -3693,6 +3697,18 @@ impl<'a> HirToMirLowering<'a> {
                         list: input_vreg,
                     });
                 } else if let Some(len) = input_meta.as_ref().and_then(|meta| {
+                    if !meta.record_fields.is_empty() {
+                        return Some(meta.record_fields.len());
+                    }
+                    if let Some(field_count) = Self::typed_mutable_global_record_field_count(meta) {
+                        return Some(field_count);
+                    }
+                    if let Some(nu_protocol::Value::Record { val, .. }) =
+                        meta.constant_value.as_ref()
+                    {
+                        return Some(val.len());
+                    }
+
                     meta.annotated_semantics
                         .as_ref()
                         .and_then(|semantics| match semantics {
@@ -3731,7 +3747,7 @@ impl<'a> HirToMirLowering<'a> {
                     });
                 } else {
                     return Err(CompileError::UnsupportedInstruction(
-                        "length requires a stack-backed list, typed fixed array, literal binary, or literal null input in eBPF"
+                        "length requires a stack-backed list, typed fixed array, metadata-backed or typed global record, literal binary, or literal null input in eBPF"
                             .into(),
                     ));
                 }
