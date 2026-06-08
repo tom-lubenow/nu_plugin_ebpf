@@ -585,6 +585,17 @@ impl<'a> HirToMirLowering<'a> {
                 "{cmd_name} requires a typed record value in eBPF"
             ))
         })?;
+        let (input_vreg, input_runtime_ty) =
+            self.typed_record_vreg_and_runtime_ty(cmd_name, input_reg, input_vreg)?;
+        Ok((input_reg, input_vreg, input_runtime_ty))
+    }
+
+    fn typed_record_vreg_and_runtime_ty(
+        &mut self,
+        cmd_name: &str,
+        input_reg: RegId,
+        input_vreg: VReg,
+    ) -> Result<(VReg, MirType), CompileError> {
         let mut input_vreg = input_vreg;
         let mut input_runtime_ty = self
             .typed_value_runtime_type(input_reg, input_vreg)
@@ -610,7 +621,7 @@ impl<'a> HirToMirLowering<'a> {
                 "{cmd_name} requires a typed record pointer input in eBPF"
             )));
         }
-        Ok((input_reg, input_vreg, input_runtime_ty))
+        Ok((input_vreg, input_runtime_ty))
     }
 
     fn project_typed_record_scalar_field(
@@ -682,6 +693,32 @@ impl<'a> HirToMirLowering<'a> {
     ) -> Result<Vec<RecordField>, CompileError> {
         let (_input_reg, input_vreg, input_runtime_ty) =
             self.typed_record_input_vreg_and_runtime_ty(cmd_name, input_reg)?;
+
+        let mut projected_fields = Vec::with_capacity(typed_fields.len());
+        for field in typed_fields {
+            projected_fields.push(self.project_typed_record_scalar_field(
+                cmd_name,
+                scratch_reg,
+                input_vreg,
+                &input_runtime_ty,
+                input_meta,
+                field,
+            )?);
+        }
+        Ok(projected_fields)
+    }
+
+    fn project_typed_record_scalar_fields_from_vreg(
+        &mut self,
+        cmd_name: &str,
+        scratch_reg: RegId,
+        input_reg: RegId,
+        input_vreg: VReg,
+        input_meta: &RegMetadata,
+        typed_fields: &[StructField],
+    ) -> Result<Vec<RecordField>, CompileError> {
+        let (input_vreg, input_runtime_ty) =
+            self.typed_record_vreg_and_runtime_ty(cmd_name, input_reg, input_vreg)?;
 
         let mut projected_fields = Vec::with_capacity(typed_fields.len());
         for field in typed_fields {
@@ -1645,14 +1682,25 @@ impl<'a> HirToMirLowering<'a> {
             input_meta.constant_value.as_ref(),
             Some(nu_protocol::Value::Record { val, .. }) if val.is_empty()
         );
-        if input_meta.record_fields.is_empty() && !input_is_known_empty_record {
-            return Err(CompileError::UnsupportedInstruction(
-                "default column fill requires record input with compiler-known fields in eBPF"
-                    .into(),
-            ));
-        }
-
-        let mut fields = input_meta.record_fields.clone();
+        let mut fields = if input_meta.record_fields.is_empty() && !input_is_known_empty_record {
+            if let Some(typed_fields) = Self::typed_record_visible_fields(&input_meta) {
+                self.project_typed_record_scalar_fields_from_vreg(
+                    "default",
+                    src_dst,
+                    input_reg,
+                    input_vreg,
+                    &input_meta,
+                    &typed_fields,
+                )?
+            } else {
+                return Err(CompileError::UnsupportedInstruction(
+                    "default column fill requires record input with compiler-known fields in eBPF"
+                        .into(),
+                ));
+            }
+        } else {
+            input_meta.record_fields.clone()
+        };
         for name in &column_names {
             let existing_index = fields.iter().position(|field| field.name == *name);
             let replace_existing = input_meta

@@ -10221,6 +10221,134 @@ fn test_lower_global_define_type_record_insert_update_upsert_supports_scalar_fie
 }
 
 #[test]
+fn test_lower_global_define_type_record_default_supports_scalar_fields() {
+    for (case_idx, (default_field, get_field, expected_offset)) in
+        [("tid", "tid", None), ("uid", "uid", Some(8))]
+            .into_iter()
+            .enumerate()
+    {
+        let base_decl = 10_430 + case_idx * 10;
+        let define_decl = DeclId::new(base_decl);
+        let global_get_decl = DeclId::new(base_decl + 1);
+        let default_decl = DeclId::new(base_decl + 2);
+        let get_decl = DeclId::new(base_decl + 3);
+        let decl_names = HashMap::from([
+            (define_decl, "global-define".to_string()),
+            (global_get_decl, "global-get".to_string()),
+            (default_decl, "default".to_string()),
+            (get_decl, "get".to_string()),
+        ]);
+
+        let func = HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(0),
+                        lit: HirLiteral::String("seen_state".into()),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::String("record{pid:i64,uid:u32,cpu:u32}".into()),
+                    },
+                    HirStmt::Call {
+                        decl_id: define_decl,
+                        src_dst: RegId::new(2),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(0)],
+                            named: vec![(b"type".to_vec(), RegId::new(1))],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::Call {
+                        decl_id: global_get_decl,
+                        src_dst: RegId::new(3),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(0)],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(4),
+                        lit: HirLiteral::Int(7),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(5),
+                        lit: HirLiteral::String(default_field.into()),
+                    },
+                    HirStmt::Call {
+                        decl_id: default_decl,
+                        src_dst: RegId::new(6),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(4), RegId::new(5)],
+                            pipeline_input: Some(RegId::new(3)),
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(7),
+                        lit: HirLiteral::String(get_field.into()),
+                    },
+                    HirStmt::Call {
+                        decl_id: get_decl,
+                        src_dst: RegId::new(8),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(7)],
+                            pipeline_input: Some(RegId::new(6)),
+                            ..HirCallArgs::default()
+                        },
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(8) },
+            }],
+            entry: HirBlockId(0),
+            spans: Vec::new(),
+            ast: Vec::new(),
+            comments: Vec::new(),
+            register_count: 9,
+            file_count: 0,
+        };
+        let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("global-define --type record{{...}} | default should lower: {err:?}")
+        });
+
+        if let Some(expected_offset) = expected_offset {
+            assert!(
+                result
+                    .program
+                    .main
+                    .blocks
+                    .iter()
+                    .flat_map(|block| block.instructions.iter())
+                    .any(|inst| matches!(
+                        inst,
+                        MirInst::Load {
+                            offset,
+                            ty: MirType::U32,
+                            ..
+                        } if *offset == expected_offset
+                    )),
+                "expected default on existing typed field '{get_field}' to preserve the typed projection"
+            );
+        }
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("typed record default output should compile through codegen: {err:?}")
+            });
+    }
+}
+
+#[test]
 fn test_lower_global_define_type_record_values_shape_consumers_use_field_count() {
     for (case_idx, (consumer_name, expected_const)) in
         [("length", 2), ("is-empty", 0), ("is-not-empty", 1)]
