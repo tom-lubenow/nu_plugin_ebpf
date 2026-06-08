@@ -6867,6 +6867,69 @@ fn make_record_mixed_values_uniq_length_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_record_mixed_values_count_transform_length_program(
+    values_decl: DeclId,
+    transform_decl: DeclId,
+    length_decl: DeclId,
+    count: i64,
+) -> HirProgram {
+    let mut record = Record::new();
+    record.push("pid", Value::int(7, Span::test_data()));
+    record.push("comm", Value::string("nu", Span::test_data()));
+    record.push("ok", Value::bool(true, Span::test_data()));
+
+    let stmts = vec![
+        HirStmt::LoadValue {
+            dst: RegId::new(0),
+            val: Box::new(Value::record(record, Span::test_data())),
+        },
+        HirStmt::Call {
+            decl_id: values_decl,
+            src_dst: RegId::new(1),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(0)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::LoadLiteral {
+            dst: RegId::new(2),
+            lit: HirLiteral::Int(count),
+        },
+        HirStmt::Call {
+            decl_id: transform_decl,
+            src_dst: RegId::new(3),
+            args: HirCallArgs {
+                positional: vec![RegId::new(2)],
+                pipeline_input: Some(RegId::new(1)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::Call {
+            decl_id: length_decl,
+            src_dst: RegId::new(4),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(3)),
+                ..HirCallArgs::default()
+            },
+        },
+    ];
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(4) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 5,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_record_mixed_values_then_get_then_starts_with_program(
     values_decl: DeclId,
     get_decl: DeclId,
@@ -40070,6 +40133,58 @@ fn test_lower_values_on_mixed_constant_record_uniq_feeds_metadata_length() {
     assert_no_runtime_list_operations(&result.program, "mixed record values uniq");
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("mixed record values uniq length should compile through codegen");
+}
+
+#[test]
+fn test_lower_values_on_mixed_constant_record_count_transforms_feed_metadata_length() {
+    for (offset, transform_name, expected_len) in [
+        (0, "take", 2),
+        (10, "first", 2),
+        (20, "skip", 1),
+        (30, "drop", 1),
+        (40, "last", 2),
+    ] {
+        let values_decl = DeclId::new(1249 + offset);
+        let transform_decl = DeclId::new(1250 + offset);
+        let length_decl = DeclId::new(1251 + offset);
+        let hir = make_record_mixed_values_count_transform_length_program(
+            values_decl,
+            transform_decl,
+            length_decl,
+            2,
+        );
+        let decl_names = HashMap::from([
+            (values_decl, "values".to_string()),
+            (transform_decl, transform_name.to_string()),
+            (length_decl, "length".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("mixed constant record values should feed metadata-only {transform_name}: {err}")
+        });
+
+        assert_program_returns_constant(
+            &result.program,
+            expected_len,
+            &format!("mixed record values {transform_name} length"),
+        );
+        assert_no_runtime_list_operations(
+            &result.program,
+            &format!("mixed record values {transform_name}"),
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("mixed record values {transform_name} length should compile: {err}")
+            });
+    }
 }
 
 #[test]
