@@ -3494,7 +3494,7 @@ impl<'a> HirToMirLowering<'a> {
         if let Some(value) = meta.constant_value.as_ref() {
             return Some(value.get_type().to_string());
         }
-        if let Some(output) = Self::describe_typed_mutable_global_record_type(meta) {
+        if let Some(output) = Self::describe_typed_mutable_global_type(meta) {
             return Some(output);
         }
         if let Some(output) = meta
@@ -3522,17 +3522,60 @@ impl<'a> HirToMirLowering<'a> {
             .and_then(Self::describe_mir_type)
     }
 
-    fn describe_typed_mutable_global_record_type(meta: &RegMetadata) -> Option<String> {
+    fn describe_typed_mutable_global_type(meta: &RegMetadata) -> Option<String> {
         if !meta.mutable_global_runtime || meta.is_context || meta.trusted_btf {
             return None;
         }
 
-        let fields = Self::typed_record_visible_fields(meta)?;
+        let ty = meta.field_type.as_ref()?;
+        Self::describe_source_mir_type(ty, meta.annotated_semantics.as_ref())
+    }
+
+    fn describe_source_mir_type(
+        ty: &MirType,
+        semantics: Option<&AnnotatedValueSemantics>,
+    ) -> Option<String> {
+        if let Some(output) = semantics.and_then(Self::describe_annotated_semantics_type) {
+            return Some(output);
+        }
+
+        match ty {
+            MirType::I8
+            | MirType::I16
+            | MirType::I32
+            | MirType::I64
+            | MirType::U8
+            | MirType::U16
+            | MirType::U32
+            | MirType::U64 => Some("int".to_string()),
+            MirType::Bool => Some("bool".to_string()),
+            MirType::Array { elem, .. } => {
+                let elem_type = Self::describe_source_mir_type(elem, None)?;
+                Some(format!("list<{elem_type}>"))
+            }
+            MirType::Struct { fields, .. } => {
+                Self::describe_typed_record_fields_type(fields, semantics)
+            }
+            MirType::Ptr { .. }
+            | MirType::MapRef { .. }
+            | MirType::Subprogram { .. }
+            | MirType::Unknown => None,
+        }
+    }
+
+    fn describe_typed_record_fields_type(
+        fields: &[StructField],
+        semantics: Option<&AnnotatedValueSemantics>,
+    ) -> Option<String> {
+        let fields = fields
+            .iter()
+            .filter(|field| !field.synthetic)
+            .collect::<Vec<_>>();
         if fields.is_empty() {
             return Some("record".to_string());
         }
 
-        let semantics = match meta.annotated_semantics.as_ref() {
+        let semantics = match semantics {
             Some(AnnotatedValueSemantics::Record(fields)) => Some(fields),
             _ => None,
         };
@@ -3546,7 +3589,7 @@ impl<'a> HirToMirLowering<'a> {
                             .flatten()
                     })
                 })
-                .or_else(|| Self::describe_mir_type(&field.ty))?;
+                .or_else(|| Self::describe_source_mir_type(&field.ty, None))?;
             parts.push(format!("{}: {field_type}", field.name));
         }
         Some(format!("record<{}>", parts.join(", ")))
