@@ -13,7 +13,8 @@ source ($VERIFIER_DIFF_FIXTURE_CHUNKS_DIR | path join fixtures_1251_1375.nu)
 source ($VERIFIER_DIFF_FIXTURE_CHUNKS_DIR | path join fixtures_1376_1500.nu)
 source ($VERIFIER_DIFF_FIXTURE_CHUNKS_DIR | path join fixtures_1501_1625.nu)
 source ($VERIFIER_DIFF_FIXTURE_CHUNKS_DIR | path join fixtures_1626_1750.nu)
-source ($VERIFIER_DIFF_FIXTURE_CHUNKS_DIR | path join fixtures_1751_2000.nu)
+source ($VERIFIER_DIFF_FIXTURE_CHUNKS_DIR | path join fixtures_1751_1875.nu)
+source ($VERIFIER_DIFF_FIXTURE_CHUNKS_DIR | path join fixtures_1876_2000.nu)
 source ($VERIFIER_DIFF_FIXTURE_CHUNKS_DIR | path join fixtures_2001_2125.nu)
 source ($VERIFIER_DIFF_FIXTURE_CHUNKS_DIR | path join fixtures_2126_2250.nu)
 source ($VERIFIER_DIFF_FIXTURE_CHUNKS_DIR | path join fixtures_2251_2284.nu)
@@ -45,7 +46,8 @@ let FIXTURES = (
     | append $VERIFIER_DIFF_FIXTURES_1376_1500
     | append $VERIFIER_DIFF_FIXTURES_1501_1625
     | append $VERIFIER_DIFF_FIXTURES_1626_1750
-    | append $VERIFIER_DIFF_FIXTURES_1751_2000
+    | append $VERIFIER_DIFF_FIXTURES_1751_1875
+    | append $VERIFIER_DIFF_FIXTURES_1876_2000
     | append $VERIFIER_DIFF_FIXTURES_2001_2125
     | append $VERIFIER_DIFF_FIXTURES_2126_2250
     | append $VERIFIER_DIFF_FIXTURES_2251_2284
