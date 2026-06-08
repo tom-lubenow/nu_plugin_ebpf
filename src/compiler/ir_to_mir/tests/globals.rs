@@ -9587,6 +9587,102 @@ fn test_lower_global_define_type_record_supports_field_projection() {
 }
 
 #[test]
+fn test_lower_global_define_type_record_supports_command_get_field() {
+    let define_decl = DeclId::new(10_290);
+    let global_get_decl = DeclId::new(10_291);
+    let get_decl = DeclId::new(10_292);
+    let decl_names = HashMap::from([
+        (define_decl, "global-define".to_string()),
+        (global_get_decl, "global-get".to_string()),
+        (get_decl, "get".to_string()),
+    ]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::String("seen_state".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("record{pid:i64,uid:u32}".into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        named: vec![(b"type".to_vec(), RegId::new(1))],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: global_get_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::String("pid".into()),
+                },
+                HirStmt::Call {
+                    decl_id: get_decl,
+                    src_dst: RegId::new(5),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(4)],
+                        pipeline_input: Some(RegId::new(3)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(5) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 6,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("global-define --type record{...} command get field should lower");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Load {
+                    offset: 0,
+                    ty: MirType::I64,
+                    ..
+                }
+            )),
+        "expected command get to load the pid field at offset 0"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("typed record command get should compile through codegen");
+}
+
+#[test]
 fn test_lower_global_define_type_record_values_shape_consumers_use_field_count() {
     for (case_idx, (consumer_name, expected_const)) in
         [("length", 2), ("is-empty", 0), ("is-not-empty", 1)]
