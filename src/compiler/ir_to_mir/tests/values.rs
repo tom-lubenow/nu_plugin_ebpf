@@ -40298,6 +40298,8 @@ fn test_lower_columns_feed_metadata_only_list_transforms() {
         (0, "sort", None, "cpu,ok,pid"),
         (10, "reverse", None, "ok,cpu,pid"),
         (20, "find", Some("cpu"), "cpu"),
+        (30, "skip", None, "cpu,ok"),
+        (40, "drop", None, "pid,cpu"),
     ] {
         let columns_decl = DeclId::new(215 + offset);
         let transform_decl = DeclId::new(216 + offset);
