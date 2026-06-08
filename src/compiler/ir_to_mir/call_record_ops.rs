@@ -758,6 +758,12 @@ impl<'a> HirToMirLowering<'a> {
                 .collect::<Vec<_>>();
             let value_list = nu_protocol::Value::list(vals, Span::unknown());
             if self.current_call_result_metadata_only
+                && matches!(&value_list, nu_protocol::Value::List { vals, .. } if vals.is_empty())
+            {
+                self.lower_compile_time_only_constant_value(src_dst, &value_list);
+                return Ok(());
+            }
+            if self.current_call_result_metadata_only
                 && !crate::compiler::hir::supports_numeric_constant_list(&value_list)
                 && !crate::compiler::hir::supports_fixed_array_constant_list(&value_list)
                 && Self::record_values_list_is_metadata_only_supported(&value_list)

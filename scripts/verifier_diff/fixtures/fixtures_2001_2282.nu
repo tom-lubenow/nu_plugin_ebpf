@@ -1132,6 +1132,23 @@ const VERIFIER_DIFF_FIXTURES_2001_2282 = [
         kernel: "accept"
     }
     {
+        name: "core-record-empty-metadata-list-first-last"
+        category: "language-core"
+        tags: [aggregate record columns values list empty first last is-empty]
+        target: "kprobe:ksys_read"
+        program: [
+            '{|ctx|'
+            '  let columns_first = ({} | columns | first | is-empty)'
+            '  let columns_last = ({} | columns | last | is-empty)'
+            '  let values_first = ({} | values | first | is-empty)'
+            '  let values_last = ({} | values | last | is-empty)'
+            '  $columns_first and ($columns_last and ($values_first and $values_last))'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
         name: "core-record-values-empty-length"
         category: "language-core"
         tags: [aggregate record values list empty]

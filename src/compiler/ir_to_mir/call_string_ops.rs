@@ -2582,7 +2582,9 @@ impl<'a> HirToMirLowering<'a> {
         result_vreg: VReg,
         outputs: Vec<String>,
     ) -> Result<(), CompileError> {
-        if self.current_call_result_list_transform_metadata_only {
+        if self.current_call_result_metadata_only
+            || self.current_call_result_list_transform_metadata_only
+        {
             let values = outputs
                 .into_iter()
                 .map(|output| nu_protocol::Value::string(output, Span::unknown()))
