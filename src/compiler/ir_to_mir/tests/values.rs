@@ -40318,6 +40318,18 @@ fn test_lower_columns_feed_metadata_only_list_transforms() {
             "pid,cpu",
         ),
         (70, "last", Some(Value::int(2, Span::test_data())), "cpu,ok"),
+        (
+            80,
+            "append",
+            Some(Value::string("irq", Span::test_data())),
+            "pid,cpu,ok,irq",
+        ),
+        (
+            90,
+            "prepend",
+            Some(Value::string("irq", Span::test_data())),
+            "irq,pid,cpu,ok",
+        ),
     ] {
         let columns_decl = DeclId::new(215 + offset);
         let transform_decl = DeclId::new(216 + offset);
