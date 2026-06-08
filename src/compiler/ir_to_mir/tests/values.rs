@@ -7493,6 +7493,69 @@ fn make_record_columns_transform_join_starts_with_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_record_columns_scalar_starts_with_program(
+    columns_decl: DeclId,
+    scalar_decl: DeclId,
+    starts_with_decl: DeclId,
+    prefix: &str,
+) -> HirProgram {
+    let mut record = Record::new();
+    record.push("pid", Value::int(7, Span::test_data()));
+    record.push("cpu", Value::int(2, Span::test_data()));
+    record.push("ok", Value::bool(true, Span::test_data()));
+
+    let stmts = vec![
+        HirStmt::LoadValue {
+            dst: RegId::new(0),
+            val: Box::new(Value::record(record, Span::test_data())),
+        },
+        HirStmt::Call {
+            decl_id: columns_decl,
+            src_dst: RegId::new(1),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(0)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::Call {
+            decl_id: scalar_decl,
+            src_dst: RegId::new(2),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(1)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::LoadValue {
+            dst: RegId::new(3),
+            val: Box::new(Value::string(prefix, Span::test_data())),
+        },
+        HirStmt::Call {
+            decl_id: starts_with_decl,
+            src_dst: RegId::new(4),
+            args: HirCallArgs {
+                positional: vec![RegId::new(3)],
+                pipeline_input: Some(RegId::new(2)),
+                ..HirCallArgs::default()
+            },
+        },
+    ];
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(4) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 5,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_record_transpose_get_field_program(
     transpose_decl: DeclId,
     get_decl: DeclId,
@@ -40287,6 +40350,62 @@ fn test_lower_columns_feed_metadata_only_list_transforms() {
         compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
             .unwrap_or_else(|err| {
                 panic!("record columns {transform_name} should compile through codegen: {err}")
+            });
+    }
+}
+
+#[test]
+fn test_lower_columns_feed_metadata_only_first_last() {
+    for (offset, scalar_name, expected_prefix) in [(0, "first", "pid"), (10, "last", "ok")] {
+        let columns_decl = DeclId::new(1240 + offset);
+        let scalar_decl = DeclId::new(1241 + offset);
+        let starts_with_decl = DeclId::new(1242 + offset);
+        let hir = make_record_columns_scalar_starts_with_program(
+            columns_decl,
+            scalar_decl,
+            starts_with_decl,
+            expected_prefix,
+        );
+        let decl_names = HashMap::from([
+            (columns_decl, "columns".to_string()),
+            (scalar_decl, scalar_name.to_string()),
+            (starts_with_decl, "str starts-with".to_string()),
+        ]);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("columns should feed metadata-only scalar {scalar_name}: {err}")
+        });
+        assert!(
+            result
+                .program
+                .main
+                .blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .any(|inst| matches!(
+                    inst,
+                    MirInst::StringAppend {
+                        val_type: StringAppendType::Literal { bytes },
+                        ..
+                    } if bytes.starts_with(format!("{expected_prefix}\0").as_bytes())
+                )),
+            "expected columns | {scalar_name} to materialize {expected_prefix}"
+        );
+        assert_no_runtime_list_operations(
+            &result.program,
+            &format!("record columns {scalar_name}"),
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("record columns {scalar_name} should compile through codegen: {err}")
             });
     }
 }
