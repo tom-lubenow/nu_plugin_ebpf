@@ -328,9 +328,9 @@ impl<'a> HirToMirLowering<'a> {
             .compile_time_only_list_builder_values(input_reg, input_vreg)
             .map(|values| {
                 if values.is_empty() {
-                    return Err(CompileError::UnsupportedInstruction(format!(
-                        "{cmd_name} requires a non-empty compile-time known list in eBPF"
-                    )));
+                    return Ok::<nu_protocol::Value, CompileError>(nu_protocol::Value::nothing(
+                        Span::unknown(),
+                    ));
                 }
                 Ok(if cmd_name == "first" {
                     values[0].clone()
