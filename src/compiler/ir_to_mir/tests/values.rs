@@ -6810,6 +6810,63 @@ fn make_record_mixed_values_compact_length_program(
     HirProgram::new(func, HashMap::new(), vec![], None)
 }
 
+fn make_record_mixed_values_uniq_length_program(
+    values_decl: DeclId,
+    uniq_decl: DeclId,
+    length_decl: DeclId,
+) -> HirProgram {
+    let mut record = Record::new();
+    record.push("pid", Value::int(7, Span::test_data()));
+    record.push("tid", Value::int(7, Span::test_data()));
+    record.push("comm", Value::string("nu", Span::test_data()));
+
+    let stmts = vec![
+        HirStmt::LoadValue {
+            dst: RegId::new(0),
+            val: Box::new(Value::record(record, Span::test_data())),
+        },
+        HirStmt::Call {
+            decl_id: values_decl,
+            src_dst: RegId::new(1),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(0)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::Call {
+            decl_id: uniq_decl,
+            src_dst: RegId::new(2),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(1)),
+                ..HirCallArgs::default()
+            },
+        },
+        HirStmt::Call {
+            decl_id: length_decl,
+            src_dst: RegId::new(3),
+            args: HirCallArgs {
+                pipeline_input: Some(RegId::new(2)),
+                ..HirCallArgs::default()
+            },
+        },
+    ];
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(3) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 4,
+        file_count: 0,
+    };
+    HirProgram::new(func, HashMap::new(), vec![], None)
+}
+
 fn make_record_mixed_values_then_get_then_starts_with_program(
     values_decl: DeclId,
     get_decl: DeclId,
@@ -39985,6 +40042,34 @@ fn test_lower_values_on_mixed_constant_record_compact_feeds_metadata_length() {
     assert_no_runtime_list_operations(&result.program, "mixed record values compact");
     compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
         .expect("mixed record values compact length should compile through codegen");
+}
+
+#[test]
+fn test_lower_values_on_mixed_constant_record_uniq_feeds_metadata_length() {
+    let values_decl = DeclId::new(1246);
+    let uniq_decl = DeclId::new(1247);
+    let length_decl = DeclId::new(1248);
+    let hir = make_record_mixed_values_uniq_length_program(values_decl, uniq_decl, length_decl);
+    let decl_names = HashMap::from([
+        (values_decl, "values".to_string()),
+        (uniq_decl, "uniq".to_string()),
+        (length_decl, "length".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("mixed constant record values should feed metadata-only uniq");
+
+    assert_program_returns_constant(&result.program, 2, "mixed record values uniq length");
+    assert_no_runtime_list_operations(&result.program, "mixed record values uniq");
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("mixed record values uniq length should compile through codegen");
 }
 
 #[test]
