@@ -488,9 +488,22 @@ def program-callback-btf-kernel-features [source: string] {
     $features
 }
 
+def source-uses-context-variable? [source: string context_names] {
+    for context_name in $context_names {
+        if ($source | str contains $"$($context_name)") {
+            return true
+        }
+    }
+
+    false
+}
+
 def program-context-field-kernel-features [source: string target] {
     mut features = []
     let context_names = (program-context-variable-names $source)
+    if not (source-uses-context-variable? $source $context_names) {
+        return []
+    }
 
     for line in ($source | lines) {
         for context_name in $context_names {
@@ -523,6 +536,7 @@ def program-surface-kernel-features [source: string target] {
     mut features = []
     let target_text = ($target | default "")
     let context_names = (program-context-variable-names $source)
+    let source_uses_context = (source-uses-context-variable? $source $context_names)
     mut record_context_aliases = []
     mut record_context_aliases_loaded = false
     mut map_kind_bindings = []
@@ -585,7 +599,8 @@ def program-surface-kernel-features [source: string target] {
 
         let trimmed = ($line | str trim)
         let assigns_sysctl_new_value = (
-            line-assigns-context-field? $trimmed $context_names ["new_value" "sysctl_new_value"]
+            $source_uses_context
+            and (line-assigns-context-field? $trimmed $context_names ["new_value" "sysctl_new_value"])
         )
         let target_supports_ctx_sk_assign = (
             ($target_text | str starts-with "sk_lookup:")
@@ -594,7 +609,8 @@ def program-surface-kernel-features [source: string target] {
             or (($target_text | str starts-with "tcx:") and ($target_text | str contains ":ingress"))
         )
         let may_have_record_context_helper_write = (
-            (($target_text | str starts-with "cgroup_sysctl:") and (
+            $source_uses_context
+            and ((($target_text | str starts-with "cgroup_sysctl:") and (
                 ($trimmed | str contains ".new_value")
                 or ($trimmed | str contains ".sysctl_new_value")
             ))
@@ -603,24 +619,32 @@ def program-surface-kernel-features [source: string target] {
                 or ($trimmed | str contains ".sock")
                 or ($trimmed | str contains ".socket")
             ))
-            or (($target_text | str starts-with "sock_ops:") and ($trimmed | str contains ".cb_flags"))
+            or (($target_text | str starts-with "sock_ops:") and ($trimmed | str contains ".cb_flags")))
         )
         if $may_have_record_context_helper_write and not $record_context_aliases_loaded {
             $record_context_aliases = (program-record-context-aliases $source $context_names)
             $record_context_aliases_loaded = true
         }
         let assigns_ctx_sk = (
-            line-assigns-context-field? $trimmed $context_names ["sk" "sock" "socket"]
+            $source_uses_context
+            and $target_supports_ctx_sk_assign
+            and (line-assigns-context-field? $trimmed $context_names ["sk" "sock" "socket"])
         )
         let assigns_record_ctx_sk = (
+            $source_uses_context
+            and
             $target_supports_ctx_sk_assign
             and (line-assigns-record-context-field? $trimmed $record_context_aliases ["sk" "sock" "socket"] [""])
         )
         let assigns_record_sysctl_new_value = (
+            $source_uses_context
+            and
             ($target_text | str starts-with "cgroup_sysctl:")
             and (line-assigns-record-context-field? $trimmed $record_context_aliases ["new_value" "sysctl_new_value"] [""])
         )
         let assigns_record_sock_ops_cb_flags = (
+            $source_uses_context
+            and
             ($target_text | str starts-with "sock_ops:")
             and (line-assigns-record-context-field? $trimmed $record_context_aliases ["cb_flags"] [""])
         )
@@ -728,7 +752,10 @@ def program-surface-kernel-features [source: string target] {
                 $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SK_SELECT_REUSEPORT])
             }
         }
-        if ($target_text | str starts-with "sock_ops:") and ((line-assigns-context-field? $trimmed $context_names ["cb_flags"]) or $assigns_record_sock_ops_cb_flags) {
+        if ($target_text | str starts-with "sock_ops:") and (
+            ($source_uses_context and (line-assigns-context-field? $trimmed $context_names ["cb_flags"]))
+            or $assigns_record_sock_ops_cb_flags
+        ) {
             $features = (append-missing-kernel-features $features [$KERNEL_FEATURE_BPF_SOCK_OPS_CB_FLAGS_SET])
         }
         if ($target_text | str starts-with "xdp:") {

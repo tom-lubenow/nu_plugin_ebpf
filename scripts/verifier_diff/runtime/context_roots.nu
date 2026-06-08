@@ -191,7 +191,11 @@ def source-may-bind-derived-context-variable? [source: string] {
 def program-context-variable-names [source: string] {
     mut names = ["ctx"]
     mut found_closure = false
-    let identity_wrappers = (identity-wrapper-definitions $source)
+    let identity_wrappers = if ($source | str contains "def ") {
+        identity-wrapper-definitions $source
+    } else {
+        []
+    }
 
     for line in ($source | lines) {
         if $found_closure {
@@ -226,15 +230,21 @@ def program-context-variable-names [source: string] {
         $found_closure = true
     }
 
-    for line in ($source | lines) {
-        let binding = (context-variable-binding $line $names $identity_wrappers)
-        if $binding != null {
-            $names = (append-unique-name $names $binding)
+    let may_bind_direct_context = (
+        ($source | str contains "= $")
+        or (($source | str contains "= (") and ($source | str contains "$"))
+    )
+    if $may_bind_direct_context {
+        for line in ($source | lines) {
+            let binding = (context-variable-binding $line $names $identity_wrappers)
+            if $binding != null {
+                $names = (append-unique-name $names $binding)
+            }
         }
     }
 
-    if (source-may-bind-derived-context-variable? $source) {
-        for alias in (program-bound-context-root-aliases $source $names) {
+    if $may_bind_direct_context {
+        for alias in (program-bound-context-root-aliases-base $source $names) {
             if (($alias | get -o root | default "") == "") {
                 $names = (append-unique-name $names $alias.name)
             }
@@ -539,9 +549,10 @@ def context-root-from-record-pipeline-get [input: string prefix_segments get_fie
 
 def program-bound-context-root-aliases-base [source: string context_names] {
     mut aliases = []
-    let identity_wrappers = (identity-wrapper-definitions $source)
-    let root_wrapper_defs = (context-root-wrapper-definitions $source)
-    let multi_param_root_wrapper_defs = (multi-param-context-root-wrapper-definitions $source)
+    let source_has_defs = ($source | str contains "def ")
+    let identity_wrappers = if $source_has_defs { identity-wrapper-definitions $source } else { [] }
+    let root_wrapper_defs = if $source_has_defs { context-root-wrapper-definitions $source } else { [] }
+    let multi_param_root_wrapper_defs = if $source_has_defs { multi-param-context-root-wrapper-definitions $source } else { [] }
 
     for line in ($source | lines) {
         let binding = (

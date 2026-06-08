@@ -906,16 +906,11 @@ def validate-fixture-metadata [fixtures] {
 
     let names = ($fixtures | each {|fixture| $fixture.name })
 
-    for name in ($names | uniq) {
-        let count = ($names | where {|candidate| $candidate == $name } | length)
-        if $count > 1 {
-            fail $"duplicate verifier fixture name: ($name)"
-        }
+    for name in ($names | uniq --repeated) {
+        fail $"duplicate verifier fixture name: ($name)"
     }
 
-    mut derived = []
-
-    for fixture in $fixtures {
+    $fixtures | each {|fixture|
         validate-tier-option $"fixture ($fixture.name)" ($fixture | get -o tier)
         validate-test-lane-option $"fixture ($fixture.name)" ($fixture | get -o default_test_lane)
         validate-status-option $"fixture ($fixture.name) local" $fixture.local
@@ -943,8 +938,6 @@ def validate-fixture-metadata [fixtures] {
             parse-kernel-version $min_kernel | ignore
         }
 
-        $derived = ($derived | append (fixture-derived-metadata $fixture $kernel_features))
+        fixture-derived-metadata $fixture $kernel_features
     }
-
-    $derived
 }
