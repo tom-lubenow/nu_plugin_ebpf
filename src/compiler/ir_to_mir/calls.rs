@@ -15,7 +15,7 @@ const BPF_SK_LOOKUP_F_REPLACE: u64 = 1 << 0;
 const BPF_SK_LOOKUP_F_NO_REUSEPORT: u64 = 1 << 1;
 const MAX_BYTES_INDEX_OF_ALL_MATCHES: usize = 60;
 const MAX_FIXED_BINARY_INDEX_OF_PROBES: usize = MAX_STRING_SIZE - 1;
-const MAX_FIXED_BINARY_ARRAY_PREDICATE_ITEMS: usize = 60;
+const MAX_FIXED_BINARY_ARRAY_RESULT_ITEMS: usize = 60;
 
 enum SeqNumericArg {
     Int(i64),
@@ -197,9 +197,9 @@ impl<'a> HirToMirLowering<'a> {
         };
         let array_len = *len;
         let elem_len = *elem_len;
-        if array_len > MAX_FIXED_BINARY_ARRAY_PREDICATE_ITEMS {
+        if array_len > MAX_FIXED_BINARY_ARRAY_RESULT_ITEMS {
             return Err(CompileError::UnsupportedInstruction(format!(
-                "{cmd_name} output exceeds stack-backed bool-list capacity {MAX_FIXED_BINARY_ARRAY_PREDICATE_ITEMS} in eBPF"
+                "{cmd_name} output exceeds stack-backed bool-list capacity {MAX_FIXED_BINARY_ARRAY_RESULT_ITEMS} in eBPF"
             )));
         }
 
@@ -409,6 +409,199 @@ impl<'a> HirToMirLowering<'a> {
         let out_meta = self.get_or_create_metadata(src_dst);
         out_meta.field_type = Some(MirType::I64);
         self.vreg_type_hints.insert(result_vreg, MirType::I64);
+        Ok(true)
+    }
+
+    fn lower_fixed_binary_array_index_of(
+        &mut self,
+        cmd_name: &str,
+        src_dst: RegId,
+        result_vreg: VReg,
+        input_reg: RegId,
+        mut input_vreg: VReg,
+        pattern: &[u8],
+        search_from_end: bool,
+    ) -> Result<bool, CompileError> {
+        let input_meta = self.get_metadata(input_reg).cloned().ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires compiler-tracked list<binary> input in eBPF"
+            ))
+        })?;
+        let Some(AnnotatedValueSemantics::FixedArray { elem, len }) =
+            input_meta.annotated_semantics.as_ref()
+        else {
+            return Ok(false);
+        };
+        let AnnotatedValueSemantics::Binary { len: elem_len } = elem.as_ref() else {
+            return Ok(false);
+        };
+        let array_len = *len;
+        let elem_len = *elem_len;
+        if array_len > MAX_FIXED_BINARY_ARRAY_RESULT_ITEMS {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} output exceeds stack-backed numeric-list capacity {MAX_FIXED_BINARY_ARRAY_RESULT_ITEMS} in eBPF"
+            )));
+        }
+
+        let Some(mut base_runtime_ty) = self.typed_value_runtime_type(input_reg, input_vreg) else {
+            return Ok(false);
+        };
+        if !matches!(base_runtime_ty, MirType::Ptr { .. })
+            && matches!(base_runtime_ty, MirType::Array { .. })
+        {
+            input_vreg = self.materialized_metadata_aggregate_vreg(input_reg, input_vreg)?;
+            base_runtime_ty = self
+                .typed_value_runtime_type(input_reg, input_vreg)
+                .ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "{cmd_name} requires typed fixed-array binary input in eBPF"
+                    ))
+                })?;
+        }
+
+        let MirType::Ptr {
+            pointee,
+            address_space,
+        } = base_runtime_ty
+        else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires typed fixed-array binary pointer input in eBPF"
+            )));
+        };
+        if !matches!(
+            address_space,
+            AddressSpace::Stack | AddressSpace::Map | AddressSpace::Context
+        ) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} on typed fixed-array binary pointers in {address_space:?} address space is not yet supported in eBPF"
+            )));
+        }
+        let MirType::Array { elem: elem_ty, len } = pointee.as_ref() else {
+            return Ok(false);
+        };
+        if *len != array_len || elem_ty.byte_array_len() != Some(elem_len) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires typed fixed-array binary input with matching byte-array layout in eBPF"
+            )));
+        }
+
+        let elem_stride = elem_ty.size();
+        let (out_slot, out_ty) = self.create_stack_numeric_list_result(result_vreg, array_len);
+        for index in 0..array_len {
+            let item_vreg = self.func.alloc_vreg();
+            if pattern.len() > elem_len {
+                self.emit(MirInst::Copy {
+                    dst: item_vreg,
+                    src: MirValue::Const(-1),
+                });
+                self.vreg_type_hints.insert(item_vreg, MirType::I64);
+                self.emit(MirInst::ListPush {
+                    list: result_vreg,
+                    item: item_vreg,
+                });
+                continue;
+            }
+
+            let probe_count = elem_len - pattern.len() + 1;
+            if probe_count > MAX_FIXED_BINARY_INDEX_OF_PROBES {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{cmd_name} typed fixed-array binary element has {probe_count} candidate offsets; eBPF lowering supports at most {MAX_FIXED_BINARY_INDEX_OF_PROBES}"
+                )));
+            }
+
+            let byte_offset = index.checked_mul(elem_stride).ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "{cmd_name} typed fixed-array binary element offset overflowed in eBPF"
+                ))
+            })?;
+            let byte_offset = i64::try_from(byte_offset).map_err(|_| {
+                CompileError::UnsupportedInstruction(format!(
+                    "{cmd_name} typed fixed-array binary element offset is too large for eBPF"
+                ))
+            })?;
+            let element_ptr = self.func.alloc_vreg();
+            self.vreg_type_hints.insert(
+                element_ptr,
+                MirType::Ptr {
+                    pointee: Box::new(elem_ty.as_ref().clone()),
+                    address_space,
+                },
+            );
+            self.emit(MirInst::BinOp {
+                dst: element_ptr,
+                op: BinOpKind::Add,
+                lhs: MirValue::VReg(input_vreg),
+                rhs: MirValue::Const(byte_offset),
+            });
+
+            let not_found_block = self.func.alloc_block();
+            let continuation_block = self.func.alloc_block();
+            let last_offset = elem_len - pattern.len();
+            let offsets: Vec<usize> = if search_from_end {
+                (0..=last_offset).rev().collect()
+            } else {
+                (0..=last_offset).collect()
+            };
+            for (probe_index, offset) in offsets.iter().copied().enumerate() {
+                let found_block = self.func.alloc_block();
+                let is_last_probe = probe_index + 1 == offsets.len();
+                let next_block = if is_last_probe {
+                    not_found_block
+                } else {
+                    self.func.alloc_block()
+                };
+                let candidate = self.lower_fixed_binary_pattern_match(
+                    element_ptr,
+                    offset,
+                    pattern,
+                    "fixed binary array index-of byte",
+                )?;
+                self.terminate(MirInst::Branch {
+                    cond: candidate,
+                    if_true: found_block,
+                    if_false: next_block,
+                });
+
+                self.current_block = found_block;
+                self.emit(MirInst::Copy {
+                    dst: item_vreg,
+                    src: MirValue::Const(offset as i64),
+                });
+                self.vreg_type_hints.insert(item_vreg, MirType::I64);
+                self.emit(MirInst::ListPush {
+                    list: result_vreg,
+                    item: item_vreg,
+                });
+                self.terminate(MirInst::Jump {
+                    target: continuation_block,
+                });
+
+                self.current_block = next_block;
+            }
+
+            self.current_block = not_found_block;
+            self.emit(MirInst::Copy {
+                dst: item_vreg,
+                src: MirValue::Const(-1),
+            });
+            self.vreg_type_hints.insert(item_vreg, MirType::I64);
+            self.emit(MirInst::ListPush {
+                list: result_vreg,
+                item: item_vreg,
+            });
+            self.terminate(MirInst::Jump {
+                target: continuation_block,
+            });
+            self.current_block = continuation_block;
+        }
+
+        self.install_stack_numeric_list_result_metadata(
+            src_dst,
+            out_slot,
+            out_ty,
+            array_len,
+            Some(array_len),
+        );
         Ok(true)
     }
 
@@ -5400,6 +5593,17 @@ impl<'a> HirToMirLowering<'a> {
                                 )
                             })?;
                             let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
+                            if self.lower_fixed_binary_array_index_of(
+                                &cmd_name,
+                                src_dst,
+                                result_vreg,
+                                input_reg,
+                                input_vreg,
+                                &pattern,
+                                search_from_end,
+                            )? {
+                                return Ok(());
+                            }
                             if !self.lower_fixed_binary_index_of(
                                 &cmd_name,
                                 src_dst,
