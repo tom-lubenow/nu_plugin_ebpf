@@ -80,6 +80,7 @@ impl<'a> HirToMirLowering<'a> {
             input_reg,
             input_vreg,
             &input_meta,
+            remove_empty,
         )? {
             return Ok(());
         }
@@ -110,6 +111,7 @@ impl<'a> HirToMirLowering<'a> {
         input_reg: RegId,
         mut input_vreg: VReg,
         input_meta: &RegMetadata,
+        remove_empty: bool,
     ) -> Result<bool, CompileError> {
         if matches!(
             input_meta.constant_value,
@@ -132,7 +134,21 @@ impl<'a> HirToMirLowering<'a> {
         else {
             return Ok(false);
         };
-        if !Self::typed_fixed_array_compact_identity_scalar_type(&elem_ty) {
+
+        let elem_semantics = match input_meta.annotated_semantics.as_ref() {
+            Some(AnnotatedValueSemantics::FixedArray { elem, .. }) => Some(elem.as_ref()),
+            _ => None,
+        };
+        let always_kept = Self::typed_fixed_array_compact_identity_always_kept_type(&elem_ty);
+        if remove_empty && !always_kept {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "compact --empty on typed fixed arrays currently supports only numeric or bool elements in eBPF, got {:?}",
+                elem_ty
+            )));
+        }
+        if !always_kept
+            && !Self::typed_fixed_array_compact_identity_default_semantics(elem_semantics)
+        {
             return Ok(false);
         }
 
@@ -176,7 +192,7 @@ impl<'a> HirToMirLowering<'a> {
         Ok(true)
     }
 
-    fn typed_fixed_array_compact_identity_scalar_type(ty: &MirType) -> bool {
+    fn typed_fixed_array_compact_identity_always_kept_type(ty: &MirType) -> bool {
         matches!(
             ty,
             MirType::I8
@@ -188,6 +204,21 @@ impl<'a> HirToMirLowering<'a> {
                 | MirType::U32
                 | MirType::U64
                 | MirType::Bool
+        )
+    }
+
+    fn typed_fixed_array_compact_identity_default_semantics(
+        semantics: Option<&AnnotatedValueSemantics>,
+    ) -> bool {
+        matches!(
+            semantics,
+            Some(
+                AnnotatedValueSemantics::String { .. }
+                    | AnnotatedValueSemantics::Binary { .. }
+                    | AnnotatedValueSemantics::NumericList { .. }
+                    | AnnotatedValueSemantics::Record(_)
+                    | AnnotatedValueSemantics::FixedArray { .. }
+            )
         )
     }
 
