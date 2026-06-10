@@ -55,6 +55,7 @@ const MAX_RUNTIME_UNSIGNED_LEFT_FILL_WIDTH: usize = MAX_STRING_SIZE - 1;
 const MAX_RUNTIME_FILL_DIGIT_THRESHOLD: usize = 18;
 const MAX_STACK_NUMERIC_LIST_CAPACITY: usize = 60;
 const MAX_TYPED_STRING_ARRAY_REPLACE_PROBES: usize = MAX_STRING_SIZE - 1;
+const MAX_TYPED_STRING_ARRAY_TRIM_RIGHT_PROBES: usize = MAX_STRING_SIZE - 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FillAlignment {
@@ -5001,6 +5002,21 @@ impl<'a> HirToMirLowering<'a> {
             return self.lower_known_string_list_result(src_dst, result_vreg, output);
         }
 
+        let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
+        if let Some(input_reg) = input_reg
+            && self.lower_typed_fixed_string_array_trim(
+                src_dst,
+                result_vreg,
+                input_reg,
+                input_vreg,
+                trim_char,
+                trim_left,
+                trim_right,
+            )?
+        {
+            return Ok(());
+        }
+
         let input = self.exact_string_input(input_reg, "str trim")?;
         let output = Self::trim_known_string(input, trim_char, trim_left, trim_right);
         self.lower_known_string_result(src_dst, result_vreg, output)
@@ -5020,6 +5036,334 @@ impl<'a> HirToMirLowering<'a> {
             (None, false, true) => input.trim_end().to_string(),
             (None, _, _) => input.trim().to_string(),
         }
+    }
+
+    fn typed_fixed_string_array_trim_byte(
+        trim_char: Option<char>,
+        trim_left: bool,
+        trim_right: bool,
+    ) -> Result<u8, CompileError> {
+        let Some(ch) = trim_char else {
+            return Err(CompileError::UnsupportedInstruction(
+                "str trim on typed fixed string arrays currently requires --char in eBPF".into(),
+            ));
+        };
+        if trim_left || !trim_right {
+            return Err(CompileError::UnsupportedInstruction(
+                "str trim on typed fixed string arrays currently supports only --right --char in eBPF"
+                    .into(),
+            ));
+        }
+        let mut buf = [0u8; 4];
+        let encoded = ch.encode_utf8(&mut buf);
+        if encoded.len() != 1 {
+            return Err(CompileError::UnsupportedInstruction(
+                "str trim on typed fixed string arrays requires a one-byte --char in eBPF".into(),
+            ));
+        }
+        let byte = encoded.as_bytes()[0];
+        if byte == 0 {
+            return Err(CompileError::UnsupportedInstruction(
+                "str trim on typed fixed string arrays does not support NUL --char in eBPF".into(),
+            ));
+        }
+        Ok(byte)
+    }
+
+    fn lower_typed_fixed_string_array_trim_right_len(
+        &mut self,
+        out_slot: StackSlotId,
+        output_base_offset: usize,
+        input_len_vreg: VReg,
+        content_cap: usize,
+        trim_byte: u8,
+    ) -> Result<(), CompileError> {
+        let probe_count = content_cap;
+        if probe_count > MAX_TYPED_STRING_ARRAY_TRIM_RIGHT_PROBES {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "str trim typed fixed string-array input has {probe_count} candidate suffix offsets; eBPF lowering supports at most {MAX_TYPED_STRING_ARRAY_TRIM_RIGHT_PROBES}"
+            )));
+        }
+
+        let done_block = self.func.alloc_block();
+        for candidate_len in (1..=content_cap).rev() {
+            let check_byte_block = self.func.alloc_block();
+            let next_candidate_block = self.func.alloc_block();
+            let store_candidate_block = self.func.alloc_block();
+
+            let len_ge_candidate = self.func.alloc_vreg();
+            self.emit(MirInst::BinOp {
+                dst: len_ge_candidate,
+                op: BinOpKind::Ge,
+                lhs: MirValue::VReg(input_len_vreg),
+                rhs: MirValue::Const(i64::try_from(candidate_len).map_err(|_| {
+                    CompileError::UnsupportedInstruction(
+                        "str trim typed fixed string-array candidate length is too large for eBPF"
+                            .into(),
+                    )
+                })?),
+            });
+            self.vreg_type_hints.insert(len_ge_candidate, MirType::Bool);
+            self.terminate(MirInst::Branch {
+                cond: len_ge_candidate,
+                if_true: check_byte_block,
+                if_false: next_candidate_block,
+            });
+
+            self.current_block = check_byte_block;
+            let byte_offset = output_base_offset
+                .checked_add(8)
+                .and_then(|offset| offset.checked_add(candidate_len - 1))
+                .ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(
+                        "str trim typed fixed string-array byte offset overflowed in eBPF".into(),
+                    )
+                })?;
+            let candidate_byte = self.func.alloc_vreg();
+            self.emit(MirInst::LoadSlot {
+                dst: candidate_byte,
+                slot: out_slot,
+                offset: Self::checked_mir_offset(byte_offset, "string trim suffix byte")?,
+                ty: MirType::U8,
+            });
+            self.vreg_type_hints.insert(candidate_byte, MirType::U8);
+
+            let is_trim_byte = self.func.alloc_vreg();
+            self.emit(MirInst::BinOp {
+                dst: is_trim_byte,
+                op: BinOpKind::Eq,
+                lhs: MirValue::VReg(candidate_byte),
+                rhs: MirValue::Const(i64::from(trim_byte)),
+            });
+            self.vreg_type_hints.insert(is_trim_byte, MirType::Bool);
+            self.terminate(MirInst::Branch {
+                cond: is_trim_byte,
+                if_true: next_candidate_block,
+                if_false: store_candidate_block,
+            });
+
+            self.current_block = store_candidate_block;
+            self.emit(MirInst::StoreSlot {
+                slot: out_slot,
+                offset: Self::checked_mir_offset(output_base_offset, "string trim length")?,
+                val: MirValue::Const(i64::try_from(candidate_len).map_err(|_| {
+                    CompileError::UnsupportedInstruction(
+                        "str trim typed fixed string-array output length is too large for eBPF"
+                            .into(),
+                    )
+                })?),
+                ty: MirType::I64,
+            });
+            self.terminate(MirInst::Jump { target: done_block });
+
+            self.current_block = next_candidate_block;
+        }
+
+        self.emit(MirInst::StoreSlot {
+            slot: out_slot,
+            offset: Self::checked_mir_offset(output_base_offset, "string trim empty length")?,
+            val: MirValue::Const(0),
+            ty: MirType::I64,
+        });
+        self.terminate(MirInst::Jump { target: done_block });
+        self.current_block = done_block;
+        Ok(())
+    }
+
+    fn lower_typed_fixed_string_array_trim(
+        &mut self,
+        src_dst: RegId,
+        result_vreg: VReg,
+        input_reg: RegId,
+        mut input_vreg: VReg,
+        trim_char: Option<char>,
+        trim_left: bool,
+        trim_right: bool,
+    ) -> Result<bool, CompileError> {
+        let Some(input_meta) = self.get_metadata(input_reg).cloned() else {
+            return Ok(false);
+        };
+        let Some(AnnotatedValueSemantics::FixedArray { elem, len }) =
+            input_meta.annotated_semantics.as_ref()
+        else {
+            return Ok(false);
+        };
+        let AnnotatedValueSemantics::String {
+            slot_len,
+            content_cap,
+        } = elem.as_ref()
+        else {
+            return Ok(false);
+        };
+
+        let trim_byte = Self::typed_fixed_string_array_trim_byte(trim_char, trim_left, trim_right)?;
+
+        let mut base_runtime_ty = match self.typed_value_runtime_type(input_reg, input_vreg) {
+            Some(ty) => ty,
+            None => return Ok(false),
+        };
+        let Some(MirType::Array {
+            elem: array_elem_ty,
+            len: array_len,
+        }) = Self::aggregate_call_value_type(&base_runtime_ty)
+        else {
+            return Ok(false);
+        };
+        let mut elem_ty = array_elem_ty.as_ref().clone();
+        let mut array_len = *array_len;
+
+        if !matches!(base_runtime_ty, MirType::Ptr { .. }) {
+            input_vreg = self.materialized_metadata_aggregate_vreg(input_reg, input_vreg)?;
+            base_runtime_ty = self
+                .typed_value_runtime_type(input_reg, input_vreg)
+                .ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(
+                        "str trim requires typed fixed string-array input in eBPF".into(),
+                    )
+                })?;
+            let Some(MirType::Array { elem, len }) =
+                Self::aggregate_call_value_type(&base_runtime_ty)
+            else {
+                return Err(CompileError::UnsupportedInstruction(
+                    "str trim requires typed fixed string-array input in eBPF".into(),
+                ));
+            };
+            elem_ty = elem.as_ref().clone();
+            array_len = *len;
+        }
+
+        if array_len != *len {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "str trim typed fixed string-array length metadata mismatch: type length {array_len}, semantic length {len}"
+            )));
+        }
+        let elem_size = elem_ty.size();
+        let min_elem_size = 8usize.checked_add(*slot_len).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "str trim typed fixed string-array element size overflowed in eBPF".into(),
+            )
+        })?;
+        if elem_size < min_elem_size {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "str trim typed fixed string-array element storage is too small: element size {elem_size}, required {min_elem_size}"
+            )));
+        }
+
+        let address_space = match &base_runtime_ty {
+            MirType::Ptr { address_space, .. } => *address_space,
+            _ => {
+                return Err(CompileError::UnsupportedInstruction(
+                    "str trim requires typed fixed string-array pointer input in eBPF".into(),
+                ));
+            }
+        };
+        let out_ty = MirType::Array {
+            elem: Box::new(elem_ty.clone()),
+            len: array_len,
+        };
+        if array_len == 0 {
+            self.lower_known_string_list_result(src_dst, result_vreg, Vec::new())?;
+            return Ok(true);
+        }
+
+        let out_size = out_ty.size();
+        let out_slot =
+            self.func
+                .alloc_stack_slot(align_to_eight(out_size), 8, StackSlotKind::Local);
+        self.record_stack_slot_type(out_slot, out_ty.clone());
+        self.emit(MirInst::Copy {
+            dst: result_vreg,
+            src: MirValue::StackSlot(out_slot),
+        });
+        self.vreg_type_hints.insert(
+            result_vreg,
+            MirType::Ptr {
+                pointee: Box::new(out_ty.clone()),
+                address_space: AddressSpace::Stack,
+            },
+        );
+
+        for index in 0..array_len {
+            let byte_offset = index.checked_mul(elem_size).ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "str trim typed fixed string-array element offset overflowed in eBPF".into(),
+                )
+            })?;
+            let byte_offset_i64 = i64::try_from(byte_offset).map_err(|_| {
+                CompileError::UnsupportedInstruction(
+                    "str trim typed fixed string-array element offset is too large for eBPF".into(),
+                )
+            })?;
+            let element_ptr = self.func.alloc_vreg();
+            self.vreg_type_hints.insert(
+                element_ptr,
+                MirType::Ptr {
+                    pointee: Box::new(elem_ty.clone()),
+                    address_space,
+                },
+            );
+            self.emit(MirInst::BinOp {
+                dst: element_ptr,
+                op: BinOpKind::Add,
+                lhs: MirValue::VReg(input_vreg),
+                rhs: MirValue::Const(byte_offset_i64),
+            });
+            self.emit_ptr_to_slot_copy(out_slot, byte_offset, element_ptr, 0, elem_size)?;
+
+            let input_len_vreg = self.func.alloc_vreg();
+            self.emit(MirInst::Load {
+                dst: input_len_vreg,
+                ptr: element_ptr,
+                offset: 0,
+                ty: MirType::I64,
+            });
+            self.vreg_type_hints.insert(input_len_vreg, MirType::I64);
+
+            self.lower_typed_fixed_string_array_trim_right_len(
+                out_slot,
+                byte_offset,
+                input_len_vreg,
+                *content_cap,
+                trim_byte,
+            )?;
+        }
+
+        self.reset_call_result_metadata(src_dst);
+        let constant_value = match &input_meta.constant_value {
+            Some(nu_protocol::Value::List { vals, .. }) => {
+                let outputs = vals
+                    .iter()
+                    .map(|value| match value {
+                        nu_protocol::Value::String { val, .. } => Ok(Self::trim_known_string(
+                            val.clone(),
+                            trim_char,
+                            trim_left,
+                            trim_right,
+                        )),
+                        other => Err(CompileError::UnsupportedInstruction(format!(
+                            "str trim requires string list items in eBPF; item has type {}",
+                            other.get_type()
+                        ))),
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                Some(nu_protocol::Value::list(
+                    outputs
+                        .into_iter()
+                        .map(|output| nu_protocol::Value::string(output, Span::unknown()))
+                        .collect(),
+                    Span::unknown(),
+                ))
+            }
+            _ => None,
+        };
+        let out_meta = self.get_or_create_metadata(src_dst);
+        out_meta.field_type = Some(out_ty);
+        out_meta.constant_value = constant_value;
+        out_meta.annotated_semantics = Some(AnnotatedValueSemantics::FixedArray {
+            elem: elem.clone(),
+            len: array_len,
+        });
+        Ok(true)
     }
 
     pub(super) fn lower_fill(

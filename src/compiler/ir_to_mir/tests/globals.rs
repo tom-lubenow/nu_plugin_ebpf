@@ -12643,6 +12643,216 @@ fn test_lower_global_define_type_string_array_str_replace_rejects_variable_lengt
 }
 
 #[test]
+fn test_lower_global_define_type_string_array_str_trim_right_char_feeds_length() {
+    let define_decl = DeclId::new(10_625);
+    let global_get_decl = DeclId::new(10_626);
+    let trim_decl = DeclId::new(10_627);
+    let length_decl = DeclId::new(10_628);
+    let first_decl = DeclId::new(10_629);
+    let decl_names = HashMap::from([
+        (define_decl, "global-define".to_string()),
+        (global_get_decl, "global-get".to_string()),
+        (trim_decl, "str trim".to_string()),
+        (length_decl, "str length".to_string()),
+        (first_decl, "first".to_string()),
+    ]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::String("names".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("array{string:8:2}".into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        named: vec![(b"type".to_vec(), RegId::new(1))],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: global_get_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::String("x".into()),
+                },
+                HirStmt::Call {
+                    decl_id: trim_decl,
+                    src_dst: RegId::new(5),
+                    args: HirCallArgs {
+                        named: vec![(b"char".to_vec(), RegId::new(4))],
+                        flags: vec![b"right".to_vec()],
+                        pipeline_input: Some(RegId::new(3)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: length_decl,
+                    src_dst: RegId::new(6),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(5)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: first_decl,
+                    src_dst: RegId::new(7),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(6)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(7) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 8,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("typed string array str trim --right --char should lower as a fixed string array");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::LoadSlot {
+                    ty: MirType::U8,
+                    ..
+                }
+            )),
+        "expected str trim --right --char to inspect fixed string suffix bytes"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StoreSlot {
+                    val: MirValue::Const(_),
+                    ty: MirType::I64,
+                    ..
+                }
+            )),
+        "expected str trim --right --char to store adjusted runtime lengths"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "typed string array str trim --right --char result consumed by str length should compile through codegen",
+    );
+}
+
+#[test]
+fn test_lower_global_define_type_string_array_str_trim_rejects_default_runtime_trim() {
+    let define_decl = DeclId::new(10_630);
+    let global_get_decl = DeclId::new(10_631);
+    let trim_decl = DeclId::new(10_632);
+    let decl_names = HashMap::from([
+        (define_decl, "global-define".to_string()),
+        (global_get_decl, "global-get".to_string()),
+        (trim_decl, "str trim".to_string()),
+    ]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::String("names".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("array{string:8:1}".into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        named: vec![(b"type".to_vec(), RegId::new(1))],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: global_get_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: trim_decl,
+                    src_dst: RegId::new(4),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(3)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(4) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 5,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("typed string array default str trim should require compile-time known input");
+
+    assert!(
+        err.to_string().contains("currently requires --char"),
+        "expected typed string array str trim --char diagnostic, got: {err}"
+    );
+}
+
+#[test]
 fn test_lower_global_define_type_string_array_reverse_preserves_string_semantics() {
     let define_decl = DeclId::new(10_514);
     let global_get_decl = DeclId::new(10_515);
