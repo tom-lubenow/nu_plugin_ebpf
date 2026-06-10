@@ -2533,36 +2533,27 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(());
         }
 
-        if let Some(input_meta) = input_meta.as_ref()
-            && input_meta.list_buffer.is_some()
-        {
-            if self.bits_rotate_runtime_auto_zero_count(cmd_name)? {
-                self.emit(MirInst::Copy {
-                    dst: result_vreg,
-                    src: MirValue::VReg(input_vreg),
-                });
-                self.propagate_passthrough_reg_metadata(
-                    src_dst,
-                    result_vreg,
-                    input_reg,
-                    input_vreg,
-                );
-                return Ok(());
-            }
-            let spec = self.bits_rotate_spec(cmd_name, None)?;
-            if spec.mode == BitsShiftMode::UnsignedI64 {
-                return Err(CompileError::UnsupportedInstruction(format!(
-                    "{cmd_name} unsigned --number-bytes 8 requires compile-time known integer input or runtime u8, u16, or u32 scalar input for safe bits rol counts in eBPF; use --signed --number-bytes 8 for runtime list input"
-                )));
-            }
-            return self.lower_bits_rotate_runtime_list(
+        if let Some(input_meta) = input_meta.as_ref() {
+            if self.lower_typed_fixed_array_bits_rotate(
                 cmd_name,
                 src_dst,
+                input_reg,
                 input_vreg,
                 result_vreg,
                 input_meta,
-                spec,
-            );
+                MAX_BITS_STACK_LIST_CAPACITY,
+            )? {
+                return Ok(());
+            }
+            if input_meta.list_buffer.is_some() {
+                return self.lower_bits_rotate_runtime_list_input(
+                    cmd_name,
+                    src_dst,
+                    input_vreg,
+                    result_vreg,
+                    input_meta,
+                );
+            }
         }
 
         self.validate_bits_integer_operand_optional_metadata(
@@ -2652,6 +2643,79 @@ impl<'a> HirToMirLowering<'a> {
         }
         self.vreg_type_hints.insert(result_vreg, MirType::I64);
         Ok(())
+    }
+
+    fn lower_typed_fixed_array_bits_rotate(
+        &mut self,
+        cmd_name: &str,
+        src_dst: RegId,
+        input_reg: RegId,
+        input_vreg: VReg,
+        result_vreg: VReg,
+        input_meta: &RegMetadata,
+        max_bits_list_len: usize,
+    ) -> Result<bool, CompileError> {
+        let Some((input_vreg, elem_ty, array_len)) =
+            self.typed_fixed_array_numeric_list_input(cmd_name, input_reg, input_vreg, input_meta)?
+        else {
+            return Ok(false);
+        };
+        if array_len > max_bits_list_len {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} supports typed fixed-arrays with length <= {max_bits_list_len} in eBPF"
+            )));
+        }
+
+        let (materialized_vreg, materialized_meta) = self
+            .materialize_typed_fixed_array_numeric_list(
+                cmd_name, input_vreg, &elem_ty, array_len,
+            )?;
+        self.lower_bits_rotate_runtime_list_input(
+            cmd_name,
+            src_dst,
+            materialized_vreg,
+            result_vreg,
+            &materialized_meta,
+        )?;
+        Ok(true)
+    }
+
+    fn lower_bits_rotate_runtime_list_input(
+        &mut self,
+        cmd_name: &str,
+        src_dst: RegId,
+        input_vreg: VReg,
+        result_vreg: VReg,
+        input_meta: &RegMetadata,
+    ) -> Result<(), CompileError> {
+        if self.bits_rotate_runtime_auto_zero_count(cmd_name)? {
+            self.emit(MirInst::Copy {
+                dst: result_vreg,
+                src: MirValue::VReg(input_vreg),
+            });
+            self.install_passthrough_stack_numeric_list_metadata(
+                cmd_name,
+                src_dst,
+                result_vreg,
+                input_vreg,
+                input_meta,
+            )?;
+            return Ok(());
+        }
+        let spec = self.bits_rotate_spec(cmd_name, None)?;
+        if spec.mode == BitsShiftMode::UnsignedI64 {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} unsigned --number-bytes 8 requires compile-time known integer input or runtime u8, u16, or u32 scalar input for safe bits rol counts in eBPF; use --signed --number-bytes 8 for runtime list input"
+            )));
+        }
+        self.lower_bits_rotate_runtime_list(
+            cmd_name,
+            src_dst,
+            input_vreg,
+            result_vreg,
+            input_meta,
+            spec,
+        )
     }
 
     fn lower_bits_rotate_runtime_list(
