@@ -14,18 +14,17 @@ export const VERIFIER_DIFF_FIXTURES_3374_3375 = [
         kernel: "accept"
     }
     {
-        name: "global-define-type-array-string-str-trim-char-both-reject"
+        name: "global-define-type-array-string-str-trim-char-join"
         category: "globals"
-        tags: [globals arrays string str trim char diagnostics global-define reject]
+        tags: [globals arrays string str trim char join global-define accept]
         target: "raw_tracepoint:sys_enter"
         program: [
             '{|ctx|'
-            '  ["xx"] | global-define --type "array{string:8:1}" names'
-            '  ((global-get names) | str trim --char "x" | str join "")'
+            '  ["xxaax" "xbbx"] | global-define --type "array{string:8:2}" names'
+            '  ((global-get names) | str trim --char "x" | str join "-" | str starts-with "aa-bb")'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "currently supports only --left --char or --right --char"
+        local: "accept"
+        kernel: "accept"
     }
 ]

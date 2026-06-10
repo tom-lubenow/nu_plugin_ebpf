@@ -5039,23 +5039,12 @@ impl<'a> HirToMirLowering<'a> {
         }
     }
 
-    fn typed_fixed_string_array_trim_byte(
-        trim_char: Option<char>,
-        trim_left: bool,
-        trim_right: bool,
-    ) -> Result<u8, CompileError> {
+    fn typed_fixed_string_array_trim_byte(trim_char: Option<char>) -> Result<u8, CompileError> {
         let Some(ch) = trim_char else {
             return Err(CompileError::UnsupportedInstruction(
                 "str trim on typed fixed string arrays currently requires --char in eBPF".into(),
             ));
         };
-        let single_sided = (trim_left && !trim_right) || (!trim_left && trim_right);
-        if !single_sided {
-            return Err(CompileError::UnsupportedInstruction(
-                "str trim on typed fixed string arrays currently supports only --left --char or --right --char in eBPF"
-                    .into(),
-            ));
-        }
         let mut buf = [0u8; 4];
         let encoded = ch.encode_utf8(&mut buf);
         if encoded.len() != 1 {
@@ -5355,7 +5344,9 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(false);
         };
 
-        let trim_byte = Self::typed_fixed_string_array_trim_byte(trim_char, trim_left, trim_right)?;
+        let trim_byte = Self::typed_fixed_string_array_trim_byte(trim_char)?;
+        let trim_start = trim_left || !trim_right;
+        let trim_end = trim_right || !trim_left;
 
         let mut base_runtime_ty = match self.typed_value_runtime_type(input_reg, input_vreg) {
             Some(ty) => ty,
@@ -5478,7 +5469,7 @@ impl<'a> HirToMirLowering<'a> {
             });
             self.vreg_type_hints.insert(input_len_vreg, MirType::I64);
 
-            if trim_left {
+            if trim_start {
                 self.lower_typed_fixed_string_array_trim_left_len(
                     out_slot,
                     byte_offset,
@@ -5486,11 +5477,25 @@ impl<'a> HirToMirLowering<'a> {
                     *content_cap,
                     trim_byte,
                 )?;
-            } else {
+            }
+            if trim_end {
+                let len_vreg = if trim_start {
+                    let len_vreg = self.func.alloc_vreg();
+                    self.emit(MirInst::LoadSlot {
+                        dst: len_vreg,
+                        slot: out_slot,
+                        offset: Self::checked_mir_offset(byte_offset, "string trim length")?,
+                        ty: MirType::I64,
+                    });
+                    self.vreg_type_hints.insert(len_vreg, MirType::I64);
+                    len_vreg
+                } else {
+                    input_len_vreg
+                };
                 self.lower_typed_fixed_string_array_trim_right_len(
                     out_slot,
                     byte_offset,
-                    input_len_vreg,
+                    len_vreg,
                     *content_cap,
                     trim_byte,
                 )?;
