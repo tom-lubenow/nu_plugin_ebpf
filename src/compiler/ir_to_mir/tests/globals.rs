@@ -5116,6 +5116,135 @@ fn test_lower_bytes_length_on_typed_bytes_array_global_materializes_lengths() {
 }
 
 #[test]
+fn test_lower_bytes_collect_on_typed_bytes_global_array_concatenates_elements() {
+    let define_decl = DeclId::new(10_637);
+    let global_get_decl = DeclId::new(10_638);
+    let collect_decl = DeclId::new(10_639);
+    let starts_with_decl = DeclId::new(10_640);
+    let decl_names = HashMap::from([
+        (define_decl, "global-define".to_string()),
+        (global_get_decl, "global-get".to_string()),
+        (collect_decl, "bytes collect".to_string()),
+        (starts_with_decl, "bytes starts-with".to_string()),
+    ]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::String("buffers".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("array{bytes:2:2}".into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        named: vec![(b"type".to_vec(), RegId::new(1))],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: global_get_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::Binary(vec![0xff]),
+                },
+                HirStmt::Call {
+                    decl_id: collect_decl,
+                    src_dst: RegId::new(5),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(3)),
+                        positional: vec![RegId::new(4)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(6),
+                    lit: HirLiteral::Binary(vec![0, 0, 0xff, 0]),
+                },
+                HirStmt::Call {
+                    decl_id: starts_with_decl,
+                    src_dst: RegId::new(7),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(5)),
+                        positional: vec![RegId::new(6)],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(7) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 8,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bytes collect should lower on a typed fixed-array bytes global");
+
+    let byte_load_offsets = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .filter_map(|inst| match inst {
+            MirInst::Load {
+                offset,
+                ty: MirType::U8,
+                ..
+            } => Some(*offset),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        byte_load_offsets.contains(&0) && byte_load_offsets.contains(&2),
+        "expected bytes collect to copy fixed-array item offsets 0 and 2, got {byte_load_offsets:?}"
+    );
+    assert!(
+        result.program.main.blocks.iter().any(|block| {
+            block.instructions.iter().any(|inst| {
+                matches!(
+                    inst,
+                    MirInst::StoreSlot {
+                        offset: 2,
+                        val: MirValue::Const(255),
+                        ty: MirType::U8,
+                        ..
+                    }
+                )
+            })
+        }),
+        "expected bytes collect to store separator byte at output offset 2"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("typed fixed-array bytes collect should compile through codegen");
+}
+
+#[test]
 fn test_lower_describe_on_typed_bytes_global_uses_binary_metadata() {
     let define_decl = DeclId::new(9092);
     let global_get_decl = DeclId::new(9093);

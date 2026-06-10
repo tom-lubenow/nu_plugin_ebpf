@@ -838,6 +838,169 @@ impl<'a> HirToMirLowering<'a> {
         Ok(true)
     }
 
+    fn lower_fixed_array_binary_collect(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+        input_reg: RegId,
+        mut input_vreg: VReg,
+        separator: &[u8],
+    ) -> Result<bool, CompileError> {
+        let input_meta = self.get_metadata(input_reg).cloned().ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "bytes collect requires compiler-tracked list<binary> input in eBPF".into(),
+            )
+        })?;
+        let Some(AnnotatedValueSemantics::FixedArray { elem, len }) =
+            input_meta.annotated_semantics.as_ref()
+        else {
+            return Ok(false);
+        };
+        let AnnotatedValueSemantics::Binary { len: elem_len } = elem.as_ref() else {
+            return Ok(false);
+        };
+        let array_len = *len;
+        let elem_len = *elem_len;
+
+        let Some(mut base_runtime_ty) = self.typed_value_runtime_type(input_reg, input_vreg) else {
+            return Ok(false);
+        };
+        if !matches!(base_runtime_ty, MirType::Ptr { .. })
+            && matches!(base_runtime_ty, MirType::Array { .. })
+        {
+            input_vreg = self.materialized_metadata_aggregate_vreg(input_reg, input_vreg)?;
+            base_runtime_ty = self
+                .typed_value_runtime_type(input_reg, input_vreg)
+                .ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(
+                        "bytes collect requires typed fixed-array input in eBPF".into(),
+                    )
+                })?;
+        }
+
+        let MirType::Ptr {
+            pointee,
+            address_space,
+        } = base_runtime_ty
+        else {
+            return Err(CompileError::UnsupportedInstruction(
+                "bytes collect requires typed fixed-array pointer input in eBPF".into(),
+            ));
+        };
+        if !matches!(
+            address_space,
+            AddressSpace::Stack | AddressSpace::Map | AddressSpace::Context
+        ) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "bytes collect on typed fixed-array pointers in {address_space:?} address space is not yet supported in eBPF"
+            )));
+        }
+        let MirType::Array { elem: elem_ty, len } = pointee.as_ref() else {
+            return Ok(false);
+        };
+        if *len != array_len || elem_ty.byte_array_len() != Some(elem_len) {
+            return Err(CompileError::UnsupportedInstruction(
+                "bytes collect requires typed fixed-array binary input with matching byte-array layout in eBPF"
+                    .into(),
+            ));
+        }
+
+        let content_len = array_len.checked_mul(elem_len).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "bytes collect typed fixed-array content length overflowed in eBPF".into(),
+            )
+        })?;
+        let separator_count = array_len.saturating_sub(1);
+        let separator_len = separator_count
+            .checked_mul(separator.len())
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "bytes collect typed fixed-array separator length overflowed in eBPF".into(),
+                )
+            })?;
+        let out_len = content_len.checked_add(separator_len).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "bytes collect typed fixed-array output length overflowed in eBPF".into(),
+            )
+        })?;
+        if out_len == 0 {
+            self.lower_compile_time_only_constant_value(
+                src_dst,
+                &nu_protocol::Value::binary(Vec::new(), Span::unknown()),
+            );
+            return Ok(true);
+        }
+
+        let out_ty = MirType::Array {
+            elem: Box::new(MirType::U8),
+            len: out_len,
+        };
+        let out_slot = self
+            .func
+            .alloc_stack_slot(align_to_eight(out_len), 8, StackSlotKind::Local);
+        self.record_stack_slot_type(out_slot, out_ty.clone());
+
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+        self.emit(MirInst::Copy {
+            dst: result_vreg,
+            src: MirValue::StackSlot(out_slot),
+        });
+        self.vreg_type_hints.insert(
+            result_vreg,
+            MirType::Ptr {
+                pointee: Box::new(out_ty.clone()),
+                address_space: AddressSpace::Stack,
+            },
+        );
+
+        let mut out_offset = 0usize;
+        let elem_stride = elem_ty.size();
+        for index in 0..array_len {
+            if index > 0 {
+                for (separator_index, byte) in separator.iter().copied().enumerate() {
+                    let separator_offset = Self::checked_byte_offset(
+                        out_offset,
+                        separator_index,
+                        "bytes collect separator",
+                    )?;
+                    self.emit(MirInst::StoreSlot {
+                        slot: out_slot,
+                        offset: Self::checked_mir_offset(
+                            separator_offset,
+                            "bytes collect separator",
+                        )?,
+                        val: MirValue::Const(i64::from(byte)),
+                        ty: MirType::U8,
+                    });
+                }
+                out_offset = Self::checked_byte_offset(
+                    out_offset,
+                    separator.len(),
+                    "bytes collect separator",
+                )?;
+            }
+
+            let src_offset = index.checked_mul(elem_stride).ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "bytes collect typed fixed-array source offset overflowed in eBPF".into(),
+                )
+            })?;
+            self.emit_ptr_to_slot_copy(out_slot, out_offset, input_vreg, src_offset, elem_len)?;
+            out_offset = Self::checked_byte_offset(out_offset, elem_len, "bytes collect output")?;
+        }
+
+        self.reset_call_result_metadata(src_dst);
+        let out_meta = self.get_or_create_metadata(src_dst);
+        out_meta.field_type = Some(out_ty);
+        out_meta.annotated_semantics = Some(AnnotatedValueSemantics::Binary { len: out_len });
+        Ok(true)
+    }
+
     fn bytes_add_output(input: &[u8], data: &[u8], index: i64, from_end: bool) -> Vec<u8> {
         let input_len = input.len();
         let index = index as usize;
@@ -5618,13 +5781,7 @@ impl<'a> HirToMirLowering<'a> {
                     .and_then(|meta| match meta.constant_value.as_ref() {
                         Some(nu_protocol::Value::List { vals, .. }) => Some(vals.clone()),
                         _ => None,
-                    })
-                    .ok_or_else(|| {
-                        CompileError::UnsupportedInstruction(
-                            "bytes collect requires compile-time known list<binary> input in eBPF"
-                                .into(),
-                        )
-                    })?;
+                    });
                 let separator = if let Some((_, separator_reg)) =
                     self.positional_args.first().copied()
                 {
@@ -5643,24 +5800,47 @@ impl<'a> HirToMirLowering<'a> {
                     Vec::new()
                 };
 
-                let mut output = Vec::new();
-                for (index, item) in items.iter().enumerate() {
-                    let nu_protocol::Value::Binary { val, .. } = item else {
-                        return Err(CompileError::UnsupportedInstruction(format!(
-                            "bytes collect requires binary list items in eBPF; item {index} has type {}",
-                            item.get_type()
-                        )));
-                    };
-                    if index > 0 {
-                        output.extend_from_slice(&separator);
+                if let Some(items) = items {
+                    let mut output = Vec::new();
+                    for (index, item) in items.iter().enumerate() {
+                        let nu_protocol::Value::Binary { val, .. } = item else {
+                            return Err(CompileError::UnsupportedInstruction(format!(
+                                "bytes collect requires binary list items in eBPF; item {index} has type {}",
+                                item.get_type()
+                            )));
+                        };
+                        if index > 0 {
+                            output.extend_from_slice(&separator);
+                        }
+                        output.extend_from_slice(val);
                     }
-                    output.extend_from_slice(val);
+                    self.reset_call_result_metadata(src_dst);
+                    self.lower_constant_value(
+                        src_dst,
+                        &nu_protocol::Value::binary(output, nu_protocol::Span::unknown()),
+                    )?;
+                } else {
+                    let input_reg = input_reg.ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "bytes collect requires compile-time known list<binary> input in eBPF"
+                                .into(),
+                        )
+                    })?;
+                    let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
+                    if !self.lower_fixed_array_binary_collect(
+                        src_dst,
+                        dst_vreg,
+                        src_dst_had_value,
+                        input_reg,
+                        input_vreg,
+                        &separator,
+                    )? {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "bytes collect requires compile-time known list<binary> input in eBPF"
+                                .into(),
+                        ));
+                    }
                 }
-                self.reset_call_result_metadata(src_dst);
-                self.lower_constant_value(
-                    src_dst,
-                    &nu_protocol::Value::binary(output, nu_protocol::Span::unknown()),
-                )?;
             }
 
             "bytes split" => {
