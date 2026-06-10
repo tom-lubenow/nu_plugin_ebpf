@@ -7,7 +7,7 @@
 
 use std::collections::HashMap;
 
-use nu_protocol::ast::{Boolean, CellPath, Operator, PathMember, Pattern};
+use nu_protocol::ast::{Boolean, CellPath, Comparison, Operator, PathMember, Pattern};
 use nu_protocol::{BlockId as NuBlockId, DeclId, RegId, Type, Value, VarId};
 
 use super::hindley_milner::{
@@ -387,8 +387,15 @@ impl<'a> HirTypeInference<'a> {
                 let lhs_ty = self.reg_type(*lhs_dst);
                 let rhs_ty = self.reg_type(*rhs);
                 match op {
-                    Operator::Comparison(nu_protocol::ast::Comparison::Equal)
-                    | Operator::Comparison(nu_protocol::ast::Comparison::NotEqual) => {}
+                    Operator::Comparison(Comparison::Equal | Comparison::NotEqual) => {}
+                    Operator::Comparison(Comparison::RegexMatch | Comparison::NotRegexMatch) => {}
+                    Operator::Comparison(
+                        Comparison::LessThan
+                        | Comparison::LessThanOrEqual
+                        | Comparison::GreaterThan
+                        | Comparison::GreaterThanOrEqual,
+                    ) if hm_type_is_stack_string(&self.substitution.apply(&lhs_ty))
+                        || hm_type_is_stack_string(&self.substitution.apply(&rhs_ty)) => {}
                     Operator::Comparison(_) => {
                         self.constrain(lhs_ty, HMType::I64, "cmp_lhs")?;
                         self.constrain(rhs_ty, HMType::I64, "cmp_rhs")?;
