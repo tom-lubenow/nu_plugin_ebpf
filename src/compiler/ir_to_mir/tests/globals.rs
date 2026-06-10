@@ -4364,6 +4364,200 @@ fn test_lower_bytes_replace_all_on_typed_bytes_global_rewrites_equal_length_byte
         .expect("typed bytes global bytes replace should compile through codegen");
 }
 
+#[test]
+fn test_lower_bytes_remove_on_typed_bytes_global_accepts_impossible_match() {
+    let define_decl = DeclId::new(10_641);
+    let global_get_decl = DeclId::new(10_642);
+    let remove_decl = DeclId::new(10_643);
+    let starts_with_decl = DeclId::new(10_644);
+    let decl_names = HashMap::from([
+        (define_decl, "global-define".to_string()),
+        (global_get_decl, "global-get".to_string()),
+        (remove_decl, "bytes remove".to_string()),
+        (starts_with_decl, "bytes starts-with".to_string()),
+    ]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::String("scratch".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("bytes:4".into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        named: vec![(b"type".to_vec(), RegId::new(1))],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: global_get_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::Binary(vec![0, 0, 0, 0, 0]),
+                },
+                HirStmt::Call {
+                    decl_id: remove_decl,
+                    src_dst: RegId::new(5),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(3)),
+                        positional: vec![RegId::new(4)],
+                        flags: vec![b"all".to_vec(), b"end".to_vec()],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(6),
+                    lit: HirLiteral::Binary(vec![0, 0, 0, 0]),
+                },
+                HirStmt::Call {
+                    decl_id: starts_with_decl,
+                    src_dst: RegId::new(7),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(5)),
+                        positional: vec![RegId::new(6)],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(7) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 8,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bytes remove should lower typed bytes input when the pattern cannot match");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Copy {
+                    src: MirValue::StackSlot(_),
+                    ..
+                }
+            )),
+        "expected bytes remove no-match lowering to materialize a stack-backed binary"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("typed bytes global no-match bytes remove should compile through codegen");
+}
+
+#[test]
+fn test_lower_bytes_remove_on_typed_bytes_global_rejects_matchable_pattern() {
+    let define_decl = DeclId::new(10_645);
+    let global_get_decl = DeclId::new(10_646);
+    let remove_decl = DeclId::new(10_647);
+    let decl_names = HashMap::from([
+        (define_decl, "global-define".to_string()),
+        (global_get_decl, "global-get".to_string()),
+        (remove_decl, "bytes remove".to_string()),
+    ]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::String("scratch".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("bytes:4".into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        named: vec![(b"type".to_vec(), RegId::new(1))],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: global_get_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::Binary(vec![0]),
+                },
+                HirStmt::Call {
+                    decl_id: remove_decl,
+                    src_dst: RegId::new(5),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(3)),
+                        positional: vec![RegId::new(4)],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(5) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 6,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("bytes remove should reject matchable typed bytes input");
+
+    assert!(
+        err.to_string().contains(
+            "bytes remove on typed fixed-size binary input requires a pattern longer than the input length"
+        ),
+        "unexpected error: {err}"
+    );
+}
+
 fn assert_lower_bytes_index_of_on_typed_bytes_global(
     search_from_end: bool,
     expected_first_load_offset: i32,

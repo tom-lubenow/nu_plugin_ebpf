@@ -698,6 +698,66 @@ impl<'a> HirToMirLowering<'a> {
         Ok(())
     }
 
+    fn lower_fixed_binary_remove(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+        input_reg: RegId,
+        input_vreg: VReg,
+        pattern: &[u8],
+    ) -> Result<bool, CompileError> {
+        let Some(input_len) = self.fixed_binary_input_len("bytes remove", input_reg, input_vreg)?
+        else {
+            return Ok(false);
+        };
+        if pattern.len() <= input_len {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "bytes remove on typed fixed-size binary input requires a pattern longer than the input length ({input_len}) in eBPF"
+            )));
+        }
+        if input_len == 0 {
+            self.lower_compile_time_only_constant_value(
+                src_dst,
+                &nu_protocol::Value::binary(Vec::new(), Span::unknown()),
+            );
+            return Ok(true);
+        }
+
+        let out_ty = MirType::Array {
+            elem: Box::new(MirType::U8),
+            len: input_len,
+        };
+        let out_slot =
+            self.func
+                .alloc_stack_slot(align_to_eight(input_len), 8, StackSlotKind::Local);
+        self.record_stack_slot_type(out_slot, out_ty.clone());
+
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+        self.emit(MirInst::Copy {
+            dst: result_vreg,
+            src: MirValue::StackSlot(out_slot),
+        });
+        self.vreg_type_hints.insert(
+            result_vreg,
+            MirType::Ptr {
+                pointee: Box::new(out_ty.clone()),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        self.emit_ptr_to_slot_copy(out_slot, 0, input_vreg, 0, input_len)?;
+
+        self.reset_call_result_metadata(src_dst);
+        let out_meta = self.get_or_create_metadata(src_dst);
+        out_meta.field_type = Some(out_ty);
+        out_meta.annotated_semantics = Some(AnnotatedValueSemantics::Binary { len: input_len });
+        Ok(true)
+    }
+
     fn lower_fixed_binary_replace(
         &mut self,
         src_dst: RegId,
@@ -5729,31 +5789,37 @@ impl<'a> HirToMirLowering<'a> {
                         )));
                     }
                     None => {
-                        if cmd_name != "bytes replace" {
+                        let input_reg = input_reg.ok_or_else(|| {
+                            CompileError::UnsupportedInstruction(format!(
+                                "{cmd_name} requires binary input in eBPF"
+                            ))
+                        })?;
+                        let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
+                        let lowered = if cmd_name == "bytes replace" {
+                            self.lower_fixed_binary_replace(
+                                src_dst,
+                                dst_vreg,
+                                src_dst_had_value,
+                                input_reg,
+                                input_vreg,
+                                &pattern,
+                                &replacement,
+                                apply_all,
+                            )?
+                        } else {
+                            self.lower_fixed_binary_remove(
+                                src_dst,
+                                dst_vreg,
+                                src_dst_had_value,
+                                input_reg,
+                                input_vreg,
+                                &pattern,
+                            )?
+                        };
+                        if !lowered {
                             return Err(CompileError::UnsupportedInstruction(format!(
                                 "{cmd_name} requires compile-time known binary or list<binary> input in eBPF"
                             )));
-                        }
-                        let input_reg = input_reg.ok_or_else(|| {
-                            CompileError::UnsupportedInstruction(
-                                "bytes replace requires binary input in eBPF".into(),
-                            )
-                        })?;
-                        let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
-                        if !self.lower_fixed_binary_replace(
-                            src_dst,
-                            dst_vreg,
-                            src_dst_had_value,
-                            input_reg,
-                            input_vreg,
-                            &pattern,
-                            &replacement,
-                            apply_all,
-                        )? {
-                            return Err(CompileError::UnsupportedInstruction(
-                                "bytes replace requires compile-time known binary or list<binary> input in eBPF"
-                                    .into(),
-                            ));
                         }
                     }
                 }
