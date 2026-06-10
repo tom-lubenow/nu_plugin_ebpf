@@ -3426,6 +3426,447 @@ impl<'a> HirToMirLowering<'a> {
         self.current_block = continuation_block;
     }
 
+    fn typed_string_array_substring_bounds(
+        range: MaybeOpenRange,
+        content_cap: usize,
+    ) -> Result<(usize, Option<usize>, usize), CompileError> {
+        let start = range.start.unwrap_or(0);
+        if start < 0 {
+            return Err(CompileError::UnsupportedInstruction(
+                "str substring on typed fixed string arrays supports only non-negative byte range starts in eBPF"
+                    .into(),
+            ));
+        }
+        let start = usize::try_from(start).map_err(|_| {
+            CompileError::UnsupportedInstruction(
+                "str substring typed fixed string-array range start is too large for eBPF".into(),
+            )
+        })?;
+        let start = start.min(content_cap);
+
+        let end_exclusive = match range.end {
+            Some(end) => {
+                if end < 0 {
+                    return Err(CompileError::UnsupportedInstruction(
+                        "str substring on typed fixed string arrays supports only non-negative byte range ends in eBPF"
+                            .into(),
+                    ));
+                }
+                let end = if range.inclusive {
+                    end.checked_add(1).ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "str substring typed fixed string-array inclusive range end overflowed in eBPF"
+                                .into(),
+                        )
+                    })?
+                } else {
+                    end
+                };
+                Some(usize::try_from(end).map_err(|_| {
+                    CompileError::UnsupportedInstruction(
+                        "str substring typed fixed string-array range end is too large for eBPF"
+                            .into(),
+                    )
+                })?)
+            }
+            None => None,
+        };
+        let static_end = end_exclusive
+            .map(|end| end.min(content_cap))
+            .unwrap_or(content_cap)
+            .max(start);
+        Ok((start, end_exclusive, static_end.saturating_sub(start)))
+    }
+
+    fn emit_nonnegative_substring_len_from_start(
+        &mut self,
+        result_vreg: VReg,
+        input_len_vreg: VReg,
+        start: usize,
+        continuation_block: BlockId,
+    ) -> Result<(), CompileError> {
+        if start == 0 {
+            self.emit(MirInst::Copy {
+                dst: result_vreg,
+                src: MirValue::VReg(input_len_vreg),
+            });
+            self.terminate(MirInst::Jump {
+                target: continuation_block,
+            });
+            self.current_block = continuation_block;
+            return Ok(());
+        }
+
+        let start_const = i64::try_from(start).map_err(|_| {
+            CompileError::UnsupportedInstruction(
+                "str substring typed fixed string-array range start is too large for eBPF".into(),
+            )
+        })?;
+        let zero_block = self.func.alloc_block();
+        let subtract_block = self.func.alloc_block();
+        let before_start_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::BinOp {
+            dst: before_start_vreg,
+            op: BinOpKind::Le,
+            lhs: MirValue::VReg(input_len_vreg),
+            rhs: MirValue::Const(start_const),
+        });
+        self.vreg_type_hints
+            .insert(before_start_vreg, MirType::Bool);
+        self.terminate(MirInst::Branch {
+            cond: before_start_vreg,
+            if_true: zero_block,
+            if_false: subtract_block,
+        });
+
+        self.current_block = zero_block;
+        self.emit(MirInst::Copy {
+            dst: result_vreg,
+            src: MirValue::Const(0),
+        });
+        self.terminate(MirInst::Jump {
+            target: continuation_block,
+        });
+
+        self.current_block = subtract_block;
+        self.emit(MirInst::BinOp {
+            dst: result_vreg,
+            op: BinOpKind::Sub,
+            lhs: MirValue::VReg(input_len_vreg),
+            rhs: MirValue::Const(start_const),
+        });
+        self.terminate(MirInst::Jump {
+            target: continuation_block,
+        });
+
+        self.current_block = continuation_block;
+        Ok(())
+    }
+
+    fn emit_nonnegative_substring_len(
+        &mut self,
+        result_vreg: VReg,
+        input_len_vreg: VReg,
+        start: usize,
+        end_exclusive: Option<usize>,
+        cap: usize,
+    ) -> Result<(), CompileError> {
+        if cap == 0 {
+            self.emit(MirInst::Copy {
+                dst: result_vreg,
+                src: MirValue::Const(0),
+            });
+            self.vreg_type_hints.insert(result_vreg, MirType::I64);
+            return Ok(());
+        }
+
+        let continuation_block = self.func.alloc_block();
+        if let Some(end_exclusive) = end_exclusive {
+            let end_const = i64::try_from(end_exclusive).map_err(|_| {
+                CompileError::UnsupportedInstruction(
+                    "str substring typed fixed string-array range end is too large for eBPF".into(),
+                )
+            })?;
+            let cap_const = i64::try_from(cap).map_err(|_| {
+                CompileError::UnsupportedInstruction(
+                    "str substring typed fixed string-array output length is too large for eBPF"
+                        .into(),
+                )
+            })?;
+            let short_block = self.func.alloc_block();
+            let capped_block = self.func.alloc_block();
+            let below_end_vreg = self.func.alloc_vreg();
+            self.emit(MirInst::BinOp {
+                dst: below_end_vreg,
+                op: BinOpKind::Lt,
+                lhs: MirValue::VReg(input_len_vreg),
+                rhs: MirValue::Const(end_const),
+            });
+            self.vreg_type_hints.insert(below_end_vreg, MirType::Bool);
+            self.terminate(MirInst::Branch {
+                cond: below_end_vreg,
+                if_true: short_block,
+                if_false: capped_block,
+            });
+
+            self.current_block = capped_block;
+            self.emit(MirInst::Copy {
+                dst: result_vreg,
+                src: MirValue::Const(cap_const),
+            });
+            self.terminate(MirInst::Jump {
+                target: continuation_block,
+            });
+
+            self.current_block = short_block;
+            self.emit_nonnegative_substring_len_from_start(
+                result_vreg,
+                input_len_vreg,
+                start,
+                continuation_block,
+            )?;
+        } else {
+            self.emit_nonnegative_substring_len_from_start(
+                result_vreg,
+                input_len_vreg,
+                start,
+                continuation_block,
+            )?;
+        }
+
+        self.vreg_type_hints.insert(result_vreg, MirType::I64);
+        Ok(())
+    }
+
+    fn lower_typed_fixed_string_array_substring(
+        &mut self,
+        src_dst: RegId,
+        result_vreg: VReg,
+        input_reg: RegId,
+        mut input_vreg: VReg,
+        range: MaybeOpenRange,
+        use_grapheme_clusters: bool,
+    ) -> Result<bool, CompileError> {
+        let Some(input_meta) = self.get_metadata(input_reg).cloned() else {
+            return Ok(false);
+        };
+        let Some(AnnotatedValueSemantics::FixedArray { elem, len }) =
+            input_meta.annotated_semantics.as_ref()
+        else {
+            return Ok(false);
+        };
+        let AnnotatedValueSemantics::String {
+            slot_len,
+            content_cap,
+        } = elem.as_ref()
+        else {
+            return Ok(false);
+        };
+
+        if use_grapheme_clusters {
+            return Err(CompileError::UnsupportedInstruction(
+                "str substring --grapheme-clusters requires compile-time known string input in eBPF"
+                    .into(),
+            ));
+        }
+
+        let (start, end_exclusive, output_content_cap) =
+            Self::typed_string_array_substring_bounds(range, *content_cap)?;
+        let mut base_runtime_ty = match self.typed_value_runtime_type(input_reg, input_vreg) {
+            Some(ty) => ty,
+            None => return Ok(false),
+        };
+        let Some(MirType::Array {
+            elem: array_elem_ty,
+            len: array_len,
+        }) = Self::aggregate_call_value_type(&base_runtime_ty)
+        else {
+            return Ok(false);
+        };
+        let mut elem_ty = array_elem_ty.as_ref().clone();
+        let mut array_len = *array_len;
+
+        if !matches!(base_runtime_ty, MirType::Ptr { .. }) {
+            input_vreg = self.materialized_metadata_aggregate_vreg(input_reg, input_vreg)?;
+            base_runtime_ty = self
+                .typed_value_runtime_type(input_reg, input_vreg)
+                .ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(
+                        "str substring requires typed fixed string-array input in eBPF".into(),
+                    )
+                })?;
+            let Some(MirType::Array { elem, len }) =
+                Self::aggregate_call_value_type(&base_runtime_ty)
+            else {
+                return Err(CompileError::UnsupportedInstruction(
+                    "str substring requires typed fixed string-array input in eBPF".into(),
+                ));
+            };
+            elem_ty = elem.as_ref().clone();
+            array_len = *len;
+        }
+
+        if array_len != *len {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "str substring typed fixed string-array length metadata mismatch: type length {array_len}, semantic length {len}"
+            )));
+        }
+        let input_elem_size = elem_ty.size();
+        let min_input_elem_size = 8usize.checked_add(*slot_len).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "str substring typed fixed string-array element size overflowed in eBPF".into(),
+            )
+        })?;
+        if input_elem_size < min_input_elem_size {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "str substring typed fixed string-array element storage is too small: element size {input_elem_size}, required {min_input_elem_size}"
+            )));
+        }
+
+        let address_space = match &base_runtime_ty {
+            MirType::Ptr { address_space, .. } => *address_space,
+            _ => {
+                return Err(CompileError::UnsupportedInstruction(
+                    "str substring requires typed fixed string-array pointer input in eBPF".into(),
+                ));
+            }
+        };
+
+        let output_slot_len = align_to_eight(output_content_cap.saturating_add(1)).max(16);
+        let output_elem_size = 8usize.checked_add(output_slot_len).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "str substring typed fixed string-array output element size overflowed in eBPF"
+                    .into(),
+            )
+        })?;
+        let out_ty = MirType::Array {
+            elem: Box::new(MirType::Array {
+                elem: Box::new(MirType::U8),
+                len: output_elem_size,
+            }),
+            len: array_len,
+        };
+        if array_len == 0 {
+            self.lower_known_string_list_result(src_dst, result_vreg, Vec::new())?;
+            return Ok(true);
+        }
+        let out_size = out_ty.size();
+        let out_slot =
+            self.func
+                .alloc_stack_slot(align_to_eight(out_size), 8, StackSlotKind::Local);
+        self.record_stack_slot_type(out_slot, out_ty.clone());
+        self.emit(MirInst::Copy {
+            dst: result_vreg,
+            src: MirValue::StackSlot(out_slot),
+        });
+        self.vreg_type_hints.insert(
+            result_vreg,
+            MirType::Ptr {
+                pointee: Box::new(out_ty.clone()),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        self.emit_ptr_zero(result_vreg, 0, out_size)?;
+
+        for index in 0..array_len {
+            let input_byte_offset = index.checked_mul(input_elem_size).ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "str substring typed fixed string-array input element offset overflowed in eBPF"
+                        .into(),
+                )
+            })?;
+            let input_byte_offset = i64::try_from(input_byte_offset).map_err(|_| {
+                CompileError::UnsupportedInstruction(
+                    "str substring typed fixed string-array input element offset is too large for eBPF"
+                        .into(),
+                )
+            })?;
+            let input_element_ptr = self.func.alloc_vreg();
+            self.vreg_type_hints.insert(
+                input_element_ptr,
+                MirType::Ptr {
+                    pointee: Box::new(elem_ty.clone()),
+                    address_space,
+                },
+            );
+            self.emit(MirInst::BinOp {
+                dst: input_element_ptr,
+                op: BinOpKind::Add,
+                lhs: MirValue::VReg(input_vreg),
+                rhs: MirValue::Const(input_byte_offset),
+            });
+
+            let input_len_vreg = self.func.alloc_vreg();
+            self.emit(MirInst::Load {
+                dst: input_len_vreg,
+                ptr: input_element_ptr,
+                offset: 0,
+                ty: MirType::I64,
+            });
+            self.vreg_type_hints.insert(input_len_vreg, MirType::I64);
+
+            let output_byte_offset = index.checked_mul(output_elem_size).ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "str substring typed fixed string-array output element offset overflowed in eBPF"
+                        .into(),
+                )
+            })?;
+            if output_content_cap > 0 {
+                let copy_src = 8usize.checked_add(start).ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(
+                        "str substring typed fixed string-array source byte offset overflowed in eBPF"
+                            .into(),
+                    )
+                })?;
+                let copy_dst = output_byte_offset.checked_add(8).ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(
+                        "str substring typed fixed string-array destination byte offset overflowed in eBPF"
+                            .into(),
+                    )
+                })?;
+                self.emit_ptr_to_slot_copy(
+                    out_slot,
+                    copy_dst,
+                    input_element_ptr,
+                    copy_src,
+                    output_content_cap,
+                )?;
+            }
+
+            let output_len_vreg = self.func.alloc_vreg();
+            self.emit_nonnegative_substring_len(
+                output_len_vreg,
+                input_len_vreg,
+                start,
+                end_exclusive,
+                output_content_cap,
+            )?;
+            self.emit(MirInst::StoreSlot {
+                slot: out_slot,
+                offset: Self::checked_mir_offset(output_byte_offset, "substring output length")?,
+                val: MirValue::VReg(output_len_vreg),
+                ty: MirType::I64,
+            });
+        }
+
+        self.reset_call_result_metadata(src_dst);
+        let constant_value = match &input_meta.constant_value {
+            Some(nu_protocol::Value::List { vals, .. }) => {
+                let outputs = vals
+                    .iter()
+                    .map(|value| match value {
+                        nu_protocol::Value::String { val, .. } => {
+                            Self::substring_known_string(val.clone(), range, false)
+                        }
+                        other => Err(CompileError::UnsupportedInstruction(format!(
+                            "str substring requires string list items in eBPF; item has type {}",
+                            other.get_type()
+                        ))),
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                Some(nu_protocol::Value::list(
+                    outputs
+                        .into_iter()
+                        .map(|output| nu_protocol::Value::string(output, Span::unknown()))
+                        .collect(),
+                    Span::unknown(),
+                ))
+            }
+            _ => None,
+        };
+        let out_meta = self.get_or_create_metadata(src_dst);
+        out_meta.field_type = Some(out_ty);
+        out_meta.constant_value = constant_value;
+        out_meta.annotated_semantics = Some(AnnotatedValueSemantics::FixedArray {
+            elem: Box::new(AnnotatedValueSemantics::String {
+                slot_len: output_slot_len,
+                content_cap: output_content_cap,
+            }),
+            len: array_len,
+        });
+        Ok(true)
+    }
+
     pub(super) fn lower_string_substring(
         &mut self,
         src_dst: RegId,
@@ -3468,6 +3909,20 @@ impl<'a> HirToMirLowering<'a> {
                 .map(|item| Self::substring_known_string(item, range, use_grapheme_clusters))
                 .collect::<Result<Vec<_>, _>>()?;
             return self.lower_known_string_list_result(src_dst, result_vreg, output);
+        }
+
+        let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
+        if let Some(input_reg) = input_reg
+            && self.lower_typed_fixed_string_array_substring(
+                src_dst,
+                result_vreg,
+                input_reg,
+                input_vreg,
+                range,
+                use_grapheme_clusters,
+            )?
+        {
+            return Ok(());
         }
 
         let input = self.exact_string_input(input_reg, "str substring")?;
