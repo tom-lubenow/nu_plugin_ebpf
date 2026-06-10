@@ -5,6 +5,7 @@ mod bits;
 mod compact;
 mod dedupe;
 mod find;
+mod map_filter;
 mod math;
 mod predicates;
 mod sort;

@@ -948,8 +948,8 @@ sources use the same bounded comparison.
 
 | Primitive | Supported eBPF subset |
 |-----------|-----------------------|
-| `where` | Stack-backed numeric lists with a closure predicate; scalar pipeline filtering also lowers to an early return when the predicate is false |
-| `each` | Stack-backed numeric lists with a closure transform, preserving runtime list length; scalar pipeline transforms are also supported |
+| `where` | Stack-backed numeric lists and typed numeric fixed arrays with a closure predicate; scalar pipeline filtering also lowers to an early return when the predicate is false |
+| `each` | Stack-backed numeric lists and typed numeric fixed arrays with a closure transform, preserving runtime/fixed list length; scalar pipeline transforms are also supported |
 | `all` / `any` | Stack-backed numeric lists and typed numeric fixed arrays with a closure predicate, verifier-bounded constant-index reads, and Nushell empty-list identities |
 | `take` | Stack-backed numeric lists, typed fixed arrays, and compile-time known fixed lists with a compile-time non-negative count, including metadata-only float-list outputs when folded by metadata consumers |
 | `skip` | Stack-backed numeric lists, typed fixed arrays, and compile-time known fixed lists with a compile-time non-negative count, including metadata-only float-list outputs when folded by metadata consumers |

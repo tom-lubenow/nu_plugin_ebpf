@@ -3285,75 +3285,83 @@ impl<'a> HirToMirLowering<'a> {
                     })?;
 
                     let meta = input_reg.and_then(|reg| self.get_metadata(reg).cloned());
-                    if let Some(meta) = meta
-                        && let Some((_slot, max_len)) = meta.list_buffer
-                    {
-                        let (out_slot, out_ty) =
-                            self.create_stack_numeric_list_result(dst_vreg, max_len);
+                    if let Some(meta) = meta {
+                        if let Some((_slot, max_len)) = meta.list_buffer {
+                            let (out_slot, out_ty) =
+                                self.create_stack_numeric_list_result(dst_vreg, max_len);
 
-                        if max_len > 0 {
-                            let len_vreg = self.func.alloc_vreg();
-                            self.emit(MirInst::ListLen {
-                                dst: len_vreg,
-                                list: input_vreg,
-                            });
-                            self.vreg_type_hints.insert(len_vreg, MirType::U64);
-                            let continuation_block = self.func.alloc_block();
-                            for i in 0..max_len {
-                                let predicate_block = self.func.alloc_block();
-                                let next_block = if i + 1 == max_len {
-                                    continuation_block
-                                } else {
-                                    self.func.alloc_block()
-                                };
-                                let in_bounds_vreg = self.func.alloc_vreg();
-                                self.emit(MirInst::BinOp {
-                                    dst: in_bounds_vreg,
-                                    op: BinOpKind::Lt,
-                                    lhs: MirValue::Const(i as i64),
-                                    rhs: MirValue::VReg(len_vreg),
-                                });
-                                self.vreg_type_hints.insert(in_bounds_vreg, MirType::Bool);
-                                self.terminate(MirInst::Branch {
-                                    cond: in_bounds_vreg,
-                                    if_true: predicate_block,
-                                    if_false: next_block,
-                                });
-
-                                self.current_block = predicate_block;
-                                let elem_vreg = self.func.alloc_vreg();
-                                self.emit(MirInst::ListGet {
-                                    dst: elem_vreg,
+                            if max_len > 0 {
+                                let len_vreg = self.func.alloc_vreg();
+                                self.emit(MirInst::ListLen {
+                                    dst: len_vreg,
                                     list: input_vreg,
-                                    idx: MirValue::Const(i as i64),
                                 });
-                                self.vreg_type_hints.insert(elem_vreg, MirType::I64);
+                                self.vreg_type_hints.insert(len_vreg, MirType::U64);
+                                let continuation_block = self.func.alloc_block();
+                                for i in 0..max_len {
+                                    let predicate_block = self.func.alloc_block();
+                                    let next_block = if i + 1 == max_len {
+                                        continuation_block
+                                    } else {
+                                        self.func.alloc_block()
+                                    };
+                                    let in_bounds_vreg = self.func.alloc_vreg();
+                                    self.emit(MirInst::BinOp {
+                                        dst: in_bounds_vreg,
+                                        op: BinOpKind::Lt,
+                                        lhs: MirValue::Const(i as i64),
+                                        rhs: MirValue::VReg(len_vreg),
+                                    });
+                                    self.vreg_type_hints.insert(in_bounds_vreg, MirType::Bool);
+                                    self.terminate(MirInst::Branch {
+                                        cond: in_bounds_vreg,
+                                        if_true: predicate_block,
+                                        if_false: next_block,
+                                    });
 
-                                let predicate =
-                                    self.inline_closure_with_in(block_id, closure_ir, elem_vreg)?;
-                                let push_block = self.func.alloc_block();
-                                self.terminate(MirInst::Branch {
-                                    cond: predicate,
-                                    if_true: push_block,
-                                    if_false: next_block,
-                                });
+                                    self.current_block = predicate_block;
+                                    let elem_vreg = self.func.alloc_vreg();
+                                    self.emit(MirInst::ListGet {
+                                        dst: elem_vreg,
+                                        list: input_vreg,
+                                        idx: MirValue::Const(i as i64),
+                                    });
+                                    self.vreg_type_hints.insert(elem_vreg, MirType::I64);
 
-                                self.current_block = push_block;
-                                self.emit(MirInst::ListPush {
-                                    list: dst_vreg,
-                                    item: elem_vreg,
-                                });
-                                self.terminate(MirInst::Jump { target: next_block });
+                                    let predicate = self
+                                        .inline_closure_with_in(block_id, closure_ir, elem_vreg)?;
+                                    let push_block = self.func.alloc_block();
+                                    self.terminate(MirInst::Branch {
+                                        cond: predicate,
+                                        if_true: push_block,
+                                        if_false: next_block,
+                                    });
 
-                                self.current_block = next_block;
+                                    self.current_block = push_block;
+                                    self.emit(MirInst::ListPush {
+                                        list: dst_vreg,
+                                        item: elem_vreg,
+                                    });
+                                    self.terminate(MirInst::Jump { target: next_block });
+
+                                    self.current_block = next_block;
+                                }
+                                self.current_block = continuation_block;
                             }
-                            self.current_block = continuation_block;
-                        }
 
-                        self.install_stack_numeric_list_result_metadata(
-                            src_dst, out_slot, out_ty, max_len, None,
-                        );
-                        return Ok(());
+                            self.install_stack_numeric_list_result_metadata(
+                                src_dst, out_slot, out_ty, max_len, None,
+                            );
+                            return Ok(());
+                        }
+                        if let Some(input_reg) = input_reg
+                            && self.lower_typed_fixed_array_where(
+                                src_dst, dst_vreg, input_reg, input_vreg, &meta, block_id,
+                                closure_ir,
+                            )?
+                        {
+                            return Ok(());
+                        }
                     }
 
                     let result_vreg =
@@ -3488,6 +3496,14 @@ impl<'a> HirToMirLowering<'a> {
                                 max_len,
                                 Self::numeric_list_known_len(&meta),
                             );
+                            return Ok(());
+                        }
+                        if let Some(input_reg) = input_reg
+                            && self.lower_typed_fixed_array_each(
+                                src_dst, dst_vreg, input_reg, input_vreg, &meta, block_id,
+                                closure_ir,
+                            )?
+                        {
                             return Ok(());
                         }
                     }
