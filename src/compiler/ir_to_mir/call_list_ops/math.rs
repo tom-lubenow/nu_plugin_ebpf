@@ -1096,6 +1096,21 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(());
         }
 
+        if let Some(input_meta) = input_meta.as_ref()
+            && self.lower_typed_fixed_array_integer_identity_math(
+                cmd_name,
+                src_dst,
+                dst_vreg,
+                src_dst_had_value,
+                input_reg,
+                input_vreg,
+                input_meta,
+                MAX_IDENTITY_STACK_LIST_CAPACITY,
+            )?
+        {
+            return Ok(());
+        }
+
         if input_meta
             .as_ref()
             .is_some_and(|meta| meta.list_buffer.is_some())
@@ -1167,6 +1182,52 @@ impl<'a> HirToMirLowering<'a> {
         });
         self.propagate_passthrough_reg_metadata(src_dst, result_vreg, input_reg, input_vreg);
         Ok(())
+    }
+
+    fn lower_typed_fixed_array_integer_identity_math(
+        &mut self,
+        cmd_name: &str,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+        input_reg: RegId,
+        input_vreg: VReg,
+        input_meta: &RegMetadata,
+        max_list_len: usize,
+    ) -> Result<bool, CompileError> {
+        let Some((input_vreg, elem_ty, array_len)) =
+            self.typed_fixed_array_numeric_list_input(cmd_name, input_reg, input_vreg, input_meta)?
+        else {
+            return Ok(false);
+        };
+        if array_len > max_list_len {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} supports typed fixed-arrays with length <= {max_list_len} in eBPF"
+            )));
+        }
+
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+        let (out_slot, out_ty) = self.create_stack_numeric_list_result(result_vreg, array_len);
+        for index in 0..array_len {
+            let item_vreg = self
+                .emit_typed_fixed_array_numeric_list_item(cmd_name, input_vreg, &elem_ty, index)?;
+            self.emit(MirInst::ListPush {
+                list: result_vreg,
+                item: item_vreg,
+            });
+        }
+        self.install_stack_numeric_list_result_metadata(
+            src_dst,
+            out_slot,
+            out_ty,
+            array_len,
+            Some(array_len),
+        );
+        Ok(true)
     }
 
     pub(in crate::compiler::ir_to_mir) fn lower_math_abs(
