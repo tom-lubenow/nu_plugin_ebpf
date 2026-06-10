@@ -1573,6 +1573,126 @@ impl<'a> HirToMirLowering<'a> {
         Ok(true)
     }
 
+    fn lower_fixed_array_binary_remove(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+        input_reg: RegId,
+        mut input_vreg: VReg,
+        pattern: &[u8],
+    ) -> Result<bool, CompileError> {
+        let Some(input_meta) = self.get_metadata(input_reg).cloned() else {
+            return Ok(false);
+        };
+        let Some(AnnotatedValueSemantics::FixedArray { elem, len }) =
+            input_meta.annotated_semantics.as_ref()
+        else {
+            return Ok(false);
+        };
+        let AnnotatedValueSemantics::Binary { len: elem_len } = elem.as_ref() else {
+            return Ok(false);
+        };
+        let array_len = *len;
+        let elem_len = *elem_len;
+        if pattern.len() <= elem_len {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "bytes remove on typed fixed-array binary input requires a pattern longer than the element length ({elem_len}) in eBPF"
+            )));
+        }
+
+        let Some(mut base_runtime_ty) = self.typed_value_runtime_type(input_reg, input_vreg) else {
+            return Ok(false);
+        };
+        if !matches!(base_runtime_ty, MirType::Ptr { .. })
+            && matches!(base_runtime_ty, MirType::Array { .. })
+        {
+            input_vreg = self.materialized_metadata_aggregate_vreg(input_reg, input_vreg)?;
+            base_runtime_ty = self
+                .typed_value_runtime_type(input_reg, input_vreg)
+                .ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(
+                        "bytes remove requires typed fixed-array input in eBPF".into(),
+                    )
+                })?;
+        }
+
+        let MirType::Ptr {
+            pointee,
+            address_space,
+        } = base_runtime_ty
+        else {
+            return Err(CompileError::UnsupportedInstruction(
+                "bytes remove requires typed fixed-array pointer input in eBPF".into(),
+            ));
+        };
+        if !matches!(
+            address_space,
+            AddressSpace::Stack | AddressSpace::Map | AddressSpace::Context
+        ) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "bytes remove on typed fixed-array pointers in {address_space:?} address space is not yet supported in eBPF"
+            )));
+        }
+        let MirType::Array { elem: elem_ty, len } = pointee.as_ref() else {
+            return Ok(false);
+        };
+        if *len != array_len || elem_ty.byte_array_len() != Some(elem_len) {
+            return Err(CompileError::UnsupportedInstruction(
+                "bytes remove requires typed fixed-array binary input with matching byte-array layout in eBPF"
+                    .into(),
+            ));
+        }
+
+        let out_ty = MirType::Array {
+            elem: Box::new(elem_ty.as_ref().clone()),
+            len: array_len,
+        };
+        let out_size = out_ty.size();
+        if out_size == 0 {
+            let values = (0..array_len)
+                .map(|_| nu_protocol::Value::binary(Vec::new(), Span::unknown()))
+                .collect::<Vec<_>>();
+            self.lower_compile_time_list_transform_result(
+                src_dst,
+                &nu_protocol::Value::list(values, Span::unknown()),
+            )?;
+            return Ok(true);
+        }
+
+        let out_slot =
+            self.func
+                .alloc_stack_slot(align_to_eight(out_size), 8, StackSlotKind::Local);
+        self.record_stack_slot_type(out_slot, out_ty.clone());
+
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+        self.emit(MirInst::Copy {
+            dst: result_vreg,
+            src: MirValue::StackSlot(out_slot),
+        });
+        self.vreg_type_hints.insert(
+            result_vreg,
+            MirType::Ptr {
+                pointee: Box::new(out_ty.clone()),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        self.emit_ptr_to_slot_copy(out_slot, 0, input_vreg, 0, out_size)?;
+
+        self.reset_call_result_metadata(src_dst);
+        let out_meta = self.get_or_create_metadata(src_dst);
+        out_meta.field_type = Some(out_ty);
+        out_meta.annotated_semantics = Some(AnnotatedValueSemantics::FixedArray {
+            elem: elem.clone(),
+            len: array_len,
+        });
+        Ok(true)
+    }
+
     fn lower_fixed_binary_replace(
         &mut self,
         src_dst: RegId,
@@ -6994,14 +7114,25 @@ impl<'a> HirToMirLowering<'a> {
                                 )?
                             }
                         } else {
-                            self.lower_fixed_binary_remove(
+                            if self.lower_fixed_array_binary_remove(
                                 src_dst,
                                 dst_vreg,
                                 src_dst_had_value,
                                 input_reg,
                                 input_vreg,
                                 &pattern,
-                            )?
+                            )? {
+                                true
+                            } else {
+                                self.lower_fixed_binary_remove(
+                                    src_dst,
+                                    dst_vreg,
+                                    src_dst_had_value,
+                                    input_reg,
+                                    input_vreg,
+                                    &pattern,
+                                )?
+                            }
                         };
                         if !lowered {
                             return Err(CompileError::UnsupportedInstruction(format!(
