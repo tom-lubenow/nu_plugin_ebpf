@@ -778,9 +778,9 @@ impl<'a> HirToMirLowering<'a> {
                     "{cmd_name} requires a stack-backed numeric list with proven non-empty length in eBPF"
                 )));
             }
-            if cmd_name == "last" && known_len.unwrap_or(0) == 0 {
+            if cmd_name == "last" && min_len.unwrap_or(0) == 0 {
                 return Err(CompileError::UnsupportedInstruction(format!(
-                    "{cmd_name} requires a non-empty stack-backed numeric list in eBPF"
+                    "{cmd_name} requires a stack-backed numeric list with proven non-empty length in eBPF"
                 )));
             }
 
