@@ -58,9 +58,8 @@ impl<'a> MirToEbpfCompiler<'a> {
                 // Copy bytes from source slot to destination
                 let src_offset = self.slot_offsets.get(slot).copied().unwrap_or(0);
 
-                // Bounded loop to copy up to max_len bytes
-                // For eBPF verifier, we unroll small loops
-                let copy_len = (*max_len).min(64); // Cap at 64 bytes to limit instruction count
+                // Bounded loop to copy up to the tracked string payload capacity.
+                let copy_len = (*max_len).min(crate::compiler::ir_to_mir::MAX_STRING_SIZE - 1);
                 for i in 0..copy_len {
                     // Load byte from source: R0 = [R10 + src_offset + i]
                     self.instructions.push(EbpfInsn::ldxb(

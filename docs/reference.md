@@ -939,8 +939,8 @@ eBPF layout and verifier bounds are explicit:
 
 String concatenation with `+` folds compile-time string operands and supports
 tracked string operands by copying them into a fresh bounded string buffer when
-each tracked source fits the 64-byte append-copy cap and the result fits the
-compiler string limit.
+each tracked source fits the tracked string append-copy cap and the result fits
+the compiler string limit.
 Tracked string equality with `==` / `!=` is supported when one operand is a
 compile-time known string literal, using the tracked runtime length and a
 bounded byte comparison. Literal string `match` patterns against tracked string
@@ -983,7 +983,7 @@ sources use the same bounded comparison.
 | `str distance` | Compile-time known scalar string input and one compile-time known compare string, returning a constant Levenshtein distance; table/record cell-path rewrites are not supported |
 | `str stats` | Compile-time known scalar string input in the default no-argument mode, returning a fixed integer record with `lines`, `words`, `bytes`, `chars`, `graphemes`, and `unicode-width` fields |
 | `str index-of` | Tracked strings with a literal substring in byte mode, returning the first byte index or `-1` through bounded fixed-offset comparisons guarded by the tracked runtime length; typed fixed `array{string:N:M}` input with a literal substring returns a stack numeric list of byte indexes; `--end`, byte `--range` bounds including negative runtime bounds, and empty-substring range results are supported for runtime strings and typed fixed string arrays, while `--grapheme-clusters` requires compile-time known input strings; compile-time known string-list input returns a numeric list |
-| `str join` | Compile-time known string input as a pass-through, compile-time known string/int/float/filesize/duration/binary/bool/null/list/record-list input with an optional literal separator, or typed fixed `array{string:N:M}` input with `N <= 64` and a literal separator when the joined output fits the tracked string limit, returning a tracked string |
+| `str join` | Compile-time known string input as a pass-through, compile-time known string/int/float/filesize/duration/binary/bool/null/list/record-list input with an optional literal separator, or typed fixed `array{string:N:M}` input with elements up to 127 bytes and an optional literal separator when the joined output fits the tracked string limit, returning a tracked string |
 | `split chars` | Compile-time known scalar string input, returning a fixed string list of code points by default or grapheme clusters with `--grapheme-clusters`; compile-time known string-list input is supported as nested constant metadata when folded by `str join`, `length`, or empty predicates |
 | `split list` | Compile-time known fixed-list input with a compile-time known literal separator, including metadata-only nested scalar-list outputs when folded by metadata consumers, or `--regex` string separator matching string/int/bool item text while preserving null/filesize/duration items as non-matches, and optional compile-time `--split on`/`before`/`after`, returning homogeneous fixed-layout groups when materialized; closure separators, runtime input lists, materialized heterogeneous result group layouts, and `--regex` over binary/record/list/float items are not supported |
 | `split row` | Compile-time known string or string-list input with a literal or `--regex` separator and optional non-negative compile-time `--number`, returning a fixed string list |

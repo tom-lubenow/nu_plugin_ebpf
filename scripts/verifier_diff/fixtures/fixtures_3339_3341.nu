@@ -28,18 +28,17 @@ export const VERIFIER_DIFF_FIXTURES_3339_3341 = [
         kernel: "accept"
     }
     {
-        name: "global-define-type-array-string-str-join-rejects-wide-element"
+        name: "global-define-type-array-string-str-join-wide-element"
         category: "globals"
-        tags: [globals arrays string str join diagnostics reject]
+        tags: [globals arrays string str join length global-define accept]
         target: "raw_tracepoint:sys_enter"
         program: [
             '{|ctx|'
-            '  global-define --type "array{string:65:1}" names'
-            '  (global-get names) | str join'
+            '  ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"] | global-define --type "array{string:65:1}" names'
+            '  (((global-get names) | str join | str length) == 65)'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "str join on typed fixed string arrays supports string elements up to 64 bytes"
+        local: "accept"
+        kernel: "accept"
     }
 ]

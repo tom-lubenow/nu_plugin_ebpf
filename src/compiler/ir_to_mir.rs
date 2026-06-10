@@ -53,7 +53,7 @@ pub enum UserParamKind {
 /// Maximum string size that eBPF can reliably handle
 /// Strings longer than this will be truncated
 pub const MAX_STRING_SIZE: usize = 128;
-const STRING_APPEND_COPY_CAP: usize = 64;
+const STRING_APPEND_COPY_CAP: usize = MAX_STRING_SIZE - 1;
 const MAX_INT_STRING_LEN: usize = 20;
 const EMPTY_BINARY_LAYOUT_ERROR: &str = "empty binary constants do not establish a fixed byte-buffer layout; use a non-empty binary initializer or an explicit bytes:N/binary:N type spec";
 

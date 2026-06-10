@@ -18,7 +18,7 @@ struct VccLowerer<'a> {
     next_temp: u32,
 }
 
-const STRING_APPEND_COPY_CAP: usize = 64;
+const STRING_APPEND_COPY_CAP: usize = crate::compiler::ir_to_mir::MAX_STRING_SIZE - 1;
 const MAX_INT_STRING_LEN: usize = 20;
 
 #[path = "lower/value_utils.rs"]

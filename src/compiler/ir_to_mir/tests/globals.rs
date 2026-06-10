@@ -11582,14 +11582,16 @@ fn test_lower_global_define_type_string_array_str_join_materializes_tracked_stri
 }
 
 #[test]
-fn test_lower_global_define_type_string_array_str_join_rejects_oversized_element_cap() {
+fn test_lower_global_define_type_string_array_str_join_accepts_wide_element_cap() {
     let define_decl = DeclId::new(10_548);
     let global_get_decl = DeclId::new(10_549);
     let join_decl = DeclId::new(10_550);
+    let length_decl = DeclId::new(11_051);
     let decl_names = HashMap::from([
         (define_decl, "global-define".to_string()),
         (global_get_decl, "global-get".to_string()),
         (join_decl, "str join".to_string()),
+        (length_decl, "str length".to_string()),
     ]);
 
     let func = HirFunction {
@@ -11629,19 +11631,27 @@ fn test_lower_global_define_type_string_array_str_join_rejects_oversized_element
                         ..HirCallArgs::default()
                     },
                 },
+                HirStmt::Call {
+                    decl_id: length_decl,
+                    src_dst: RegId::new(5),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(4)),
+                        ..HirCallArgs::default()
+                    },
+                },
             ],
-            terminator: HirTerminator::Return { src: RegId::new(4) },
+            terminator: HirTerminator::Return { src: RegId::new(5) },
         }],
         entry: HirBlockId(0),
         spans: Vec::new(),
         ast: Vec::new(),
         comments: Vec::new(),
-        register_count: 5,
+        register_count: 6,
         file_count: 0,
     };
     let hir = HirProgram::new(func, HashMap::new(), vec![], None);
 
-    let err = lower_hir_to_mir_with_hints(
+    let result = lower_hir_to_mir_with_hints(
         &hir,
         None,
         &decl_names,
@@ -11649,12 +11659,26 @@ fn test_lower_global_define_type_string_array_str_join_rejects_oversized_element
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("str join should reject typed string elements beyond the append copy cap");
+    .expect("str join should accept typed string elements up to the tracked string cap");
 
     assert!(
-        err.to_string()
-            .contains("supports string elements up to 64 bytes"),
-        "expected oversized element-cap diagnostic, got: {err}"
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StringAppend {
+                    val_type: StringAppendType::StringSlot { max_len: 65, .. },
+                    ..
+                }
+            )),
+        "expected str join to append the full 65-byte fixed string element"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "typed string array str join with a 65-byte element should compile through codegen",
     );
 }
 
