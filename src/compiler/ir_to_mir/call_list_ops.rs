@@ -291,6 +291,142 @@ impl<'a> HirToMirLowering<'a> {
         Ok(true)
     }
 
+    fn lower_typed_fixed_array_reverse(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+        input_reg: RegId,
+        mut input_vreg: VReg,
+        input_meta: &RegMetadata,
+    ) -> Result<bool, CompileError> {
+        if matches!(
+            input_meta.constant_value,
+            Some(nu_protocol::Value::List { .. })
+        ) && !matches!(
+            input_meta.annotated_semantics,
+            Some(AnnotatedValueSemantics::FixedArray { .. })
+        ) {
+            return Ok(false);
+        }
+
+        let Some(mut base_runtime_ty) = self.typed_value_runtime_type(input_reg, input_vreg) else {
+            return Ok(false);
+        };
+        let Some((elem_ty, array_len)) = Self::aggregate_call_value_type(&base_runtime_ty)
+            .and_then(|ty| match ty {
+                MirType::Array { elem, len } => Some((elem.as_ref().clone(), *len)),
+                _ => None,
+            })
+        else {
+            return Ok(false);
+        };
+
+        if !matches!(base_runtime_ty, MirType::Ptr { .. })
+            && Self::aggregate_call_value_type(&base_runtime_ty).is_some()
+        {
+            input_vreg = self.materialized_metadata_aggregate_vreg(input_reg, input_vreg)?;
+            base_runtime_ty = self
+                .typed_value_runtime_type(input_reg, input_vreg)
+                .ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(
+                        "reverse requires typed fixed-array input in eBPF".into(),
+                    )
+                })?;
+        }
+
+        let MirType::Ptr { address_space, .. } = base_runtime_ty else {
+            return Err(CompileError::UnsupportedInstruction(
+                "reverse requires typed fixed-array pointer input in eBPF".into(),
+            ));
+        };
+        if !matches!(
+            address_space,
+            AddressSpace::Stack | AddressSpace::Map | AddressSpace::Context
+        ) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "reverse on typed fixed-array pointers in {address_space:?} address space is not yet supported in eBPF"
+            )));
+        }
+
+        let out_ty = MirType::Array {
+            elem: Box::new(elem_ty.clone()),
+            len: array_len,
+        };
+        let out_size = out_ty.size();
+        if out_size == 0 {
+            self.lower_compile_time_list_transform_result(
+                src_dst,
+                &nu_protocol::Value::list(Vec::new(), Span::unknown()),
+            )?;
+            return Ok(true);
+        }
+
+        let out_slot =
+            self.func
+                .alloc_stack_slot(align_to_eight(out_size), 8, StackSlotKind::Local);
+        self.record_stack_slot_type(out_slot, out_ty.clone());
+
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+        self.emit(MirInst::Copy {
+            dst: result_vreg,
+            src: MirValue::StackSlot(out_slot),
+        });
+        self.vreg_type_hints.insert(
+            result_vreg,
+            MirType::Ptr {
+                pointee: Box::new(out_ty.clone()),
+                address_space: AddressSpace::Stack,
+            },
+        );
+
+        let elem_size = elem_ty.size();
+        for output_index in 0..array_len {
+            let source_index = array_len - 1 - output_index;
+            let dst_offset = output_index.checked_mul(elem_size).ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "reverse typed fixed-array destination offset overflowed in eBPF".into(),
+                )
+            })?;
+            let src_offset = source_index.checked_mul(elem_size).ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "reverse typed fixed-array source offset overflowed in eBPF".into(),
+                )
+            })?;
+            self.emit_ptr_to_slot_copy(out_slot, dst_offset, input_vreg, src_offset, elem_size)?;
+        }
+
+        let constant_value = match &input_meta.constant_value {
+            Some(nu_protocol::Value::List { vals, .. }) => {
+                let mut vals = vals.clone();
+                vals.reverse();
+                Some(nu_protocol::Value::list(vals, Span::unknown()))
+            }
+            _ => None,
+        };
+        let annotated_semantics = match &input_meta.annotated_semantics {
+            Some(AnnotatedValueSemantics::FixedArray { elem, .. }) => {
+                Some(AnnotatedValueSemantics::FixedArray {
+                    elem: elem.clone(),
+                    len: array_len,
+                })
+            }
+            _ => None,
+        };
+
+        self.reset_call_result_metadata(src_dst);
+        let out_meta = self.get_or_create_metadata(src_dst);
+        out_meta.field_type = Some(out_ty);
+        out_meta.root_ctx_field = input_meta.root_ctx_field.clone();
+        out_meta.constant_value = constant_value;
+        out_meta.annotated_semantics = annotated_semantics;
+        Ok(true)
+    }
+
     pub(super) fn lower_stack_list_first_or_last_scalar(
         &mut self,
         cmd_name: &str,
@@ -778,6 +914,18 @@ impl<'a> HirToMirLowering<'a> {
                     "reverse requires a pipeline input with tracked metadata in eBPF".into(),
                 )
             })?;
+        if let Some(input_reg) = input_reg
+            && self.lower_typed_fixed_array_reverse(
+                src_dst,
+                dst_vreg,
+                src_dst_had_value,
+                input_reg,
+                input_vreg,
+                &input_meta,
+            )?
+        {
+            return Ok(());
+        }
         let Some((_input_slot, max_len)) = input_meta.list_buffer else {
             return Err(CompileError::UnsupportedInstruction(
                 "reverse requires a stack-backed list input in eBPF".into(),
