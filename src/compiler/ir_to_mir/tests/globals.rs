@@ -3721,6 +3721,270 @@ fn test_lower_bytes_starts_with_on_typed_bytes_global_compares_fixed_bytes() {
         .expect("typed bytes global bytes starts-with should compile through codegen");
 }
 
+#[test]
+fn test_lower_bytes_at_on_typed_bytes_global_copies_fixed_slice() {
+    let define_decl = DeclId::new(10_617);
+    let global_get_decl = DeclId::new(10_618);
+    let bytes_at_decl = DeclId::new(10_619);
+    let starts_with_decl = DeclId::new(10_620);
+    let decl_names = HashMap::from([
+        (define_decl, "global-define".to_string()),
+        (global_get_decl, "global-get".to_string()),
+        (bytes_at_decl, "bytes at".to_string()),
+        (starts_with_decl, "bytes starts-with".to_string()),
+    ]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::String("scratch".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("bytes:4".into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        named: vec![(b"type".to_vec(), RegId::new(1))],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: global_get_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::Int(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(5),
+                    lit: HirLiteral::Int(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(6),
+                    lit: HirLiteral::Int(2),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(7),
+                    lit: HirLiteral::Range {
+                        start: RegId::new(4),
+                        step: RegId::new(5),
+                        end: RegId::new(6),
+                        inclusion: RangeInclusion::Inclusive,
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: bytes_at_decl,
+                    src_dst: RegId::new(8),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(3)),
+                        positional: vec![RegId::new(7)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(9),
+                    lit: HirLiteral::Binary(vec![0, 0]),
+                },
+                HirStmt::Call {
+                    decl_id: starts_with_decl,
+                    src_dst: RegId::new(10),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(8)),
+                        positional: vec![RegId::new(9)],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return {
+                src: RegId::new(10),
+            },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 11,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bytes at should lower on a typed bytes global");
+
+    let byte_load_offsets = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .filter_map(|inst| match inst {
+            MirInst::Load {
+                offset,
+                ty: MirType::U8,
+                ..
+            } => Some(*offset),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        byte_load_offsets.contains(&1) && byte_load_offsets.contains(&2),
+        "expected bytes at to copy source offsets 1 and 2, got {byte_load_offsets:?}"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::StoreSlot { offset: 0, .. })),
+        "expected bytes at to materialize the fixed slice in a stack slot"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("typed bytes global bytes at should compile through codegen");
+}
+
+#[test]
+fn test_lower_bytes_at_empty_slice_on_typed_bytes_global_feeds_length() {
+    let define_decl = DeclId::new(10_621);
+    let global_get_decl = DeclId::new(10_622);
+    let bytes_at_decl = DeclId::new(10_623);
+    let bytes_length_decl = DeclId::new(10_624);
+    let decl_names = HashMap::from([
+        (define_decl, "global-define".to_string()),
+        (global_get_decl, "global-get".to_string()),
+        (bytes_at_decl, "bytes at".to_string()),
+        (bytes_length_decl, "bytes length".to_string()),
+    ]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::String("scratch".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("bytes:4".into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        named: vec![(b"type".to_vec(), RegId::new(1))],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: global_get_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::Int(2),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(5),
+                    lit: HirLiteral::Int(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(6),
+                    lit: HirLiteral::Int(1),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(7),
+                    lit: HirLiteral::Range {
+                        start: RegId::new(4),
+                        step: RegId::new(5),
+                        end: RegId::new(6),
+                        inclusion: RangeInclusion::Inclusive,
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: bytes_at_decl,
+                    src_dst: RegId::new(8),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(3)),
+                        positional: vec![RegId::new(7)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: bytes_length_decl,
+                    src_dst: RegId::new(9),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(8)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(9) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 10,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("empty bytes at should lower on a typed bytes global");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::Copy {
+                    src: MirValue::Const(0),
+                    ..
+                }
+            )),
+        "expected empty fixed binary slice to feed bytes length as zero"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("empty typed bytes global bytes at should compile through codegen");
+}
+
 fn assert_lower_bytes_index_of_on_typed_bytes_global(
     search_from_end: bool,
     expected_first_load_offset: i32,

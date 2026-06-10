@@ -427,8 +427,8 @@ impl<'a> HirToMirLowering<'a> {
         found.map(|idx| idx as i64).unwrap_or(-1)
     }
 
-    fn bytes_at_output(input: &[u8], range: MaybeOpenRange) -> Vec<u8> {
-        let len = input.len() as i64;
+    fn bytes_at_bounds(input_len: usize, range: MaybeOpenRange) -> (usize, usize) {
+        let len = input_len as i64;
         let start = range
             .start
             .map(|idx| {
@@ -458,7 +458,69 @@ impl<'a> HirToMirLowering<'a> {
             .unwrap_or(len)
             .max(start);
 
+        (start as usize, end as usize)
+    }
+
+    fn bytes_at_output(input: &[u8], range: MaybeOpenRange) -> Vec<u8> {
+        let (start, end) = Self::bytes_at_bounds(input.len(), range);
         input[start as usize..end as usize].to_vec()
+    }
+
+    fn lower_fixed_binary_at(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+        input_reg: RegId,
+        input_vreg: VReg,
+        range: MaybeOpenRange,
+    ) -> Result<bool, CompileError> {
+        let Some(input_len) = self.fixed_binary_input_len("bytes at", input_reg, input_vreg)?
+        else {
+            return Ok(false);
+        };
+        let (start, end) = Self::bytes_at_bounds(input_len, range);
+        let out_len = end.saturating_sub(start);
+        if out_len == 0 {
+            self.lower_compile_time_only_constant_value(
+                src_dst,
+                &nu_protocol::Value::binary(Vec::new(), Span::unknown()),
+            );
+            return Ok(true);
+        }
+
+        let out_ty = MirType::Array {
+            elem: Box::new(MirType::U8),
+            len: out_len,
+        };
+        let out_slot = self
+            .func
+            .alloc_stack_slot(align_to_eight(out_len), 8, StackSlotKind::Local);
+        self.record_stack_slot_type(out_slot, out_ty.clone());
+
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+        self.emit(MirInst::Copy {
+            dst: result_vreg,
+            src: MirValue::StackSlot(out_slot),
+        });
+        self.vreg_type_hints.insert(
+            result_vreg,
+            MirType::Ptr {
+                pointee: Box::new(out_ty.clone()),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        self.emit_ptr_to_slot_copy(out_slot, 0, input_vreg, start, out_len)?;
+
+        self.reset_call_result_metadata(src_dst);
+        let out_meta = self.get_or_create_metadata(src_dst);
+        out_meta.field_type = Some(out_ty);
+        out_meta.annotated_semantics = Some(AnnotatedValueSemantics::Binary { len: out_len });
+        Ok(true)
     }
 
     fn bytes_add_output(input: &[u8], data: &[u8], index: i64, from_end: bool) -> Vec<u8> {
@@ -4743,15 +4805,6 @@ impl<'a> HirToMirLowering<'a> {
                     ));
                 }
 
-                let input = input_reg
-                    .and_then(|reg| self.get_metadata(reg))
-                    .and_then(|meta| meta.constant_value.as_ref().cloned())
-                    .ok_or_else(|| {
-                        CompileError::UnsupportedInstruction(
-                            "bytes at requires compile-time known binary or list<binary> input in eBPF"
-                                .into(),
-                        )
-                    })?;
                 let (_, range_reg) = self.positional_args[0];
                 let range = self
                     .get_metadata(range_reg)
@@ -4761,8 +4814,11 @@ impl<'a> HirToMirLowering<'a> {
                             "bytes at requires a compile-time known range in eBPF".into(),
                         )
                     })?;
-                match input {
-                    nu_protocol::Value::Binary { val, .. } => {
+                let input_value = input_reg
+                    .and_then(|reg| self.get_metadata(reg))
+                    .and_then(|meta| meta.constant_value.as_ref().cloned());
+                match input_value {
+                    Some(nu_protocol::Value::Binary { val, .. }) => {
                         let output = Self::bytes_at_output(&val, range);
                         self.reset_call_result_metadata(src_dst);
                         self.lower_constant_value(
@@ -4770,7 +4826,7 @@ impl<'a> HirToMirLowering<'a> {
                             &nu_protocol::Value::binary(output, nu_protocol::Span::unknown()),
                         )?;
                     }
-                    nu_protocol::Value::List { vals, .. } => {
+                    Some(nu_protocol::Value::List { vals, .. }) => {
                         if vals.is_empty() && !self.current_call_result_metadata_only {
                             return Err(CompileError::UnsupportedInstruction(
                                 "bytes at requires a non-empty list<binary> result in eBPF".into(),
@@ -4822,11 +4878,32 @@ impl<'a> HirToMirLowering<'a> {
                             self.lower_constant_value(src_dst, &value)?;
                         }
                     }
-                    other => {
+                    Some(other) => {
                         return Err(CompileError::UnsupportedInstruction(format!(
                             "bytes at requires binary or list<binary> input in eBPF, got {}",
                             other.get_type()
                         )));
+                    }
+                    None => {
+                        let input_reg = input_reg.ok_or_else(|| {
+                            CompileError::UnsupportedInstruction(
+                                "bytes at requires binary input in eBPF".into(),
+                            )
+                        })?;
+                        let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
+                        if !self.lower_fixed_binary_at(
+                            src_dst,
+                            dst_vreg,
+                            src_dst_had_value,
+                            input_reg,
+                            input_vreg,
+                            range,
+                        )? {
+                            return Err(CompileError::UnsupportedInstruction(
+                                "bytes at requires compile-time known binary or list<binary> input in eBPF"
+                                    .into(),
+                            ));
+                        }
                     }
                 }
             }
