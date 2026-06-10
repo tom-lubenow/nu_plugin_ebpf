@@ -438,7 +438,7 @@ const VERIFIER_DIFF_FIXTURES_1626_1687 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "first requires a non-empty stack-backed numeric list"
+        error_contains: "first requires a stack-backed numeric list with proven non-empty length"
     }
     {
         name: "core-list-last-empty-reject"
@@ -452,7 +452,7 @@ const VERIFIER_DIFF_FIXTURES_1626_1687 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "last requires a non-empty stack-backed numeric list"
+        error_contains: "last requires a stack-backed numeric list with proven non-empty length"
     }
     {
         name: "core-list-first-count"

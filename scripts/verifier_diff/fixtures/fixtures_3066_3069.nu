@@ -39,7 +39,7 @@ const VERIFIER_DIFF_FIXTURES_3066_3069 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "first requires a non-empty stack-backed numeric list in eBPF"
+        error_contains: "first requires a stack-backed numeric list with proven non-empty length"
     }
     {
         name: "core-last-rejects-empty-stack-backed-list"
@@ -53,6 +53,6 @@ const VERIFIER_DIFF_FIXTURES_3066_3069 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "last requires a non-empty stack-backed numeric list in eBPF"
+        error_contains: "last requires a stack-backed numeric list with proven non-empty length"
     }
 ]
