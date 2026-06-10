@@ -9755,7 +9755,7 @@ fn test_lower_global_define_type_u32_array_uniq_last_uses_non_empty_min_len() {
 }
 
 #[test]
-fn test_lower_global_define_type_u32_array_uniq_math_min_max_use_non_empty_min_len() {
+fn test_lower_global_define_type_u32_array_uniq_math_reducers_use_non_empty_min_len() {
     for (define_decl, global_get_decl, uniq_decl, reducer_decl, reducer_name, expected_op) in [
         (
             DeclId::new(10_557),
@@ -9772,6 +9772,22 @@ fn test_lower_global_define_type_u32_array_uniq_math_min_max_use_non_empty_min_l
             DeclId::new(10_564),
             "math max",
             BinOpKind::Gt,
+        ),
+        (
+            DeclId::new(10_565),
+            DeclId::new(10_566),
+            DeclId::new(10_567),
+            DeclId::new(10_568),
+            "math sum",
+            BinOpKind::Add,
+        ),
+        (
+            DeclId::new(10_569),
+            DeclId::new(10_570),
+            DeclId::new(10_571),
+            DeclId::new(10_572),
+            "math product",
+            BinOpKind::Mul,
         ),
     ] {
         let decl_names = HashMap::from([

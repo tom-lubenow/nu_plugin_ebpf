@@ -2191,23 +2191,10 @@ impl<'a> HirToMirLowering<'a> {
         };
         let known_len = Self::numeric_list_known_len(&input_meta);
         let min_len = input_meta.list_min_len.or(known_len);
-        if matches!(cmd_name, "math min" | "math max") {
-            if min_len.unwrap_or(0) == 0 {
-                return Err(CompileError::UnsupportedInstruction(format!(
-                    "{cmd_name} requires a stack-backed numeric list with proven non-empty length in eBPF"
-                )));
-            }
-        } else {
-            let Some(known_len) = known_len else {
-                return Err(CompileError::UnsupportedInstruction(format!(
-                    "{cmd_name} requires a stack-backed numeric list with known non-empty length in eBPF"
-                )));
-            };
-            if known_len == 0 {
-                return Err(CompileError::UnsupportedInstruction(format!(
-                    "{cmd_name} requires a non-empty stack-backed numeric list in eBPF"
-                )));
-            }
+        if min_len.unwrap_or(0) == 0 {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires a stack-backed numeric list with proven non-empty length in eBPF"
+            )));
         }
 
         let result_vreg = if src_dst_had_value {

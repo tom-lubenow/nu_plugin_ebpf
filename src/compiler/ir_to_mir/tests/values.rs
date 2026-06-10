@@ -19184,7 +19184,7 @@ fn test_lower_math_sum_on_empty_numeric_list_is_rejected() {
 
     assert!(
         err.to_string()
-            .contains("math sum requires a non-empty stack-backed numeric list"),
+            .contains("math sum requires a stack-backed numeric list with proven non-empty length"),
         "unexpected error: {err}"
     );
 }
