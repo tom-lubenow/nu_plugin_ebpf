@@ -2184,6 +2184,20 @@ impl<'a> HirToMirLowering<'a> {
             );
         }
 
+        if let Some(input_reg) = input_reg
+            && self.lower_typed_fixed_array_math_reduce(
+                cmd_name,
+                src_dst,
+                dst_vreg,
+                src_dst_had_value,
+                input_reg,
+                input_vreg,
+                &input_meta,
+            )?
+        {
+            return Ok(());
+        }
+
         let Some((_slot, max_len)) = input_meta.list_buffer else {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "{cmd_name} requires a stack-backed numeric list input in eBPF"
@@ -2380,6 +2394,182 @@ impl<'a> HirToMirLowering<'a> {
             }
         }
         Ok(())
+    }
+
+    fn lower_typed_fixed_array_math_reduce(
+        &mut self,
+        cmd_name: &str,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+        input_reg: RegId,
+        input_vreg: VReg,
+        input_meta: &RegMetadata,
+    ) -> Result<bool, CompileError> {
+        let Some((input_vreg, elem_ty, array_len)) =
+            self.typed_fixed_array_numeric_list_input(cmd_name, input_reg, input_vreg, input_meta)?
+        else {
+            return Ok(false);
+        };
+        if array_len == 0 {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires a typed fixed-array with proven non-empty length in eBPF"
+            )));
+        }
+
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+        let acc_slot = self.func.alloc_stack_slot(8, 8, StackSlotKind::Local);
+        self.record_stack_slot_type(acc_slot, MirType::I64);
+
+        match cmd_name {
+            "math product" | "math sum" => {
+                let initial_value = if cmd_name == "math product" { 1 } else { 0 };
+                self.emit(MirInst::StoreSlot {
+                    slot: acc_slot,
+                    offset: 0,
+                    val: MirValue::Const(initial_value),
+                    ty: MirType::I64,
+                });
+            }
+            "math max" | "math min" => {
+                let first_vreg = self
+                    .emit_typed_fixed_array_numeric_list_item(cmd_name, input_vreg, &elem_ty, 0)?;
+                self.emit(MirInst::StoreSlot {
+                    slot: acc_slot,
+                    offset: 0,
+                    val: MirValue::VReg(first_vreg),
+                    ty: MirType::I64,
+                });
+            }
+            _ => unreachable!("validated math reducer command"),
+        }
+
+        let start_index = if matches!(cmd_name, "math max" | "math min") {
+            1
+        } else {
+            0
+        };
+        if start_index < array_len {
+            let continuation_block = self.func.alloc_block();
+            for i in start_index..array_len {
+                let reduce_block = self.func.alloc_block();
+                let next_block = if i + 1 == array_len {
+                    continuation_block
+                } else {
+                    self.func.alloc_block()
+                };
+
+                self.terminate(MirInst::Jump {
+                    target: reduce_block,
+                });
+                self.current_block = reduce_block;
+
+                let item_vreg = self
+                    .emit_typed_fixed_array_numeric_list_item(cmd_name, input_vreg, &elem_ty, i)?;
+                let current_vreg = self.func.alloc_vreg();
+                self.emit(MirInst::LoadSlot {
+                    dst: current_vreg,
+                    slot: acc_slot,
+                    offset: 0,
+                    ty: MirType::I64,
+                });
+                self.vreg_type_hints.insert(current_vreg, MirType::I64);
+
+                match cmd_name {
+                    "math product" | "math sum" => {
+                        let next_vreg = self.func.alloc_vreg();
+                        self.emit(MirInst::BinOp {
+                            dst: next_vreg,
+                            op: if cmd_name == "math product" {
+                                BinOpKind::Mul
+                            } else {
+                                BinOpKind::Add
+                            },
+                            lhs: MirValue::VReg(current_vreg),
+                            rhs: MirValue::VReg(item_vreg),
+                        });
+                        self.vreg_type_hints.insert(next_vreg, MirType::I64);
+                        self.emit(MirInst::StoreSlot {
+                            slot: acc_slot,
+                            offset: 0,
+                            val: MirValue::VReg(next_vreg),
+                            ty: MirType::I64,
+                        });
+                        self.terminate(MirInst::Jump { target: next_block });
+                    }
+                    "math max" | "math min" => {
+                        let update_cond = self.func.alloc_vreg();
+                        self.emit(MirInst::BinOp {
+                            dst: update_cond,
+                            op: if cmd_name == "math max" {
+                                BinOpKind::Gt
+                            } else {
+                                BinOpKind::Lt
+                            },
+                            lhs: MirValue::VReg(item_vreg),
+                            rhs: MirValue::VReg(current_vreg),
+                        });
+                        self.vreg_type_hints.insert(update_cond, MirType::Bool);
+                        let update_block = self.func.alloc_block();
+                        self.terminate(MirInst::Branch {
+                            cond: update_cond,
+                            if_true: update_block,
+                            if_false: next_block,
+                        });
+
+                        self.current_block = update_block;
+                        self.emit(MirInst::StoreSlot {
+                            slot: acc_slot,
+                            offset: 0,
+                            val: MirValue::VReg(item_vreg),
+                            ty: MirType::I64,
+                        });
+                        self.terminate(MirInst::Jump { target: next_block });
+                    }
+                    _ => unreachable!("validated math reducer command"),
+                }
+
+                self.current_block = next_block;
+            }
+            self.current_block = continuation_block;
+        }
+
+        self.emit(MirInst::LoadSlot {
+            dst: result_vreg,
+            slot: acc_slot,
+            offset: 0,
+            ty: MirType::I64,
+        });
+
+        self.reset_call_result_metadata(src_dst);
+        let out_meta = self.get_or_create_metadata(src_dst);
+        out_meta.field_type = Some(MirType::I64);
+        self.vreg_type_hints.insert(result_vreg, MirType::I64);
+
+        if let Some(nu_protocol::Value::List { vals, .. }) = &input_meta.constant_value {
+            let ints = vals.iter().filter_map(|val| match val {
+                nu_protocol::Value::Int { val, .. } => Some(*val),
+                _ => None,
+            });
+            let result = match cmd_name {
+                "math max" => ints.max(),
+                "math min" => ints.min(),
+                "math product" => Some(ints.product::<i64>()),
+                "math sum" => Some(ints.sum::<i64>()),
+                _ => unreachable!("validated math reducer command"),
+            };
+            if let Some(result) = result {
+                self.set_reg_constant_value(
+                    src_dst,
+                    Some(nu_protocol::Value::int(result, Span::unknown())),
+                );
+            }
+        }
+        Ok(true)
     }
 
     fn numeric_value_as_f64(value: &nu_protocol::Value) -> f64 {

@@ -1,7 +1,7 @@
 use super::*;
 
 impl<'a> HirToMirLowering<'a> {
-    fn typed_fixed_array_numeric_list_input(
+    pub(super) fn typed_fixed_array_numeric_list_input(
         &mut self,
         cmd_name: &str,
         input_reg: RegId,

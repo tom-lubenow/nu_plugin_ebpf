@@ -10432,6 +10432,140 @@ fn test_lower_global_define_type_u32_array_uniq_math_reducers_use_non_empty_min_
 }
 
 #[test]
+fn test_lower_global_define_type_u32_array_math_reducers() {
+    for (define_decl, global_get_decl, reducer_decl, reducer_name, expected_op) in [
+        (
+            DeclId::new(10_900),
+            DeclId::new(10_901),
+            DeclId::new(10_902),
+            "math min",
+            BinOpKind::Lt,
+        ),
+        (
+            DeclId::new(10_903),
+            DeclId::new(10_904),
+            DeclId::new(10_905),
+            "math max",
+            BinOpKind::Gt,
+        ),
+        (
+            DeclId::new(10_906),
+            DeclId::new(10_907),
+            DeclId::new(10_908),
+            "math sum",
+            BinOpKind::Add,
+        ),
+        (
+            DeclId::new(10_909),
+            DeclId::new(10_910),
+            DeclId::new(10_911),
+            "math product",
+            BinOpKind::Mul,
+        ),
+    ] {
+        let decl_names = HashMap::from([
+            (define_decl, "global-define".to_string()),
+            (global_get_decl, "global-get".to_string()),
+            (reducer_decl, reducer_name.to_string()),
+        ]);
+
+        let func = HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(0),
+                        lit: HirLiteral::String("ports".into()),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::String("array{u32:2}".into()),
+                    },
+                    HirStmt::Call {
+                        decl_id: define_decl,
+                        src_dst: RegId::new(2),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(0)],
+                            named: vec![(b"type".to_vec(), RegId::new(1))],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::Call {
+                        decl_id: global_get_decl,
+                        src_dst: RegId::new(3),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(0)],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::Call {
+                        decl_id: reducer_decl,
+                        src_dst: RegId::new(4),
+                        args: HirCallArgs {
+                            pipeline_input: Some(RegId::new(3)),
+                            ..HirCallArgs::default()
+                        },
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(4) },
+            }],
+            entry: HirBlockId(0),
+            spans: Vec::new(),
+            ast: Vec::new(),
+            comments: Vec::new(),
+            register_count: 5,
+            file_count: 0,
+        };
+        let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("global-define --type array{{u32:N}} | {reducer_name} should lower: {err}")
+        });
+        let instructions = result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .collect::<Vec<_>>();
+
+        assert!(
+            instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::Load {
+                    offset: 0,
+                    ty: MirType::U32,
+                    ..
+                }
+            )),
+            "expected {reducer_name} to read typed fixed-array u32 elements"
+        );
+        assert!(
+            instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op,
+                    ..
+                } if *op == expected_op
+            )),
+            "expected {reducer_name} to lower with {expected_op:?}"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("typed u32 array consumed by {reducer_name} should compile: {err}")
+            });
+    }
+}
+
+#[test]
 fn test_lower_global_define_type_list_int_uses_named_bss_global() {
     let define_decl = DeclId::new(413);
     let get_decl = DeclId::new(414);
