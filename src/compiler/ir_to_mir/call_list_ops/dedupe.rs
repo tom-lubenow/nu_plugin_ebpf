@@ -196,7 +196,7 @@ impl<'a> HirToMirLowering<'a> {
         Ok(())
     }
 
-    fn typed_fixed_array_uniq_scalar_type(ty: &MirType) -> bool {
+    pub(super) fn typed_fixed_array_numeric_list_scalar_type(ty: &MirType) -> bool {
         matches!(
             ty,
             MirType::I8
@@ -209,19 +209,20 @@ impl<'a> HirToMirLowering<'a> {
         )
     }
 
-    fn emit_typed_fixed_array_numeric_list_item(
+    pub(super) fn emit_typed_fixed_array_numeric_list_item(
         &mut self,
+        cmd_name: &str,
         input_vreg: VReg,
         elem_ty: &MirType,
         index: usize,
     ) -> Result<VReg, CompileError> {
         let elem_size = elem_ty.size();
         let offset = index.checked_mul(elem_size).ok_or_else(|| {
-            CompileError::UnsupportedInstruction(
-                "uniq typed fixed-array item offset overflowed in eBPF".into(),
-            )
+            CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} typed fixed-array item offset overflowed in eBPF"
+            ))
         })?;
-        let offset = Self::checked_mir_offset(offset, "typed fixed-array uniq item")?;
+        let offset = Self::checked_mir_offset(offset, "typed fixed-array numeric-list item")?;
 
         let raw_vreg = self.func.alloc_vreg();
         self.emit(MirInst::Load {
@@ -240,7 +241,7 @@ impl<'a> HirToMirLowering<'a> {
                 .coerce_scalar_assignment_value(raw_vreg, elem_ty, &MirType::I64)
                 .ok_or_else(|| {
                     CompileError::UnsupportedInstruction(format!(
-                        "uniq could not widen typed fixed-array element type {:?} to i64 in eBPF",
+                        "{cmd_name} could not widen typed fixed-array element type {:?} to i64 in eBPF",
                         elem_ty
                     ))
                 });
@@ -286,7 +287,7 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(false);
         };
 
-        if !Self::typed_fixed_array_uniq_scalar_type(&elem_ty) {
+        if !Self::typed_fixed_array_numeric_list_scalar_type(&elem_ty) {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "uniq on typed fixed arrays currently supports only <=32-bit unsigned or signed integer scalar elements in eBPF, got {:?}",
                 elem_ty
@@ -335,8 +336,12 @@ impl<'a> HirToMirLowering<'a> {
             });
             self.current_block = consider_block;
 
-            let item_vreg =
-                self.emit_typed_fixed_array_numeric_list_item(input_vreg, &elem_ty, source_index)?;
+            let item_vreg = self.emit_typed_fixed_array_numeric_list_item(
+                "uniq",
+                input_vreg,
+                &elem_ty,
+                source_index,
+            )?;
 
             let push_block = self.func.alloc_block();
             if source_index == 0 {
@@ -349,6 +354,7 @@ impl<'a> HirToMirLowering<'a> {
                         self.func.alloc_block()
                     };
                     let prior_vreg = self.emit_typed_fixed_array_numeric_list_item(
+                        "uniq",
                         input_vreg,
                         &elem_ty,
                         prior_index,

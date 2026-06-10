@@ -73,6 +73,16 @@ impl<'a> HirToMirLowering<'a> {
                 "compact requires a pipeline input with tracked metadata in eBPF".into(),
             )
         })?;
+        if self.lower_typed_fixed_array_compact_identity(
+            src_dst,
+            dst_vreg,
+            src_dst_had_value,
+            input_reg,
+            input_vreg,
+            &input_meta,
+        )? {
+            return Ok(());
+        }
         if input_meta.list_buffer.is_none() {
             return Err(CompileError::UnsupportedInstruction(
                 "compact requires a stack-backed numeric list input in eBPF".into(),
@@ -90,6 +100,80 @@ impl<'a> HirToMirLowering<'a> {
         });
         self.propagate_passthrough_reg_metadata(src_dst, result_vreg, input_reg, input_vreg);
         Ok(())
+    }
+
+    fn lower_typed_fixed_array_compact_identity(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+        input_reg: RegId,
+        mut input_vreg: VReg,
+        input_meta: &RegMetadata,
+    ) -> Result<bool, CompileError> {
+        if matches!(
+            input_meta.constant_value,
+            Some(nu_protocol::Value::List { .. })
+        ) && !matches!(
+            input_meta.annotated_semantics,
+            Some(AnnotatedValueSemantics::FixedArray { .. })
+        ) {
+            return Ok(false);
+        }
+
+        let Some(mut base_runtime_ty) = self.typed_value_runtime_type(input_reg, input_vreg) else {
+            return Ok(false);
+        };
+        let Some(elem_ty) =
+            Self::aggregate_call_value_type(&base_runtime_ty).and_then(|ty| match ty {
+                MirType::Array { elem, .. } => Some(elem.as_ref().clone()),
+                _ => None,
+            })
+        else {
+            return Ok(false);
+        };
+        if !Self::typed_fixed_array_numeric_list_scalar_type(&elem_ty) {
+            return Ok(false);
+        }
+
+        if !matches!(base_runtime_ty, MirType::Ptr { .. })
+            && Self::aggregate_call_value_type(&base_runtime_ty).is_some()
+        {
+            input_vreg = self.materialized_metadata_aggregate_vreg(input_reg, input_vreg)?;
+            base_runtime_ty = self
+                .typed_value_runtime_type(input_reg, input_vreg)
+                .ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(
+                        "compact requires typed fixed-array input in eBPF".into(),
+                    )
+                })?;
+        }
+
+        let MirType::Ptr { address_space, .. } = base_runtime_ty else {
+            return Err(CompileError::UnsupportedInstruction(
+                "compact requires typed fixed-array pointer input in eBPF".into(),
+            ));
+        };
+        if !matches!(
+            address_space,
+            AddressSpace::Stack | AddressSpace::Map | AddressSpace::Context
+        ) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "compact on typed fixed-array pointers in {address_space:?} address space is not yet supported in eBPF"
+            )));
+        }
+
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+        self.emit(MirInst::Copy {
+            dst: result_vreg,
+            src: MirValue::VReg(input_vreg),
+        });
+        self.propagate_passthrough_reg_metadata(src_dst, result_vreg, input_reg, input_vreg);
+        Ok(true)
     }
 
     fn compact_column_names(&self) -> Result<Vec<String>, CompileError> {
