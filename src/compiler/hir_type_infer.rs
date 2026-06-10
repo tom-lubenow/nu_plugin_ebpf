@@ -393,7 +393,15 @@ impl<'a> HirTypeInference<'a> {
                         Comparison::LessThan
                         | Comparison::LessThanOrEqual
                         | Comparison::GreaterThan
-                        | Comparison::GreaterThanOrEqual,
+                        | Comparison::GreaterThanOrEqual
+                        | Comparison::StartsWith
+                        | Comparison::NotStartsWith
+                        | Comparison::EndsWith
+                        | Comparison::NotEndsWith
+                        | Comparison::In
+                        | Comparison::NotIn
+                        | Comparison::Has
+                        | Comparison::NotHas,
                     ) if hm_type_is_stack_string(&self.substitution.apply(&lhs_ty))
                         || hm_type_is_stack_string(&self.substitution.apply(&rhs_ty)) => {}
                     Operator::Comparison(_) => {
