@@ -1350,6 +1350,19 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(());
         }
 
+        if let Some(input_meta) = input_meta.as_ref()
+            && let Some(input_reg) = input_reg
+            && self.lower_typed_fixed_array_math_abs(
+                src_dst,
+                result_vreg,
+                input_reg,
+                input_vreg,
+                input_meta,
+            )?
+        {
+            return Ok(());
+        }
+
         if let Some(input) = input_meta.as_ref().and_then(|meta| {
             meta.literal_int
                 .or_else(|| match meta.constant_value.as_ref() {
@@ -1473,6 +1486,102 @@ impl<'a> HirToMirLowering<'a> {
         out_meta.field_type = Some(output_ty.clone());
         self.vreg_type_hints.insert(result_vreg, output_ty);
         Ok(())
+    }
+
+    fn lower_typed_fixed_array_math_abs(
+        &mut self,
+        src_dst: RegId,
+        result_vreg: VReg,
+        input_reg: RegId,
+        input_vreg: VReg,
+        input_meta: &RegMetadata,
+    ) -> Result<bool, CompileError> {
+        let Some((input_vreg, elem_ty, array_len)) = self
+            .typed_fixed_array_numeric_list_input("math abs", input_reg, input_vreg, input_meta)?
+        else {
+            return Ok(false);
+        };
+
+        let (out_slot, out_ty) = self.create_stack_numeric_list_result(result_vreg, array_len);
+        let signed_items = matches!(
+            elem_ty,
+            MirType::I8 | MirType::I16 | MirType::I32 | MirType::I64
+        );
+
+        if array_len > 0 {
+            let continuation_block = self.func.alloc_block();
+            for index in 0..array_len {
+                let load_block = self.func.alloc_block();
+                let next_block = if index + 1 == array_len {
+                    continuation_block
+                } else {
+                    self.func.alloc_block()
+                };
+
+                self.terminate(MirInst::Jump { target: load_block });
+                self.current_block = load_block;
+
+                let item_vreg = self.emit_typed_fixed_array_numeric_list_item(
+                    "math abs", input_vreg, &elem_ty, index,
+                )?;
+                if signed_items {
+                    let negative_block = self.func.alloc_block();
+                    let non_negative_block = self.func.alloc_block();
+                    let is_negative_vreg = self.func.alloc_vreg();
+                    self.emit(MirInst::BinOp {
+                        dst: is_negative_vreg,
+                        op: BinOpKind::Lt,
+                        lhs: MirValue::VReg(item_vreg),
+                        rhs: MirValue::Const(0),
+                    });
+                    self.vreg_type_hints.insert(is_negative_vreg, MirType::Bool);
+                    self.terminate(MirInst::Branch {
+                        cond: is_negative_vreg,
+                        if_true: negative_block,
+                        if_false: non_negative_block,
+                    });
+
+                    self.current_block = negative_block;
+                    let abs_vreg = self.func.alloc_vreg();
+                    self.emit(MirInst::UnaryOp {
+                        dst: abs_vreg,
+                        op: UnaryOpKind::Neg,
+                        src: MirValue::VReg(item_vreg),
+                    });
+                    self.vreg_type_hints.insert(abs_vreg, MirType::I64);
+                    self.emit(MirInst::ListPush {
+                        list: result_vreg,
+                        item: abs_vreg,
+                    });
+                    self.terminate(MirInst::Jump { target: next_block });
+
+                    self.current_block = non_negative_block;
+                    self.emit(MirInst::ListPush {
+                        list: result_vreg,
+                        item: item_vreg,
+                    });
+                    self.terminate(MirInst::Jump { target: next_block });
+                } else {
+                    self.emit(MirInst::ListPush {
+                        list: result_vreg,
+                        item: item_vreg,
+                    });
+                    self.terminate(MirInst::Jump { target: next_block });
+                }
+
+                self.current_block = next_block;
+            }
+            self.current_block = continuation_block;
+        }
+
+        self.install_stack_numeric_list_result_metadata(
+            src_dst,
+            out_slot,
+            out_ty,
+            array_len,
+            Some(array_len),
+        );
+        Ok(true)
     }
 
     pub(in crate::compiler::ir_to_mir) fn lower_math_mode(
