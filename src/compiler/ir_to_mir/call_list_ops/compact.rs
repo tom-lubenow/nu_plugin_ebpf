@@ -132,7 +132,7 @@ impl<'a> HirToMirLowering<'a> {
         else {
             return Ok(false);
         };
-        if !Self::typed_fixed_array_numeric_list_scalar_type(&elem_ty) {
+        if !Self::typed_fixed_array_compact_identity_scalar_type(&elem_ty) {
             return Ok(false);
         }
 
@@ -174,6 +174,20 @@ impl<'a> HirToMirLowering<'a> {
         });
         self.propagate_passthrough_reg_metadata(src_dst, result_vreg, input_reg, input_vreg);
         Ok(true)
+    }
+
+    fn typed_fixed_array_compact_identity_scalar_type(ty: &MirType) -> bool {
+        matches!(
+            ty,
+            MirType::I8
+                | MirType::I16
+                | MirType::I32
+                | MirType::I64
+                | MirType::U8
+                | MirType::U16
+                | MirType::U32
+                | MirType::U64
+        )
     }
 
     fn compact_column_names(&self) -> Result<Vec<String>, CompileError> {
