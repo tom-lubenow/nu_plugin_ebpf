@@ -105,7 +105,7 @@ const VERIFIER_DIFF_FIXTURES_1751_1812 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "math sum requires a non-empty stack-backed numeric list"
+        error_contains: "math sum requires a stack-backed numeric list with proven non-empty length"
     }
     {
         name: "core-scalar-math-abs"
