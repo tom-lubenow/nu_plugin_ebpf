@@ -8,6 +8,9 @@ impl<'a> HirToMirLowering<'a> {
         mut input_vreg: VReg,
         input_meta: &RegMetadata,
     ) -> Result<Option<(VReg, MirType, usize)>, CompileError> {
+        if input_meta.list_buffer.is_some() {
+            return Ok(None);
+        }
         if matches!(
             input_meta.constant_value,
             Some(nu_protocol::Value::List { .. })

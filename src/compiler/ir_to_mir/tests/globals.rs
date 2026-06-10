@@ -11174,6 +11174,153 @@ fn test_lower_global_define_type_u32_array_bits_not_materializes_numeric_list() 
 }
 
 #[test]
+fn test_lower_global_define_type_u32_array_bits_shift_materializes_numeric_list() {
+    for (offset, command_name, expected_op) in [
+        (0, "bits shl", BinOpKind::Shl),
+        (1, "bits shr", BinOpKind::Shr),
+    ] {
+        let define_decl = DeclId::new(10_931 + offset);
+        let global_get_decl = DeclId::new(10_933 + offset);
+        let bits_decl = DeclId::new(10_935 + offset);
+        let length_decl = DeclId::new(10_937 + offset);
+        let decl_names = HashMap::from([
+            (define_decl, "global-define".to_string()),
+            (global_get_decl, "global-get".to_string()),
+            (bits_decl, command_name.to_string()),
+            (length_decl, "length".to_string()),
+        ]);
+
+        let func = HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(0),
+                        lit: HirLiteral::String("ports".into()),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(1),
+                        lit: HirLiteral::String("array{u32:2}".into()),
+                    },
+                    HirStmt::Call {
+                        decl_id: define_decl,
+                        src_dst: RegId::new(2),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(0)],
+                            named: vec![(b"type".to_vec(), RegId::new(1))],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::Call {
+                        decl_id: global_get_decl,
+                        src_dst: RegId::new(3),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(0)],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(4),
+                        lit: HirLiteral::Int(1),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(5),
+                        lit: HirLiteral::Int(4),
+                    },
+                    HirStmt::Call {
+                        decl_id: bits_decl,
+                        src_dst: RegId::new(6),
+                        args: HirCallArgs {
+                            positional: vec![RegId::new(4)],
+                            named: vec![(b"number-bytes".to_vec(), RegId::new(5))],
+                            pipeline_input: Some(RegId::new(3)),
+                            ..HirCallArgs::default()
+                        },
+                    },
+                    HirStmt::Call {
+                        decl_id: length_decl,
+                        src_dst: RegId::new(7),
+                        args: HirCallArgs {
+                            pipeline_input: Some(RegId::new(6)),
+                            ..HirCallArgs::default()
+                        },
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(7) },
+            }],
+            entry: HirBlockId(0),
+            spans: Vec::new(),
+            ast: Vec::new(),
+            comments: Vec::new(),
+            register_count: 8,
+            file_count: 0,
+        };
+        let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+        let result = lower_hir_to_mir_with_hints(
+            &hir,
+            None,
+            &decl_names,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|err| {
+            panic!("global-define --type array{{u32:N}} | {command_name} should lower: {err}")
+        });
+        let instructions = result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .collect::<Vec<_>>();
+
+        assert!(
+            instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::Load {
+                    offset: 0,
+                    ty: MirType::U32,
+                    ..
+                }
+            )),
+            "expected {command_name} to read typed fixed-array u32 elements"
+        );
+        assert!(
+            instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op,
+                    ..
+                } if *op == expected_op
+            )),
+            "expected {command_name} to transform fixed-array values"
+        );
+        assert!(
+            instructions.iter().any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op: BinOpKind::And,
+                    ..
+                }
+            )),
+            "expected {command_name} --number-bytes to apply the byte-width mask"
+        );
+        assert!(
+            instructions
+                .iter()
+                .any(|inst| matches!(inst, MirInst::ListPush { .. })),
+            "expected {command_name} to materialize a stack numeric list"
+        );
+        compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+            .unwrap_or_else(|err| {
+                panic!("typed u32 array {command_name} consumed by length should compile: {err}")
+            });
+    }
+}
+
+#[test]
 fn test_lower_global_define_type_list_int_uses_named_bss_global() {
     let define_decl = DeclId::new(413);
     let get_decl = DeclId::new(414);

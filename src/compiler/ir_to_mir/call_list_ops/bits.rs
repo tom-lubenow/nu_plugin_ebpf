@@ -1677,59 +1677,27 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(());
         }
 
-        if let Some(input_meta) = input_meta.as_ref()
-            && input_meta.list_buffer.is_some()
-        {
-            if self.bits_shift_runtime_auto_zero_count(cmd_name)? {
-                self.emit(MirInst::Copy {
-                    dst: result_vreg,
-                    src: MirValue::VReg(input_vreg),
-                });
-                self.propagate_passthrough_reg_metadata(
-                    src_dst,
-                    result_vreg,
-                    input_reg,
-                    input_vreg,
-                );
-                return Ok(());
-            }
-            if let Some(count) = self.bits_shift_runtime_auto_right_count(cmd_name)? {
-                return self.lower_bits_shift_runtime_list(
-                    cmd_name,
-                    src_dst,
-                    input_vreg,
-                    result_vreg,
-                    input_meta,
-                    BitsShiftRuntimeTransform::AutoRight { count },
-                );
-            }
-            let spec = self.bits_shift_spec(cmd_name, None)?;
-            if spec.mode == BitsShiftMode::UnsignedI64 && cmd_name == "bits shl" {
-                return Err(CompileError::UnsupportedInstruction(format!(
-                    "{cmd_name} unsigned --number-bytes 8 requires compile-time known integer input or runtime u8, u16, or u32 scalar input in eBPF; use --signed --number-bytes 8 for runtime list input"
-                )));
-            }
-            let op = Self::bits_shift_op(cmd_name, spec.mode);
-            let rhs_value = MirValue::Const(spec.count);
-            if spec.mode == BitsShiftMode::SignedI64 {
-                return self.lower_bits_binary_runtime_list(
-                    cmd_name,
-                    src_dst,
-                    input_vreg,
-                    result_vreg,
-                    input_meta,
-                    op,
-                    rhs_value,
-                );
-            }
-            return self.lower_bits_shift_runtime_list(
+        if let Some(input_meta) = input_meta.as_ref() {
+            if self.lower_typed_fixed_array_bits_shift(
                 cmd_name,
                 src_dst,
+                input_reg,
                 input_vreg,
                 result_vreg,
                 input_meta,
-                BitsShiftRuntimeTransform::Spec(spec),
-            );
+                MAX_BITS_STACK_LIST_CAPACITY,
+            )? {
+                return Ok(());
+            }
+            if input_meta.list_buffer.is_some() {
+                return self.lower_bits_shift_runtime_list_input(
+                    cmd_name,
+                    src_dst,
+                    input_vreg,
+                    result_vreg,
+                    input_meta,
+                );
+            }
         }
 
         self.validate_bits_integer_operand_optional_metadata(
@@ -1806,6 +1774,41 @@ impl<'a> HirToMirLowering<'a> {
         }
         self.vreg_type_hints.insert(result_vreg, MirType::I64);
         Ok(())
+    }
+
+    fn lower_typed_fixed_array_bits_shift(
+        &mut self,
+        cmd_name: &str,
+        src_dst: RegId,
+        input_reg: RegId,
+        input_vreg: VReg,
+        result_vreg: VReg,
+        input_meta: &RegMetadata,
+        max_bits_list_len: usize,
+    ) -> Result<bool, CompileError> {
+        let Some((input_vreg, elem_ty, array_len)) =
+            self.typed_fixed_array_numeric_list_input(cmd_name, input_reg, input_vreg, input_meta)?
+        else {
+            return Ok(false);
+        };
+        if array_len > max_bits_list_len {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} supports typed fixed-arrays with length <= {max_bits_list_len} in eBPF"
+            )));
+        }
+
+        let (materialized_vreg, materialized_meta) = self
+            .materialize_typed_fixed_array_numeric_list(
+                cmd_name, input_vreg, &elem_ty, array_len,
+            )?;
+        self.lower_bits_shift_runtime_list_input(
+            cmd_name,
+            src_dst,
+            materialized_vreg,
+            result_vreg,
+            &materialized_meta,
+        )?;
+        Ok(true)
     }
 
     fn emit_bits_shift_value(
@@ -3525,6 +3528,94 @@ impl<'a> HirToMirLowering<'a> {
         self.install_stack_numeric_list_result_metadata(
             src_dst, out_slot, out_ty, max_len, known_len,
         );
+        Ok(())
+    }
+
+    fn lower_bits_shift_runtime_list_input(
+        &mut self,
+        cmd_name: &str,
+        src_dst: RegId,
+        input_vreg: VReg,
+        result_vreg: VReg,
+        input_meta: &RegMetadata,
+    ) -> Result<(), CompileError> {
+        if self.bits_shift_runtime_auto_zero_count(cmd_name)? {
+            self.emit(MirInst::Copy {
+                dst: result_vreg,
+                src: MirValue::VReg(input_vreg),
+            });
+            self.install_passthrough_stack_numeric_list_metadata(
+                cmd_name,
+                src_dst,
+                result_vreg,
+                input_vreg,
+                input_meta,
+            )?;
+            return Ok(());
+        }
+        if let Some(count) = self.bits_shift_runtime_auto_right_count(cmd_name)? {
+            return self.lower_bits_shift_runtime_list(
+                cmd_name,
+                src_dst,
+                input_vreg,
+                result_vreg,
+                input_meta,
+                BitsShiftRuntimeTransform::AutoRight { count },
+            );
+        }
+        let spec = self.bits_shift_spec(cmd_name, None)?;
+        if spec.mode == BitsShiftMode::UnsignedI64 && cmd_name == "bits shl" {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} unsigned --number-bytes 8 requires compile-time known integer input or runtime u8, u16, or u32 scalar input in eBPF; use --signed --number-bytes 8 for runtime list input"
+            )));
+        }
+        let op = Self::bits_shift_op(cmd_name, spec.mode);
+        let rhs_value = MirValue::Const(spec.count);
+        if spec.mode == BitsShiftMode::SignedI64 {
+            return self.lower_bits_binary_runtime_list(
+                cmd_name,
+                src_dst,
+                input_vreg,
+                result_vreg,
+                input_meta,
+                op,
+                rhs_value,
+            );
+        }
+        self.lower_bits_shift_runtime_list(
+            cmd_name,
+            src_dst,
+            input_vreg,
+            result_vreg,
+            input_meta,
+            BitsShiftRuntimeTransform::Spec(spec),
+        )
+    }
+
+    fn install_passthrough_stack_numeric_list_metadata(
+        &mut self,
+        cmd_name: &str,
+        src_dst: RegId,
+        result_vreg: VReg,
+        input_vreg: VReg,
+        input_meta: &RegMetadata,
+    ) -> Result<(), CompileError> {
+        let Some((out_slot, max_len)) = input_meta.list_buffer else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires a stack-backed integer list in eBPF"
+            )));
+        };
+        let out_ty = input_meta.field_type.clone().unwrap_or(MirType::Array {
+            elem: Box::new(MirType::I64),
+            len: max_len.saturating_add(1),
+        });
+        let known_len = Self::numeric_list_known_len(input_meta).map(|len| len.min(max_len));
+        self.install_stack_numeric_list_result_metadata(
+            src_dst, out_slot, out_ty, max_len, known_len,
+        );
+        if let Some(ty) = self.vreg_type_hints.get(&input_vreg).cloned() {
+            self.vreg_type_hints.insert(result_vreg, ty);
+        }
         Ok(())
     }
 
