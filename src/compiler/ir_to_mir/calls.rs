@@ -29,6 +29,127 @@ impl SeqNumericArg {
 }
 
 impl<'a> HirToMirLowering<'a> {
+    fn lower_fixed_binary_predicate(
+        &mut self,
+        cmd_name: &str,
+        src_dst: RegId,
+        result_vreg: VReg,
+        input_reg: RegId,
+        input_vreg: VReg,
+        pattern: &[u8],
+    ) -> Result<bool, CompileError> {
+        let input_meta = self.get_metadata(input_reg).cloned().ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires compiler-tracked binary input in eBPF"
+            ))
+        })?;
+        let Some(AnnotatedValueSemantics::Binary { len: input_len }) =
+            input_meta.annotated_semantics
+        else {
+            return Ok(false);
+        };
+
+        let input_ty = self
+            .typed_value_runtime_type(input_reg, input_vreg)
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "{cmd_name} requires typed fixed-size binary input in eBPF"
+                ))
+            })?;
+        let MirType::Ptr {
+            pointee,
+            address_space: AddressSpace::Stack | AddressSpace::Map | AddressSpace::Context,
+        } = input_ty
+        else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires stack/map/context-backed fixed-size binary input in eBPF"
+            )));
+        };
+        if pointee.byte_array_len() != Some(input_len) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires fixed-size binary input with matching byte-array layout in eBPF"
+            )));
+        }
+
+        let matched_const = if pattern.is_empty() {
+            Some(true)
+        } else if pattern.len() > input_len {
+            Some(false)
+        } else {
+            None
+        };
+        if let Some(matched) = matched_const {
+            self.emit(MirInst::Copy {
+                dst: result_vreg,
+                src: MirValue::Const(if matched { 1 } else { 0 }),
+            });
+        } else {
+            let start_offset = if cmd_name == "bytes starts-with" {
+                0
+            } else {
+                input_len - pattern.len()
+            };
+            let mut combined_match = None;
+            for (index, expected) in pattern.iter().enumerate() {
+                let byte_vreg = self.func.alloc_vreg();
+                self.emit(MirInst::Load {
+                    dst: byte_vreg,
+                    ptr: input_vreg,
+                    offset: Self::checked_mir_offset(
+                        start_offset + index,
+                        "fixed binary predicate byte",
+                    )?,
+                    ty: MirType::U8,
+                });
+                self.vreg_type_hints.insert(byte_vreg, MirType::U8);
+
+                let byte_matches = self.func.alloc_vreg();
+                self.emit(MirInst::BinOp {
+                    dst: byte_matches,
+                    op: BinOpKind::Eq,
+                    lhs: MirValue::VReg(byte_vreg),
+                    rhs: MirValue::Const(i64::from(*expected)),
+                });
+                self.vreg_type_hints.insert(byte_matches, MirType::Bool);
+
+                combined_match = Some(if let Some(prev) = combined_match {
+                    let next = if index + 1 == pattern.len() {
+                        result_vreg
+                    } else {
+                        self.func.alloc_vreg()
+                    };
+                    self.emit(MirInst::BinOp {
+                        dst: next,
+                        op: BinOpKind::And,
+                        lhs: MirValue::VReg(prev),
+                        rhs: MirValue::VReg(byte_matches),
+                    });
+                    self.vreg_type_hints.insert(next, MirType::Bool);
+                    next
+                } else {
+                    byte_matches
+                });
+            }
+            if combined_match != Some(result_vreg) {
+                let src = combined_match.ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "{cmd_name} fixed-size binary predicate had no bytes to compare in eBPF"
+                    ))
+                })?;
+                self.emit(MirInst::Copy {
+                    dst: result_vreg,
+                    src: MirValue::VReg(src),
+                });
+            }
+        }
+
+        self.reset_call_result_metadata(src_dst);
+        let out_meta = self.get_or_create_metadata(src_dst);
+        out_meta.field_type = Some(MirType::Bool);
+        self.vreg_type_hints.insert(result_vreg, MirType::Bool);
+        Ok(true)
+    }
+
     fn bytes_index_of_all_offsets(input: &[u8], pattern: &[u8], from_end: bool) -> Vec<i64> {
         if pattern.is_empty() || pattern.len() > input.len() {
             return Vec::new();
@@ -3921,14 +4042,6 @@ impl<'a> HirToMirLowering<'a> {
                     )));
                 }
 
-                let input_value = input_reg
-                    .and_then(|reg| self.get_metadata(reg))
-                    .and_then(|meta| meta.constant_value.as_ref().cloned())
-                    .ok_or_else(|| {
-                        CompileError::UnsupportedInstruction(format!(
-                            "{cmd_name} requires compile-time known binary or list<binary> input in eBPF"
-                        ))
-                    })?;
                 let (_, pattern_reg) = self.positional_args[0];
                 let pattern = self
                     .get_metadata(pattern_reg)
@@ -3941,6 +4054,9 @@ impl<'a> HirToMirLowering<'a> {
                             "{cmd_name} requires a compile-time known binary pattern in eBPF"
                         ))
                     })?;
+                let input_value = input_reg
+                    .and_then(|reg| self.get_metadata(reg))
+                    .and_then(|meta| meta.constant_value.as_ref().cloned());
 
                 let matches_input = |input: &[u8]| {
                     if cmd_name == "bytes starts-with" {
@@ -3951,23 +4067,24 @@ impl<'a> HirToMirLowering<'a> {
                 };
 
                 match input_value {
-                    nu_protocol::Value::Binary { val, .. } => {
-                        let matched = matches_input(&val);
-                        self.emit(MirInst::Copy {
-                            dst: result_vreg,
-                            src: MirValue::Const(if matched { 1 } else { 0 }),
-                        });
-                        self.reset_call_result_metadata(src_dst);
-                        let out_meta = self.get_or_create_metadata(src_dst);
-                        out_meta.field_type = Some(MirType::Bool);
-                        out_meta.constant_value = Some(nu_protocol::Value::bool(
-                            matched,
-                            nu_protocol::Span::unknown(),
-                        ));
-                        self.vreg_type_hints.insert(result_vreg, MirType::Bool);
-                    }
-                    nu_protocol::Value::List { vals, .. } => {
-                        let matched_values = vals
+                    Some(input_value) => match input_value {
+                        nu_protocol::Value::Binary { val, .. } => {
+                            let matched = matches_input(&val);
+                            self.emit(MirInst::Copy {
+                                dst: result_vreg,
+                                src: MirValue::Const(if matched { 1 } else { 0 }),
+                            });
+                            self.reset_call_result_metadata(src_dst);
+                            let out_meta = self.get_or_create_metadata(src_dst);
+                            out_meta.field_type = Some(MirType::Bool);
+                            out_meta.constant_value = Some(nu_protocol::Value::bool(
+                                matched,
+                                nu_protocol::Span::unknown(),
+                            ));
+                            self.vreg_type_hints.insert(result_vreg, MirType::Bool);
+                        }
+                        nu_protocol::Value::List { vals, .. } => {
+                            let matched_values = vals
                             .iter()
                             .enumerate()
                             .map(|(index, item)| {
@@ -3983,16 +4100,40 @@ impl<'a> HirToMirLowering<'a> {
                                 ))
                             })
                             .collect::<Result<Vec<_>, _>>()?;
-                        self.lower_constant_value(
+                            self.lower_constant_value(
+                                src_dst,
+                                &nu_protocol::Value::list(
+                                    matched_values,
+                                    nu_protocol::Span::unknown(),
+                                ),
+                            )?;
+                        }
+                        other => {
+                            return Err(CompileError::UnsupportedInstruction(format!(
+                                "{cmd_name} requires compile-time known binary or list<binary> input in eBPF; got {}",
+                                other.get_type()
+                            )));
+                        }
+                    },
+                    None => {
+                        let input_reg = input_reg.ok_or_else(|| {
+                            CompileError::UnsupportedInstruction(format!(
+                                "{cmd_name} requires binary input in eBPF"
+                            ))
+                        })?;
+                        let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
+                        if !self.lower_fixed_binary_predicate(
+                            &cmd_name,
                             src_dst,
-                            &nu_protocol::Value::list(matched_values, nu_protocol::Span::unknown()),
-                        )?;
-                    }
-                    other => {
-                        return Err(CompileError::UnsupportedInstruction(format!(
-                            "{cmd_name} requires compile-time known binary or list<binary> input in eBPF; got {}",
-                            other.get_type()
-                        )));
+                            result_vreg,
+                            input_reg,
+                            input_vreg,
+                            &pattern,
+                        )? {
+                            return Err(CompileError::UnsupportedInstruction(format!(
+                                "{cmd_name} requires compile-time known binary or list<binary> input in eBPF"
+                            )));
+                        }
                     }
                 }
             }
