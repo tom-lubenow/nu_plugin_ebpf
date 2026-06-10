@@ -187,6 +187,7 @@ impl<'a> HirToMirLowering<'a> {
                 | MirType::U16
                 | MirType::U32
                 | MirType::U64
+                | MirType::Bool
         )
     }
 
