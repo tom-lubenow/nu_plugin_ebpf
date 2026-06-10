@@ -595,6 +595,90 @@ impl<'a> HirToMirLowering<'a> {
         Ok(true)
     }
 
+    fn lower_fixed_binary_add(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+        input_reg: RegId,
+        input_vreg: VReg,
+        data: &[u8],
+        index: usize,
+        from_end: bool,
+    ) -> Result<bool, CompileError> {
+        let Some(input_len) = self.fixed_binary_input_len("bytes add", input_reg, input_vreg)?
+        else {
+            return Ok(false);
+        };
+        let out_len = input_len.checked_add(data.len()).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "bytes add fixed-size binary output length overflowed in eBPF".into(),
+            )
+        })?;
+        if out_len == 0 {
+            self.lower_compile_time_only_constant_value(
+                src_dst,
+                &nu_protocol::Value::binary(Vec::new(), Span::unknown()),
+            );
+            return Ok(true);
+        }
+
+        let insert_at = if from_end {
+            input_len.saturating_sub(index)
+        } else {
+            index.min(input_len)
+        };
+        let out_ty = MirType::Array {
+            elem: Box::new(MirType::U8),
+            len: out_len,
+        };
+        let out_slot = self
+            .func
+            .alloc_stack_slot(align_to_eight(out_len), 8, StackSlotKind::Local);
+        self.record_stack_slot_type(out_slot, out_ty.clone());
+
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+        self.emit(MirInst::Copy {
+            dst: result_vreg,
+            src: MirValue::StackSlot(out_slot),
+        });
+        self.vreg_type_hints.insert(
+            result_vreg,
+            MirType::Ptr {
+                pointee: Box::new(out_ty.clone()),
+                address_space: AddressSpace::Stack,
+            },
+        );
+
+        if insert_at > 0 {
+            self.emit_ptr_to_slot_copy(out_slot, 0, input_vreg, 0, insert_at)?;
+        }
+        for (offset, byte) in data.iter().copied().enumerate() {
+            let output_offset = Self::checked_byte_offset(insert_at, offset, "bytes add data")?;
+            self.emit(MirInst::StoreSlot {
+                slot: out_slot,
+                offset: Self::checked_mir_offset(output_offset, "bytes add data")?,
+                val: MirValue::Const(i64::from(byte)),
+                ty: MirType::U8,
+            });
+        }
+        let suffix_len = input_len.saturating_sub(insert_at);
+        if suffix_len > 0 {
+            let suffix_dst = Self::checked_byte_offset(insert_at, data.len(), "bytes add suffix")?;
+            self.emit_ptr_to_slot_copy(out_slot, suffix_dst, input_vreg, insert_at, suffix_len)?;
+        }
+
+        self.reset_call_result_metadata(src_dst);
+        let out_meta = self.get_or_create_metadata(src_dst);
+        out_meta.field_type = Some(out_ty);
+        out_meta.annotated_semantics = Some(AnnotatedValueSemantics::Binary { len: out_len });
+        Ok(true)
+    }
+
     fn bytes_add_output(input: &[u8], data: &[u8], index: i64, from_end: bool) -> Vec<u8> {
         let input_len = input.len();
         let index = index as usize;
@@ -5024,15 +5108,6 @@ impl<'a> HirToMirLowering<'a> {
                     ));
                 }
 
-                let input = input_reg
-                    .and_then(|reg| self.get_metadata(reg))
-                    .and_then(|meta| meta.constant_value.as_ref().cloned())
-                    .ok_or_else(|| {
-                        CompileError::UnsupportedInstruction(
-                            "bytes add requires compile-time known binary or list<binary> input in eBPF"
-                                .into(),
-                        )
-                    })?;
                 let (_, data_reg) = self.positional_args[0];
                 let data = self
                     .get_metadata(data_reg)
@@ -5069,17 +5144,25 @@ impl<'a> HirToMirLowering<'a> {
                         "bytes add --index requires a non-negative integer in eBPF".into(),
                     ));
                 }
+                let index = usize::try_from(index).map_err(|_| {
+                    CompileError::UnsupportedInstruction(
+                        "bytes add --index exceeds the supported eBPF index range".into(),
+                    )
+                })?;
 
+                let input = input_reg
+                    .and_then(|reg| self.get_metadata(reg))
+                    .and_then(|meta| meta.constant_value.as_ref().cloned());
                 match input {
-                    nu_protocol::Value::Binary { val, .. } => {
-                        let output = Self::bytes_add_output(&val, &data, index, from_end);
+                    Some(nu_protocol::Value::Binary { val, .. }) => {
+                        let output = Self::bytes_add_output(&val, &data, index as i64, from_end);
                         self.reset_call_result_metadata(src_dst);
                         self.lower_constant_value(
                             src_dst,
                             &nu_protocol::Value::binary(output, nu_protocol::Span::unknown()),
                         )?;
                     }
-                    nu_protocol::Value::List { vals, .. } => {
+                    Some(nu_protocol::Value::List { vals, .. }) => {
                         if vals.is_empty() && !self.current_call_result_metadata_only {
                             return Err(CompileError::UnsupportedInstruction(
                                 "bytes add requires a non-empty list<binary> result in eBPF".into(),
@@ -5096,7 +5179,7 @@ impl<'a> HirToMirLowering<'a> {
                                     item.get_type()
                                 )));
                             };
-                            let output = Self::bytes_add_output(val, &data, index, from_end);
+                            let output = Self::bytes_add_output(val, &data, index as i64, from_end);
                             if output.is_empty() {
                                 has_empty_output = true;
                             }
@@ -5132,11 +5215,34 @@ impl<'a> HirToMirLowering<'a> {
                             self.lower_constant_value(src_dst, &value)?;
                         }
                     }
-                    other => {
+                    Some(other) => {
                         return Err(CompileError::UnsupportedInstruction(format!(
                             "bytes add requires binary or list<binary> input in eBPF, got {}",
                             other.get_type()
                         )));
+                    }
+                    None => {
+                        let input_reg = input_reg.ok_or_else(|| {
+                            CompileError::UnsupportedInstruction(
+                                "bytes add requires binary input in eBPF".into(),
+                            )
+                        })?;
+                        let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
+                        if !self.lower_fixed_binary_add(
+                            src_dst,
+                            dst_vreg,
+                            src_dst_had_value,
+                            input_reg,
+                            input_vreg,
+                            &data,
+                            index,
+                            from_end,
+                        )? {
+                            return Err(CompileError::UnsupportedInstruction(
+                                "bytes add requires compile-time known binary or list<binary> input in eBPF"
+                                    .into(),
+                            ));
+                        }
                     }
                 }
             }
