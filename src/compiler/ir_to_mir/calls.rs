@@ -1713,6 +1713,238 @@ impl<'a> HirToMirLowering<'a> {
         Ok(true)
     }
 
+    fn lower_fixed_array_binary_replace(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+        input_reg: RegId,
+        mut input_vreg: VReg,
+        pattern: &[u8],
+        replacement: &[u8],
+        apply_all: bool,
+    ) -> Result<bool, CompileError> {
+        let Some(input_meta) = self.get_metadata(input_reg).cloned() else {
+            return Ok(false);
+        };
+        let Some(AnnotatedValueSemantics::FixedArray { elem, len }) =
+            input_meta.annotated_semantics.as_ref()
+        else {
+            return Ok(false);
+        };
+        let AnnotatedValueSemantics::Binary { len: elem_len } = elem.as_ref() else {
+            return Ok(false);
+        };
+        let array_len = *len;
+        let elem_len = *elem_len;
+        if pattern.len() != replacement.len() {
+            return Err(CompileError::UnsupportedInstruction(
+                "bytes replace on typed fixed-array binary input requires replacement length to equal pattern length in eBPF"
+                    .into(),
+            ));
+        }
+
+        let Some(mut base_runtime_ty) = self.typed_value_runtime_type(input_reg, input_vreg) else {
+            return Ok(false);
+        };
+        if !matches!(base_runtime_ty, MirType::Ptr { .. })
+            && matches!(base_runtime_ty, MirType::Array { .. })
+        {
+            input_vreg = self.materialized_metadata_aggregate_vreg(input_reg, input_vreg)?;
+            base_runtime_ty = self
+                .typed_value_runtime_type(input_reg, input_vreg)
+                .ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(
+                        "bytes replace requires typed fixed-array input in eBPF".into(),
+                    )
+                })?;
+        }
+
+        let MirType::Ptr {
+            pointee,
+            address_space,
+        } = base_runtime_ty
+        else {
+            return Err(CompileError::UnsupportedInstruction(
+                "bytes replace requires typed fixed-array pointer input in eBPF".into(),
+            ));
+        };
+        if !matches!(
+            address_space,
+            AddressSpace::Stack | AddressSpace::Map | AddressSpace::Context
+        ) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "bytes replace on typed fixed-array pointers in {address_space:?} address space is not yet supported in eBPF"
+            )));
+        }
+        let MirType::Array { elem: elem_ty, len } = pointee.as_ref() else {
+            return Ok(false);
+        };
+        if *len != array_len || elem_ty.byte_array_len() != Some(elem_len) {
+            return Err(CompileError::UnsupportedInstruction(
+                "bytes replace requires typed fixed-array binary input with matching byte-array layout in eBPF"
+                    .into(),
+            ));
+        }
+
+        let out_ty = MirType::Array {
+            elem: Box::new(elem_ty.as_ref().clone()),
+            len: array_len,
+        };
+        let out_size = out_ty.size();
+        if out_size == 0 {
+            let values = (0..array_len)
+                .map(|_| nu_protocol::Value::binary(Vec::new(), Span::unknown()))
+                .collect::<Vec<_>>();
+            self.lower_compile_time_list_transform_result(
+                src_dst,
+                &nu_protocol::Value::list(values, Span::unknown()),
+            )?;
+            return Ok(true);
+        }
+
+        let out_slot =
+            self.func
+                .alloc_stack_slot(align_to_eight(out_size), 8, StackSlotKind::Local);
+        self.record_stack_slot_type(out_slot, out_ty.clone());
+
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+        self.emit(MirInst::Copy {
+            dst: result_vreg,
+            src: MirValue::StackSlot(out_slot),
+        });
+        self.vreg_type_hints.insert(
+            result_vreg,
+            MirType::Ptr {
+                pointee: Box::new(out_ty.clone()),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        self.emit_ptr_to_slot_copy(out_slot, 0, input_vreg, 0, out_size)?;
+
+        if pattern.len() <= elem_len {
+            if array_len > MAX_FIXED_BINARY_ARRAY_RESULT_ITEMS {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "bytes replace typed fixed-array binary input exceeds replacement item capacity {MAX_FIXED_BINARY_ARRAY_RESULT_ITEMS} in eBPF"
+                )));
+            }
+            let probe_count = elem_len - pattern.len() + 1;
+            if probe_count > MAX_FIXED_BINARY_INDEX_OF_PROBES {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "bytes replace typed fixed-array binary element has {probe_count} candidate offsets; eBPF lowering supports at most {MAX_FIXED_BINARY_INDEX_OF_PROBES}"
+                )));
+            }
+            let last_offset = elem_len - pattern.len();
+            let elem_stride = elem_ty.size();
+
+            for item_index in 0..array_len {
+                let elem_base = item_index.checked_mul(elem_stride).ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(
+                        "bytes replace typed fixed-array element offset overflowed in eBPF".into(),
+                    )
+                })?;
+                let continuation_block = self.func.alloc_block();
+
+                if apply_all {
+                    let probe_blocks = (0..=last_offset)
+                        .map(|_| self.func.alloc_block())
+                        .collect::<Vec<_>>();
+                    self.terminate(MirInst::Jump {
+                        target: probe_blocks[0],
+                    });
+
+                    for offset in 0..=last_offset {
+                        self.current_block = probe_blocks[offset];
+                        let found_block = self.func.alloc_block();
+                        let next_probe = (offset < last_offset).then(|| probe_blocks[offset + 1]);
+                        let skip_next = offset + pattern.len();
+                        let skip_probe =
+                            (skip_next <= last_offset).then(|| probe_blocks[skip_next]);
+                        let input_offset = Self::checked_byte_offset(
+                            elem_base,
+                            offset,
+                            "fixed binary array replace byte",
+                        )?;
+
+                        let candidate = self.lower_fixed_binary_pattern_match(
+                            input_vreg,
+                            input_offset,
+                            pattern,
+                            "fixed binary array replace byte",
+                        )?;
+                        self.terminate(MirInst::Branch {
+                            cond: candidate,
+                            if_true: found_block,
+                            if_false: next_probe.unwrap_or(continuation_block),
+                        });
+
+                        self.current_block = found_block;
+                        self.lower_fixed_binary_replacement_stores(
+                            out_slot,
+                            input_offset,
+                            replacement,
+                        )?;
+                        self.terminate(MirInst::Jump {
+                            target: skip_probe.unwrap_or(continuation_block),
+                        });
+                    }
+                } else {
+                    for offset in 0..=last_offset {
+                        let found_block = self.func.alloc_block();
+                        let is_last_probe = offset == last_offset;
+                        let next_block = if is_last_probe {
+                            continuation_block
+                        } else {
+                            self.func.alloc_block()
+                        };
+                        let input_offset = Self::checked_byte_offset(
+                            elem_base,
+                            offset,
+                            "fixed binary array replace byte",
+                        )?;
+                        let candidate = self.lower_fixed_binary_pattern_match(
+                            input_vreg,
+                            input_offset,
+                            pattern,
+                            "fixed binary array replace byte",
+                        )?;
+                        self.terminate(MirInst::Branch {
+                            cond: candidate,
+                            if_true: found_block,
+                            if_false: next_block,
+                        });
+
+                        self.current_block = found_block;
+                        self.lower_fixed_binary_replacement_stores(
+                            out_slot,
+                            input_offset,
+                            replacement,
+                        )?;
+                        self.terminate(MirInst::Jump {
+                            target: continuation_block,
+                        });
+
+                        self.current_block = next_block;
+                    }
+                }
+                self.current_block = continuation_block;
+            }
+        }
+
+        self.reset_call_result_metadata(src_dst);
+        let out_meta = self.get_or_create_metadata(src_dst);
+        out_meta.field_type = Some(out_ty);
+        out_meta.annotated_semantics = Some(AnnotatedValueSemantics::FixedArray {
+            elem: elem.clone(),
+            len: array_len,
+        });
+        Ok(true)
+    }
+
     fn lower_fixed_array_binary_collect(
         &mut self,
         src_dst: RegId,
@@ -6738,7 +6970,7 @@ impl<'a> HirToMirLowering<'a> {
                         })?;
                         let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
                         let lowered = if cmd_name == "bytes replace" {
-                            self.lower_fixed_binary_replace(
+                            if self.lower_fixed_array_binary_replace(
                                 src_dst,
                                 dst_vreg,
                                 src_dst_had_value,
@@ -6747,7 +6979,20 @@ impl<'a> HirToMirLowering<'a> {
                                 &pattern,
                                 &replacement,
                                 apply_all,
-                            )?
+                            )? {
+                                true
+                            } else {
+                                self.lower_fixed_binary_replace(
+                                    src_dst,
+                                    dst_vreg,
+                                    src_dst_had_value,
+                                    input_reg,
+                                    input_vreg,
+                                    &pattern,
+                                    &replacement,
+                                    apply_all,
+                                )?
+                            }
                         } else {
                             self.lower_fixed_binary_remove(
                                 src_dst,
