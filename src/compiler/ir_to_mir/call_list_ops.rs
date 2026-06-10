@@ -458,6 +458,20 @@ impl<'a> HirToMirLowering<'a> {
         fits.then_some(MirValue::Const(value))
     }
 
+    fn typed_fixed_array_aggregate_copy_size(
+        elem_ty: &MirType,
+        item_ty: &MirType,
+    ) -> Option<usize> {
+        if elem_ty == item_ty {
+            return Some(elem_ty.size());
+        }
+
+        match (elem_ty.byte_array_len(), item_ty.byte_array_len()) {
+            (Some(elem_len), Some(item_len)) if item_len <= elem_len => Some(item_len),
+            _ => None,
+        }
+    }
+
     pub(super) fn lower_typed_fixed_array_append_or_prepend(
         &mut self,
         cmd_name: &str,
@@ -498,13 +512,6 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(false);
         };
 
-        if !Self::typed_fixed_array_append_scalar_type(&elem_ty) {
-            return Err(CompileError::UnsupportedInstruction(format!(
-                "{cmd_name} on typed fixed arrays currently supports only scalar numeric/bool elements in eBPF, got {:?}",
-                elem_ty
-            )));
-        }
-
         if !matches!(base_runtime_ty, MirType::Ptr { .. })
             && Self::aggregate_call_value_type(&base_runtime_ty).is_some()
         {
@@ -532,31 +539,81 @@ impl<'a> HirToMirLowering<'a> {
             )));
         }
 
-        let item_runtime_ty = self
-            .typed_value_runtime_type(item_reg, item_vreg)
-            .ok_or_else(|| {
+        enum InsertItem {
+            Scalar(MirValue),
+            Aggregate { ptr: VReg, copy_size: usize },
+        }
+
+        let item_runtime_ty = self.typed_value_runtime_type(item_reg, item_vreg);
+        let insert_item = if Self::typed_fixed_array_append_scalar_type(&elem_ty) {
+            let item_runtime_ty = item_runtime_ty.ok_or_else(|| {
                 CompileError::UnsupportedInstruction(format!(
                     "{cmd_name} typed fixed-array item requires tracked scalar type in eBPF"
                 ))
             })?;
-        let item_val = if let Some(coerced_vreg) =
-            self.coerce_scalar_assignment_value(item_vreg, &item_runtime_ty, &elem_ty)
-        {
-            MirValue::VReg(coerced_vreg)
-        } else if let Some(literal) = self
-            .get_metadata(item_reg)
-            .and_then(|meta| meta.literal_int)
-        {
-            Self::typed_fixed_array_literal_scalar_value(literal, &elem_ty).ok_or_else(|| {
-                CompileError::UnsupportedInstruction(format!(
-                    "{cmd_name} item literal {literal} cannot fit typed fixed-array element type {:?} in eBPF",
-                    elem_ty
-                ))
-            })?
+            let item_val = if let Some(coerced_vreg) =
+                self.coerce_scalar_assignment_value(item_vreg, &item_runtime_ty, &elem_ty)
+            {
+                MirValue::VReg(coerced_vreg)
+            } else if let Some(literal) = self
+                .get_metadata(item_reg)
+                .and_then(|meta| meta.literal_int)
+            {
+                Self::typed_fixed_array_literal_scalar_value(literal, &elem_ty).ok_or_else(
+                    || {
+                        CompileError::UnsupportedInstruction(format!(
+                            "{cmd_name} item literal {literal} cannot fit typed fixed-array element type {:?} in eBPF",
+                            elem_ty
+                        ))
+                    },
+                )?
+            } else {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{cmd_name} item type {:?} cannot be stored in typed fixed-array element type {:?} in eBPF",
+                    item_runtime_ty, elem_ty
+                )));
+            };
+            InsertItem::Scalar(item_val)
+        } else if Self::aggregate_call_value_type(&elem_ty).is_some() {
+            let item_ptr = self.materialized_metadata_aggregate_vreg(item_reg, item_vreg)?;
+            let item_ptr_ty = self
+                .vreg_type_hints
+                .get(&item_ptr)
+                .cloned()
+                .or_else(|| self.typed_value_runtime_type(item_reg, item_ptr))
+                .ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "{cmd_name} typed fixed-array aggregate item requires tracked pointer type in eBPF"
+                    ))
+                })?;
+            let MirType::Ptr {
+                pointee,
+                address_space: AddressSpace::Stack | AddressSpace::Map,
+            } = item_ptr_ty
+            else {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{cmd_name} typed fixed-array aggregate item requires a stack/map aggregate pointer in eBPF, got {:?}",
+                    item_ptr_ty
+                )));
+            };
+            let item_ty = pointee.as_ref().clone();
+            let copy_size =
+                Self::typed_fixed_array_aggregate_copy_size(&elem_ty, &item_ty).ok_or_else(
+                    || {
+                        CompileError::UnsupportedInstruction(format!(
+                            "{cmd_name} item type {:?} cannot be stored in typed fixed-array element type {:?} in eBPF",
+                            item_ty, elem_ty
+                        ))
+                    },
+                )?;
+            InsertItem::Aggregate {
+                ptr: item_ptr,
+                copy_size,
+            }
         } else {
             return Err(CompileError::UnsupportedInstruction(format!(
-                "{cmd_name} item type {:?} cannot be stored in typed fixed-array element type {:?} in eBPF",
-                item_runtime_ty, elem_ty
+                "{cmd_name} on typed fixed arrays currently supports only scalar or aggregate fixed-layout elements in eBPF, got {:?}",
+                elem_ty
             )));
         };
 
@@ -604,12 +661,22 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         let item_offset = if cmd_name == "prepend" { 0 } else { input_size };
-        self.emit(MirInst::StoreSlot {
-            slot: out_slot,
-            offset: Self::checked_mir_offset(item_offset, "typed fixed-array insert item")?,
-            val: item_val,
-            ty: elem_ty,
-        });
+        match insert_item {
+            InsertItem::Scalar(item_val) => {
+                self.emit(MirInst::StoreSlot {
+                    slot: out_slot,
+                    offset: Self::checked_mir_offset(item_offset, "typed fixed-array insert item")?,
+                    val: item_val,
+                    ty: elem_ty,
+                });
+            }
+            InsertItem::Aggregate { ptr, copy_size } => {
+                if elem_size > 0 {
+                    self.emit_ptr_zero(result_vreg, item_offset, elem_size)?;
+                    self.emit_ptr_copy_with_offsets(result_vreg, item_offset, ptr, 0, copy_size)?;
+                }
+            }
+        }
 
         let item_constant = self.get_metadata(item_reg).and_then(|meta| {
             meta.constant_value.clone().or_else(|| {
