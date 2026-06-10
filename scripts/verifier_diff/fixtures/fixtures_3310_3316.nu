@@ -1,4 +1,4 @@
-export const VERIFIER_DIFF_FIXTURES_3310_3314 = [
+export const VERIFIER_DIFF_FIXTURES_3310_3316 = [
     {
         name: "global-define-type-bytes-index-of"
         category: "globals"
@@ -65,6 +65,36 @@ export const VERIFIER_DIFF_FIXTURES_3310_3314 = [
             '{|ctx|'
             '  [0x[01 02] 0x[03 04]] | global-define --type "array{bytes:4:2}" buffers'
             '  (((global-get buffers) | last | bytes index-of --end 0x[04]) == 1)'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "global-define-type-bytes-index-of-all"
+        category: "globals"
+        tags: [globals binary bytes index-of all global-define accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  global-define --type bytes:4 scratch'
+            '  let offsets = ((global-get scratch) | bytes index-of --all 0x[00 00])'
+            '  (($offsets | get 0) == 0) and (($offsets | get 1) == 2)'
+            '}'
+        ]
+        local: "accept"
+        kernel: "accept"
+    }
+    {
+        name: "global-define-type-bytes-index-of-all-end"
+        category: "globals"
+        tags: [globals binary bytes index-of all end global-define accept]
+        target: "raw_tracepoint:sys_enter"
+        program: [
+            '{|ctx|'
+            '  global-define --type bytes:4 scratch'
+            '  let offsets = ((global-get scratch) | bytes index-of --all --end 0x[00 00])'
+            '  (($offsets | get 0) == 2) and (($offsets | get 1) == 0)'
             '}'
         ]
         local: "accept"

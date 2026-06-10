@@ -13,6 +13,8 @@ use chrono::{Duration, NaiveDate, NaiveDateTime};
 
 const BPF_SK_LOOKUP_F_REPLACE: u64 = 1 << 0;
 const BPF_SK_LOOKUP_F_NO_REUSEPORT: u64 = 1 << 1;
+const MAX_BYTES_INDEX_OF_ALL_MATCHES: usize = 60;
+const MAX_FIXED_BINARY_INDEX_OF_PROBES: usize = MAX_STRING_SIZE - 1;
 
 enum SeqNumericArg {
     Int(i64),
@@ -190,6 +192,12 @@ impl<'a> HirToMirLowering<'a> {
                 src: MirValue::Const(-1),
             });
         } else {
+            let probe_count = input_len - pattern.len() + 1;
+            if probe_count > MAX_FIXED_BINARY_INDEX_OF_PROBES {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{cmd_name} fixed-size binary input has {probe_count} candidate offsets; eBPF lowering supports at most {MAX_FIXED_BINARY_INDEX_OF_PROBES}"
+                )));
+            }
             let not_found_block = self.func.alloc_block();
             let continuation_block = self.func.alloc_block();
             let last_offset = input_len - pattern.len();
@@ -247,6 +255,129 @@ impl<'a> HirToMirLowering<'a> {
         let out_meta = self.get_or_create_metadata(src_dst);
         out_meta.field_type = Some(MirType::I64);
         self.vreg_type_hints.insert(result_vreg, MirType::I64);
+        Ok(true)
+    }
+
+    fn lower_fixed_binary_index_of_all(
+        &mut self,
+        cmd_name: &str,
+        src_dst: RegId,
+        result_vreg: VReg,
+        input_reg: RegId,
+        input_vreg: VReg,
+        pattern: &[u8],
+        search_from_end: bool,
+    ) -> Result<bool, CompileError> {
+        let Some(input_len) = self.fixed_binary_input_len(cmd_name, input_reg, input_vreg)? else {
+            return Ok(false);
+        };
+
+        let max_matches = if pattern.len() > input_len {
+            0
+        } else {
+            input_len / pattern.len()
+        };
+        if max_matches > MAX_BYTES_INDEX_OF_ALL_MATCHES {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} --all result for fixed-size binary input may exceed eBPF numeric list capacity {MAX_BYTES_INDEX_OF_ALL_MATCHES}"
+            )));
+        }
+
+        let (out_slot, out_ty) = self.create_stack_numeric_list_result(result_vreg, max_matches);
+
+        if pattern.len() <= input_len {
+            let probe_count = input_len - pattern.len() + 1;
+            if probe_count > MAX_FIXED_BINARY_INDEX_OF_PROBES {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{cmd_name} --all fixed-size binary input has {probe_count} candidate offsets; eBPF lowering supports at most {MAX_FIXED_BINARY_INDEX_OF_PROBES}"
+                )));
+            }
+
+            let continuation_block = self.func.alloc_block();
+            let last_offset = input_len - pattern.len();
+            let probe_blocks = (0..=last_offset)
+                .map(|_| self.func.alloc_block())
+                .collect::<Vec<_>>();
+            let first_probe = if search_from_end {
+                probe_blocks[last_offset]
+            } else {
+                probe_blocks[0]
+            };
+            self.terminate(MirInst::Jump {
+                target: first_probe,
+            });
+
+            let offsets: Vec<usize> = if search_from_end {
+                (0..=last_offset).rev().collect()
+            } else {
+                (0..=last_offset).collect()
+            };
+            for offset in offsets {
+                self.current_block = probe_blocks[offset];
+                let found_block = self.func.alloc_block();
+                let next_probe = if search_from_end {
+                    offset.checked_sub(1).map(|next| probe_blocks[next])
+                } else {
+                    (offset < last_offset).then(|| probe_blocks[offset + 1])
+                };
+                let skip_probe = if search_from_end {
+                    offset
+                        .checked_sub(pattern.len())
+                        .map(|next| probe_blocks[next])
+                } else {
+                    let next = offset + pattern.len();
+                    (next <= last_offset).then(|| probe_blocks[next])
+                };
+
+                let candidate = self.lower_fixed_binary_pattern_match(
+                    input_vreg,
+                    offset,
+                    pattern,
+                    "fixed binary index-of --all byte",
+                )?;
+                self.terminate(MirInst::Branch {
+                    cond: candidate,
+                    if_true: found_block,
+                    if_false: next_probe.unwrap_or(continuation_block),
+                });
+
+                self.current_block = found_block;
+                let offset_vreg = self.func.alloc_vreg();
+                self.emit(MirInst::Copy {
+                    dst: offset_vreg,
+                    src: MirValue::Const(offset as i64),
+                });
+                self.vreg_type_hints.insert(offset_vreg, MirType::I64);
+                self.emit(MirInst::ListPush {
+                    list: result_vreg,
+                    item: offset_vreg,
+                });
+                self.terminate(MirInst::Jump {
+                    target: skip_probe.unwrap_or(continuation_block),
+                });
+            }
+
+            self.current_block = continuation_block;
+        }
+
+        self.reset_call_result_metadata(src_dst);
+        let out_meta = self.get_or_create_metadata(src_dst);
+        out_meta.field_type = Some(out_ty);
+        out_meta.list_buffer = Some((out_slot, max_matches));
+        out_meta.annotated_semantics = Some(AnnotatedValueSemantics::NumericList {
+            max_len: max_matches,
+            known_len: (max_matches == 0).then_some(0),
+        });
+        self.vreg_type_hints.insert(
+            result_vreg,
+            MirType::Ptr {
+                pointee: Box::new(MirType::Array {
+                    elem: Box::new(MirType::I64),
+                    len: max_matches.saturating_add(1),
+                }),
+                address_space: AddressSpace::Stack,
+            },
+        );
         Ok(true)
     }
 
@@ -4296,12 +4427,29 @@ impl<'a> HirToMirLowering<'a> {
                     .and_then(|meta| meta.constant_value.as_ref().cloned());
 
                 if return_all {
-                    let input_value = input_value.ok_or_else(|| {
-                        CompileError::UnsupportedInstruction(
-                            "bytes index-of requires compile-time known binary or list<binary> input in eBPF".into(),
-                        )
-                    })?;
-                    const MAX_BYTES_INDEX_OF_ALL_MATCHES: usize = 60;
+                    let Some(input_value) = input_value else {
+                        let input_reg = input_reg.ok_or_else(|| {
+                            CompileError::UnsupportedInstruction(
+                                "bytes index-of requires binary input in eBPF".into(),
+                            )
+                        })?;
+                        let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
+                        if !self.lower_fixed_binary_index_of_all(
+                            &cmd_name,
+                            src_dst,
+                            result_vreg,
+                            input_reg,
+                            input_vreg,
+                            &pattern,
+                            search_from_end,
+                        )? {
+                            return Err(CompileError::UnsupportedInstruction(
+                                "bytes index-of requires compile-time known binary or list<binary> input in eBPF"
+                                    .into(),
+                            ));
+                        }
+                        return Ok(());
+                    };
                     let offsets_value = match input_value {
                         nu_protocol::Value::Binary { val: input, .. } => {
                             let offsets =

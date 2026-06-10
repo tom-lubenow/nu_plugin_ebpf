@@ -3846,6 +3846,156 @@ fn test_lower_bytes_index_of_end_on_typed_bytes_global_compares_from_last_offset
     assert_lower_bytes_index_of_on_typed_bytes_global(true, 2);
 }
 
+fn assert_lower_bytes_index_of_all_on_typed_bytes_global(
+    search_from_end: bool,
+    expected_probe_offset: i32,
+) {
+    let define_decl = DeclId::new(if search_from_end { 10_612 } else { 10_609 });
+    let global_get_decl = DeclId::new(if search_from_end { 10_613 } else { 10_610 });
+    let index_of_decl = DeclId::new(if search_from_end { 10_614 } else { 10_611 });
+    let get_decl = DeclId::new(if search_from_end { 10_616 } else { 10_615 });
+    let decl_names = HashMap::from([
+        (define_decl, "global-define".to_string()),
+        (global_get_decl, "global-get".to_string()),
+        (index_of_decl, "bytes index-of".to_string()),
+        (get_decl, "get".to_string()),
+    ]);
+
+    let mut flags = vec![b"all".to_vec()];
+    if search_from_end {
+        flags.push(b"end".to_vec());
+    }
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::String("scratch".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("bytes:4".into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        named: vec![(b"type".to_vec(), RegId::new(1))],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: global_get_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(4),
+                    lit: HirLiteral::Binary(vec![0, 0]),
+                },
+                HirStmt::Call {
+                    decl_id: index_of_decl,
+                    src_dst: RegId::new(5),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(3)),
+                        positional: vec![RegId::new(4)],
+                        flags,
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(6),
+                    lit: HirLiteral::Int(0),
+                },
+                HirStmt::Call {
+                    decl_id: get_decl,
+                    src_dst: RegId::new(7),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(5)),
+                        positional: vec![RegId::new(6)],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(7) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 8,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bytes index-of --all should lower on a typed bytes global");
+
+    assert!(
+        result.program.main.blocks.iter().any(|block| {
+            block
+                .instructions
+                .iter()
+                .any(|inst| matches!(inst, MirInst::ListNew { max_len: 2, .. }))
+        }),
+        "expected fixed binary index-of --all to allocate a two-item offset list"
+    );
+    assert!(
+        result.program.main.blocks.iter().any(|block| {
+            block
+                .instructions
+                .iter()
+                .any(|inst| matches!(inst, MirInst::ListPush { .. }))
+        }),
+        "expected fixed binary index-of --all to push matching offsets"
+    );
+
+    let byte_load_offsets = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .filter_map(|inst| match inst {
+            MirInst::Load {
+                offset,
+                ty: MirType::U8,
+                ..
+            } => Some(*offset),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        byte_load_offsets.contains(&expected_probe_offset),
+        "expected fixed binary index-of --all byte probe offset {expected_probe_offset}, got {byte_load_offsets:?}"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("typed bytes global bytes index-of --all should compile through codegen");
+}
+
+#[test]
+fn test_lower_bytes_index_of_all_on_typed_bytes_global_builds_offset_list() {
+    assert_lower_bytes_index_of_all_on_typed_bytes_global(false, 0);
+}
+
+#[test]
+fn test_lower_bytes_index_of_all_end_on_typed_bytes_global_builds_reverse_offset_list() {
+    assert_lower_bytes_index_of_all_on_typed_bytes_global(true, 2);
+}
+
 #[test]
 fn test_lower_bytes_length_on_typed_record_bytes_field_uses_declared_len() {
     let define_decl = DeclId::new(9076);
