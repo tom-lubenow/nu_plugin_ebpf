@@ -3985,6 +3985,124 @@ fn test_lower_bytes_at_empty_slice_on_typed_bytes_global_feeds_length() {
         .expect("empty typed bytes global bytes at should compile through codegen");
 }
 
+#[test]
+fn test_lower_bytes_reverse_on_typed_bytes_global_copies_reversed_bytes() {
+    let define_decl = DeclId::new(10_625);
+    let global_get_decl = DeclId::new(10_626);
+    let reverse_decl = DeclId::new(10_627);
+    let starts_with_decl = DeclId::new(10_628);
+    let decl_names = HashMap::from([
+        (define_decl, "global-define".to_string()),
+        (global_get_decl, "global-get".to_string()),
+        (reverse_decl, "bytes reverse".to_string()),
+        (starts_with_decl, "bytes starts-with".to_string()),
+    ]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::String("scratch".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("bytes:4".into()),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(2),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        named: vec![(b"type".to_vec(), RegId::new(1))],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: global_get_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: reverse_decl,
+                    src_dst: RegId::new(4),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(3)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(5),
+                    lit: HirLiteral::Binary(vec![0, 0]),
+                },
+                HirStmt::Call {
+                    decl_id: starts_with_decl,
+                    src_dst: RegId::new(6),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(4)),
+                        positional: vec![RegId::new(5)],
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(6) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 7,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("bytes reverse should lower on a typed bytes global");
+
+    let byte_load_offsets = result
+        .program
+        .main
+        .blocks
+        .iter()
+        .flat_map(|block| block.instructions.iter())
+        .filter_map(|inst| match inst {
+            MirInst::Load {
+                offset,
+                ty: MirType::U8,
+                ..
+            } => Some(*offset),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        byte_load_offsets.contains(&3) && byte_load_offsets.contains(&2),
+        "expected bytes reverse to read source offsets 3 and 2 first, got {byte_load_offsets:?}"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::StoreSlot { offset: 0, .. })),
+        "expected bytes reverse to materialize the reversed bytes in a stack slot"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("typed bytes global bytes reverse should compile through codegen");
+}
+
 fn assert_lower_bytes_index_of_on_typed_bytes_global(
     search_from_end: bool,
     expected_first_load_offset: i32,

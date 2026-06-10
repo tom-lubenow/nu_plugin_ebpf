@@ -523,6 +523,78 @@ impl<'a> HirToMirLowering<'a> {
         Ok(true)
     }
 
+    fn lower_fixed_binary_reverse(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+        input_reg: RegId,
+        input_vreg: VReg,
+    ) -> Result<bool, CompileError> {
+        let Some(input_len) =
+            self.fixed_binary_input_len("bytes reverse", input_reg, input_vreg)?
+        else {
+            return Ok(false);
+        };
+        if input_len == 0 {
+            self.lower_compile_time_only_constant_value(
+                src_dst,
+                &nu_protocol::Value::binary(Vec::new(), Span::unknown()),
+            );
+            return Ok(true);
+        }
+
+        let out_ty = MirType::Array {
+            elem: Box::new(MirType::U8),
+            len: input_len,
+        };
+        let out_slot =
+            self.func
+                .alloc_stack_slot(align_to_eight(input_len), 8, StackSlotKind::Local);
+        self.record_stack_slot_type(out_slot, out_ty.clone());
+
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+        self.emit(MirInst::Copy {
+            dst: result_vreg,
+            src: MirValue::StackSlot(out_slot),
+        });
+        self.vreg_type_hints.insert(
+            result_vreg,
+            MirType::Ptr {
+                pointee: Box::new(out_ty.clone()),
+                address_space: AddressSpace::Stack,
+            },
+        );
+
+        for output_index in 0..input_len {
+            let source_index = input_len - 1 - output_index;
+            let byte_vreg = self.func.alloc_vreg();
+            self.emit(MirInst::Load {
+                dst: byte_vreg,
+                ptr: input_vreg,
+                offset: Self::checked_mir_offset(source_index, "fixed binary reverse source")?,
+                ty: MirType::U8,
+            });
+            self.vreg_type_hints.insert(byte_vreg, MirType::U8);
+            self.emit(MirInst::StoreSlot {
+                slot: out_slot,
+                offset: Self::checked_mir_offset(output_index, "fixed binary reverse destination")?,
+                val: MirValue::VReg(byte_vreg),
+                ty: MirType::U8,
+            });
+        }
+
+        self.reset_call_result_metadata(src_dst);
+        let out_meta = self.get_or_create_metadata(src_dst);
+        out_meta.field_type = Some(out_ty);
+        out_meta.annotated_semantics = Some(AnnotatedValueSemantics::Binary { len: input_len });
+        Ok(true)
+    }
+
     fn bytes_add_output(input: &[u8], data: &[u8], index: i64, from_end: bool) -> Vec<u8> {
         let input_len = input.len();
         let index = index as usize;
@@ -4658,14 +4730,9 @@ impl<'a> HirToMirLowering<'a> {
 
                 let input_value = input_reg
                     .and_then(|reg| self.get_metadata(reg))
-                    .and_then(|meta| meta.constant_value.as_ref().cloned())
-                    .ok_or_else(|| {
-                        CompileError::UnsupportedInstruction(
-                            "bytes reverse requires compile-time known binary or list<binary> input in eBPF".into(),
-                        )
-                    })?;
+                    .and_then(|meta| meta.constant_value.as_ref().cloned());
                 match input_value {
-                    nu_protocol::Value::Binary { mut val, .. } => {
+                    Some(nu_protocol::Value::Binary { mut val, .. }) => {
                         val.reverse();
                         self.reset_call_result_metadata(src_dst);
                         self.lower_constant_value(
@@ -4673,7 +4740,7 @@ impl<'a> HirToMirLowering<'a> {
                             &nu_protocol::Value::binary(val, nu_protocol::Span::unknown()),
                         )?;
                     }
-                    nu_protocol::Value::List { vals, .. } => {
+                    Some(nu_protocol::Value::List { vals, .. }) => {
                         let is_empty = vals.is_empty();
                         if is_empty && !self.current_call_result_metadata_only {
                             return Err(CompileError::UnsupportedInstruction(
@@ -4730,11 +4797,31 @@ impl<'a> HirToMirLowering<'a> {
                             self.lower_constant_value(src_dst, &value)?;
                         }
                     }
-                    other => {
+                    Some(other) => {
                         return Err(CompileError::UnsupportedInstruction(format!(
                             "bytes reverse requires binary or list<binary> input in eBPF, got {}",
                             other.get_type()
                         )));
+                    }
+                    None => {
+                        let input_reg = input_reg.ok_or_else(|| {
+                            CompileError::UnsupportedInstruction(
+                                "bytes reverse requires binary input in eBPF".into(),
+                            )
+                        })?;
+                        let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
+                        if !self.lower_fixed_binary_reverse(
+                            src_dst,
+                            dst_vreg,
+                            src_dst_had_value,
+                            input_reg,
+                            input_vreg,
+                        )? {
+                            return Err(CompileError::UnsupportedInstruction(
+                                "bytes reverse requires compile-time known binary or list<binary> input in eBPF"
+                                    .into(),
+                            ));
+                        }
                     }
                 }
             }
