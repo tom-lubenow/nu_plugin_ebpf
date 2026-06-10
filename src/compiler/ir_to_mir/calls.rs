@@ -870,6 +870,144 @@ impl<'a> HirToMirLowering<'a> {
         Ok(true)
     }
 
+    fn lower_fixed_array_binary_at(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+        input_reg: RegId,
+        mut input_vreg: VReg,
+        range: MaybeOpenRange,
+    ) -> Result<bool, CompileError> {
+        let Some(input_meta) = self.get_metadata(input_reg).cloned() else {
+            return Ok(false);
+        };
+        let Some(AnnotatedValueSemantics::FixedArray { elem, len }) =
+            input_meta.annotated_semantics.as_ref()
+        else {
+            return Ok(false);
+        };
+        let AnnotatedValueSemantics::Binary { len: elem_len } = elem.as_ref() else {
+            return Ok(false);
+        };
+        let array_len = *len;
+        let elem_len = *elem_len;
+
+        let Some(mut base_runtime_ty) = self.typed_value_runtime_type(input_reg, input_vreg) else {
+            return Ok(false);
+        };
+        if !matches!(base_runtime_ty, MirType::Ptr { .. })
+            && matches!(base_runtime_ty, MirType::Array { .. })
+        {
+            input_vreg = self.materialized_metadata_aggregate_vreg(input_reg, input_vreg)?;
+            base_runtime_ty = self
+                .typed_value_runtime_type(input_reg, input_vreg)
+                .ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(
+                        "bytes at requires typed fixed-array input in eBPF".into(),
+                    )
+                })?;
+        }
+
+        let MirType::Ptr {
+            pointee,
+            address_space,
+        } = base_runtime_ty
+        else {
+            return Err(CompileError::UnsupportedInstruction(
+                "bytes at requires typed fixed-array pointer input in eBPF".into(),
+            ));
+        };
+        if !matches!(
+            address_space,
+            AddressSpace::Stack | AddressSpace::Map | AddressSpace::Context
+        ) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "bytes at on typed fixed-array pointers in {address_space:?} address space is not yet supported in eBPF"
+            )));
+        }
+        let MirType::Array { elem: elem_ty, len } = pointee.as_ref() else {
+            return Ok(false);
+        };
+        if *len != array_len || elem_ty.byte_array_len() != Some(elem_len) {
+            return Err(CompileError::UnsupportedInstruction(
+                "bytes at requires typed fixed-array binary input with matching byte-array layout in eBPF"
+                    .into(),
+            ));
+        }
+
+        let (start, end) = Self::bytes_at_bounds(elem_len, range);
+        let out_len = end.saturating_sub(start);
+        if out_len == 0 || array_len == 0 {
+            let values = (0..array_len)
+                .map(|_| nu_protocol::Value::binary(Vec::new(), Span::unknown()))
+                .collect::<Vec<_>>();
+            self.lower_compile_time_list_transform_result(
+                src_dst,
+                &nu_protocol::Value::list(values, Span::unknown()),
+            )?;
+            return Ok(true);
+        }
+
+        let out_elem_ty = MirType::Array {
+            elem: Box::new(MirType::U8),
+            len: out_len,
+        };
+        let out_ty = MirType::Array {
+            elem: Box::new(out_elem_ty.clone()),
+            len: array_len,
+        };
+        let out_size = out_ty.size();
+        let out_slot =
+            self.func
+                .alloc_stack_slot(align_to_eight(out_size), 8, StackSlotKind::Local);
+        self.record_stack_slot_type(out_slot, out_ty.clone());
+
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+        self.emit(MirInst::Copy {
+            dst: result_vreg,
+            src: MirValue::StackSlot(out_slot),
+        });
+        self.vreg_type_hints.insert(
+            result_vreg,
+            MirType::Ptr {
+                pointee: Box::new(out_ty.clone()),
+                address_space: AddressSpace::Stack,
+            },
+        );
+
+        let input_stride = elem_ty.size();
+        let output_stride = out_elem_ty.size();
+        for item_index in 0..array_len {
+            let input_base = item_index.checked_mul(input_stride).ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "bytes at typed fixed-array input offset overflowed in eBPF".into(),
+                )
+            })?;
+            let output_base = item_index.checked_mul(output_stride).ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "bytes at typed fixed-array output offset overflowed in eBPF".into(),
+                )
+            })?;
+            let input_offset =
+                Self::checked_byte_offset(input_base, start, "fixed binary array bytes at source")?;
+            self.emit_ptr_to_slot_copy(out_slot, output_base, input_vreg, input_offset, out_len)?;
+        }
+
+        self.reset_call_result_metadata(src_dst);
+        let out_meta = self.get_or_create_metadata(src_dst);
+        out_meta.field_type = Some(out_ty);
+        out_meta.annotated_semantics = Some(AnnotatedValueSemantics::FixedArray {
+            elem: Box::new(AnnotatedValueSemantics::Binary { len: out_len }),
+            len: array_len,
+        });
+        Ok(true)
+    }
+
     fn lower_fixed_binary_reverse(
         &mut self,
         src_dst: RegId,
@@ -6048,6 +6186,16 @@ impl<'a> HirToMirLowering<'a> {
                             )
                         })?;
                         let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
+                        if self.lower_fixed_array_binary_at(
+                            src_dst,
+                            dst_vreg,
+                            src_dst_had_value,
+                            input_reg,
+                            input_vreg,
+                            range,
+                        )? {
+                            return Ok(());
+                        }
                         if !self.lower_fixed_binary_at(
                             src_dst,
                             dst_vreg,
