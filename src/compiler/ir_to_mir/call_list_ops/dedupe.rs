@@ -209,6 +209,10 @@ impl<'a> HirToMirLowering<'a> {
         )
     }
 
+    pub(super) fn typed_fixed_array_numeric_list_scalar_type_description() -> &'static str {
+        "signed integer or <=32-bit unsigned integer scalar elements"
+    }
+
     pub(super) fn emit_typed_fixed_array_numeric_list_item(
         &mut self,
         cmd_name: &str,
@@ -289,7 +293,8 @@ impl<'a> HirToMirLowering<'a> {
 
         if !Self::typed_fixed_array_numeric_list_scalar_type(&elem_ty) {
             return Err(CompileError::UnsupportedInstruction(format!(
-                "uniq on typed fixed arrays currently supports only <=32-bit unsigned or signed integer scalar elements in eBPF, got {:?}",
+                "uniq on typed fixed arrays currently supports {} in eBPF, got {:?}",
+                Self::typed_fixed_array_numeric_list_scalar_type_description(),
                 elem_ty
             )));
         }

@@ -151,7 +151,8 @@ impl<'a> HirToMirLowering<'a> {
 
         if !Self::typed_fixed_array_numeric_list_scalar_type(&elem_ty) {
             return Err(CompileError::UnsupportedInstruction(format!(
-                "find on typed fixed arrays currently supports integer scalar elements in eBPF, got {:?}",
+                "find on typed fixed arrays currently supports {} in eBPF, got {:?}",
+                Self::typed_fixed_array_numeric_list_scalar_type_description(),
                 elem_ty
             )));
         }

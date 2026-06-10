@@ -200,7 +200,7 @@ impl<'a> HirToMirLowering<'a> {
 
         if !Self::typed_fixed_array_predicate_scalar_type(&elem_ty) {
             return Err(CompileError::UnsupportedInstruction(format!(
-                "{cmd_name} on typed fixed arrays currently supports integer scalar elements in eBPF, got {:?}",
+                "{cmd_name} on typed fixed arrays currently supports integer or bool scalar elements in eBPF, got {:?}",
                 elem_ty
             )));
         }
