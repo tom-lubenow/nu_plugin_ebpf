@@ -1021,6 +1021,7 @@ impl<'a> HirToMirLowering<'a> {
                 "str join accepts at most one separator argument in eBPF".into(),
             ));
         }
+        let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
         if let Some((_, separator_reg)) = self.positional_args.first().copied() {
             let separator = self.literal_string_arg(separator_reg, "str join separator")?;
             if let Some(input) = self.string_join_list_input(input_reg, "str join")? {
@@ -1030,12 +1031,256 @@ impl<'a> HirToMirLowering<'a> {
                     input.join(&separator),
                 );
             }
+            if let Some(input_reg) = input_reg
+                && self.lower_typed_fixed_string_array_join(
+                    src_dst,
+                    result_vreg,
+                    input_reg,
+                    input_vreg,
+                    &separator,
+                )?
+            {
+                return Ok(());
+            }
         } else if let Some(input) = self.string_join_list_input(input_reg, "str join")? {
             return self.lower_known_string_result(src_dst, result_vreg, input.concat());
+        } else if let Some(input_reg) = input_reg
+            && self.lower_typed_fixed_string_array_join(
+                src_dst,
+                result_vreg,
+                input_reg,
+                input_vreg,
+                "",
+            )?
+        {
+            return Ok(());
         }
 
         let input = self.exact_string_input(input_reg, "str join")?;
         self.lower_known_string_result(src_dst, result_vreg, input)
+    }
+
+    fn lower_typed_fixed_string_array_join(
+        &mut self,
+        src_dst: RegId,
+        result_vreg: VReg,
+        input_reg: RegId,
+        mut input_vreg: VReg,
+        separator: &str,
+    ) -> Result<bool, CompileError> {
+        let Some(input_meta) = self.get_metadata(input_reg).cloned() else {
+            return Ok(false);
+        };
+        let Some(AnnotatedValueSemantics::FixedArray { elem, len }) =
+            input_meta.annotated_semantics.as_ref()
+        else {
+            return Ok(false);
+        };
+        let AnnotatedValueSemantics::String {
+            slot_len,
+            content_cap,
+        } = elem.as_ref()
+        else {
+            return Ok(false);
+        };
+
+        if separator.as_bytes().contains(&0) {
+            return Err(CompileError::UnsupportedInstruction(
+                "str join on typed fixed string arrays does not support NUL bytes in the separator in eBPF"
+                    .into(),
+            ));
+        }
+        if *content_cap > STRING_APPEND_COPY_CAP {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "str join on typed fixed string arrays supports string elements up to {STRING_APPEND_COPY_CAP} bytes in eBPF"
+            )));
+        }
+
+        let mut base_runtime_ty = match self.typed_value_runtime_type(input_reg, input_vreg) {
+            Some(ty) => ty,
+            None => return Ok(false),
+        };
+        let Some(MirType::Array {
+            elem: array_elem_ty,
+            len: array_len,
+        }) = Self::aggregate_call_value_type(&base_runtime_ty)
+        else {
+            return Ok(false);
+        };
+        let mut elem_ty = array_elem_ty.as_ref().clone();
+        let mut array_len = *array_len;
+
+        if !matches!(base_runtime_ty, MirType::Ptr { .. }) {
+            input_vreg = self.materialized_metadata_aggregate_vreg(input_reg, input_vreg)?;
+            base_runtime_ty = self
+                .typed_value_runtime_type(input_reg, input_vreg)
+                .ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(
+                        "str join requires typed fixed string-array input in eBPF".into(),
+                    )
+                })?;
+            let Some(MirType::Array { elem, len }) =
+                Self::aggregate_call_value_type(&base_runtime_ty)
+            else {
+                return Err(CompileError::UnsupportedInstruction(
+                    "str join requires typed fixed string-array input in eBPF".into(),
+                ));
+            };
+            elem_ty = elem.as_ref().clone();
+            array_len = *len;
+        }
+
+        if array_len != *len {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "str join typed fixed string-array length metadata mismatch: type length {array_len}, semantic length {len}"
+            )));
+        }
+        let elem_size = elem_ty.size();
+        let min_elem_size = 8usize.checked_add(*slot_len).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "str join typed fixed string-array element size overflowed in eBPF".into(),
+            )
+        })?;
+        if elem_size < min_elem_size {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "str join typed fixed string-array element storage is too small: element size {elem_size}, required {min_elem_size}"
+            )));
+        }
+        if array_len == 0 {
+            return self
+                .lower_known_string_result(src_dst, result_vreg, String::new())
+                .map(|()| true);
+        }
+
+        let items_bound = array_len.checked_mul(*content_cap).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "str join typed fixed string-array output length overflowed in eBPF".into(),
+            )
+        })?;
+        let separators_bound = array_len
+            .saturating_sub(1)
+            .checked_mul(separator.len())
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "str join typed fixed string-array separator length overflowed in eBPF".into(),
+                )
+            })?;
+        let output_bound = items_bound.checked_add(separators_bound).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "str join typed fixed string-array output length overflowed in eBPF".into(),
+            )
+        })?;
+        if output_bound.saturating_add(1) > MAX_STRING_SIZE {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "str join typed fixed string-array output may require {} bytes (limit {})",
+                output_bound + 1,
+                MAX_STRING_SIZE
+            )));
+        }
+        let output_slot_len = align_to_eight(output_bound.saturating_add(1))
+            .min(MAX_STRING_SIZE)
+            .max(16);
+        let output_slot =
+            self.func
+                .alloc_stack_slot(output_slot_len, 8, StackSlotKind::StringBuffer);
+        let output_ty = MirType::Array {
+            elem: Box::new(MirType::U8),
+            len: output_slot_len,
+        };
+        self.record_stack_slot_type(output_slot, output_ty.clone());
+        self.emit(MirInst::Copy {
+            dst: result_vreg,
+            src: MirValue::StackSlot(output_slot),
+        });
+        self.vreg_type_hints.insert(
+            result_vreg,
+            MirType::Ptr {
+                pointee: Box::new(output_ty.clone()),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        self.emit_ptr_zero(result_vreg, 0, output_slot_len)?;
+
+        let len_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::Copy {
+            dst: len_vreg,
+            src: MirValue::Const(0),
+        });
+        self.vreg_type_hints.insert(len_vreg, MirType::U64);
+
+        let temp_ty = MirType::Array {
+            elem: Box::new(MirType::U8),
+            len: *slot_len,
+        };
+        let temp_slot = self
+            .func
+            .alloc_stack_slot(*slot_len, 8, StackSlotKind::StringBuffer);
+        self.record_stack_slot_type(temp_slot, temp_ty);
+
+        let address_space = match &base_runtime_ty {
+            MirType::Ptr { address_space, .. } => *address_space,
+            _ => {
+                return Err(CompileError::UnsupportedInstruction(
+                    "str join requires typed fixed string-array pointer input in eBPF".into(),
+                ));
+            }
+        };
+
+        for index in 0..array_len {
+            if index > 0 && !separator.is_empty() {
+                self.emit(MirInst::StringAppend {
+                    dst_buffer: output_slot,
+                    dst_len: len_vreg,
+                    val: MirValue::Const(0),
+                    val_type: StringAppendType::Literal {
+                        bytes: separator.as_bytes().to_vec(),
+                    },
+                });
+            }
+
+            let byte_offset = index.checked_mul(elem_size).ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "str join typed fixed string-array element offset overflowed in eBPF".into(),
+                )
+            })?;
+            let byte_offset = i64::try_from(byte_offset).map_err(|_| {
+                CompileError::UnsupportedInstruction(
+                    "str join typed fixed string-array element offset is too large for eBPF".into(),
+                )
+            })?;
+            let element_ptr = self.func.alloc_vreg();
+            self.vreg_type_hints.insert(
+                element_ptr,
+                MirType::Ptr {
+                    pointee: Box::new(elem_ty.clone()),
+                    address_space,
+                },
+            );
+            self.emit(MirInst::BinOp {
+                dst: element_ptr,
+                op: BinOpKind::Add,
+                lhs: MirValue::VReg(input_vreg),
+                rhs: MirValue::Const(byte_offset),
+            });
+            self.emit_ptr_to_slot_copy(temp_slot, 0, element_ptr, 8, *slot_len)?;
+            self.emit(MirInst::StringAppend {
+                dst_buffer: output_slot,
+                dst_len: len_vreg,
+                val: MirValue::Const(0),
+                val_type: StringAppendType::StringSlot {
+                    slot: temp_slot,
+                    max_len: *content_cap,
+                },
+            });
+        }
+
+        self.reset_call_result_metadata(src_dst);
+        let meta = self.get_or_create_metadata(src_dst);
+        meta.string_slot = Some(output_slot);
+        meta.string_len_vreg = Some(len_vreg);
+        meta.string_len_bound = Some(output_bound);
+        meta.field_type = Some(output_ty);
+        Ok(true)
     }
 
     pub(super) fn lower_split_row(
