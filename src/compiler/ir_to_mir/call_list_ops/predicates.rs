@@ -306,7 +306,8 @@ impl<'a> HirToMirLowering<'a> {
     }
 
     fn typed_fixed_array_predicate_scalar_type(ty: &MirType) -> bool {
-        Self::typed_fixed_array_numeric_list_scalar_type(ty) || matches!(ty, MirType::U64)
+        Self::typed_fixed_array_numeric_list_scalar_type(ty)
+            || matches!(ty, MirType::U64 | MirType::Bool)
     }
 
     fn emit_typed_fixed_array_predicate_item(
@@ -316,7 +317,7 @@ impl<'a> HirToMirLowering<'a> {
         elem_ty: &MirType,
         index: usize,
     ) -> Result<VReg, CompileError> {
-        if !matches!(elem_ty, MirType::U64) {
+        if !matches!(elem_ty, MirType::U64 | MirType::Bool) {
             return self
                 .emit_typed_fixed_array_numeric_list_item(cmd_name, input_vreg, elem_ty, index);
         }
