@@ -326,6 +326,7 @@ impl<'a> HirToMirLowering<'a> {
                     src_dst,
                     dst_vreg,
                     src_dst_had_value,
+                    Some(builder_reg),
                     input_vreg,
                     input_meta,
                     item_vreg,
@@ -356,6 +357,7 @@ impl<'a> HirToMirLowering<'a> {
             src_dst,
             dst_vreg,
             src_dst_had_value,
+            input_reg,
             input_vreg,
             input_meta,
             item_vreg,
@@ -369,12 +371,29 @@ impl<'a> HirToMirLowering<'a> {
         src_dst: RegId,
         dst_vreg: VReg,
         src_dst_had_value: bool,
+        input_reg: Option<RegId>,
         input_vreg: VReg,
         input_meta: RegMetadata,
         item_vreg: VReg,
         item_reg: RegId,
     ) -> Result<(), CompileError> {
         const MAX_STACK_LIST_CAPACITY: usize = 60;
+
+        if let Some(input_reg) = input_reg
+            && self.lower_typed_fixed_array_append_or_prepend(
+                cmd_name,
+                src_dst,
+                dst_vreg,
+                src_dst_had_value,
+                input_reg,
+                input_vreg,
+                &input_meta,
+                item_reg,
+                item_vreg,
+            )?
+        {
+            return Ok(());
+        }
 
         let Some((_input_slot, max_len)) = input_meta.list_buffer else {
             return Err(CompileError::UnsupportedInstruction(format!(

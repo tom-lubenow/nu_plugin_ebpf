@@ -427,6 +427,227 @@ impl<'a> HirToMirLowering<'a> {
         Ok(true)
     }
 
+    fn typed_fixed_array_append_scalar_type(ty: &MirType) -> bool {
+        matches!(
+            ty,
+            MirType::I8
+                | MirType::I16
+                | MirType::I32
+                | MirType::I64
+                | MirType::U8
+                | MirType::U16
+                | MirType::U32
+                | MirType::U64
+                | MirType::Bool
+        )
+    }
+
+    fn typed_fixed_array_literal_scalar_value(value: i64, dst_ty: &MirType) -> Option<MirValue> {
+        let fits = match dst_ty {
+            MirType::I8 => i8::try_from(value).is_ok(),
+            MirType::I16 => i16::try_from(value).is_ok(),
+            MirType::I32 => i32::try_from(value).is_ok(),
+            MirType::I64 => true,
+            MirType::U8 => u8::try_from(value).is_ok(),
+            MirType::U16 => u16::try_from(value).is_ok(),
+            MirType::U32 => u32::try_from(value).is_ok(),
+            MirType::U64 => u64::try_from(value).is_ok(),
+            MirType::Bool => matches!(value, 0 | 1),
+            _ => false,
+        };
+        fits.then_some(MirValue::Const(value))
+    }
+
+    pub(super) fn lower_typed_fixed_array_append_or_prepend(
+        &mut self,
+        cmd_name: &str,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+        input_reg: RegId,
+        mut input_vreg: VReg,
+        input_meta: &RegMetadata,
+        item_reg: RegId,
+        item_vreg: VReg,
+    ) -> Result<bool, CompileError> {
+        if !matches!(cmd_name, "append" | "prepend") {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "unsupported typed fixed-array insert command '{cmd_name}'"
+            )));
+        }
+
+        if matches!(
+            input_meta.constant_value,
+            Some(nu_protocol::Value::List { .. })
+        ) && !matches!(
+            input_meta.annotated_semantics,
+            Some(AnnotatedValueSemantics::FixedArray { .. })
+        ) {
+            return Ok(false);
+        }
+
+        let Some(mut base_runtime_ty) = self.typed_value_runtime_type(input_reg, input_vreg) else {
+            return Ok(false);
+        };
+        let Some((elem_ty, array_len)) = Self::aggregate_call_value_type(&base_runtime_ty)
+            .and_then(|ty| match ty {
+                MirType::Array { elem, len } => Some((elem.as_ref().clone(), *len)),
+                _ => None,
+            })
+        else {
+            return Ok(false);
+        };
+
+        if !Self::typed_fixed_array_append_scalar_type(&elem_ty) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} on typed fixed arrays currently supports only scalar numeric/bool elements in eBPF, got {:?}",
+                elem_ty
+            )));
+        }
+
+        if !matches!(base_runtime_ty, MirType::Ptr { .. })
+            && Self::aggregate_call_value_type(&base_runtime_ty).is_some()
+        {
+            input_vreg = self.materialized_metadata_aggregate_vreg(input_reg, input_vreg)?;
+            base_runtime_ty = self
+                .typed_value_runtime_type(input_reg, input_vreg)
+                .ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(format!(
+                        "{cmd_name} requires typed fixed-array input in eBPF"
+                    ))
+                })?;
+        }
+
+        let MirType::Ptr { address_space, .. } = base_runtime_ty else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires typed fixed-array pointer input in eBPF"
+            )));
+        };
+        if !matches!(
+            address_space,
+            AddressSpace::Stack | AddressSpace::Map | AddressSpace::Context
+        ) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} on typed fixed-array pointers in {address_space:?} address space is not yet supported in eBPF"
+            )));
+        }
+
+        let item_runtime_ty = self
+            .typed_value_runtime_type(item_reg, item_vreg)
+            .ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "{cmd_name} typed fixed-array item requires tracked scalar type in eBPF"
+                ))
+            })?;
+        let item_val = if let Some(coerced_vreg) =
+            self.coerce_scalar_assignment_value(item_vreg, &item_runtime_ty, &elem_ty)
+        {
+            MirValue::VReg(coerced_vreg)
+        } else if let Some(literal) = self
+            .get_metadata(item_reg)
+            .and_then(|meta| meta.literal_int)
+        {
+            Self::typed_fixed_array_literal_scalar_value(literal, &elem_ty).ok_or_else(|| {
+                CompileError::UnsupportedInstruction(format!(
+                    "{cmd_name} item literal {literal} cannot fit typed fixed-array element type {:?} in eBPF",
+                    elem_ty
+                ))
+            })?
+        } else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} item type {:?} cannot be stored in typed fixed-array element type {:?} in eBPF",
+                item_runtime_ty, elem_ty
+            )));
+        };
+
+        let out_len = array_len.checked_add(1).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} typed fixed-array result length overflowed in eBPF"
+            ))
+        })?;
+        let out_ty = MirType::Array {
+            elem: Box::new(elem_ty.clone()),
+            len: out_len,
+        };
+        let out_size = out_ty.size();
+        let out_slot =
+            self.func
+                .alloc_stack_slot(align_to_eight(out_size), 8, StackSlotKind::Local);
+        self.record_stack_slot_type(out_slot, out_ty.clone());
+
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+        self.emit(MirInst::Copy {
+            dst: result_vreg,
+            src: MirValue::StackSlot(out_slot),
+        });
+        self.vreg_type_hints.insert(
+            result_vreg,
+            MirType::Ptr {
+                pointee: Box::new(out_ty.clone()),
+                address_space: AddressSpace::Stack,
+            },
+        );
+
+        let elem_size = elem_ty.size();
+        let input_size = array_len.checked_mul(elem_size).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} typed fixed-array input byte length overflowed in eBPF"
+            ))
+        })?;
+        let insert_offset = if cmd_name == "prepend" { elem_size } else { 0 };
+        if input_size > 0 {
+            self.emit_ptr_to_slot_copy(out_slot, insert_offset, input_vreg, 0, input_size)?;
+        }
+
+        let item_offset = if cmd_name == "prepend" { 0 } else { input_size };
+        self.emit(MirInst::StoreSlot {
+            slot: out_slot,
+            offset: Self::checked_mir_offset(item_offset, "typed fixed-array insert item")?,
+            val: item_val,
+            ty: elem_ty,
+        });
+
+        let item_constant = self.get_metadata(item_reg).and_then(|meta| {
+            meta.constant_value.clone().or_else(|| {
+                meta.literal_int
+                    .map(|value| nu_protocol::Value::int(value, Span::unknown()))
+            })
+        });
+        let constant_value = match (&input_meta.constant_value, item_constant) {
+            (Some(nu_protocol::Value::List { vals, .. }), Some(item)) => {
+                let mut vals = vals.clone();
+                if cmd_name == "prepend" {
+                    vals.insert(0, item);
+                } else {
+                    vals.push(item);
+                }
+                Some(nu_protocol::Value::list(vals, Span::unknown()))
+            }
+            _ => None,
+        };
+        let annotated_semantics = match &input_meta.annotated_semantics {
+            Some(AnnotatedValueSemantics::FixedArray { elem, .. }) => {
+                Some(AnnotatedValueSemantics::FixedArray {
+                    elem: elem.clone(),
+                    len: out_len,
+                })
+            }
+            _ => None,
+        };
+
+        self.reset_call_result_metadata(src_dst);
+        let out_meta = self.get_or_create_metadata(src_dst);
+        out_meta.field_type = Some(out_ty);
+        out_meta.root_ctx_field = input_meta.root_ctx_field.clone();
+        out_meta.constant_value = constant_value;
+        out_meta.annotated_semantics = annotated_semantics;
+        Ok(true)
+    }
+
     pub(super) fn lower_stack_list_first_or_last_scalar(
         &mut self,
         cmd_name: &str,
