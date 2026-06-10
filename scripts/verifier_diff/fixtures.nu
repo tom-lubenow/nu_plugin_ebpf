@@ -1,6 +1,7 @@
 const VERIFIER_DIFF_FIXTURE_CHUNKS_DIR = (path self | path dirname | path join fixtures)
 source ($VERIFIER_DIFF_FIXTURE_CHUNKS_DIR | path join fixtures_0001_0062.nu)
-source ($VERIFIER_DIFF_FIXTURE_CHUNKS_DIR | path join fixtures_0063_0125.nu)
+source ($VERIFIER_DIFF_FIXTURE_CHUNKS_DIR | path join fixtures_0063_0093.nu)
+source ($VERIFIER_DIFF_FIXTURE_CHUNKS_DIR | path join fixtures_0094_0125.nu)
 source ($VERIFIER_DIFF_FIXTURE_CHUNKS_DIR | path join fixtures_0126_0187.nu)
 source ($VERIFIER_DIFF_FIXTURE_CHUNKS_DIR | path join fixtures_0188_0250.nu)
 source ($VERIFIER_DIFF_FIXTURE_CHUNKS_DIR | path join fixtures_0251_0312.nu)
@@ -378,7 +379,8 @@ source ($VERIFIER_DIFF_FIXTURE_CHUNKS_DIR | path join fixtures_3374_3375.nu)
 
 let FIXTURES = (
     $VERIFIER_DIFF_FIXTURES_0001_0062
-    | append $VERIFIER_DIFF_FIXTURES_0063_0125
+    | append $VERIFIER_DIFF_FIXTURES_0063_0093
+    | append $VERIFIER_DIFF_FIXTURES_0094_0125
     | append $VERIFIER_DIFF_FIXTURES_0126_0187
     | append $VERIFIER_DIFF_FIXTURES_0188_0250
     | append $VERIFIER_DIFF_FIXTURES_0251_0312
