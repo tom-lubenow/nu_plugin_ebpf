@@ -1525,12 +1525,35 @@ impl<'a> HirToMirLowering<'a> {
             rhs_vreg,
         )?;
 
+        let (materialized_vreg, materialized_meta) = self
+            .materialize_typed_fixed_array_numeric_list(
+                cmd_name, input_vreg, &elem_ty, array_len,
+            )?;
+        self.lower_bits_binary_runtime_list(
+            cmd_name,
+            src_dst,
+            materialized_vreg,
+            result_vreg,
+            &materialized_meta,
+            op,
+            rhs_const.map_or(MirValue::VReg(rhs_vreg), MirValue::Const),
+        )?;
+        Ok(true)
+    }
+
+    fn materialize_typed_fixed_array_numeric_list(
+        &mut self,
+        cmd_name: &str,
+        input_vreg: VReg,
+        elem_ty: &MirType,
+        array_len: usize,
+    ) -> Result<(VReg, RegMetadata), CompileError> {
         let materialized_vreg = self.func.alloc_vreg();
         let (materialized_slot, materialized_ty) =
             self.create_stack_numeric_list_result(materialized_vreg, array_len);
         for index in 0..array_len {
             let item_vreg = self
-                .emit_typed_fixed_array_numeric_list_item(cmd_name, input_vreg, &elem_ty, index)?;
+                .emit_typed_fixed_array_numeric_list_item(cmd_name, input_vreg, elem_ty, index)?;
             self.emit(MirInst::ListPush {
                 list: materialized_vreg,
                 item: item_vreg,
@@ -1547,16 +1570,7 @@ impl<'a> HirToMirLowering<'a> {
             }),
             ..RegMetadata::default()
         };
-        self.lower_bits_binary_runtime_list(
-            cmd_name,
-            src_dst,
-            materialized_vreg,
-            result_vreg,
-            &materialized_meta,
-            op,
-            rhs_const.map_or(MirValue::VReg(rhs_vreg), MirValue::Const),
-        )?;
-        Ok(true)
+        Ok((materialized_vreg, materialized_meta))
     }
 
     pub(in crate::compiler::ir_to_mir) fn lower_bits_shift(
@@ -3129,73 +3143,29 @@ impl<'a> HirToMirLowering<'a> {
         }
 
         let mode = self.bits_not_mode(cmd_name)?;
-        if let Some(input_meta) = input_meta.as_ref()
-            && let Some((_input_slot, max_len)) = input_meta.list_buffer
-        {
-            let (out_slot, out_ty) = self.create_stack_numeric_list_result(result_vreg, max_len);
-
-            if max_len > 0 {
-                let len_vreg = self.func.alloc_vreg();
-                self.emit(MirInst::ListLen {
-                    dst: len_vreg,
-                    list: input_vreg,
-                });
-                self.vreg_type_hints.insert(len_vreg, MirType::U64);
-
-                let continuation_block = self.func.alloc_block();
-                for index in 0..max_len {
-                    let transform_block = self.func.alloc_block();
-                    let next_block = if index + 1 == max_len {
-                        continuation_block
-                    } else {
-                        self.func.alloc_block()
-                    };
-
-                    let in_bounds_vreg = self.func.alloc_vreg();
-                    self.emit(MirInst::BinOp {
-                        dst: in_bounds_vreg,
-                        op: BinOpKind::Lt,
-                        lhs: MirValue::Const(index as i64),
-                        rhs: MirValue::VReg(len_vreg),
-                    });
-                    self.vreg_type_hints.insert(in_bounds_vreg, MirType::Bool);
-                    self.terminate(MirInst::Branch {
-                        cond: in_bounds_vreg,
-                        if_true: transform_block,
-                        if_false: next_block,
-                    });
-
-                    self.current_block = transform_block;
-                    let item_vreg = self.func.alloc_vreg();
-                    self.emit(MirInst::ListGet {
-                        dst: item_vreg,
-                        list: input_vreg,
-                        idx: MirValue::Const(index as i64),
-                    });
-                    self.vreg_type_hints.insert(item_vreg, MirType::I64);
-
-                    let output_vreg = self.func.alloc_vreg();
-                    if mode == BitsNotMode::Auto {
-                        self.emit_bits_not_auto_value(output_vreg, MirValue::VReg(item_vreg));
-                    } else {
-                        self.emit_bits_not_value(output_vreg, MirValue::VReg(item_vreg), mode);
-                    }
-                    self.vreg_type_hints.insert(output_vreg, MirType::I64);
-                    self.emit(MirInst::ListPush {
-                        list: result_vreg,
-                        item: output_vreg,
-                    });
-                    self.terminate(MirInst::Jump { target: next_block });
-
-                    self.current_block = next_block;
-                }
+        if let Some(input_meta) = input_meta.as_ref() {
+            if self.lower_typed_fixed_array_bits_not(
+                cmd_name,
+                src_dst,
+                input_reg,
+                input_vreg,
+                result_vreg,
+                input_meta,
+                mode,
+                MAX_BITS_STACK_LIST_CAPACITY,
+            )? {
+                return Ok(());
             }
-
-            let known_len = Self::numeric_list_known_len(input_meta).map(|len| len.min(max_len));
-            self.install_stack_numeric_list_result_metadata(
-                src_dst, out_slot, out_ty, max_len, known_len,
-            );
-            return Ok(());
+            if input_meta.list_buffer.is_some() {
+                return self.lower_bits_not_runtime_list(
+                    cmd_name,
+                    src_dst,
+                    input_vreg,
+                    result_vreg,
+                    input_meta,
+                    mode,
+                );
+            }
         }
 
         self.validate_bits_integer_operand_optional_metadata(
@@ -3231,6 +3201,123 @@ impl<'a> HirToMirLowering<'a> {
             self.get_or_create_metadata(src_dst).field_type = Some(MirType::I64);
         }
         self.vreg_type_hints.insert(result_vreg, MirType::I64);
+        Ok(())
+    }
+
+    fn lower_typed_fixed_array_bits_not(
+        &mut self,
+        cmd_name: &str,
+        src_dst: RegId,
+        input_reg: RegId,
+        input_vreg: VReg,
+        result_vreg: VReg,
+        input_meta: &RegMetadata,
+        mode: BitsNotMode,
+        max_bits_list_len: usize,
+    ) -> Result<bool, CompileError> {
+        let Some((input_vreg, elem_ty, array_len)) =
+            self.typed_fixed_array_numeric_list_input(cmd_name, input_reg, input_vreg, input_meta)?
+        else {
+            return Ok(false);
+        };
+        if array_len > max_bits_list_len {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} supports typed fixed-arrays with length <= {max_bits_list_len} in eBPF"
+            )));
+        }
+
+        let (materialized_vreg, materialized_meta) = self
+            .materialize_typed_fixed_array_numeric_list(
+                cmd_name, input_vreg, &elem_ty, array_len,
+            )?;
+        self.lower_bits_not_runtime_list(
+            cmd_name,
+            src_dst,
+            materialized_vreg,
+            result_vreg,
+            &materialized_meta,
+            mode,
+        )?;
+        Ok(true)
+    }
+
+    fn lower_bits_not_runtime_list(
+        &mut self,
+        cmd_name: &str,
+        src_dst: RegId,
+        input_vreg: VReg,
+        result_vreg: VReg,
+        input_meta: &RegMetadata,
+        mode: BitsNotMode,
+    ) -> Result<(), CompileError> {
+        let Some((_input_slot, max_len)) = input_meta.list_buffer else {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} requires a stack-backed integer list in eBPF"
+            )));
+        };
+        let (out_slot, out_ty) = self.create_stack_numeric_list_result(result_vreg, max_len);
+
+        if max_len > 0 {
+            let len_vreg = self.func.alloc_vreg();
+            self.emit(MirInst::ListLen {
+                dst: len_vreg,
+                list: input_vreg,
+            });
+            self.vreg_type_hints.insert(len_vreg, MirType::U64);
+
+            let continuation_block = self.func.alloc_block();
+            for index in 0..max_len {
+                let transform_block = self.func.alloc_block();
+                let next_block = if index + 1 == max_len {
+                    continuation_block
+                } else {
+                    self.func.alloc_block()
+                };
+
+                let in_bounds_vreg = self.func.alloc_vreg();
+                self.emit(MirInst::BinOp {
+                    dst: in_bounds_vreg,
+                    op: BinOpKind::Lt,
+                    lhs: MirValue::Const(index as i64),
+                    rhs: MirValue::VReg(len_vreg),
+                });
+                self.vreg_type_hints.insert(in_bounds_vreg, MirType::Bool);
+                self.terminate(MirInst::Branch {
+                    cond: in_bounds_vreg,
+                    if_true: transform_block,
+                    if_false: next_block,
+                });
+
+                self.current_block = transform_block;
+                let item_vreg = self.func.alloc_vreg();
+                self.emit(MirInst::ListGet {
+                    dst: item_vreg,
+                    list: input_vreg,
+                    idx: MirValue::Const(index as i64),
+                });
+                self.vreg_type_hints.insert(item_vreg, MirType::I64);
+
+                let output_vreg = self.func.alloc_vreg();
+                if mode == BitsNotMode::Auto {
+                    self.emit_bits_not_auto_value(output_vreg, MirValue::VReg(item_vreg));
+                } else {
+                    self.emit_bits_not_value(output_vreg, MirValue::VReg(item_vreg), mode);
+                }
+                self.vreg_type_hints.insert(output_vreg, MirType::I64);
+                self.emit(MirInst::ListPush {
+                    list: result_vreg,
+                    item: output_vreg,
+                });
+                self.terminate(MirInst::Jump { target: next_block });
+
+                self.current_block = next_block;
+            }
+        }
+
+        let known_len = Self::numeric_list_known_len(input_meta).map(|len| len.min(max_len));
+        self.install_stack_numeric_list_result_metadata(
+            src_dst, out_slot, out_ty, max_len, known_len,
+        );
         Ok(())
     }
 
