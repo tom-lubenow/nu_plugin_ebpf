@@ -1290,6 +1290,24 @@ impl<'a> HirToMirLowering<'a> {
             .and_then(Self::bits_binary_value_from_metadata);
         let op = Self::bits_binary_op(cmd_name);
 
+        if let Some(input_meta) = input_meta.as_ref() {
+            if self.lower_typed_fixed_array_bits_binary(
+                cmd_name,
+                src_dst,
+                input_reg,
+                input_vreg,
+                result_vreg,
+                input_meta,
+                op,
+                rhs_meta.as_ref(),
+                rhs_vreg,
+                rhs_const,
+                MAX_BITS_STACK_LIST_CAPACITY,
+            )? {
+                return Ok(());
+            }
+        }
+
         if let Some(nu_protocol::Value::List { vals, .. }) = input_meta
             .as_ref()
             .and_then(|meta| meta.constant_value.clone())
@@ -1474,6 +1492,71 @@ impl<'a> HirToMirLowering<'a> {
         }
         self.vreg_type_hints.insert(result_vreg, MirType::I64);
         Ok(())
+    }
+
+    fn lower_typed_fixed_array_bits_binary(
+        &mut self,
+        cmd_name: &str,
+        src_dst: RegId,
+        input_reg: RegId,
+        input_vreg: VReg,
+        result_vreg: VReg,
+        input_meta: &RegMetadata,
+        op: BinOpKind,
+        rhs_meta: Option<&RegMetadata>,
+        rhs_vreg: VReg,
+        rhs_const: Option<i64>,
+        max_bits_list_len: usize,
+    ) -> Result<bool, CompileError> {
+        let Some((input_vreg, elem_ty, array_len)) =
+            self.typed_fixed_array_numeric_list_input(cmd_name, input_reg, input_vreg, input_meta)?
+        else {
+            return Ok(false);
+        };
+        if array_len > max_bits_list_len {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} supports typed fixed-arrays with length <= {max_bits_list_len} in eBPF"
+            )));
+        }
+        self.validate_bits_integer_operand_optional_metadata(
+            cmd_name,
+            "target argument",
+            rhs_meta,
+            rhs_vreg,
+        )?;
+
+        let materialized_vreg = self.func.alloc_vreg();
+        let (materialized_slot, materialized_ty) =
+            self.create_stack_numeric_list_result(materialized_vreg, array_len);
+        for index in 0..array_len {
+            let item_vreg = self
+                .emit_typed_fixed_array_numeric_list_item(cmd_name, input_vreg, &elem_ty, index)?;
+            self.emit(MirInst::ListPush {
+                list: materialized_vreg,
+                item: item_vreg,
+            });
+        }
+
+        let materialized_meta = RegMetadata {
+            list_buffer: Some((materialized_slot, array_len)),
+            list_min_len: Some(array_len),
+            field_type: Some(materialized_ty),
+            annotated_semantics: Some(AnnotatedValueSemantics::NumericList {
+                max_len: array_len,
+                known_len: Some(array_len),
+            }),
+            ..RegMetadata::default()
+        };
+        self.lower_bits_binary_runtime_list(
+            cmd_name,
+            src_dst,
+            materialized_vreg,
+            result_vreg,
+            &materialized_meta,
+            op,
+            rhs_const.map_or(MirValue::VReg(rhs_vreg), MirValue::Const),
+        )?;
+        Ok(true)
     }
 
     pub(in crate::compiler::ir_to_mir) fn lower_bits_shift(
