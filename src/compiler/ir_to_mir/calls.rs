@@ -1061,6 +1061,81 @@ impl<'a> HirToMirLowering<'a> {
         Ok(true)
     }
 
+    fn lower_fixed_binary_split_no_match(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+        input_reg: RegId,
+        input_vreg: VReg,
+        separator: &[u8],
+    ) -> Result<bool, CompileError> {
+        let Some(input_len) = self.fixed_binary_input_len("bytes split", input_reg, input_vreg)?
+        else {
+            return Ok(false);
+        };
+        if separator.len() <= input_len {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "bytes split on typed fixed-size binary input requires a separator longer than the input length ({input_len}) in eBPF"
+            )));
+        }
+        if input_len == 0 {
+            if !self.current_call_result_metadata_only {
+                return Err(CompileError::UnsupportedInstruction(
+                    "bytes split requires non-empty binary parts in eBPF".into(),
+                ));
+            }
+            self.lower_compile_time_only_constant_value(
+                src_dst,
+                &nu_protocol::Value::list(
+                    vec![nu_protocol::Value::binary(Vec::new(), Span::unknown())],
+                    Span::unknown(),
+                ),
+            );
+            return Ok(true);
+        }
+
+        let elem_ty = MirType::Array {
+            elem: Box::new(MirType::U8),
+            len: input_len,
+        };
+        let out_ty = MirType::Array {
+            elem: Box::new(elem_ty),
+            len: 1,
+        };
+        let out_slot =
+            self.func
+                .alloc_stack_slot(align_to_eight(out_ty.size()), 8, StackSlotKind::Local);
+        self.record_stack_slot_type(out_slot, out_ty.clone());
+
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+        self.emit(MirInst::Copy {
+            dst: result_vreg,
+            src: MirValue::StackSlot(out_slot),
+        });
+        self.vreg_type_hints.insert(
+            result_vreg,
+            MirType::Ptr {
+                pointee: Box::new(out_ty.clone()),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        self.emit_ptr_to_slot_copy(out_slot, 0, input_vreg, 0, input_len)?;
+
+        self.reset_call_result_metadata(src_dst);
+        let out_meta = self.get_or_create_metadata(src_dst);
+        out_meta.field_type = Some(out_ty);
+        out_meta.annotated_semantics = Some(AnnotatedValueSemantics::FixedArray {
+            elem: Box::new(AnnotatedValueSemantics::Binary { len: input_len }),
+            len: 1,
+        });
+        Ok(true)
+    }
+
     fn bytes_add_output(input: &[u8], data: &[u8], index: i64, from_end: bool) -> Vec<u8> {
         let input_len = input.len();
         let index = index as usize;
@@ -5931,12 +6006,7 @@ impl<'a> HirToMirLowering<'a> {
                     .and_then(|meta| match meta.constant_value.as_ref() {
                         Some(nu_protocol::Value::Binary { val, .. }) => Some(val.clone()),
                         _ => None,
-                    })
-                    .ok_or_else(|| {
-                        CompileError::UnsupportedInstruction(
-                            "bytes split requires compile-time known binary input in eBPF".into(),
-                        )
-                    })?;
+                    });
                 let (_, separator_reg) = self.positional_args[0];
                 let separator = self
                     .get_metadata(separator_reg)
@@ -5959,6 +6029,28 @@ impl<'a> HirToMirLowering<'a> {
                         "bytes split requires a non-empty separator in eBPF".into(),
                     ));
                 }
+
+                let Some(input) = input else {
+                    let input_reg = input_reg.ok_or_else(|| {
+                        CompileError::UnsupportedInstruction(
+                            "bytes split requires compile-time known binary input in eBPF".into(),
+                        )
+                    })?;
+                    let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
+                    if !self.lower_fixed_binary_split_no_match(
+                        src_dst,
+                        dst_vreg,
+                        src_dst_had_value,
+                        input_reg,
+                        input_vreg,
+                        &separator,
+                    )? {
+                        return Err(CompileError::UnsupportedInstruction(
+                            "bytes split requires compile-time known binary input in eBPF".into(),
+                        ));
+                    }
+                    return Ok(());
+                };
 
                 let mut parts = Vec::new();
                 let mut offset = 0usize;
