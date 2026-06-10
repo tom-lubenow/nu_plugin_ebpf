@@ -8193,7 +8193,7 @@ fn test_lower_first_on_empty_numeric_list_is_rejected() {
 
     assert!(
         err.to_string()
-            .contains("first requires a non-empty stack-backed numeric list"),
+            .contains("first requires a stack-backed numeric list with proven non-empty length"),
         "unexpected error: {err}"
     );
 }
@@ -8216,7 +8216,7 @@ fn test_lower_last_on_empty_numeric_list_is_rejected() {
 
     assert!(
         err.to_string()
-            .contains("last requires a non-empty stack-backed numeric list"),
+            .contains("last requires a stack-backed numeric list with proven non-empty length"),
         "unexpected error: {err}"
     );
 }
