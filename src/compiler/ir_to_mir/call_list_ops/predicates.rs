@@ -198,7 +198,7 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(false);
         };
 
-        if !Self::typed_fixed_array_numeric_list_scalar_type(&elem_ty) {
+        if !Self::typed_fixed_array_predicate_scalar_type(&elem_ty) {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "{cmd_name} on typed fixed arrays currently supports integer scalar elements in eBPF, got {:?}",
                 elem_ty
@@ -255,8 +255,8 @@ impl<'a> HirToMirLowering<'a> {
                     target: predicate_block,
                 });
                 self.current_block = predicate_block;
-                let elem_vreg = self
-                    .emit_typed_fixed_array_numeric_list_item(cmd_name, input_vreg, &elem_ty, i)?;
+                let elem_vreg =
+                    self.emit_typed_fixed_array_predicate_item(cmd_name, input_vreg, &elem_ty, i)?;
 
                 let predicate =
                     self.inline_closure_with_in(closure_block_id, closure_ir, elem_vreg)?;
@@ -303,5 +303,40 @@ impl<'a> HirToMirLowering<'a> {
         out_meta.field_type = Some(MirType::Bool);
         self.vreg_type_hints.insert(result_vreg, MirType::Bool);
         Ok(true)
+    }
+
+    fn typed_fixed_array_predicate_scalar_type(ty: &MirType) -> bool {
+        Self::typed_fixed_array_numeric_list_scalar_type(ty) || matches!(ty, MirType::U64)
+    }
+
+    fn emit_typed_fixed_array_predicate_item(
+        &mut self,
+        cmd_name: &str,
+        input_vreg: VReg,
+        elem_ty: &MirType,
+        index: usize,
+    ) -> Result<VReg, CompileError> {
+        if !matches!(elem_ty, MirType::U64) {
+            return self
+                .emit_typed_fixed_array_numeric_list_item(cmd_name, input_vreg, elem_ty, index);
+        }
+
+        let elem_size = elem_ty.size();
+        let offset = index.checked_mul(elem_size).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} typed fixed-array item offset overflowed in eBPF"
+            ))
+        })?;
+        let offset = Self::checked_mir_offset(offset, "typed fixed-array predicate item")?;
+
+        let raw_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::Load {
+            dst: raw_vreg,
+            ptr: input_vreg,
+            offset,
+            ty: elem_ty.clone(),
+        });
+        self.vreg_type_hints.insert(raw_vreg, elem_ty.clone());
+        Ok(raw_vreg)
     }
 }
