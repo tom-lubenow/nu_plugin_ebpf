@@ -2057,6 +2057,20 @@ impl<'a> HirToMirLowering<'a> {
                 )
             })?;
 
+        if let Some(input_reg) = input_reg
+            && self.lower_typed_fixed_array_math_median(
+                src_dst,
+                dst_vreg,
+                src_dst_had_value,
+                input_reg,
+                input_vreg,
+                &input_meta,
+                MAX_MEDIAN_STACK_LIST_LEN,
+            )?
+        {
+            return Ok(());
+        }
+
         if let Some(nu_protocol::Value::List { vals, .. }) = input_meta.constant_value.clone() {
             if vals.iter().any(|value| {
                 matches!(
@@ -2221,6 +2235,81 @@ impl<'a> HirToMirLowering<'a> {
         out_meta.field_type = Some(MirType::I64);
         self.vreg_type_hints.insert(result_vreg, MirType::I64);
         Ok(())
+    }
+
+    fn lower_typed_fixed_array_math_median(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+        input_reg: RegId,
+        input_vreg: VReg,
+        input_meta: &RegMetadata,
+        max_median_len: usize,
+    ) -> Result<bool, CompileError> {
+        let Some((input_vreg, elem_ty, array_len)) = self.typed_fixed_array_numeric_list_input(
+            "math median",
+            input_reg,
+            input_vreg,
+            input_meta,
+        )?
+        else {
+            return Ok(false);
+        };
+
+        if array_len == 0 {
+            return Err(CompileError::UnsupportedInstruction(
+                "math median requires a non-empty typed fixed-array in eBPF".into(),
+            ));
+        }
+        if array_len % 2 == 0 {
+            return Err(CompileError::UnsupportedInstruction(
+                "math median requires an odd-length typed fixed-array in eBPF because even-length medians are floats in Nushell".into(),
+            ));
+        }
+        if array_len > max_median_len {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "math median supports typed fixed-arrays with known odd length <= {max_median_len} in eBPF"
+            )));
+        }
+
+        let sorted_vreg = self.func.alloc_vreg();
+        let (sorted_slot, _sorted_ty) =
+            self.create_stack_numeric_list_result(sorted_vreg, array_len);
+        for index in 0..array_len {
+            let item_vreg = self.emit_typed_fixed_array_numeric_list_item(
+                "math median",
+                input_vreg,
+                &elem_ty,
+                index,
+            )?;
+            self.emit(MirInst::ListPush {
+                list: sorted_vreg,
+                item: item_vreg,
+            });
+        }
+
+        for pass in 0..array_len {
+            for left_index in 0..array_len.saturating_sub(1 + pass) {
+                self.emit_stack_list_compare_swap(sorted_slot, left_index, left_index + 1, false);
+            }
+        }
+
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+        self.emit(MirInst::ListGet {
+            dst: result_vreg,
+            list: sorted_vreg,
+            idx: MirValue::Const((array_len / 2) as i64),
+        });
+        self.reset_call_result_metadata(src_dst);
+        let out_meta = self.get_or_create_metadata(src_dst);
+        out_meta.field_type = Some(MirType::I64);
+        self.vreg_type_hints.insert(result_vreg, MirType::I64);
+        Ok(true)
     }
 
     pub(in crate::compiler::ir_to_mir) fn lower_stack_list_math_reduce(
