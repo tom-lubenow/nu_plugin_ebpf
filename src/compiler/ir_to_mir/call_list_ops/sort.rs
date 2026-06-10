@@ -112,6 +112,21 @@ impl<'a> HirToMirLowering<'a> {
                     "sort requires a pipeline input with tracked metadata in eBPF".into(),
                 )
             })?;
+
+        if let Some(input_reg) = input_reg
+            && self.lower_typed_fixed_array_sort(
+                src_dst,
+                dst_vreg,
+                src_dst_had_value,
+                input_reg,
+                input_vreg,
+                &input_meta,
+                reverse,
+            )?
+        {
+            return Ok(());
+        }
+
         let Some((_input_slot, max_len)) = input_meta.list_buffer else {
             return Err(CompileError::UnsupportedInstruction(
                 "sort requires a stack-backed list input in eBPF".into(),
@@ -211,6 +226,260 @@ impl<'a> HirToMirLowering<'a> {
         if let Some(value) = constant_value {
             self.get_or_create_metadata(src_dst).constant_value = Some(value);
         }
+        Ok(())
+    }
+
+    fn typed_fixed_array_sort_scalar_type(ty: &MirType) -> bool {
+        matches!(
+            ty,
+            MirType::I8
+                | MirType::I16
+                | MirType::I32
+                | MirType::I64
+                | MirType::U8
+                | MirType::U16
+                | MirType::U32
+                | MirType::U64
+        )
+    }
+
+    fn lower_typed_fixed_array_sort(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+        input_reg: RegId,
+        mut input_vreg: VReg,
+        input_meta: &RegMetadata,
+        reverse: bool,
+    ) -> Result<bool, CompileError> {
+        if matches!(
+            input_meta.constant_value,
+            Some(nu_protocol::Value::List { .. })
+        ) && !matches!(
+            input_meta.annotated_semantics,
+            Some(AnnotatedValueSemantics::FixedArray { .. })
+        ) {
+            return Ok(false);
+        }
+
+        let Some(mut base_runtime_ty) = self.typed_value_runtime_type(input_reg, input_vreg) else {
+            return Ok(false);
+        };
+        let Some((elem_ty, array_len)) = Self::aggregate_call_value_type(&base_runtime_ty)
+            .and_then(|ty| match ty {
+                MirType::Array { elem, len } => Some((elem.as_ref().clone(), *len)),
+                _ => None,
+            })
+        else {
+            return Ok(false);
+        };
+
+        if !Self::typed_fixed_array_sort_scalar_type(&elem_ty) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "sort on typed fixed arrays currently supports only integer scalar elements in eBPF, got {:?}",
+                elem_ty
+            )));
+        }
+        if array_len > MAX_STACK_LIST_SORT_CAPACITY {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "sort supports typed fixed arrays with length <= {MAX_STACK_LIST_SORT_CAPACITY} in eBPF"
+            )));
+        }
+
+        if !matches!(base_runtime_ty, MirType::Ptr { .. })
+            && Self::aggregate_call_value_type(&base_runtime_ty).is_some()
+        {
+            input_vreg = self.materialized_metadata_aggregate_vreg(input_reg, input_vreg)?;
+            base_runtime_ty = self
+                .typed_value_runtime_type(input_reg, input_vreg)
+                .ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(
+                        "sort requires typed fixed-array input in eBPF".into(),
+                    )
+                })?;
+        }
+
+        let MirType::Ptr { address_space, .. } = base_runtime_ty else {
+            return Err(CompileError::UnsupportedInstruction(
+                "sort requires typed fixed-array pointer input in eBPF".into(),
+            ));
+        };
+        if !matches!(
+            address_space,
+            AddressSpace::Stack | AddressSpace::Map | AddressSpace::Context
+        ) {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "sort on typed fixed-array pointers in {address_space:?} address space is not yet supported in eBPF"
+            )));
+        }
+
+        let out_ty = MirType::Array {
+            elem: Box::new(elem_ty.clone()),
+            len: array_len,
+        };
+        let out_size = out_ty.size();
+        if out_size == 0 {
+            self.lower_compile_time_list_transform_result(
+                src_dst,
+                &nu_protocol::Value::list(Vec::new(), Span::unknown()),
+            )?;
+            return Ok(true);
+        }
+
+        let out_slot =
+            self.func
+                .alloc_stack_slot(align_to_eight(out_size), 8, StackSlotKind::Local);
+        self.record_stack_slot_type(out_slot, out_ty.clone());
+
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+        self.emit(MirInst::Copy {
+            dst: result_vreg,
+            src: MirValue::StackSlot(out_slot),
+        });
+        self.vreg_type_hints.insert(
+            result_vreg,
+            MirType::Ptr {
+                pointee: Box::new(out_ty.clone()),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        self.emit_ptr_to_slot_copy(out_slot, 0, input_vreg, 0, out_size)?;
+
+        for pass in 0..array_len {
+            for left_index in 0..array_len.saturating_sub(1 + pass) {
+                self.emit_fixed_array_compare_swap(
+                    out_slot,
+                    &elem_ty,
+                    left_index,
+                    left_index + 1,
+                    reverse,
+                )?;
+            }
+        }
+
+        let constant_value = match &input_meta.constant_value {
+            Some(nu_protocol::Value::List { vals, .. }) => {
+                let mut vals = vals.clone();
+                vals.sort_by(|lhs, rhs| {
+                    let ord = match (Self::literal_int_value(lhs), Self::literal_int_value(rhs)) {
+                        (Some(lhs), Some(rhs)) => lhs.cmp(&rhs),
+                        _ => std::cmp::Ordering::Equal,
+                    };
+                    if reverse { ord.reverse() } else { ord }
+                });
+                Some(nu_protocol::Value::list(vals, Span::unknown()))
+            }
+            _ => None,
+        };
+        let annotated_semantics = match &input_meta.annotated_semantics {
+            Some(AnnotatedValueSemantics::FixedArray { elem, .. }) => {
+                Some(AnnotatedValueSemantics::FixedArray {
+                    elem: elem.clone(),
+                    len: array_len,
+                })
+            }
+            _ => None,
+        };
+
+        self.reset_call_result_metadata(src_dst);
+        let out_meta = self.get_or_create_metadata(src_dst);
+        out_meta.field_type = Some(out_ty);
+        out_meta.root_ctx_field = input_meta.root_ctx_field.clone();
+        out_meta.constant_value = constant_value;
+        out_meta.annotated_semantics = annotated_semantics;
+        Ok(true)
+    }
+
+    fn emit_fixed_array_compare_swap(
+        &mut self,
+        slot: StackSlotId,
+        elem_ty: &MirType,
+        left_index: usize,
+        right_index: usize,
+        reverse: bool,
+    ) -> Result<(), CompileError> {
+        let elem_size = elem_ty.size();
+        let left_offset = left_index.checked_mul(elem_size).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "sort typed fixed-array left offset overflowed in eBPF".into(),
+            )
+        })?;
+        let right_offset = right_index.checked_mul(elem_size).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "sort typed fixed-array right offset overflowed in eBPF".into(),
+            )
+        })?;
+        let left_offset =
+            Self::checked_mir_offset(left_offset, "typed fixed-array sort left item")?;
+        let right_offset =
+            Self::checked_mir_offset(right_offset, "typed fixed-array sort right item")?;
+
+        let compare_block = self.func.alloc_block();
+        let swap_block = self.func.alloc_block();
+        let next_block = self.func.alloc_block();
+
+        self.terminate(MirInst::Jump {
+            target: compare_block,
+        });
+        self.current_block = compare_block;
+
+        let left_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::LoadSlot {
+            dst: left_vreg,
+            slot,
+            offset: left_offset,
+            ty: elem_ty.clone(),
+        });
+        self.vreg_type_hints.insert(left_vreg, elem_ty.clone());
+
+        let right_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::LoadSlot {
+            dst: right_vreg,
+            slot,
+            offset: right_offset,
+            ty: elem_ty.clone(),
+        });
+        self.vreg_type_hints.insert(right_vreg, elem_ty.clone());
+
+        let swap_cond = self.func.alloc_vreg();
+        self.emit(MirInst::BinOp {
+            dst: swap_cond,
+            op: if reverse {
+                BinOpKind::Lt
+            } else {
+                BinOpKind::Gt
+            },
+            lhs: MirValue::VReg(left_vreg),
+            rhs: MirValue::VReg(right_vreg),
+        });
+        self.vreg_type_hints.insert(swap_cond, MirType::Bool);
+        self.terminate(MirInst::Branch {
+            cond: swap_cond,
+            if_true: swap_block,
+            if_false: next_block,
+        });
+
+        self.current_block = swap_block;
+        self.emit(MirInst::StoreSlot {
+            slot,
+            offset: left_offset,
+            val: MirValue::VReg(right_vreg),
+            ty: elem_ty.clone(),
+        });
+        self.emit(MirInst::StoreSlot {
+            slot,
+            offset: right_offset,
+            val: MirValue::VReg(left_vreg),
+            ty: elem_ty.clone(),
+        });
+        self.terminate(MirInst::Jump { target: next_block });
+
+        self.current_block = next_block;
         Ok(())
     }
 
