@@ -1615,6 +1615,20 @@ impl<'a> HirToMirLowering<'a> {
                 )
             })?;
 
+        if let Some(input_reg) = input_reg
+            && self.lower_typed_fixed_array_math_mode(
+                src_dst,
+                dst_vreg,
+                src_dst_had_value,
+                input_reg,
+                input_vreg,
+                &input_meta,
+                MAX_RUNTIME_MODE_STACK_LIST_CAPACITY,
+            )?
+        {
+            return Ok(());
+        }
+
         if let Some(nu_protocol::Value::List { vals, .. }) = input_meta.constant_value {
             let mut counts = std::collections::BTreeMap::<i64, usize>::new();
             for (index, value) in vals.into_iter().enumerate() {
@@ -1664,6 +1678,68 @@ impl<'a> HirToMirLowering<'a> {
             input_meta,
             max_len,
         )
+    }
+
+    fn lower_typed_fixed_array_math_mode(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+        input_reg: RegId,
+        input_vreg: VReg,
+        input_meta: &RegMetadata,
+        max_mode_len: usize,
+    ) -> Result<bool, CompileError> {
+        let Some((input_vreg, elem_ty, array_len)) = self.typed_fixed_array_numeric_list_input(
+            "math mode",
+            input_reg,
+            input_vreg,
+            input_meta,
+        )?
+        else {
+            return Ok(false);
+        };
+        if array_len > max_mode_len {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "math mode supports typed fixed-arrays with length <= {max_mode_len} in eBPF"
+            )));
+        }
+
+        let materialized_vreg = self.func.alloc_vreg();
+        let (materialized_slot, materialized_ty) =
+            self.create_stack_numeric_list_result(materialized_vreg, array_len);
+        for index in 0..array_len {
+            let item_vreg = self.emit_typed_fixed_array_numeric_list_item(
+                "math mode",
+                input_vreg,
+                &elem_ty,
+                index,
+            )?;
+            self.emit(MirInst::ListPush {
+                list: materialized_vreg,
+                item: item_vreg,
+            });
+        }
+
+        let materialized_meta = RegMetadata {
+            list_buffer: Some((materialized_slot, array_len)),
+            list_min_len: Some(array_len),
+            field_type: Some(materialized_ty),
+            annotated_semantics: Some(AnnotatedValueSemantics::NumericList {
+                max_len: array_len,
+                known_len: Some(array_len),
+            }),
+            ..RegMetadata::default()
+        };
+        self.lower_stack_list_math_mode(
+            src_dst,
+            dst_vreg,
+            src_dst_had_value,
+            materialized_vreg,
+            materialized_meta,
+            array_len,
+        )?;
+        Ok(true)
     }
 
     fn lower_stack_list_math_mode(
