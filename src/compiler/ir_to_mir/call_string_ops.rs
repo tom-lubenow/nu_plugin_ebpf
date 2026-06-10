@@ -53,6 +53,7 @@ struct RuntimeStringDynamicEnd {
 const MAX_STRING_EXPAND_RESULTS: usize = 60;
 const MAX_RUNTIME_UNSIGNED_LEFT_FILL_WIDTH: usize = MAX_STRING_SIZE - 1;
 const MAX_RUNTIME_FILL_DIGIT_THRESHOLD: usize = 18;
+const MAX_STACK_NUMERIC_LIST_CAPACITY: usize = 60;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FillAlignment {
@@ -367,8 +368,6 @@ impl<'a> HirToMirLowering<'a> {
         input_reg: RegId,
         mut input_vreg: VReg,
     ) -> Result<bool, CompileError> {
-        const MAX_STACK_NUMERIC_LIST_CAPACITY: usize = 60;
-
         let Some(input_meta) = self.get_metadata(input_reg).cloned() else {
             return Ok(false);
         };
@@ -589,6 +588,20 @@ impl<'a> HirToMirLowering<'a> {
             return self.lower_known_bool_list_result(src_dst, output);
         }
 
+        let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
+        if let Some(input_reg) = input_reg
+            && self.lower_typed_fixed_string_array_starts_with(
+                src_dst,
+                result_vreg,
+                input_reg,
+                input_vreg,
+                &prefix,
+                ignore_case,
+            )?
+        {
+            return Ok(());
+        }
+
         let input_meta = input_reg
             .and_then(|reg| self.get_metadata(reg).cloned())
             .ok_or_else(|| {
@@ -668,6 +681,234 @@ impl<'a> HirToMirLowering<'a> {
         out_meta.field_type = Some(MirType::Bool);
         self.vreg_type_hints.insert(result_vreg, MirType::Bool);
         Ok(())
+    }
+
+    fn lower_typed_fixed_string_array_starts_with(
+        &mut self,
+        src_dst: RegId,
+        result_vreg: VReg,
+        input_reg: RegId,
+        mut input_vreg: VReg,
+        prefix: &str,
+        ignore_case: bool,
+    ) -> Result<bool, CompileError> {
+        let Some(input_meta) = self.get_metadata(input_reg).cloned() else {
+            return Ok(false);
+        };
+        let Some(AnnotatedValueSemantics::FixedArray { elem, len }) =
+            input_meta.annotated_semantics.as_ref()
+        else {
+            return Ok(false);
+        };
+        let AnnotatedValueSemantics::String {
+            slot_len,
+            content_cap,
+        } = elem.as_ref()
+        else {
+            return Ok(false);
+        };
+
+        if ignore_case {
+            return Err(CompileError::UnsupportedInstruction(
+                "str starts-with --ignore-case requires compile-time known string input in eBPF"
+                    .into(),
+            ));
+        }
+
+        let mut base_runtime_ty = match self.typed_value_runtime_type(input_reg, input_vreg) {
+            Some(ty) => ty,
+            None => return Ok(false),
+        };
+        let Some(MirType::Array {
+            elem: array_elem_ty,
+            len: array_len,
+        }) = Self::aggregate_call_value_type(&base_runtime_ty)
+        else {
+            return Ok(false);
+        };
+        let mut elem_ty = array_elem_ty.as_ref().clone();
+        let mut array_len = *array_len;
+
+        if !matches!(base_runtime_ty, MirType::Ptr { .. }) {
+            input_vreg = self.materialized_metadata_aggregate_vreg(input_reg, input_vreg)?;
+            base_runtime_ty = self
+                .typed_value_runtime_type(input_reg, input_vreg)
+                .ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(
+                        "str starts-with requires typed fixed string-array input in eBPF".into(),
+                    )
+                })?;
+            let Some(MirType::Array { elem, len }) =
+                Self::aggregate_call_value_type(&base_runtime_ty)
+            else {
+                return Err(CompileError::UnsupportedInstruction(
+                    "str starts-with requires typed fixed string-array input in eBPF".into(),
+                ));
+            };
+            elem_ty = elem.as_ref().clone();
+            array_len = *len;
+        }
+
+        if array_len != *len {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "str starts-with typed fixed string-array length metadata mismatch: type length {array_len}, semantic length {len}"
+            )));
+        }
+        if array_len > MAX_STACK_NUMERIC_LIST_CAPACITY {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "str starts-with output exceeds stack-backed numeric list capacity {MAX_STACK_NUMERIC_LIST_CAPACITY} in eBPF"
+            )));
+        }
+        let elem_size = elem_ty.size();
+        let min_elem_size = 8usize.checked_add(*slot_len).ok_or_else(|| {
+            CompileError::UnsupportedInstruction(
+                "str starts-with typed fixed string-array element size overflowed in eBPF".into(),
+            )
+        })?;
+        if elem_size < min_elem_size {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "str starts-with typed fixed string-array element storage is too small: element size {elem_size}, required {min_elem_size}"
+            )));
+        }
+
+        let address_space = match &base_runtime_ty {
+            MirType::Ptr { address_space, .. } => *address_space,
+            _ => {
+                return Err(CompileError::UnsupportedInstruction(
+                    "str starts-with requires typed fixed string-array pointer input in eBPF"
+                        .into(),
+                ));
+            }
+        };
+
+        let prefix_len = prefix.len();
+        let prefix_too_long = prefix_len > *content_cap;
+        let (out_slot, out_ty) = self.create_stack_numeric_list_result(result_vreg, array_len);
+        for index in 0..array_len {
+            let item_vreg = self.func.alloc_vreg();
+            if prefix_len == 0 || prefix_too_long {
+                self.emit(MirInst::Copy {
+                    dst: item_vreg,
+                    src: MirValue::Const(if prefix_len == 0 { 1 } else { 0 }),
+                });
+                self.vreg_type_hints.insert(item_vreg, MirType::Bool);
+                self.emit(MirInst::ListPush {
+                    list: result_vreg,
+                    item: item_vreg,
+                });
+                continue;
+            }
+
+            let byte_offset = index.checked_mul(elem_size).ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "str starts-with typed fixed string-array element offset overflowed in eBPF"
+                        .into(),
+                )
+            })?;
+            let byte_offset = i64::try_from(byte_offset).map_err(|_| {
+                CompileError::UnsupportedInstruction(
+                    "str starts-with typed fixed string-array element offset is too large for eBPF"
+                        .into(),
+                )
+            })?;
+            let element_ptr = self.func.alloc_vreg();
+            self.vreg_type_hints.insert(
+                element_ptr,
+                MirType::Ptr {
+                    pointee: Box::new(elem_ty.clone()),
+                    address_space,
+                },
+            );
+            self.emit(MirInst::BinOp {
+                dst: element_ptr,
+                op: BinOpKind::Add,
+                lhs: MirValue::VReg(input_vreg),
+                rhs: MirValue::Const(byte_offset),
+            });
+
+            let len_vreg = self.func.alloc_vreg();
+            self.emit(MirInst::Load {
+                dst: len_vreg,
+                ptr: element_ptr,
+                offset: 0,
+                ty: MirType::I64,
+            });
+            self.vreg_type_hints.insert(len_vreg, MirType::I64);
+
+            let mut bytes_match = None;
+            for (byte_index, expected) in prefix.as_bytes().iter().copied().enumerate() {
+                let load_offset = 8usize.checked_add(byte_index).ok_or_else(|| {
+                    CompileError::UnsupportedInstruction(
+                        "str starts-with typed fixed string-array byte offset overflowed in eBPF"
+                            .into(),
+                    )
+                })?;
+                let load_offset = i32::try_from(load_offset).map_err(|_| {
+                    CompileError::UnsupportedInstruction(
+                        "str starts-with typed fixed string-array byte offset is too large for eBPF"
+                            .into(),
+                    )
+                })?;
+                let byte_vreg = self.func.alloc_vreg();
+                self.emit(MirInst::Load {
+                    dst: byte_vreg,
+                    ptr: element_ptr,
+                    offset: load_offset,
+                    ty: MirType::U8,
+                });
+                self.vreg_type_hints.insert(byte_vreg, MirType::U8);
+
+                let byte_matches = self.func.alloc_vreg();
+                self.emit(MirInst::BinOp {
+                    dst: byte_matches,
+                    op: BinOpKind::Eq,
+                    lhs: MirValue::VReg(byte_vreg),
+                    rhs: MirValue::Const(i64::from(expected)),
+                });
+                self.vreg_type_hints.insert(byte_matches, MirType::Bool);
+
+                bytes_match = Some(if let Some(prev) = bytes_match {
+                    let next = self.func.alloc_vreg();
+                    self.emit(MirInst::BinOp {
+                        dst: next,
+                        op: BinOpKind::And,
+                        lhs: MirValue::VReg(prev),
+                        rhs: MirValue::VReg(byte_matches),
+                    });
+                    self.vreg_type_hints.insert(next, MirType::Bool);
+                    next
+                } else {
+                    byte_matches
+                });
+            }
+
+            let bytes_match = bytes_match.ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "str starts-with typed fixed string-array prefix match requires a non-empty prefix in eBPF"
+                        .into(),
+                )
+            })?;
+            self.lower_string_len_guarded_match(
+                item_vreg,
+                len_vreg,
+                BinOpKind::Ge,
+                prefix_len,
+                bytes_match,
+            );
+            self.emit(MirInst::ListPush {
+                list: result_vreg,
+                item: item_vreg,
+            });
+        }
+
+        self.install_stack_numeric_list_result_metadata(
+            src_dst,
+            out_slot,
+            out_ty,
+            array_len,
+            Some(array_len),
+        );
+        Ok(true)
     }
 
     fn lower_string_len_guarded_match(
