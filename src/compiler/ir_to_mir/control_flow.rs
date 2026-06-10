@@ -1083,6 +1083,13 @@ impl<'a> HirToMirLowering<'a> {
             has_metadata = true;
         }
 
+        if incoming.iter().all(|meta| meta.list_min_len.is_some())
+            && let Some(min_len) = incoming.iter().filter_map(|meta| meta.list_min_len).min()
+        {
+            merged.list_min_len = Some(min_len);
+            has_metadata = true;
+        }
+
         if let Some(map_ref) = &first.dynamic_map_ref
             && incoming
                 .iter()
@@ -1664,6 +1671,7 @@ impl<'a> HirToMirLowering<'a> {
         self.set_reg_constant_value(src_dst, constant_value);
         if let Some(meta) = self.reg_metadata.get_mut(&src_dst.get()) {
             meta.list_buffer = None;
+            meta.list_min_len = None;
         }
         Ok(())
     }
@@ -1700,6 +1708,7 @@ impl<'a> HirToMirLowering<'a> {
         self.set_reg_constant_value(src_dst, constant_value);
         if let Some(meta) = self.reg_metadata.get_mut(&src_dst.get()) {
             meta.list_buffer = None;
+            meta.list_min_len = None;
         }
         Ok(())
     }

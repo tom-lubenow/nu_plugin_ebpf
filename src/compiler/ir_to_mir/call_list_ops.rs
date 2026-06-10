@@ -771,12 +771,14 @@ impl<'a> HirToMirLowering<'a> {
             .is_some()
         {
             let input_meta = input_meta.expect("checked stack-list metadata");
-            let Some(known_len) = Self::numeric_list_known_len(&input_meta) else {
+            let known_len = Self::numeric_list_known_len(&input_meta);
+            let min_len = input_meta.list_min_len.or(known_len);
+            if cmd_name == "first" && min_len.unwrap_or(0) == 0 {
                 return Err(CompileError::UnsupportedInstruction(format!(
-                    "{cmd_name} requires a stack-backed numeric list with known non-empty length in eBPF"
+                    "{cmd_name} requires a stack-backed numeric list with proven non-empty length in eBPF"
                 )));
-            };
-            if known_len == 0 {
+            }
+            if cmd_name == "last" && known_len.unwrap_or(0) == 0 {
                 return Err(CompileError::UnsupportedInstruction(format!(
                     "{cmd_name} requires a non-empty stack-backed numeric list in eBPF"
                 )));
@@ -1543,6 +1545,7 @@ impl<'a> HirToMirLowering<'a> {
         self.reset_call_result_metadata(src_dst);
         let out_meta = self.get_or_create_metadata(src_dst);
         out_meta.list_buffer = Some((out_slot, max_len));
+        out_meta.list_min_len = known_len;
         out_meta.field_type = Some(out_ty);
         out_meta.annotated_semantics =
             Some(AnnotatedValueSemantics::NumericList { max_len, known_len });

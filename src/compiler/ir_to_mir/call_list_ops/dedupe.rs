@@ -158,6 +158,9 @@ impl<'a> HirToMirLowering<'a> {
             self.current_block = continuation_block;
         }
 
+        let input_min_len = input_meta
+            .list_min_len
+            .or_else(|| Self::numeric_list_known_len(&input_meta));
         let constant_value = match input_meta.constant_value {
             Some(nu_protocol::Value::List { vals, .. }) => {
                 let mut unique = Vec::new();
@@ -170,13 +173,21 @@ impl<'a> HirToMirLowering<'a> {
             }
             _ => None,
         };
+        let known_len = constant_value.as_ref().and_then(|value| match value {
+            nu_protocol::Value::List { vals, .. } => Some(vals.len()),
+            _ => None,
+        });
 
-        self.install_stack_numeric_list_result_metadata(src_dst, out_slot, out_ty, max_len, None);
+        self.install_stack_numeric_list_result_metadata(
+            src_dst, out_slot, out_ty, max_len, known_len,
+        );
+        if known_len.is_none()
+            && let Some(input_min_len) = input_min_len
+        {
+            self.get_or_create_metadata(src_dst).list_min_len =
+                Some(if input_min_len > 0 { 1 } else { 0 });
+        }
         if let Some(value) = constant_value {
-            let known_len = match &value {
-                nu_protocol::Value::List { vals, .. } => Some(vals.len()),
-                _ => None,
-            };
             let out_meta = self.get_or_create_metadata(src_dst);
             out_meta.constant_value = Some(value);
             out_meta.annotated_semantics =
@@ -389,6 +400,9 @@ impl<'a> HirToMirLowering<'a> {
         self.install_stack_numeric_list_result_metadata(
             src_dst, out_slot, out_ty, array_len, known_len,
         );
+        if known_len.is_none() && array_len > 0 {
+            self.get_or_create_metadata(src_dst).list_min_len = Some(1);
+        }
         if let Some(value) = constant_value {
             self.get_or_create_metadata(src_dst).constant_value = Some(value);
         }

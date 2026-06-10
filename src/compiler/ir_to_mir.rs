@@ -258,6 +258,8 @@ struct RegMetadata {
     maybe_open_range: Option<MaybeOpenRange>,
     /// List buffer (stack slot, max_len) for list construction
     list_buffer: Option<(StackSlotId, usize)>,
+    /// Minimum proven runtime length for a stack-backed numeric list.
+    list_min_len: Option<usize>,
     /// Logical semantics for annotated mutable globals and their projected fields.
     annotated_semantics: Option<AnnotatedValueSemantics>,
     /// Value was loaded from mutable global storage; initializer lengths are not runtime bounds.
