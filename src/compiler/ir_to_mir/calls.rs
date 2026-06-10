@@ -679,6 +679,165 @@ impl<'a> HirToMirLowering<'a> {
         Ok(true)
     }
 
+    fn lower_fixed_binary_replacement_stores(
+        &mut self,
+        out_slot: StackSlotId,
+        offset: usize,
+        replacement: &[u8],
+    ) -> Result<(), CompileError> {
+        for (index, byte) in replacement.iter().copied().enumerate() {
+            let output_offset =
+                Self::checked_byte_offset(offset, index, "fixed binary replacement")?;
+            self.emit(MirInst::StoreSlot {
+                slot: out_slot,
+                offset: Self::checked_mir_offset(output_offset, "fixed binary replacement")?,
+                val: MirValue::Const(i64::from(byte)),
+                ty: MirType::U8,
+            });
+        }
+        Ok(())
+    }
+
+    fn lower_fixed_binary_replace(
+        &mut self,
+        src_dst: RegId,
+        dst_vreg: VReg,
+        src_dst_had_value: bool,
+        input_reg: RegId,
+        input_vreg: VReg,
+        pattern: &[u8],
+        replacement: &[u8],
+        apply_all: bool,
+    ) -> Result<bool, CompileError> {
+        let Some(input_len) =
+            self.fixed_binary_input_len("bytes replace", input_reg, input_vreg)?
+        else {
+            return Ok(false);
+        };
+        if pattern.len() != replacement.len() {
+            return Err(CompileError::UnsupportedInstruction(
+                "bytes replace on typed fixed-size binary input requires replacement length to equal pattern length in eBPF"
+                    .into(),
+            ));
+        }
+        if input_len == 0 {
+            self.lower_compile_time_only_constant_value(
+                src_dst,
+                &nu_protocol::Value::binary(Vec::new(), Span::unknown()),
+            );
+            return Ok(true);
+        }
+
+        let out_ty = MirType::Array {
+            elem: Box::new(MirType::U8),
+            len: input_len,
+        };
+        let out_slot =
+            self.func
+                .alloc_stack_slot(align_to_eight(input_len), 8, StackSlotKind::Local);
+        self.record_stack_slot_type(out_slot, out_ty.clone());
+
+        let result_vreg = if src_dst_had_value {
+            self.assign_fresh_vreg(src_dst)
+        } else {
+            dst_vreg
+        };
+        self.emit(MirInst::Copy {
+            dst: result_vreg,
+            src: MirValue::StackSlot(out_slot),
+        });
+        self.vreg_type_hints.insert(
+            result_vreg,
+            MirType::Ptr {
+                pointee: Box::new(out_ty.clone()),
+                address_space: AddressSpace::Stack,
+            },
+        );
+        self.emit_ptr_to_slot_copy(out_slot, 0, input_vreg, 0, input_len)?;
+
+        if pattern.len() <= input_len {
+            let probe_count = input_len - pattern.len() + 1;
+            if probe_count > MAX_FIXED_BINARY_INDEX_OF_PROBES {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "bytes replace fixed-size binary input has {probe_count} candidate offsets; eBPF lowering supports at most {MAX_FIXED_BINARY_INDEX_OF_PROBES}"
+                )));
+            }
+            let last_offset = input_len - pattern.len();
+            let continuation_block = self.func.alloc_block();
+
+            if apply_all {
+                let probe_blocks = (0..=last_offset)
+                    .map(|_| self.func.alloc_block())
+                    .collect::<Vec<_>>();
+                self.terminate(MirInst::Jump {
+                    target: probe_blocks[0],
+                });
+
+                for offset in 0..=last_offset {
+                    self.current_block = probe_blocks[offset];
+                    let found_block = self.func.alloc_block();
+                    let next_probe = (offset < last_offset).then(|| probe_blocks[offset + 1]);
+                    let skip_next = offset + pattern.len();
+                    let skip_probe = (skip_next <= last_offset).then(|| probe_blocks[skip_next]);
+
+                    let candidate = self.lower_fixed_binary_pattern_match(
+                        input_vreg,
+                        offset,
+                        pattern,
+                        "fixed binary replace byte",
+                    )?;
+                    self.terminate(MirInst::Branch {
+                        cond: candidate,
+                        if_true: found_block,
+                        if_false: next_probe.unwrap_or(continuation_block),
+                    });
+
+                    self.current_block = found_block;
+                    self.lower_fixed_binary_replacement_stores(out_slot, offset, replacement)?;
+                    self.terminate(MirInst::Jump {
+                        target: skip_probe.unwrap_or(continuation_block),
+                    });
+                }
+            } else {
+                for offset in 0..=last_offset {
+                    let found_block = self.func.alloc_block();
+                    let is_last_probe = offset == last_offset;
+                    let next_block = if is_last_probe {
+                        continuation_block
+                    } else {
+                        self.func.alloc_block()
+                    };
+                    let candidate = self.lower_fixed_binary_pattern_match(
+                        input_vreg,
+                        offset,
+                        pattern,
+                        "fixed binary replace byte",
+                    )?;
+                    self.terminate(MirInst::Branch {
+                        cond: candidate,
+                        if_true: found_block,
+                        if_false: next_block,
+                    });
+
+                    self.current_block = found_block;
+                    self.lower_fixed_binary_replacement_stores(out_slot, offset, replacement)?;
+                    self.terminate(MirInst::Jump {
+                        target: continuation_block,
+                    });
+
+                    self.current_block = next_block;
+                }
+            }
+            self.current_block = continuation_block;
+        }
+
+        self.reset_call_result_metadata(src_dst);
+        let out_meta = self.get_or_create_metadata(src_dst);
+        out_meta.field_type = Some(out_ty);
+        out_meta.annotated_semantics = Some(AnnotatedValueSemantics::Binary { len: input_len });
+        Ok(true)
+    }
+
     fn bytes_add_output(input: &[u8], data: &[u8], index: i64, from_end: bool) -> Vec<u8> {
         let input_len = input.len();
         let index = index as usize;
@@ -5291,12 +5450,7 @@ impl<'a> HirToMirLowering<'a> {
 
                 let input = input_reg
                     .and_then(|reg| self.get_metadata(reg))
-                    .and_then(|meta| meta.constant_value.as_ref().cloned())
-                    .ok_or_else(|| {
-                        CompileError::UnsupportedInstruction(format!(
-                            "{cmd_name} requires compile-time known binary or list<binary> input in eBPF"
-                        ))
-                    })?;
+                    .and_then(|meta| meta.constant_value.as_ref().cloned());
                 let (_, pattern_reg) = self.positional_args[0];
                 let pattern = self
                     .get_metadata(pattern_reg)
@@ -5333,7 +5487,7 @@ impl<'a> HirToMirLowering<'a> {
                 };
 
                 match input {
-                    nu_protocol::Value::Binary { val, .. } => {
+                    Some(nu_protocol::Value::Binary { val, .. }) => {
                         let output = Self::bytes_pattern_transform_output(
                             &val,
                             &pattern,
@@ -5347,7 +5501,7 @@ impl<'a> HirToMirLowering<'a> {
                             &nu_protocol::Value::binary(output, nu_protocol::Span::unknown()),
                         )?;
                     }
-                    nu_protocol::Value::List { vals, .. } => {
+                    Some(nu_protocol::Value::List { vals, .. }) => {
                         if vals.is_empty() && !self.current_call_result_metadata_only {
                             return Err(CompileError::UnsupportedInstruction(format!(
                                 "{cmd_name} requires a non-empty list<binary> result in eBPF"
@@ -5405,11 +5559,39 @@ impl<'a> HirToMirLowering<'a> {
                             self.lower_constant_value(src_dst, &value)?;
                         }
                     }
-                    other => {
+                    Some(other) => {
                         return Err(CompileError::UnsupportedInstruction(format!(
                             "{cmd_name} requires binary or list<binary> input in eBPF, got {}",
                             other.get_type()
                         )));
+                    }
+                    None => {
+                        if cmd_name != "bytes replace" {
+                            return Err(CompileError::UnsupportedInstruction(format!(
+                                "{cmd_name} requires compile-time known binary or list<binary> input in eBPF"
+                            )));
+                        }
+                        let input_reg = input_reg.ok_or_else(|| {
+                            CompileError::UnsupportedInstruction(
+                                "bytes replace requires binary input in eBPF".into(),
+                            )
+                        })?;
+                        let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
+                        if !self.lower_fixed_binary_replace(
+                            src_dst,
+                            dst_vreg,
+                            src_dst_had_value,
+                            input_reg,
+                            input_vreg,
+                            &pattern,
+                            &replacement,
+                            apply_all,
+                        )? {
+                            return Err(CompileError::UnsupportedInstruction(
+                                "bytes replace requires compile-time known binary or list<binary> input in eBPF"
+                                    .into(),
+                            ));
+                        }
                     }
                 }
             }
