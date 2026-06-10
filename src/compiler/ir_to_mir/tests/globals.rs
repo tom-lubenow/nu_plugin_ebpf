@@ -12399,6 +12399,250 @@ fn test_lower_global_define_type_string_array_str_substring_negative_range_rejec
 }
 
 #[test]
+fn test_lower_global_define_type_string_array_str_replace_all_feeds_join() {
+    let define_decl = DeclId::new(10_617);
+    let global_get_decl = DeclId::new(10_618);
+    let replace_decl = DeclId::new(10_619);
+    let join_decl = DeclId::new(10_620);
+    let length_decl = DeclId::new(10_621);
+    let decl_names = HashMap::from([
+        (define_decl, "global-define".to_string()),
+        (global_get_decl, "global-get".to_string()),
+        (replace_decl, "str replace".to_string()),
+        (join_decl, "str join".to_string()),
+        (length_decl, "str length".to_string()),
+    ]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::String("names".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("array{string:8:2}".into()),
+                },
+                HirStmt::LoadValue {
+                    dst: RegId::new(2),
+                    val: Box::new(Value::list(
+                        vec![
+                            Value::string("aa".to_string(), Span::unknown()),
+                            Value::string("aba".to_string(), Span::unknown()),
+                        ],
+                        Span::unknown(),
+                    )),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        named: vec![(b"type".to_vec(), RegId::new(1))],
+                        pipeline_input: Some(RegId::new(2)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: global_get_decl,
+                    src_dst: RegId::new(4),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(5),
+                    lit: HirLiteral::String("a".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(6),
+                    lit: HirLiteral::String("z".into()),
+                },
+                HirStmt::Call {
+                    decl_id: replace_decl,
+                    src_dst: RegId::new(7),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(5), RegId::new(6)],
+                        flags: vec![b"all".to_vec()],
+                        pipeline_input: Some(RegId::new(4)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(8),
+                    lit: HirLiteral::String(",".into()),
+                },
+                HirStmt::Call {
+                    decl_id: join_decl,
+                    src_dst: RegId::new(9),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(8)],
+                        pipeline_input: Some(RegId::new(7)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: length_decl,
+                    src_dst: RegId::new(10),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(9)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return {
+                src: RegId::new(10),
+            },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 11,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("typed string array str replace --all should lower as a fixed string array");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(inst, MirInst::StrCmp { len: 1, .. })),
+        "expected str replace to compare literal bytes against each fixed string element"
+    );
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::StoreSlot {
+                    val: MirValue::Const(122),
+                    ty: MirType::U8,
+                    ..
+                }
+            )),
+        "expected str replace to store replacement byte 'z'"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "typed string array str replace result consumed by str join should compile through codegen",
+    );
+}
+
+#[test]
+fn test_lower_global_define_type_string_array_str_replace_rejects_variable_length_output() {
+    let define_decl = DeclId::new(10_622);
+    let global_get_decl = DeclId::new(10_623);
+    let replace_decl = DeclId::new(10_624);
+    let decl_names = HashMap::from([
+        (define_decl, "global-define".to_string()),
+        (global_get_decl, "global-get".to_string()),
+        (replace_decl, "str replace".to_string()),
+    ]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::String("names".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("array{string:8:1}".into()),
+                },
+                HirStmt::LoadValue {
+                    dst: RegId::new(2),
+                    val: Box::new(Value::list(
+                        vec![Value::string("aa".to_string(), Span::unknown())],
+                        Span::unknown(),
+                    )),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        named: vec![(b"type".to_vec(), RegId::new(1))],
+                        pipeline_input: Some(RegId::new(2)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: global_get_decl,
+                    src_dst: RegId::new(4),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(5),
+                    lit: HirLiteral::String("a".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(6),
+                    lit: HirLiteral::String("zz".into()),
+                },
+                HirStmt::Call {
+                    decl_id: replace_decl,
+                    src_dst: RegId::new(7),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(5), RegId::new(6)],
+                        pipeline_input: Some(RegId::new(4)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(7) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 8,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("typed string array str replace should reject variable-length replacement");
+
+    assert!(
+        err.to_string()
+            .contains("replacement length to equal find length"),
+        "expected fixed-length replacement diagnostic, got: {err}"
+    );
+}
+
+#[test]
 fn test_lower_global_define_type_string_array_reverse_preserves_string_semantics() {
     let define_decl = DeclId::new(10_514);
     let global_get_decl = DeclId::new(10_515);
