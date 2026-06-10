@@ -5340,6 +5340,7 @@ impl<'a> HirToMirLowering<'a> {
                                         input_vreg,
                                         &base_runtime_ty,
                                         idx,
+                                        projected_semantics.as_ref(),
                                         root_ctx_field.as_ref(),
                                     )?;
                                     let out_meta = self.get_or_create_metadata(src_dst);

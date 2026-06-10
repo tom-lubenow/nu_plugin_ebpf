@@ -68,6 +68,7 @@ impl<'a> HirToMirLowering<'a> {
             stream_vreg,
             &base_runtime_ty,
             MirValue::VReg(counter_vreg),
+            None,
             root_ctx_field.as_ref(),
         )?;
         self.terminate(MirInst::Jump { target: body_block });

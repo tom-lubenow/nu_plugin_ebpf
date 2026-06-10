@@ -132,6 +132,7 @@ impl<'a> HirToMirLowering<'a> {
         base_vreg: VReg,
         base_runtime_ty: &MirType,
         idx: MirValue,
+        projected_semantics: Option<&AnnotatedValueSemantics>,
         root_ctx_field: Option<&CtxField>,
     ) -> Result<MirType, CompileError> {
         let dst_vreg = self.get_vreg(dst_reg);
@@ -240,6 +241,53 @@ impl<'a> HirToMirLowering<'a> {
             lhs: MirValue::VReg(base_copy),
             rhs: scaled_idx,
         });
+
+        if matches!(
+            address_space,
+            AddressSpace::Stack | AddressSpace::Map | AddressSpace::Context
+        ) && let Some(AnnotatedValueSemantics::String {
+            slot_len,
+            content_cap,
+        }) = projected_semantics
+            && matches!(element_ty, MirType::Array { .. })
+        {
+            let payload_ty = MirType::Array {
+                elem: Box::new(MirType::U8),
+                len: *slot_len,
+            };
+            let slot = self
+                .func
+                .alloc_stack_slot(*slot_len, 8, StackSlotKind::StringBuffer);
+            self.record_stack_slot_type(slot, payload_ty.clone());
+            self.emit(MirInst::Copy {
+                dst: dst_vreg,
+                src: MirValue::StackSlot(slot),
+            });
+            self.vreg_type_hints.insert(
+                dst_vreg,
+                MirType::Ptr {
+                    pointee: Box::new(payload_ty.clone()),
+                    address_space: AddressSpace::Stack,
+                },
+            );
+            let len_vreg = self.func.alloc_vreg();
+            self.vreg_type_hints.insert(len_vreg, MirType::U64);
+            self.emit(MirInst::Load {
+                dst: len_vreg,
+                ptr: element_ptr_vreg,
+                offset: 0,
+                ty: MirType::U64,
+            });
+            self.emit_ptr_to_slot_copy(slot, 0, element_ptr_vreg, 8, *slot_len)?;
+            let meta = self.get_or_create_metadata(dst_reg);
+            *meta = RegMetadata::default();
+            meta.field_type = Some(payload_ty.clone());
+            meta.string_slot = Some(slot);
+            meta.string_len_vreg = Some(len_vreg);
+            meta.string_len_bound = Some(*content_cap);
+            meta.annotated_semantics = projected_semantics.cloned();
+            return Ok(payload_ty);
+        }
 
         match address_space {
             AddressSpace::Kernel | AddressSpace::User => {
