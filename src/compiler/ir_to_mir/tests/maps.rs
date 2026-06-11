@@ -10,6 +10,24 @@ use nu_protocol::ast::{CellPath, Comparison, Operator};
 use nu_protocol::{DeclId, Record, RegId, Span, Value, VarId};
 use std::collections::HashMap;
 
+fn bool_binop_result_vreg<'a>(
+    mut instructions: impl Iterator<Item = &'a MirInst>,
+    op: BinOpKind,
+    rhs: i64,
+) -> VReg {
+    instructions
+        .find_map(|inst| match inst {
+            MirInst::BinOp {
+                dst,
+                op: actual_op,
+                rhs: MirValue::Const(actual_rhs),
+                ..
+            } if *actual_op == op && *actual_rhs == rhs => Some(*dst),
+            _ => None,
+        })
+        .expect("expected boolean comparison binop")
+}
+
 fn path_struct_schema(map_name: &str, kind: MapKind) -> HashMap<MapRef, MirType> {
     HashMap::from([(
         MapRef {
@@ -834,7 +852,20 @@ fn test_lower_map_contains_task_storage_uses_storage_lookup() {
                 }
             ))
     );
-    assert_eq!(result.type_hints.main.get(&VReg(0)), Some(&MirType::Bool));
+    let contains_vreg = bool_binop_result_vreg(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| &block.instructions),
+        BinOpKind::Ne,
+        0,
+    );
+    assert_eq!(
+        result.type_hints.main.get(&contains_vreg),
+        Some(&MirType::Bool)
+    );
 }
 
 #[test]
@@ -2410,7 +2441,7 @@ fn test_lower_map_put_sockhash_uses_socket_update_helper() {
 
 #[test]
 fn test_lower_map_push_respects_queue_kind_and_flags() {
-    let hir = make_map_push_program(DeclId::new(42), 1, "queue");
+    let hir = make_map_push_program(DeclId::new(42), 2, "queue");
     let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
     let decl_names = HashMap::from([(DeclId::new(42), "map-push".to_string())]);
 
@@ -2438,7 +2469,7 @@ fn test_lower_map_push_respects_queue_kind_and_flags() {
         })
         .expect("expected generic map push");
     assert_eq!(push.0, MapKind::Queue);
-    assert_eq!(push.2, 1);
+    assert_eq!(push.2, 2);
 }
 
 #[test]
@@ -5140,10 +5171,9 @@ fn test_map_key_type_spec_supports_fixed_array_numeric_list() {
 
 #[test]
 fn test_map_key_type_spec_supports_record_fixed_array_numeric_list_field() {
-    let ty = HirToMirLowering::parse_named_map_key_type_spec(
-        "record{sets:array{list:int:2:2},pid:int}",
-    )
-    .expect("record key with fixed-array numeric-list field should parse");
+    let ty =
+        HirToMirLowering::parse_named_map_key_type_spec("record{sets:array{list:int:2:2},pid:int}")
+            .expect("record key with fixed-array numeric-list field should parse");
 
     assert_eq!(
         ty,

@@ -14,6 +14,21 @@ use crate::compiler::passes::optimize_with_ssa_hints;
 use nu_protocol::ast::{CellPath, Comparison, Operator};
 use nu_protocol::{DeclId, RegId, VarId};
 
+fn bool_binop_result_vreg(instructions: &[MirInst], op: BinOpKind, rhs: i64) -> VReg {
+    instructions
+        .iter()
+        .find_map(|inst| match inst {
+            MirInst::BinOp {
+                dst,
+                op: actual_op,
+                rhs: MirValue::Const(actual_rhs),
+                ..
+            } if *actual_op == op && *actual_rhs == rhs => Some(*dst),
+            _ => None,
+        })
+        .expect("expected boolean comparison binop")
+}
+
 #[test]
 fn test_kfunc_call_lowers_with_explicit_btf_id() {
     use nu_protocol::ir::{DataSlice, Instruction, IrBlock, Literal};
@@ -8995,7 +9010,11 @@ fn test_map_contains_bloom_filter_reuses_declared_map_kind_and_compiles() {
             ..
         } if *helper == BpfHelper::MapPeekElem as u32 && args.len() == 2
     )));
-    assert_eq!(result.type_hints.main.get(&VReg(0)), Some(&MirType::Bool));
+    let contains_vreg = bool_binop_result_vreg(&block.instructions, BinOpKind::Eq, 0);
+    assert_eq!(
+        result.type_hints.main.get(&contains_vreg),
+        Some(&MirType::Bool)
+    );
 
     optimize_with_ssa_hints(
         &mut result.program.main,
@@ -9101,7 +9120,11 @@ fn test_map_contains_defaults_to_hash_lookup() {
             ..
         }
     )));
-    assert_eq!(result.type_hints.main.get(&VReg(0)), Some(&MirType::Bool));
+    let contains_vreg = bool_binop_result_vreg(&block.instructions, BinOpKind::Ne, 0);
+    assert_eq!(
+        result.type_hints.main.get(&contains_vreg),
+        Some(&MirType::Bool)
+    );
 
     optimize_with_ssa_hints(
         &mut result.program.main,
@@ -9242,7 +9265,11 @@ fn test_map_contains_cgroup_array_uses_skb_helper_on_tc() {
             ..
         }
     )));
-    assert_eq!(result.type_hints.main.get(&VReg(0)), Some(&MirType::Bool));
+    let contains_vreg = bool_binop_result_vreg(&block.instructions, BinOpKind::Eq, 1);
+    assert_eq!(
+        result.type_hints.main.get(&contains_vreg),
+        Some(&MirType::Bool)
+    );
 
     optimize_with_ssa_hints(
         &mut result.program.main,
@@ -9294,7 +9321,11 @@ fn test_map_contains_cgroup_array_uses_skb_helper_on_lwt() {
             ..
         } if *helper == BpfHelper::SkbUnderCgroup as u32 && args.len() == 3
     )));
-    assert_eq!(result.type_hints.main.get(&VReg(0)), Some(&MirType::Bool));
+    let contains_vreg = bool_binop_result_vreg(&block.instructions, BinOpKind::Eq, 1);
+    assert_eq!(
+        result.type_hints.main.get(&contains_vreg),
+        Some(&MirType::Bool)
+    );
 
     optimize_with_ssa_hints(
         &mut result.program.main,
@@ -9354,7 +9385,11 @@ fn test_map_contains_cgroup_array_uses_current_task_helper_on_kprobe() {
             ..
         }
     )));
-    assert_eq!(result.type_hints.main.get(&VReg(0)), Some(&MirType::Bool));
+    let contains_vreg = bool_binop_result_vreg(&block.instructions, BinOpKind::Eq, 1);
+    assert_eq!(
+        result.type_hints.main.get(&contains_vreg),
+        Some(&MirType::Bool)
+    );
 
     optimize_with_ssa_hints(
         &mut result.program.main,

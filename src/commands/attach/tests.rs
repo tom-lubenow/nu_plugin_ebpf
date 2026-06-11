@@ -22159,7 +22159,7 @@ fn test_compile_optimized_named_typed_map_get_projection() {
 
 #[test]
 fn test_compile_optimized_queue_map_push_program() {
-    let hir = make_map_push_program(DeclId::new(42), 1, "queue");
+    let hir = make_map_push_program(DeclId::new(42), 2, "queue");
     let probe_ctx = ProbeContext::new(EbpfProgramType::Fentry, "security_file_open");
     let decl_names = HashMap::from([(DeclId::new(42), "map-push".to_string())]);
 

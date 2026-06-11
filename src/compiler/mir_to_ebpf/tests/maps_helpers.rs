@@ -1,22 +1,13 @@
 use super::*;
 
-const LARGE_MAP_FLAG: u64 = 0x1_0000_0000;
+const BPF_EXIST_FLAG: u64 = 2;
 
-fn bytecode_has_ld_imm64(bytecode: &[u8], dst: EbpfReg, value: u64) -> bool {
-    let bytes = value.to_le_bytes();
-    let lo = i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
-    let hi = i32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
-    let insns: Vec<_> = bytecode.chunks_exact(8).collect();
-
-    insns.windows(2).any(|pair| {
-        let first = pair[0];
-        let second = pair[1];
-        first[0] == opcode::LD_DW_IMM
-            && first[1] & 0x0f == dst.as_u8()
-            && first[1] >> 4 == 0
-            && i32::from_le_bytes([first[4], first[5], first[6], first[7]]) == lo
-            && second[0] == 0
-            && i32::from_le_bytes([second[4], second[5], second[6], second[7]]) == hi
+fn bytecode_has_mov64_imm(bytecode: &[u8], dst: EbpfReg, value: i32) -> bool {
+    bytecode.chunks_exact(8).any(|chunk| {
+        chunk[0] == opcode::MOV64_IMM
+            && chunk[1] & 0x0f == dst.as_u8()
+            && chunk[1] >> 4 == 0
+            && i32::from_le_bytes([chunk[4], chunk[5], chunk[6], chunk[7]]) == value
     })
 }
 
@@ -1538,7 +1529,7 @@ fn test_dynamic_map_update_and_delete_compile_after_map_in_map_outer_lookup() {
             inner_map: inner.clone(),
             key: inner_key,
             val: inner_value,
-            flags: LARGE_MAP_FLAG,
+            flags: BPF_EXIST_FLAG,
         });
     func.block_mut(mutate_inner)
         .instructions
@@ -1576,8 +1567,8 @@ fn test_dynamic_map_update_and_delete_compile_after_map_in_map_outer_lookup() {
     let result = compile_mir_to_ebpf_with_hints(&program, None, Some(&type_hints))
         .expect("dynamic map update/delete should compile");
     assert!(
-        bytecode_has_ld_imm64(&result.bytecode, EbpfReg::R4, LARGE_MAP_FLAG),
-        "expected dynamic map update to materialize large flags in R4"
+        bytecode_has_mov64_imm(&result.bytecode, EbpfReg::R4, BPF_EXIST_FLAG as i32),
+        "expected dynamic map update to materialize BPF_EXIST in R4"
     );
     let update_calls = result
         .bytecode
@@ -1930,7 +1921,7 @@ fn test_map_update_compiles_and_emits_generic_map() {
 }
 
 #[test]
-fn test_map_update_materializes_large_u64_flags() {
+fn test_map_update_materializes_bpf_exist_flags() {
     use crate::compiler::mir::*;
 
     let mut func = MirFunction::new();
@@ -1955,7 +1946,7 @@ fn test_map_update_materializes_large_u64_flags() {
         },
         key,
         val,
-        flags: LARGE_MAP_FLAG,
+        flags: BPF_EXIST_FLAG,
     });
     func.block_mut(entry).terminator = MirInst::Return { val: None };
 
@@ -1965,10 +1956,10 @@ fn test_map_update_materializes_large_u64_flags() {
     };
 
     let result =
-        compile_mir_to_ebpf(&program, None).expect("large map update flags should compile");
+        compile_mir_to_ebpf(&program, None).expect("BPF_EXIST map update flags should compile");
     assert!(
-        bytecode_has_ld_imm64(&result.bytecode, EbpfReg::R4, LARGE_MAP_FLAG),
-        "expected map update to materialize large flags in R4"
+        bytecode_has_mov64_imm(&result.bytecode, EbpfReg::R4, BPF_EXIST_FLAG as i32),
+        "expected map update to materialize BPF_EXIST in R4"
     );
 }
 
@@ -3312,7 +3303,7 @@ fn test_compile_generic_map_push_accepts_bloom_filter_map() {
 }
 
 #[test]
-fn test_compile_generic_map_push_materializes_large_u64_flags() {
+fn test_compile_generic_map_push_materializes_bpf_exist_flags() {
     use crate::compiler::mir::*;
 
     let mut func = MirFunction::new();
@@ -3330,7 +3321,7 @@ fn test_compile_generic_map_push_materializes_large_u64_flags() {
             kind: MapKind::Queue,
         },
         val: value,
-        flags: LARGE_MAP_FLAG,
+        flags: BPF_EXIST_FLAG,
     });
     func.block_mut(entry).terminator = MirInst::Return { val: None };
 
@@ -3339,11 +3330,11 @@ fn test_compile_generic_map_push_materializes_large_u64_flags() {
         subfunctions: vec![],
     };
     let compiled = compile_mir_to_ebpf(&program, None)
-        .expect("large map-push flags should compile queue maps");
+        .expect("BPF_EXIST map-push flags should compile queue maps");
 
     assert!(
-        bytecode_has_ld_imm64(&compiled.bytecode, EbpfReg::R3, LARGE_MAP_FLAG),
-        "expected map push to materialize large flags in R3"
+        bytecode_has_mov64_imm(&compiled.bytecode, EbpfReg::R3, BPF_EXIST_FLAG as i32),
+        "expected map push to materialize BPF_EXIST in R3"
     );
 }
 
