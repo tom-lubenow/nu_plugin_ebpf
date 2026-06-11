@@ -3279,6 +3279,233 @@ fn test_helper_call_with_live_src_dst_does_not_prepend_implicit_arg_when_explici
     );
 }
 
+fn assert_pipeline_input_helper_result_uses_fresh_vreg(
+    command: &str,
+    probe_ctx: Option<ProbeContext>,
+    ctx_param: Option<VarId>,
+    mut stmts: Vec<HirStmt>,
+    call_args: HirCallArgs,
+    expected_helper: BpfHelper,
+    consumed_arg_index: usize,
+) {
+    stmts.push(HirStmt::Call {
+        decl_id: DeclId::new(42),
+        src_dst: RegId::new(0),
+        args: call_args,
+    });
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts,
+            terminator: HirTerminator::Return { src: RegId::new(0) },
+        }],
+        entry: HirBlockId(0),
+        spans: vec![],
+        ast: vec![],
+        comments: vec![],
+        register_count: 8,
+        file_count: 0,
+    };
+
+    let hir_program = HirProgram::new(func, HashMap::new(), vec![], ctx_param);
+    let decl_names = HashMap::from([(DeclId::new(42), command.to_string())]);
+    let hir_types = infer_hir_types(&hir_program, &decl_names).unwrap_or_else(|err| {
+        panic!("{command} pipeline-input program should type-check: {err:?}")
+    });
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir_program,
+        probe_ctx.as_ref(),
+        &decl_names,
+        Some(&hir_types),
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .unwrap_or_else(|err| panic!("{command} pipeline-input program should lower: {err:?}"));
+
+    let entry = result.program.main.entry;
+    let block = result.program.main.block(entry);
+    let (dst, args) = block
+        .instructions
+        .iter()
+        .find_map(|inst| match inst {
+            MirInst::CallHelper { dst, helper, args } if *helper == expected_helper as u32 => {
+                Some((*dst, args))
+            }
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("expected {command} to lower to {expected_helper:?}"));
+    let consumed_input = match args.get(consumed_arg_index) {
+        Some(MirValue::VReg(vreg)) => *vreg,
+        other => panic!(
+            "{command} expected helper arg {consumed_arg_index} to be the pipeline input vreg, got {other:?}"
+        ),
+    };
+
+    assert_ne!(
+        dst, consumed_input,
+        "{command} helper result must not overwrite its consumed pipeline input vreg"
+    );
+}
+
+#[test]
+fn test_helper_backed_pipeline_input_results_use_fresh_vregs() {
+    assert_pipeline_input_helper_result_uses_fresh_vreg(
+        "helper-call",
+        None,
+        None,
+        vec![
+            HirStmt::LoadLiteral {
+                dst: RegId::new(0),
+                lit: HirLiteral::Int(7),
+            },
+            HirStmt::LoadLiteral {
+                dst: RegId::new(1),
+                lit: HirLiteral::String(b"bpf_get_socket_cookie".to_vec()),
+            },
+        ],
+        HirCallArgs {
+            pipeline_input: Some(RegId::new(0)),
+            positional: vec![RegId::new(1)],
+            ..Default::default()
+        },
+        BpfHelper::GetSocketCookie,
+        0,
+    );
+
+    assert_pipeline_input_helper_result_uses_fresh_vreg(
+        "redirect",
+        Some(ProbeContext::new(EbpfProgramType::Xdp, "lo")),
+        None,
+        vec![HirStmt::LoadLiteral {
+            dst: RegId::new(0),
+            lit: HirLiteral::Int(7),
+        }],
+        HirCallArgs {
+            pipeline_input: Some(RegId::new(0)),
+            ..Default::default()
+        },
+        BpfHelper::Redirect,
+        0,
+    );
+
+    assert_pipeline_input_helper_result_uses_fresh_vreg(
+        "redirect-map",
+        Some(ProbeContext::new(EbpfProgramType::Xdp, "lo")),
+        None,
+        vec![
+            HirStmt::LoadLiteral {
+                dst: RegId::new(0),
+                lit: HirLiteral::Int(7),
+            },
+            HirStmt::LoadLiteral {
+                dst: RegId::new(1),
+                lit: HirLiteral::String(b"demo_redirect_map".to_vec()),
+            },
+            HirStmt::LoadLiteral {
+                dst: RegId::new(2),
+                lit: HirLiteral::String(b"devmap-hash".to_vec()),
+            },
+        ],
+        HirCallArgs {
+            pipeline_input: Some(RegId::new(0)),
+            positional: vec![RegId::new(1)],
+            named: vec![(b"kind".to_vec(), RegId::new(2))],
+            ..Default::default()
+        },
+        BpfHelper::RedirectMap,
+        1,
+    );
+
+    assert_pipeline_input_helper_result_uses_fresh_vreg(
+        "redirect-socket",
+        Some(ProbeContext::new(
+            EbpfProgramType::SkSkb,
+            "/sys/fs/bpf/demo_sockmap",
+        )),
+        Some(VarId::new(101)),
+        vec![
+            HirStmt::LoadLiteral {
+                dst: RegId::new(0),
+                lit: HirLiteral::Int(3),
+            },
+            HirStmt::LoadLiteral {
+                dst: RegId::new(1),
+                lit: HirLiteral::String(b"demo_sockmap".to_vec()),
+            },
+            HirStmt::LoadLiteral {
+                dst: RegId::new(2),
+                lit: HirLiteral::String(b"sockmap".to_vec()),
+            },
+        ],
+        HirCallArgs {
+            pipeline_input: Some(RegId::new(0)),
+            positional: vec![RegId::new(1)],
+            named: vec![(b"kind".to_vec(), RegId::new(2))],
+            ..Default::default()
+        },
+        BpfHelper::SkRedirectMap,
+        2,
+    );
+
+    assert_pipeline_input_helper_result_uses_fresh_vreg(
+        "assign-socket",
+        Some(ProbeContext::new(
+            EbpfProgramType::SkLookup,
+            "/proc/self/ns/net",
+        )),
+        Some(VarId::new(101)),
+        vec![HirStmt::LoadLiteral {
+            dst: RegId::new(0),
+            lit: HirLiteral::Int(0),
+        }],
+        HirCallArgs {
+            pipeline_input: Some(RegId::new(0)),
+            ..Default::default()
+        },
+        BpfHelper::SkAssign,
+        1,
+    );
+
+    assert_pipeline_input_helper_result_uses_fresh_vreg(
+        "adjust-packet",
+        Some(ProbeContext::new(EbpfProgramType::Xdp, "lo")),
+        Some(VarId::new(0)),
+        vec![HirStmt::LoadLiteral {
+            dst: RegId::new(0),
+            lit: HirLiteral::Int(-4),
+        }],
+        HirCallArgs {
+            pipeline_input: Some(RegId::new(0)),
+            flags: vec![b"meta".to_vec()],
+            ..Default::default()
+        },
+        BpfHelper::XdpAdjustMeta,
+        1,
+    );
+
+    assert_pipeline_input_helper_result_uses_fresh_vreg(
+        "adjust-message",
+        Some(ProbeContext::new(
+            EbpfProgramType::SkMsg,
+            "/sys/fs/bpf/demo_sockmap",
+        )),
+        Some(VarId::new(0)),
+        vec![HirStmt::LoadLiteral {
+            dst: RegId::new(0),
+            lit: HirLiteral::Int(8),
+        }],
+        HirCallArgs {
+            pipeline_input: Some(RegId::new(0)),
+            flags: vec![b"cork".to_vec()],
+            ..Default::default()
+        },
+        BpfHelper::MsgCorkBytes,
+        1,
+    );
+}
+
 #[test]
 fn test_helper_call_manual_hir_live_src_dst_without_pipeline_does_not_inject() {
     let hir_program = HirProgram::new(

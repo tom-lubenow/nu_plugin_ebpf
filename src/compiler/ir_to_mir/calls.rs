@@ -3781,12 +3781,17 @@ impl<'a> HirToMirLowering<'a> {
                     }
                     _ => unreachable!("packet adjust helper selection returned unexpected helper"),
                 };
+                let result_vreg = if src_dst_had_value {
+                    self.assign_fresh_vreg(src_dst)
+                } else {
+                    dst_vreg
+                };
                 self.emit(MirInst::CallHelper {
-                    dst: dst_vreg,
+                    dst: result_vreg,
                     helper: helper as u32,
                     args,
                 });
-                self.vreg_type_hints.insert(dst_vreg, MirType::I64);
+                self.vreg_type_hints.insert(result_vreg, MirType::I64);
                 self.reset_call_result_metadata(src_dst);
             }
 
@@ -3868,12 +3873,17 @@ impl<'a> HirToMirLowering<'a> {
                         ]
                     }
                 };
+                let result_vreg = if src_dst_had_value {
+                    self.assign_fresh_vreg(src_dst)
+                } else {
+                    dst_vreg
+                };
                 self.emit(MirInst::CallHelper {
-                    dst: dst_vreg,
+                    dst: result_vreg,
                     helper: helper as u32,
                     args,
                 });
-                self.vreg_type_hints.insert(dst_vreg, MirType::I64);
+                self.vreg_type_hints.insert(result_vreg, MirType::I64);
                 self.reset_call_result_metadata(src_dst);
             }
 
@@ -3923,12 +3933,17 @@ impl<'a> HirToMirLowering<'a> {
                         "packet redirect helper selection returned non-redirect helper"
                     ),
                 };
+                let result_vreg = if src_dst_had_value {
+                    self.assign_fresh_vreg(src_dst)
+                } else {
+                    dst_vreg
+                };
                 self.emit(MirInst::CallHelper {
-                    dst: dst_vreg,
+                    dst: result_vreg,
                     helper: helper as u32,
                     args,
                 });
-                self.vreg_type_hints.insert(dst_vreg, MirType::I64);
+                self.vreg_type_hints.insert(result_vreg, MirType::I64);
                 self.reset_call_result_metadata(src_dst);
             }
 
@@ -3979,8 +3994,13 @@ impl<'a> HirToMirLowering<'a> {
                     .unwrap_or(0);
 
                 let map_vreg = self.emit_typed_map_fd_load(map_name, map_kind);
+                let result_vreg = if src_dst_had_value {
+                    self.assign_fresh_vreg(src_dst)
+                } else {
+                    dst_vreg
+                };
                 self.emit(MirInst::CallHelper {
-                    dst: dst_vreg,
+                    dst: result_vreg,
                     helper: BpfHelper::RedirectMap as u32,
                     args: vec![
                         MirValue::VReg(map_vreg),
@@ -3988,7 +4008,7 @@ impl<'a> HirToMirLowering<'a> {
                         MirValue::Const(flags as i64),
                     ],
                 });
-                self.vreg_type_hints.insert(dst_vreg, MirType::I64);
+                self.vreg_type_hints.insert(result_vreg, MirType::I64);
                 self.reset_call_result_metadata(src_dst);
             }
 
@@ -4041,8 +4061,13 @@ impl<'a> HirToMirLowering<'a> {
                 } else {
                     MirValue::VReg(key_arg.0)
                 };
+                let result_vreg = if src_dst_had_value {
+                    self.assign_fresh_vreg(src_dst)
+                } else {
+                    dst_vreg
+                };
                 self.emit(MirInst::CallHelper {
-                    dst: dst_vreg,
+                    dst: result_vreg,
                     helper: helper as u32,
                     args: vec![
                         MirValue::VReg(ctx_vreg),
@@ -4051,7 +4076,7 @@ impl<'a> HirToMirLowering<'a> {
                         MirValue::Const(flags as i64),
                     ],
                 });
-                self.vreg_type_hints.insert(dst_vreg, MirType::I64);
+                self.vreg_type_hints.insert(result_vreg, MirType::I64);
                 self.reset_call_result_metadata(src_dst);
             }
 
@@ -4110,8 +4135,13 @@ impl<'a> HirToMirLowering<'a> {
                 let sk_vreg = sk_arg.0;
 
                 let ctx_vreg = self.materialize_context_pointer_arg();
+                let result_vreg = if src_dst_had_value {
+                    self.assign_fresh_vreg(src_dst)
+                } else {
+                    dst_vreg
+                };
                 self.emit(MirInst::CallHelper {
-                    dst: dst_vreg,
+                    dst: result_vreg,
                     helper: BpfHelper::SkAssign as u32,
                     args: vec![
                         MirValue::VReg(ctx_vreg),
@@ -4120,7 +4150,7 @@ impl<'a> HirToMirLowering<'a> {
                     ],
                 });
                 self.implied_ctx_fields.insert(CtxField::Socket);
-                self.vreg_type_hints.insert(dst_vreg, MirType::I64);
+                self.vreg_type_hints.insert(result_vreg, MirType::I64);
                 self.reset_call_result_metadata(src_dst);
             }
 
@@ -4472,15 +4502,20 @@ impl<'a> HirToMirLowering<'a> {
                 self.validate_timer_helper_call_args(helper, &helper_map_args, &helper_arg_regs)?;
                 self.validate_kptr_xchg_helper_call_args(helper, &args, &helper_arg_regs)?;
 
+                let call_dst_vreg = if src_dst_had_value {
+                    self.assign_fresh_vreg(src_dst)
+                } else {
+                    dst_vreg
+                };
                 self.record_storage_helper_value_schema(
                     helper,
-                    dst_vreg,
+                    call_dst_vreg,
                     &helper_map_args,
                     &helper_arg_regs,
                 )?;
 
                 self.emit(MirInst::CallHelper {
-                    dst: dst_vreg,
+                    dst: call_dst_vreg,
                     helper: helper_id,
                     args,
                 });
@@ -4488,7 +4523,7 @@ impl<'a> HirToMirLowering<'a> {
                     HelperRetKind::Scalar | HelperRetKind::Void => {
                         let ret_ty = TypeInference::precise_helper_return_mir_type(helper)
                             .unwrap_or(MirType::I64);
-                        self.vreg_type_hints.insert(dst_vreg, ret_ty);
+                        self.vreg_type_hints.insert(call_dst_vreg, ret_ty);
                     }
                     HelperRetKind::PointerNonNull | HelperRetKind::PointerMaybeNull => {
                         let ret_ty = TypeInference::precise_helper_return_mir_type(helper)
@@ -4505,7 +4540,7 @@ impl<'a> HirToMirLowering<'a> {
                                     address_space,
                                 }
                             });
-                        self.vreg_type_hints.insert(dst_vreg, ret_ty);
+                        self.vreg_type_hints.insert(call_dst_vreg, ret_ty);
                     }
                 }
             }
