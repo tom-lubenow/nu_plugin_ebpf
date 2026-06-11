@@ -586,6 +586,14 @@ def program-bound-context-root-aliases-base [source: string context_names] {
 
 def program-bound-context-root-aliases [source: string context_names] {
     mut aliases = (program-bound-context-root-aliases-base $source $context_names)
+    let may_extract_from_record = (
+        (source-has-non-context-record-projection? $source $context_names)
+        or (($source | str contains "get") and ($source | str contains "|"))
+    )
+    if not $may_extract_from_record {
+        return $aliases
+    }
+
     let identity_wrappers = (identity-wrapper-definitions $source)
     let root_wrapper_defs = (context-root-wrapper-definitions $source)
     let record_aliases = (program-record-context-aliases $source $context_names)
