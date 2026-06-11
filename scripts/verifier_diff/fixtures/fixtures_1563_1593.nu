@@ -16,6 +16,7 @@ const VERIFIER_DIFF_FIXTURES_1563_1593 = [
         ]
         local: "accept"
         kernel: "skip"
+        default_test_lane: "dry-run"
     }
     {
         name: "snprintf-rejects-extra-format-size-arg"

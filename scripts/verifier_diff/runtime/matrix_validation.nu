@@ -687,6 +687,10 @@ def validate-fixture-metadata [fixtures] {
             parse-kernel-version $min_kernel | ignore
         }
 
-        fixture-derived-metadata $fixture $kernel_features
+        let derived = (fixture-derived-metadata $fixture $kernel_features)
+        if $fixture.local == "accept" and $fixture.kernel == "skip" and $derived.default_test_lane == "host-safe" {
+            fail $"fixture ($fixture.name) is local-accept/kernel-skip but defaults to host-safe; set default_test_lane to dry-run, host-gated, or vm-only"
+        }
+        $derived
     }
 }

@@ -352,6 +352,7 @@ const VERIFIER_DIFF_FIXTURES_1469_1500 = [
         ]
         local: "accept"
         kernel: "skip"
+        default_test_lane: "dry-run"
     }
     {
         name: "source-kfunc-throw-rejects-return-use"

@@ -359,6 +359,7 @@ const VERIFIER_DIFF_FIXTURES_0751_0781 = [
         ]
         local: "accept"
         kernel: "skip"
+        default_test_lane: "dry-run"
     }
     {
         name: "helper-packet-output-rejects-raw-tracing-context"

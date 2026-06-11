@@ -41,6 +41,7 @@ const VERIFIER_DIFF_FIXTURES_0782_0812 = [
         ]
         local: "accept"
         kernel: "skip"
+        default_test_lane: "dry-run"
     }
     {
         name: "source-helper-per-cpu-pointers"
@@ -56,6 +57,7 @@ const VERIFIER_DIFF_FIXTURES_0782_0812 = [
         ]
         local: "accept"
         kernel: "skip"
+        default_test_lane: "dry-run"
     }
     {
         name: "source-helper-socket-conversions"
@@ -145,6 +147,7 @@ const VERIFIER_DIFF_FIXTURES_0782_0812 = [
         ]
         local: "accept"
         kernel: "skip"
+        default_test_lane: "dry-run"
     }
     {
         name: "source-helper-skc-socket-conversions"

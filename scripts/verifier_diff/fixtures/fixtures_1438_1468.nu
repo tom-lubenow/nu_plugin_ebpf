@@ -20,6 +20,7 @@ const VERIFIER_DIFF_FIXTURES_1438_1468 = [
         ]
         local: "accept"
         kernel: "skip"
+        default_test_lane: "dry-run"
     }
     {
         name: "source-kfunc-task-get-cgroup1-rejects-cgroup-leak"
@@ -64,6 +65,7 @@ const VERIFIER_DIFF_FIXTURES_1438_1468 = [
         ]
         local: "accept"
         kernel: "skip"
+        default_test_lane: "dry-run"
     }
     {
         name: "source-kfunc-task-under-cgroup-rejects-task-ref-cgroup-arg"
@@ -364,6 +366,7 @@ const VERIFIER_DIFF_FIXTURES_1438_1468 = [
         ]
         local: "accept"
         kernel: "skip"
+        default_test_lane: "dry-run"
     }
     {
         name: "source-kfunc-cpumask-populate-rejects-scalar-mask"
@@ -475,6 +478,7 @@ const VERIFIER_DIFF_FIXTURES_1438_1468 = [
         ]
         local: "accept"
         kernel: "skip"
+        default_test_lane: "dry-run"
     }
     {
         name: "source-kfunc-cpumask-test-cpu-rejects-scalar-mask"
@@ -519,6 +523,7 @@ const VERIFIER_DIFF_FIXTURES_1438_1468 = [
         ]
         local: "accept"
         kernel: "skip"
+        default_test_lane: "dry-run"
     }
     {
         name: "source-kfunc-cpumask-setops-release"
@@ -550,6 +555,7 @@ const VERIFIER_DIFF_FIXTURES_1438_1468 = [
         ]
         local: "accept"
         kernel: "skip"
+        default_test_lane: "dry-run"
     }
     {
         name: "source-kptr-xchg-task-ref-transfer"

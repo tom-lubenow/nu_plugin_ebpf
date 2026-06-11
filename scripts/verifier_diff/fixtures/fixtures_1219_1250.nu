@@ -131,6 +131,7 @@ const VERIFIER_DIFF_FIXTURES_1219_1250 = [
         ]
         local: "accept"
         kernel: "skip"
+        default_test_lane: "dry-run"
     }
     {
         name: "source-kfunc-task-from-vpid-rejects-leak"

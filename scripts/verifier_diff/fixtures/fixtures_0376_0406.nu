@@ -16,6 +16,7 @@ const VERIFIER_DIFF_FIXTURES_0376_0406 = [
         ]
         local: "accept"
         kernel: "skip"
+        default_test_lane: "dry-run"
     }
     {
         name: "raw-cgrp-storage-get-helper"
