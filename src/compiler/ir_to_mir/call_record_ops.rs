@@ -1404,27 +1404,33 @@ impl<'a> HirToMirLowering<'a> {
                     "columns requires record input with compiler-known fields in eBPF".into(),
                 )
             })?;
-        let input_is_known_empty_record = matches!(
-            input_meta.constant_value.as_ref(),
-            Some(nu_protocol::Value::Record { val, .. }) if val.is_empty()
-        );
+        let constant_record_field_names = match input_meta.constant_value.as_ref() {
+            Some(nu_protocol::Value::Record { val, .. }) => Some(
+                val.iter()
+                    .map(|(field_name, _)| field_name.clone())
+                    .collect::<Vec<_>>(),
+            ),
+            _ => None,
+        };
         let typed_record_field_names = Self::typed_record_field_names(&input_meta);
         if input_meta.record_fields.is_empty()
-            && !input_is_known_empty_record
+            && constant_record_field_names.is_none()
             && typed_record_field_names.is_none()
         {
             return Err(CompileError::UnsupportedInstruction(
                 "columns requires record input with compiler-known fields in eBPF".into(),
             ));
         }
-        let columns = if input_meta.record_fields.is_empty() {
-            typed_record_field_names.unwrap_or_default()
-        } else {
+        let columns = if !input_meta.record_fields.is_empty() {
             input_meta
                 .record_fields
                 .iter()
                 .map(|field| field.name.clone())
                 .collect::<Vec<_>>()
+        } else if let Some(columns) = constant_record_field_names {
+            columns
+        } else {
+            typed_record_field_names.unwrap_or_default()
         };
         if columns.len() > MAX_RECORD_COLUMNS_RESULTS {
             return Err(CompileError::UnsupportedInstruction(format!(

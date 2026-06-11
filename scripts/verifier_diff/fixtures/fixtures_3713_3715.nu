@@ -19,7 +19,7 @@ export const VERIFIER_DIFF_FIXTURES_3713_3715 = [
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  {pid: 1} | select --optional uid | get --optional uid | is-empty'
+            '  {pid: 1} | select --optional uid | columns | length'
             '}'
         ]
         local: "accept"
