@@ -12,6 +12,33 @@ mod sort;
 mod split;
 
 impl<'a> HirToMirLowering<'a> {
+    pub(super) fn validate_optional_strict_list_flag(
+        &self,
+        cmd_name: &str,
+    ) -> Result<(), CompileError> {
+        if !self.named_args.is_empty() {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} does not accept named arguments in eBPF"
+            )));
+        }
+        let mut strict_count = 0usize;
+        for flag in &self.named_flags {
+            if flag == "strict" {
+                strict_count = strict_count.saturating_add(1);
+            } else {
+                return Err(CompileError::UnsupportedInstruction(format!(
+                    "{cmd_name} supports only the --strict flag in eBPF"
+                )));
+            }
+        }
+        if strict_count > 1 {
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "{cmd_name} duplicate --strict flags are not supported in eBPF"
+            )));
+        }
+        Ok(())
+    }
+
     fn is_stack_list_placeholder_type(ty: &MirType) -> bool {
         matches!(
             ty,
@@ -955,7 +982,9 @@ impl<'a> HirToMirLowering<'a> {
             .pipeline_input_reg
             .or(src_dst_had_value.then_some(src_dst));
 
-        if !self.named_flags.is_empty() || !self.named_args.is_empty() {
+        if cmd_name == "first" {
+            self.validate_optional_strict_list_flag(cmd_name)?;
+        } else if !self.named_flags.is_empty() || !self.named_args.is_empty() {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "{cmd_name} does not accept named flags or arguments in eBPF"
             )));
@@ -1313,10 +1342,8 @@ impl<'a> HirToMirLowering<'a> {
             .pipeline_input_reg
             .or(src_dst_had_value.then_some(src_dst));
 
-        if !self.named_flags.is_empty()
-            || !self.named_args.is_empty()
-            || self.positional_args.len() != 1
-        {
+        self.validate_optional_strict_list_flag("last")?;
+        if self.positional_args.len() != 1 {
             return Err(CompileError::UnsupportedInstruction(
                 "last requires exactly one positional count argument in eBPF".into(),
             ));

@@ -1,17 +1,16 @@
 const VERIFIER_DIFF_FIXTURES_2992_2998 = [
     {
-        name: "core-list-first-rejects-strict-flag"
+        name: "core-list-first-strict-count"
         category: "language-core"
-        tags: [list first diagnostics reject flag]
+        tags: [list first strict accept]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  [1 2] | first --strict 1'
+            '  [1 2] | first --strict 1 | get 0'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "first does not accept named flags or arguments in eBPF"
+        local: "accept"
+        kernel: "accept"
     }
     {
         name: "core-list-first-rejects-negative-count"
@@ -28,18 +27,17 @@ const VERIFIER_DIFF_FIXTURES_2992_2998 = [
         error_contains: "first count must be non-negative in eBPF"
     }
     {
-        name: "core-list-last-rejects-strict-flag"
+        name: "core-list-last-strict-count"
         category: "language-core"
-        tags: [list last diagnostics reject flag]
+        tags: [list last strict accept]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  [1 2] | last --strict 1'
+            '  [1 2] | last --strict 1 | get 0'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "last does not accept named flags or arguments in eBPF"
+        local: "accept"
+        kernel: "accept"
     }
     {
         name: "core-list-last-rejects-negative-count"

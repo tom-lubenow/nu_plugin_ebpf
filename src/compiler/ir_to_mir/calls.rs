@@ -7896,11 +7896,7 @@ impl<'a> HirToMirLowering<'a> {
             }
 
             "first" | "last" => {
-                if !self.named_flags.is_empty() || !self.named_args.is_empty() {
-                    return Err(CompileError::UnsupportedInstruction(format!(
-                        "{cmd_name} does not accept named flags or arguments in eBPF"
-                    )));
-                }
+                self.validate_optional_strict_list_flag(&cmd_name)?;
 
                 if !self.positional_args.is_empty() {
                     if cmd_name == "first" {

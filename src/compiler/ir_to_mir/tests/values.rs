@@ -8309,6 +8309,72 @@ fn test_lower_last_count_on_numeric_list_rebuilds_suffix() {
         .expect("counted last should compile through codegen");
 }
 
+fn add_strict_flag_to_call(hir: &mut HirProgram, decl_id: DeclId) {
+    let call = hir.main.blocks[0]
+        .stmts
+        .iter_mut()
+        .find_map(|stmt| match stmt {
+            HirStmt::Call {
+                decl_id: call_decl,
+                args,
+                ..
+            } if *call_decl == decl_id => Some(args),
+            _ => None,
+        })
+        .expect("expected command call");
+    call.flags.push(b"strict".to_vec());
+}
+
+#[test]
+fn test_lower_first_strict_count_on_numeric_list_rebuilds_prefix() {
+    let first_decl = DeclId::new(820);
+    let get_decl = DeclId::new(821);
+    let mut hir = make_numeric_list_call_then_get_program(first_decl, get_decl, Some(1), 0);
+    add_strict_flag_to_call(&mut hir, first_decl);
+    let decl_names = HashMap::from([
+        (first_decl, "first".to_string()),
+        (get_decl, "get".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("counted first --strict should lower as a bounded stack-list prefix slice");
+
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("counted first --strict should compile through codegen");
+}
+
+#[test]
+fn test_lower_last_strict_count_on_numeric_list_rebuilds_suffix() {
+    let last_decl = DeclId::new(822);
+    let get_decl = DeclId::new(823);
+    let mut hir = make_numeric_list_call_then_get_program(last_decl, get_decl, Some(1), 0);
+    add_strict_flag_to_call(&mut hir, last_decl);
+    let decl_names = HashMap::from([
+        (last_decl, "last".to_string()),
+        (get_decl, "get".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("counted last --strict should lower as a bounded stack-list suffix slice");
+
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("counted last --strict should compile through codegen");
+}
+
 #[test]
 fn test_lower_first_negative_count_is_rejected() {
     let first_decl = DeclId::new(84);
