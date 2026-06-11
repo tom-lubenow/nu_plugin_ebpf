@@ -2934,6 +2934,22 @@ def record-get-projection-kernel-features [source: string target context_names] 
     if (not ($source | str contains "get")) or (not ($source | str contains "|")) {
         return []
     }
+    let may_carry_record_context = (
+        ($source | str contains ": $")
+        or ($source | str contains ": ($")
+        or ($source | str contains "def ")
+        or ($source | str contains "| insert")
+        or ($source | str contains "| update")
+        or ($source | str contains "| upsert")
+        or ($source | str contains "| merge")
+        or ($source | str contains "| rename")
+        or ($source | str contains "| default")
+        or ($source | str contains "| select")
+        or ($source | str contains "| reject")
+    )
+    if not $may_carry_record_context {
+        return []
+    }
     let candidate_lines = (record-get-candidate-lines $source)
     if ($candidate_lines | is-empty) {
         return []
