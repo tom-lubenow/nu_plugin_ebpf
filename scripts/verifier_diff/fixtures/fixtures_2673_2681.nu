@@ -11,7 +11,7 @@ const VERIFIER_DIFF_FIXTURES_2673_2681 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "Environment variable access ($env.PATH) is not supported in eBPF. eBPF programs run in kernel space without access to the user environment."
+        error_contains: "Environment variable access ($env.PATH) is not supported in eBPF because kernel programs cannot access the user environment."
     }
     {
         name: "core-control-flow-rejects-env-store"
@@ -26,7 +26,7 @@ const VERIFIER_DIFF_FIXTURES_2673_2681 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "Setting environment variable ($env.NU_EBPF_TEST) is not supported in eBPF. eBPF programs run in kernel space without access to the user environment."
+        error_contains: "Setting environment variable ($env.NU_EBPF_TEST) is not supported in eBPF because kernel programs cannot access the user environment."
     }
     {
         name: "core-control-flow-rejects-scalar-iteration"
