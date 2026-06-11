@@ -1753,7 +1753,7 @@ fn test_type_infer_rejects_array_map_delete() {
 }
 
 #[test]
-fn test_type_infer_accepts_large_map_update_flags() {
+fn test_type_infer_rejects_invalid_map_update_flags() {
     let mut func = make_test_function();
     let key = func.alloc_vreg();
     let val = func.alloc_vreg();
@@ -1774,17 +1774,69 @@ fn test_type_infer_accepts_large_map_update_flags() {
         },
         key,
         val,
-        flags: i32::MAX as u64 + 1,
+        flags: 4,
     });
     block.terminator = MirInst::Return { val: None };
 
-    TypeInference::new(None)
+    let errors = TypeInference::new(None)
         .infer(&func)
-        .expect("large map update flags should be accepted");
+        .expect_err("invalid map update flags should be rejected");
+    assert!(
+        errors.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_map_update_elem' requires arg3 flags")),
+        "unexpected errors: {:?}",
+        errors
+    );
 }
 
 #[test]
-fn test_type_infer_accepts_large_map_push_flags() {
+fn test_type_infer_rejects_invalid_dynamic_map_update_flags() {
+    let mut func = make_test_function();
+    let map_ptr = func.alloc_vreg();
+    let key = func.alloc_vreg();
+    let val = func.alloc_vreg();
+    let slot = func.alloc_stack_slot(8, 8, StackSlotKind::Local);
+
+    let block = func.block_mut(BlockId(0));
+    block.instructions.push(MirInst::Copy {
+        dst: map_ptr,
+        src: MirValue::StackSlot(slot),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: key,
+        src: MirValue::Const(0),
+    });
+    block.instructions.push(MirInst::Copy {
+        dst: val,
+        src: MirValue::Const(1),
+    });
+    block.instructions.push(MirInst::MapUpdateDynamic {
+        map_ptr,
+        inner_map: MapRef {
+            name: "inner_slots".to_string(),
+            kind: MapKind::Hash,
+        },
+        key,
+        val,
+        flags: 4,
+    });
+    block.terminator = MirInst::Return { val: None };
+
+    let errors = TypeInference::new(None)
+        .infer(&func)
+        .expect_err("invalid dynamic map update flags should be rejected");
+    assert!(
+        errors.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_map_update_elem' requires arg3 flags")),
+        "unexpected errors: {:?}",
+        errors
+    );
+}
+
+#[test]
+fn test_type_infer_rejects_invalid_map_push_flags() {
     let mut func = make_test_function();
     let val = func.alloc_vreg();
 
@@ -1799,13 +1851,20 @@ fn test_type_infer_accepts_large_map_push_flags() {
             kind: MapKind::Queue,
         },
         val,
-        flags: i32::MAX as u64 + 1,
+        flags: 4,
     });
     block.terminator = MirInst::Return { val: None };
 
-    TypeInference::new(None)
+    let errors = TypeInference::new(None)
         .infer(&func)
-        .expect("large map push flags should be accepted");
+        .expect_err("invalid map push flags should be rejected");
+    assert!(
+        errors.iter().any(|e| e
+            .message
+            .contains("helper 'bpf_map_push_elem' requires arg2 flags")),
+        "unexpected errors: {:?}",
+        errors
+    );
 }
 
 #[test]

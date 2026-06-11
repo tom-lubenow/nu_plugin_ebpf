@@ -2,6 +2,24 @@ use super::*;
 use crate::compiler::instruction::{kfunc_arg_pointee_mismatch, unknown_kfunc_signature_message};
 
 impl<'a> TypeInference<'a> {
+    fn validate_helper_allowed_u64_arg(
+        helper: BpfHelper,
+        arg_idx: usize,
+        value: u64,
+        errors: &mut Vec<TypeError>,
+    ) {
+        let Some((allowed_values, message)) = helper.scalar_arg_allowed_values_requirement(arg_idx)
+        else {
+            return;
+        };
+        if !allowed_values
+            .iter()
+            .any(|allowed| u64::try_from(*allowed).is_ok_and(|allowed| allowed == value))
+        {
+            errors.push(TypeError::new(message));
+        }
+    }
+
     fn validate_helper_program_context(
         &self,
         helper_id: u32,
@@ -666,13 +684,14 @@ impl<'a> TypeInference<'a> {
                 map,
                 key,
                 val,
-                flags: _,
+                flags,
             } => {
                 if !map.kind.supports_generic_map_op(MapOpKind::Update) {
                     errors.push(TypeError::new(
                         map.kind.generic_map_op_error(MapOpKind::Update, &map.name),
                     ));
                 }
+                Self::validate_helper_allowed_u64_arg(BpfHelper::MapUpdateElem, 3, *flags, errors);
                 let key_ty = self.mir_type_for_vreg(*key, types);
                 if map.name == STRING_COUNTER_MAP_NAME || map.name == BYTES_COUNTER_MAP_NAME {
                     match key_ty {
@@ -714,7 +733,7 @@ impl<'a> TypeInference<'a> {
                 inner_map,
                 key,
                 val,
-                flags: _,
+                flags,
             } => {
                 if !inner_map.kind.supports_generic_map_op(MapOpKind::Update) {
                     errors.push(TypeError::new(
@@ -723,6 +742,7 @@ impl<'a> TypeInference<'a> {
                             .generic_map_op_error(MapOpKind::Update, &inner_map.name),
                     ));
                 }
+                Self::validate_helper_allowed_u64_arg(BpfHelper::MapUpdateElem, 3, *flags, errors);
                 let map_ptr_ty = self.mir_type_for_vreg(*map_ptr, types);
                 if Self::mir_ptr_space(&map_ptr_ty).is_none() {
                     errors.push(TypeError::new(format!(
@@ -815,12 +835,13 @@ impl<'a> TypeInference<'a> {
                 }
             }
 
-            MirInst::MapPush { map, val, flags: _ } => {
+            MirInst::MapPush { map, val, flags } => {
                 if !map.kind.supports_generic_map_op(MapOpKind::Push) {
                     errors.push(TypeError::new(
                         map.kind.generic_map_op_error(MapOpKind::Push, &map.name),
                     ));
                 }
+                Self::validate_helper_allowed_u64_arg(BpfHelper::MapPushElem, 2, *flags, errors);
                 let val_ty = self.mir_type_for_vreg(*val, types);
                 match val_ty {
                     MirType::Ptr { address_space, .. }
