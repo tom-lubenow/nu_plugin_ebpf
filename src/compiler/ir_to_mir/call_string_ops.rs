@@ -308,6 +308,19 @@ impl<'a> HirToMirLowering<'a> {
             return Ok(());
         }
 
+        let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
+        if let Some(input_reg) = input_reg
+            && self.lower_typed_fixed_string_array_lengths(
+                src_dst,
+                result_vreg,
+                input_reg,
+                input_vreg,
+                length_mode,
+            )?
+        {
+            return Ok(());
+        }
+
         match length_mode {
             StringLengthMode::Chars | StringLengthMode::GraphemeClusters => {
                 let input = self.exact_string_input(input_reg, "str length")?;
@@ -318,18 +331,6 @@ impl<'a> HirToMirLowering<'a> {
                 );
             }
             StringLengthMode::Utf8Bytes => {}
-        }
-
-        let input_vreg = self.pipeline_input.unwrap_or(dst_vreg);
-        if let Some(input_reg) = input_reg
-            && self.lower_typed_fixed_string_array_lengths(
-                src_dst,
-                result_vreg,
-                input_reg,
-                input_vreg,
-            )?
-        {
-            return Ok(());
         }
 
         let input_meta = input_reg.and_then(|reg| self.get_metadata(reg).cloned());
@@ -370,7 +371,12 @@ impl<'a> HirToMirLowering<'a> {
         result_vreg: VReg,
         input_reg: RegId,
         mut input_vreg: VReg,
+        length_mode: StringLengthMode,
     ) -> Result<bool, CompileError> {
+        if length_mode == StringLengthMode::GraphemeClusters {
+            return Ok(false);
+        }
+
         let Some(input_meta) = self.get_metadata(input_reg).cloned() else {
             return Ok(false);
         };
@@ -484,6 +490,13 @@ impl<'a> HirToMirLowering<'a> {
                 ty: MirType::I64,
             });
             self.vreg_type_hints.insert(len_vreg, MirType::I64);
+            let len_vreg = match length_mode {
+                StringLengthMode::Utf8Bytes => len_vreg,
+                StringLengthMode::Chars => {
+                    self.lower_typed_fixed_string_slot_char_count(element_ptr, len_vreg, *slot_len)?
+                }
+                StringLengthMode::GraphemeClusters => unreachable!("checked above"),
+            };
             self.emit(MirInst::ListPush {
                 list: result_vreg,
                 item: len_vreg,
@@ -498,6 +511,93 @@ impl<'a> HirToMirLowering<'a> {
             Some(array_len),
         );
         Ok(true)
+    }
+
+    fn lower_typed_fixed_string_slot_char_count(
+        &mut self,
+        element_ptr: VReg,
+        len_vreg: VReg,
+        slot_len: usize,
+    ) -> Result<VReg, CompileError> {
+        let mut count_vreg = self.func.alloc_vreg();
+        self.emit(MirInst::Copy {
+            dst: count_vreg,
+            src: MirValue::Const(0),
+        });
+        self.vreg_type_hints.insert(count_vreg, MirType::I64);
+
+        for byte_index in 0..slot_len {
+            let load_offset = 8usize.checked_add(byte_index).ok_or_else(|| {
+                CompileError::UnsupportedInstruction(
+                    "str length --chars typed fixed string-array byte offset overflowed in eBPF"
+                        .into(),
+                )
+            })?;
+            let load_offset = i32::try_from(load_offset).map_err(|_| {
+                CompileError::UnsupportedInstruction(
+                    "str length --chars typed fixed string-array byte offset is too large for eBPF"
+                        .into(),
+                )
+            })?;
+
+            let byte_vreg = self.func.alloc_vreg();
+            self.emit(MirInst::Load {
+                dst: byte_vreg,
+                ptr: element_ptr,
+                offset: load_offset,
+                ty: MirType::U8,
+            });
+            self.vreg_type_hints.insert(byte_vreg, MirType::U8);
+
+            let in_bounds = self.func.alloc_vreg();
+            self.emit(MirInst::BinOp {
+                dst: in_bounds,
+                op: BinOpKind::Lt,
+                lhs: MirValue::Const(byte_index as i64),
+                rhs: MirValue::VReg(len_vreg),
+            });
+            self.vreg_type_hints.insert(in_bounds, MirType::Bool);
+
+            let byte_tag = self.func.alloc_vreg();
+            self.emit(MirInst::BinOp {
+                dst: byte_tag,
+                op: BinOpKind::And,
+                lhs: MirValue::VReg(byte_vreg),
+                rhs: MirValue::Const(0xC0),
+            });
+            self.vreg_type_hints.insert(byte_tag, MirType::U8);
+
+            let is_codepoint_start = self.func.alloc_vreg();
+            self.emit(MirInst::BinOp {
+                dst: is_codepoint_start,
+                op: BinOpKind::Ne,
+                lhs: MirValue::VReg(byte_tag),
+                rhs: MirValue::Const(0x80),
+            });
+            self.vreg_type_hints
+                .insert(is_codepoint_start, MirType::Bool);
+
+            let count_this = self.func.alloc_vreg();
+            self.emit(MirInst::BinOp {
+                dst: count_this,
+                op: BinOpKind::And,
+                lhs: MirValue::VReg(in_bounds),
+                rhs: MirValue::VReg(is_codepoint_start),
+            });
+            self.vreg_type_hints.insert(count_this, MirType::I64);
+
+            let next_count = self.func.alloc_vreg();
+            self.emit(MirInst::BinOp {
+                dst: next_count,
+                op: BinOpKind::Add,
+                lhs: MirValue::VReg(count_vreg),
+                rhs: MirValue::VReg(count_this),
+            });
+            self.vreg_type_hints.insert(next_count, MirType::I64);
+            count_vreg = next_count;
+        }
+
+        Ok(count_vreg)
     }
 
     fn string_length_mode(&self) -> Result<StringLengthMode, CompileError> {

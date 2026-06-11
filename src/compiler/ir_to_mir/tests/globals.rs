@@ -11801,10 +11801,124 @@ fn test_lower_global_define_type_string_array_str_length_materializes_numeric_li
 }
 
 #[test]
-fn test_lower_global_define_type_string_array_str_length_chars_rejects_runtime_array() {
+fn test_lower_global_define_type_string_array_str_length_chars_materializes_numeric_list() {
     let define_decl = DeclId::new(10_555);
     let global_get_decl = DeclId::new(10_556);
     let length_decl = DeclId::new(10_557);
+    let sum_decl = DeclId::new(10_558);
+    let decl_names = HashMap::from([
+        (define_decl, "global-define".to_string()),
+        (global_get_decl, "global-get".to_string()),
+        (length_decl, "str length".to_string()),
+        (sum_decl, "math sum".to_string()),
+    ]);
+
+    let func = HirFunction {
+        blocks: vec![HirBlock {
+            id: HirBlockId(0),
+            stmts: vec![
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(0),
+                    lit: HirLiteral::String("names".into()),
+                },
+                HirStmt::LoadLiteral {
+                    dst: RegId::new(1),
+                    lit: HirLiteral::String("array{string:8:2}".into()),
+                },
+                HirStmt::LoadValue {
+                    dst: RegId::new(2),
+                    val: Box::new(Value::list(
+                        vec![
+                            Value::string("é".to_string(), Span::unknown()),
+                            Value::string("abc".to_string(), Span::unknown()),
+                        ],
+                        Span::unknown(),
+                    )),
+                },
+                HirStmt::Call {
+                    decl_id: define_decl,
+                    src_dst: RegId::new(3),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        named: vec![(b"type".to_vec(), RegId::new(1))],
+                        pipeline_input: Some(RegId::new(2)),
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: global_get_decl,
+                    src_dst: RegId::new(4),
+                    args: HirCallArgs {
+                        positional: vec![RegId::new(0)],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: length_decl,
+                    src_dst: RegId::new(5),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(4)),
+                        flags: vec![b"chars".to_vec()],
+                        ..HirCallArgs::default()
+                    },
+                },
+                HirStmt::Call {
+                    decl_id: sum_decl,
+                    src_dst: RegId::new(6),
+                    args: HirCallArgs {
+                        pipeline_input: Some(RegId::new(5)),
+                        ..HirCallArgs::default()
+                    },
+                },
+            ],
+            terminator: HirTerminator::Return { src: RegId::new(6) },
+        }],
+        entry: HirBlockId(0),
+        spans: Vec::new(),
+        ast: Vec::new(),
+        comments: Vec::new(),
+        register_count: 7,
+        file_count: 0,
+    };
+    let hir = HirProgram::new(func, HashMap::new(), vec![], None);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("str length --chars should lower for typed string arrays");
+
+    assert!(
+        result
+            .program
+            .main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .any(|inst| matches!(
+                inst,
+                MirInst::BinOp {
+                    op: BinOpKind::And,
+                    rhs: MirValue::Const(0xC0),
+                    ..
+                }
+            )),
+        "expected str length --chars to mask UTF-8 byte tags"
+    );
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints)).expect(
+        "typed string array str length --chars consumed by math sum should compile through codegen",
+    );
+}
+
+#[test]
+fn test_lower_global_define_type_string_array_str_length_grapheme_rejects_runtime_array() {
+    let define_decl = DeclId::new(10_701);
+    let global_get_decl = DeclId::new(10_702);
+    let length_decl = DeclId::new(10_703);
     let decl_names = HashMap::from([
         (define_decl, "global-define".to_string()),
         (global_get_decl, "global-get".to_string()),
@@ -11845,7 +11959,7 @@ fn test_lower_global_define_type_string_array_str_length_chars_rejects_runtime_a
                     src_dst: RegId::new(4),
                     args: HirCallArgs {
                         pipeline_input: Some(RegId::new(3)),
-                        flags: vec![b"chars".to_vec()],
+                        flags: vec![b"grapheme-clusters".to_vec()],
                         ..HirCallArgs::default()
                     },
                 },
@@ -11869,12 +11983,12 @@ fn test_lower_global_define_type_string_array_str_length_chars_rejects_runtime_a
         &HashMap::new(),
         &HashMap::new(),
     )
-    .expect_err("str length --chars should remain compile-time-only for typed string arrays");
+    .expect_err("str length --grapheme-clusters should remain compile-time-only for typed arrays");
 
     assert!(
         err.to_string()
             .contains("str length requires compile-time known string input"),
-        "expected compile-time-only length-mode diagnostic, got: {err}"
+        "expected compile-time-only grapheme diagnostic, got: {err}"
     );
 }
 
