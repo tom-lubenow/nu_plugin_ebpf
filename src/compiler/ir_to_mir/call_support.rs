@@ -214,6 +214,30 @@ impl<'a> HirToMirLowering<'a> {
                 )? {
                     value_ty = named_value_ty;
                 }
+                let value_metadata = match &value_ty {
+                    MirType::Array { .. } | MirType::Struct { .. } => {
+                        let value_semantics = self.named_map_value_semantics(map_ref).cloned();
+                        let key_origin_ty = if map_ref.kind.is_array_index_map() {
+                            MirType::U32
+                        } else {
+                            key_ty.clone()
+                        };
+                        Some(RegMetadata {
+                            field_type: Some(MirType::Ptr {
+                                pointee: Box::new(value_ty.clone()),
+                                address_space: AddressSpace::Map,
+                            }),
+                            annotated_semantics: value_semantics,
+                            map_value_origin: Some(MapValueOrigin {
+                                map_ref: map_ref.clone(),
+                                key_ty: key_origin_ty,
+                                value_ty: value_ty.clone(),
+                            }),
+                            ..Default::default()
+                        })
+                    }
+                    _ => None,
+                };
                 Ok(vec![
                     SubfunctionArgSeed {
                         type_hint: Some(self.kernel_btf_callback_arg_ptr_type("bpf_map")),
@@ -237,7 +261,7 @@ impl<'a> HirToMirLowering<'a> {
                             pointee: Box::new(value_ty),
                             address_space: AddressSpace::Map,
                         }),
-                        metadata: None,
+                        metadata: value_metadata,
                         synthetic_stack_slot: None,
                         non_null: true,
                         trusted_btf: false,
