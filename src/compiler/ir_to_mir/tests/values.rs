@@ -40079,6 +40079,109 @@ fn test_lower_reject_optional_on_metadata_record_rejects_present_field() {
 }
 
 #[test]
+fn test_lower_get_optional_on_metadata_record_missing_field_returns_nothing() {
+    let get_decl = DeclId::new(953);
+    let mut hir = make_record_get_field_program(get_decl, "uid");
+    add_optional_flag_to_call(&mut hir, get_decl);
+    let decl_names = HashMap::from([(get_decl, "get".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("get --optional should lower missing metadata-backed record fields");
+
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("get --optional on a missing field should compile through codegen");
+}
+
+#[test]
+fn test_lower_select_optional_on_metadata_record_materializes_missing_field() {
+    let select_decl = DeclId::new(954);
+    let hir = HirProgram::new(
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadValue {
+                        dst: RegId::new(0),
+                        val: Box::new(Value::record(
+                            test_record(vec![("pid", Value::int(7, Span::test_data()))]),
+                            Span::test_data(),
+                        )),
+                    },
+                    HirStmt::LoadLiteral {
+                        dst: RegId::new(2),
+                        lit: HirLiteral::CellPath(Box::new(CellPath {
+                            members: vec![string_member("uid")],
+                        })),
+                    },
+                    HirStmt::Call {
+                        decl_id: select_decl,
+                        src_dst: RegId::new(1),
+                        args: HirCallArgs {
+                            flags: vec![b"optional".to_vec()],
+                            positional: vec![RegId::new(2)],
+                            pipeline_input: Some(RegId::new(0)),
+                            ..HirCallArgs::default()
+                        },
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(1) },
+            }],
+            entry: HirBlockId(0),
+            spans: Vec::new(),
+            ast: Vec::new(),
+            comments: Vec::new(),
+            register_count: 3,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        None,
+    );
+    let decl_names = HashMap::from([(select_decl, "select".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("select --optional should lower missing metadata-backed record fields");
+
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("select --optional on a missing field should compile through codegen");
+}
+
+#[test]
+fn test_lower_reject_optional_on_metadata_record_ignores_missing_field() {
+    let reject_decl = DeclId::new(955);
+    let mut hir = make_record_projection_then_field_program(reject_decl, &["uid"], false, "cpu");
+    add_optional_flag_to_call(&mut hir, reject_decl);
+    let decl_names = HashMap::from([(reject_decl, "reject".to_string())]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("reject --optional should ignore missing metadata-backed record fields");
+
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("reject --optional on a missing field should compile through codegen");
+}
+
+#[test]
 fn test_lower_select_missing_metadata_record_field_is_rejected() {
     let select_decl = DeclId::new(96);
     let hir = make_record_projection_then_field_program(select_decl, &["missing"], true, "missing");

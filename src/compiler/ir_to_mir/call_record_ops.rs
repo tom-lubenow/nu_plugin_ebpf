@@ -418,7 +418,7 @@ impl<'a> HirToMirLowering<'a> {
             .pipeline_input_reg
             .or(src_dst_had_value.then_some(src_dst));
 
-        let _optional = self.validate_optional_record_flag(cmd_name)?;
+        let optional = self.validate_optional_record_flag(cmd_name)?;
         if self.positional_args.is_empty() {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "{cmd_name} requires at least one record field name in eBPF"
@@ -462,6 +462,7 @@ impl<'a> HirToMirLowering<'a> {
                 .record_fields
                 .iter()
                 .any(|field| field.name == *name)
+                && !optional
             {
                 return Err(CompileError::UnsupportedInstruction(format!(
                     "{cmd_name} cannot find record field '{name}'"
@@ -495,10 +496,11 @@ impl<'a> HirToMirLowering<'a> {
                 let mut out = nu_protocol::Record::new();
                 if cmd_name == "select" {
                     for name in &names {
-                        let Some(value) = record.get(name) else {
-                            continue;
-                        };
-                        out.push(name.clone(), value.clone());
+                        if let Some(value) = record.get(name) {
+                            out.push(name.clone(), value.clone());
+                        } else if optional {
+                            out.push(name.clone(), nu_protocol::Value::nothing(Span::unknown()));
+                        }
                     }
                 } else {
                     for (key, value) in record.iter() {
@@ -1598,7 +1600,7 @@ impl<'a> HirToMirLowering<'a> {
             .pipeline_input_reg
             .or(src_dst_had_value.then_some(src_dst));
 
-        let _optional = self.validate_optional_record_flag("get")?;
+        let optional = self.validate_optional_record_flag("get")?;
         if self.positional_args.len() != 1 {
             return Err(CompileError::UnsupportedInstruction(
                 "get requires exactly one record field name argument in eBPF".into(),
@@ -1620,16 +1622,23 @@ impl<'a> HirToMirLowering<'a> {
             ));
         }
 
-        let field = input_meta
+        let Some(field) = input_meta
             .record_fields
             .iter()
             .find(|field| field.name == field_name)
             .cloned()
-            .ok_or_else(|| {
-                CompileError::UnsupportedInstruction(format!(
-                    "get field '{field_name}' was not found in metadata-backed record in eBPF"
-                ))
-            })?;
+        else {
+            if optional {
+                self.lower_compile_time_list_transform_result(
+                    src_dst,
+                    &nu_protocol::Value::nothing(Span::unknown()),
+                )?;
+                return Ok(());
+            }
+            return Err(CompileError::UnsupportedInstruction(format!(
+                "get field '{field_name}' was not found in metadata-backed record in eBPF"
+            )));
+        };
         let field_constant = input_meta
             .constant_value
             .as_ref()

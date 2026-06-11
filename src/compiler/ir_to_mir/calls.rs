@@ -7585,7 +7585,7 @@ impl<'a> HirToMirLowering<'a> {
             }
 
             "get" => {
-                let _optional = self.validate_optional_record_flag("get")?;
+                let optional = self.validate_optional_record_flag("get")?;
                 if self.positional_args.len() != 1 {
                     return Err(CompileError::UnsupportedInstruction(
                         "get accepts exactly one positional argument in eBPF".into(),
@@ -7608,13 +7608,20 @@ impl<'a> HirToMirLowering<'a> {
                             && let Some(value) = meta.constant_value.as_ref()
                             && matches!(value, nu_protocol::Value::Record { .. })
                         {
-                            let projected = Self::constant_follow_cell_path(value, &path)
-                                .ok_or_else(|| {
-                                    CompileError::UnsupportedInstruction(format!(
-                                        "get field path '{}' was not found in compile-time known record in eBPF",
-                                        Self::typed_value_path_desc(&path.members)
-                                    ))
-                                })?;
+                            let Some(projected) = Self::constant_follow_cell_path(value, &path)
+                            else {
+                                if optional {
+                                    self.lower_compile_time_list_transform_result(
+                                        src_dst,
+                                        &nu_protocol::Value::nothing(Span::unknown()),
+                                    )?;
+                                    return Ok(());
+                                }
+                                return Err(CompileError::UnsupportedInstruction(format!(
+                                    "get field path '{}' was not found in compile-time known record in eBPF",
+                                    Self::typed_value_path_desc(&path.members)
+                                )));
+                            };
                             self.lower_compile_time_list_transform_result(src_dst, &projected)?;
                             return Ok(());
                         }
