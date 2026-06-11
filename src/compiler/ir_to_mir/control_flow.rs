@@ -2153,7 +2153,7 @@ impl<'a> HirToMirLowering<'a> {
                 // Get the key name for a better error message
                 let key_name = std::str::from_utf8(key).unwrap_or("<unknown>");
                 return Err(CompileError::UnsupportedInstruction(format!(
-                    "Environment variable access ($env.{}) is not supported in eBPF.                      eBPF programs run in kernel space without access to user environment.",
+                    "Environment variable access ($env.{}) is not supported in eBPF. eBPF programs run in kernel space without access to the user environment.",
                     key_name
                 )));
             }
@@ -2161,7 +2161,7 @@ impl<'a> HirToMirLowering<'a> {
             HirStmt::StoreEnv { key, .. } => {
                 let key_name = std::str::from_utf8(key).unwrap_or("<unknown>");
                 return Err(CompileError::UnsupportedInstruction(format!(
-                    "Setting environment variable ($env.{}) is not supported in eBPF.                      eBPF programs run in kernel space without access to user environment.",
+                    "Setting environment variable ($env.{}) is not supported in eBPF. eBPF programs run in kernel space without access to the user environment.",
                     key_name
                 )));
             }
