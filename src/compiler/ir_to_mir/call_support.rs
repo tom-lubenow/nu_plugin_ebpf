@@ -1392,6 +1392,26 @@ impl<'a> HirToMirLowering<'a> {
             .transpose()
     }
 
+    pub(super) fn require_helper_allowed_u64_arg(
+        &self,
+        helper: BpfHelper,
+        arg_idx: usize,
+        value: u64,
+    ) -> Result<(), CompileError> {
+        let Some((allowed_values, message)) = helper.scalar_arg_allowed_values_requirement(arg_idx)
+        else {
+            return Ok(());
+        };
+        if allowed_values
+            .iter()
+            .any(|allowed| u64::try_from(*allowed).is_ok_and(|allowed| allowed == value))
+        {
+            Ok(())
+        } else {
+            Err(CompileError::UnsupportedInstruction(message.into()))
+        }
+    }
+
     pub(super) fn packet_redirect_helper_from_named_flags(
         &self,
         context: &str,

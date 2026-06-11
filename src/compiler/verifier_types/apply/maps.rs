@@ -1,5 +1,23 @@
 use super::*;
 
+fn check_helper_allowed_u64_arg(
+    helper: BpfHelper,
+    arg_idx: usize,
+    value: u64,
+    errors: &mut Vec<VerifierTypeError>,
+) {
+    let Some((allowed_values, message)) = helper.scalar_arg_allowed_values_requirement(arg_idx)
+    else {
+        return;
+    };
+    if !allowed_values
+        .iter()
+        .any(|allowed| u64::try_from(*allowed).is_ok_and(|allowed| allowed == value))
+    {
+        errors.push(VerifierTypeError::new(message));
+    }
+}
+
 pub(super) fn apply_map_lookup_inst(
     dst: VReg,
     map: &MapRef,
@@ -117,7 +135,7 @@ pub(super) fn apply_map_update_inst(
     map: &MapRef,
     key: VReg,
     val: VReg,
-    _flags: u64,
+    flags: u64,
     types: &HashMap<VReg, MirType>,
     state: &VerifierState,
     errors: &mut Vec<VerifierTypeError>,
@@ -127,6 +145,7 @@ pub(super) fn apply_map_update_inst(
             map.kind.generic_map_op_error(MapOpKind::Update, &map.name),
         ));
     }
+    check_helper_allowed_u64_arg(BpfHelper::MapUpdateElem, 3, flags, errors);
     check_map_operand_scalar_size(key, "map key", types, errors);
     check_map_operand_scalar_size(val, "map value", types, errors);
     check_map_key_access(map, key, types, state, errors);
@@ -138,7 +157,7 @@ pub(super) fn apply_map_update_dynamic_inst(
     inner_map: &MapRef,
     key: VReg,
     val: VReg,
-    _flags: u64,
+    flags: u64,
     types: &HashMap<VReg, MirType>,
     state: &VerifierState,
     errors: &mut Vec<VerifierTypeError>,
@@ -150,6 +169,7 @@ pub(super) fn apply_map_update_dynamic_inst(
                 .generic_map_op_error(MapOpKind::Update, &inner_map.name),
         ));
     }
+    check_helper_allowed_u64_arg(BpfHelper::MapUpdateElem, 3, flags, errors);
     let _ = require_ptr_with_space(
         map_ptr,
         "dynamic map update",
@@ -208,7 +228,7 @@ pub(super) fn apply_map_delete_dynamic_inst(
 pub(super) fn apply_map_push_inst(
     map: &MapRef,
     val: VReg,
-    _flags: u64,
+    flags: u64,
     types: &HashMap<VReg, MirType>,
     state: &VerifierState,
     errors: &mut Vec<VerifierTypeError>,
@@ -218,6 +238,7 @@ pub(super) fn apply_map_push_inst(
             map.kind.generic_map_op_error(MapOpKind::Push, &map.name),
         ));
     }
+    check_helper_allowed_u64_arg(BpfHelper::MapPushElem, 2, flags, errors);
     check_map_operand_scalar_size(val, "map value", types, errors);
     check_map_value_access(val, types, state, errors);
 }

@@ -4970,6 +4970,7 @@ impl<'a> HirToMirLowering<'a> {
                     .get_metadata(map_reg)
                     .and_then(|meta| meta.dynamic_map_ref.clone())
                 {
+                    self.require_helper_allowed_u64_arg(BpfHelper::MapUpdateElem, 3, flags)?;
                     if self.named_args.contains_key("kind") {
                         return Err(CompileError::UnsupportedInstruction(
                             "map-put on a dynamic inner-map pointer does not accept --kind".into(),
@@ -5027,6 +5028,7 @@ impl<'a> HirToMirLowering<'a> {
                             src_dst, dst_vreg, map_ref, key_vreg, key_reg, flags,
                         )?;
                     } else {
+                        self.require_helper_allowed_u64_arg(BpfHelper::MapUpdateElem, 3, flags)?;
                         self.validate_generic_map_update_kind(map_kind, &map_name)?;
                         self.reject_context_pointer_payload(Some(key_reg), "map-put key")?;
                         let key_vreg = self.map_key_vreg_for_named_schema(
@@ -5089,21 +5091,10 @@ impl<'a> HirToMirLowering<'a> {
                     name: map_name,
                     kind: map_kind,
                 };
-                let flags = if let Some((_, reg)) = self.named_args.get("flags") {
-                    let raw = self
-                        .get_metadata(*reg)
-                        .and_then(|m| m.literal_int)
-                        .ok_or_else(|| {
-                            CompileError::UnsupportedInstruction(
-                                "map-push --flags must be a compile-time integer literal".into(),
-                            )
-                        })?;
-                    u64::try_from(raw).map_err(|_| {
-                        CompileError::UnsupportedInstruction("map-push --flags must be >= 0".into())
-                    })?
-                } else {
-                    0
-                };
+                let flags = self
+                    .optional_nonnegative_named_u64_arg("map-push", "flags")?
+                    .unwrap_or(0);
+                self.require_helper_allowed_u64_arg(BpfHelper::MapPushElem, 2, flags)?;
                 let value_vreg = self.pipeline_input.ok_or_else(|| {
                     CompileError::UnsupportedInstruction(
                         "map-push requires a value from pipeline input".into(),

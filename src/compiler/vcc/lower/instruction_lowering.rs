@@ -9,6 +9,29 @@ enum MapLookupPhiSource {
 }
 
 impl<'a> VccLowerer<'a> {
+    fn verify_helper_allowed_u64_arg(
+        &self,
+        helper: BpfHelper,
+        arg_idx: usize,
+        value: u64,
+    ) -> Result<(), VccError> {
+        let Some((allowed_values, message)) = helper.scalar_arg_allowed_values_requirement(arg_idx)
+        else {
+            return Ok(());
+        };
+        if allowed_values
+            .iter()
+            .any(|allowed| u64::try_from(*allowed).is_ok_and(|allowed| allowed == value))
+        {
+            Ok(())
+        } else {
+            Err(VccError::new(
+                VccErrorKind::UnsupportedInstruction,
+                message,
+            ))
+        }
+    }
+
     fn ctx_field_key(field: &CtxField) -> String {
         match field {
             CtxField::Arg(idx) => format!("arg:{idx}"),
@@ -1124,7 +1147,7 @@ impl<'a> VccLowerer<'a> {
                 map,
                 key,
                 val,
-                flags: _,
+                flags,
             } => {
                 if !map.kind.supports_generic_map_op(MapOpKind::Update) {
                     return Err(VccError::new(
@@ -1132,6 +1155,7 @@ impl<'a> VccLowerer<'a> {
                         map.kind.generic_map_op_error(MapOpKind::Update, &map.name),
                     ));
                 }
+                self.verify_helper_allowed_u64_arg(BpfHelper::MapUpdateElem, 3, *flags)?;
                 self.verify_map_key(&map.name, *key, out)?;
                 self.verify_map_value(*val, out)?;
             }
@@ -1140,7 +1164,7 @@ impl<'a> VccLowerer<'a> {
                 inner_map,
                 key,
                 val,
-                flags: _,
+                flags,
             } => {
                 if !inner_map.kind.supports_generic_map_op(MapOpKind::Update) {
                     return Err(VccError::new(
@@ -1150,6 +1174,7 @@ impl<'a> VccLowerer<'a> {
                             .generic_map_op_error(MapOpKind::Update, &inner_map.name),
                     ));
                 }
+                self.verify_helper_allowed_u64_arg(BpfHelper::MapUpdateElem, 3, *flags)?;
                 out.push(VccInst::AssertPtrAccess {
                     ptr: VccReg(map_ptr.0),
                     size: VccValue::Imm(1),
@@ -1187,13 +1212,14 @@ impl<'a> VccLowerer<'a> {
                 });
                 self.verify_map_key(&inner_map.name, *key, out)?;
             }
-            MirInst::MapPush { map, val, flags: _ } => {
+            MirInst::MapPush { map, val, flags } => {
                 if !map.kind.supports_generic_map_op(MapOpKind::Push) {
                     return Err(VccError::new(
                         VccErrorKind::UnsupportedInstruction,
                         map.kind.generic_map_op_error(MapOpKind::Push, &map.name),
                     ));
                 }
+                self.verify_helper_allowed_u64_arg(BpfHelper::MapPushElem, 2, *flags)?;
                 self.verify_map_value(*val, out)?;
             }
             MirInst::EmitEvent { data, size } => {
