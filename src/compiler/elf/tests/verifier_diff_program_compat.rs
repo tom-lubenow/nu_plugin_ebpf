@@ -709,6 +709,29 @@ fn test_verifier_diff_fixture_summary_exposes_target() {
 }
 
 #[test]
+fn test_verifier_diff_kernel_preflight_runs_before_local_execution() {
+    let verifier_diff = VERIFIER_DIFF_SOURCE;
+    let preflight = verifier_diff
+        .find("let required_kernel_candidates = (")
+        .expect("expected required --kernel preflight block");
+    let plugin_resolution = verifier_diff
+        .find("let plugin_bin = (resolve-plugin-bin $REPO_ROOT)")
+        .expect("expected plugin resolution before local checks");
+    let local_execution = verifier_diff
+        .find("let local_results = (check-local-fixtures")
+        .expect("expected local fixture execution");
+
+    assert!(
+        preflight < plugin_resolution,
+        "--kernel availability should be checked before resolving the plugin"
+    );
+    assert!(
+        preflight < local_execution,
+        "--kernel availability should be checked before running local fixtures"
+    );
+}
+
+#[test]
 fn test_verifier_diff_fixture_summary_reports_too_new_kfunc_window() {
     let script = r#"source scripts/verifier_diff.nu
 let fixture = {

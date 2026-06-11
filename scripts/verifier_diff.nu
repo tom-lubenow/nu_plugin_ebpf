@@ -227,6 +227,27 @@ def verifier-diff-main [options] {
         return
     }
 
+    let local_fixtures = (select-fixtures-with-requirements $fixtures $kernel "local")
+    if (($local_fixtures | length) == 0) {
+        print "ok: 0 local fixtures"
+        return
+    }
+
+    if $kernel {
+        let required_kernel_candidates = (
+            $local_fixtures
+            | where {|fixture| $fixture.local == "accept" and $fixture.kernel != "skip" }
+        )
+        let required_kernel_fixtures = (select-kernel-fixtures $required_kernel_candidates true)
+        if (($required_kernel_fixtures | length) > 0) {
+            let preflight = (kernel-preflight)
+            if not $preflight.available {
+                let reason = ($preflight.reasons | str join "; ")
+                fail $"kernel verifier checks requested but unavailable: ($reason)"
+            }
+        }
+    }
+
     let local_jobs = (resolve-local-jobs $jobs)
     let plugin_bin = (resolve-plugin-bin $REPO_ROOT)
     print $"Using plugin: ($plugin_bin)"
@@ -235,12 +256,6 @@ def verifier-diff-main [options] {
     }
     if $default_smoke {
         print "Using default smoke lane: --tier fast --test-lane host-safe. Pass --full for the complete fixture sweep."
-    }
-
-    let local_fixtures = (select-fixtures-with-requirements $fixtures $kernel "local")
-    if (($local_fixtures | length) == 0) {
-        print "ok: 0 local fixtures"
-        return
     }
 
     let local_results = (check-local-fixtures $plugin_bin $local_fixtures $local_jobs)
