@@ -33,6 +33,7 @@ def default-main-options [] {
     {
         help: false
         validate: false
+        validate_fixture_file: null
         check_host_syscall_tracepoints: false
         list: false
         matrix: false
@@ -64,6 +65,7 @@ def print-main-help [] {
         "Flags:"
         "  -h, --help: Display this help message"
         "  --validate: Validate fixture metadata and exit without resolving or running the plugin."
+        "  --validate-fixture-file <path>: Validate one fixture chunk file and exit without resolving or running the plugin."
         "  --check-host-syscall-tracepoints: Compare this host's sys_enter tracepoints with modeled fallback coverage and exit."
         "  --list: List verifier fixtures and exit."
         "  --matrix: Print verifier fixture counts by tier and category, then exit."
@@ -225,7 +227,7 @@ def parse-main-args [args] {
             let key = ($arg | str substring 2.. | str replace --all "-" "_")
             $options = ($options | upsert $key true)
             $i = ($i + 1)
-        } else if $arg in ["--compat-kernel" "--category" "--tag" "--tier" "--exclude-tier" "--test-lane" "--local-status" "--kernel-status"] {
+        } else if $arg in ["--validate-fixture-file" "--compat-kernel" "--category" "--tag" "--tier" "--exclude-tier" "--test-lane" "--local-status" "--kernel-status"] {
             let value = if $has_value { $parsed.value } else { require-flag-value $args $i $arg }
             let key = ($arg | str substring 2.. | str replace --all "-" "_")
             $options = ($options | upsert $key (string-flag-value $value))

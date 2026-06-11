@@ -31,6 +31,7 @@ def --wrapped main [...args] {
 
 def verifier-diff-main [options] {
     let validate = $options.validate
+    let validate_fixture_file = $options.validate_fixture_file
     let check_host_syscall_tracepoints = $options.check_host_syscall_tracepoints
     let list = $options.list
     let matrix = $options.matrix
@@ -61,8 +62,14 @@ def verifier-diff-main [options] {
     if $validate and ($list or $matrix) {
         fail "--validate cannot be combined with --list or --matrix"
     }
-    if $check_host_syscall_tracepoints and ($validate or $list or $matrix) {
-        fail "--check-host-syscall-tracepoints cannot be combined with --validate, --list, or --matrix"
+    if $validate and $validate_fixture_file != null {
+        fail "--validate and --validate-fixture-file are mutually exclusive"
+    }
+    if $validate_fixture_file != null and ($list or $matrix) {
+        fail "--validate-fixture-file cannot be combined with --list or --matrix"
+    }
+    if $check_host_syscall_tracepoints and ($validate or $validate_fixture_file != null or $list or $matrix) {
+        fail "--check-host-syscall-tracepoints cannot be combined with --validate, --validate-fixture-file, --list, or --matrix"
     }
     if $json and not ($list or $matrix) {
         fail "--json is only supported with --list or --matrix"
@@ -136,8 +143,31 @@ def verifier-diff-main [options] {
         fail "--validate checks all fixture metadata and cannot be combined with fixture selection or run-mode flags"
     }
 
+    if $validate_fixture_file != null and (
+        $kernel
+        or $no_kernel
+        or $smoke
+        or $fast
+        or $full
+        or $fixture != null
+        or $fixtures != null
+        or $category != null
+        or $tag != null
+        or $tier != null
+        or $exclude_tier != null
+        or $test_lane != null
+        or $local_status != null
+        or $kernel_status != null
+    ) {
+        fail "--validate-fixture-file validates one fixture chunk and cannot be combined with fixture selection or run-mode flags"
+    }
+
     if $validate {
         exec nu ($REPO_ROOT | path join scripts verifier_diff_validate.nu)
+    }
+
+    if $validate_fixture_file != null {
+        exec nu ($REPO_ROOT | path join scripts verifier_diff_validate.nu) --fixture-file $validate_fixture_file
     }
 
     if $check_host_syscall_tracepoints {
