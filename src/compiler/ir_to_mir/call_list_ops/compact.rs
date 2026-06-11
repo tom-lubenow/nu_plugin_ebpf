@@ -142,7 +142,7 @@ impl<'a> HirToMirLowering<'a> {
         let always_kept = Self::typed_fixed_array_compact_identity_always_kept_type(&elem_ty);
         if remove_empty && !always_kept {
             return Err(CompileError::UnsupportedInstruction(format!(
-                "compact --empty on typed fixed arrays currently supports only numeric or bool elements in eBPF, got {:?}",
+                "compact --empty on typed fixed arrays is only a safe identity for numeric or bool elements in eBPF; variable-length filtering for fixed-array elements is not supported yet, got {:?}",
                 elem_ty
             )));
         }

@@ -15812,7 +15812,7 @@ fn test_lower_global_define_type_string_array_compact_empty_rejects() {
 
     assert!(
         err.to_string().contains(
-            "compact --empty on typed fixed arrays currently supports only numeric or bool elements"
+            "compact --empty on typed fixed arrays is only a safe identity for numeric or bool elements"
         ),
         "expected targeted compact --empty fixed-array diagnostic, got: {err}"
     );

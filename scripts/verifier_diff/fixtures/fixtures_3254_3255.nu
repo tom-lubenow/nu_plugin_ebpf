@@ -26,6 +26,6 @@ export const VERIFIER_DIFF_FIXTURES_3254_3255 = [
         ]
         local: "reject"
         kernel: "skip"
-        error_contains: "compact --empty on typed fixed arrays currently supports only numeric or bool elements"
+        error_contains: "compact --empty on typed fixed arrays is only a safe identity for numeric or bool elements"
     }
 ]
