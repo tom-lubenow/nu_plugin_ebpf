@@ -228,8 +228,15 @@ def verifier-diff-main [options] {
     }
 
     let local_fixtures = (select-fixtures-with-requirements $fixtures $kernel "local")
-    if (($local_fixtures | length) == 0) {
-        print "ok: 0 local fixtures"
+    let local_fixture_count = ($local_fixtures | length)
+    let local_skip_count = (($fixtures | length) - $local_fixture_count)
+    let local_skip_text = if $local_skip_count > 0 {
+        $", ($local_skip_count) skipped missing host features"
+    } else {
+        ""
+    }
+    if $local_fixture_count == 0 {
+        print $"ok: 0 local fixtures($local_skip_text)"
         return
     }
 
@@ -268,7 +275,7 @@ def verifier-diff-main [options] {
     )
 
     if $no_kernel {
-        print $"ok: (($local_fixtures | length)) local fixtures, kernel checks disabled"
+        print $"ok: ($local_fixture_count) local fixtures, kernel checks disabled($local_skip_text)"
         return
     }
 
@@ -278,7 +285,7 @@ def verifier-diff-main [options] {
     )
     let kernel_fixtures = (select-kernel-fixtures $kernel_candidates $kernel)
     if (($kernel_fixtures | length) == 0) {
-        print $"ok: (($local_fixtures | length)) local fixtures, no kernel fixtures"
+        print $"ok: ($local_fixture_count) local fixtures, no kernel fixtures($local_skip_text)"
         return
     }
 
@@ -289,7 +296,7 @@ def verifier-diff-main [options] {
             fail $"kernel verifier checks requested but unavailable: ($reason)"
         }
         print $"kernel skip: ($reason)"
-        print $"ok: (($local_fixtures | length)) local fixtures"
+        print $"ok: ($local_fixture_count) local fixtures($local_skip_text)"
         return
     }
 
@@ -308,5 +315,5 @@ def verifier-diff-main [options] {
         error make $err
     }
 
-    print $"ok: (($local_fixtures | length)) local fixtures, (($kernel_fixtures | length)) kernel fixtures"
+    print $"ok: ($local_fixture_count) local fixtures, (($kernel_fixtures | length)) kernel fixtures($local_skip_text)"
 }
