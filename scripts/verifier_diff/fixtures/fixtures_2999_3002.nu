@@ -1,17 +1,16 @@
 const VERIFIER_DIFF_FIXTURES_2999_3002 = [
     {
-        name: "core-list-sort-rejects-natural-flag"
+        name: "core-list-sort-natural"
         category: "language-core"
-        tags: [list sort diagnostics reject flag]
+        tags: [list sort natural accept]
         target: "kprobe:ksys_read"
         program: [
             '{|ctx|'
-            '  [1 2] | sort --natural'
+            '  [20 10 30] | sort --natural | get 0'
             '}'
         ]
-        local: "reject"
-        kernel: "skip"
-        error_contains: "sort --natural is not supported for stack-backed numeric lists in eBPF"
+        local: "accept"
+        kernel: "accept"
     }
     {
         name: "core-list-sort-rejects-values-flag"

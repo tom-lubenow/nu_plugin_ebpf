@@ -30700,6 +30700,94 @@ fn test_lower_sort_reverse_on_numeric_list_uses_descending_compare() {
 }
 
 #[test]
+fn test_lower_sort_natural_on_numeric_list_is_supported() {
+    let sort_decl = DeclId::new(1231);
+    let get_decl = DeclId::new(1232);
+    let mut hir = make_numeric_list_call_then_get_program(sort_decl, get_decl, None, 0);
+    let HirStmt::Call { args, .. } = &mut hir.main.blocks[0].stmts[1] else {
+        panic!("expected sort call");
+    };
+    args.flags.push(b"natural".to_vec());
+    let decl_names = HashMap::from([
+        (sort_decl, "sort".to_string()),
+        (get_decl, "get".to_string()),
+    ]);
+
+    let result = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect("sort --natural should lower as numeric sort on stack-backed numeric lists");
+
+    compile_mir_to_ebpf_with_hints(&result.program, None, Some(&result.type_hints))
+        .expect("sort --natural followed by get should compile through codegen");
+}
+
+#[test]
+fn test_lower_sort_natural_rejects_compile_time_string_lists() {
+    let sort_decl = DeclId::new(1233);
+    let hir = HirProgram::new(
+        HirFunction {
+            blocks: vec![HirBlock {
+                id: HirBlockId(0),
+                stmts: vec![
+                    HirStmt::LoadValue {
+                        dst: RegId::new(0),
+                        val: Box::new(Value::list(
+                            vec![
+                                Value::string("item10", Span::test_data()),
+                                Value::string("item2", Span::test_data()),
+                            ],
+                            Span::test_data(),
+                        )),
+                    },
+                    HirStmt::Call {
+                        decl_id: sort_decl,
+                        src_dst: RegId::new(1),
+                        args: HirCallArgs {
+                            pipeline_input: Some(RegId::new(0)),
+                            flags: vec![b"natural".to_vec()],
+                            ..HirCallArgs::default()
+                        },
+                    },
+                ],
+                terminator: HirTerminator::Return { src: RegId::new(1) },
+            }],
+            entry: HirBlockId(0),
+            spans: Vec::new(),
+            ast: Vec::new(),
+            comments: Vec::new(),
+            register_count: 2,
+            file_count: 0,
+        },
+        HashMap::new(),
+        vec![],
+        None,
+    );
+    let decl_names = HashMap::from([(sort_decl, "sort".to_string())]);
+
+    let err = lower_hir_to_mir_with_hints(
+        &hir,
+        None,
+        &decl_names,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+    .expect_err("sort --natural on strings should remain unsupported");
+
+    assert!(
+        err.to_string()
+            .contains("sort on typed fixed arrays currently supports only integer scalar elements"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn test_lower_sort_large_numeric_list_capacity_is_rejected() {
     let sort_decl = DeclId::new(125);
     let values = (0..17)

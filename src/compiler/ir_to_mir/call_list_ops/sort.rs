@@ -44,10 +44,11 @@ impl<'a> HirToMirLowering<'a> {
         src_dst_had_value: bool,
     ) -> Result<(), CompileError> {
         let reverse = self.named_flags.iter().any(|flag| flag == "reverse");
+        let natural = self.named_flags.iter().any(|flag| flag == "natural");
         if let Some(flag) = self
             .named_flags
             .iter()
-            .find(|flag| flag.as_str() != "reverse")
+            .find(|flag| !matches!(flag.as_str(), "reverse" | "natural"))
         {
             return Err(CompileError::UnsupportedInstruction(format!(
                 "sort --{flag} is not supported for stack-backed numeric lists in eBPF"
@@ -86,6 +87,18 @@ impl<'a> HirToMirLowering<'a> {
                 return Err(CompileError::UnsupportedInstruction(
                     "sort requires compile-time known fixed-list elements with one comparable type in eBPF"
                         .into(),
+                ));
+            }
+            if natural
+                && keyed.iter().any(|key| {
+                    !matches!(
+                        key,
+                        CompileTimeSortKey::Int(_) | CompileTimeSortKey::Float(_)
+                    )
+                })
+            {
+                return Err(CompileError::UnsupportedInstruction(
+                    "sort --natural is only supported for numeric lists in eBPF".into(),
                 ));
             }
 
