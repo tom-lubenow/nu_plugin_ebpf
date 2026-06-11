@@ -1290,24 +1290,6 @@ impl<'a> HirToMirLowering<'a> {
             .and_then(Self::bits_binary_value_from_metadata);
         let op = Self::bits_binary_op(cmd_name);
 
-        if let Some(input_meta) = input_meta.as_ref() {
-            if self.lower_typed_fixed_array_bits_binary(
-                cmd_name,
-                src_dst,
-                input_reg,
-                input_vreg,
-                result_vreg,
-                input_meta,
-                op,
-                rhs_meta.as_ref(),
-                rhs_vreg,
-                rhs_const,
-                MAX_BITS_STACK_LIST_CAPACITY,
-            )? {
-                return Ok(());
-            }
-        }
-
         if let Some(nu_protocol::Value::List { vals, .. }) = input_meta
             .as_ref()
             .and_then(|meta| meta.constant_value.clone())
@@ -1437,6 +1419,24 @@ impl<'a> HirToMirLowering<'a> {
                 &nu_protocol::Value::binary(output, nu_protocol::Span::unknown()),
             )?;
             return Ok(());
+        }
+
+        if let Some(input_meta) = input_meta.as_ref() {
+            if self.lower_typed_fixed_array_bits_binary(
+                cmd_name,
+                src_dst,
+                input_reg,
+                input_vreg,
+                result_vreg,
+                input_meta,
+                op,
+                rhs_meta.as_ref(),
+                rhs_vreg,
+                rhs_const,
+                MAX_BITS_STACK_LIST_CAPACITY,
+            )? {
+                return Ok(());
+            }
         }
 
         if rhs_binary_const.is_some() {

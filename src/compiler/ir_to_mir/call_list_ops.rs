@@ -83,7 +83,11 @@ impl<'a> HirToMirLowering<'a> {
         dst: RegId,
         value: &nu_protocol::Value,
     ) -> Result<(), CompileError> {
-        if self.current_call_result_metadata_only {
+        let scalar_string = matches!(
+            value,
+            nu_protocol::Value::String { .. } | nu_protocol::Value::Glob { .. }
+        );
+        if self.current_call_result_metadata_only && !scalar_string {
             self.lower_compile_time_only_constant_value(dst, value);
             Ok(())
         } else {
